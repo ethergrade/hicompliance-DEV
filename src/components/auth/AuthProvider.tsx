@@ -91,7 +91,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (error) {
         // If admin login fails, try to sign up the admin user first
-        if (email === 'admin' && error.message.includes('Invalid login credentials')) {
+        if ((email === 'admin' || email === 'admin@admin.com') && error.message.includes('Invalid login credentials')) {
+          console.log('Tentativo di registrazione admin...');
+          
           const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
             email: 'admin@admin.com',
             password: 'adminadmin',
@@ -105,13 +107,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           });
 
           if (signUpError) {
+            console.error('Errore registrazione admin:', signUpError);
             toast({
-              title: "Errore di accesso",
+              title: "Errore di registrazione admin",
               description: signUpError.message,
               variant: "destructive",
             });
             return { error: signUpError };
           }
+
+          console.log('Admin registrato, tentativo di login...');
+
+          // Wait a moment for the signup to complete
+          await new Promise(resolve => setTimeout(resolve, 1000));
 
           // Try to login again after signup
           const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
@@ -120,26 +128,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           });
 
           if (loginError) {
+            console.error('Errore login dopo registrazione:', loginError);
             toast({
-              title: "Errore di accesso",
-              description: "Riprova tra qualche secondo",
-              variant: "destructive",
+              title: "Admin registrato",
+              description: "Account admin creato. Riprova il login tra qualche secondo.",
+              variant: "default",
             });
             return { error: loginError };
           }
 
-          // Update the user profile with admin details
+          // Update the user profile with admin details and sync auth_user_id
           if (loginData.user) {
+            console.log('Aggiornamento profilo admin...');
+            
+            // Get admin organization
+            const { data: adminOrg } = await supabase
+              .from('organizations')
+              .select('id')
+              .eq('code', 'admin')
+              .single();
+
+            // Update the existing admin user record with auth_user_id
             await supabase
               .from('users')
-              .upsert({
+              .update({
                 auth_user_id: loginData.user.id,
-                email: 'admin@admin.com',
-                full_name: 'Administrator',
-                user_type: 'admin',
-                organization_id: (await supabase.from('organizations').select('id').eq('code', 'admin').single()).data?.id,
-              });
+              })
+              .eq('email', 'admin@admin.com');
+
+            console.log('Profilo admin aggiornato');
           }
+
+          toast({
+            title: "Accesso admin effettuato",
+            description: "Account admin creato e login completato",
+          });
+
+          return { error: null };
         } else {
           toast({
             title: "Errore di accesso",
@@ -157,6 +182,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       return { error: null };
     } catch (error: any) {
+      console.error('Errore generale di accesso:', error);
       toast({
         title: "Errore di accesso",
         description: "Si è verificato un errore durante l'accesso",
