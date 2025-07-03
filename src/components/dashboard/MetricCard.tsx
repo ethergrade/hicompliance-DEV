@@ -48,12 +48,10 @@ export const MetricCard: React.FC<MetricCardProps> = ({
   return (
     <Card className="relative overflow-hidden border-border shadow-cyber hover:shadow-glow transition-cyber animate-fade-in">
       <CardHeader className="pb-3 text-center">
-        <div className="flex items-center justify-between mb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            {title}
-          </CardTitle>
-          {getStatusBadge()}
-        </div>
+        <CardTitle className="text-sm font-medium text-muted-foreground mb-2">
+          {title}
+        </CardTitle>
+        {getStatusBadge()}
       </CardHeader>
       <CardContent className="pb-6">
         {percentage !== undefined ? (
