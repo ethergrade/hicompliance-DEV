@@ -16,10 +16,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
         
         <div className="flex-1 flex flex-col">
           <header className="h-14 border-b border-border bg-card flex items-center px-4 shadow-sm">
-            <SidebarTrigger asChild>
-              <Button variant="ghost" size="sm" className="mr-4">
-                <Menu className="h-4 w-4" />
-              </Button>
+            <SidebarTrigger>
+              <Menu className="h-4 w-4" />
             </SidebarTrigger>
             
             <div className="flex-1">
