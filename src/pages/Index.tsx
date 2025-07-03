@@ -40,10 +40,8 @@ const Index = () => {
     );
   }
 
-  // Redirect if authenticated
-  if (user) {
-    return <Navigate to="/dashboard" replace />;
-  }
+  // Show different header for authenticated users
+  const showAuthenticatedHeader = user;
 
   const features = [
     {
@@ -123,12 +121,21 @@ const Index = () => {
               <p className="text-xs text-muted-foreground">Cyber Risk Platform</p>
             </div>
           </div>
-          <Link to="/auth">
-            <Button className="bg-gradient-cyber hover:opacity-90">
-              Accedi alla Piattaforma
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
-          </Link>
+          {showAuthenticatedHeader ? (
+            <Link to="/dashboard">
+              <Button className="bg-gradient-cyber hover:opacity-90">
+                Vai al Dashboard
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </Link>
+          ) : (
+            <Link to="/auth">
+              <Button className="bg-gradient-cyber hover:opacity-90">
+                Accedi alla Piattaforma
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </Link>
+          )}
         </div>
       </header>
 
@@ -149,12 +156,21 @@ const Index = () => {
             la conformità NIS2 e il monitoraggio continuo della sicurezza aziendale.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link to="/auth">
-              <Button size="lg" className="bg-gradient-cyber hover:opacity-90 text-lg px-8">
-                Inizia Ora
-                <ArrowRight className="w-5 h-5 ml-2" />
-              </Button>
-            </Link>
+            {showAuthenticatedHeader ? (
+              <Link to="/dashboard">
+                <Button size="lg" className="bg-gradient-cyber hover:opacity-90 text-lg px-8">
+                  Vai al Dashboard
+                  <ArrowRight className="w-5 h-5 ml-2" />
+                </Button>
+              </Link>
+            ) : (
+              <Link to="/auth">
+                <Button size="lg" className="bg-gradient-cyber hover:opacity-90 text-lg px-8">
+                  Inizia Ora
+                  <ArrowRight className="w-5 h-5 ml-2" />
+                </Button>
+              </Link>
+            )}
             <Button size="lg" variant="outline" className="text-lg px-8">
               Scopri di Più
             </Button>
@@ -247,12 +263,21 @@ const Index = () => {
             Accedi alla piattaforma per iniziare la valutazione della conformità 
             e proteggere la tua organizzazione dalle minacce cyber
           </p>
-          <Link to="/auth">
-            <Button size="lg" variant="secondary" className="text-lg px-8">
-              Accedi alla Piattaforma
-              <ArrowRight className="w-5 h-5 ml-2" />
-            </Button>
-          </Link>
+          {showAuthenticatedHeader ? (
+            <Link to="/dashboard">
+              <Button size="lg" variant="secondary" className="text-lg px-8">
+                Vai al Dashboard
+                <ArrowRight className="w-5 h-5 ml-2" />
+              </Button>
+            </Link>
+          ) : (
+            <Link to="/auth">
+              <Button size="lg" variant="secondary" className="text-lg px-8">
+                Accedi alla Piattaforma
+                <ArrowRight className="w-5 h-5 ml-2" />
+              </Button>
+            </Link>
+          )}
         </div>
       </section>
 

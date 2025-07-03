@@ -14,7 +14,8 @@ import {
   LogOut,
   Globe,
   Eye,
-  ClipboardCheck
+  ClipboardCheck,
+  Home
 } from 'lucide-react';
 import {
   Sidebar,
@@ -33,6 +34,11 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { LogoutButton } from '@/components/auth/LogoutButton';
 
 const navigation = [
+  {
+    title: 'Home',
+    href: '/',
+    icon: Home,
+  },
   {
     title: 'Dashboard',
     href: '/dashboard',
