@@ -465,11 +465,11 @@ const Threats: React.FC = () => {
                 </TableHeader>
                 <TableBody>
                   {sortedThreats.map((threat) => (
-                    <TableRow key={threat.id} className="hover:bg-muted/50">
-                      <TableCell className="text-foreground">
+                    <TableRow key={threat.id} className="hover:bg-muted/50 border-b border-border">
+                      <TableCell>
                         <div>
-                          <div className="font-medium text-foreground">{threat.title}</div>
-                          <div className="text-sm text-muted-foreground line-clamp-2">
+                          <div className="font-medium text-gray-100">{threat.title}</div>
+                          <div className="text-sm text-gray-400 line-clamp-2">
                             {threat.description}
                           </div>
                         </div>
@@ -479,36 +479,36 @@ const Threats: React.FC = () => {
                           {threat.severity.toUpperCase()}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-foreground">
-                        <span className="font-medium text-foreground">{threat.score}/100</span>
+                      <TableCell>
+                        <span className="font-medium text-gray-100">{threat.score}/100</span>
                       </TableCell>
-                      <TableCell className="text-foreground">
+                      <TableCell>
                         <span className={getSourceColor(threat.source)}>
                           {threat.source}
                         </span>
                       </TableCell>
-                      <TableCell className="text-foreground">
-                        <span className="font-mono text-sm text-foreground">{threat.asset}</span>
+                      <TableCell>
+                        <span className="font-mono text-sm text-gray-100">{threat.asset}</span>
                       </TableCell>
-                      <TableCell className="text-foreground">
+                      <TableCell>
                         {threat.cve && (
-                          <Badge variant="outline" className="font-mono text-xs">
+                          <Badge variant="outline" className="font-mono text-xs border-gray-400 text-gray-100">
                             {threat.cve}
                           </Badge>
                         )}
                       </TableCell>
-                      <TableCell className="text-foreground">
-                        <span className="text-sm text-foreground">{threat.category}</span>
+                      <TableCell>
+                        <span className="text-sm text-gray-100">{threat.category}</span>
                       </TableCell>
-                      <TableCell className="text-foreground">
+                      <TableCell>
                         <Badge variant={getStatusBadge(threat.status) as any}>
                           {threat.status === 'active' ? 'Attiva' :
                            threat.status === 'investigating' ? 'In analisi' :
                            threat.status === 'mitigated' ? 'Mitigata' : 'Risolta'}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-foreground">
-                        <span className="text-sm text-foreground">
+                      <TableCell>
+                        <span className="text-sm text-gray-100">
                           {new Date(threat.discoveredAt).toLocaleDateString('it-IT')}
                         </span>
                       </TableCell>
