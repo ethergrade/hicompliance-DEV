@@ -7,6 +7,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { supabase } from '@/integrations/supabase/client';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+import { 
+  Shield, 
+  Monitor, 
+  Mail, 
+  FileText, 
+  Download, 
+  Lock, 
+  BarChart3, 
+  Cloud, 
+  Laptop,
+  AtSign 
+} from 'lucide-react';
 
 const Dashboard: React.FC = () => {
   const { userProfile } = useAuth();
@@ -154,6 +166,23 @@ const Dashboard: React.FC = () => {
                 const resolvedCount = Math.floor(50 + Math.random() * 100);
                 const status = orgService.status;
                 
+                // Mappatura icone per i servizi
+                const getServiceIcon = (code: string) => {
+                  switch (code) {
+                    case 'hi_firewall': return <Shield className="w-4 h-4" />;
+                    case 'hi_endpoint': return <Laptop className="w-4 h-4" />;
+                    case 'hi_mail': return <Mail className="w-4 h-4" />;
+                    case 'hi_log': return <FileText className="w-4 h-4" />;
+                    case 'hi_patch': return <Download className="w-4 h-4" />;
+                    case 'hi_mfa': return <Lock className="w-4 h-4" />;
+                    case 'hi_track': return <BarChart3 className="w-4 h-4" />;
+                    case 'cloud_security': return <Cloud className="w-4 h-4" />;
+                    case 'endpoint_security': return <Monitor className="w-4 h-4" />;
+                    case 'email_security': return <AtSign className="w-4 h-4" />;
+                    default: return <Shield className="w-4 h-4" />;
+                  }
+                };
+                
                 // Calcolo punteggio di criticità basato su health score e issues
                 const criticalityScore = status === 'alert' ? 
                   Math.min(100, 100 - healthScore + issueCount * 5) : 
@@ -201,7 +230,12 @@ const Dashboard: React.FC = () => {
                     </div>
                     
                     <div className="flex-1">
-                      <h4 className="font-semibold text-base mb-3">{service.name}</h4>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="text-primary">
+                          {getServiceIcon(service.code)}
+                        </div>
+                        <h4 className="font-semibold text-base">{service.name}</h4>
+                      </div>
                       
                       {/* Health Score e Criticità */}
                       <div className="space-y-2 mb-3">
