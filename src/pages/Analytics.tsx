@@ -25,7 +25,12 @@ import {
   ResponsiveContainer,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  RadarChart,
+  Radar,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis
 } from 'recharts';
 import { 
   TrendingUp, 
@@ -262,10 +267,15 @@ const Analytics: React.FC = () => {
             <CardContent>
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={nis2ComplianceData} layout="horizontal">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis type="number" domain={[0, 100]} stroke="#9CA3AF" />
-                    <YAxis dataKey="category" type="category" width={120} stroke="#9CA3AF" />
+                  <RadarChart data={nis2ComplianceData}>
+                    <PolarGrid stroke="#374151" />
+                    <PolarAngleAxis dataKey="category" tick={{ fontSize: 12, fill: '#9CA3AF' }} />
+                    <PolarRadiusAxis 
+                      angle={0} 
+                      domain={[0, 100]} 
+                      tick={{ fontSize: 10, fill: '#9CA3AF' }}
+                      tickCount={6}
+                    />
                     <Tooltip 
                       contentStyle={{ 
                         backgroundColor: '#1F2937', 
@@ -273,9 +283,25 @@ const Analytics: React.FC = () => {
                         color: '#F9FAFB' 
                       }} 
                     />
-                    <Bar dataKey="compliance" fill="#3B82F6" name="Attuale" />
-                    <Bar dataKey="target" fill="#10B981" name="Target" />
-                  </BarChart>
+                    <Radar 
+                      name="Conformità Attuale" 
+                      dataKey="compliance" 
+                      stroke="#3B82F6" 
+                      fill="#3B82F6" 
+                      fillOpacity={0.3}
+                      strokeWidth={2}
+                    />
+                    <Radar 
+                      name="Target" 
+                      dataKey="target" 
+                      stroke="#10B981" 
+                      fill="#10B981" 
+                      fillOpacity={0.1}
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
+                    />
+                    <Legend />
+                  </RadarChart>
                 </ResponsiveContainer>
               </div>
             </CardContent>
