@@ -18,6 +18,14 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { 
   Globe, 
   Shield, 
@@ -25,12 +33,16 @@ import {
   CheckCircle, 
   Search,
   Eye,
-  TrendingUp
+  TrendingUp,
+  Filter
 } from 'lucide-react';
 
 const SurfaceScan360: React.FC = () => {
   const [openTooltip, setOpenTooltip] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [riskFilter, setRiskFilter] = useState('all');
   const assetsPerPage = 5;
   
   const allPublicAssets = [
@@ -46,10 +58,28 @@ const SurfaceScan360: React.FC = () => {
     { ip: '203.0.113.186', hostname: 'monitor.cliente1.com', score: 77, risk: 'Medio', status: 'Attenzione', ports: [443, 9090], services: ['HTTPS', 'Prometheus'] },
   ];
 
-  const totalPages = Math.ceil(allPublicAssets.length / assetsPerPage);
+  // Filter assets based on search and filters
+  const filteredAssets = allPublicAssets.filter(asset => {
+    const matchesSearch = searchTerm === '' || 
+      asset.ip.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      asset.hostname.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      asset.services.some(service => service.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    const matchesStatus = statusFilter === 'all' || asset.status === statusFilter;
+    const matchesRisk = riskFilter === 'all' || asset.risk === riskFilter;
+    
+    return matchesSearch && matchesStatus && matchesRisk;
+  });
+
+  const totalPages = Math.ceil(filteredAssets.length / assetsPerPage);
   const indexOfLastAsset = currentPage * assetsPerPage;
   const indexOfFirstAsset = indexOfLastAsset - assetsPerPage;
-  const currentAssets = allPublicAssets.slice(indexOfFirstAsset, indexOfLastAsset);
+  const currentAssets = filteredAssets.slice(indexOfFirstAsset, indexOfLastAsset);
+
+  // Reset to first page when filters change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, riskFilter]);
 
   const scanResults = [
     { 
@@ -217,10 +247,51 @@ const SurfaceScan360: React.FC = () => {
             </Card>
           </div>
 
+          {/* Search and Filter Bar */}
+          <Card className="border-border">
+            <CardContent className="p-4">
+              <div className="flex flex-col md:flex-row gap-4 items-center">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                  <Input
+                    placeholder="Cerca per IP, hostname o servizio..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Stato" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tutti gli stati</SelectItem>
+                      <SelectItem value="Sicuro">Sicuro</SelectItem>
+                      <SelectItem value="Attenzione">Attenzione</SelectItem>
+                      <SelectItem value="Critico">Critico</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={riskFilter} onValueChange={setRiskFilter}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Rischio" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tutti i rischi</SelectItem>
+                      <SelectItem value="Basso">Basso</SelectItem>
+                      <SelectItem value="Medio">Medio</SelectItem>
+                      <SelectItem value="Alto">Alto</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Public Assets Table */}
           <Card className="border-border">
             <CardHeader>
-              <CardTitle>Asset IP Pubblici Monitorati</CardTitle>
+              <CardTitle>Asset IP Pubblici Monitorati ({filteredAssets.length} trovati)</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
