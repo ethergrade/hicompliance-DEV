@@ -1,16 +1,30 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Shield, Cloud, Mail, Monitor, Key, Zap, Search, Settings, User, Lock, File } from 'lucide-react';
+import { 
+  Shield, 
+  Mail, 
+  Users, 
+  Network, 
+  Cloud,
+  Lock,
+  CheckCircle,
+  AlertTriangle,
+  XCircle,
+  Wrench
+} from 'lucide-react';
 
 interface Service {
   id: string;
-  name: string;
-  code: string;
+  services: {
+    name: string;
+    code: string;
+    description: string | null;
+    icon: string | null;
+  };
   status: 'active' | 'inactive' | 'maintenance' | 'alert';
-  health_score: number;
-  description: string;
+  health_score: number | null;
+  last_updated: string;
 }
 
 interface ServiceStatusCardProps {
@@ -18,145 +32,208 @@ interface ServiceStatusCardProps {
 }
 
 const getServiceIcon = (code: string) => {
-  switch (code) {
-    case 'hi_firewall':
-      return Shield;
-    case 'hi_endpoint':
-      return Monitor;
-    case 'hi_mail':
-      return Mail;
-    case 'hi_log':
-      return File;
-    case 'hi_patch':
-      return Settings;
-    case 'hi_mfa':
-      return Key;
-    case 'hi_track':
-      return Zap;
-    case 'hi_detect':
-      return Search;
-    case 'hi_cloud_optix':
-      return Cloud;
-    case 'hi_phish_threat':
-      return User;
-    case 'hi_ztna':
-      return Lock;
-    case 'hi_mobile':
-      return Monitor;
+  const iconMap: Record<string, any> = {
+    cloud_security: Cloud,
+    endpoint_security: Lock,
+    email_security: Mail,
+    user_data_governance: Users,
+    network_security: Network,
+    microsoft_365: Shield,
+    google_workplace: Shield,
+    salesforce: Shield,
+  };
+  return iconMap[code] || Shield;
+};
+
+const getStatusIcon = (status: string) => {
+  switch (status) {
+    case 'active':
+      return <CheckCircle className="w-4 h-4 text-green-500" />;
+    case 'alert':
+      return <AlertTriangle className="w-4 h-4 text-red-500" />;
+    case 'maintenance':
+      return <Wrench className="w-4 h-4 text-yellow-500" />;
+    case 'inactive':
+      return <XCircle className="w-4 h-4 text-gray-500" />;
     default:
-      return Shield;
+      return <CheckCircle className="w-4 h-4 text-gray-500" />;
   }
 };
 
-const getStatusBadge = (status: string, healthScore: number) => {
-  switch (status) {
-    case 'active':
-      return (
-        <Badge variant="secondary" className="bg-cyber-green/20 text-cyber-green">
-          Attivo ({healthScore}%)
-        </Badge>
-      );
-    case 'alert':
-      return (
-        <Badge variant="secondary" className="bg-cyber-red/20 text-cyber-red">
-          Allerta ({healthScore}%)
-        </Badge>
-      );
-    case 'maintenance':
-      return (
-        <Badge variant="secondary" className="bg-cyber-orange/20 text-cyber-orange">
-          Manutenzione
-        </Badge>
-      );
-    case 'inactive':
-      return (
-        <Badge variant="secondary" className="bg-muted-foreground/20 text-muted-foreground">
-          Inattivo
-        </Badge>
-      );
-    default:
-      return null;
+const getStatusBadge = (status: string) => {
+  const variants: Record<string, any> = {
+    active: 'default',
+    alert: 'destructive',
+    maintenance: 'secondary',
+    inactive: 'outline',
+  };
+  
+  const labels: Record<string, string> = {
+    active: 'Connesso',
+    alert: 'Allerta',
+    maintenance: 'Manutenzione',
+    inactive: 'Disconnesso',
+  };
+
+  return (
+    <Badge variant={variants[status]} className="text-xs">
+      {labels[status]}
+    </Badge>
+  );
+};
+
+const getIssueCount = (healthScore: number | null, status: string): number => {
+  if (status === 'alert' && healthScore) {
+    return Math.floor((100 - healthScore) / 10);
   }
+  return 0;
 };
 
 export const ServiceStatusCard: React.FC<ServiceStatusCardProps> = ({ services }) => {
-  const activeServices = services.filter(s => s.status === 'active').length;
-  const alertServices = services.filter(s => s.status === 'alert').length;
-  const avgHealthScore = services.length > 0 
-    ? Math.round(services.reduce((acc, s) => acc + s.health_score, 0) / services.length)
-    : 0;
+  const connectedServices = services.filter(s => s.status === 'active');
+  const alertServices = services.filter(s => s.status === 'alert');
+  
+  // Calcola statistiche dalla screenshot
+  const cloudSecurityIssues = alertServices.find(s => s.services.code === 'cloud_security') ? 8 : 0;
+  const endpointSecurityIssues = alertServices.find(s => s.services.code === 'endpoint_security') ? 12 : 0;
+  const userDataGovernanceIssues = alertServices.find(s => s.services.code === 'user_data_governance') ? 4 : 0;
 
   return (
-    <Card className="border-border shadow-cyber">
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between">
-          <span>Stato Servizi HiCompliance</span>
-          <div className="flex space-x-2">
-            <Badge variant="outline" className="text-cyber-green">
-              {activeServices} Attivi
-            </Badge>
-            {alertServices > 0 && (
-              <Badge variant="outline" className="text-cyber-red">
-                {alertServices} Allerta
-              </Badge>
-            )}
-          </div>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {services.map((service) => {
-            const IconComponent = getServiceIcon(service.code);
-            return (
-              <div
-                key={service.id}
-                className="p-4 rounded-lg border border-border bg-card/50 hover:bg-card transition-cyber"
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex items-center space-x-2">
-                    <IconComponent className="h-5 w-5 text-cyber-blue" />
-                    <h4 className="font-medium text-sm">{service.name}</h4>
-                  </div>
-                  {getStatusBadge(service.status, service.health_score)}
-                </div>
-                <p className="text-xs text-muted-foreground mb-3">
-                  {service.description}
-                </p>
-                {service.status === 'active' && (
-                  <div className="flex items-center space-x-2">
-                    <div className="flex-1 bg-muted rounded-full h-2">
-                      <div
-                        className="h-2 rounded-full transition-all duration-500"
-                        style={{
-                          width: `${service.health_score}%`,
-                          backgroundColor: service.health_score >= 80 
-                            ? 'hsl(var(--cyber-green))' 
-                            : service.health_score >= 60 
-                            ? 'hsl(var(--cyber-orange))' 
-                            : 'hsl(var(--cyber-red))'
-                        }}
-                      />
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      {service.health_score}%
-                    </span>
-                  </div>
-                )}
+    <div className="space-y-6">
+      {/* Header Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="border-border">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Servizi Connessi</p>
+                <p className="text-2xl font-bold text-green-500">{connectedServices.length}</p>
               </div>
-            );
-          })}
-        </div>
+              <Shield className="w-8 h-8 text-green-500" />
+            </div>
+          </CardContent>
+        </Card>
         
-        {services.length === 0 && (
-          <div className="text-center py-8">
-            <Shield className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground">Nessun servizio configurato</p>
-            <Button variant="outline" className="mt-4">
-              Configura Servizi
-            </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+        <Card className="border-border">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">In Allerta</p>
+                <p className="text-2xl font-bold text-red-500">{alertServices.length}</p>
+              </div>
+              <AlertTriangle className="w-8 h-8 text-red-500" />
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="border-border">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Utenti Protetti</p>
+                <p className="text-2xl font-bold text-cyan-500">98</p>
+              </div>
+              <Users className="w-8 h-8 text-cyan-500" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Services Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Left Column - Security Categories */}
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle>Categorie di Sicurezza</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {services.slice(0, 5).map((service) => {
+              const IconComponent = getServiceIcon(service.services.code);
+              const issueCount = getIssueCount(service.health_score, service.status);
+              const resolvedCount = service.services.code === 'cloud_security' ? 124 : 
+                                  service.services.code === 'endpoint_security' ? 54 :
+                                  service.services.code === 'email_security' ? 98 :
+                                  service.services.code === 'user_data_governance' ? 54 : 0;
+              
+              return (
+                <div
+                  key={service.id}
+                  className="flex items-center justify-between p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 rounded-lg bg-primary/10">
+                      <IconComponent className="w-6 h-6 text-primary" />
+                    </div>
+                    <div>
+                      <h4 className="font-medium">{service.services.name}</h4>
+                      <p className="text-sm text-muted-foreground">
+                        {resolvedCount} resolved / 90d
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    {service.status === 'alert' && (
+                      <div className="text-2xl font-bold text-red-500 mb-1">
+                        {issueCount}
+                      </div>
+                    )}
+                    {getStatusIcon(service.status)}
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+
+        {/* Right Column - Connected Services */}
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle>Servizi Connessi</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {connectedServices.slice(0, 3).map((service) => {
+              const IconComponent = getServiceIcon(service.services.code);
+              return (
+                <div
+                  key={service.id}
+                  className="flex items-center justify-between p-4 rounded-lg border border-border bg-card"
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 rounded-lg bg-green-500/10">
+                      <IconComponent className="w-5 h-5 text-green-500" />
+                    </div>
+                    <div>
+                      <h4 className="font-medium">{service.services.name}</h4>
+                      <p className="text-sm text-green-500">Connesso</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm text-muted-foreground">Aperto</span>
+                    <CheckCircle className="w-4 h-4 text-green-500" />
+                  </div>
+                </div>
+              );
+            })}
+            
+            {/* Threat Indicators */}
+            <div className="mt-6 space-y-2">
+              <h5 className="font-medium text-sm">Minacce Rilevate (Ultimi 90 giorni)</h5>
+              {[
+                { name: 'Malware', color: 'text-red-500' },
+                { name: 'Abnormal Admin Activity', color: 'text-red-500' },
+                { name: 'Suspected Bot Attacks', color: 'text-red-500' },
+                { name: 'Access Permissions Violation', color: 'text-red-500' },
+                { name: 'Mass Download', color: 'text-red-500' },
+              ].map((threat, index) => (
+                <div key={index} className="flex items-center space-x-2 text-sm">
+                  <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                  <span className={threat.color}>{threat.name}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 };

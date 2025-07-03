@@ -1,13 +1,17 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { 
-  Grid2x2, 
-  Shield, 
-  Book, 
-  Settings, 
-  Users, 
-  LogOut,
-  ChevronRight 
+  LayoutDashboard,
+  Shield,
+  Users,
+  Settings,
+  BarChart3,
+  AlertTriangle,
+  FileText,
+  Lock,
+  Cloud,
+  Network,
+  LogOut
 } from 'lucide-react';
 import {
   Sidebar,
@@ -22,121 +26,190 @@ import {
   SidebarFooter,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { Button } from '@/components/ui/button';
+
+const navigation = [
+  {
+    title: 'Dashboard',
+    href: '/dashboard',
+    icon: LayoutDashboard,
+  },
+  {
+    title: 'Cloud Security',
+    href: '/cloud-security',
+    icon: Cloud,
+  },
+  {
+    title: 'Endpoint Security',
+    href: '/endpoint-security',
+    icon: Lock,
+  },
+  {
+    title: 'Email Security',
+    href: '/email-security',
+    icon: FileText,
+  },
+  {
+    title: 'Data Governance',
+    href: '/data-governance',
+    icon: Shield,
+  },
+  {
+    title: 'Network Security',
+    href: '/network-security',
+    icon: Network,
+  },
+  {
+    title: 'Analytics',
+    href: '/analytics',
+    icon: BarChart3,
+  },
+  {
+    title: 'Minacce',
+    href: '/threats',
+    icon: AlertTriangle,
+  },
+];
+
+const adminNavigation = [
+  {
+    title: 'Gestione Clienti',
+    href: '/admin/clients',
+    icon: Users,
+  },
+  {
+    title: 'Impostazioni',
+    href: '/admin/settings',
+    icon: Settings,
+  },
+];
 
 export const AppSidebar: React.FC = () => {
+  const location = useLocation();
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
-  const location = useLocation();
-  const { signOut, userProfile } = useAuth();
-  const currentPath = location.pathname;
-
-  const isActive = (path: string) => currentPath === path;
-  const getNavCls = ({ isActive }: { isActive: boolean }) =>
-    isActive 
-      ? "bg-gradient-cyber text-primary-foreground font-medium shadow-glow" 
-      : "hover:bg-secondary/50 transition-cyber";
-
-  const mainItems = [
-    { title: "Dashboard", url: "/dashboard", icon: Grid2x2 },
-    { title: "Assessment", url: "/assessment", icon: Shield },
-    { title: "Servizi", url: "/services", icon: Book },
-  ];
-
-  const adminItems = userProfile?.user_type === 'admin' ? [
-    { title: "Gestione Clienti", url: "/admin/clients", icon: Users },
-    { title: "Configurazione", url: "/admin/settings", icon: Settings },
-  ] : [];
+  const { userProfile, signOut } = useAuth();
+  
+  const isAdmin = userProfile?.user_type === 'admin';
 
   return (
-    <Sidebar className={`${collapsed ? "w-16" : "w-64"} transition-cyber border-border`}>
-      <SidebarHeader className="p-4">
-        {!collapsed && (
-          <div className="text-center">
-            <h2 className="text-xl font-bold bg-gradient-cyber bg-clip-text text-transparent">
-              HiCompliance
-            </h2>
-            <p className="text-xs text-muted-foreground">Cyber Risk Platform</p>
+    <Sidebar className="bg-sidebar-background border-sidebar-border">
+      <SidebarHeader className="p-4 border-b border-sidebar-border">
+        <div className="flex items-center space-x-3">
+          <div className="w-8 h-8 bg-gradient-cyber rounded-lg flex items-center justify-center">
+            <Shield className="w-4 h-4 text-white" />
           </div>
-        )}
-        {collapsed && (
-          <div className="text-center">
-            <div className="w-8 h-8 bg-gradient-cyber rounded-md flex items-center justify-center">
-              <span className="text-sm font-bold text-white">Hi</span>
+          {!collapsed && (
+            <div>
+              <h2 className="text-lg font-semibold text-sidebar-foreground">HiCompliance</h2>
+              <p className="text-xs text-sidebar-foreground/60">Cyber Risk Platform</p>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </SidebarHeader>
 
-      <SidebarContent className="px-2">
+      <SidebarContent className="bg-sidebar-background">
         <SidebarGroup>
-          <SidebarGroupLabel className={collapsed ? "sr-only" : ""}>
-            Principale
+          <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
+            Sicurezza
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
-                    <NavLink to={item.url} className={getNavCls}>
-                      <item.icon className={`h-4 w-4 ${collapsed ? "" : "mr-3"}`} />
-                      {!collapsed && <span>{item.title}</span>}
-                      {!collapsed && isActive(item.url) && (
-                        <ChevronRight className="h-4 w-4 ml-auto" />
-                      )}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {navigation.map((item) => {
+                const isActive = location.pathname === item.href;
+                return (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton 
+                      asChild
+                      className={`
+                        mx-2 rounded-lg transition-all duration-200
+                        ${isActive 
+                          ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-cyber' 
+                          : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground'
+                        }
+                      `}
+                    >
+                      <NavLink to={item.href}>
+                        <item.icon className="w-4 h-4" />
+                        {!collapsed && <span>{item.title}</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {adminItems.length > 0 && (
+        {isAdmin && (
           <SidebarGroup>
-            <SidebarGroupLabel className={collapsed ? "sr-only" : ""}>
+            <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
               Amministrazione
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {adminItems.map((item) => (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild>
-                      <NavLink to={item.url} className={getNavCls}>
-                        <item.icon className={`h-4 w-4 ${collapsed ? "" : "mr-3"}`} />
-                        {!collapsed && <span>{item.title}</span>}
-                        {!collapsed && isActive(item.url) && (
-                          <ChevronRight className="h-4 w-4 ml-auto" />
-                        )}
-                      </NavLink>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
+                {adminNavigation.map((item) => {
+                  const isActive = location.pathname === item.href;
+                  return (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton 
+                        asChild
+                        className={`
+                          mx-2 rounded-lg transition-all duration-200
+                          ${isActive 
+                            ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-cyber' 
+                            : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground'
+                          }
+                        `}
+                      >
+                        <NavLink to={item.href}>
+                          <item.icon className="w-4 h-4" />
+                          {!collapsed && <span>{item.title}</span>}
+                        </NavLink>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
         )}
       </SidebarContent>
 
-      <SidebarFooter className="p-2">
-        {!collapsed && userProfile && (
-          <div className="px-2 py-3 border-t border-border">
+      <SidebarFooter className="p-4 border-t border-sidebar-border bg-sidebar-background">
+        {!collapsed && (
+          <div className="space-y-3">
             <div className="text-sm">
-              <p className="font-medium text-foreground">{userProfile.full_name}</p>
-              <p className="text-xs text-muted-foreground">{userProfile.organizations?.name}</p>
-              <p className="text-xs text-muted-foreground capitalize">{userProfile.user_type}</p>
+              <p className="text-sidebar-foreground font-medium">{userProfile?.full_name}</p>
+              <p className="text-sidebar-foreground/60 text-xs">
+                {userProfile?.organizations?.name || 'Organizzazione'}
+              </p>
+              <p className="text-xs text-cyan-400">
+                {isAdmin ? 'Amministratore' : 'Cliente'}
+              </p>
             </div>
+            <Button 
+              onClick={signOut}
+              variant="outline" 
+              size="sm" 
+              className="w-full text-sidebar-foreground/80 border-sidebar-border hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Disconnetti
+            </Button>
           </div>
         )}
-        <Button
-          variant="ghost"
-          onClick={signOut}
-          className={`w-full ${collapsed ? "px-2" : "justify-start"} hover:bg-destructive/10 hover:text-destructive`}
-        >
-          <LogOut className={`h-4 w-4 ${collapsed ? "" : "mr-2"}`} />
-          {!collapsed && "Esci"}
-        </Button>
+        {collapsed && (
+          <Button 
+            onClick={signOut}
+            variant="outline" 
+            size="sm" 
+            className="w-full text-sidebar-foreground/80 border-sidebar-border hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <LogOut className="w-4 h-4" />
+          </Button>
+        )}
       </SidebarFooter>
     </Sidebar>
   );
