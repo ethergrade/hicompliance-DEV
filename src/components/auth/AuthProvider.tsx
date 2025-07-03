@@ -80,45 +80,73 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signIn = async (email: string, password: string) => {
     try {
+      // Handle special admin case - convert admin to real email
+      const loginEmail = email === 'admin' ? 'admin@hicompliance.local' : email;
+      const loginPassword = email === 'admin' ? 'adminadmin' : password;
+
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+        email: loginEmail,
+        password: loginPassword,
       });
 
       if (error) {
-        toast({
-          title: "Errore di accesso",
-          description: error.message,
-          variant: "destructive",
-        });
-        return { error };
-      }
+        // If admin login fails, try to sign up the admin user first
+        if (email === 'admin' && error.message.includes('Invalid login credentials')) {
+          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+            email: 'admin@hicompliance.local',
+            password: 'adminadmin',
+            options: {
+              emailRedirectTo: `${window.location.origin}/dashboard`,
+              data: {
+                full_name: 'Administrator',
+                user_type: 'admin'
+              }
+            }
+          });
 
-      // Handle special admin case
-      if (email === 'admin' && password === 'adminadmin') {
-        // Create or update admin user profile
-        const { data: existingUser } = await supabase
-          .from('users')
-          .select('*')
-          .eq('auth_user_id', data.user.id)
-          .single();
-
-        if (!existingUser) {
-          const { data: adminOrg } = await supabase
-            .from('organizations')
-            .select('id')
-            .eq('code', 'admin')
-            .single();
-
-          await supabase
-            .from('users')
-            .insert({
-              auth_user_id: data.user.id,
-              email: email,
-              full_name: 'Administrator',
-              user_type: 'admin',
-              organization_id: adminOrg?.id,
+          if (signUpError) {
+            toast({
+              title: "Errore di accesso",
+              description: signUpError.message,
+              variant: "destructive",
             });
+            return { error: signUpError };
+          }
+
+          // Try to login again after signup
+          const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+            email: 'admin@hicompliance.local',
+            password: 'adminadmin',
+          });
+
+          if (loginError) {
+            toast({
+              title: "Errore di accesso",
+              description: "Riprova tra qualche secondo",
+              variant: "destructive",
+            });
+            return { error: loginError };
+          }
+
+          // Update the user profile with admin details
+          if (loginData.user) {
+            await supabase
+              .from('users')
+              .upsert({
+                auth_user_id: loginData.user.id,
+                email: 'admin@hicompliance.local',
+                full_name: 'Administrator',
+                user_type: 'admin',
+                organization_id: (await supabase.from('organizations').select('id').eq('code', 'admin').single()).data?.id,
+              });
+          }
+        } else {
+          toast({
+            title: "Errore di accesso",
+            description: error.message,
+            variant: "destructive",
+          });
+          return { error };
         }
       }
 
@@ -129,6 +157,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       return { error: null };
     } catch (error: any) {
+      toast({
+        title: "Errore di accesso",
+        description: "Si è verificato un errore durante l'accesso",
+        variant: "destructive",
+      });
       return { error };
     }
   };
