@@ -194,7 +194,7 @@ const Dashboard: React.FC = () => {
                       <div className="text-lg font-bold text-red-500">
                         {totalIssues}
                       </div>
-                      <div className="text-xs text-muted-foreground">Issues Aperte</div>
+                      <div className="text-xs text-muted-foreground">Issues Rilevate</div>
                     </div>
                     <div>
                       <div className="text-lg font-bold text-green-500">
