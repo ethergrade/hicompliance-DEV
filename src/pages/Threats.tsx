@@ -36,7 +36,7 @@ interface Threat {
   title: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
   score: number;
-  source: 'HiSolution' | 'SurfaceScan' | 'DarkRisk';
+  source: 'HiFirewall' | 'HiEndpoint' | 'HiMail' | 'HiLog' | 'HiPatch' | 'HiMfa' | 'HiTrack' | 'SurfaceScan' | 'DarkRisk';
   asset: string;
   cve?: string;
   description: string;
@@ -108,7 +108,7 @@ const Threats: React.FC = () => {
       title: 'Email Server Vulnerability',
       severity: 'high',
       score: 82,
-      source: 'HiSolution',
+      source: 'HiMail',
       asset: 'mail.cliente1.com',
       cve: 'CVE-2024-0003',
       description: 'Outdated mail server with known security vulnerabilities',
@@ -134,7 +134,7 @@ const Threats: React.FC = () => {
       title: 'Weak Encryption Protocol',
       severity: 'medium',
       score: 68,
-      source: 'HiSolution',
+      source: 'HiFirewall',
       asset: 'mail.cliente1.com',
       cve: 'CVE-2024-0004',
       description: 'Email server using deprecated encryption protocols',
@@ -160,7 +160,7 @@ const Threats: React.FC = () => {
       title: 'Missing Security Headers',
       severity: 'low',
       score: 45,
-      source: 'HiSolution',
+      source: 'HiLog',
       asset: 'mail.cliente1.com',
       cve: 'CVE-2024-0005',
       description: 'Web server missing important security headers',
@@ -243,7 +243,13 @@ const Threats: React.FC = () => {
 
   const getSourceColor = (source: string) => {
     switch (source) {
-      case 'HiSolution': return 'text-blue-500';
+      case 'HiFirewall': return 'text-blue-600';
+      case 'HiEndpoint': return 'text-green-600';
+      case 'HiMail': return 'text-orange-600';
+      case 'HiLog': return 'text-cyan-600';
+      case 'HiPatch': return 'text-violet-600';
+      case 'HiMfa': return 'text-pink-600';
+      case 'HiTrack': return 'text-indigo-600';
       case 'SurfaceScan': return 'text-purple-500';
       case 'DarkRisk': return 'text-red-500';
       default: return 'text-gray-500';
@@ -405,7 +411,13 @@ const Threats: React.FC = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Tutte le sorgenti</SelectItem>
-                    <SelectItem value="HiSolution">HiSolution</SelectItem>
+                    <SelectItem value="HiFirewall">HiFirewall</SelectItem>
+                    <SelectItem value="HiEndpoint">HiEndpoint</SelectItem>
+                    <SelectItem value="HiMail">HiMail</SelectItem>
+                    <SelectItem value="HiLog">HiLog</SelectItem>
+                    <SelectItem value="HiPatch">HiPatch</SelectItem>
+                    <SelectItem value="HiMfa">HiMfa</SelectItem>
+                    <SelectItem value="HiTrack">HiTrack</SelectItem>
                     <SelectItem value="SurfaceScan">SurfaceScan</SelectItem>
                     <SelectItem value="DarkRisk">DarkRisk</SelectItem>
                   </SelectContent>
