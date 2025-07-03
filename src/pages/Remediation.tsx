@@ -33,7 +33,7 @@ const Remediation: React.FC = () => {
       status: 'not_started',
       estimatedDays: 45,
       assignedTeam: 'IT Security',
-      budget: '€25,000'
+      budget: '€8,500'
     },
     { 
       name: 'Sviluppo software', 
@@ -44,7 +44,7 @@ const Remediation: React.FC = () => {
       status: 'planned_in_progress',
       estimatedDays: 60,
       assignedTeam: 'Development',
-      budget: '€35,000'
+      budget: '€9,000'
     },
     { 
       name: 'Gestione fornitori e acquisti', 
@@ -55,7 +55,7 @@ const Remediation: React.FC = () => {
       status: 'planned_in_progress',
       estimatedDays: 30,
       assignedTeam: 'Procurement',
-      budget: '€15,000'
+      budget: '€3,000'
     },
     { 
       name: 'Manutenzione e miglioramento continuo', 
@@ -66,7 +66,7 @@ const Remediation: React.FC = () => {
       status: 'planned_in_progress',
       estimatedDays: 35,
       assignedTeam: 'Operations',
-      budget: '€20,000'
+      budget: '€3,000'
     }
   ];
 
@@ -155,12 +155,12 @@ const Remediation: React.FC = () => {
 
   // Metriche actionable
   const actionableMetrics = {
-    totalBudget: '€95,000',
-    estimatedCompletion: '120 giorni',
-    riskReduction: '75%',
-    complianceImprovement: '65%',
+    totalBudget: '€23,500',
+    estimatedCompletion: '90 giorni',
+    riskReduction: '60%',
+    complianceImprovement: '55%',
     criticalIssues: 4,
-    highPriorityActions: 8
+    highPriorityActions: 6
   };
 
   return (
@@ -457,7 +457,7 @@ const Remediation: React.FC = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-sm">Costi Evitati</span>
-                    <span className="font-bold text-green-500">€180K</span>
+                    <span className="font-bold text-green-500">€65K</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-sm">Business Continuity</span>
