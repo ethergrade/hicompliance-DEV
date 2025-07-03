@@ -45,6 +45,11 @@ const navigation = [
     icon: LayoutDashboard,
   },
   {
+    title: 'Valutazione',
+    href: '/assessment',
+    icon: ClipboardCheck,
+  },
+  {
     title: 'SurfaceScan360',
     href: '/surface-scan',
     icon: Globe,
@@ -53,11 +58,6 @@ const navigation = [
     title: 'DarkRisk360',
     href: '/dark-risk',
     icon: Eye,
-  },
-  {
-    title: 'Valutazione',
-    href: '/assessment',
-    icon: ClipboardCheck,
   },
   {
     title: 'Analisi',
