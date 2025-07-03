@@ -141,25 +141,36 @@ const Analytics: React.FC = () => {
 
   const riskTrendData = getRiskTrendData(timeRange);
 
-  // Dati conformità Assessment semplificati e fissi per la radar chart
-  const assessmentComplianceData = [
-    { category: 'Business Continuity', compliance: 72, target: 85 },
-    { category: 'Certificazioni', compliance: 85, target: 90 },
-    { category: 'Crittografia', compliance: 60, target: 80 },
-    { category: 'Gestione Identità', compliance: 25, target: 85 },
-    { category: 'Gest. Incidenti', compliance: 78, target: 85 },
-    { category: 'Gest. Rischio', compliance: 65, target: 80 },
-    { category: 'Gest. Risorse', compliance: 55, target: 75 },
-    { category: 'Gest. Fornitori', compliance: 30, target: 70 },
-    { category: 'Governance', compliance: 88, target: 90 },
-    { category: 'HR e Formazione', compliance: 70, target: 80 },
-    { category: 'Igiene Informatica', compliance: 62, target: 75 },
-    { category: 'Manutenzione', compliance: 35, target: 70 },
-    { category: 'Network Security', compliance: 82, target: 85 },
-    { category: 'Sviluppo Software', compliance: 40, target: 75 }
-  ];
+  // Dati conformità Assessment che cambiano in base al timeRange
+  const getAssessmentData = (range: string) => {
+    const baseCategories = [
+      'Business Continuity', 'Certificazioni', 'Crittografia', 'Gestione Identità',
+      'Gest. Incidenti', 'Gest. Rischio', 'Gest. Risorse', 'Gest. Fornitori',
+      'Governance', 'HR e Formazione', 'Igiene Informatica', 'Manutenzione',
+      'Network Security', 'Sviluppo Software'
+    ];
 
-  console.log('Radar chart data:', assessmentComplianceData);
+    // Dati progressivamente migliorativi: ultimo anno (peggiore) -> ultimo mese (migliore)
+    const complianceByRange = {
+      '1y': [35, 45, 25, 10, 40, 30, 25, 15, 50, 35, 28, 20, 45, 20], // Peggiore
+      '6m': [55, 70, 45, 20, 65, 50, 40, 25, 75, 55, 48, 30, 65, 35], // Intermedio
+      '3m': [65, 80, 55, 23, 72, 60, 50, 28, 83, 65, 58, 33, 75, 38], // Buono
+      '1m': [72, 85, 60, 25, 78, 65, 55, 30, 88, 70, 62, 35, 82, 40]  // Migliore
+    };
+
+    const currentCompliance = complianceByRange[range as keyof typeof complianceByRange] || complianceByRange['6m'];
+    
+    const data = baseCategories.map((category, index) => ({
+      category,
+      compliance: currentCompliance[index],
+      target: Math.min(currentCompliance[index] + 15, 100) // Target massimo 100%
+    }));
+
+    console.log('Assessment radar data for range:', range, data);
+    return data;
+  };
+
+  const assessmentComplianceData = getAssessmentData(timeRange);
 
   // Dati minacce nel tempo che cambiano in base al timeRange
   const getThreatsData = (range: string) => {
@@ -422,7 +433,12 @@ const Analytics: React.FC = () => {
           {/* Conformità NIS2 */}
           <Card className="border-border bg-card">
             <CardHeader>
-              <CardTitle className="text-white">Assessment NIS2/NIST/ISO - 14 Categorie</CardTitle>
+              <CardTitle className="text-white">
+                Assessment NIS2/NIST/ISO - 14 Categorie 
+                <span className="text-sm text-muted-foreground ml-2">
+                  ({timeRange === '1y' ? 'Ultimo Anno' : timeRange === '6m' ? 'Ultimi 6 Mesi' : timeRange === '3m' ? 'Ultimi 3 Mesi' : 'Ultimo Mese'})
+                </span>
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-96">
@@ -434,7 +450,11 @@ const Analytics: React.FC = () => {
                     <PolarGrid stroke="#374151" />
                     <PolarAngleAxis 
                       dataKey="category" 
-                      tick={{ fontSize: 10, fill: '#9CA3AF' }}
+                      tick={{ fontSize: 9, fill: '#9CA3AF' }}
+                      tickFormatter={(value) => {
+                        // Tronca i nomi lunghi per una migliore visualizzazione
+                        return value.length > 12 ? value.substring(0, 10) + '...' : value;
+                      }}
                     />
                     <PolarRadiusAxis 
                       angle={0} 
