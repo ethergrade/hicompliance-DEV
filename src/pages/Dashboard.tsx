@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { MetricCard } from '@/components/dashboard/MetricCard';
 import { ServiceStatusCard } from '@/components/dashboard/ServiceStatusCard';
+import { HiSolutionStatusGrid } from '@/components/dashboard/HiSolutionStatusGrid';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -26,11 +27,20 @@ const Dashboard: React.FC = () => {
     fetchServices();
   }, [userProfile]);
 
+  // Calculate real metrics from services
+  const alertServices = services.filter(s => s.status === 'alert');
+  const activeServices = services.filter(s => s.status === 'active');
+  const hiSolutionServices = services.filter(s => s.services.code.startsWith('hi_'));
+  const totalIssues = alertServices.reduce((acc, service) => {
+    const issues = service.health_score ? Math.floor((100 - service.health_score) / 10) : 0;
+    return acc + issues;
+  }, 0);
+
   const mockData = {
     nis2Compliance: 42,
-    riskIndicator: 84,
-    totalAssets: 155,
-    activeThreats: 8
+    riskIndicator: Math.min(84 + (alertServices.length * 5), 100),
+    totalAssets: hiSolutionServices.length,
+    activeThreats: totalIssues
   };
 
   return (
@@ -55,25 +65,27 @@ const Dashboard: React.FC = () => {
           />
           <MetricCard
             title="Indicatore di Rischio"
-            value="Altissimo"
+            value={alertServices.length > 3 ? "Altissimo" : "Alto"}
             percentage={mockData.riskIndicator}
             status="critical"
             description="Livello di rischio complessivo"
           />
           <MetricCard
-            title="Asset Totali"
-            value={mockData.totalAssets}
+            title="Servizi HiSolution"
+            value={hiSolutionServices.length}
             status="good"
-            description="Asset monitorati"
+            description="Servizi attivi"
           />
           <MetricCard
-            title="Minacce Attive"
+            title="Issues Rilevate"
             value={mockData.activeThreats}
             status="critical"
-            description="Minacce rilevate"
+            description="Problemi da risolvere"
           />
         </div>
 
+        <HiSolutionStatusGrid services={services} />
+        
         <ServiceStatusCard services={services} />
       </div>
     </DashboardLayout>
