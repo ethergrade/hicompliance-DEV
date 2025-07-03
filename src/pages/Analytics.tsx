@@ -45,6 +45,7 @@ import {
 
 const Analytics: React.FC = () => {
   const [timeRange, setTimeRange] = useState('6m');
+  const [chartsTimeRange, setChartsTimeRange] = useState('6m'); // Selector specifico per radar e pie chart
 
   // Funzione per ottenere i dati in base al timeRange
   const getDataByTimeRange = (range: string) => {
@@ -170,7 +171,7 @@ const Analytics: React.FC = () => {
     return data;
   };
 
-  const assessmentComplianceData = getAssessmentData(timeRange);
+  const assessmentComplianceData = getAssessmentData(chartsTimeRange);
 
   // Dati minacce nel tempo che cambiano in base al timeRange
   const getThreatsData = (range: string) => {
@@ -247,7 +248,7 @@ const Analytics: React.FC = () => {
     }
   };
 
-  const severityDistribution = getSeverityData(timeRange);
+  const severityDistribution = getSeverityData(chartsTimeRange);
 
   const exportReport = () => {
     // Simulazione export report
@@ -429,6 +430,22 @@ const Analytics: React.FC = () => {
           </CardContent>
         </Card>
 
+        {/* Selector per Charts Radar e Distribuzione Severità */}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-white">Analisi Assessment e Minacce</h2>
+          <Select value={chartsTimeRange} onValueChange={setChartsTimeRange}>
+            <SelectTrigger className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1m">Ultimo mese</SelectItem>
+              <SelectItem value="3m">Ultimi 3 mesi</SelectItem>
+              <SelectItem value="6m">Ultimi 6 mesi</SelectItem>
+              <SelectItem value="1y">Ultimo anno</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Conformità NIS2 */}
           <Card className="border-border bg-card">
@@ -436,7 +453,7 @@ const Analytics: React.FC = () => {
               <CardTitle className="text-white">
                 Assessment NIS2/NIST/ISO - 14 Categorie 
                 <span className="text-sm text-muted-foreground ml-2">
-                  ({timeRange === '1y' ? 'Ultimo Anno' : timeRange === '6m' ? 'Ultimi 6 Mesi' : timeRange === '3m' ? 'Ultimi 3 Mesi' : 'Ultimo Mese'})
+                  ({chartsTimeRange === '1y' ? 'Ultimo Anno' : chartsTimeRange === '6m' ? 'Ultimi 6 Mesi' : chartsTimeRange === '3m' ? 'Ultimi 3 Mesi' : 'Ultimo Mese'})
                 </span>
               </CardTitle>
             </CardHeader>
@@ -496,7 +513,12 @@ const Analytics: React.FC = () => {
           {/* Distribuzione Severità */}
           <Card className="border-border bg-card">
             <CardHeader>
-              <CardTitle className="text-white">Distribuzione Severità Minacce</CardTitle>
+              <CardTitle className="text-white">
+                Distribuzione Severità Minacce
+                <span className="text-sm text-muted-foreground ml-2">
+                  ({chartsTimeRange === '1y' ? 'Ultimo Anno' : chartsTimeRange === '6m' ? 'Ultimi 6 Mesi' : chartsTimeRange === '3m' ? 'Ultimi 3 Mesi' : 'Ultimo Mese'})
+                </span>
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-80">
