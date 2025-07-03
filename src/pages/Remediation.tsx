@@ -31,6 +31,9 @@ import {
 const Remediation: React.FC = () => {
   const [selectedTimeframe, setSelectedTimeframe] = useState('90days');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [draggedTask, setDraggedTask] = useState<number | null>(null);
+  const [draggedOver, setDraggedOver] = useState<number | null>(null);
+  const [taskOrder, setTaskOrder] = useState<number[]>([1, 2, 3, 4, 5, 6]);
   const [newRemediation, setNewRemediation] = useState({
     category: '',
     priority: '',
@@ -234,13 +237,53 @@ const Remediation: React.FC = () => {
     setIsCreateModalOpen(false);
   };
 
-  // Funzioni per il Gantt Chart
+  // Funzioni per il Gantt Chart con drag & drop
+  const handleDragStart = (taskId: number) => {
+    setDraggedTask(taskId);
+  };
+
+  const handleDragOver = (e: React.DragEvent, taskId: number) => {
+    e.preventDefault();
+    setDraggedOver(taskId);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetTaskId: number) => {
+    e.preventDefault();
+    if (draggedTask && draggedTask !== targetTaskId) {
+      const newOrder = [...taskOrder];
+      const draggedIndex = newOrder.indexOf(draggedTask);
+      const targetIndex = newOrder.indexOf(targetTaskId);
+      
+      // Rimuovi il task dalla posizione originale
+      newOrder.splice(draggedIndex, 1);
+      // Inserisci nella nuova posizione
+      newOrder.splice(targetIndex, 0, draggedTask);
+      
+      setTaskOrder(newOrder);
+      
+      // Ricalcola le date per evitare sovrapposizioni
+      recalculateDates(newOrder);
+    }
+    setDraggedTask(null);
+    setDraggedOver(null);
+  };
+
+  const recalculateDates = (order: number[]) => {
+    // Logica per riallocare le date quando i task si sovrappongono
+    // Per ora manteniamo le date originali, ma in futuro si può implementare
+    // una logica più sofisticata per evitare sovrapposizioni
+    console.log('Recalculating dates for order:', order);
+  };
+
   const getGanttData = () => {
     const startDate = new Date('2025-01-01');
     const endDate = new Date('2025-05-01');
     const totalDays = differenceInDays(endDate, startDate);
     
-    return ganttActions.map(action => {
+    // Ordina i task secondo l'ordine corrente
+    const orderedActions = taskOrder.map(id => ganttActions.find(action => action.id === id)!).filter(Boolean);
+    
+    return orderedActions.map(action => {
       const actionStart = parseISO(action.startDate);
       const actionEnd = parseISO(action.endDate);
       const daysFromStart = differenceInDays(actionStart, startDate);
@@ -650,14 +693,32 @@ const Remediation: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Gantt bars */}
+                  {/* Gantt bars con drag & drop */}
                   <div className="space-y-3">
                     {ganttData.map((action) => (
-                      <div key={action.id} className="flex items-center">
+                      <div 
+                        key={action.id} 
+                        className={`flex items-center transition-all duration-200 rounded-lg p-2 cursor-move
+                          ${draggedTask === action.id ? 'opacity-50 scale-95' : ''}
+                          ${draggedOver === action.id ? 'bg-primary/10 border-l-4 border-primary' : ''}
+                          hover:bg-muted/30
+                        `}
+                        draggable
+                        onDragStart={() => handleDragStart(action.id)}
+                        onDragOver={(e) => handleDragOver(e, action.id)}
+                        onDrop={(e) => handleDrop(e, action.id)}
+                        onDragEnd={() => {
+                          setDraggedTask(null);
+                          setDraggedOver(null);
+                        }}
+                      >
                         {/* Task info */}
                         <div className="w-64 flex-shrink-0 pr-4">
-                          <div className="text-sm font-medium text-foreground">
-                            {action.task}
+                          <div className="flex items-center space-x-2">
+                            <div className="text-sm font-medium text-foreground">
+                              {action.task}
+                            </div>
+                            <div className="w-2 h-2 rounded-full bg-muted-foreground opacity-30"></div>
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {action.assignee}
@@ -680,17 +741,18 @@ const Remediation: React.FC = () => {
                         <div className="flex-1 relative h-8 bg-muted/20 rounded">
                           {/* Task bar */}
                           <div
-                            className="absolute h-6 top-1 rounded-sm flex items-center px-1"
+                            className="absolute h-6 top-1 rounded-sm flex items-center px-1 transition-all duration-200"
                             style={{
                               left: `${action.startOffset}%`,
                               width: `${action.width}%`,
                               backgroundColor: action.color + '40',
-                              border: `2px solid ${action.color}`
+                              border: `2px solid ${action.color}`,
+                              transform: draggedTask === action.id ? 'scale(0.95)' : 'scale(1)'
                             }}
                           >
                             {/* Progress bar */}
                             <div
-                              className="h-full rounded-sm"
+                              className="h-full rounded-sm transition-all duration-200"
                               style={{
                                 width: `${action.progress}%`,
                                 backgroundColor: action.color,
@@ -710,26 +772,32 @@ const Remediation: React.FC = () => {
 
                   {/* Legend */}
                   <div className="mt-6 pt-4 border-t border-border">
-                    <div className="flex items-center space-x-6 text-xs">
-                      <div className="flex items-center space-x-2">
-                        <div className="w-4 h-2 bg-red-600 rounded"></div>
-                        <span>Critica</span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-6 text-xs">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-4 h-2 bg-red-600 rounded"></div>
+                          <span>Critica</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <div className="w-4 h-2 bg-orange-600 rounded"></div>
+                          <span>Alta</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <div className="w-4 h-2 bg-yellow-600 rounded"></div>
+                          <span>Media</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <div className="w-4 h-2 bg-gray-400 rounded"></div>
+                          <span>Barra: Durata totale</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <div className="w-4 h-2 bg-red-600 rounded"></div>
+                          <span>Riempimento: Progresso</span>
+                        </div>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <div className="w-4 h-2 bg-orange-600 rounded"></div>
-                        <span>Alta</span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <div className="w-4 h-2 bg-yellow-600 rounded"></div>
-                        <span>Media</span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <div className="w-4 h-2 bg-gray-400 rounded"></div>
-                        <span>Barra: Durata totale</span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <div className="w-4 h-2 bg-red-600 rounded"></div>
-                        <span>Riempimento: Progresso</span>
+                      <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+                        <div className="w-3 h-3 border-2 border-dashed border-muted-foreground rounded"></div>
+                        <span>Trascina i task per riordinarli</span>
                       </div>
                     </div>
                   </div>
