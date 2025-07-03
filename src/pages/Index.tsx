@@ -146,9 +146,8 @@ const Index = () => {
             Conformità NIS2 • Gestione Cyber Risk • Monitoraggio 24/7
           </Badge>
           <h1 className="text-5xl md:text-6xl font-bold mb-6">
-            Piattaforma Integrata di
-            <span className="block bg-gradient-cyber bg-clip-text text-transparent">
-              Cyber Risk Management
+            <span className="bg-gradient-cyber bg-clip-text text-transparent">
+              HiCompliance:
             </span>
           </h1>
           <p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto">
