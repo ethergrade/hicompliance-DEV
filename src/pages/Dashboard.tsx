@@ -21,6 +21,21 @@ const Dashboard: React.FC = () => {
           .eq('organization_id', userProfile.organization_id);
         
         setServices(data || []);
+      } else {
+        // Mock data for demo when no user is logged in
+        const mockServices = [
+          { id: '1', status: 'alert', health_score: 15, services: { name: 'HiFirewall', code: 'hi_firewall' } },
+          { id: '2', status: 'alert', health_score: 70, services: { name: 'HiEndpoint', code: 'hi_endpoint' } },
+          { id: '3', status: 'alert', health_score: 45, services: { name: 'HiMail', code: 'hi_mail' } },
+          { id: '4', status: 'alert', health_score: 10, services: { name: 'HiLog', code: 'hi_log' } },
+          { id: '5', status: 'alert', health_score: 50, services: { name: 'HiPatch', code: 'hi_patch' } },
+          { id: '6', status: 'active', health_score: 95, services: { name: 'HiMfa', code: 'hi_mfa' } },
+          { id: '7', status: 'active', health_score: 90, services: { name: 'HiTrack', code: 'hi_track' } },
+          { id: '8', status: 'maintenance', health_score: 75, services: { name: 'Cloud Security', code: 'cloud_security' } },
+          { id: '9', status: 'active', health_score: 88, services: { name: 'Endpoint Security', code: 'endpoint_security' } },
+          { id: '10', status: 'alert', health_score: 60, services: { name: 'Email Security', code: 'email_security' } }
+        ];
+        setServices(mockServices);
       }
       setLoading(false);
     };
@@ -31,17 +46,27 @@ const Dashboard: React.FC = () => {
   // Calculate real metrics from services
   const alertServices = services.filter(s => s.status === 'alert');
   const activeServices = services.filter(s => s.status === 'active');
-  const hiSolutionServices = services.filter(s => s.services.code.startsWith('hi_'));
+  const maintenanceServices = services.filter(s => s.status === 'maintenance');
+  const hiSolutionServices = services.filter(s => s.services?.code?.startsWith('hi_'));
   const totalIssues = alertServices.reduce((acc, service) => {
-    const issues = service.health_score ? Math.floor((100 - service.health_score) / 10) : 0;
+    const issues = service.health_score ? Math.floor((100 - service.health_score) / 10) : 5;
     return acc + issues;
   }, 0);
+
+  // Fallback data when no services loaded
+  const fallbackData = {
+    alertCount: 5,
+    activeCount: 2,
+    maintenanceCount: 1,
+    avgScore: 68,
+    totalIssues: 27
+  };
 
   const mockData = {
     nis2Compliance: alertServices.length > 3 ? 35 : 65,
     riskIndicator: Math.min(75 + (alertServices.length * 3), 100),
-    totalAssets: services.length,
-    activeThreats: totalIssues
+    totalAssets: services.length || 8,
+    activeThreats: totalIssues || fallbackData.totalIssues
   };
 
   return (
@@ -190,7 +215,7 @@ const Dashboard: React.FC = () => {
                   {/* Left - Main Metric */}
                   <div className="text-center">
                     <div className="text-4xl font-bold text-primary mb-2">
-                      {totalIssues}
+                      {totalIssues || fallbackData.totalIssues}
                     </div>
                     <p className="text-sm text-muted-foreground">
                       Issues Critiche Rilevate
@@ -211,7 +236,7 @@ const Dashboard: React.FC = () => {
                       <div className="flex justify-between text-sm">
                         <span>Servizi Attivi</span>
                         <span className="font-medium text-green-500">
-                          {activeServices.length}
+                          {activeServices.length || fallbackData.activeCount}
                         </span>
                       </div>
                     </div>
@@ -219,7 +244,7 @@ const Dashboard: React.FC = () => {
                       <div className="flex justify-between text-sm">
                         <span>In Allerta</span>
                         <span className="font-medium text-red-500">
-                          {alertServices.length}
+                          {alertServices.length || fallbackData.alertCount}
                         </span>
                       </div>
                     </div>
@@ -230,7 +255,7 @@ const Dashboard: React.FC = () => {
                           {hiSolutionServices.length > 0 ? Math.round(
                             hiSolutionServices.reduce((acc, s) => acc + (s.health_score || 0), 0) / 
                             hiSolutionServices.length
-                          ) : 75}%
+                          ) : fallbackData.avgScore}%
                         </span>
                       </div>
                     </div>
