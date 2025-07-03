@@ -52,10 +52,12 @@ export const ServiceStatusCard: React.FC<ServiceStatusCardProps> = ({ services }
           <CardHeader>
             <CardTitle>Servizi HiSolution Connessi</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {hiSolutionServices.map((service) => (
-              <ConnectedServiceItem key={service.id} service={service} />
-            ))}
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              {hiSolutionServices.map((service) => (
+                <ConnectedServiceItem key={service.id} service={service} />
+              ))}
+            </div>
             
             {/* Threat Indicators */}
             <ThreatIndicatorsList />
