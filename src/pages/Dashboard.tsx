@@ -268,8 +268,8 @@ const Dashboard: React.FC = () => {
         </Card>
 
         {/* Additional Components */}
-        <HiSolutionStatusGrid services={services} />
         <ServiceStatusCard services={services} />
+        <HiSolutionStatusGrid services={services} />
       </div>
     </DashboardLayout>
   );
