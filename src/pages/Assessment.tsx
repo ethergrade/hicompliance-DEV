@@ -18,39 +18,102 @@ import {
 const Assessment: React.FC = () => {
   const assessmentCategories = [
     { 
-      name: 'Governance e Risk Management', 
+      name: 'Business Continuity, Disaster recovery, Backup', 
       questions: 25, 
       completed: 18, 
       status: 'in_progress',
       score: 72 
     },
     { 
-      name: 'Protezione Asset e Dati', 
-      questions: 30, 
-      completed: 30, 
+      name: 'Certificazioni', 
+      questions: 20, 
+      completed: 20, 
       status: 'completed',
       score: 85 
     },
     { 
-      name: 'Gestione Vulnerabilità', 
-      questions: 20, 
+      name: 'Crittografia', 
+      questions: 22, 
       completed: 12, 
       status: 'in_progress',
       score: 60 
     },
     { 
-      name: 'Continuità Operativa', 
-      questions: 15, 
+      name: 'Gestione delle identità Gestione degli accessi', 
+      questions: 28, 
       completed: 5, 
       status: 'not_started',
       score: 33 
     },
     { 
-      name: 'Gestione Incidenti', 
+      name: 'Gestione degli incidenti', 
       questions: 18, 
       completed: 18, 
       status: 'completed',
       score: 78 
+    },
+    { 
+      name: 'Gestione del rischio', 
+      questions: 24, 
+      completed: 12, 
+      status: 'in_progress',
+      score: 65 
+    },
+    { 
+      name: 'Gestione delle risorse', 
+      questions: 16, 
+      completed: 8, 
+      status: 'in_progress',
+      score: 55 
+    },
+    { 
+      name: 'Gestione fornitori e acquisti', 
+      questions: 19, 
+      completed: 0, 
+      status: 'not_started',
+      score: 0 
+    },
+    { 
+      name: 'Governance', 
+      questions: 21, 
+      completed: 21, 
+      status: 'completed',
+      score: 88 
+    },
+    { 
+      name: 'HR e formazione', 
+      questions: 15, 
+      completed: 10, 
+      status: 'in_progress',
+      score: 70 
+    },
+    { 
+      name: 'Igiene informatica', 
+      questions: 26, 
+      completed: 15, 
+      status: 'in_progress',
+      score: 62 
+    },
+    { 
+      name: 'Manutenzione e miglioramento continuo', 
+      questions: 17, 
+      completed: 0, 
+      status: 'not_started',
+      score: 0 
+    },
+    { 
+      name: 'Network Security Best Practices & Operations', 
+      questions: 30, 
+      completed: 25, 
+      status: 'in_progress',
+      score: 82 
+    },
+    { 
+      name: 'Sviluppo software', 
+      questions: 23, 
+      completed: 0, 
+      status: 'not_started',
+      score: 0 
     },
   ];
 
