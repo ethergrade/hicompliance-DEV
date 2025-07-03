@@ -9,6 +9,15 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination';
 import { 
   Globe, 
   Shield, 
@@ -21,14 +30,26 @@ import {
 
 const SurfaceScan360: React.FC = () => {
   const [openTooltip, setOpenTooltip] = useState<number | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const assetsPerPage = 5;
   
-  const publicAssets = [
+  const allPublicAssets = [
     { ip: '203.0.113.10', hostname: 'cliente1.com', score: 95, risk: 'Basso', status: 'Sicuro', ports: [80, 443], services: ['HTTP', 'HTTPS'] },
     { ip: '203.0.113.25', hostname: 'mail.cliente1.com', score: 78, risk: 'Medio', status: 'Attenzione', ports: [25, 587, 993], services: ['SMTP', 'IMAPS'] },
     { ip: '203.0.113.45', hostname: 'vpn.cliente1.com', score: 45, risk: 'Alto', status: 'Critico', ports: [1723, 443], services: ['PPTP', 'OpenVPN'] },
     { ip: '203.0.113.67', hostname: 'api.cliente1.com', score: 88, risk: 'Basso', status: 'Sicuro', ports: [443, 8080], services: ['HTTPS', 'API'] },
     { ip: '203.0.113.89', hostname: 'ftp.cliente1.com', score: 62, risk: 'Medio', status: 'Attenzione', ports: [21, 22], services: ['FTP', 'SSH'] },
+    { ip: '203.0.113.102', hostname: 'db.cliente1.com', score: 72, risk: 'Medio', status: 'Attenzione', ports: [3306, 5432], services: ['MySQL', 'PostgreSQL'] },
+    { ip: '203.0.113.123', hostname: 'cdn.cliente1.com', score: 91, risk: 'Basso', status: 'Sicuro', ports: [80, 443], services: ['HTTP', 'HTTPS'] },
+    { ip: '203.0.113.144', hostname: 'test.cliente1.com', score: 55, risk: 'Alto', status: 'Critico', ports: [80, 8080], services: ['HTTP', 'Apache'] },
+    { ip: '203.0.113.165', hostname: 'backup.cliente1.com', score: 82, risk: 'Basso', status: 'Sicuro', ports: [22, 873], services: ['SSH', 'rsync'] },
+    { ip: '203.0.113.186', hostname: 'monitor.cliente1.com', score: 77, risk: 'Medio', status: 'Attenzione', ports: [443, 9090], services: ['HTTPS', 'Prometheus'] },
   ];
+
+  const totalPages = Math.ceil(allPublicAssets.length / assetsPerPage);
+  const indexOfLastAsset = currentPage * assetsPerPage;
+  const indexOfFirstAsset = indexOfLastAsset - assetsPerPage;
+  const currentAssets = allPublicAssets.slice(indexOfFirstAsset, indexOfLastAsset);
 
   const scanResults = [
     { 
@@ -203,7 +224,7 @@ const SurfaceScan360: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {publicAssets.map((asset, index) => (
+                {currentAssets.map((asset, index) => (
                   <div key={index} className="flex items-center justify-between p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors">
                     <div className="flex items-center space-x-4">
                       <div className="p-2 rounded-lg bg-primary/10">
@@ -248,6 +269,40 @@ const SurfaceScan360: React.FC = () => {
                   </div>
                 ))}
               </div>
+              
+              {totalPages > 1 && (
+                <div className="mt-6 flex justify-center">
+                  <Pagination>
+                    <PaginationContent>
+                      <PaginationItem>
+                        <PaginationPrevious 
+                          onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                          className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                        />
+                      </PaginationItem>
+                      
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                        <PaginationItem key={page}>
+                          <PaginationLink
+                            onClick={() => setCurrentPage(page)}
+                            isActive={currentPage === page}
+                            className="cursor-pointer"
+                          >
+                            {page}
+                          </PaginationLink>
+                        </PaginationItem>
+                      ))}
+                      
+                      <PaginationItem>
+                        <PaginationNext 
+                          onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                          className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                        />
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
+                </div>
+              )}
             </CardContent>
           </Card>
 
