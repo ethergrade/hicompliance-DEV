@@ -11,7 +11,10 @@ import {
   Lock,
   Cloud,
   Network,
-  LogOut
+  LogOut,
+  Globe,
+  Eye,
+  ClipboardCheck
 } from 'lucide-react';
 import {
   Sidebar,
@@ -34,6 +37,21 @@ const navigation = [
     title: 'Dashboard',
     href: '/dashboard',
     icon: LayoutDashboard,
+  },
+  {
+    title: 'SurfaceScan360',
+    href: '/surface-scan',
+    icon: Globe,
+  },
+  {
+    title: 'DarkRisk360',
+    href: '/dark-risk',
+    icon: Eye,
+  },
+  {
+    title: 'Assessment',
+    href: '/assessment',
+    icon: ClipboardCheck,
   },
   {
     title: 'Cloud Security',

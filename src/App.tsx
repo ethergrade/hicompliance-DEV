@@ -7,6 +7,9 @@ import { AuthProvider } from "@/components/auth/AuthProvider";
 import { LoginPage } from "@/components/auth/LoginPage";
 import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
+import SurfaceScan360 from "./pages/SurfaceScan360";
+import DarkRisk360 from "./pages/DarkRisk360";
+import Assessment from "./pages/Assessment";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -22,6 +25,9 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<LoginPage />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/surface-scan" element={<SurfaceScan360 />} />
+            <Route path="/dark-risk" element={<DarkRisk360 />} />
+            <Route path="/assessment" element={<Assessment />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
