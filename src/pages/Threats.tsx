@@ -475,9 +475,9 @@ const Threats: React.FC = () => {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={getSeverityBadge(threat.severity) as any} className={getSeverityColor(threat.severity)}>
-                          {threat.severity.toUpperCase()}
-                        </Badge>
+                        <span className="text-white font-medium uppercase text-sm">
+                          {threat.severity}
+                        </span>
                       </TableCell>
                       <TableCell>
                         <span className="font-medium text-white">{threat.score}/100</span>
