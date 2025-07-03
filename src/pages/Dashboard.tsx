@@ -89,6 +89,12 @@ const Dashboard: React.FC = () => {
               {userProfile?.organizations?.name || 'Organizzazione'}
             </p>
           </div>
+          <div className="text-right">
+            <div className="text-4xl font-bold text-red-500 mb-1">
+              {totalIssues || fallbackData.totalIssues}
+            </div>
+            <p className="text-sm text-muted-foreground">Issues Attive</p>
+          </div>
         </div>
 
         {/* Quick Stats */}
