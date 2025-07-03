@@ -32,11 +32,11 @@ export const MetricCard: React.FC<MetricCardProps> = ({
   const getStatusBadge = () => {
     switch (status) {
       case 'good':
-        return <Badge variant="secondary" className="bg-cyber-green/20 text-cyber-green">Buono</Badge>;
+        return <Badge variant="secondary" className="bg-cyber-green/20 text-cyber-green text-center">Buono</Badge>;
       case 'warning':
-        return <Badge variant="secondary" className="bg-cyber-orange/20 text-cyber-orange">Attenzione</Badge>;
+        return <Badge variant="secondary" className="bg-cyber-orange/20 text-cyber-orange text-center">Attenzione</Badge>;
       case 'critical':
-        return <Badge variant="secondary" className="bg-cyber-red/20 text-cyber-red">Critico</Badge>;
+        return <Badge variant="secondary" className="bg-cyber-red/20 text-cyber-red text-center">Critico</Badge>;
       default:
         return null;
     }
