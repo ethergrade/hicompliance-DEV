@@ -266,7 +266,7 @@ const Assessment: React.FC = () => {
           <div>
             <h1 className="text-3xl font-bold text-foreground">Assessment NIS2/NIST/ISO</h1>
             <p className="text-muted-foreground">
-              Valutazione della conformità alla direttiva NIS2
+              Valutazione conformità direttiva e best practices NIS2/NIST/ISO
             </p>
           </div>
           <Button className="bg-primary text-primary-foreground">
