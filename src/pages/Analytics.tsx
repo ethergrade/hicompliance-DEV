@@ -159,16 +159,20 @@ const Analytics: React.FC = () => {
 
     const currentCompliance = complianceByRange[range as keyof typeof complianceByRange] || complianceByRange['6m'];
     
-    return baseCategories.map((category, index) => ({
+    const data = baseCategories.map((category, index) => ({
       category: category.length > 12 ? category.substring(0, 12) + '...' : category,
       compliance: currentCompliance[index],
       target: currentCompliance[index] + 15,
       completedQuestions: Math.round((currentCompliance[index] / 100) * 20),
       totalQuestions: 20
     }));
+
+    console.log('Assessment data for range:', range, data);
+    return data;
   };
 
   const assessmentComplianceData = getAssessmentData(timeRange);
+  console.log('Final assessment compliance data:', assessmentComplianceData);
 
   // Dati minacce nel tempo che cambiano in base al timeRange
   const getThreatsData = (range: string) => {
@@ -436,12 +440,15 @@ const Analytics: React.FC = () => {
             <CardContent>
               <div className="h-96">
                 <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart data={assessmentComplianceData}>
+                  <RadarChart data={assessmentComplianceData} margin={{ top: 20, right: 30, bottom: 20, left: 30 }}>
                     <PolarGrid stroke="#374151" />
                     <PolarAngleAxis 
                       dataKey="category" 
-                      tick={{ fontSize: 10, fill: '#9CA3AF' }}
-                      className="text-xs"
+                      tick={{ fontSize: 9, fill: '#9CA3AF' }}
+                      tickFormatter={(value) => {
+                        console.log('Rendering category:', value);
+                        return value;
+                      }}
                     />
                     <PolarRadiusAxis 
                       angle={0} 
