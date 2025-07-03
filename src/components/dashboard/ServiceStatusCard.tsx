@@ -24,6 +24,7 @@ interface ServiceStatusCardProps {
 
 export const ServiceStatusCard: React.FC<ServiceStatusCardProps> = ({ services }) => {
   const connectedServices = services.filter(s => s.status === 'active');
+  const hiSolutionServices = services.filter(s => s.services?.code?.startsWith('hi_'));
   
   return (
     <div className="space-y-6">
@@ -46,13 +47,13 @@ export const ServiceStatusCard: React.FC<ServiceStatusCardProps> = ({ services }
           </Card>
         </div>
 
-        {/* Right Column - Connected Services */}
+        {/* Right Column - HiSolution Services */}
         <Card className="border-border">
           <CardHeader>
-            <CardTitle>Servizi Connessi</CardTitle>
+            <CardTitle>Servizi HiSolution Connessi</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {connectedServices.slice(0, 3).map((service) => (
+            {hiSolutionServices.map((service) => (
               <ConnectedServiceItem key={service.id} service={service} />
             ))}
             
