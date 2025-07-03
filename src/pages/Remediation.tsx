@@ -34,6 +34,15 @@ const Remediation: React.FC = () => {
   const [draggedTask, setDraggedTask] = useState<number | null>(null);
   const [draggedOver, setDraggedOver] = useState<number | null>(null);
   const [taskOrder, setTaskOrder] = useState<number[]>([1, 2, 3, 4, 5, 6]);
+  const [resizingTask, setResizingTask] = useState<{ id: number, side: 'left' | 'right' } | null>(null);
+  const [taskDates, setTaskDates] = useState<Record<number, { startDate: string, endDate: string }>>({
+    1: { startDate: '2025-01-15', endDate: '2025-03-01' },
+    2: { startDate: '2025-01-20', endDate: '2025-02-15' },
+    3: { startDate: '2025-02-01', endDate: '2025-04-01' },
+    4: { startDate: '2025-01-25', endDate: '2025-02-25' },
+    5: { startDate: '2025-02-15', endDate: '2025-03-15' },
+    6: { startDate: '2025-03-01', endDate: '2025-04-15' }
+  });
   const [newRemediation, setNewRemediation] = useState({
     category: '',
     priority: '',
@@ -268,10 +277,65 @@ const Remediation: React.FC = () => {
     setDraggedOver(null);
   };
 
+  // Funzioni per il resize delle barre
+  const handleResizeStart = (e: React.MouseEvent, taskId: number, side: 'left' | 'right') => {
+    e.stopPropagation();
+    setResizingTask({ id: taskId, side });
+    
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const ganttContainer = document.querySelector('.gantt-timeline') as HTMLElement;
+      if (!ganttContainer) return;
+      
+      const containerRect = ganttContainer.getBoundingClientRect();
+      const relativeX = moveEvent.clientX - containerRect.left;
+      const percentage = Math.max(0, Math.min(100, (relativeX / containerRect.width) * 100));
+      
+      // Converti percentuale in data
+      const startDate = new Date('2025-01-01');
+      const endDate = new Date('2025-05-01');
+      const totalDays = differenceInDays(endDate, startDate);
+      const targetDays = Math.round((percentage / 100) * totalDays);
+      const targetDate = format(addDays(startDate, targetDays), 'yyyy-MM-dd');
+      
+      setTaskDates(prev => {
+        const currentDates = prev[taskId];
+        if (side === 'left') {
+          // Non permettere che la data di inizio superi quella di fine
+          const endDateObj = parseISO(currentDates.endDate);
+          const newStartDateObj = parseISO(targetDate);
+          if (newStartDateObj < endDateObj) {
+            return {
+              ...prev,
+              [taskId]: { ...currentDates, startDate: targetDate }
+            };
+          }
+        } else {
+          // Non permettere che la data di fine sia prima di quella di inizio
+          const startDateObj = parseISO(currentDates.startDate);
+          const newEndDateObj = parseISO(targetDate);
+          if (newEndDateObj > startDateObj) {
+            return {
+              ...prev,
+              [taskId]: { ...currentDates, endDate: targetDate }
+            };
+          }
+        }
+        return prev;
+      });
+    };
+    
+    const handleMouseUp = () => {
+      setResizingTask(null);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
   const recalculateDates = (order: number[]) => {
     // Logica per riallocare le date quando i task si sovrappongono
-    // Per ora manteniamo le date originali, ma in futuro si può implementare
-    // una logica più sofisticata per evitare sovrapposizioni
     console.log('Recalculating dates for order:', order);
   };
 
@@ -281,7 +345,15 @@ const Remediation: React.FC = () => {
     const totalDays = differenceInDays(endDate, startDate);
     
     // Ordina i task secondo l'ordine corrente
-    const orderedActions = taskOrder.map(id => ganttActions.find(action => action.id === id)!).filter(Boolean);
+    const orderedActions = taskOrder.map(id => {
+      const baseAction = ganttActions.find(action => action.id === id)!;
+      const dates = taskDates[id];
+      return {
+        ...baseAction,
+        startDate: dates.startDate,
+        endDate: dates.endDate
+      };
+    }).filter(Boolean);
     
     return orderedActions.map(action => {
       const actionStart = parseISO(action.startDate);
@@ -293,7 +365,8 @@ const Remediation: React.FC = () => {
         ...action,
         startOffset: (daysFromStart / totalDays) * 100,
         width: (duration / totalDays) * 100,
-        progressWidth: ((duration * action.progress) / 100 / totalDays) * 100
+        progressWidth: ((duration * action.progress) / 100 / totalDays) * 100,
+        duration: duration
       };
     });
   };
@@ -738,32 +811,50 @@ const Remediation: React.FC = () => {
                         </div>
 
                         {/* Gantt timeline */}
-                        <div className="flex-1 relative h-8 bg-muted/20 rounded">
-                          {/* Task bar */}
+                        <div className="flex-1 relative h-8 bg-muted/20 rounded gantt-timeline">
+                          {/* Task bar con handle di resize */}
                           <div
-                            className="absolute h-6 top-1 rounded-sm flex items-center px-1 transition-all duration-200"
+                            className="absolute h-6 top-1 rounded-sm flex items-center group transition-all duration-200"
                             style={{
                               left: `${action.startOffset}%`,
                               width: `${action.width}%`,
                               backgroundColor: action.color + '40',
                               border: `2px solid ${action.color}`,
-                              transform: draggedTask === action.id ? 'scale(0.95)' : 'scale(1)'
+                              transform: draggedTask === action.id ? 'scale(0.95)' : 'scale(1)',
+                              zIndex: resizingTask?.id === action.id ? 10 : 1
                             }}
                           >
+                            {/* Handle sinistra per resize start date */}
+                            <div
+                              className="absolute left-0 top-0 w-2 h-full bg-primary/80 rounded-l-sm cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary"
+                              onMouseDown={(e) => handleResizeStart(e, action.id, 'left')}
+                              title="Trascina per modificare data inizio"
+                            />
+                            
                             {/* Progress bar */}
                             <div
-                              className="h-full rounded-sm transition-all duration-200"
+                              className="h-full rounded-sm transition-all duration-200 pointer-events-none"
                               style={{
                                 width: `${action.progress}%`,
                                 backgroundColor: action.color,
                                 minWidth: action.progress > 0 ? '4px' : '0'
                               }}
                             />
+                            
+                            {/* Handle destra per resize end date */}
+                            <div
+                              className="absolute right-0 top-0 w-2 h-full bg-primary/80 rounded-r-sm cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary"
+                              onMouseDown={(e) => handleResizeStart(e, action.id, 'right')}
+                              title="Trascina per modificare data fine"
+                            />
                           </div>
                           
-                          {/* Tooltip info */}
+                          {/* Tooltip info con durata aggiornata */}
                           <div className="absolute top-8 left-0 text-xs text-muted-foreground whitespace-nowrap">
                             {format(parseISO(action.startDate), 'dd/MM')} - {format(parseISO(action.endDate), 'dd/MM')}
+                            <span className="text-primary ml-2">
+                              ({action.duration} giorni)
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -772,34 +863,40 @@ const Remediation: React.FC = () => {
 
                   {/* Legend */}
                   <div className="mt-6 pt-4 border-t border-border">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-6 text-xs">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-4 h-2 bg-red-600 rounded"></div>
-                          <span>Critica</span>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-6 text-xs">
+                          <div className="flex items-center space-x-2">
+                            <div className="w-4 h-2 bg-red-600 rounded"></div>
+                            <span>Critica</span>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <div className="w-4 h-2 bg-orange-600 rounded"></div>
+                            <span>Alta</span>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <div className="w-4 h-2 bg-yellow-600 rounded"></div>
+                            <span>Media</span>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <div className="w-4 h-2 bg-gray-400 rounded"></div>
+                            <span>Barra: Durata totale</span>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <div className="w-4 h-2 bg-red-600 rounded"></div>
+                            <span>Riempimento: Progresso</span>
+                          </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <div className="w-4 h-2 bg-orange-600 rounded"></div>
-                          <span>Alta</span>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <div className="w-4 h-2 bg-yellow-600 rounded"></div>
-                          <span>Media</span>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <div className="w-4 h-2 bg-gray-400 rounded"></div>
-                          <span>Barra: Durata totale</span>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <div className="w-4 h-2 bg-red-600 rounded"></div>
-                          <span>Riempimento: Progresso</span>
+                        <div className="flex items-center space-x-4 text-xs text-muted-foreground">
+                          <div className="flex items-center space-x-2">
+                            <div className="w-3 h-3 border-2 border-dashed border-muted-foreground rounded"></div>
+                            <span>Trascina i task per riordinarli</span>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <div className="w-2 h-3 bg-primary rounded"></div>
+                            <span>Trascina i bordi per modificare le date</span>
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-2 text-xs text-muted-foreground">
-                        <div className="w-3 h-3 border-2 border-dashed border-muted-foreground rounded"></div>
-                        <span>Trascina i task per riordinarli</span>
-                      </div>
-                    </div>
                   </div>
                 </div>
               </CardContent>
