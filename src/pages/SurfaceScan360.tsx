@@ -128,7 +128,7 @@ const SurfaceScan360: React.FC = () => {
                   </div>
                   <div className="flex items-center space-x-4">
                     <div className="text-right">
-                      <div className="text-sm font-medium">Score: {result.score}/100</div>
+                      <div className="text-sm font-medium">Punteggio: {result.score}/100</div>
                       <Badge variant={getStatusBadge(result.status) as any}>
                         {result.status}
                       </Badge>

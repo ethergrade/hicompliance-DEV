@@ -133,7 +133,7 @@ const Assessment: React.FC = () => {
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Score Conformità</p>
+                  <p className="text-sm text-muted-foreground">Punteggio Conformità</p>
                   <p className="text-2xl font-bold text-yellow-500">{overallScore}/100</p>
                 </div>
                 <Target className="w-8 h-8 text-yellow-500" />
@@ -234,7 +234,7 @@ const Assessment: React.FC = () => {
                   </div>
                   <div className="flex items-center space-x-4">
                     <div className="text-right">
-                      <div className="text-sm font-medium">Score: {category.score}/100</div>
+                      <div className="text-sm font-medium">Punteggio: {category.score}/100</div>
                       <div className="flex items-center space-x-1">
                         {getStatusIcon(category.status)}
                         <Badge variant={getStatusBadge(category.status) as any}>

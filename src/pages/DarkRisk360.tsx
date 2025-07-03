@@ -124,7 +124,7 @@ const DarkRisk360: React.FC = () => {
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Risk Score</p>
+                  <p className="text-sm text-muted-foreground">Punteggio Rischio</p>
                   <p className="text-2xl font-bold text-red-500">85</p>
                 </div>
                 <TrendingDown className="w-8 h-8 text-red-500" />
