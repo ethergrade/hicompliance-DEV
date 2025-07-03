@@ -307,7 +307,7 @@ const Assessment: React.FC = () => {
                     </div>
                     <Button variant="outline" size="sm">
                       <FileText className="w-4 h-4 mr-1" />
-                      Continua
+                      Modifica
                     </Button>
                   </div>
                 </div>
