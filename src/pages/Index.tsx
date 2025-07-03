@@ -124,7 +124,7 @@ const Index = () => {
           {showAuthenticatedHeader ? (
             <Link to="/dashboard">
               <Button className="bg-gradient-cyber hover:opacity-90">
-                Vai allala Dashboard
+                Vai alla Dashboard
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </Link>
@@ -159,7 +159,7 @@ const Index = () => {
             {showAuthenticatedHeader ? (
               <Link to="/dashboard">
                 <Button size="lg" className="bg-gradient-cyber hover:opacity-90 text-lg px-8">
-                  Vai allala Dashboard
+                  Vai alla Dashboard
                   <ArrowRight className="w-5 h-5 ml-2" />
                 </Button>
               </Link>
