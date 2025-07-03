@@ -54,31 +54,6 @@ const navigation = [
     icon: ClipboardCheck,
   },
   {
-    title: 'Sicurezza Cloud',
-    href: '/cloud-security',
-    icon: Cloud,
-  },
-  {
-    title: 'Sicurezza Endpoint',
-    href: '/endpoint-security',
-    icon: Lock,
-  },
-  {
-    title: 'Sicurezza Email',
-    href: '/email-security',
-    icon: FileText,
-  },
-  {
-    title: 'Governance Dati',
-    href: '/data-governance',
-    icon: Shield,
-  },
-  {
-    title: 'Sicurezza Rete',
-    href: '/network-security',
-    icon: Network,
-  },
-  {
     title: 'Analisi',
     href: '/analytics',
     icon: BarChart3,
