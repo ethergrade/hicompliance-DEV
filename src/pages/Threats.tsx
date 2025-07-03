@@ -475,9 +475,17 @@ const Threats: React.FC = () => {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <span className="text-white font-medium uppercase text-sm">
-                          {threat.severity}
-                        </span>
+                        <div className="flex items-center space-x-2">
+                          <div className={`w-3 h-3 rounded-full ${
+                            threat.severity === 'critical' ? 'bg-red-600' :
+                            threat.severity === 'high' ? 'bg-orange-500' :
+                            threat.severity === 'medium' ? 'bg-yellow-500' :
+                            'bg-green-500'
+                          }`} />
+                          <span className="text-white font-medium uppercase text-sm">
+                            {threat.severity}
+                          </span>
+                        </div>
                       </TableCell>
                       <TableCell>
                         <span className="font-medium text-white">{threat.score}/100</span>
