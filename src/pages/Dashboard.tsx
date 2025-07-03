@@ -149,9 +149,29 @@ const Dashboard: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {hiSolutionServices.length > 0 ? hiSolutionServices.map((orgService, index) => {
                 const service = orgService.services;
-                const issueCount = Math.floor((100 - (orgService.health_score || 0)) / 10);
+                const healthScore = orgService.health_score || 0;
+                const issueCount = Math.floor((100 - healthScore) / 10);
                 const resolvedCount = Math.floor(50 + Math.random() * 100);
                 const status = orgService.status;
+                
+                // Calcolo punteggio di criticità basato su health score e issues
+                const criticalityScore = status === 'alert' ? 
+                  Math.min(100, 100 - healthScore + issueCount * 5) : 
+                  status === 'maintenance' ? 
+                    Math.min(80, 100 - healthScore) : 
+                    Math.max(10, 100 - healthScore);
+                
+                const getCriticalityColor = (score: number) => {
+                  if (score >= 70) return 'text-red-500';
+                  if (score >= 40) return 'text-yellow-500';
+                  return 'text-green-500';
+                };
+                
+                const getHealthColor = (score: number) => {
+                  if (score >= 80) return 'text-green-500';
+                  if (score >= 50) return 'text-yellow-500';
+                  return 'text-red-500';
+                };
                 
                 return (
                   <div key={index} className="flex flex-col p-4 rounded-xl border border-border bg-card hover:bg-muted/30 transition-all duration-200 hover:shadow-lg">
@@ -181,7 +201,24 @@ const Dashboard: React.FC = () => {
                     </div>
                     
                     <div className="flex-1">
-                      <h4 className="font-semibold text-base mb-2">{service.name}</h4>
+                      <h4 className="font-semibold text-base mb-3">{service.name}</h4>
+                      
+                      {/* Health Score e Criticità */}
+                      <div className="space-y-2 mb-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-muted-foreground">Health Score:</span>
+                          <span className={`text-sm font-semibold ${getHealthColor(healthScore)}`}>
+                            {healthScore}%
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-muted-foreground">Criticità:</span>
+                          <span className={`text-sm font-semibold ${getCriticalityColor(criticalityScore)}`}>
+                            {criticalityScore}/100
+                          </span>
+                        </div>
+                      </div>
+                      
                       <p className="text-sm text-muted-foreground">
                         {resolvedCount} risolte negli ultimi 90 giorni
                       </p>
