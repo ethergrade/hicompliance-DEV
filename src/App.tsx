@@ -12,6 +12,8 @@ import DarkRisk360 from "./pages/DarkRisk360";
 import Assessment from "./pages/Assessment";
 import Analytics from "./pages/Analytics";
 import Threats from "./pages/Threats";
+import IncidentResponse from "./pages/IncidentResponse";
+import ThreatManagement from "./pages/ThreatManagement";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -32,6 +34,8 @@ const App = () => (
             <Route path="/assessment" element={<Assessment />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/threats" element={<Threats />} />
+            <Route path="/incident-response" element={<IncidentResponse />} />
+            <Route path="/threat-management" element={<ThreatManagement />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
