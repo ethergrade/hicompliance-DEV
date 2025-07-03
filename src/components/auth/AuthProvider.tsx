@@ -81,7 +81,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signIn = async (email: string, password: string) => {
     try {
       // Handle special admin case - convert admin to real email
-      const loginEmail = email === 'admin' ? 'admin@hicompliance.local' : email;
+      const loginEmail = email === 'admin' ? 'admin@admin.com' : email;
       const loginPassword = email === 'admin' ? 'adminadmin' : password;
 
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -93,7 +93,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // If admin login fails, try to sign up the admin user first
         if (email === 'admin' && error.message.includes('Invalid login credentials')) {
           const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            email: 'admin@hicompliance.local',
+            email: 'admin@admin.com',
             password: 'adminadmin',
             options: {
               emailRedirectTo: `${window.location.origin}/dashboard`,
@@ -115,7 +115,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           // Try to login again after signup
           const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
-            email: 'admin@hicompliance.local',
+            email: 'admin@admin.com',
             password: 'adminadmin',
           });
 
@@ -134,7 +134,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               .from('users')
               .upsert({
                 auth_user_id: loginData.user.id,
-                email: 'admin@hicompliance.local',
+                email: 'admin@admin.com',
                 full_name: 'Administrator',
                 user_type: 'admin',
                 organization_id: (await supabase.from('organizations').select('id').eq('code', 'admin').single()).data?.id,

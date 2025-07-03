@@ -101,9 +101,9 @@ export const LoginPage: React.FC = () => {
                 
                 <div className="text-sm text-muted-foreground p-3 bg-muted rounded-md">
                   <strong>Accesso Admin:</strong><br />
-                  Email: <code>admin</code><br />
+                  Email: <code>admin@admin.com</code><br />
                   Password: <code>adminadmin</code><br />
-                  <em className="text-xs">Puoi usare "admin" come email</em>
+                  <em className="text-xs">Oppure usa solo "admin" come email</em>
                 </div>
               </TabsContent>
 
