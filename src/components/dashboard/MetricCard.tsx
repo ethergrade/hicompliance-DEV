@@ -46,25 +46,28 @@ export const MetricCard: React.FC<MetricCardProps> = ({
   };
 
   return (
-    <Card className="relative overflow-hidden border-border shadow-cyber hover:shadow-glow transition-cyber">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between">
-          {title}
+    <Card className="relative overflow-hidden border-border shadow-cyber hover:shadow-glow transition-cyber animate-fade-in">
+      <CardHeader className="pb-3 text-center">
+        <div className="flex items-center justify-between mb-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground">
+            {title}
+          </CardTitle>
           {getStatusBadge()}
-        </CardTitle>
+        </div>
       </CardHeader>
-      <CardContent className="pb-4">
-        <div className="flex items-center space-x-4">
-          {percentage !== undefined && (
-            <div className="relative w-16 h-16">
-              <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 64 64">
+      <CardContent className="pb-6">
+        {percentage !== undefined ? (
+          // Layout con percentuale e cerchio
+          <div className="flex flex-col items-center space-y-4">
+            <div className="relative w-20 h-20">
+              <svg className="w-20 h-20 transform -rotate-90" viewBox="0 0 64 64">
                 <circle
                   cx="32"
                   cy="32"
                   r="28"
                   fill="none"
                   stroke="currentColor"
-                  strokeWidth="4"
+                  strokeWidth="3"
                   className="text-muted"
                   opacity="0.2"
                 />
@@ -73,10 +76,10 @@ export const MetricCard: React.FC<MetricCardProps> = ({
                   cy="32"
                   r="28"
                   fill="none"
-                  strokeWidth="4"
+                  strokeWidth="3"
                   strokeDasharray={`${(percentage / 100) * 175.93} 175.93`}
                   strokeLinecap="round"
-                  className={`${getStatusColor()} transition-all duration-500`}
+                  className="transition-all duration-500"
                   style={{
                     stroke: status === 'good' ? 'hsl(var(--cyber-green))' : 
                            status === 'warning' ? 'hsl(var(--cyber-orange))' : 
@@ -88,14 +91,22 @@ export const MetricCard: React.FC<MetricCardProps> = ({
                 <span className="text-lg font-bold text-foreground">{percentage}%</span>
               </div>
             </div>
-          )}
-          <div className="flex-1">
-            <div className="text-2xl font-bold text-foreground">{value}</div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-foreground mb-2">{value}</div>
+              {description && (
+                <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
+              )}
+            </div>
+          </div>
+        ) : (
+          // Layout senza percentuale - solo valore centrato
+          <div className="text-center space-y-3">
+            <div className="text-4xl font-bold text-foreground">{value}</div>
             {description && (
-              <p className="text-xs text-muted-foreground mt-1">{description}</p>
+              <p className="text-sm text-muted-foreground leading-relaxed px-2">{description}</p>
             )}
           </div>
-        </div>
+        )}
       </CardContent>
     </Card>
   );
