@@ -45,7 +45,7 @@ const navigation = [
     icon: LayoutDashboard,
   },
   {
-    title: 'Valutazione',
+    title: 'Assessment',
     href: '/assessment',
     icon: ClipboardCheck,
   },
