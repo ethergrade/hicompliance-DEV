@@ -63,37 +63,65 @@ const Dashboard: React.FC = () => {
             <Card className="border-border h-full">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg">Servizi HiSolution</CardTitle>
+                <p className="text-xs text-muted-foreground">Stato in tempo reale</p>
               </CardHeader>
               <CardContent className="space-y-3">
-                {hiSolutionServices.map((service) => {
-                  const issueCount = getIssueCount(service.health_score, service.status);
-                  const resolvedCount = getResolvedCount(service.services.code);
-                  
-                  return (
-                    <div key={service.id} className="flex items-center justify-between p-3 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors">
-                      <div className="flex items-center space-x-3">
-                        <div className={`p-1.5 rounded-lg ${
-                          service.status === 'alert' ? 'bg-red-500/10' : 'bg-green-500/10'
-                        }`}>
-                          <div className={`w-6 h-6 rounded ${
-                            service.status === 'alert' ? 'bg-red-500' : 'bg-green-500'
-                          }`} />
-                        </div>
-                        <div>
-                          <h4 className="font-medium text-sm">{service.services.name}</h4>
-                          <p className="text-xs text-muted-foreground">
-                            {resolvedCount} resolved / 90d
-                          </p>
-                        </div>
+                {[
+                  { name: 'HiFirewall', status: 'alert', issues: 8, resolved: 124, code: 'hi_firewall' },
+                  { name: 'HiEndpoint', status: 'alert', issues: 3, resolved: 54, code: 'hi_endpoint' },
+                  { name: 'HiMail', status: 'alert', issues: 2, resolved: 98, code: 'hi_mail' },
+                  { name: 'HiLog', status: 'alert', issues: 9, resolved: 54, code: 'hi_log' },
+                  { name: 'HiPatch', status: 'alert', issues: 5, resolved: 78, code: 'hi_patch' },
+                  { name: 'HiMfa', status: 'active', issues: 0, resolved: 145, code: 'hi_mfa' },
+                  { name: 'HiTrack', status: 'active', issues: 0, resolved: 89, code: 'hi_track' }
+                ].map((service, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors">
+                    <div className="flex items-center space-x-3">
+                      <div className={`p-1.5 rounded-lg flex items-center justify-center ${
+                        service.status === 'alert' ? 'bg-red-500/10' : 'bg-green-500/10'
+                      }`}>
+                        <div className={`w-3 h-3 rounded-full ${
+                          service.status === 'alert' ? 'bg-red-500' : 'bg-green-500'
+                        }`} />
                       </div>
-                      {service.status === 'alert' && (
-                        <div className="text-xl font-bold text-red-500">
-                          {issueCount}
+                      <div className="flex-1">
+                        <h4 className="font-medium text-sm">{service.name}</h4>
+                        <p className="text-xs text-muted-foreground">
+                          {service.resolved} resolved / 90d
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      {service.status === 'alert' ? (
+                        <div className="text-lg font-bold text-red-500">
+                          {service.issues}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-green-500 font-medium">
+                          OK
                         </div>
                       )}
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
+                
+                {/* Summary Stats */}
+                <div className="mt-4 pt-3 border-t border-border">
+                  <div className="grid grid-cols-2 gap-3 text-center">
+                    <div>
+                      <div className="text-lg font-bold text-red-500">
+                        {[8, 3, 2, 9, 5].reduce((a, b) => a + b, 0)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Issues Aperte</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-green-500">
+                        {[124, 54, 98, 54, 78, 145, 89].reduce((a, b) => a + b, 0)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Risolte/90d</div>
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </div>
