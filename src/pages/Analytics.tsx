@@ -141,38 +141,25 @@ const Analytics: React.FC = () => {
 
   const riskTrendData = getRiskTrendData(timeRange);
 
-  // Dati conformità Assessment che cambiano in base al timeRange
-  const getAssessmentData = (range: string) => {
-    const baseCategories = [
-      'Business Continuity', 'Certificazioni', 'Crittografia', 'Gestione Identità',
-      'Gestione Incidenti', 'Gestione Rischio', 'Gestione Risorse', 'Gestione Fornitori',
-      'Governance', 'HR e Formazione', 'Igiene Informatica', 'Manutenzione',
-      'Network Security', 'Sviluppo Software'
-    ];
+  // Dati conformità Assessment semplificati e fissi per la radar chart
+  const assessmentComplianceData = [
+    { category: 'Business Continuity', compliance: 72, target: 85 },
+    { category: 'Certificazioni', compliance: 85, target: 90 },
+    { category: 'Crittografia', compliance: 60, target: 80 },
+    { category: 'Gestione Identità', compliance: 25, target: 85 },
+    { category: 'Gest. Incidenti', compliance: 78, target: 85 },
+    { category: 'Gest. Rischio', compliance: 65, target: 80 },
+    { category: 'Gest. Risorse', compliance: 55, target: 75 },
+    { category: 'Gest. Fornitori', compliance: 30, target: 70 },
+    { category: 'Governance', compliance: 88, target: 90 },
+    { category: 'HR e Formazione', compliance: 70, target: 80 },
+    { category: 'Igiene Informatica', compliance: 62, target: 75 },
+    { category: 'Manutenzione', compliance: 35, target: 70 },
+    { category: 'Network Security', compliance: 82, target: 85 },
+    { category: 'Sviluppo Software', compliance: 40, target: 75 }
+  ];
 
-    const complianceByRange = {
-      '1y': [45, 60, 35, 15, 50, 40, 30, 20, 65, 45, 38, 25, 55, 25],
-      '6m': [72, 85, 60, 25, 78, 65, 55, 30, 88, 70, 62, 35, 82, 40],
-      '3m': [68, 82, 55, 22, 75, 62, 52, 28, 85, 67, 58, 32, 78, 38],
-      '1m': [70, 84, 58, 24, 76, 63, 53, 29, 86, 68, 60, 33, 80, 39]
-    };
-
-    const currentCompliance = complianceByRange[range as keyof typeof complianceByRange] || complianceByRange['6m'];
-    
-    const data = baseCategories.map((category, index) => ({
-      category: category.length > 12 ? category.substring(0, 12) + '...' : category,
-      compliance: currentCompliance[index],
-      target: currentCompliance[index] + 15,
-      completedQuestions: Math.round((currentCompliance[index] / 100) * 20),
-      totalQuestions: 20
-    }));
-
-    console.log('Assessment data for range:', range, data);
-    return data;
-  };
-
-  const assessmentComplianceData = getAssessmentData(timeRange);
-  console.log('Final assessment compliance data:', assessmentComplianceData);
+  console.log('Radar chart data:', assessmentComplianceData);
 
   // Dati minacce nel tempo che cambiano in base al timeRange
   const getThreatsData = (range: string) => {
@@ -440,27 +427,27 @@ const Analytics: React.FC = () => {
             <CardContent>
               <div className="h-96">
                 <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart data={assessmentComplianceData} margin={{ top: 20, right: 30, bottom: 20, left: 30 }}>
+                  <RadarChart 
+                    data={assessmentComplianceData} 
+                    margin={{ top: 40, right: 40, bottom: 40, left: 40 }}
+                  >
                     <PolarGrid stroke="#374151" />
                     <PolarAngleAxis 
                       dataKey="category" 
-                      tick={{ fontSize: 9, fill: '#9CA3AF' }}
-                      tickFormatter={(value) => {
-                        console.log('Rendering category:', value);
-                        return value;
-                      }}
+                      tick={{ fontSize: 10, fill: '#9CA3AF' }}
                     />
                     <PolarRadiusAxis 
                       angle={0} 
                       domain={[0, 100]} 
                       tick={{ fontSize: 10, fill: '#9CA3AF' }}
-                      tickCount={6}
+                      tickCount={5}
                     />
                     <Tooltip 
                       contentStyle={{ 
                         backgroundColor: '#1F2937', 
                         border: '1px solid #374151', 
-                        color: '#F9FAFB' 
+                        color: '#F9FAFB',
+                        borderRadius: '6px'
                       }} 
                     />
                     <Radar 
@@ -475,8 +462,7 @@ const Analytics: React.FC = () => {
                       name="Target" 
                       dataKey="target" 
                       stroke="#10B981" 
-                      fill="#10B981" 
-                      fillOpacity={0.1}
+                      fill="transparent" 
                       strokeWidth={2}
                       strokeDasharray="5 5"
                     />
