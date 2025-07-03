@@ -56,16 +56,106 @@ const Analytics: React.FC = () => {
     { month: 'Giu', critical: 4, high: 22, medium: 46, low: 28, overall: 68 }
   ];
 
-  // Dati conformità NIS2
-  const nis2ComplianceData = [
-    { category: 'Governance', compliance: 85, target: 90 },
-    { category: 'Risk Management', compliance: 78, target: 85 },
-    { category: 'Incident Response', compliance: 92, target: 95 },
-    { category: 'Business Continuity', compliance: 70, target: 80 },
-    { category: 'Supply Chain', compliance: 65, target: 75 },
-    { category: 'Cybersecurity Measures', compliance: 88, target: 90 },
-    { category: 'Human Resources', compliance: 82, target: 85 },
-    { category: 'Asset Management', compliance: 75, target: 80 }
+  // Dati conformità Assessment NIS2/NIST/ISO - 14 categorie
+  const assessmentComplianceData = [
+    { 
+      category: 'Business Continuity', 
+      compliance: 72, 
+      target: 85,
+      completedQuestions: 18,
+      totalQuestions: 25
+    },
+    { 
+      category: 'Certificazioni', 
+      compliance: 85, 
+      target: 90,
+      completedQuestions: 20,
+      totalQuestions: 20
+    },
+    { 
+      category: 'Crittografia', 
+      compliance: 60, 
+      target: 80,
+      completedQuestions: 12,
+      totalQuestions: 22
+    },
+    { 
+      category: 'Gestione Identità', 
+      compliance: 25, 
+      target: 85,
+      completedQuestions: 5,
+      totalQuestions: 28
+    },
+    { 
+      category: 'Gestione Incidenti', 
+      compliance: 78, 
+      target: 85,
+      completedQuestions: 18,
+      totalQuestions: 18
+    },
+    { 
+      category: 'Gestione Rischio', 
+      compliance: 65, 
+      target: 80,
+      completedQuestions: 12,
+      totalQuestions: 24
+    },
+    { 
+      category: 'Gestione Risorse', 
+      compliance: 55, 
+      target: 75,
+      completedQuestions: 8,
+      totalQuestions: 16
+    },
+    { 
+      category: 'Gestione Fornitori', 
+      compliance: 30, 
+      target: 70,
+      completedQuestions: 1,
+      totalQuestions: 19
+    },
+    { 
+      category: 'Governance', 
+      compliance: 88, 
+      target: 90,
+      completedQuestions: 21,
+      totalQuestions: 21
+    },
+    { 
+      category: 'HR e Formazione', 
+      compliance: 70, 
+      target: 80,
+      completedQuestions: 10,
+      totalQuestions: 15
+    },
+    { 
+      category: 'Igiene Informatica', 
+      compliance: 62, 
+      target: 75,
+      completedQuestions: 15,
+      totalQuestions: 26
+    },
+    { 
+      category: 'Manutenzione', 
+      compliance: 35, 
+      target: 70,
+      completedQuestions: 1,
+      totalQuestions: 17
+    },
+    { 
+      category: 'Network Security', 
+      compliance: 82, 
+      target: 85,
+      completedQuestions: 25,
+      totalQuestions: 30
+    },
+    { 
+      category: 'Sviluppo Software', 
+      compliance: 40, 
+      target: 75,
+      completedQuestions: 1,
+      totalQuestions: 23
+    }
   ];
 
   // Dati minacce nel tempo
@@ -157,10 +247,12 @@ const Analytics: React.FC = () => {
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-400">Conformità NIS2 Media</p>
-                  <p className="text-2xl font-bold text-white">79%</p>
+                  <p className="text-sm text-gray-400">Conformità Assessment Media</p>
+                  <p className="text-2xl font-bold text-white">
+                    {Math.round(assessmentComplianceData.reduce((acc, cat) => acc + cat.compliance, 0) / assessmentComplianceData.length)}%
+                  </p>
                   <Badge variant="secondary" className="mt-1">
-                    Target: 85%
+                    Target: {Math.round(assessmentComplianceData.reduce((acc, cat) => acc + cat.target, 0) / assessmentComplianceData.length)}%
                   </Badge>
                 </div>
                 <Shield className="w-8 h-8 text-blue-500" />
@@ -262,14 +354,18 @@ const Analytics: React.FC = () => {
           {/* Conformità NIS2 */}
           <Card className="border-border bg-card">
             <CardHeader>
-              <CardTitle className="text-white">Conformità Direttiva NIS2</CardTitle>
+              <CardTitle className="text-white">Assessment NIS2/NIST/ISO - 14 Categorie</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-80">
+              <div className="h-96">
                 <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart data={nis2ComplianceData}>
+                  <RadarChart data={assessmentComplianceData}>
                     <PolarGrid stroke="#374151" />
-                    <PolarAngleAxis dataKey="category" tick={{ fontSize: 12, fill: '#9CA3AF' }} />
+                    <PolarAngleAxis 
+                      dataKey="category" 
+                      tick={{ fontSize: 10, fill: '#9CA3AF' }}
+                      className="text-xs"
+                    />
                     <PolarRadiusAxis 
                       angle={0} 
                       domain={[0, 100]} 
