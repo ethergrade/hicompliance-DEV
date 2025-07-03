@@ -31,39 +31,22 @@ export const ServiceStatusCard: React.FC<ServiceStatusCardProps> = ({ services }
       {/* Header Stats */}
       <ServiceStatsCard services={services} />
 
-      {/* Services Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left Column - Security Categories - Hidden */}
-        <div className="hidden">
-          <Card className="border-border">
-            <CardHeader>
-              <CardTitle>Categorie di Sicurezza</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {services.slice(0, 5).map((service) => (
-                <SecurityCategoryItem key={service.id} service={service} />
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Right Column - HiSolution Services */}
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle>Servizi HiSolution Connessi</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-              {hiSolutionServices.map((service) => (
-                <ConnectedServiceItem key={service.id} service={service} />
-              ))}
-            </div>
-            
-            {/* Threat Indicators */}
-            <ThreatIndicatorsList />
-          </CardContent>
-        </Card>
-      </div>
+      {/* HiSolution Services - Full Width */}
+      <Card className="border-border">
+        <CardHeader>
+          <CardTitle>Servizi HiSolution Connessi</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+            {hiSolutionServices.map((service) => (
+              <ConnectedServiceItem key={service.id} service={service} />
+            ))}
+          </div>
+          
+          {/* Threat Indicators */}
+          <ThreatIndicatorsList />
+        </CardContent>
+      </Card>
     </div>
   );
 };
