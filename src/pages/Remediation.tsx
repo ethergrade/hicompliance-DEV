@@ -5,6 +5,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   AlertTriangle,
   Calendar,
@@ -16,11 +21,24 @@ import {
   Target,
   Wrench,
   BarChart3,
-  CalendarDays
+  CalendarDays,
+  Plus,
+  Calculator,
+  Euro
 } from 'lucide-react';
 
 const Remediation: React.FC = () => {
   const [selectedTimeframe, setSelectedTimeframe] = useState('90days');
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [newRemediation, setNewRemediation] = useState({
+    category: '',
+    priority: '',
+    description: '',
+    estimatedDays: '',
+    estimatedBudget: '',
+    assignedTeam: '',
+    complexity: 'medium'
+  });
 
   // Categorie critiche che necessitano remediation (status: not_started o planned_in_progress)
   const criticalCategories = [
@@ -153,6 +171,51 @@ const Remediation: React.FC = () => {
     return 'bg-red-500';
   };
 
+  // Calcolo automatico budget basato su complessità e giorni
+  const calculateBudget = (days: number, complexity: string) => {
+    const baseDayRate = {
+      low: 300,      // €300/giorno per attività semplici
+      medium: 500,   // €500/giorno per attività medie
+      high: 800      // €800/giorno per attività complesse
+    };
+    return Math.round(days * baseDayRate[complexity as keyof typeof baseDayRate]);
+  };
+
+  const calculateDays = (complexity: string, categoryType: string) => {
+    // Stima giorni basata su tipo categoria e complessità
+    const baseEstimates = {
+      'identity_management': { low: 15, medium: 30, high: 45 },
+      'software_development': { low: 20, medium: 40, high: 60 },
+      'supplier_management': { low: 10, medium: 20, high: 30 },
+      'maintenance': { low: 12, medium: 25, high: 35 },
+      'governance': { low: 8, medium: 15, high: 25 }
+    };
+    return baseEstimates[categoryType as keyof typeof baseEstimates]?.[complexity as keyof typeof baseEstimates['identity_management']] || 20;
+  };
+
+  const handleCreateRemediation = () => {
+    const estimatedDays = newRemediation.estimatedDays || calculateDays(newRemediation.complexity, newRemediation.category);
+    const estimatedBudget = newRemediation.estimatedBudget || calculateBudget(Number(estimatedDays), newRemediation.complexity);
+    
+    console.log('Creating remediation:', {
+      ...newRemediation,
+      estimatedDays,
+      estimatedBudget: `€${estimatedBudget.toLocaleString()}`
+    });
+    
+    // Reset form
+    setNewRemediation({
+      category: '',
+      priority: '',
+      description: '',
+      estimatedDays: '',
+      estimatedBudget: '',
+      assignedTeam: '',
+      complexity: 'medium'
+    });
+    setIsCreateModalOpen(false);
+  };
+
   // Metriche actionable
   const actionableMetrics = {
     totalBudget: '€23,500',
@@ -174,6 +237,181 @@ const Remediation: React.FC = () => {
             </p>
           </div>
           <div className="flex space-x-2">
+            <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+              <DialogTrigger asChild>
+                <Button className="bg-green-600 hover:bg-green-700 text-white">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Crea Remediation
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center">
+                    <Calculator className="w-5 h-5 mr-2" />
+                    Crea Nuova Remediation
+                  </DialogTitle>
+                </DialogHeader>
+                
+                <div className="space-y-6 py-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="category">Categoria Assessment</Label>
+                      <Select value={newRemediation.category} onValueChange={(value) => 
+                        setNewRemediation(prev => ({ ...prev, category: value }))
+                      }>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleziona categoria" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="identity_management">Gestione delle identità</SelectItem>
+                          <SelectItem value="software_development">Sviluppo software</SelectItem>
+                          <SelectItem value="supplier_management">Gestione fornitori</SelectItem>
+                          <SelectItem value="maintenance">Manutenzione continua</SelectItem>
+                          <SelectItem value="governance">Governance</SelectItem>
+                          <SelectItem value="encryption">Crittografia</SelectItem>
+                          <SelectItem value="incident_management">Gestione incidenti</SelectItem>
+                          <SelectItem value="risk_management">Gestione del rischio</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="priority">Priorità</Label>
+                      <Select value={newRemediation.priority} onValueChange={(value) => 
+                        setNewRemediation(prev => ({ ...prev, priority: value }))
+                      }>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleziona priorità" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="critica">Critica</SelectItem>
+                          <SelectItem value="alta">Alta</SelectItem>
+                          <SelectItem value="media">Media</SelectItem>
+                          <SelectItem value="bassa">Bassa</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="description">Descrizione Remediation</Label>
+                    <Textarea
+                      id="description"
+                      value={newRemediation.description}
+                      onChange={(e) => setNewRemediation(prev => ({ ...prev, description: e.target.value }))}
+                      placeholder="Descrivi le azioni da intraprendere per la remediation..."
+                      rows={3}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="complexity">Complessità</Label>
+                      <Select value={newRemediation.complexity} onValueChange={(value) => 
+                        setNewRemediation(prev => ({ ...prev, complexity: value }))
+                      }>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="low">Bassa (€300/gg)</SelectItem>
+                          <SelectItem value="medium">Media (€500/gg)</SelectItem>
+                          <SelectItem value="high">Alta (€800/gg)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="estimatedDays">Giorni Stimati</Label>
+                      <Input
+                        id="estimatedDays"
+                        type="number"
+                        value={newRemediation.estimatedDays}
+                        onChange={(e) => setNewRemediation(prev => ({ ...prev, estimatedDays: e.target.value }))}
+                        placeholder={`Auto: ${calculateDays(newRemediation.complexity, newRemediation.category)}`}
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="estimatedBudget">Budget Stimato (€)</Label>
+                      <Input
+                        id="estimatedBudget"
+                        type="number"
+                        value={newRemediation.estimatedBudget}
+                        onChange={(e) => setNewRemediation(prev => ({ ...prev, estimatedBudget: e.target.value }))}
+                        placeholder={`Auto: €${calculateBudget(
+                          Number(newRemediation.estimatedDays) || calculateDays(newRemediation.complexity, newRemediation.category), 
+                          newRemediation.complexity
+                        ).toLocaleString()}`}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="assignedTeam">Team Assegnato</Label>
+                    <Select value={newRemediation.assignedTeam} onValueChange={(value) => 
+                      setNewRemediation(prev => ({ ...prev, assignedTeam: value }))
+                    }>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleziona team" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="IT Security">IT Security Team</SelectItem>
+                        <SelectItem value="Development">Development Team</SelectItem>
+                        <SelectItem value="DevSecOps">DevSecOps Team</SelectItem>
+                        <SelectItem value="Procurement">Procurement Team</SelectItem>
+                        <SelectItem value="Operations">Operations Team</SelectItem>
+                        <SelectItem value="Compliance">Compliance Team</SelectItem>
+                        <SelectItem value="HR">HR & Training</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Anteprima calcoli */}
+                  <Card className="bg-muted/50">
+                    <CardContent className="p-4">
+                      <h4 className="font-medium mb-3 flex items-center">
+                        <Euro className="w-4 h-4 mr-2" />
+                        Stima Automatica
+                      </h4>
+                      <div className="grid grid-cols-3 gap-4 text-sm">
+                        <div>
+                          <span className="text-muted-foreground">Giorni:</span>
+                          <p className="font-medium">
+                            {newRemediation.estimatedDays || calculateDays(newRemediation.complexity, newRemediation.category)} giorni
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Budget:</span>
+                          <p className="font-medium">
+                            €{(Number(newRemediation.estimatedBudget) || calculateBudget(
+                              Number(newRemediation.estimatedDays) || calculateDays(newRemediation.complexity, newRemediation.category), 
+                              newRemediation.complexity
+                            )).toLocaleString()}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Tariffa/gg:</span>
+                          <p className="font-medium">
+                            €{newRemediation.complexity === 'low' ? '300' : newRemediation.complexity === 'high' ? '800' : '500'}
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <div className="flex justify-end space-x-2">
+                    <Button variant="outline" onClick={() => setIsCreateModalOpen(false)}>
+                      Annulla
+                    </Button>
+                    <Button onClick={handleCreateRemediation} className="bg-green-600 hover:bg-green-700">
+                      Crea Remediation
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+            
             <Button variant="outline">
               <FileText className="w-4 h-4 mr-2" />
               Esporta Piano
