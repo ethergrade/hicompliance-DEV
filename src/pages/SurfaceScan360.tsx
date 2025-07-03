@@ -116,7 +116,7 @@ const SurfaceScan360: React.FC = () => {
           </div>
 
           {/* Stats Overview */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
             <Card className="border-border">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
@@ -149,6 +149,18 @@ const SurfaceScan360: React.FC = () => {
                     <p className="text-2xl font-bold text-yellow-500">76</p>
                   </div>
                   <TrendingUp className="w-8 h-8 text-yellow-500" />
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Asset Monitorati</p>
+                    <p className="text-2xl font-bold text-foreground">34</p>
+                  </div>
+                  <Shield className="w-8 h-8 text-primary" />
                 </div>
               </CardContent>
             </Card>
