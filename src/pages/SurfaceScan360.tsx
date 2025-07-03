@@ -21,6 +21,15 @@ import {
 
 const SurfaceScan360: React.FC = () => {
   const [openTooltip, setOpenTooltip] = useState<number | null>(null);
+  
+  const publicAssets = [
+    { ip: '203.0.113.10', hostname: 'cliente1.com', score: 95, risk: 'Basso', status: 'Sicuro', ports: [80, 443], services: ['HTTP', 'HTTPS'] },
+    { ip: '203.0.113.25', hostname: 'mail.cliente1.com', score: 78, risk: 'Medio', status: 'Attenzione', ports: [25, 587, 993], services: ['SMTP', 'IMAPS'] },
+    { ip: '203.0.113.45', hostname: 'vpn.cliente1.com', score: 45, risk: 'Alto', status: 'Critico', ports: [1723, 443], services: ['PPTP', 'OpenVPN'] },
+    { ip: '203.0.113.67', hostname: 'api.cliente1.com', score: 88, risk: 'Basso', status: 'Sicuro', ports: [443, 8080], services: ['HTTPS', 'API'] },
+    { ip: '203.0.113.89', hostname: 'ftp.cliente1.com', score: 62, risk: 'Medio', status: 'Attenzione', ports: [21, 22], services: ['FTP', 'SSH'] },
+  ];
+
   const scanResults = [
     { 
       domain: 'cliente1.com', 
@@ -66,6 +75,15 @@ const SurfaceScan360: React.FC = () => {
       ]
     },
   ];
+
+  const getRiskColor = (risk: string) => {
+    switch (risk) {
+      case 'Basso': return 'text-green-500';
+      case 'Medio': return 'text-yellow-500';
+      case 'Alto': return 'text-red-500';
+      default: return 'text-gray-500';
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -177,6 +195,61 @@ const SurfaceScan360: React.FC = () => {
               </CardContent>
             </Card>
           </div>
+
+          {/* Public Assets Table */}
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle>Asset IP Pubblici Monitorati</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {publicAssets.map((asset, index) => (
+                  <div key={index} className="flex items-center justify-between p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors">
+                    <div className="flex items-center space-x-4">
+                      <div className="p-2 rounded-lg bg-primary/10">
+                        <Shield className="w-5 h-5 text-primary" />
+                      </div>
+                      <div>
+                        <h4 className="font-medium">{asset.ip}</h4>
+                        <p className="text-sm text-muted-foreground">{asset.hostname}</p>
+                        <div className="flex items-center space-x-2 mt-1">
+                          <span className="text-xs text-muted-foreground">Porte:</span>
+                          <div className="flex space-x-1">
+                            {asset.ports.map((port, portIndex) => (
+                              <Badge key={portIndex} variant="outline" className="text-xs">
+                                {port}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-4">
+                      <div className="text-center">
+                        <div className="text-sm text-muted-foreground">Servizi</div>
+                        <div className="flex space-x-1 mt-1">
+                          {asset.services.map((service, serviceIndex) => (
+                            <Badge key={serviceIndex} variant="secondary" className="text-xs">
+                              {service}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-medium">Score: {asset.score}/100</div>
+                        <div className={`text-xs font-medium ${getRiskColor(asset.risk)}`}>
+                          Rischio: {asset.risk}
+                        </div>
+                        <Badge variant={getStatusBadge(asset.status) as any} className="mt-1">
+                          {asset.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Scan Results */}
           <Card className="border-border">
