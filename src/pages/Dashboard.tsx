@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { MetricCard } from '@/components/dashboard/MetricCard';
-import { ServiceStatusCard } from '@/components/dashboard/ServiceStatusCard';
 import { HiSolutionStatusGrid } from '@/components/dashboard/HiSolutionStatusGrid';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -269,7 +268,6 @@ const Dashboard: React.FC = () => {
 
         {/* Additional Components */}
         <HiSolutionStatusGrid services={services} />
-        <ServiceStatusCard services={services} />
       </div>
     </DashboardLayout>
   );
