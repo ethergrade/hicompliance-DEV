@@ -245,7 +245,7 @@ const Index = () => {
                   </div>
                   <h3 className="font-semibold text-lg">{service.name}</h3>
                 </div>
-                <p className="text-muted-foreground text-sm">{service.description}</p>
+                <p className="text-muted-foreground text-sm">Monitoraggio dispositivi</p>
               </div>
             ))}
           </div>
