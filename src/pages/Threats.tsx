@@ -492,9 +492,9 @@ const Threats: React.FC = () => {
                       </TableCell>
                       <TableCell>
                         {threat.cve && (
-                          <Badge variant="outline" className="font-mono text-xs border-white/30 text-white">
+                          <span className="font-mono text-xs text-white">
                             {threat.cve}
-                          </Badge>
+                          </span>
                         )}
                       </TableCell>
                       <TableCell>
