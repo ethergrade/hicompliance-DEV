@@ -6,6 +6,7 @@ import { HiSolutionStatusGrid } from '@/components/dashboard/HiSolutionStatusGri
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { supabase } from '@/integrations/supabase/client';
+import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 
 const Dashboard: React.FC = () => {
   const { userProfile } = useAuth();
@@ -68,6 +69,15 @@ const Dashboard: React.FC = () => {
     totalAssets: services.length || 8,
     activeThreats: totalIssues || fallbackData.totalIssues
   };
+
+  // Prepare chart data
+  const chartData = [
+    { name: 'Attivi', value: activeServices.length || fallbackData.activeCount, color: '#10b981' },
+    { name: 'Allerta', value: alertServices.length || fallbackData.alertCount, color: '#ef4444' },
+    { name: 'Manutenzione', value: maintenanceServices.length || fallbackData.maintenanceCount, color: '#f59e0b' }
+  ];
+
+  const COLORS = ['#10b981', '#ef4444', '#f59e0b'];
 
   return (
     <DashboardLayout>
@@ -225,9 +235,27 @@ const Dashboard: React.FC = () => {
                     </p>
                   </div>
                   
-                  {/* Center - Chart Placeholder */}
+                  {/* Center - Donut Chart */}
                   <div className="flex items-center justify-center">
-                    <div className="w-24 h-24 rounded-full border-8 border-red-500 border-t-green-500 border-r-yellow-500 border-l-blue-500"></div>
+                    <div className="w-32 h-32">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={chartData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={35}
+                            outerRadius={55}
+                            paddingAngle={2}
+                            dataKey="value"
+                          >
+                            {chartData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            ))}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
                   
                   {/* Right - Stats */}
