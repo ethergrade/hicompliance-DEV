@@ -91,8 +91,7 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
           <MetricCard
             title="Conformità NIS2"
             value="Moderato"
@@ -118,6 +117,40 @@ const Dashboard: React.FC = () => {
             value={mockData.activeThreats}
             status="critical"
             description="Da risolvere"
+          />
+          <MetricCard
+            title="Servizi in Allerta"
+            value={alertServices.length || 0}
+            status="critical"
+            description="Richiedono attenzione"
+          />
+          <MetricCard
+            title="Servizi Operativi"
+            value={activeServices.length || 10}
+            status="good"
+            description="Funzionanti"
+          />
+          <MetricCard
+            title="Punteggio Medio"
+            value={hiSolutionServices.length > 0 ? Math.round(
+              hiSolutionServices.reduce((acc, s) => acc + (s.health_score || 0), 0) / 
+              hiSolutionServices.length
+            ) : 100}
+            percentage={hiSolutionServices.length > 0 ? Math.round(
+              hiSolutionServices.reduce((acc, s) => acc + (s.health_score || 0), 0) / 
+              hiSolutionServices.length
+            ) : 100}
+            status="good"
+            description="Salute generale"
+          />
+          <MetricCard
+            title="Totale Risolte"
+            value={hiSolutionServices.length > 0 ? hiSolutionServices.reduce((acc, s) => {
+              const resolved = Math.floor(50 + Math.random() * 100);
+              return acc + resolved;
+            }, 0) : 800}
+            status="good"
+            description="Issues risolte"
           />
         </div>
 
@@ -226,44 +259,6 @@ const Dashboard: React.FC = () => {
               )}
             </div>
 
-            {/* Statistiche riassuntive */}
-            <div className="border-t border-border pt-6">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="text-center p-4">
-                  <div className="text-2xl font-bold text-red-500 mb-1">
-                    {alertServices.length || 4}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Servizi in Allerta</div>
-                </div>
-                
-                <div className="text-center p-4">
-                  <div className="text-2xl font-bold text-green-500 mb-1">
-                    {activeServices.length || 3}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Servizi Operativi</div>
-                </div>
-                
-                <div className="text-center p-4">
-                  <div className="text-2xl font-bold text-yellow-500 mb-1">
-                    {hiSolutionServices.length > 0 ? Math.round(
-                      hiSolutionServices.reduce((acc, s) => acc + (s.health_score || 0), 0) / 
-                      hiSolutionServices.length
-                    ) : 76}%
-                  </div>
-                  <div className="text-sm text-muted-foreground">Punteggio Medio</div>
-                </div>
-                
-                <div className="text-center p-4">
-                  <div className="text-2xl font-bold text-blue-500 mb-1">
-                    {hiSolutionServices.length > 0 ? hiSolutionServices.reduce((acc, s) => {
-                      const resolved = Math.floor(50 + Math.random() * 100);
-                      return acc + resolved;
-                    }, 0) : 642}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Totale Risolte</div>
-                </div>
-              </div>
-            </div>
           </CardContent>
         </Card>
 
