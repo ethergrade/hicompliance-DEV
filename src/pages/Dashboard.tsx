@@ -65,7 +65,7 @@ const Dashboard: React.FC = () => {
 
   const mockData = {
     nis2Compliance: alertServices.length > 3 ? 35 : 65,
-    riskIndicator: Math.min(75 + (alertServices.length * 3), 100),
+    riskIndicator: 51,
     totalAssets: services.length || 8,
     activeThreats: totalIssues || fallbackData.totalIssues
   };
