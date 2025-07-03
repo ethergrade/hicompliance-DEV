@@ -24,6 +24,7 @@ const Assessment: React.FC = () => {
   const [animatedNotStarted, setAnimatedNotStarted] = useState(0);
   const [animatedCategoryProgress, setAnimatedCategoryProgress] = useState<number[]>([]);
   const [animatedCategoryScores, setAnimatedCategoryScores] = useState<number[]>([]);
+  const [animationsStarted, setAnimationsStarted] = useState(false);
 
   const assessmentCategories = [
     { 
@@ -231,9 +232,14 @@ const Assessment: React.FC = () => {
     requestAnimationFrame(animate);
   };
 
-  // Start animations on component mount
+  // Start animations on component mount - only once
   useEffect(() => {
+    // Prevent animations from running multiple times
+    if (animationsStarted) return;
+
     const timer = setTimeout(() => {
+      setAnimationsStarted(true);
+      
       // Animate main metrics
       animateValue(0, overallProgress, setAnimatedProgress, 2000);
       animateValue(0, overallScore, setAnimatedScore, 2200);
@@ -251,7 +257,7 @@ const Assessment: React.FC = () => {
     }, 300); // Small delay before starting animations
 
     return () => clearTimeout(timer);
-  }, [overallProgress, overallScore, assessmentCategories]);
+  }, []); // Empty dependency array ensures this runs only once
 
   return (
     <DashboardLayout>
