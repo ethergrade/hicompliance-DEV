@@ -100,7 +100,6 @@ const Index = () => {
 
   const stats = [
     { label: "Organizzazioni Protette", value: "500+", icon: Users },
-    { label: "Servizi Monitorati", value: "7", icon: Shield },
     { label: "Conformità NIS2", value: "100%", icon: CheckCircle },
     { label: "Uptime Garantito", value: "99.9%", icon: Network }
   ];
