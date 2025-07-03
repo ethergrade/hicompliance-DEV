@@ -130,8 +130,8 @@ const Dashboard: React.FC = () => {
                             {issueCount}
                           </div>
                         ) : status === 'maintenance' ? (
-                          <div className="text-xs text-yellow-500 font-medium">
-                            MANUTENZIONE
+                          <div className="text-lg font-bold text-yellow-500">
+                            {Math.floor((100 - (orgService.health_score || 75)) / 15)}
                           </div>
                         ) : (
                           <div className="text-xs text-green-500 font-medium">
@@ -174,8 +174,8 @@ const Dashboard: React.FC = () => {
                             {service.issues}
                           </div>
                         ) : service.status === 'maintenance' ? (
-                          <div className="text-xs text-yellow-500 font-medium">
-                            MANUTENZIONE
+                          <div className="text-lg font-bold text-yellow-500">
+                            {service.issues}
                           </div>
                         ) : (
                           <div className="text-xs text-green-500 font-medium">
