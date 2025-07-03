@@ -180,7 +180,7 @@ const Index = () => {
       {/* Stats Section */}
       <section className="py-16 bg-card text-center">
         <div className="container mx-auto px-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 justify-items-center">
             {stats.map((stat, index) => (
               <div key={index} className="text-center">
                 <div className="w-12 h-12 bg-gradient-cyber rounded-lg flex items-center justify-center mx-auto mb-4">
