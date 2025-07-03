@@ -69,9 +69,9 @@ const Assessment: React.FC = () => {
     { 
       name: 'Gestione fornitori e acquisti', 
       questions: 19, 
-      completed: 0, 
-      status: 'not_started',
-      score: 30 
+      completed: 1, 
+      status: 'in_progress',
+      score: 30
     },
     { 
       name: 'Governance', 
@@ -97,8 +97,8 @@ const Assessment: React.FC = () => {
     { 
       name: 'Manutenzione e miglioramento continuo', 
       questions: 17, 
-      completed: 0, 
-      status: 'not_started',
+      completed: 1, 
+      status: 'in_progress',
       score: 35 
     },
     { 
@@ -111,8 +111,8 @@ const Assessment: React.FC = () => {
     { 
       name: 'Sviluppo software', 
       questions: 23, 
-      completed: 0, 
-      status: 'not_started',
+      completed: 1, 
+      status: 'in_progress',
       score: 40 
     },
   ];
