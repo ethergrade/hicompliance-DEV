@@ -101,7 +101,8 @@ const Index = () => {
   const stats = [
     { label: "Organizzazioni Protette", value: "500+", icon: Users },
     { label: "Conformità NIS2", value: "100%", icon: CheckCircle },
-    { label: "Uptime Garantito", value: "99.9%", icon: Network }
+    { label: "Uptime Garantito", value: "99.9%", icon: Network },
+    { label: "delle aziende hanno ridotto il rischio nei primi 3 mesi", value: "63%", icon: Shield }
   ];
 
   return (
