@@ -148,7 +148,7 @@ const Index = () => {
           <h1 className="text-5xl md:text-6xl font-bold mb-6">
             Piattaforma Integrata di
             <span className="block bg-gradient-cyber bg-clip-text text-transparent">
-              Cyber Risk Management
+              HiCompliance: Piattaforma integrata di Cyber Risk Management
             </span>
           </h1>
           <p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto">
