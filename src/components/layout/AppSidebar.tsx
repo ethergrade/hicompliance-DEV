@@ -15,7 +15,8 @@ import {
   Globe,
   Eye,
   ClipboardCheck,
-  Home
+  Home,
+  Wrench
 } from 'lucide-react';
 import {
   Sidebar,
@@ -48,6 +49,11 @@ const navigation = [
     title: 'Assessment',
     href: '/assessment',
     icon: ClipboardCheck,
+  },
+  {
+    title: 'Remediation',
+    href: '/remediation',
+    icon: Wrench,
   },
   {
     title: 'SurfaceScan360',

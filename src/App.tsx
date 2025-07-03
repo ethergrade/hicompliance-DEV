@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import SurfaceScan360 from "./pages/SurfaceScan360";
 import DarkRisk360 from "./pages/DarkRisk360";
 import Assessment from "./pages/Assessment";
+import Remediation from "./pages/Remediation";
 import Analytics from "./pages/Analytics";
 import Threats from "./pages/Threats";
 import IncidentResponse from "./pages/IncidentResponse";
@@ -32,6 +33,7 @@ const App = () => (
             <Route path="/surface-scan" element={<SurfaceScan360 />} />
             <Route path="/dark-risk" element={<DarkRisk360 />} />
             <Route path="/assessment" element={<Assessment />} />
+            <Route path="/remediation" element={<Remediation />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/threats" element={<Threats />} />
             <Route path="/incident-response" element={<IncidentResponse />} />
