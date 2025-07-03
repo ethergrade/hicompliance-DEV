@@ -13,6 +13,7 @@ import Assessment from "./pages/Assessment";
 import Remediation from "./pages/Remediation";
 import Analytics from "./pages/Analytics";
 import Threats from "./pages/Threats";
+import Reports from "./pages/Reports";
 import IncidentResponse from "./pages/IncidentResponse";
 import ThreatManagement from "./pages/ThreatManagement";
 import NotFound from "./pages/NotFound";
@@ -36,6 +37,7 @@ const App = () => (
             <Route path="/remediation" element={<Remediation />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/threats" element={<Threats />} />
+            <Route path="/reports" element={<Reports />} />
             <Route path="/incident-response" element={<IncidentResponse />} />
             <Route path="/threat-management" element={<ThreatManagement />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

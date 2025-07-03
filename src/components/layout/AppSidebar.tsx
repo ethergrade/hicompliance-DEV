@@ -75,6 +75,11 @@ const navigation = [
     href: '/threats',
     icon: AlertTriangle,
   },
+  {
+    title: 'Report',
+    href: '/reports',
+    icon: FileText,
+  },
 ];
 
 const adminNavigation = [
