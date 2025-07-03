@@ -43,7 +43,7 @@ const Assessment: React.FC = () => {
       questions: 28, 
       completed: 5, 
       status: 'not_started',
-      score: 33 
+      score: 25 
     },
     { 
       name: 'Gestione degli incidenti', 
@@ -71,7 +71,7 @@ const Assessment: React.FC = () => {
       questions: 19, 
       completed: 0, 
       status: 'not_started',
-      score: 0 
+      score: 30 
     },
     { 
       name: 'Governance', 
@@ -99,7 +99,7 @@ const Assessment: React.FC = () => {
       questions: 17, 
       completed: 0, 
       status: 'not_started',
-      score: 0 
+      score: 35 
     },
     { 
       name: 'Network Security Best Practices & Operations', 
@@ -113,9 +113,15 @@ const Assessment: React.FC = () => {
       questions: 23, 
       completed: 0, 
       status: 'not_started',
-      score: 0 
+      score: 40 
     },
   ];
+
+  const getRiskLevel = (score: number) => {
+    if (score >= 71) return { level: 'Basso', color: 'text-green-500' };
+    if (score >= 41) return { level: 'Medio', color: 'text-yellow-500' };
+    return { level: 'Alto', color: 'text-red-500' };
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -298,7 +304,10 @@ const Assessment: React.FC = () => {
                   <div className="flex items-center space-x-4">
                     <div className="text-right">
                       <div className="text-sm font-medium">Punteggio: {category.score}/100</div>
-                      <div className="flex items-center space-x-1">
+                      <div className={`text-xs font-medium ${getRiskLevel(category.score).color}`}>
+                        Rischio: {getRiskLevel(category.score).level}
+                      </div>
+                      <div className="flex items-center space-x-1 mt-1">
                         {getStatusIcon(category.status)}
                         <Badge variant={getStatusBadge(category.status) as any}>
                           {getStatusText(category.status)}
