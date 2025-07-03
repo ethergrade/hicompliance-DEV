@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +16,15 @@ import {
 } from 'lucide-react';
 
 const Assessment: React.FC = () => {
+  // Animated states
+  const [animatedProgress, setAnimatedProgress] = useState(0);
+  const [animatedScore, setAnimatedScore] = useState(0);
+  const [animatedCompleted, setAnimatedCompleted] = useState(0);
+  const [animatedInProgress, setAnimatedInProgress] = useState(0);
+  const [animatedNotStarted, setAnimatedNotStarted] = useState(0);
+  const [animatedCategoryProgress, setAnimatedCategoryProgress] = useState<number[]>([]);
+  const [animatedCategoryScores, setAnimatedCategoryScores] = useState<number[]>([]);
+
   const assessmentCategories = [
     { 
       name: 'Business Continuity, Disaster recovery, Backup', 
@@ -168,6 +177,82 @@ const Assessment: React.FC = () => {
     assessmentCategories.reduce((acc, cat) => acc + cat.score, 0) / assessmentCategories.length
   );
 
+  // Animation function
+  const animateValue = (
+    startValue: number,
+    endValue: number,
+    setter: React.Dispatch<React.SetStateAction<number>>,
+    duration: number = 2000
+  ) => {
+    const startTime = Date.now();
+    const animate = () => {
+      const currentTime = Date.now();
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Easing function for smooth animation
+      const easeOutQuart = 1 - Math.pow(1 - progress, 4);
+      const currentValue = Math.round(startValue + (endValue - startValue) * easeOutQuart);
+      
+      setter(currentValue);
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      }
+    };
+    requestAnimationFrame(animate);
+  };
+
+  // Animation for arrays
+  const animateArray = (
+    endValues: number[],
+    setter: React.Dispatch<React.SetStateAction<number[]>>,
+    duration: number = 2000
+  ) => {
+    const startTime = Date.now();
+    const startValues = new Array(endValues.length).fill(0);
+    
+    const animate = () => {
+      const currentTime = Date.now();
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      const easeOutQuart = 1 - Math.pow(1 - progress, 4);
+      const currentValues = endValues.map((endValue, index) => 
+        Math.round(startValues[index] + (endValue - startValues[index]) * easeOutQuart)
+      );
+      
+      setter(currentValues);
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      }
+    };
+    requestAnimationFrame(animate);
+  };
+
+  // Start animations on component mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      // Animate main metrics
+      animateValue(0, overallProgress, setAnimatedProgress, 2000);
+      animateValue(0, overallScore, setAnimatedScore, 2200);
+      animateValue(0, assessmentCategories.filter(c => c.status === 'completed').length, setAnimatedCompleted, 1800);
+      animateValue(0, assessmentCategories.filter(c => c.status === 'in_progress').length, setAnimatedInProgress, 2100);
+      animateValue(0, assessmentCategories.filter(c => c.status === 'not_started').length, setAnimatedNotStarted, 1900);
+      
+      // Animate category progress bars
+      const categoryProgressValues = assessmentCategories.map(cat => (cat.completed / cat.questions) * 100);
+      animateArray(categoryProgressValues, setAnimatedCategoryProgress, 2500);
+      
+      // Animate category scores
+      const categoryScoreValues = assessmentCategories.map(cat => cat.score);
+      animateArray(categoryScoreValues, setAnimatedCategoryScores, 2300);
+    }, 300); // Small delay before starting animations
+
+    return () => clearTimeout(timer);
+  }, [overallProgress, overallScore, assessmentCategories]);
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -191,7 +276,7 @@ const Assessment: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Progresso Globale</p>
-                  <p className="text-2xl font-bold text-foreground">{overallProgress}%</p>
+                  <p className="text-2xl font-bold text-foreground">{animatedProgress}%</p>
                 </div>
                 <TrendingUp className="w-8 h-8 text-primary" />
               </div>
@@ -203,7 +288,7 @@ const Assessment: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Punteggio Conformità</p>
-                  <p className="text-2xl font-bold text-yellow-500">{overallScore}/100</p>
+                  <p className="text-2xl font-bold text-yellow-500">{animatedScore}/100</p>
                 </div>
                 <Target className="w-8 h-8 text-yellow-500" />
               </div>
@@ -216,7 +301,7 @@ const Assessment: React.FC = () => {
                 <div>
                   <p className="text-sm text-muted-foreground">Aree Completate</p>
                   <p className="text-2xl font-bold text-green-500">
-                    {assessmentCategories.filter(c => c.status === 'completed').length}
+                    {animatedCompleted}
                   </p>
                 </div>
                 <CheckCircle className="w-8 h-8 text-green-500" />
@@ -247,26 +332,26 @@ const Assessment: React.FC = () => {
               <div>
                 <div className="flex justify-between text-sm mb-2">
                   <span>Progresso Assessment</span>
-                  <span>{overallProgress}%</span>
+                  <span>{animatedProgress}%</span>
                 </div>
-                <Progress value={overallProgress} className="h-2" />
+                <Progress value={animatedProgress} className="h-2" />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-500">
-                    {assessmentCategories.filter(c => c.status === 'completed').length}
+                    {animatedCompleted}
                   </div>
                   <div className="text-sm text-muted-foreground">Aree Completate</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-yellow-500">
-                    {assessmentCategories.filter(c => c.status === 'in_progress').length}
+                    {animatedInProgress}
                   </div>
                   <div className="text-sm text-muted-foreground">In Corso</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-gray-500">
-                    {assessmentCategories.filter(c => c.status === 'not_started').length}
+                    {animatedNotStarted}
                   </div>
                   <div className="text-sm text-muted-foreground">Da Iniziare</div>
                 </div>
@@ -295,7 +380,7 @@ const Assessment: React.FC = () => {
                       </p>
                       <div className="mt-2">
                         <Progress 
-                          value={(category.completed / category.questions) * 100} 
+                          value={animatedCategoryProgress[index] || 0} 
                           className="h-1.5 w-48" 
                         />
                       </div>
@@ -303,7 +388,7 @@ const Assessment: React.FC = () => {
                   </div>
                   <div className="flex items-center space-x-4">
                     <div className="text-right">
-                      <div className="text-sm font-medium">Punteggio: {category.score}/100</div>
+                      <div className="text-sm font-medium">Punteggio: {animatedCategoryScores[index] || 0}/100</div>
                       <div className={`text-xs font-medium ${getRiskLevel(category.score).color}`}>
                         Rischio: {getRiskLevel(category.score).level}
                       </div>
