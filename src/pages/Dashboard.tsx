@@ -25,16 +25,16 @@ const Dashboard: React.FC = () => {
       } else {
         // Mock data for demo when no user is logged in
         const mockServices = [
-          { id: '1', status: 'active', health_score: 100, services: { name: 'HiFirewall', code: 'hi_firewall' } },
-          { id: '2', status: 'active', health_score: 100, services: { name: 'HiEndpoint', code: 'hi_endpoint' } },
-          { id: '3', status: 'active', health_score: 100, services: { name: 'HiMail', code: 'hi_mail' } },
-          { id: '4', status: 'active', health_score: 100, services: { name: 'HiLog', code: 'hi_log' } },
-          { id: '5', status: 'active', health_score: 100, services: { name: 'HiPatch', code: 'hi_patch' } },
-          { id: '6', status: 'active', health_score: 100, services: { name: 'HiMfa', code: 'hi_mfa' } },
-          { id: '7', status: 'active', health_score: 100, services: { name: 'HiTrack', code: 'hi_track' } },
-          { id: '8', status: 'active', health_score: 100, services: { name: 'Cloud Security', code: 'cloud_security' } },
-          { id: '9', status: 'active', health_score: 100, services: { name: 'Endpoint Security', code: 'endpoint_security' } },
-          { id: '10', status: 'active', health_score: 100, services: { name: 'Email Security', code: 'email_security' } }
+          { id: '1', status: 'alert', health_score: 15, services: { name: 'HiFirewall', code: 'hi_firewall' } },
+          { id: '2', status: 'alert', health_score: 70, services: { name: 'HiEndpoint', code: 'hi_endpoint' } },
+          { id: '3', status: 'maintenance', health_score: 75, services: { name: 'HiMail', code: 'hi_mail' } },
+          { id: '4', status: 'alert', health_score: 10, services: { name: 'HiLog', code: 'hi_log' } },
+          { id: '5', status: 'maintenance', health_score: 65, services: { name: 'HiPatch', code: 'hi_patch' } },
+          { id: '6', status: 'active', health_score: 95, services: { name: 'HiMfa', code: 'hi_mfa' } },
+          { id: '7', status: 'active', health_score: 90, services: { name: 'HiTrack', code: 'hi_track' } },
+          { id: '8', status: 'maintenance', health_score: 70, services: { name: 'Cloud Security', code: 'cloud_security' } },
+          { id: '9', status: 'active', health_score: 88, services: { name: 'Endpoint Security', code: 'endpoint_security' } },
+          { id: '10', status: 'alert', health_score: 60, services: { name: 'Email Security', code: 'email_security' } }
         ];
         setServices(mockServices);
       }
