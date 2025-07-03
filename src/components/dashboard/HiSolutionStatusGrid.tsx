@@ -85,7 +85,7 @@ export const HiSolutionStatusGrid: React.FC<HiSolutionStatusGridProps> = ({ serv
   const hiServices = services.filter(s => s.services.code.startsWith('hi_'));
   
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 hidden">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
