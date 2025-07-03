@@ -30,7 +30,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { Button } from '@/components/ui/button';
+import { LogoutButton } from '@/components/auth/LogoutButton';
 
 const navigation = [
   {
@@ -82,7 +82,7 @@ export const AppSidebar: React.FC = () => {
   const location = useLocation();
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
-  const { userProfile, signOut } = useAuth();
+  const { userProfile } = useAuth();
   
   const isAdmin = userProfile?.user_type === 'admin';
 
@@ -214,26 +214,21 @@ export const AppSidebar: React.FC = () => {
                 {isAdmin ? 'Amministratore' : 'Cliente'}
               </p>
             </div>
-            <Button 
-              onClick={signOut}
+            <LogoutButton 
               variant="outline" 
               size="sm" 
               className="w-full text-sidebar-foreground/80 border-sidebar-border hover:bg-sidebar-accent hover:text-sidebar-foreground"
-            >
-              <LogOut className="w-4 h-4 mr-2" />
-              Disconnetti
-            </Button>
+              showText={true}
+            />
           </div>
         )}
         {collapsed && (
-          <Button 
-            onClick={signOut}
+          <LogoutButton 
             variant="outline" 
             size="sm" 
             className="w-full text-sidebar-foreground/80 border-sidebar-border hover:bg-sidebar-accent hover:text-sidebar-foreground"
-          >
-            <LogOut className="w-4 h-4" />
-          </Button>
+            showText={false}
+          />
         )}
       </SidebarFooter>
     </Sidebar>
