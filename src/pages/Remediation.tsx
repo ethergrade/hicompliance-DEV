@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { format, addDays, differenceInDays, parseISO } from 'date-fns';
 import { 
   AlertTriangle,
   Calendar,
@@ -88,7 +89,7 @@ const Remediation: React.FC = () => {
     }
   ];
 
-  // Azioni GANTT
+  // Azioni GANTT con date più realistiche
   const ganttActions = [
     {
       id: 1,
@@ -99,7 +100,8 @@ const Remediation: React.FC = () => {
       progress: 0,
       assignee: 'IT Security Team',
       priority: 'Critica',
-      dependencies: []
+      dependencies: [],
+      color: '#DC2626'
     },
     {
       id: 2,
@@ -110,7 +112,8 @@ const Remediation: React.FC = () => {
       progress: 0,
       assignee: 'Security Auditor',
       priority: 'Critica',
-      dependencies: []
+      dependencies: [],
+      color: '#DC2626'
     },
     {
       id: 3,
@@ -121,7 +124,8 @@ const Remediation: React.FC = () => {
       progress: 15,
       assignee: 'DevSecOps Team',
       priority: 'Alta',
-      dependencies: []
+      dependencies: [],
+      color: '#EA580C'
     },
     {
       id: 4,
@@ -132,7 +136,8 @@ const Remediation: React.FC = () => {
       progress: 0,
       assignee: 'HR & Security',
       priority: 'Alta',
-      dependencies: []
+      dependencies: [],
+      color: '#EA580C'
     },
     {
       id: 5,
@@ -143,7 +148,20 @@ const Remediation: React.FC = () => {
       progress: 0,
       assignee: 'Procurement Team',
       priority: 'Media',
-      dependencies: []
+      dependencies: [],
+      color: '#EAB308'
+    },
+    {
+      id: 6,
+      task: 'Implementazione procedure backup',
+      category: 'Business Continuity',
+      startDate: '2025-03-01',
+      endDate: '2025-04-15',
+      progress: 0,
+      assignee: 'Operations Team',
+      priority: 'Alta',
+      dependencies: [],
+      color: '#EA580C'
     }
   ];
 
@@ -216,7 +234,47 @@ const Remediation: React.FC = () => {
     setIsCreateModalOpen(false);
   };
 
-  // Metriche actionable
+  // Funzioni per il Gantt Chart
+  const getGanttData = () => {
+    const startDate = new Date('2025-01-01');
+    const endDate = new Date('2025-05-01');
+    const totalDays = differenceInDays(endDate, startDate);
+    
+    return ganttActions.map(action => {
+      const actionStart = parseISO(action.startDate);
+      const actionEnd = parseISO(action.endDate);
+      const daysFromStart = differenceInDays(actionStart, startDate);
+      const duration = differenceInDays(actionEnd, actionStart);
+      
+      return {
+        ...action,
+        startOffset: (daysFromStart / totalDays) * 100,
+        width: (duration / totalDays) * 100,
+        progressWidth: ((duration * action.progress) / 100 / totalDays) * 100
+      };
+    });
+  };
+
+  const ganttData = getGanttData();
+
+  // Generiamo le settimane per l'header del Gantt
+  const generateWeeks = () => {
+    const weeks = [];
+    const startDate = new Date('2025-01-01');
+    const endDate = new Date('2025-05-01');
+    let currentDate = startDate;
+    
+    while (currentDate < endDate) {
+      weeks.push({
+        label: format(currentDate, 'dd/MM'),
+        date: new Date(currentDate)
+      });
+      currentDate = addDays(currentDate, 7);
+    }
+    return weeks;
+  };
+
+  const weeks = generateWeeks();
   const actionableMetrics = {
     totalBudget: '€23,500',
     estimatedCompletion: '90 giorni',
@@ -566,52 +624,115 @@ const Remediation: React.FC = () => {
           </TabsContent>
 
           <TabsContent value="gantt" className="space-y-6">
-            {/* GANTT Chart Semplificato */}
             <Card className="border-border">
               <CardHeader>
                 <CardTitle className="flex items-center">
                   <Calendar className="w-5 h-5 mr-2 text-primary" />
-                  GANTT Operativo - Azioni Prioritarie
+                  GANTT Operativo - Timeline Remediation
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  <div className="grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground border-b pb-2">
-                    <div className="col-span-4">Attività</div>
-                    <div className="col-span-2">Assegnatario</div>
-                    <div className="col-span-2">Data Inizio</div>
-                    <div className="col-span-2">Data Fine</div>
-                    <div className="col-span-1">Progresso</div>
-                    <div className="col-span-1">Priorità</div>
-                  </div>
-                  
-                  {ganttActions.map((action) => (
-                    <div key={action.id} className="grid grid-cols-12 gap-2 items-center py-2 border-b border-border/50">
-                      <div className="col-span-4">
-                        <div className="font-medium text-sm">{action.task}</div>
-                        <div className="text-xs text-muted-foreground">{action.category}</div>
-                      </div>
-                      <div className="col-span-2 text-sm">{action.assignee}</div>
-                      <div className="col-span-2 text-sm">{action.startDate}</div>
-                      <div className="col-span-2 text-sm">{action.endDate}</div>
-                      <div className="col-span-1">
-                        <div className="flex items-center space-x-1">
-                          <div className="w-8 h-2 bg-gray-200 rounded-full overflow-hidden">
-                            <div 
-                              className={`h-full transition-all duration-300 ${getProgressColor(action.progress)}`}
-                              style={{ width: `${action.progress}%` }}
-                            />
+                <div className="overflow-x-auto">
+                  {/* Header timeline */}
+                  <div className="mb-4">
+                    <div className="flex">
+                      <div className="w-64 flex-shrink-0"></div>
+                      <div className="flex-1 flex border-b border-border">
+                        {weeks.map((week, index) => (
+                          <div 
+                            key={index} 
+                            className="flex-1 text-center text-xs text-muted-foreground py-2 border-r border-border/50"
+                          >
+                            {week.label}
                           </div>
-                          <span className="text-xs">{action.progress}%</span>
-                        </div>
-                      </div>
-                      <div className="col-span-1">
-                        <Badge variant={getPriorityColor(action.priority) as any} className="text-xs">
-                          {action.priority}
-                        </Badge>
+                        ))}
                       </div>
                     </div>
-                  ))}
+                  </div>
+
+                  {/* Gantt bars */}
+                  <div className="space-y-3">
+                    {ganttData.map((action) => (
+                      <div key={action.id} className="flex items-center">
+                        {/* Task info */}
+                        <div className="w-64 flex-shrink-0 pr-4">
+                          <div className="text-sm font-medium text-foreground">
+                            {action.task}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {action.assignee}
+                          </div>
+                          <div className="flex items-center space-x-2 mt-1">
+                            <Badge 
+                              variant={action.priority === 'Critica' ? 'destructive' : 
+                                      action.priority === 'Alta' ? 'default' : 'secondary'} 
+                              className="text-xs"
+                            >
+                              {action.priority}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {action.progress}%
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Gantt timeline */}
+                        <div className="flex-1 relative h-8 bg-muted/20 rounded">
+                          {/* Task bar */}
+                          <div
+                            className="absolute h-6 top-1 rounded-sm flex items-center px-1"
+                            style={{
+                              left: `${action.startOffset}%`,
+                              width: `${action.width}%`,
+                              backgroundColor: action.color + '40',
+                              border: `2px solid ${action.color}`
+                            }}
+                          >
+                            {/* Progress bar */}
+                            <div
+                              className="h-full rounded-sm"
+                              style={{
+                                width: `${action.progress}%`,
+                                backgroundColor: action.color,
+                                minWidth: action.progress > 0 ? '4px' : '0'
+                              }}
+                            />
+                          </div>
+                          
+                          {/* Tooltip info */}
+                          <div className="absolute top-8 left-0 text-xs text-muted-foreground whitespace-nowrap">
+                            {format(parseISO(action.startDate), 'dd/MM')} - {format(parseISO(action.endDate), 'dd/MM')}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Legend */}
+                  <div className="mt-6 pt-4 border-t border-border">
+                    <div className="flex items-center space-x-6 text-xs">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-4 h-2 bg-red-600 rounded"></div>
+                        <span>Critica</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-4 h-2 bg-orange-600 rounded"></div>
+                        <span>Alta</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-4 h-2 bg-yellow-600 rounded"></div>
+                        <span>Media</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-4 h-2 bg-gray-400 rounded"></div>
+                        <span>Barra: Durata totale</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-4 h-2 bg-red-600 rounded"></div>
+                        <span>Riempimento: Progresso</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
