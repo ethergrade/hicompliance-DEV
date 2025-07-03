@@ -51,11 +51,6 @@ const navigation = [
     icon: ClipboardCheck,
   },
   {
-    title: 'Remediation',
-    href: '/remediation',
-    icon: Wrench,
-  },
-  {
     title: 'SurfaceScan360',
     href: '/surface-scan',
     icon: Globe,
@@ -69,6 +64,11 @@ const navigation = [
     title: 'Analisi',
     href: '/analytics',
     icon: BarChart3,
+  },
+  {
+    title: 'Remediation',
+    href: '/remediation',
+    icon: Wrench,
   },
   {
     title: 'Minacce',
