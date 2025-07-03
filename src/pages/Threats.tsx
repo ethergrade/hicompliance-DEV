@@ -468,8 +468,8 @@ const Threats: React.FC = () => {
                     <TableRow key={threat.id} className="hover:bg-muted/50 border-b border-border">
                       <TableCell>
                         <div>
-                          <div className="font-medium text-gray-100">{threat.title}</div>
-                          <div className="text-sm text-gray-400 line-clamp-2">
+                          <div className="font-medium text-white">{threat.title}</div>
+                          <div className="text-sm text-white/70 line-clamp-2">
                             {threat.description}
                           </div>
                         </div>
@@ -480,7 +480,7 @@ const Threats: React.FC = () => {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <span className="font-medium text-gray-100">{threat.score}/100</span>
+                        <span className="font-medium text-white">{threat.score}/100</span>
                       </TableCell>
                       <TableCell>
                         <span className={getSourceColor(threat.source)}>
@@ -488,17 +488,17 @@ const Threats: React.FC = () => {
                         </span>
                       </TableCell>
                       <TableCell>
-                        <span className="font-mono text-sm text-gray-100">{threat.asset}</span>
+                        <span className="font-mono text-sm text-white">{threat.asset}</span>
                       </TableCell>
                       <TableCell>
                         {threat.cve && (
-                          <Badge variant="outline" className="font-mono text-xs border-gray-400 text-gray-100">
+                          <Badge variant="outline" className="font-mono text-xs border-white/30 text-white">
                             {threat.cve}
                           </Badge>
                         )}
                       </TableCell>
                       <TableCell>
-                        <span className="text-sm text-gray-100">{threat.category}</span>
+                        <span className="text-sm text-white">{threat.category}</span>
                       </TableCell>
                       <TableCell>
                         <Badge variant={getStatusBadge(threat.status) as any}>
@@ -508,7 +508,7 @@ const Threats: React.FC = () => {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <span className="text-sm text-gray-100">
+                        <span className="text-sm text-white">
                           {new Date(threat.discoveredAt).toLocaleDateString('it-IT')}
                         </span>
                       </TableCell>
