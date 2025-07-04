@@ -63,31 +63,31 @@ const Index = () => {
   const hiSolutionServices = [{
     icon: Shield,
     name: "HiFirewall",
-    description: "Protezione perimetrale avanzata"
+    description: "Sicurezza Perimetrale"
   }, {
     icon: Monitor,
     name: "HiEndpoint",
-    description: "Sicurezza degli endpoint"
+    description: "Sicurezza Endpoint e Server"
   }, {
     icon: Mail,
     name: "HiMail",
-    description: "Protezione email e phishing"
+    description: "Protezione caselle E-Mail"
   }, {
     icon: FileText,
     name: "HiLog",
-    description: "Gestione e analisi log"
+    description: "Monitoraggio accessi Admin"
   }, {
     icon: Download,
     name: "HiPatch",
-    description: "Gestione patch e vulnerabilità"
+    description: "Vulnerability Assessment continuativo e Patch Management"
   }, {
     icon: Lock,
     name: "HiMfa",
-    description: "Autenticazione multi-fattore"
+    description: "Protezione accessi"
   }, {
     icon: Activity,
     name: "HiTrack",
-    description: "Monitoraggio attività utenti"
+    description: "Monitoraggio Dispositivi"
   }];
   const stats = [{
     label: "Organizzazioni Protette",
