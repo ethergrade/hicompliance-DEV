@@ -245,10 +245,7 @@ const Index = () => {
           <h2 className="text-4xl font-bold text-white mb-6">
             Inizia la Tua Valutazione NIS2 Oggi
           </h2>
-          <p className="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
-            Accedi alla piattaforma per iniziare la valutazione della conformità 
-            e proteggere la tua organizzazione dalle minacce cyber
-          </p>
+          <p className="text-xl text-white/90 mb-8 max-w-2xl mx-auto">Scopri HiCompliance per iniziare la valutazione della conformità e proteggere la tua organizzazione dalle minacce cyber.</p>
           {showAuthenticatedHeader ? <Link to="/dashboard">
               <Button size="lg" variant="secondary" className="text-lg px-8">
                 Vai alla Dashboard
