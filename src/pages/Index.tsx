@@ -25,7 +25,7 @@ const Index = () => {
   const showAuthenticatedHeader = user;
   const features = [{
     icon: Shield,
-    title: "Dashboard Centralizzato",
+    title: "Dashboard Centralizzata",
     description: "Monitoraggio in tempo reale dei servizi HiSolution con metriche di sicurezza e health score",
     color: "text-blue-500",
     bgColor: "bg-blue-500/10"
