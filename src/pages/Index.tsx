@@ -4,109 +4,109 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { 
-  Shield, 
-  Monitor, 
-  Globe,
-  Eye,
-  ClipboardCheck,
-  BarChart3,
-  AlertTriangle,
-  FileText,
-  Users,
-  CheckCircle,
-  ArrowRight,
-  Lock,
-  Cloud,
-  Network,
-  Mail,
-  Download,
-  Activity
-} from 'lucide-react';
-
+import { Shield, Monitor, Globe, Eye, ClipboardCheck, BarChart3, AlertTriangle, FileText, Users, CheckCircle, ArrowRight, Lock, Cloud, Network, Mail, Download, Activity } from 'lucide-react';
 const Index = () => {
-  const { user, loading } = useAuth();
-
+  const {
+    user,
+    loading
+  } = useAuth();
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+    return <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
           <h1 className="text-4xl font-bold bg-gradient-cyber bg-clip-text text-transparent mb-4">
             HiCompliance
           </h1>
           <p className="text-muted-foreground">Caricamento...</p>
         </div>
-      </div>
-    );
+      </div>;
   }
 
   // Show different header for authenticated users
   const showAuthenticatedHeader = user;
-
-  const features = [
-    {
-      icon: Shield,
-      title: "Dashboard Centralizzato",
-      description: "Monitoraggio in tempo reale dei servizi HiSolution con metriche di sicurezza e health score",
-      color: "text-blue-500",
-      bgColor: "bg-blue-500/10"
-    },
-    {
-      icon: Globe,
-      title: "SurfaceScan360",
-      description: "Scansione completa della superficie di attacco dell'organizzazione",
-      color: "text-green-500",
-      bgColor: "bg-green-500/10"
-    },
-    {
-      icon: Eye,
-      title: "DarkRisk360",
-      description: "Monitoraggio delle minacce nel dark web e intelligence sulle vulnerabilità",
-      color: "text-purple-500",
-      bgColor: "bg-purple-500/10"
-    },
-    {
-      icon: ClipboardCheck,
-      title: "Assessment NIS2",
-      description: "Valutazione completa della conformità alla direttiva NIS2 con report dettagliati",
-      color: "text-orange-500",
-      bgColor: "bg-orange-500/10"
-    },
-    {
-      icon: BarChart3,
-      title: "Analytics Avanzate",
-      description: "Dashboard analitiche per trend di sicurezza e KPI di conformità",
-      color: "text-cyan-500",
-      bgColor: "bg-cyan-500/10"
-    },
-    {
-      icon: AlertTriangle,
-      title: "Threat Management",
-      description: "Gestione centralizzata delle minacce e incident response automatizzato",
-      color: "text-red-500",
-      bgColor: "bg-red-500/10"
-    }
-  ];
-
-  const hiSolutionServices = [
-    { icon: Shield, name: "HiFirewall", description: "Protezione perimetrale avanzata" },
-    { icon: Monitor, name: "HiEndpoint", description: "Sicurezza degli endpoint" },
-    { icon: Mail, name: "HiMail", description: "Protezione email e phishing" },
-    { icon: FileText, name: "HiLog", description: "Gestione e analisi log" },
-    { icon: Download, name: "HiPatch", description: "Gestione patch e vulnerabilità" },
-    { icon: Lock, name: "HiMfa", description: "Autenticazione multi-fattore" },
-    { icon: Activity, name: "HiTrack", description: "Monitoraggio attività utenti" }
-  ];
-
-  const stats = [
-    { label: "Organizzazioni Protette", value: "500+", icon: Users },
-    { label: "Conformità NIS2", value: "100%", icon: CheckCircle },
-    { label: "Uptime Garantito", value: "99.9%", icon: Network },
-    { label: "delle aziende hanno ridotto il rischio nei primi 3 mesi", value: "63%", icon: Shield }
-  ];
-
-  return (
-    <div className="min-h-screen bg-background">
+  const features = [{
+    icon: Shield,
+    title: "Dashboard Centralizzato",
+    description: "Monitoraggio in tempo reale dei servizi HiSolution con metriche di sicurezza e health score",
+    color: "text-blue-500",
+    bgColor: "bg-blue-500/10"
+  }, {
+    icon: Globe,
+    title: "SurfaceScan360",
+    description: "Scansione completa della superficie di attacco dell'organizzazione",
+    color: "text-green-500",
+    bgColor: "bg-green-500/10"
+  }, {
+    icon: Eye,
+    title: "DarkRisk360",
+    description: "Monitoraggio delle minacce nel dark web e intelligence sulle vulnerabilità",
+    color: "text-purple-500",
+    bgColor: "bg-purple-500/10"
+  }, {
+    icon: ClipboardCheck,
+    title: "Assessment NIS2",
+    description: "Valutazione completa della conformità alla direttiva NIS2 con report dettagliati",
+    color: "text-orange-500",
+    bgColor: "bg-orange-500/10"
+  }, {
+    icon: BarChart3,
+    title: "Analytics Avanzate",
+    description: "Dashboard analitiche per trend di sicurezza e KPI di conformità",
+    color: "text-cyan-500",
+    bgColor: "bg-cyan-500/10"
+  }, {
+    icon: AlertTriangle,
+    title: "Threat Management",
+    description: "Gestione centralizzata delle minacce e incident response automatizzato",
+    color: "text-red-500",
+    bgColor: "bg-red-500/10"
+  }];
+  const hiSolutionServices = [{
+    icon: Shield,
+    name: "HiFirewall",
+    description: "Protezione perimetrale avanzata"
+  }, {
+    icon: Monitor,
+    name: "HiEndpoint",
+    description: "Sicurezza degli endpoint"
+  }, {
+    icon: Mail,
+    name: "HiMail",
+    description: "Protezione email e phishing"
+  }, {
+    icon: FileText,
+    name: "HiLog",
+    description: "Gestione e analisi log"
+  }, {
+    icon: Download,
+    name: "HiPatch",
+    description: "Gestione patch e vulnerabilità"
+  }, {
+    icon: Lock,
+    name: "HiMfa",
+    description: "Autenticazione multi-fattore"
+  }, {
+    icon: Activity,
+    name: "HiTrack",
+    description: "Monitoraggio attività utenti"
+  }];
+  const stats = [{
+    label: "Organizzazioni Protette",
+    value: "500+",
+    icon: Users
+  }, {
+    label: "Conformità NIS2",
+    value: "100%",
+    icon: CheckCircle
+  }, {
+    label: "Uptime Garantito",
+    value: "99.9%",
+    icon: Network
+  }, {
+    label: "delle aziende hanno ridotto il rischio nei primi 3 mesi",
+    value: "63%",
+    icon: Shield
+  }];
+  return <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
@@ -121,33 +121,29 @@ const Index = () => {
               <p className="text-xs text-muted-foreground">Cyber Risk Platform</p>
             </div>
           </div>
-          {showAuthenticatedHeader ? (
-            <Link to="/dashboard">
+          {showAuthenticatedHeader ? <Link to="/dashboard">
               <Button className="bg-gradient-cyber hover:opacity-90">
                 Vai alla Dashboard
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
-            </Link>
-          ) : (
-            <Link to="/auth">
+            </Link> : <Link to="/auth">
               <Button className="bg-gradient-cyber hover:opacity-90">
                 Accedi alla Piattaforma
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
-            </Link>
-          )}
+            </Link>}
         </div>
       </header>
 
       {/* Hero Section */}
       <section className="py-20 bg-gradient-to-br from-background via-background to-muted/30">
-        <div className="container mx-auto px-4 text-center">
+        <div className="container mx-auto px-4 text-center py-[15px]">
           <Badge variant="secondary" className="mb-6">
             Conformità NIS2 • Gestione Cyber Risk • Monitoraggio 24/7
           </Badge>
           <h1 className="text-5xl md:text-6xl font-bold mb-6">
             <span className="text-white">HiCompliance:</span>
-            <span className="block bg-gradient-cyber bg-clip-text text-transparent">
+            <span className="block bg-gradient-cyber bg-clip-text text-transparent py-[10px]">
               Piattaforma integrata di Cyber Risk Management
             </span>
           </h1>
@@ -156,21 +152,17 @@ const Index = () => {
             la conformità NIS2 e il monitoraggio continuo della sicurezza aziendale.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            {showAuthenticatedHeader ? (
-              <Link to="/dashboard">
+            {showAuthenticatedHeader ? <Link to="/dashboard">
                 <Button size="lg" className="bg-gradient-cyber hover:opacity-90 text-lg px-8">
                   Vai alla Dashboard
                   <ArrowRight className="w-5 h-5 ml-2" />
                 </Button>
-              </Link>
-            ) : (
-              <Link to="/auth">
+              </Link> : <Link to="/auth">
                 <Button size="lg" className="bg-gradient-cyber hover:opacity-90 text-lg px-8">
                   Inizia Ora
                   <ArrowRight className="w-5 h-5 ml-2" />
                 </Button>
-              </Link>
-            )}
+              </Link>}
             <Button size="lg" variant="outline" className="text-lg px-8">
               Scopri di Più
             </Button>
@@ -182,15 +174,13 @@ const Index = () => {
       <section className="py-16 bg-card text-center">
         <div className="container mx-auto px-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 justify-items-center">
-            {stats.map((stat, index) => (
-              <div key={index} className="text-center">
+            {stats.map((stat, index) => <div key={index} className="text-center">
                 <div className="w-12 h-12 bg-gradient-cyber rounded-lg flex items-center justify-center mx-auto mb-4">
                   <stat.icon className="w-6 h-6 text-white" />
                 </div>
                 <div className="text-3xl font-bold text-foreground mb-2">{stat.value}</div>
                 <div className="text-sm text-muted-foreground">{stat.label}</div>
-              </div>
-            ))}
+              </div>)}
           </div>
         </div>
       </section>
@@ -207,8 +197,7 @@ const Index = () => {
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {features.map((feature, index) => (
-              <Card key={index} className="border-border hover:shadow-cyber transition-all duration-300 hover:scale-105">
+            {features.map((feature, index) => <Card key={index} className="border-border hover:shadow-cyber transition-all duration-300 hover:scale-105">
                 <CardHeader>
                   <div className={`w-12 h-12 ${feature.bgColor} rounded-lg flex items-center justify-center mb-4`}>
                     <feature.icon className={`w-6 h-6 ${feature.color}`} />
@@ -220,8 +209,7 @@ const Index = () => {
                     {feature.description}
                   </CardDescription>
                 </CardContent>
-              </Card>
-            ))}
+              </Card>)}
           </div>
         </div>
       </section>
@@ -238,8 +226,7 @@ const Index = () => {
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {hiSolutionServices.map((service, index) => (
-              <div key={index} className="bg-card rounded-xl border border-border p-6 hover:bg-muted/50 transition-colors">
+            {hiSolutionServices.map((service, index) => <div key={index} className="bg-card rounded-xl border border-border p-6 hover:bg-muted/50 transition-colors">
                 <div className="flex items-center space-x-3 mb-3">
                   <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
                     <service.icon className="w-5 h-5 text-primary" />
@@ -247,8 +234,7 @@ const Index = () => {
                   <h3 className="font-semibold text-lg">{service.name}</h3>
                 </div>
                 <p className="text-muted-foreground text-sm">Monitoraggio dispositivi</p>
-              </div>
-            ))}
+              </div>)}
           </div>
         </div>
       </section>
@@ -263,21 +249,17 @@ const Index = () => {
             Accedi alla piattaforma per iniziare la valutazione della conformità 
             e proteggere la tua organizzazione dalle minacce cyber
           </p>
-          {showAuthenticatedHeader ? (
-            <Link to="/dashboard">
+          {showAuthenticatedHeader ? <Link to="/dashboard">
               <Button size="lg" variant="secondary" className="text-lg px-8">
                 Vai alla Dashboard
                 <ArrowRight className="w-5 h-5 ml-2" />
               </Button>
-            </Link>
-          ) : (
-            <Link to="/auth">
+            </Link> : <Link to="/auth">
               <Button size="lg" variant="secondary" className="text-lg px-8">
                 Accedi alla Piattaforma
                 <ArrowRight className="w-5 h-5 ml-2" />
               </Button>
-            </Link>
-          )}
+            </Link>}
         </div>
       </section>
 
@@ -297,8 +279,6 @@ const Index = () => {
           </div>
         </div>
       </footer>
-    </div>
-  );
+    </div>;
 };
-
 export default Index;
