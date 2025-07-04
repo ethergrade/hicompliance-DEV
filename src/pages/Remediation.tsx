@@ -64,7 +64,7 @@ const Remediation: React.FC = () => {
       status: 'not_started',
       estimatedDays: 45,
       assignedTeam: 'IT Security',
-      budget: '€8,500'
+      budget: '€16,500'
     },
     { 
       name: 'Sviluppo software', 
@@ -75,7 +75,7 @@ const Remediation: React.FC = () => {
       status: 'planned_in_progress',
       estimatedDays: 60,
       assignedTeam: 'Development',
-      budget: '€9,000'
+      budget: '€18,000'
     },
     { 
       name: 'Gestione fornitori e acquisti', 
@@ -86,7 +86,7 @@ const Remediation: React.FC = () => {
       status: 'planned_in_progress',
       estimatedDays: 30,
       assignedTeam: 'Procurement',
-      budget: '€3,000'
+      budget: '€4,500'
     },
     { 
       name: 'Manutenzione e miglioramento continuo', 
@@ -97,7 +97,7 @@ const Remediation: React.FC = () => {
       status: 'planned_in_progress',
       estimatedDays: 35,
       assignedTeam: 'Operations',
-      budget: '€3,000'
+      budget: '€4,500'
     }
   ];
 
@@ -392,7 +392,7 @@ const Remediation: React.FC = () => {
 
   const weeks = generateWeeks();
   const actionableMetrics = {
-    totalBudget: '€23,500',
+    totalBudget: '€43,500',
     estimatedCompletion: '90 giorni',
     riskReduction: '60%',
     complianceImprovement: '55%',
