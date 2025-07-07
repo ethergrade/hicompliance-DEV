@@ -156,10 +156,10 @@ const DarkRisk360: React.FC = () => {
                       </div>
                     </div>
                     <div className="flex items-center space-x-4">
-                      <div className="text-right">
-                        <div className="text-sm font-medium">
+                      <div className="flex items-center space-x-3">
+                        <div className="text-2xl font-bold">
                           <span className={getSeverityColor(threat.severity)}>
-                            {threat.count} elementi
+                            {threat.count}
                           </span>
                         </div>
                         <Badge variant={getSeverityBadge(threat.severity) as any}>
