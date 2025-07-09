@@ -33,7 +33,7 @@ const Remediation: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [draggedTask, setDraggedTask] = useState<number | null>(null);
   const [draggedOver, setDraggedOver] = useState<number | null>(null);
-  const [taskOrder, setTaskOrder] = useState<number[]>([1, 2, 3, 4, 5, 6]);
+  const [taskOrder, setTaskOrder] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
   const [resizingTask, setResizingTask] = useState<{ id: number, side: 'left' | 'right' } | null>(null);
   const [taskDates, setTaskDates] = useState<Record<number, { startDate: string, endDate: string }>>({
     1: { startDate: '2025-01-15', endDate: '2025-03-01' },
@@ -41,7 +41,8 @@ const Remediation: React.FC = () => {
     3: { startDate: '2025-02-01', endDate: '2025-04-01' },
     4: { startDate: '2025-01-25', endDate: '2025-02-25' },
     5: { startDate: '2025-02-15', endDate: '2025-03-15' },
-    6: { startDate: '2025-03-01', endDate: '2025-04-15' }
+    6: { startDate: '2025-03-01', endDate: '2025-04-15' },
+    7: { startDate: '2025-02-10', endDate: '2025-03-20' }
   });
   const [newRemediation, setNewRemediation] = useState({
     category: '',
@@ -171,6 +172,18 @@ const Remediation: React.FC = () => {
       endDate: '2025-04-15',
       progress: 0,
       assignee: 'Operations Team',
+      priority: 'Alta',
+      dependencies: [],
+      color: '#EA580C'
+    },
+    {
+      id: 7,
+      task: 'Implementazione Incident Remediation Plan',
+      category: 'Incident Management',
+      startDate: '2025-02-10',
+      endDate: '2025-03-20',
+      progress: 0,
+      assignee: 'IT Security Team',
       priority: 'Alta',
       dependencies: [],
       color: '#EA580C'
@@ -392,12 +405,12 @@ const Remediation: React.FC = () => {
 
   const weeks = generateWeeks();
   const actionableMetrics = {
-    totalBudget: '€43,500',
-    estimatedCompletion: '90 giorni',
-    riskReduction: '60%',
-    complianceImprovement: '55%',
+    totalBudget: '€62,500',
+    estimatedCompletion: '120 giorni',
+    riskReduction: '65%',
+    complianceImprovement: '60%',
     criticalIssues: 4,
-    highPriorityActions: 6
+    highPriorityActions: 7
   };
 
   return (
