@@ -163,7 +163,12 @@ const Index = () => {
                   <ArrowRight className="w-5 h-5 ml-2" />
                 </Button>
               </Link>}
-            <Button size="lg" variant="outline" className="text-lg px-8">
+            <Button 
+              size="lg" 
+              variant="outline" 
+              className="text-lg px-8"
+              onClick={() => document.getElementById('valutazione-nis2')?.scrollIntoView({ behavior: 'smooth' })}
+            >
               Scopri di Più
             </Button>
           </div>
@@ -240,7 +245,7 @@ const Index = () => {
       </section>
 
       {/* CTA Section */}
-      <section className="py-20 bg-gradient-cyber">
+      <section id="valutazione-nis2" className="py-20 bg-gradient-cyber">
         <div className="container mx-auto px-4 text-center">
           <h2 className="text-4xl font-bold text-white mb-6">
             Inizia la Tua Valutazione NIS2 Oggi
