@@ -98,13 +98,8 @@ export const LoginPage: React.FC = () => {
                     {isLoading ? 'Accesso in corso...' : 'Accedi'}
                   </Button>
                 </form>
-                
-                <div className="text-sm text-muted-foreground p-3 bg-muted rounded-md">
-                  <strong>Accesso Admin:</strong><br />
-                  Email: <code>admin@admin.com</code><br />
-                  Password: <code>adminadmin</code><br />
-                  <em className="text-xs">Oppure usa solo "admin" come email</em>
-                </div>
+                // copia qui il codice
+               
               </TabsContent>
 
               <TabsContent value="signup" className="space-y-4">
