@@ -271,7 +271,7 @@ const Index = () => {
               <span className="text-lg font-semibold">HiCompliance</span>
             </div>
             <p className="text-muted-foreground text-sm">
-              © 2024 HiCompliance. Piattaforma di gestione cyber risk e conformità NIS2.
+              © 2024 HiCompliance un Servizio Gestito HiSolution - Gestione Cyber Risk per la serenità tecnologica.
             </p>
           </div>
         </div>
