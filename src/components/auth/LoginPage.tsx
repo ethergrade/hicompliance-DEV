@@ -76,7 +76,7 @@ export const LoginPage: React.FC = () => {
                       id="email" 
                       name="email" 
                       type="email" 
-                      placeholder="admin o tua email"
+                      placeholder="email di login"
                       required 
                     />
                   </div>
@@ -86,7 +86,7 @@ export const LoginPage: React.FC = () => {
                       id="password" 
                       name="password" 
                       type="password" 
-                      placeholder="adminadmin o tua password"
+                      placeholder="inserisci la password per accedere"
                       required 
                     />
                   </div>
