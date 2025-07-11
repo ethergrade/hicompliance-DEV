@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { EmergencyContactForm } from '@/components/emergency/EmergencyContactForm';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 import {
   Download,
   FileText,
@@ -18,11 +21,25 @@ import {
   Eye,
   Database,
   Network,
-  Lock
+  Lock,
+  Trash2,
+  Edit
 } from 'lucide-react';
+
+interface EmergencyContact {
+  id: string;
+  name: string;
+  role: string;
+  phone: string;
+  email: string;
+  category: 'security' | 'it' | 'authorities';
+}
 
 const IncidentResponse: React.FC = () => {
   const [selectedProcedure, setSelectedProcedure] = useState<string | null>(null);
+  const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
   // Procedure operative per incident response
   const procedures = [
@@ -193,6 +210,75 @@ const IncidentResponse: React.FC = () => {
       category: 'Tecnico'
     }
   ];
+
+  // Fetch emergency contacts from database
+  const fetchEmergencyContacts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('emergency_contacts')
+        .select('*')
+        .order('category', { ascending: true })
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      setEmergencyContacts((data || []) as EmergencyContact[]);
+    } catch (error) {
+      console.error('Error fetching emergency contacts:', error);
+      toast({
+        title: "Errore",
+        description: "Errore nel caricamento dei contatti di emergenza",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchEmergencyContacts();
+  }, []);
+
+  const handleContactAdded = () => {
+    fetchEmergencyContacts();
+  };
+
+  const handleDeleteContact = async (contactId: string) => {
+    try {
+      const { error } = await supabase
+        .from('emergency_contacts')
+        .delete()
+        .eq('id', contactId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Successo",
+        description: "Contatto eliminato con successo"
+      });
+
+      fetchEmergencyContacts();
+    } catch (error) {
+      console.error('Error deleting contact:', error);
+      toast({
+        title: "Errore",
+        description: "Errore durante l'eliminazione del contatto",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const getCategoryTitle = (category: string) => {
+    switch (category) {
+      case 'security': return 'Team di Sicurezza';
+      case 'it': return 'Team IT';
+      case 'authorities': return 'Autorità e Partner';
+      default: return category;
+    }
+  };
+
+  const getContactsByCategory = (category: string) => {
+    return emergencyContacts.filter(contact => contact.category === category);
+  };
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
@@ -375,73 +461,56 @@ const IncidentResponse: React.FC = () => {
           </TabsContent>
 
           <TabsContent value="contacts" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <Card className="border-border bg-card">
-                <CardHeader>
-                  <CardTitle className="text-white">Team di Sicurezza</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <Phone className="w-4 h-4 text-primary" />
-                      <span className="text-white">CISO: +39 02 1234 5678</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Mail className="w-4 h-4 text-primary" />
-                      <span className="text-white">security@company.com</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <AlertTriangle className="w-4 h-4 text-red-500" />
-                      <span className="text-white">Emergenze: +39 02 1234 9999</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-border bg-card">
-                <CardHeader>
-                  <CardTitle className="text-white">Team IT</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <Phone className="w-4 h-4 text-primary" />
-                      <span className="text-white">IT Manager: +39 02 1234 5679</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Mail className="w-4 h-4 text-primary" />
-                      <span className="text-white">it-support@company.com</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Users className="w-4 h-4 text-primary" />
-                      <span className="text-white">Helpdesk: +39 02 1234 1000</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-border bg-card">
-                <CardHeader>
-                  <CardTitle className="text-white">Autorità e Partner</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <Phone className="w-4 h-4 text-primary" />
-                      <span className="text-white">Polizia Postale: 113</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Mail className="w-4 h-4 text-primary" />
-                      <span className="text-white">CSIRT-IT: csirt@cert-it.gov</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Shield className="w-4 h-4 text-primary" />
-                      <span className="text-white">Partner SOC: +39 02 9876 5432</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+            {loading ? (
+              <div className="text-center text-gray-400">Caricamento contatti...</div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {['security', 'it', 'authorities'].map((category) => (
+                  <Card key={category} className="border-border bg-card">
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-white">{getCategoryTitle(category)}</CardTitle>
+                        <EmergencyContactForm onContactAdded={handleContactAdded} />
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {getContactsByCategory(category).length === 0 ? (
+                        <div className="text-gray-400 text-sm">Nessun contatto disponibile</div>
+                      ) : (
+                        getContactsByCategory(category).map((contact) => (
+                          <div key={contact.id} className="space-y-2 p-3 border border-border rounded-lg">
+                            <div className="flex items-center justify-between">
+                              <h4 className="text-white font-medium">{contact.name}</h4>
+                              <div className="flex items-center space-x-1">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleDeleteContact(contact.id)}
+                                  className="h-6 w-6 p-0 text-red-400 hover:text-red-300"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            </div>
+                            <p className="text-gray-400 text-sm">{contact.role}</p>
+                            <div className="space-y-1">
+                              <div className="flex items-center space-x-2">
+                                <Phone className="w-4 h-4 text-primary" />
+                                <span className="text-white text-sm">{contact.phone}</span>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <Mail className="w-4 h-4 text-primary" />
+                                <span className="text-white text-sm">{contact.email}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </div>

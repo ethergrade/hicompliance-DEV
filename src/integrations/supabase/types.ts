@@ -131,6 +131,50 @@ export type Database = {
           },
         ]
       }
+      emergency_contacts: {
+        Row: {
+          category: string
+          created_at: string
+          email: string
+          id: string
+          name: string
+          organization_id: string | null
+          phone: string
+          role: string
+          updated_at: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          email: string
+          id?: string
+          name: string
+          organization_id?: string | null
+          phone: string
+          role: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          email?: string
+          id?: string
+          name?: string
+          organization_id?: string | null
+          phone?: string
+          role?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "emergency_contacts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_services: {
         Row: {
           created_at: string
