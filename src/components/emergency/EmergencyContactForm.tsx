@@ -15,12 +15,15 @@ interface EmergencyContactFormProps {
 export const EmergencyContactForm: React.FC<EmergencyContactFormProps> = ({ onContactAdded }) => {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showNewCategory, setShowNewCategory] = useState(false);
   const [formData, setFormData] = useState({
-    name: '',
+    firstName: '',
+    lastName: '',
     role: '',
     phone: '',
     email: '',
-    category: ''
+    category: '',
+    newCategory: ''
   });
   const { toast } = useToast();
 
@@ -29,26 +32,46 @@ export const EmergencyContactForm: React.FC<EmergencyContactFormProps> = ({ onCo
     setLoading(true);
 
     try {
-      // Get current user's organization
-      const { data: userData } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('auth_user_id', (await supabase.auth.getUser()).data.user?.id)
-        .single();
-
-      if (!userData?.organization_id) {
+      // Get current user first
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError || !user) {
         toast({
           title: "Errore",
-          description: "Organizzazione non trovata",
+          description: "Utente non autenticato",
           variant: "destructive"
         });
         return;
       }
 
+      // Get user's organization
+      const { data: userData, error: orgError } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      if (orgError || !userData?.organization_id) {
+        console.error('Organization error:', orgError);
+        toast({
+          title: "Errore",
+          description: "Organizzazione non trovata. Contatta l'amministratore.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const finalCategory = formData.category === 'new' ? formData.newCategory : formData.category;
+      const fullName = `${formData.firstName} ${formData.lastName}`.trim();
+
       const { error } = await supabase
         .from('emergency_contacts')
         .insert({
-          ...formData,
+          name: fullName,
+          role: formData.role,
+          phone: formData.phone,
+          email: formData.email,
+          category: finalCategory,
           organization_id: userData.organization_id
         });
 
@@ -59,7 +82,16 @@ export const EmergencyContactForm: React.FC<EmergencyContactFormProps> = ({ onCo
         description: "Contatto di emergenza aggiunto con successo"
       });
 
-      setFormData({ name: '', role: '', phone: '', email: '', category: '' });
+      setFormData({ 
+        firstName: '', 
+        lastName: '', 
+        role: '', 
+        phone: '', 
+        email: '', 
+        category: '', 
+        newCategory: '' 
+      });
+      setShowNewCategory(false);
       setOpen(false);
       onContactAdded();
     } catch (error) {
@@ -76,6 +108,13 @@ export const EmergencyContactForm: React.FC<EmergencyContactFormProps> = ({ onCo
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+    
+    if (field === 'category') {
+      setShowNewCategory(value === 'new');
+      if (value !== 'new') {
+        setFormData(prev => ({ ...prev, newCategory: '' }));
+      }
+    }
   };
 
   return (
@@ -91,20 +130,34 @@ export const EmergencyContactForm: React.FC<EmergencyContactFormProps> = ({ onCo
           <DialogTitle className="text-white">Aggiungi Contatto di Emergenza</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="name" className="text-white">Nome/Ruolo</Label>
-            <Input
-              id="name"
-              value={formData.name}
-              onChange={(e) => handleInputChange('name', e.target.value)}
-              required
-              placeholder="es. CISO, Security Manager..."
-              className="bg-background border-border text-white"
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="firstName" className="text-white">Nome</Label>
+              <Input
+                id="firstName"
+                value={formData.firstName}
+                onChange={(e) => handleInputChange('firstName', e.target.value)}
+                required
+                placeholder="Mario"
+                className="bg-background border-border text-white"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="lastName" className="text-white">Cognome</Label>
+              <Input
+                id="lastName"
+                value={formData.lastName}
+                onChange={(e) => handleInputChange('lastName', e.target.value)}
+                required
+                placeholder="Rossi"
+                className="bg-background border-border text-white"
+              />
+            </div>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="role" className="text-white">Descrizione Ruolo</Label>
+            <Label htmlFor="role" className="text-white">Ruolo</Label>
             <Input
               id="role"
               value={formData.role}
@@ -150,9 +203,24 @@ export const EmergencyContactForm: React.FC<EmergencyContactFormProps> = ({ onCo
                 <SelectItem value="security" className="text-white">Team di Sicurezza</SelectItem>
                 <SelectItem value="it" className="text-white">Team IT</SelectItem>
                 <SelectItem value="authorities" className="text-white">Autorità e Partner</SelectItem>
+                <SelectItem value="new" className="text-white">+ Nuova Categoria</SelectItem>
               </SelectContent>
             </Select>
           </div>
+
+          {showNewCategory && (
+            <div className="space-y-2">
+              <Label htmlFor="newCategory" className="text-white">Nome Nuova Categoria</Label>
+              <Input
+                id="newCategory"
+                value={formData.newCategory}
+                onChange={(e) => handleInputChange('newCategory', e.target.value)}
+                required={formData.category === 'new'}
+                placeholder="es. Team Legale, Fornitori..."
+                className="bg-background border-border text-white"
+              />
+            </div>
+          )}
 
           <div className="flex gap-2 pt-4">
             <Button type="button" variant="outline" onClick={() => setOpen(false)} className="flex-1">
