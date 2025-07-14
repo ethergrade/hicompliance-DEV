@@ -180,21 +180,20 @@ export const AppSidebar: React.FC = () => {
                   </NavLink>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
+            Impostazioni
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton 
                   asChild
                   className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                >
-                  <NavLink to="/settings">
-                    <Settings className="w-4 h-4" />
-                    {!collapsed && <span>Impostazioni</span>}
-                  </NavLink>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton 
-                  asChild
-                  className="mx-2 ml-6 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                 >
                   <NavLink to="/settings/integrations">
                     <Network className="w-4 h-4" />
