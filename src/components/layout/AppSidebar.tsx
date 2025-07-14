@@ -195,6 +195,17 @@ export const AppSidebar: React.FC = () => {
                   asChild
                   className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                 >
+                  <NavLink to="/settings/users">
+                    <Users className="w-4 h-4" />
+                    {!collapsed && <span>Utenti</span>}
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton 
+                  asChild
+                  className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                >
                   <NavLink to="/settings/integrations">
                     <Network className="w-4 h-4" />
                     {!collapsed && <span>Integrazioni</span>}

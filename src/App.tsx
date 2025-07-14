@@ -18,6 +18,7 @@ import Reports from "./pages/Reports";
 import IncidentResponse from "./pages/IncidentResponse";
 import ThreatManagement from "./pages/ThreatManagement";
 import Integrations from "./pages/Integrations";
+import Users from "./pages/Users";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -43,6 +44,7 @@ const App = () => (
             <Route path="/reports" element={<Reports />} />
             <Route path="/incident-response" element={<IncidentResponse />} />
             <Route path="/threat-management" element={<ThreatManagement />} />
+            <Route path="/settings/users" element={<Users />} />
             <Route path="/settings/integrations" element={<Integrations />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
