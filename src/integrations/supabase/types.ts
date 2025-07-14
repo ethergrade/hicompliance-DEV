@@ -175,6 +175,84 @@ export type Database = {
           },
         ]
       }
+      hisolution_services: {
+        Row: {
+          code: string
+          created_at: string
+          description: string | null
+          icon: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          description?: string | null
+          icon?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          description?: string | null
+          icon?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      organization_integrations: {
+        Row: {
+          api_key: string
+          api_methods: Json | null
+          api_url: string
+          created_at: string
+          id: string
+          is_active: boolean | null
+          organization_id: string | null
+          service_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          api_key: string
+          api_methods?: Json | null
+          api_url: string
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          organization_id?: string | null
+          service_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          api_key?: string
+          api_methods?: Json | null
+          api_url?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          organization_id?: string | null
+          service_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_integrations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_integrations_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "hisolution_services"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_services: {
         Row: {
           created_at: string
