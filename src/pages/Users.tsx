@@ -56,7 +56,7 @@ const Users = () => {
       email: "",
       full_name: "",
       user_type: "client",
-      organization_id: "",
+      organization_id: "none",
       password: "",
     },
   });
@@ -112,7 +112,7 @@ const Users = () => {
           email: data.email,
           full_name: data.full_name,
           user_type: data.user_type,
-          organization_id: data.organization_id || null,
+           organization_id: data.organization_id === "none" ? null : data.organization_id,
         });
 
       if (profileError) throw profileError;
@@ -147,7 +147,7 @@ const Users = () => {
           email: data.email,
           full_name: data.full_name,
           user_type: data.user_type,
-          organization_id: data.organization_id || null,
+          organization_id: data.organization_id === "none" ? null : data.organization_id,
         })
         .eq("id", selectedUser.id);
 
@@ -207,7 +207,7 @@ const Users = () => {
         email: user.email,
         full_name: user.full_name,
         user_type: user.user_type,
-        organization_id: user.organization_id || "",
+        organization_id: user.organization_id || "none",
         password: "", // Password not editable for existing users
       });
     } else {
@@ -216,7 +216,7 @@ const Users = () => {
         email: "",
         full_name: "",
         user_type: "client",
-        organization_id: "",
+        organization_id: "none",
         password: "",
       });
     }
@@ -360,8 +360,8 @@ const Users = () => {
                               <SelectValue placeholder="Seleziona un'organizzazione" />
                             </SelectTrigger>
                           </FormControl>
-                          <SelectContent>
-                            <SelectItem value="">Nessuna organizzazione</SelectItem>
+                           <SelectContent>
+                            <SelectItem value="none">Nessuna organizzazione</SelectItem>
                             {organizations.map((org) => (
                               <SelectItem key={org.id} value={org.id}>
                                 {org.name} ({org.code})
