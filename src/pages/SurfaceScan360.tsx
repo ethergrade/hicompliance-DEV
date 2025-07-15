@@ -3,6 +3,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import {
   Tooltip,
   TooltipContent,
@@ -34,8 +35,14 @@ import {
   Search,
   Eye,
   TrendingUp,
-  Filter
+  Filter,
+  Calendar,
+  BarChart3,
+  Activity,
+  Network
 } from 'lucide-react';
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 
 const SurfaceScan360: React.FC = () => {
   const [openTooltip, setOpenTooltip] = useState<number | null>(null);
@@ -43,6 +50,7 @@ const SurfaceScan360: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [riskFilter, setRiskFilter] = useState('all');
+  const [monthlyMonitoring, setMonthlyMonitoring] = useState(false);
   const assetsPerPage = 5;
   
   const allPublicAssets = [
@@ -163,6 +171,69 @@ const SurfaceScan360: React.FC = () => {
     }
   };
 
+  // Monthly monitoring data
+  const monthlyData = [
+    { mese: 'Gen', porte_aperte: 45, porte_chiuse: 23, cve_critiche: 12, cve_risolte: 8, epss_score: 6.2 },
+    { mese: 'Feb', porte_aperte: 52, porte_chiuse: 18, cve_critiche: 15, cve_risolte: 11, epss_score: 6.8 },
+    { mese: 'Mar', porte_aperte: 48, porte_chiuse: 25, cve_critiche: 9, cve_risolte: 14, epss_score: 5.9 },
+    { mese: 'Apr', porte_aperte: 41, porte_chiuse: 32, cve_critiche: 7, cve_risolte: 18, epss_score: 5.1 },
+    { mese: 'Mag', porte_aperte: 39, porte_chiuse: 34, cve_critiche: 8, cve_risolte: 16, epss_score: 5.4 },
+    { mese: 'Giu', porte_aperte: 43, porte_chiuse: 30, cve_critiche: 11, cve_risolte: 13, epss_score: 5.8 },
+    { mese: 'Lug', porte_aperte: 46, porte_chiuse: 27, cve_critiche: 13, cve_risolte: 10, epss_score: 6.1 },
+    { mese: 'Ago', porte_aperte: 44, porte_chiuse: 29, cve_critiche: 10, cve_risolte: 15, epss_score: 5.7 },
+    { mese: 'Set', porte_aperte: 38, porte_chiuse: 35, cve_critiche: 6, cve_risolte: 19, epss_score: 4.9 },
+    { mese: 'Ott', porte_aperte: 42, porte_chiuse: 31, cve_critiche: 9, cve_risolte: 16, epss_score: 5.5 },
+    { mese: 'Nov', porte_aperte: 40, porte_chiuse: 33, cve_critiche: 8, cve_risolte: 17, epss_score: 5.2 },
+    { mese: 'Dic', porte_aperte: 37, porte_chiuse: 36, cve_critiche: 5, cve_risolte: 20, epss_score: 4.6 }
+  ];
+
+  const exposedServicesData = [
+    { name: 'HTTP/HTTPS', value: 35, color: '#3b82f6' },
+    { name: 'SSH', value: 25, color: '#10b981' },
+    { name: 'FTP', value: 15, color: '#f59e0b' },
+    { name: 'SMTP', value: 12, color: '#ef4444' },
+    { name: 'DNS', value: 8, color: '#8b5cf6' },
+    { name: 'Altro', value: 5, color: '#6b7280' }
+  ];
+
+  const riskTrendData = [
+    { mese: 'Gen', rischio_alto: 15, rischio_medio: 28, rischio_basso: 57 },
+    { mese: 'Feb', rischio_alto: 18, rischio_medio: 32, rischio_basso: 50 },
+    { mese: 'Mar', rischio_alto: 12, rischio_medio: 35, rischio_basso: 53 },
+    { mese: 'Apr', rischio_alto: 9, rischio_medio: 31, rischio_basso: 60 },
+    { mese: 'Mag', rischio_alto: 11, rischio_medio: 29, rischio_basso: 60 },
+    { mese: 'Giu', rischio_alto: 14, rischio_medio: 33, rischio_basso: 53 },
+    { mese: 'Lug', rischio_alto: 16, rischio_medio: 36, rischio_basso: 48 },
+    { mese: 'Ago', rischio_alto: 13, rischio_medio: 34, rischio_basso: 53 },
+    { mese: 'Set', rischio_alto: 8, rischio_medio: 27, rischio_basso: 65 },
+    { mese: 'Ott', rischio_alto: 10, rischio_medio: 30, rischio_basso: 60 },
+    { mese: 'Nov', rischio_alto: 9, rischio_medio: 28, rischio_basso: 63 },
+    { mese: 'Dic', rischio_alto: 6, rischio_medio: 25, rischio_basso: 69 }
+  ];
+
+  const chartConfig = {
+    porte_aperte: {
+      label: "Porte Aperte",
+      color: "hsl(var(--destructive))",
+    },
+    porte_chiuse: {
+      label: "Porte Chiuse", 
+      color: "hsl(var(--primary))",
+    },
+    cve_critiche: {
+      label: "CVE Critiche",
+      color: "hsl(var(--destructive))",
+    },
+    cve_risolte: {
+      label: "CVE Risolte",
+      color: "hsl(var(--primary))",
+    },
+    epss_score: {
+      label: "EPSS Score",
+      color: "hsl(var(--chart-3))",
+    }
+  };
+
   const toggleTooltip = (index: number) => {
     setOpenTooltip(openTooltip === index ? null : index);
   };
@@ -178,10 +249,20 @@ const SurfaceScan360: React.FC = () => {
                 Scansione completa della superficie di attacco esterna
               </p>
             </div>
-            <Button className="bg-primary text-primary-foreground">
-              <Search className="w-4 h-4 mr-2" />
-              Nuova Scansione
-            </Button>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center space-x-2">
+                <Calendar className="w-4 h-4 text-primary" />
+                <span className="text-sm text-muted-foreground">Monitoraggio Mensile</span>
+                <Switch
+                  checked={monthlyMonitoring}
+                  onCheckedChange={setMonthlyMonitoring}
+                />
+              </div>
+              <Button className="bg-primary text-primary-foreground">
+                <Search className="w-4 h-4 mr-2" />
+                Nuova Scansione
+              </Button>
+            </div>
           </div>
 
           {/* Stats Overview */}
@@ -246,6 +327,199 @@ const SurfaceScan360: React.FC = () => {
               </CardContent>
             </Card>
           </div>
+
+          {/* Monthly Monitoring Section */}
+          {monthlyMonitoring && (
+            <>
+              {/* Monthly KPI Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <Card className="border-border">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Nuove Porte Aperte</p>
+                        <p className="text-2xl font-bold text-destructive">+12</p>
+                        <p className="text-xs text-muted-foreground">Questo mese</p>
+                      </div>
+                      <Network className="w-8 h-8 text-destructive" />
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                <Card className="border-border">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-muted-foreground">CVE Risolte</p>
+                        <p className="text-2xl font-bold text-primary">20</p>
+                        <p className="text-xs text-muted-foreground">Dicembre 2024</p>
+                      </div>
+                      <CheckCircle className="w-8 h-8 text-primary" />
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                <Card className="border-border">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-muted-foreground">EPSS Score Medio</p>
+                        <p className="text-2xl font-bold text-chart-3">4.6</p>
+                        <p className="text-xs text-green-500">-0.6 vs ultimo mese</p>
+                      </div>
+                      <BarChart3 className="w-8 h-8 text-chart-3" />
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                <Card className="border-border">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Trend Rischio</p>
+                        <p className="text-2xl font-bold text-green-500">↓ 69%</p>
+                        <p className="text-xs text-muted-foreground">Rischio basso</p>
+                      </div>
+                      <Activity className="w-8 h-8 text-green-500" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Monthly Charts */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Ports Timeline */}
+                <Card className="border-border">
+                  <CardHeader>
+                    <CardTitle>Trend Porte Aperte/Chiuse</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={chartConfig} className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={monthlyData}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="mese" className="text-muted-foreground" />
+                          <YAxis className="text-muted-foreground" />
+                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <Line 
+                            type="monotone" 
+                            dataKey="porte_aperte" 
+                            stroke="hsl(var(--destructive))" 
+                            strokeWidth={2}
+                            dot={{ fill: "hsl(var(--destructive))" }}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="porte_chiuse" 
+                            stroke="hsl(var(--primary))" 
+                            strokeWidth={2}
+                            dot={{ fill: "hsl(var(--primary))" }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </ChartContainer>
+                  </CardContent>
+                </Card>
+
+                {/* CVE Timeline */}
+                <Card className="border-border">
+                  <CardHeader>
+                    <CardTitle>CVE Critiche vs Risolte</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={chartConfig} className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={monthlyData}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="mese" className="text-muted-foreground" />
+                          <YAxis className="text-muted-foreground" />
+                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <Bar dataKey="cve_critiche" fill="hsl(var(--destructive))" />
+                          <Bar dataKey="cve_risolte" fill="hsl(var(--primary))" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </ChartContainer>
+                  </CardContent>
+                </Card>
+
+                {/* EPSS Score Timeline */}
+                <Card className="border-border">
+                  <CardHeader>
+                    <CardTitle>EPSS Score Mensile</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={chartConfig} className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={monthlyData}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="mese" className="text-muted-foreground" />
+                          <YAxis className="text-muted-foreground" />
+                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <Line 
+                            type="monotone" 
+                            dataKey="epss_score" 
+                            stroke="hsl(var(--chart-3))" 
+                            strokeWidth={2}
+                            dot={{ fill: "hsl(var(--chart-3))" }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </ChartContainer>
+                  </CardContent>
+                </Card>
+
+                {/* Exposed Services */}
+                <Card className="border-border">
+                  <CardHeader>
+                    <CardTitle>Servizi Maggiormente Esposti</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={exposedServicesData}
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={80}
+                            dataKey="value"
+                            label={({ name, value }) => `${name}: ${value}%`}
+                          >
+                            {exposedServicesData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Risk Trend Analysis */}
+              <Card className="border-border">
+                <CardHeader>
+                  <CardTitle>Analisi Trend Rischio Mensile</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ChartContainer config={chartConfig} className="h-[400px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={riskTrendData}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="mese" className="text-muted-foreground" />
+                        <YAxis className="text-muted-foreground" />
+                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <Bar dataKey="rischio_alto" stackId="stack" fill="hsl(var(--destructive))" />
+                        <Bar dataKey="rischio_medio" stackId="stack" fill="hsl(var(--chart-2))" />
+                        <Bar dataKey="rischio_basso" stackId="stack" fill="hsl(var(--primary))" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </ChartContainer>
+                </CardContent>
+              </Card>
+            </>
+          )}
 
           {/* Search and Filter Bar */}
           <Card className="border-border">
