@@ -39,7 +39,7 @@ const Remediation: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [draggedTask, setDraggedTask] = useState<number | null>(null);
   const [draggedOver, setDraggedOver] = useState<number | null>(null);
-  const [taskOrder, setTaskOrder] = useState<number[]>([]);
+  const [taskOrder, setTaskOrder] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
   const [resizingTask, setResizingTask] = useState<{ id: number, side: 'left' | 'right' } | null>(null);
   const [taskDates, setTaskDates] = useState<Record<number, { startDate: string, endDate: string }>>({
     1: { startDate: '2025-01-15', endDate: '2025-03-01' },
@@ -105,19 +105,15 @@ const Remediation: React.FC = () => {
             });
 
           if (orderedIds.length > 0) {
-            setTaskOrder(orderedIds);
-          } else {
-            // Fallback all'ordine di default se non ci sono dati nel database
-            setTaskOrder([1, 2, 3, 4, 5, 6, 7]);
+            // Mantieni tutti i task mock (1-7) ma riordina quelli che esistono nel database
+            const allMockIds = [1, 2, 3, 4, 5, 6, 7];
+            const remainingIds = allMockIds.filter(id => !orderedIds.includes(id));
+            setTaskOrder([...orderedIds, ...remainingIds]);
           }
-        } else {
-          // Fallback all'ordine di default se non ci sono dati nel database
-          setTaskOrder([1, 2, 3, 4, 5, 6, 7]);
         }
       } catch (error) {
         console.error('Errore nel caricamento dell\'ordine:', error);
-        // Fallback all'ordine di default in caso di errore
-        setTaskOrder([1, 2, 3, 4, 5, 6, 7]);
+        // Mantieni l'ordine di default in caso di errore
       }
     };
 
