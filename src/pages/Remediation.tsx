@@ -37,21 +37,14 @@ import { toast } from '@/hooks/use-toast';
 const Remediation: React.FC = () => {
   const [selectedTimeframe, setSelectedTimeframe] = useState('90days');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [draggedTask, setDraggedTask] = useState<number | null>(null);
-  const [draggedOver, setDraggedOver] = useState<number | null>(null);
-  const [taskOrder, setTaskOrder] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
-  const [resizingTask, setResizingTask] = useState<{ id: number, side: 'left' | 'right' } | null>(null);
-  const [taskDates, setTaskDates] = useState<Record<number, { startDate: string, endDate: string }>>({
-    1: { startDate: '2025-01-15', endDate: '2025-03-01' },
-    2: { startDate: '2025-01-20', endDate: '2025-02-15' },
-    3: { startDate: '2025-02-01', endDate: '2025-04-01' },
-    4: { startDate: '2025-01-25', endDate: '2025-02-25' },
-    5: { startDate: '2025-02-15', endDate: '2025-03-15' },
-    6: { startDate: '2025-03-01', endDate: '2025-04-15' },
-    7: { startDate: '2025-02-10', endDate: '2025-03-20' }
-  });
-  const [hiddenTasks, setHiddenTasks] = useState<Set<number>>(new Set());
-  const [deletedTasks, setDeletedTasks] = useState<Set<number>>(new Set());
+  const [draggedTask, setDraggedTask] = useState<string | null>(null);
+  const [draggedOver, setDraggedOver] = useState<string | null>(null);
+  const [taskOrder, setTaskOrder] = useState<string[]>([]);
+  const [hiddenTasks, setHiddenTasks] = useState<Set<string>>(new Set());
+  const [deletedTasks, setDeletedTasks] = useState<Set<string>>(new Set());
+  const [realTasks, setRealTasks] = useState<any[]>([]);
+  const [taskDates, setTaskDates] = useState<Record<string, { startDate: string, endDate: string }>>({});
+  const [resizingTask, setResizingTask] = useState<{ id: string, side: 'left' | 'right' } | null>(null);
   const [newRemediation, setNewRemediation] = useState({
     category: '',
     priority: '',
@@ -61,6 +54,52 @@ const Remediation: React.FC = () => {
     assignedTeam: '',
     complexity: 'medium'
   });
+
+  // Carica i task reali dal database
+  useEffect(() => {
+    const loadRealTasks = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('remediation_tasks')
+          .select('*')
+          .eq('organization_id', '8112bd1d-5907-4292-af35-41db7bfbaf3a')
+          .order('display_order');
+        
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          setRealTasks(data);
+          const taskIds = data.map(task => task.id);
+          setTaskOrder(taskIds);
+          
+          // Imposta le date dei task
+          const dates: Record<string, { startDate: string, endDate: string }> = {};
+          data.forEach(task => {
+            dates[task.id] = {
+              startDate: task.start_date,
+              endDate: task.end_date
+            };
+          });
+          setTaskDates(dates);
+          
+          // Imposta visibilità e stato eliminazione
+          const hidden = new Set(data.filter(task => task.is_hidden).map(task => task.id));
+          const deleted = new Set(data.filter(task => task.is_deleted).map(task => task.id));
+          setHiddenTasks(hidden);
+          setDeletedTasks(deleted);
+        }
+      } catch (error) {
+        console.error('Errore nel caricamento dei task:', error);
+        toast({
+          title: "Errore",
+          description: "Impossibile caricare i task dal database.",
+          variant: "destructive"
+        });
+      }
+    };
+
+    loadRealTasks();
+  }, []);
 
   // Categorie critiche che necessitano remediation (status: not_started o planned_in_progress)
   const criticalCategories = [
@@ -268,16 +307,16 @@ const Remediation: React.FC = () => {
   };
 
   // Funzioni per il Gantt Chart con drag & drop
-  const handleDragStart = (taskId: number) => {
+  const handleDragStart = (taskId: string) => {
     setDraggedTask(taskId);
   };
 
-  const handleDragOver = (e: React.DragEvent, taskId: number) => {
+  const handleDragOver = (e: React.DragEvent, taskId: string) => {
     e.preventDefault();
     setDraggedOver(taskId);
   };
 
-  const handleDrop = (e: React.DragEvent, targetTaskId: number) => {
+  const handleDrop = (e: React.DragEvent, targetTaskId: string) => {
     e.preventDefault();
     if (draggedTask && draggedTask !== targetTaskId) {
       const newOrder = [...taskOrder];
@@ -302,7 +341,7 @@ const Remediation: React.FC = () => {
   };
 
   // Funzioni per il resize delle barre
-  const handleResizeStart = (e: React.MouseEvent, taskId: number, side: 'left' | 'right') => {
+  const handleResizeStart = (e: React.MouseEvent, taskId: string, side: 'left' | 'right') => {
     e.stopPropagation();
     setResizingTask({ id: taskId, side });
     
@@ -364,13 +403,13 @@ const Remediation: React.FC = () => {
     document.addEventListener('mouseup', handleMouseUp);
   };
 
-  const recalculateDates = (order: number[]) => {
+  const recalculateDates = (order: string[]) => {
     // Logica per riallocare le date quando i task si sovrappongono
     console.log('Recalculating dates for order:', order);
   };
 
   // Funzioni per il salvataggio nel database
-  const saveTaskOrder = async (newOrder: number[]) => {
+  const saveTaskOrder = async (newOrder: string[]) => {
     try {
       const updates = newOrder.map((taskId, index) => ({
         id: taskId,
@@ -381,7 +420,7 @@ const Remediation: React.FC = () => {
         const { error } = await supabase
           .from('remediation_tasks')
           .update({ display_order: update.display_order })
-          .eq('id', update.id.toString());
+          .eq('id', update.id);
         
         if (error) throw error;
       }
@@ -400,7 +439,7 @@ const Remediation: React.FC = () => {
     }
   };
 
-  const saveTaskDates = async (taskId: number, startDate: string, endDate: string) => {
+  const saveTaskDates = async (taskId: string, startDate: string, endDate: string) => {
     try {
       const { error } = await supabase
         .from('remediation_tasks')
@@ -408,7 +447,7 @@ const Remediation: React.FC = () => {
           start_date: startDate,
           end_date: endDate
         })
-        .eq('id', taskId.toString());
+        .eq('id', taskId);
       
       if (error) throw error;
 
@@ -426,12 +465,12 @@ const Remediation: React.FC = () => {
     }
   };
 
-  const saveTaskVisibility = async (taskId: number, isHidden: boolean) => {
+  const saveTaskVisibility = async (taskId: string, isHidden: boolean) => {
     try {
       const { error } = await supabase
         .from('remediation_tasks')
         .update({ is_hidden: isHidden })
-        .eq('id', taskId.toString());
+        .eq('id', taskId);
       
       if (error) throw error;
 
@@ -449,12 +488,12 @@ const Remediation: React.FC = () => {
     }
   };
 
-  const saveTaskDeletion = async (taskId: number, isDeleted: boolean) => {
+  const saveTaskDeletion = async (taskId: string, isDeleted: boolean) => {
     try {
       const { error } = await supabase
         .from('remediation_tasks')
         .update({ is_deleted: isDeleted })
-        .eq('id', taskId.toString());
+        .eq('id', taskId);
       
       if (error) throw error;
 
@@ -472,7 +511,7 @@ const Remediation: React.FC = () => {
     }
   };
 
-  const handleToggleVisibility = (taskId: number) => {
+  const handleToggleVisibility = (taskId: string) => {
     setHiddenTasks(prev => {
       const newSet = new Set(prev);
       const isHidden = !newSet.has(taskId);
@@ -490,7 +529,7 @@ const Remediation: React.FC = () => {
     });
   };
 
-  const handleDeleteTask = (taskId: number) => {
+  const handleDeleteTask = (taskId: string) => {
     setDeletedTasks(prev => new Set([...prev, taskId]));
     // Rimuovi anche dai task nascosti se era presente
     setHiddenTasks(prev => {
@@ -505,7 +544,7 @@ const Remediation: React.FC = () => {
     saveTaskDeletion(taskId, true);
   };
 
-  const handleRestoreTask = (taskId: number) => {
+  const handleRestoreTask = (taskId: string) => {
     setDeletedTasks(prev => {
       const newSet = new Set(prev);
       newSet.delete(taskId);
@@ -542,10 +581,19 @@ const Remediation: React.FC = () => {
           startDate: dates.startDate,
           endDate: dates.endDate,
           isHidden: hiddenTasks.has(id)
-        };
-      }).filter(Boolean);
-    
-    return orderedActions.map(action => {
+  const getPriorityColor = (priority: string) => {
+    switch (priority?.toLowerCase()) {
+      case 'critical':
+      case 'critica': return '#DC2626';
+      case 'high':
+      case 'alta': return '#EA580C';
+      case 'medium':
+      case 'media': return '#EAB308';
+      case 'low':
+      case 'bassa': return '#10B981';
+      default: return '#6B7280';
+    }
+  };
       const actionStart = parseISO(action.startDate);
       const actionEnd = parseISO(action.endDate);
       const daysFromStart = differenceInDays(actionStart, startDate);
@@ -1092,7 +1140,7 @@ const Remediation: React.FC = () => {
                       </div>
                       <div className="space-y-2">
                         {Array.from(deletedTasks).map(taskId => {
-                          const deletedAction = ganttActions.find(action => action.id === taskId);
+                          const deletedAction = realTasks.find(action => action.id === taskId);
                           return deletedAction ? (
                             <div key={taskId} className="flex items-center justify-between p-2 bg-muted/30 rounded-lg border border-dashed">
                               <div className="flex items-center space-x-2">
