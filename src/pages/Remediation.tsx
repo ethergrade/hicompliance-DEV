@@ -334,7 +334,7 @@ const Remediation: React.FC = () => {
           <div>
             <h1 className="text-3xl font-bold text-foreground">Piano di Remediation</h1>
             <p className="text-muted-foreground">
-              Gestione delle attività di remediation con salvataggio automatico
+              Gestione delle attività di remediation
             </p>
           </div>
           
@@ -367,7 +367,7 @@ const Remediation: React.FC = () => {
               <DialogHeader>
                 <DialogTitle>Crea Nuova Attività di Remediation</DialogTitle>
                 <DialogDescription>
-                  Aggiungi una nuova attività di remediation che verrà salvata automaticamente
+                  Aggiungi una nuova attività di remediation
                 </DialogDescription>
               </DialogHeader>
               
