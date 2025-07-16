@@ -39,7 +39,7 @@ const Remediation: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [draggedTask, setDraggedTask] = useState<number | null>(null);
   const [draggedOver, setDraggedOver] = useState<number | null>(null);
-  const [taskOrder, setTaskOrder] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
+  const [taskOrder, setTaskOrder] = useState<number[]>([]);
   const [resizingTask, setResizingTask] = useState<{ id: number, side: 'left' | 'right' } | null>(null);
   const [taskDates, setTaskDates] = useState<Record<number, { startDate: string, endDate: string }>>({
     1: { startDate: '2025-01-15', endDate: '2025-03-01' },
@@ -74,6 +74,56 @@ const Remediation: React.FC = () => {
     };
     return mockUUIDs[mockId] || crypto.randomUUID();
   };
+
+  // Carica l'ordine dei task dal database all'avvio
+  useEffect(() => {
+    const loadTaskOrder = async () => {
+      try {
+        const { data: tasks, error } = await supabase
+          .from('remediation_tasks')
+          .select('id, display_order')
+          .order('display_order', { ascending: true });
+
+        if (error) throw error;
+
+        if (tasks && tasks.length > 0) {
+          // Mappa gli UUID reali agli ID mock
+          const reverseMapping: Record<string, number> = {
+            '89862a35-1eec-4489-889b-5781e6e78dd4': 1,
+            '27afa77b-05a1-4ae3-8bdf-ea39f84135b2': 2,
+            'c3f8b7d2-4e1a-4c9b-8f7e-2d5a6b8c9e0f': 3,
+            'f1e2d3c4-b5a6-9c8d-7e6f-0a1b2c3d4e5f': 4
+          };
+
+          const orderedIds = tasks
+            .map(task => reverseMapping[task.id])
+            .filter(id => id !== undefined)
+            .sort((a, b) => {
+              const taskA = tasks.find(t => reverseMapping[t.id] === a);
+              const taskB = tasks.find(t => reverseMapping[t.id] === b);
+              return (taskA?.display_order || 0) - (taskB?.display_order || 0);
+            });
+
+          if (orderedIds.length > 0) {
+            setTaskOrder(orderedIds);
+          } else {
+            // Fallback all'ordine di default se non ci sono dati nel database
+            setTaskOrder([1, 2, 3, 4, 5, 6, 7]);
+          }
+        } else {
+          // Fallback all'ordine di default se non ci sono dati nel database
+          setTaskOrder([1, 2, 3, 4, 5, 6, 7]);
+        }
+      } catch (error) {
+        console.error('Errore nel caricamento dell\'ordine:', error);
+        // Fallback all'ordine di default in caso di errore
+        setTaskOrder([1, 2, 3, 4, 5, 6, 7]);
+      }
+    };
+
+    loadTaskOrder();
+  }, []);
+
 
   // Categorie critiche che necessitano remediation (status: not_started o planned_in_progress)
   const criticalCategories = [
