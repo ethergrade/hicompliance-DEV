@@ -253,6 +253,65 @@ export type Database = {
           },
         ]
       }
+      organization_locations: {
+        Row: {
+          address: string
+          city: string
+          country: string
+          created_at: string
+          email: string | null
+          id: string
+          is_main_location: boolean | null
+          name: string
+          notes: string | null
+          organization_id: string
+          phone: string | null
+          postal_code: string | null
+          tags: string[] | null
+          updated_at: string
+        }
+        Insert: {
+          address: string
+          city: string
+          country?: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          is_main_location?: boolean | null
+          name: string
+          notes?: string | null
+          organization_id: string
+          phone?: string | null
+          postal_code?: string | null
+          tags?: string[] | null
+          updated_at?: string
+        }
+        Update: {
+          address?: string
+          city?: string
+          country?: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          is_main_location?: boolean | null
+          name?: string
+          notes?: string | null
+          organization_id?: string
+          phone?: string | null
+          postal_code?: string | null
+          tags?: string[] | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_locations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_services: {
         Row: {
           created_at: string
