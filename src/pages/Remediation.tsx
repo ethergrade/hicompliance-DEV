@@ -77,8 +77,55 @@ const Remediation: React.FC = () => {
 
   // Carica l'ordine dei task dal database all'avvio
   useEffect(() => {
-    const loadTaskOrder = async () => {
+    const initializeMockTasks = async () => {
       try {
+        // Prima verifica quali task esistono già
+        const { data: existingTasks, error: fetchError } = await supabase
+          .from('remediation_tasks')
+          .select('id');
+
+        if (fetchError) throw fetchError;
+
+        const existingIds = new Set(existingTasks?.map(t => t.id) || []);
+        const mockUUIDs = {
+          1: '89862a35-1eec-4489-889b-5781e6e78dd4',
+          2: '27afa77b-05a1-4ae3-8bdf-ea39f84135b2',
+          3: 'c3f8b7d2-4e1a-4c9b-8f7e-2d5a6b8c9e0f',
+          4: 'f1e2d3c4-b5a6-9c8d-7e6f-0a1b2c3d4e5f'
+        };
+
+        // Crea i task mancanti basati sui dati mock del gantt
+        const tasksToCreate = [];
+        ganttActions.forEach((action, index) => {
+          const uuid = mockUUIDs[action.id as keyof typeof mockUUIDs];
+          if (uuid && !existingIds.has(uuid)) {
+            tasksToCreate.push({
+              id: uuid,
+              task: action.task,
+              category: action.category,
+              start_date: action.startDate,
+              end_date: action.endDate,
+              progress: action.progress,
+              assignee: action.assignee,
+              priority: action.priority,
+              color: action.color,
+              display_order: index,
+              organization_id: null // Sarà collegato all'organizzazione dell'utente se necessario
+            });
+          }
+        });
+
+        if (tasksToCreate.length > 0) {
+          const { error: insertError } = await supabase
+            .from('remediation_tasks')
+            .insert(tasksToCreate);
+
+          if (insertError) {
+            console.error('Errore nella creazione dei task:', insertError);
+          }
+        }
+
+        // Ora carica l'ordine dal database
         const { data: tasks, error } = await supabase
           .from('remediation_tasks')
           .select('id, display_order')
@@ -112,12 +159,12 @@ const Remediation: React.FC = () => {
           }
         }
       } catch (error) {
-        console.error('Errore nel caricamento dell\'ordine:', error);
+        console.error('Errore nell\'inizializzazione dei task:', error);
         // Mantieni l'ordine di default in caso di errore
       }
     };
 
-    loadTaskOrder();
+    initializeMockTasks();
   }, []);
 
 
