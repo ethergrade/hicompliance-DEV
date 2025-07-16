@@ -558,19 +558,10 @@ const Remediation: React.FC = () => {
           startDate: dates.startDate,
           endDate: dates.endDate,
           isHidden: hiddenTasks.has(id)
-  const getPriorityColor = (priority: string) => {
-    switch (priority?.toLowerCase()) {
-      case 'critical':
-      case 'critica': return '#DC2626';
-      case 'high':
-      case 'alta': return '#EA580C';
-      case 'medium':
-      case 'media': return '#EAB308';
-      case 'low':
-      case 'bassa': return '#10B981';
-      default: return '#6B7280';
-    }
-  };
+        };
+      });
+
+    return orderedActions.map(action => {
       const actionStart = parseISO(action.startDate);
       const actionEnd = parseISO(action.endDate);
       const daysFromStart = differenceInDays(actionStart, startDate);
