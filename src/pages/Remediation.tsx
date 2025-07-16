@@ -10,12 +10,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Calendar, Clock, AlertTriangle, CheckCircle, BarChart3, Target, DollarSign, Users, MoreHorizontal, Trash2 } from 'lucide-react';
+import { Plus, Calendar, Clock, AlertTriangle, CheckCircle, BarChart3, Target, DollarSign, Users, MoreHorizontal, Trash2, Bot, Library } from 'lucide-react';
 import { useRemediationTasks, type RemediationTask, type GanttTask } from '@/hooks/useRemediationTasks';
+import { useRemediationTemplates } from '@/hooks/useRemediationTemplates';
+import { useAssessmentGapAnalysis } from '@/hooks/useAssessmentGapAnalysis';
+import { TemplateSelectionModal } from '@/components/remediation/TemplateSelectionModal';
 
 const Remediation: React.FC = () => {
   const [selectedTimeframe, setSelectedTimeframe] = useState('3months');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [draggedTask, setDraggedTask] = useState<string | null>(null);
   const [resizingTask, setResizingTask] = useState<{ taskId: string; side: 'left' | 'right' } | null>(null);
   const [newRemediation, setNewRemediation] = useState({
@@ -36,6 +40,12 @@ const Remediation: React.FC = () => {
     updateTaskDates, 
     reorderTasks 
   } = useRemediationTasks();
+
+  const { templates, getCategories } = useRemediationTemplates();
+  const { generateAutomaticPlan } = useAssessmentGapAnalysis();
+
+  // Get organization_id from user context (you might need to implement this)
+  const organizationId = "00000000-0000-0000-0000-000000000000"; // Replace with actual user's organization_id
 
   // Initialize task order when tasks are loaded
   useEffect(() => {
@@ -172,6 +182,58 @@ const Remediation: React.FC = () => {
     }
   };
 
+  const handleSelectTemplate = async (template: any) => {
+    try {
+      const startDate = new Date();
+      const endDate = new Date();
+      endDate.setDate(startDate.getDate() + template.estimated_days);
+
+      await createTask({
+        task: template.task_name,
+        category: template.category,
+        start_date: startDate.toISOString().split('T')[0],
+        end_date: endDate.toISOString().split('T')[0],
+        progress: 0,
+        assignee: null,
+        priority: template.priority,
+        dependencies: template.dependencies,
+        color: '#3b82f6'
+      });
+    } catch (error) {
+      console.error("Error creating task from template:", error);
+    }
+  };
+
+  const handleGenerateAutomaticPlan = async () => {
+    try {
+      const recommendedTemplates = await generateAutomaticPlan(organizationId, templates);
+      
+      // Create tasks from recommended templates
+      for (const template of recommendedTemplates) {
+        const startDate = new Date();
+        const endDate = new Date();
+        endDate.setDate(startDate.getDate() + template.estimated_days);
+
+        await createTask({
+          task: template.task_name,
+          category: template.category,
+          start_date: startDate.toISOString().split('T')[0],
+          end_date: endDate.toISOString().split('T')[0],
+          progress: 0,
+          assignee: null,
+          priority: template.priority,
+          dependencies: template.dependencies,
+          color: '#3b82f6'
+        });
+
+        // Add some delay between tasks to avoid overwhelming the system
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    } catch (error) {
+      console.error("Error generating automatic plan:", error);
+    }
+  };
+
   const handleDragStart = (taskId: string) => {
     setDraggedTask(taskId);
   };
@@ -261,12 +323,30 @@ const Remediation: React.FC = () => {
           </div>
           
           <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Nuova Attività
-              </Button>
-            </DialogTrigger>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowTemplateModal(true)}
+                  >
+                    <Library className="h-4 w-4 mr-2" />
+                    Da Template
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    onClick={handleGenerateAutomaticPlan}
+                  >
+                    <Bot className="h-4 w-4 mr-2" />
+                    Piano Automatico
+                  </Button>
+
+                  <DialogTrigger asChild>
+                    <Button>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Nuova Attività
+                    </Button>
+                  </DialogTrigger>
+                </div>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Crea Nuova Attività di Remediation</DialogTitle>
@@ -303,12 +383,11 @@ const Remediation: React.FC = () => {
                         <SelectValue placeholder="Seleziona categoria" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Network Security">Network Security</SelectItem>
-                        <SelectItem value="Identity Management">Identity Management</SelectItem>
-                        <SelectItem value="Data Protection">Data Protection</SelectItem>
-                        <SelectItem value="Endpoint Security">Endpoint Security</SelectItem>
-                        <SelectItem value="Business Continuity">Business Continuity</SelectItem>
-                        <SelectItem value="Awareness">Awareness</SelectItem>
+                        {getCategories().map((category) => (
+                          <SelectItem key={category} value={category}>
+                            {category}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -389,6 +468,12 @@ const Remediation: React.FC = () => {
               </div>
             </DialogContent>
           </Dialog>
+
+          <TemplateSelectionModal
+            open={showTemplateModal}
+            onOpenChange={setShowTemplateModal}
+            onSelectTemplate={handleSelectTemplate}
+          />
         </div>
 
         {/* Executive Summary */}

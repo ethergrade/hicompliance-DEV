@@ -370,6 +370,45 @@ export type Database = {
         }
         Relationships: []
       }
+      remediation_templates: {
+        Row: {
+          category: string
+          complexity: string
+          created_at: string
+          dependencies: string[] | null
+          description: string | null
+          estimated_days: number
+          id: string
+          priority: string
+          task_name: string
+          updated_at: string
+        }
+        Insert: {
+          category: string
+          complexity?: string
+          created_at?: string
+          dependencies?: string[] | null
+          description?: string | null
+          estimated_days?: number
+          id?: string
+          priority?: string
+          task_name: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          complexity?: string
+          created_at?: string
+          dependencies?: string[] | null
+          description?: string | null
+          estimated_days?: number
+          id?: string
+          priority?: string
+          task_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       services: {
         Row: {
           code: string
