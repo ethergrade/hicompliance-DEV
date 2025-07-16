@@ -70,7 +70,10 @@ const Remediation: React.FC = () => {
       1: '89862a35-1eec-4489-889b-5781e6e78dd4',
       2: '27afa77b-05a1-4ae3-8bdf-ea39f84135b2',
       3: 'c3f8b7d2-4e1a-4c9b-8f7e-2d5a6b8c9e0f',
-      4: 'f1e2d3c4-b5a6-9c8d-7e6f-0a1b2c3d4e5f'
+      4: 'f1e2d3c4-b5a6-9c8d-7e6f-0a1b2c3d4e5f',
+      5: '8a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d',
+      6: '7f8e9d0c-1b2a-3c4d-5e6f-7a8b9c0d1e2f',
+      7: '6e7d8c9b-0a1f-2e3d-4c5b-6a7f8e9d0c1b'
     };
     return mockUUIDs[mockId] || crypto.randomUUID();
   };
@@ -79,10 +82,35 @@ const Remediation: React.FC = () => {
   useEffect(() => {
     const initializeMockTasks = async () => {
       try {
-        // Prima verifica quali task esistono già
+        // Prima ottieni l'organization_id dell'utente corrente
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          console.log('Utente non autenticato');
+          return;
+        }
+
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('organization_id')
+          .eq('auth_user_id', user.id)
+          .single();
+
+        if (userError) {
+          console.error('Errore nel recupero dei dati utente:', userError);
+          return;
+        }
+
+        const organizationId = userData?.organization_id;
+        if (!organizationId) {
+          console.log('Organization ID non trovato per l\'utente');
+          return;
+        }
+
+        // Verifica quali task esistono già per questa organizzazione
         const { data: existingTasks, error: fetchError } = await supabase
           .from('remediation_tasks')
-          .select('id');
+          .select('id, display_order')
+          .eq('organization_id', organizationId);
 
         if (fetchError) throw fetchError;
 
@@ -91,7 +119,10 @@ const Remediation: React.FC = () => {
           1: '89862a35-1eec-4489-889b-5781e6e78dd4',
           2: '27afa77b-05a1-4ae3-8bdf-ea39f84135b2',
           3: 'c3f8b7d2-4e1a-4c9b-8f7e-2d5a6b8c9e0f',
-          4: 'f1e2d3c4-b5a6-9c8d-7e6f-0a1b2c3d4e5f'
+          4: 'f1e2d3c4-b5a6-9c8d-7e6f-0a1b2c3d4e5f',
+          5: '8a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d',
+          6: '7f8e9d0c-1b2a-3c4d-5e6f-7a8b9c0d1e2f',
+          7: '6e7d8c9b-0a1f-2e3d-4c5b-6a7f8e9d0c1b'
         };
 
         // Crea i task mancanti basati sui dati mock del gantt
@@ -110,7 +141,7 @@ const Remediation: React.FC = () => {
               priority: action.priority,
               color: action.color,
               display_order: index,
-              organization_id: null // Sarà collegato all'organizzazione dell'utente se necessario
+              organization_id: organizationId // Ora uso l'organization_id dell'utente
             });
           }
         });
@@ -122,6 +153,7 @@ const Remediation: React.FC = () => {
 
           if (insertError) {
             console.error('Errore nella creazione dei task:', insertError);
+            return;
           }
         }
 
@@ -129,6 +161,7 @@ const Remediation: React.FC = () => {
         const { data: tasks, error } = await supabase
           .from('remediation_tasks')
           .select('id, display_order')
+          .eq('organization_id', organizationId)
           .order('display_order', { ascending: true });
 
         if (error) throw error;
@@ -139,7 +172,10 @@ const Remediation: React.FC = () => {
             '89862a35-1eec-4489-889b-5781e6e78dd4': 1,
             '27afa77b-05a1-4ae3-8bdf-ea39f84135b2': 2,
             'c3f8b7d2-4e1a-4c9b-8f7e-2d5a6b8c9e0f': 3,
-            'f1e2d3c4-b5a6-9c8d-7e6f-0a1b2c3d4e5f': 4
+            'f1e2d3c4-b5a6-9c8d-7e6f-0a1b2c3d4e5f': 4,
+            '8a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d': 5,
+            '7f8e9d0c-1b2a-3c4d-5e6f-7a8b9c0d1e2f': 6,
+            '6e7d8c9b-0a1f-2e3d-4c5b-6a7f8e9d0c1b': 7
           };
 
           const orderedIds = tasks
@@ -166,7 +202,6 @@ const Remediation: React.FC = () => {
 
     initializeMockTasks();
   }, []);
-
 
   // Categorie critiche che necessitano remediation (status: not_started o planned_in_progress)
   const criticalCategories = [
@@ -478,6 +513,18 @@ const Remediation: React.FC = () => {
   // Funzioni per il salvataggio nel database
   const saveTaskOrder = async (newOrder: number[]) => {
     try {
+      // Ottieni l'organization_id dell'utente corrente
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      if (!userData?.organization_id) return;
+
       // Converte gli ID mock a UUID per il salvataggio nel database
       const updates = await Promise.all(newOrder.map(async (taskId, index) => ({
         id: await getUUIDForMockId(taskId),
@@ -488,7 +535,8 @@ const Remediation: React.FC = () => {
         const { error } = await supabase
           .from('remediation_tasks')
           .update({ display_order: update.display_order })
-          .eq('id', update.id);
+          .eq('id', update.id)
+          .eq('organization_id', userData.organization_id);
         
         if (error) throw error;
       }
@@ -509,6 +557,17 @@ const Remediation: React.FC = () => {
 
   const saveTaskDates = async (taskId: number, startDate: string, endDate: string) => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      if (!userData?.organization_id) return;
+
       const uuid = await getUUIDForMockId(taskId);
       const { error } = await supabase
         .from('remediation_tasks')
@@ -516,7 +575,8 @@ const Remediation: React.FC = () => {
           start_date: startDate,
           end_date: endDate
         })
-        .eq('id', uuid);
+        .eq('id', uuid)
+        .eq('organization_id', userData.organization_id);
       
       if (error) throw error;
 
@@ -536,11 +596,23 @@ const Remediation: React.FC = () => {
 
   const saveTaskVisibility = async (taskId: number, isHidden: boolean) => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      if (!userData?.organization_id) return;
+
       const uuid = await getUUIDForMockId(taskId);
       const { error } = await supabase
         .from('remediation_tasks')
         .update({ is_hidden: isHidden })
-        .eq('id', uuid);
+        .eq('id', uuid)
+        .eq('organization_id', userData.organization_id);
       
       if (error) throw error;
 
@@ -560,11 +632,23 @@ const Remediation: React.FC = () => {
 
   const saveTaskDeletion = async (taskId: number, isDeleted: boolean) => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      if (!userData?.organization_id) return;
+
       const uuid = await getUUIDForMockId(taskId);
       const { error } = await supabase
         .from('remediation_tasks')
         .update({ is_deleted: isDeleted })
-        .eq('id', uuid);
+        .eq('id', uuid)
+        .eq('organization_id', userData.organization_id);
       
       if (error) throw error;
 
