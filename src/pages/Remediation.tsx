@@ -69,9 +69,10 @@ const Remediation: React.FC = () => {
     const mockUUIDs: Record<number, string> = {
       1: '89862a35-1eec-4489-889b-5781e6e78dd4',
       2: '27afa77b-05a1-4ae3-8bdf-ea39f84135b2',
-      // Aggiungi altri mapping se necessario
+      3: 'c3f8b7d2-4e1a-4c9b-8f7e-2d5a6b8c9e0f',
+      4: 'f1e2d3c4-b5a6-9c8d-7e6f-0a1b2c3d4e5f'
     };
-    return mockUUIDs[mockId] || `mock-${mockId}-uuid`;
+    return mockUUIDs[mockId] || crypto.randomUUID();
   };
 
   // Categorie critiche che necessitano remediation (status: not_started o planned_in_progress)
