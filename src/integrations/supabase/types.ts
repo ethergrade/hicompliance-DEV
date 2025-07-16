@@ -388,8 +388,11 @@ export type Database = {
           color: string
           created_at: string
           dependencies: string[] | null
+          display_order: number | null
           end_date: string
           id: string
+          is_deleted: boolean | null
+          is_hidden: boolean | null
           organization_id: string | null
           priority: string
           progress: number
@@ -403,8 +406,11 @@ export type Database = {
           color?: string
           created_at?: string
           dependencies?: string[] | null
+          display_order?: number | null
           end_date: string
           id?: string
+          is_deleted?: boolean | null
+          is_hidden?: boolean | null
           organization_id?: string | null
           priority?: string
           progress?: number
@@ -418,8 +424,11 @@ export type Database = {
           color?: string
           created_at?: string
           dependencies?: string[] | null
+          display_order?: number | null
           end_date?: string
           id?: string
+          is_deleted?: boolean | null
+          is_hidden?: boolean | null
           organization_id?: string | null
           priority?: string
           progress?: number

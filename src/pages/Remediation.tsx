@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -31,6 +32,7 @@ import {
   Trash2,
   MoreHorizontal
 } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 
 const Remediation: React.FC = () => {
   const [selectedTimeframe, setSelectedTimeframe] = useState('90days');
@@ -289,6 +291,9 @@ const Remediation: React.FC = () => {
       
       setTaskOrder(newOrder);
       
+      // Salva il nuovo ordine nel database
+      saveTaskOrder(newOrder);
+      
       // Ricalcola le date per evitare sovrapposizioni
       recalculateDates(newOrder);
     }
@@ -318,28 +323,34 @@ const Remediation: React.FC = () => {
       
       setTaskDates(prev => {
         const currentDates = prev[taskId];
+        let newDates = prev;
+        
         if (side === 'left') {
           // Non permettere che la data di inizio superi quella di fine
           const endDateObj = parseISO(currentDates.endDate);
           const newStartDateObj = parseISO(targetDate);
           if (newStartDateObj < endDateObj) {
-            return {
+            newDates = {
               ...prev,
               [taskId]: { ...currentDates, startDate: targetDate }
             };
+            // Salva le nuove date nel database
+            saveTaskDates(taskId, targetDate, currentDates.endDate);
           }
         } else {
           // Non permettere che la data di fine sia prima di quella di inizio
           const startDateObj = parseISO(currentDates.startDate);
           const newEndDateObj = parseISO(targetDate);
           if (newEndDateObj > startDateObj) {
-            return {
+            newDates = {
               ...prev,
               [taskId]: { ...currentDates, endDate: targetDate }
             };
+            // Salva le nuove date nel database
+            saveTaskDates(taskId, currentDates.startDate, targetDate);
           }
         }
-        return prev;
+        return newDates;
       });
     };
     
@@ -358,14 +369,123 @@ const Remediation: React.FC = () => {
     console.log('Recalculating dates for order:', order);
   };
 
+  // Funzioni per il salvataggio nel database
+  const saveTaskOrder = async (newOrder: number[]) => {
+    try {
+      const updates = newOrder.map((taskId, index) => ({
+        id: taskId,
+        display_order: index
+      }));
+
+      for (const update of updates) {
+        const { error } = await supabase
+          .from('remediation_tasks')
+          .update({ display_order: update.display_order })
+          .eq('id', update.id.toString());
+        
+        if (error) throw error;
+      }
+
+      toast({
+        title: "Ordine salvato",
+        description: "L'ordine dei task è stato aggiornato nel database."
+      });
+    } catch (error) {
+      console.error('Errore nel salvataggio dell\'ordine:', error);
+      toast({
+        title: "Errore",
+        description: "Impossibile salvare l'ordine dei task.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const saveTaskDates = async (taskId: number, startDate: string, endDate: string) => {
+    try {
+      const { error } = await supabase
+        .from('remediation_tasks')
+        .update({ 
+          start_date: startDate,
+          end_date: endDate
+        })
+        .eq('id', taskId.toString());
+      
+      if (error) throw error;
+
+      toast({
+        title: "Date aggiornate",
+        description: "Le date del task sono state salvate nel database."
+      });
+    } catch (error) {
+      console.error('Errore nel salvataggio delle date:', error);
+      toast({
+        title: "Errore",
+        description: "Impossibile salvare le date del task.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const saveTaskVisibility = async (taskId: number, isHidden: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('remediation_tasks')
+        .update({ is_hidden: isHidden })
+        .eq('id', taskId.toString());
+      
+      if (error) throw error;
+
+      toast({
+        title: isHidden ? "Task nascosto" : "Task mostrato",
+        description: `Lo stato di visibilità è stato salvato nel database.`
+      });
+    } catch (error) {
+      console.error('Errore nel salvataggio della visibilità:', error);
+      toast({
+        title: "Errore",
+        description: "Impossibile salvare lo stato di visibilità.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const saveTaskDeletion = async (taskId: number, isDeleted: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('remediation_tasks')
+        .update({ is_deleted: isDeleted })
+        .eq('id', taskId.toString());
+      
+      if (error) throw error;
+
+      toast({
+        title: isDeleted ? "Task eliminato" : "Task ripristinato",
+        description: `Il task è stato ${isDeleted ? 'eliminato' : 'ripristinato'} nel database.`
+      });
+    } catch (error) {
+      console.error('Errore nel salvataggio dell\'eliminazione:', error);
+      toast({
+        title: "Errore",
+        description: "Impossibile salvare lo stato di eliminazione.",
+        variant: "destructive"
+      });
+    }
+  };
+
   const handleToggleVisibility = (taskId: number) => {
     setHiddenTasks(prev => {
       const newSet = new Set(prev);
+      const isHidden = !newSet.has(taskId);
+      
       if (newSet.has(taskId)) {
         newSet.delete(taskId);
       } else {
         newSet.add(taskId);
       }
+      
+      // Salva nel database
+      saveTaskVisibility(taskId, isHidden);
+      
       return newSet;
     });
   };
@@ -380,6 +500,9 @@ const Remediation: React.FC = () => {
     });
     // Rimuovi dall'ordine dei task
     setTaskOrder(prev => prev.filter(id => id !== taskId));
+    
+    // Salva nel database
+    saveTaskDeletion(taskId, true);
   };
 
   const handleRestoreTask = (taskId: number) => {
@@ -391,10 +514,16 @@ const Remediation: React.FC = () => {
     // Riaggiungilo all'ordine se non c'è già
     setTaskOrder(prev => {
       if (!prev.includes(taskId)) {
-        return [...prev, taskId];
+        const newOrder = [...prev, taskId];
+        // Salva il nuovo ordine nel database
+        saveTaskOrder(newOrder);
+        return newOrder;
       }
       return prev;
     });
+    
+    // Salva nel database
+    saveTaskDeletion(taskId, false);
   };
 
   const getGanttData = () => {
