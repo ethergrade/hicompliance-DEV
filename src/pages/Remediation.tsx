@@ -25,7 +25,11 @@ import {
   CalendarDays,
   Plus,
   Calculator,
-  Euro
+  Euro,
+  Eye,
+  EyeOff,
+  Trash2,
+  MoreHorizontal
 } from 'lucide-react';
 
 const Remediation: React.FC = () => {
@@ -44,6 +48,8 @@ const Remediation: React.FC = () => {
     6: { startDate: '2025-03-01', endDate: '2025-04-15' },
     7: { startDate: '2025-02-10', endDate: '2025-03-20' }
   });
+  const [hiddenTasks, setHiddenTasks] = useState<Set<number>>(new Set());
+  const [deletedTasks, setDeletedTasks] = useState<Set<number>>(new Set());
   const [newRemediation, setNewRemediation] = useState({
     category: '',
     priority: '',
@@ -352,21 +358,63 @@ const Remediation: React.FC = () => {
     console.log('Recalculating dates for order:', order);
   };
 
+  const handleToggleVisibility = (taskId: number) => {
+    setHiddenTasks(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(taskId)) {
+        newSet.delete(taskId);
+      } else {
+        newSet.add(taskId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleDeleteTask = (taskId: number) => {
+    setDeletedTasks(prev => new Set([...prev, taskId]));
+    // Rimuovi anche dai task nascosti se era presente
+    setHiddenTasks(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(taskId);
+      return newSet;
+    });
+    // Rimuovi dall'ordine dei task
+    setTaskOrder(prev => prev.filter(id => id !== taskId));
+  };
+
+  const handleRestoreTask = (taskId: number) => {
+    setDeletedTasks(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(taskId);
+      return newSet;
+    });
+    // Riaggiungilo all'ordine se non c'è già
+    setTaskOrder(prev => {
+      if (!prev.includes(taskId)) {
+        return [...prev, taskId];
+      }
+      return prev;
+    });
+  };
+
   const getGanttData = () => {
     const startDate = new Date('2025-01-01');
     const endDate = new Date('2025-05-01');
     const totalDays = differenceInDays(endDate, startDate);
     
-    // Ordina i task secondo l'ordine corrente
-    const orderedActions = taskOrder.map(id => {
-      const baseAction = ganttActions.find(action => action.id === id)!;
-      const dates = taskDates[id];
-      return {
-        ...baseAction,
-        startDate: dates.startDate,
-        endDate: dates.endDate
-      };
-    }).filter(Boolean);
+    // Filtra i task eliminati e ordina secondo l'ordine corrente
+    const orderedActions = taskOrder
+      .filter(id => !deletedTasks.has(id))
+      .map(id => {
+        const baseAction = ganttActions.find(action => action.id === id)!;
+        const dates = taskDates[id];
+        return {
+          ...baseAction,
+          startDate: dates.startDate,
+          endDate: dates.endDate,
+          isHidden: hiddenTasks.has(id)
+        };
+      }).filter(Boolean);
     
     return orderedActions.map(action => {
       const actionStart = parseISO(action.startDate);
@@ -787,12 +835,13 @@ const Remediation: React.FC = () => {
                         className={`flex items-center transition-all duration-200 rounded-lg p-2 cursor-move
                           ${draggedTask === action.id ? 'opacity-50 scale-95' : ''}
                           ${draggedOver === action.id ? 'bg-primary/10 border-l-4 border-primary' : ''}
+                          ${action.isHidden ? 'opacity-30 bg-muted/10' : ''}
                           hover:bg-muted/30
                         `}
-                        draggable
-                        onDragStart={() => handleDragStart(action.id)}
-                        onDragOver={(e) => handleDragOver(e, action.id)}
-                        onDrop={(e) => handleDrop(e, action.id)}
+                        draggable={!action.isHidden}
+                        onDragStart={() => !action.isHidden && handleDragStart(action.id)}
+                        onDragOver={(e) => !action.isHidden && handleDragOver(e, action.id)}
+                        onDrop={(e) => !action.isHidden && handleDrop(e, action.id)}
                         onDragEnd={() => {
                           setDraggedTask(null);
                           setDraggedOver(null);
@@ -801,26 +850,53 @@ const Remediation: React.FC = () => {
                         {/* Task info */}
                         <div className="w-64 flex-shrink-0 pr-4">
                           <div className="flex items-center space-x-2">
-                            <div className="text-sm font-medium text-foreground">
+                            <div className={`text-sm font-medium ${action.isHidden ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
                               {action.task}
                             </div>
-                            <div className="w-2 h-2 rounded-full bg-muted-foreground opacity-30"></div>
+                            {action.isHidden && (
+                              <Badge variant="outline" className="text-xs">
+                                <EyeOff className="w-3 h-3 mr-1" />
+                                Nascosto
+                              </Badge>
+                            )}
                           </div>
-                          <div className="text-xs text-muted-foreground">
+                          <div className={`text-xs ${action.isHidden ? 'text-muted-foreground/50' : 'text-muted-foreground'}`}>
                             {action.assignee}
                           </div>
                           <div className="flex items-center space-x-2 mt-1">
                             <Badge 
                               variant={action.priority === 'Critica' ? 'destructive' : 
                                       action.priority === 'Alta' ? 'default' : 'secondary'} 
-                              className="text-xs"
+                              className={`text-xs ${action.isHidden ? 'opacity-50' : ''}`}
                             >
                               {action.priority}
                             </Badge>
-                            <span className="text-xs text-muted-foreground">
+                            <span className={`text-xs ${action.isHidden ? 'text-muted-foreground/50' : 'text-muted-foreground'}`}>
                               {action.progress}%
                             </span>
                           </div>
+                        </div>
+
+                        {/* Controlli azione */}
+                        <div className="flex items-center space-x-1 mr-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleToggleVisibility(action.id)}
+                            title={action.isHidden ? "Mostra azione" : "Nascondi azione"}
+                            className="h-6 w-6 p-0 hover:bg-muted"
+                          >
+                            {action.isHidden ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteTask(action.id)}
+                            title="Elimina azione"
+                            className="h-6 w-6 p-0 hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
                         </div>
 
                         {/* Gantt timeline */}
@@ -831,35 +907,40 @@ const Remediation: React.FC = () => {
                             style={{
                               left: `${action.startOffset}%`,
                               width: `${action.width}%`,
-                              backgroundColor: action.color + '40',
-                              border: `2px solid ${action.color}`,
+                              backgroundColor: action.isHidden ? '#9CA3AF40' : action.color + '40',
+                              border: `2px solid ${action.isHidden ? '#9CA3AF' : action.color}`,
                               transform: draggedTask === action.id ? 'scale(0.95)' : 'scale(1)',
-                              zIndex: resizingTask?.id === action.id ? 10 : 1
+                              zIndex: resizingTask?.id === action.id ? 10 : 1,
+                              opacity: action.isHidden ? 0.5 : 1
                             }}
                           >
                             {/* Handle sinistra per resize start date */}
-                            <div
-                              className="absolute left-0 top-0 w-2 h-full bg-primary/80 rounded-l-sm cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary"
-                              onMouseDown={(e) => handleResizeStart(e, action.id, 'left')}
-                              title="Trascina per modificare data inizio"
-                            />
+                            {!action.isHidden && (
+                              <div
+                                className="absolute left-0 top-0 w-2 h-full bg-primary/80 rounded-l-sm cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary"
+                                onMouseDown={(e) => handleResizeStart(e, action.id, 'left')}
+                                title="Trascina per modificare data inizio"
+                              />
+                            )}
                             
                             {/* Progress bar */}
                             <div
                               className="h-full rounded-sm transition-all duration-200 pointer-events-none"
                               style={{
                                 width: `${action.progress}%`,
-                                backgroundColor: action.color,
+                                backgroundColor: action.isHidden ? '#9CA3AF' : action.color,
                                 minWidth: action.progress > 0 ? '4px' : '0'
                               }}
                             />
                             
                             {/* Handle destra per resize end date */}
-                            <div
-                              className="absolute right-0 top-0 w-2 h-full bg-primary/80 rounded-r-sm cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary"
-                              onMouseDown={(e) => handleResizeStart(e, action.id, 'right')}
-                              title="Trascina per modificare data fine"
-                            />
+                            {!action.isHidden && (
+                              <div
+                                className="absolute right-0 top-0 w-2 h-full bg-primary/80 rounded-r-sm cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary"
+                                onMouseDown={(e) => handleResizeStart(e, action.id, 'right')}
+                                title="Trascina per modificare data fine"
+                              />
+                            )}
                           </div>
                           
                           {/* Tooltip info con durata aggiornata */}
@@ -873,6 +954,38 @@ const Remediation: React.FC = () => {
                       </div>
                     ))}
                   </div>
+
+                  {/* Tasks eliminati - sezione di ripristino */}
+                  {deletedTasks.size > 0 && (
+                    <div className="mt-6 pt-4 border-t border-border">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-sm font-medium text-muted-foreground">Azioni Eliminate</h4>
+                      </div>
+                      <div className="space-y-2">
+                        {Array.from(deletedTasks).map(taskId => {
+                          const deletedAction = ganttActions.find(action => action.id === taskId);
+                          return deletedAction ? (
+                            <div key={taskId} className="flex items-center justify-between p-2 bg-muted/30 rounded-lg border border-dashed">
+                              <div className="flex items-center space-x-2">
+                                <Trash2 className="w-4 h-4 text-muted-foreground" />
+                                <span className="text-sm text-muted-foreground line-through">
+                                  {deletedAction.task}
+                                </span>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleRestoreTask(taskId)}
+                                className="text-xs"
+                              >
+                                Ripristina
+                              </Button>
+                            </div>
+                          ) : null;
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Legend */}
                   <div className="mt-6 pt-4 border-t border-border">
@@ -891,22 +1004,18 @@ const Remediation: React.FC = () => {
                             <span>Media</span>
                           </div>
                           <div className="flex items-center space-x-2">
-                            <div className="w-4 h-2 bg-gray-400 rounded"></div>
-                            <span>Barra: Durata totale</span>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <div className="w-4 h-2 bg-red-600 rounded"></div>
-                            <span>Riempimento: Progresso</span>
+                            <div className="w-4 h-2 bg-gray-400 rounded opacity-50"></div>
+                            <span>Nascosto</span>
                           </div>
                         </div>
                         <div className="flex items-center space-x-4 text-xs text-muted-foreground">
                           <div className="flex items-center space-x-2">
-                            <div className="w-3 h-3 border-2 border-dashed border-muted-foreground rounded"></div>
-                            <span>Trascina i task per riordinarli</span>
+                            <EyeOff className="w-3 h-3" />
+                            <span>Nascondi/Mostra</span>
                           </div>
                           <div className="flex items-center space-x-2">
-                            <div className="w-2 h-3 bg-primary rounded"></div>
-                            <span>Trascina i bordi per modificare le date</span>
+                            <Trash2 className="w-3 h-3" />
+                            <span>Elimina azione</span>
                           </div>
                         </div>
                       </div>
