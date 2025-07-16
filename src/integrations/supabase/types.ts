@@ -322,6 +322,54 @@ export type Database = {
         }
         Relationships: []
       }
+      remediation_tasks: {
+        Row: {
+          assignee: string | null
+          category: string
+          color: string
+          created_at: string
+          dependencies: string[] | null
+          end_date: string
+          id: string
+          organization_id: string | null
+          priority: string
+          progress: number
+          start_date: string
+          task: string
+          updated_at: string
+        }
+        Insert: {
+          assignee?: string | null
+          category: string
+          color?: string
+          created_at?: string
+          dependencies?: string[] | null
+          end_date: string
+          id?: string
+          organization_id?: string | null
+          priority?: string
+          progress?: number
+          start_date: string
+          task: string
+          updated_at?: string
+        }
+        Update: {
+          assignee?: string | null
+          category?: string
+          color?: string
+          created_at?: string
+          dependencies?: string[] | null
+          end_date?: string
+          id?: string
+          organization_id?: string | null
+          priority?: string
+          progress?: number
+          start_date?: string
+          task?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       services: {
         Row: {
           code: string

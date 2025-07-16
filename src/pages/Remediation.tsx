@@ -1,416 +1,252 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { format, addDays, differenceInDays, parseISO } from 'date-fns';
-import { 
-  AlertTriangle,
-  Calendar,
-  CheckCircle,
-  Clock,
-  FileText,
-  TrendingUp,
-  Users,
-  Target,
-  Wrench,
-  BarChart3,
-  CalendarDays,
-  Plus,
-  Calculator,
-  Euro
-} from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { Plus, Calendar, Clock, AlertTriangle, CheckCircle, BarChart3, Target, DollarSign, Users, MoreHorizontal, Trash2 } from 'lucide-react';
+import { useRemediationTasks, type RemediationTask, type GanttTask } from '@/hooks/useRemediationTasks';
 
 const Remediation: React.FC = () => {
-  const [selectedTimeframe, setSelectedTimeframe] = useState('90days');
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [draggedTask, setDraggedTask] = useState<number | null>(null);
-  const [draggedOver, setDraggedOver] = useState<number | null>(null);
-  const [taskOrder, setTaskOrder] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
-  const [resizingTask, setResizingTask] = useState<{ id: number, side: 'left' | 'right' } | null>(null);
-  const [taskDates, setTaskDates] = useState<Record<number, { startDate: string, endDate: string }>>({
-    1: { startDate: '2025-01-15', endDate: '2025-03-01' },
-    2: { startDate: '2025-01-20', endDate: '2025-02-15' },
-    3: { startDate: '2025-02-01', endDate: '2025-04-01' },
-    4: { startDate: '2025-01-25', endDate: '2025-02-25' },
-    5: { startDate: '2025-02-15', endDate: '2025-03-15' },
-    6: { startDate: '2025-03-01', endDate: '2025-04-15' },
-    7: { startDate: '2025-02-10', endDate: '2025-03-20' }
-  });
+  const [selectedTimeframe, setSelectedTimeframe] = useState('3months');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [draggedTask, setDraggedTask] = useState<string | null>(null);
+  const [resizingTask, setResizingTask] = useState<{ taskId: string; side: 'left' | 'right' } | null>(null);
   const [newRemediation, setNewRemediation] = useState({
+    task: '',
     category: '',
-    priority: '',
-    description: '',
-    estimatedDays: '',
-    estimatedBudget: '',
-    assignedTeam: '',
-    complexity: 'medium'
+    assignee: '',
+    priority: 'medium',
+    estimatedDays: 14,
+    description: ''
   });
 
-  // Categorie critiche che necessitano remediation (status: not_started o planned_in_progress)
+  const { 
+    tasks, 
+    loading, 
+    createTask, 
+    updateTask, 
+    deleteTask, 
+    updateTaskDates, 
+    reorderTasks 
+  } = useRemediationTasks();
+
+  // Initialize task order when tasks are loaded
+  useEffect(() => {
+    if (tasks.length > 0) {
+      const sortedTasks = [...tasks].sort((a, b) => 
+        new Date(a.start_date).getTime() - new Date(b.start_date).getTime()
+      );
+    }
+  }, [tasks]);
+
   const criticalCategories = [
-    { 
-      name: 'Gestione delle identità Gestione degli accessi', 
-      riskLevel: 'Alto',
-      priority: 'Critica',
-      completed: 5,
-      total: 28,
-      status: 'not_started',
-      estimatedDays: 45,
-      assignedTeam: 'IT Security',
-      budget: '€16,500'
+    {
+      category: "Network Security",
+      criticalCount: 8,
+      totalCount: 15,
+      urgentIssues: ["Unpatched SSL vulnerabilities", "Open RDP ports", "Weak firewall rules"],
+      averageRemediation: "7 days",
+      estimatedCost: "$12,000"
     },
-    { 
-      name: 'Sviluppo software', 
-      riskLevel: 'Alto',
-      priority: 'Alta',
-      completed: 1,
-      total: 23,
-      status: 'planned_in_progress',
-      estimatedDays: 60,
-      assignedTeam: 'Development',
-      budget: '€18,000'
+    {
+      category: "Identity Management", 
+      criticalCount: 12,
+      totalCount: 20,
+      urgentIssues: ["Privileged accounts without MFA", "Dormant user accounts", "Weak password policies"],
+      averageRemediation: "5 days",
+      estimatedCost: "$8,500"
     },
-    { 
-      name: 'Gestione fornitori e acquisti', 
-      riskLevel: 'Medio',
-      priority: 'Media',
-      completed: 1,
-      total: 19,
-      status: 'planned_in_progress',
-      estimatedDays: 30,
-      assignedTeam: 'Procurement',
-      budget: '€4,500'
+    {
+      category: "Data Protection",
+      criticalCount: 6,
+      totalCount: 18,
+      urgentIssues: ["Unencrypted sensitive data", "Missing backup verification", "Data retention violations"],
+      averageRemediation: "10 days",
+      estimatedCost: "$15,000"
     },
-    { 
-      name: 'Manutenzione e miglioramento continuo', 
-      riskLevel: 'Medio',
-      priority: 'Media',
-      completed: 1,
-      total: 17,
-      status: 'planned_in_progress',
-      estimatedDays: 35,
-      assignedTeam: 'Operations',
-      budget: '€4,500'
+    {
+      category: "Endpoint Security",
+      criticalCount: 9,
+      totalCount: 25,
+      urgentIssues: ["Outdated antivirus definitions", "Unmanaged devices", "Missing endpoint encryption"],
+      averageRemediation: "4 days",
+      estimatedCost: "$6,000"
+    },
+    {
+      category: "Business Continuity",
+      criticalCount: 4,
+      totalCount: 12,
+      urgentIssues: ["Outdated disaster recovery plan", "Untested backup systems", "Missing incident response procedures"],
+      averageRemediation: "14 days",
+      estimatedCost: "$20,000"
+    },
+    {
+      category: "Awareness",
+      criticalCount: 3,
+      totalCount: 8,
+      urgentIssues: ["Outdated security training", "Phishing simulation failures", "Policy compliance gaps"],
+      averageRemediation: "21 days",
+      estimatedCost: "$5,000"
     }
   ];
 
-  // Azioni GANTT con date più realistiche
-  const ganttActions = [
-    {
-      id: 1,
-      task: 'Implementazione IAM centralizzato',
-      category: 'Gestione delle identità',
-      startDate: '2025-01-15',
-      endDate: '2025-03-01',
-      progress: 0,
-      assignee: 'IT Security Team',
-      priority: 'Critica',
-      dependencies: [],
-      color: '#DC2626'
-    },
-    {
-      id: 2,
-      task: 'Audit accessi privilegiati',
-      category: 'Gestione delle identità',
-      startDate: '2025-01-20',
-      endDate: '2025-02-15',
-      progress: 0,
-      assignee: 'Security Auditor',
-      priority: 'Critica',
-      dependencies: [],
-      color: '#DC2626'
-    },
-    {
-      id: 3,
-      task: 'Implementazione SAST/DAST',
-      category: 'Sviluppo software',
-      startDate: '2025-02-01',
-      endDate: '2025-04-01',
-      progress: 15,
-      assignee: 'DevSecOps Team',
-      priority: 'Alta',
-      dependencies: [],
-      color: '#EA580C'
-    },
-    {
-      id: 4,
-      task: 'Training sviluppatori Secure Coding',
-      category: 'Sviluppo software',
-      startDate: '2025-01-25',
-      endDate: '2025-02-25',
-      progress: 0,
-      assignee: 'HR & Security',
-      priority: 'Alta',
-      dependencies: [],
-      color: '#EA580C'
-    },
-    {
-      id: 5,
-      task: 'Assessment fornitori critici',
-      category: 'Gestione fornitori',
-      startDate: '2025-02-15',
-      endDate: '2025-03-15',
-      progress: 0,
-      assignee: 'Procurement Team',
-      priority: 'Media',
-      dependencies: [],
-      color: '#EAB308'
-    },
-    {
-      id: 6,
-      task: 'Implementazione procedure backup',
-      category: 'Business Continuity',
-      startDate: '2025-03-01',
-      endDate: '2025-04-15',
-      progress: 0,
-      assignee: 'Operations Team',
-      priority: 'Alta',
-      dependencies: [],
-      color: '#EA580C'
-    },
-    {
-      id: 7,
-      task: 'Implementazione Incident Remediation Plan',
-      category: 'Incident Management',
-      startDate: '2025-02-10',
-      endDate: '2025-03-20',
-      progress: 0,
-      assignee: 'IT Security Team',
-      priority: 'Alta',
-      dependencies: [],
-      color: '#EA580C'
-    }
-  ];
-
-  const getRiskColor = (level: string) => {
-    switch (level) {
-      case 'Alto': return 'text-red-500';
-      case 'Medio': return 'text-yellow-500';
-      case 'Basso': return 'text-green-500';
+  const getRiskColor = (level: string): string => {
+    switch (level.toLowerCase()) {
+      case 'critical': case 'critico': return 'text-red-500';
+      case 'high': case 'alto': return 'text-orange-500';
+      case 'medium': case 'medio': return 'text-yellow-500';
+      case 'low': case 'basso': return 'text-green-500';
       default: return 'text-gray-500';
     }
   };
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'Critica': return 'destructive';
-      case 'Alta': return 'default';
-      case 'Media': return 'secondary';
+  const getPriorityColor = (priority: string): "default" | "destructive" | "outline" | "secondary" => {
+    switch (priority.toLowerCase()) {
+      case 'critical': case 'critico': return 'destructive';
+      case 'high': case 'alto': return 'destructive';
+      case 'medium': case 'medio': return 'default';
+      case 'low': case 'basso': return 'secondary';
       default: return 'outline';
     }
   };
 
-  const getProgressColor = (progress: number) => {
+  const getProgressColor = (progress: number): string => {
     if (progress >= 70) return 'bg-green-500';
     if (progress >= 40) return 'bg-yellow-500';
     return 'bg-red-500';
   };
 
-  // Calcolo automatico budget basato su complessità e giorni
-  const calculateBudget = (days: number, complexity: string) => {
-    const baseDayRate = {
-      low: 300,      // €300/giorno per attività semplici
-      medium: 500,   // €500/giorno per attività medie
-      high: 800      // €800/giorno per attività complesse
-    };
-    return Math.round(days * baseDayRate[complexity as keyof typeof baseDayRate]);
+  const calculateBudget = (days: number, complexity: string): number => {
+    const baseCost = days * 500; // $500 per day base cost
+    const multiplier = complexity === 'high' ? 1.5 : complexity === 'medium' ? 1.2 : 1.0;
+    return Math.round(baseCost * multiplier);
   };
 
-  const calculateDays = (complexity: string, categoryType: string) => {
-    // Stima giorni basata su tipo categoria e complessità
-    const baseEstimates = {
-      'identity_management': { low: 15, medium: 30, high: 45 },
-      'software_development': { low: 20, medium: 40, high: 60 },
-      'supplier_management': { low: 10, medium: 20, high: 30 },
-      'maintenance': { low: 12, medium: 25, high: 35 },
-      'governance': { low: 8, medium: 15, high: 25 }
-    };
-    return baseEstimates[categoryType as keyof typeof baseEstimates]?.[complexity as keyof typeof baseEstimates['identity_management']] || 20;
+  const calculateDays = (complexity: string, categoryType: string): number => {
+    const baseDays = categoryType === 'Network Security' ? 14 : 
+                     categoryType === 'Identity Management' ? 10 : 
+                     categoryType === 'Data Protection' ? 21 : 7;
+    const multiplier = complexity === 'high' ? 1.5 : complexity === 'medium' ? 1.2 : 1.0;
+    return Math.round(baseDays * multiplier);
   };
 
-  const handleCreateRemediation = () => {
-    const estimatedDays = newRemediation.estimatedDays || calculateDays(newRemediation.complexity, newRemediation.category);
-    const estimatedBudget = newRemediation.estimatedBudget || calculateBudget(Number(estimatedDays), newRemediation.complexity);
-    
-    console.log('Creating remediation:', {
-      ...newRemediation,
-      estimatedDays,
-      estimatedBudget: `€${estimatedBudget.toLocaleString()}`
-    });
-    
-    // Reset form
-    setNewRemediation({
-      category: '',
-      priority: '',
-      description: '',
-      estimatedDays: '',
-      estimatedBudget: '',
-      assignedTeam: '',
-      complexity: 'medium'
-    });
-    setIsCreateModalOpen(false);
+  const handleCreateRemediation = async () => {
+    try {
+      const startDate = new Date();
+      const endDate = new Date();
+      endDate.setDate(startDate.getDate() + newRemediation.estimatedDays);
+      
+      await createTask({
+        task: newRemediation.task,
+        category: newRemediation.category,
+        assignee: newRemediation.assignee,
+        priority: newRemediation.priority,
+        start_date: startDate.toISOString().split('T')[0],
+        end_date: endDate.toISOString().split('T')[0],
+        progress: 0,
+        dependencies: [],
+        color: getPriorityColor(newRemediation.priority) === 'destructive' ? '#ef4444' : 
+               getPriorityColor(newRemediation.priority) === 'default' ? '#3b82f6' : '#22c55e'
+      });
+      
+      // Reset form
+      setNewRemediation({
+        task: '',
+        category: '',
+        assignee: '',
+        priority: 'medium',
+        estimatedDays: 14,
+        description: ''
+      });
+      
+      setShowCreateModal(false);
+    } catch (error) {
+      console.error('Error creating task:', error);
+    }
   };
 
-  // Funzioni per il Gantt Chart con drag & drop
-  const handleDragStart = (taskId: number) => {
+  const handleDragStart = (taskId: string) => {
     setDraggedTask(taskId);
   };
 
-  const handleDragOver = (e: React.DragEvent, taskId: number) => {
+  const handleDragOver = (e: React.DragEvent, taskId: string) => {
     e.preventDefault();
-    setDraggedOver(taskId);
   };
 
-  const handleDrop = (e: React.DragEvent, targetTaskId: number) => {
+  const handleDrop = async (e: React.DragEvent, targetTaskId: string) => {
     e.preventDefault();
-    if (draggedTask && draggedTask !== targetTaskId) {
-      const newOrder = [...taskOrder];
-      const draggedIndex = newOrder.indexOf(draggedTask);
-      const targetIndex = newOrder.indexOf(targetTaskId);
-      
-      // Rimuovi il task dalla posizione originale
+    
+    if (draggedTask === null || draggedTask === targetTaskId) return;
+    
+    const currentOrder = tasks.map(t => t.id);
+    const draggedIndex = currentOrder.indexOf(draggedTask);
+    const targetIndex = currentOrder.indexOf(targetTaskId);
+    
+    if (draggedIndex !== -1 && targetIndex !== -1) {
+      const newOrder = [...currentOrder];
       newOrder.splice(draggedIndex, 1);
-      // Inserisci nella nuova posizione
       newOrder.splice(targetIndex, 0, draggedTask);
       
-      setTaskOrder(newOrder);
-      
-      // Ricalcola le date per evitare sovrapposizioni
-      recalculateDates(newOrder);
+      await reorderTasks(newOrder);
     }
+    
     setDraggedTask(null);
-    setDraggedOver(null);
   };
 
-  // Funzioni per il resize delle barre
-  const handleResizeStart = (e: React.MouseEvent, taskId: number, side: 'left' | 'right') => {
-    e.stopPropagation();
-    setResizingTask({ id: taskId, side });
-    
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      const ganttContainer = document.querySelector('.gantt-timeline') as HTMLElement;
-      if (!ganttContainer) return;
-      
-      const containerRect = ganttContainer.getBoundingClientRect();
-      const relativeX = moveEvent.clientX - containerRect.left;
-      const percentage = Math.max(0, Math.min(100, (relativeX / containerRect.width) * 100));
-      
-      // Converti percentuale in data
-      const startDate = new Date('2025-01-01');
-      const endDate = new Date('2025-05-01');
-      const totalDays = differenceInDays(endDate, startDate);
-      const targetDays = Math.round((percentage / 100) * totalDays);
-      const targetDate = format(addDays(startDate, targetDays), 'yyyy-MM-dd');
-      
-      setTaskDates(prev => {
-        const currentDates = prev[taskId];
-        if (side === 'left') {
-          // Non permettere che la data di inizio superi quella di fine
-          const endDateObj = parseISO(currentDates.endDate);
-          const newStartDateObj = parseISO(targetDate);
-          if (newStartDateObj < endDateObj) {
-            return {
-              ...prev,
-              [taskId]: { ...currentDates, startDate: targetDate }
-            };
-          }
-        } else {
-          // Non permettere che la data di fine sia prima di quella di inizio
-          const startDateObj = parseISO(currentDates.startDate);
-          const newEndDateObj = parseISO(targetDate);
-          if (newEndDateObj > startDateObj) {
-            return {
-              ...prev,
-              [taskId]: { ...currentDates, endDate: targetDate }
-            };
-          }
-        }
-        return prev;
-      });
-    };
-    
-    const handleMouseUp = () => {
-      setResizingTask(null);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-    
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+  const handleResizeStart = (e: React.MouseEvent, taskId: string, side: 'left' | 'right') => {
+    e.preventDefault();
+    setResizingTask({ taskId, side });
   };
 
-  const recalculateDates = (order: number[]) => {
-    // Logica per riallocare le date quando i task si sovrappongono
-    console.log('Recalculating dates for order:', order);
+  const handleDeleteTask = async (taskId: string) => {
+    if (confirm('Sei sicuro di voler eliminare questa attività?')) {
+      await deleteTask(taskId);
+    }
   };
 
-  const getGanttData = () => {
-    const startDate = new Date('2025-01-01');
-    const endDate = new Date('2025-05-01');
-    const totalDays = differenceInDays(endDate, startDate);
+  const getGanttData = (): GanttTask[] => {
+    if (tasks.length === 0) return [];
     
-    // Ordina i task secondo l'ordine corrente
-    const orderedActions = taskOrder.map(id => {
-      const baseAction = ganttActions.find(action => action.id === id)!;
-      const dates = taskDates[id];
-      return {
-        ...baseAction,
-        startDate: dates.startDate,
-        endDate: dates.endDate
-      };
-    }).filter(Boolean);
+    // Find the earliest start date
+    const earliestDate = new Date(Math.min(...tasks.map(t => new Date(t.start_date).getTime())));
     
-    return orderedActions.map(action => {
-      const actionStart = parseISO(action.startDate);
-      const actionEnd = parseISO(action.endDate);
-      const daysFromStart = differenceInDays(actionStart, startDate);
-      const duration = differenceInDays(actionEnd, actionStart);
+    return tasks.map(task => {
+      const startDate = new Date(task.start_date);
+      const endDate = new Date(task.end_date);
+      
+      const startDiff = Math.ceil((startDate.getTime() - earliestDate.getTime()) / (1000 * 60 * 60 * 24));
+      const duration = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      const progressWidth = (task.progress / 100) * 100;
       
       return {
-        ...action,
-        startOffset: (daysFromStart / totalDays) * 100,
-        width: (duration / totalDays) * 100,
-        progressWidth: ((duration * action.progress) / 100 / totalDays) * 100,
-        duration: duration
+        ...task,
+        offsetDays: Math.max(0, startDiff),
+        durationDays: duration,
+        progressWidth
       };
     });
   };
 
-  const ganttData = getGanttData();
-
-  // Generiamo le settimane per l'header del Gantt
   const generateWeeks = () => {
     const weeks = [];
-    const startDate = new Date('2025-01-01');
-    const endDate = new Date('2025-05-01');
-    let currentDate = startDate;
+    const currentDate = new Date();
     
-    while (currentDate < endDate) {
+    for (let i = 0; i < 12; i++) {
+      const weekDate = new Date(currentDate);
+      weekDate.setDate(currentDate.getDate() + (i * 7));
       weeks.push({
-        label: format(currentDate, 'dd/MM'),
-        date: new Date(currentDate)
+        label: `W${i + 1}`,
+        date: weekDate
       });
-      currentDate = addDays(currentDate, 7);
     }
     return weeks;
-  };
-
-  const weeks = generateWeeks();
-  const actionableMetrics = {
-    totalBudget: '€62,500',
-    estimatedCompletion: '120 giorni',
-    riskReduction: '65%',
-    complianceImprovement: '60%',
-    criticalIssues: 4,
-    highPriorityActions: 7
   };
 
   return (
@@ -420,585 +256,432 @@ const Remediation: React.FC = () => {
           <div>
             <h1 className="text-3xl font-bold text-foreground">Piano di Remediation</h1>
             <p className="text-muted-foreground">
-              Azioni prioritarie per mitigare i rischi critici identificati nell'assessment
+              Gestione delle attività di remediation con salvataggio automatico
             </p>
           </div>
-          <div className="flex space-x-2">
-            <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
-              <DialogTrigger asChild>
-                <Button className="bg-green-600 hover:bg-green-700 text-white">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Crea Remediation
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl">
-                <DialogHeader>
-                  <DialogTitle className="flex items-center">
-                    <Calculator className="w-5 h-5 mr-2" />
-                    Crea Nuova Remediation
-                  </DialogTitle>
-                </DialogHeader>
+          
+          <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Nuova Attività
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Crea Nuova Attività di Remediation</DialogTitle>
+                <DialogDescription>
+                  Aggiungi una nuova attività di remediation che verrà salvata automaticamente
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="task">Nome Attività</Label>
+                  <Input
+                    id="task"
+                    value={newRemediation.task}
+                    onChange={(e) => setNewRemediation(prev => ({
+                      ...prev,
+                      task: e.target.value
+                    }))}
+                    placeholder="es. Implementazione MFA"
+                  />
+                </div>
                 
-                <div className="space-y-6 py-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="category">Categoria Assessment</Label>
-                      <Select value={newRemediation.category} onValueChange={(value) => 
-                        setNewRemediation(prev => ({ ...prev, category: value }))
-                      }>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Seleziona categoria" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="identity_management">Gestione delle identità</SelectItem>
-                          <SelectItem value="software_development">Sviluppo software</SelectItem>
-                          <SelectItem value="supplier_management">Gestione fornitori</SelectItem>
-                          <SelectItem value="maintenance">Manutenzione continua</SelectItem>
-                          <SelectItem value="governance">Governance</SelectItem>
-                          <SelectItem value="encryption">Crittografia</SelectItem>
-                          <SelectItem value="incident_management">Gestione incidenti</SelectItem>
-                          <SelectItem value="risk_management">Gestione del rischio</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="priority">Priorità</Label>
-                      <Select value={newRemediation.priority} onValueChange={(value) => 
-                        setNewRemediation(prev => ({ ...prev, priority: value }))
-                      }>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Seleziona priorità" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="critica">Critica</SelectItem>
-                          <SelectItem value="alta">Alta</SelectItem>
-                          <SelectItem value="media">Media</SelectItem>
-                          <SelectItem value="bassa">Bassa</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="description">Descrizione Remediation</Label>
-                    <Textarea
-                      id="description"
-                      value={newRemediation.description}
-                      onChange={(e) => setNewRemediation(prev => ({ ...prev, description: e.target.value }))}
-                      placeholder="Descrivi le azioni da intraprendere per la remediation..."
-                      rows={3}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="complexity">Complessità</Label>
-                      <Select value={newRemediation.complexity} onValueChange={(value) => 
-                        setNewRemediation(prev => ({ ...prev, complexity: value }))
-                      }>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="low">Bassa (€300/gg)</SelectItem>
-                          <SelectItem value="medium">Media (€500/gg)</SelectItem>
-                          <SelectItem value="high">Alta (€800/gg)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="estimatedDays">Giorni Stimati</Label>
-                      <Input
-                        id="estimatedDays"
-                        type="number"
-                        value={newRemediation.estimatedDays}
-                        onChange={(e) => setNewRemediation(prev => ({ ...prev, estimatedDays: e.target.value }))}
-                        placeholder={`Auto: ${calculateDays(newRemediation.complexity, newRemediation.category)}`}
-                      />
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="estimatedBudget">Budget Stimato (€)</Label>
-                      <Input
-                        id="estimatedBudget"
-                        type="number"
-                        value={newRemediation.estimatedBudget}
-                        onChange={(e) => setNewRemediation(prev => ({ ...prev, estimatedBudget: e.target.value }))}
-                        placeholder={`Auto: €${calculateBudget(
-                          Number(newRemediation.estimatedDays) || calculateDays(newRemediation.complexity, newRemediation.category), 
-                          newRemediation.complexity
-                        ).toLocaleString()}`}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="assignedTeam">Team Assegnato</Label>
-                    <Select value={newRemediation.assignedTeam} onValueChange={(value) => 
-                      setNewRemediation(prev => ({ ...prev, assignedTeam: value }))
-                    }>
+                    <Label htmlFor="category">Categoria</Label>
+                    <Select 
+                      value={newRemediation.category} 
+                      onValueChange={(value) => setNewRemediation(prev => ({
+                        ...prev,
+                        category: value
+                      }))}
+                    >
                       <SelectTrigger>
-                        <SelectValue placeholder="Seleziona team" />
+                        <SelectValue placeholder="Seleziona categoria" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="IT Security">IT Security Team</SelectItem>
-                        <SelectItem value="Development">Development Team</SelectItem>
-                        <SelectItem value="DevSecOps">DevSecOps Team</SelectItem>
-                        <SelectItem value="Procurement">Procurement Team</SelectItem>
-                        <SelectItem value="Operations">Operations Team</SelectItem>
-                        <SelectItem value="Compliance">Compliance Team</SelectItem>
-                        <SelectItem value="HR">HR & Training</SelectItem>
+                        <SelectItem value="Network Security">Network Security</SelectItem>
+                        <SelectItem value="Identity Management">Identity Management</SelectItem>
+                        <SelectItem value="Data Protection">Data Protection</SelectItem>
+                        <SelectItem value="Endpoint Security">Endpoint Security</SelectItem>
+                        <SelectItem value="Business Continuity">Business Continuity</SelectItem>
+                        <SelectItem value="Awareness">Awareness</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-
-                  {/* Anteprima calcoli */}
-                  <Card className="bg-muted/50">
-                    <CardContent className="p-4">
-                      <h4 className="font-medium mb-3 flex items-center">
-                        <Euro className="w-4 h-4 mr-2" />
-                        Stima Automatica
-                      </h4>
-                      <div className="grid grid-cols-3 gap-4 text-sm">
-                        <div>
-                          <span className="text-muted-foreground">Giorni:</span>
-                          <p className="font-medium">
-                            {newRemediation.estimatedDays || calculateDays(newRemediation.complexity, newRemediation.category)} giorni
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Budget:</span>
-                          <p className="font-medium">
-                            €{(Number(newRemediation.estimatedBudget) || calculateBudget(
-                              Number(newRemediation.estimatedDays) || calculateDays(newRemediation.complexity, newRemediation.category), 
-                              newRemediation.complexity
-                            )).toLocaleString()}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Tariffa/gg:</span>
-                          <p className="font-medium">
-                            €{newRemediation.complexity === 'low' ? '300' : newRemediation.complexity === 'high' ? '800' : '500'}
-                          </p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <div className="flex justify-end space-x-2">
-                    <Button variant="outline" onClick={() => setIsCreateModalOpen(false)}>
-                      Annulla
-                    </Button>
-                    <Button onClick={handleCreateRemediation} className="bg-green-600 hover:bg-green-700">
-                      Crea Remediation
-                    </Button>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="priority">Priorità</Label>
+                    <Select 
+                      value={newRemediation.priority} 
+                      onValueChange={(value) => setNewRemediation(prev => ({
+                        ...prev,
+                        priority: value
+                      }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleziona priorità" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="critical">Critica</SelectItem>
+                        <SelectItem value="high">Alta</SelectItem>
+                        <SelectItem value="medium">Media</SelectItem>
+                        <SelectItem value="low">Bassa</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
-              </DialogContent>
-            </Dialog>
-            
-            <Button variant="outline">
-              <FileText className="w-4 h-4 mr-2" />
-              Esporta Piano
-            </Button>
-            <Button className="bg-primary text-primary-foreground">
-              <CalendarDays className="w-4 h-4 mr-2" />
-              Pianifica Revisione
-            </Button>
-          </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="assignee">Assegnato a</Label>
+                    <Input
+                      id="assignee"
+                      value={newRemediation.assignee}
+                      onChange={(e) => setNewRemediation(prev => ({
+                        ...prev,
+                        assignee: e.target.value
+                      }))}
+                      placeholder="es. IT Security Team"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="estimatedDays">Giorni Stimati</Label>
+                    <Input
+                      id="estimatedDays"
+                      type="number"
+                      min="1"
+                      value={newRemediation.estimatedDays}
+                      onChange={(e) => setNewRemediation(prev => ({
+                        ...prev,
+                        estimatedDays: parseInt(e.target.value) || 14
+                      }))}
+                    />
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="description">Descrizione</Label>
+                  <Textarea
+                    id="description"
+                    value={newRemediation.description}
+                    onChange={(e) => setNewRemediation(prev => ({
+                      ...prev,
+                      description: e.target.value
+                    }))}
+                    placeholder="Descrizione dettagliata dell'attività..."
+                    rows={3}
+                  />
+                </div>
+                
+                <div className="flex justify-end space-x-2">
+                  <Button variant="outline" onClick={() => setShowCreateModal(false)}>
+                    Annulla
+                  </Button>
+                  <Button onClick={handleCreateRemediation} disabled={!newRemediation.task || !newRemediation.category}>
+                    Crea Attività
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
 
-        {/* Metriche Executive Summary */}
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Budget Totale</p>
-                  <p className="text-xl font-bold text-foreground">{actionableMetrics.totalBudget}</p>
-                </div>
-                <Target className="w-6 h-6 text-primary" />
-              </div>
+        {/* Executive Summary */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Attività Totali</CardTitle>
+              <Target className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{tasks.length}</div>
+              <p className="text-xs text-muted-foreground">
+                {tasks.filter(t => t.progress === 100).length} completate
+              </p>
             </CardContent>
           </Card>
           
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Tempo Stimato</p>
-                  <p className="text-xl font-bold text-foreground">{actionableMetrics.estimatedCompletion}</p>
-                </div>
-                <Clock className="w-6 h-6 text-yellow-500" />
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">In Corso</CardTitle>
+              <Clock className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-orange-600">
+                {tasks.filter(t => t.progress > 0 && t.progress < 100).length}
               </div>
+              <p className="text-xs text-muted-foreground">Attività attive</p>
             </CardContent>
           </Card>
           
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Riduzione Rischio</p>
-                  <p className="text-xl font-bold text-green-500">{actionableMetrics.riskReduction}</p>
-                </div>
-                <TrendingUp className="w-6 h-6 text-green-500" />
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Critiche</CardTitle>
+              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-600">
+                {tasks.filter(t => t.priority === 'critical' && t.progress < 100).length}
               </div>
+              <p className="text-xs text-muted-foreground">Priorità alta</p>
             </CardContent>
           </Card>
           
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Miglioramento Compliance</p>
-                  <p className="text-xl font-bold text-blue-500">{actionableMetrics.complianceImprovement}</p>
-                </div>
-                <CheckCircle className="w-6 h-6 text-blue-500" />
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Progresso</CardTitle>
+              <CheckCircle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">
+                {tasks.length > 0 ? Math.round((tasks.filter(t => t.progress === 100).length / tasks.length) * 100) : 0}%
               </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Criticità</p>
-                  <p className="text-xl font-bold text-red-500">{actionableMetrics.criticalIssues}</p>
-                </div>
-                <AlertTriangle className="w-6 h-6 text-red-500" />
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Azioni Prioritarie</p>
-                  <p className="text-xl font-bold text-orange-500">{actionableMetrics.highPriorityActions}</p>
-                </div>
-                <Wrench className="w-6 h-6 text-orange-500" />
-              </div>
+              <Progress 
+                value={tasks.length > 0 ? (tasks.filter(t => t.progress === 100).length / tasks.length) * 100 : 0} 
+                className="mt-2" 
+              />
             </CardContent>
           </Card>
         </div>
 
-        <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="overview">Panoramica Remediation</TabsTrigger>
-            <TabsTrigger value="gantt">GANTT Operativo</TabsTrigger>
-            <TabsTrigger value="metrics">Metriche & KPI</TabsTrigger>
+        {/* Main Content */}
+        <Tabs defaultValue="overview" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="overview">Panoramica</TabsTrigger>
+            <TabsTrigger value="gantt">GANTT</TabsTrigger>
+            <TabsTrigger value="metrics">Metriche</TabsTrigger>
           </TabsList>
-          
+
           <TabsContent value="overview" className="space-y-6">
-            {/* Aree Critiche */}
-            <Card className="border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <AlertTriangle className="w-5 h-5 mr-2 text-red-500" />
-                  Aree che Richiedono Remediation Immediata
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {criticalCategories.map((category, index) => (
-                    <div key={index} className="flex items-center justify-between p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors">
-                      <div className="flex items-center space-x-4">
-                        <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/20">
-                          <AlertTriangle className="w-5 h-5 text-red-500" />
-                        </div>
-                        <div className="flex-1">
-                          <h4 className="font-medium">{category.name}</h4>
-                          <p className="text-sm text-muted-foreground">
-                            Completamento: {category.completed}/{category.total} ({Math.round((category.completed/category.total)*100)}%)
-                          </p>
-                          <div className="mt-2">
-                            <Progress 
-                              value={(category.completed/category.total)*100} 
-                              className="h-1.5 w-64" 
-                            />
-                          </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {criticalCategories.map((category, index) => (
+                <Card key={index}>
+                  <CardHeader>
+                    <CardTitle className="text-lg">{category.category}</CardTitle>
+                    <CardDescription>
+                      {category.criticalCount} vulnerabilità critiche da risolvere
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Progresso</span>
+                      <span className="text-sm text-muted-foreground">
+                        {category.criticalCount}/{category.totalCount}
+                      </span>
+                    </div>
+                    <Progress value={(category.criticalCount / category.totalCount) * 100} />
+                    
+                    <div className="space-y-2">
+                      <span className="text-sm font-medium">Problemi urgenti:</span>
+                      <ul className="text-sm text-muted-foreground space-y-1">
+                        {category.urgentIssues.map((issue, issueIndex) => (
+                          <li key={issueIndex} className="flex items-start">
+                            <span className="w-1 h-1 bg-red-500 rounded-full mt-2 mr-2 flex-shrink-0" />
+                            {issue}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    
+                    <div className="flex justify-between items-center pt-4 border-t">
+                      <div className="text-center">
+                        <div className="text-sm font-medium">{category.averageRemediation}</div>
+                        <div className="text-xs text-muted-foreground">Tempo medio</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-sm font-medium">{category.estimatedCost}</div>
+                        <div className="text-xs text-muted-foreground">Costo stimato</div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="gantt" className="space-y-6">
+            {loading ? (
+              <div className="text-center py-8">
+                <div className="text-sm text-muted-foreground">Caricamento attività...</div>
+              </div>
+            ) : (
+              <div className="bg-white dark:bg-card p-6 rounded-lg border">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-lg font-semibold">Timeline delle Attività</h3>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Settimane:</span>
+                    {generateWeeks().map((week, index) => (
+                      <div key={index} className="text-xs text-center">
+                        <div className="font-medium">{week.label}</div>
+                        <div className="text-muted-foreground">{week.date.getDate()}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  {getGanttData().map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-4 p-3 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors"
+                      draggable
+                      onDragStart={() => handleDragStart(item.id)}
+                      onDragOver={(e) => handleDragOver(e, item.id)}
+                      onDrop={(e) => handleDrop(e, item.id)}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-sm truncate">{item.task}</div>
+                        <div className="text-xs text-muted-foreground">{item.assignee}</div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <Badge variant={getPriorityColor(item.priority)}>
+                          {item.priority}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground w-16 text-right">
+                          {item.progress}% done
+                        </span>
+                      </div>
+                      
+                      <div className="relative w-96 h-8 bg-muted rounded">
+                        <div
+                          className="absolute top-0 h-full rounded"
+                          style={{
+                            left: `${(item.offsetDays / 90) * 100}%`,
+                            width: `${(item.durationDays / 90) * 100}%`,
+                            backgroundColor: item.color,
+                            opacity: 0.7
+                          }}
+                        >
+                          <div
+                            className="h-full rounded"
+                            style={{
+                              width: `${item.progressWidth}%`,
+                              backgroundColor: item.color
+                            }}
+                          />
+                          
+                          {/* Resize handles */}
+                          <div
+                            className="absolute left-0 top-0 w-2 h-full cursor-w-resize bg-black/20 rounded-l opacity-0 hover:opacity-100 transition-opacity"
+                            onMouseDown={(e) => handleResizeStart(e, item.id, 'left')}
+                          />
+                          <div
+                            className="absolute right-0 top-0 w-2 h-full cursor-e-resize bg-black/20 rounded-r opacity-0 hover:opacity-100 transition-opacity"
+                            onMouseDown={(e) => handleResizeStart(e, item.id, 'right')}
+                          />
                         </div>
                       </div>
-                      <div className="flex items-center space-x-4 text-right">
-                        <div>
-                          <div className={`text-sm font-medium ${getRiskColor(category.riskLevel)}`}>
-                            Rischio: {category.riskLevel}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            Team: {category.assignedTeam}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            Budget: {category.budget}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            Stima: {category.estimatedDays} giorni
-                          </div>
-                        </div>
-                        <Badge variant={getPriorityColor(category.priority) as any}>
-                          {category.priority}
-                        </Badge>
-                        <Button variant="outline" size="sm">
-                          <Wrench className="w-4 h-4 mr-1" />
-                          Pianifica
+                      
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-muted-foreground hover:text-foreground"
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-500 hover:text-red-700"
+                          onClick={() => handleDeleteTask(item.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </div>
                   ))}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="gantt" className="space-y-6">
-            <Card className="border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Calendar className="w-5 h-5 mr-2 text-primary" />
-                  GANTT Operativo - Timeline Remediation
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  {/* Header timeline */}
-                  <div className="mb-4">
-                    <div className="flex">
-                      <div className="w-64 flex-shrink-0"></div>
-                      <div className="flex-1 flex border-b border-border">
-                        {weeks.map((week, index) => (
-                          <div 
-                            key={index} 
-                            className="flex-1 text-center text-xs text-muted-foreground py-2 border-r border-border/50"
-                          >
-                            {week.label}
-                          </div>
-                        ))}
-                      </div>
+                  
+                  {tasks.length === 0 && (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <div className="text-sm">Nessuna attività trovata.</div>
+                      <div className="text-xs mt-1">Crea la tua prima attività di remediation.</div>
                     </div>
-                  </div>
-
-                  {/* Gantt bars con drag & drop */}
-                  <div className="space-y-3">
-                    {ganttData.map((action) => (
-                      <div 
-                        key={action.id} 
-                        className={`flex items-center transition-all duration-200 rounded-lg p-2 cursor-move
-                          ${draggedTask === action.id ? 'opacity-50 scale-95' : ''}
-                          ${draggedOver === action.id ? 'bg-primary/10 border-l-4 border-primary' : ''}
-                          hover:bg-muted/30
-                        `}
-                        draggable
-                        onDragStart={() => handleDragStart(action.id)}
-                        onDragOver={(e) => handleDragOver(e, action.id)}
-                        onDrop={(e) => handleDrop(e, action.id)}
-                        onDragEnd={() => {
-                          setDraggedTask(null);
-                          setDraggedOver(null);
-                        }}
-                      >
-                        {/* Task info */}
-                        <div className="w-64 flex-shrink-0 pr-4">
-                          <div className="flex items-center space-x-2">
-                            <div className="text-sm font-medium text-foreground">
-                              {action.task}
-                            </div>
-                            <div className="w-2 h-2 rounded-full bg-muted-foreground opacity-30"></div>
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {action.assignee}
-                          </div>
-                          <div className="flex items-center space-x-2 mt-1">
-                            <Badge 
-                              variant={action.priority === 'Critica' ? 'destructive' : 
-                                      action.priority === 'Alta' ? 'default' : 'secondary'} 
-                              className="text-xs"
-                            >
-                              {action.priority}
-                            </Badge>
-                            <span className="text-xs text-muted-foreground">
-                              {action.progress}%
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Gantt timeline */}
-                        <div className="flex-1 relative h-8 bg-muted/20 rounded gantt-timeline">
-                          {/* Task bar con handle di resize */}
-                          <div
-                            className="absolute h-6 top-1 rounded-sm flex items-center group transition-all duration-200"
-                            style={{
-                              left: `${action.startOffset}%`,
-                              width: `${action.width}%`,
-                              backgroundColor: action.color + '40',
-                              border: `2px solid ${action.color}`,
-                              transform: draggedTask === action.id ? 'scale(0.95)' : 'scale(1)',
-                              zIndex: resizingTask?.id === action.id ? 10 : 1
-                            }}
-                          >
-                            {/* Handle sinistra per resize start date */}
-                            <div
-                              className="absolute left-0 top-0 w-2 h-full bg-primary/80 rounded-l-sm cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary"
-                              onMouseDown={(e) => handleResizeStart(e, action.id, 'left')}
-                              title="Trascina per modificare data inizio"
-                            />
-                            
-                            {/* Progress bar */}
-                            <div
-                              className="h-full rounded-sm transition-all duration-200 pointer-events-none"
-                              style={{
-                                width: `${action.progress}%`,
-                                backgroundColor: action.color,
-                                minWidth: action.progress > 0 ? '4px' : '0'
-                              }}
-                            />
-                            
-                            {/* Handle destra per resize end date */}
-                            <div
-                              className="absolute right-0 top-0 w-2 h-full bg-primary/80 rounded-r-sm cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary"
-                              onMouseDown={(e) => handleResizeStart(e, action.id, 'right')}
-                              title="Trascina per modificare data fine"
-                            />
-                          </div>
-                          
-                          {/* Tooltip info con durata aggiornata */}
-                          <div className="absolute top-8 left-0 text-xs text-muted-foreground whitespace-nowrap">
-                            {format(parseISO(action.startDate), 'dd/MM')} - {format(parseISO(action.endDate), 'dd/MM')}
-                            <span className="text-primary ml-2">
-                              ({action.duration} giorni)
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Legend */}
-                  <div className="mt-6 pt-4 border-t border-border">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-6 text-xs">
-                          <div className="flex items-center space-x-2">
-                            <div className="w-4 h-2 bg-red-600 rounded"></div>
-                            <span>Critica</span>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <div className="w-4 h-2 bg-orange-600 rounded"></div>
-                            <span>Alta</span>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <div className="w-4 h-2 bg-yellow-600 rounded"></div>
-                            <span>Media</span>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <div className="w-4 h-2 bg-gray-400 rounded"></div>
-                            <span>Barra: Durata totale</span>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <div className="w-4 h-2 bg-red-600 rounded"></div>
-                            <span>Riempimento: Progresso</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-4 text-xs text-muted-foreground">
-                          <div className="flex items-center space-x-2">
-                            <div className="w-3 h-3 border-2 border-dashed border-muted-foreground rounded"></div>
-                            <span>Trascina i task per riordinarli</span>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <div className="w-2 h-3 bg-primary rounded"></div>
-                            <span>Trascina i bordi per modificare le date</span>
-                          </div>
-                        </div>
-                      </div>
-                  </div>
+                  )}
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="metrics" className="space-y-6">
-            {/* KPI Dashboard per Stakeholder */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* IT Metrics */}
-              <Card className="border-border">
+              <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center text-blue-600">
-                    <BarChart3 className="w-5 h-5 mr-2" />
-                    Metriche IT
+                  <CardTitle className="flex items-center">
+                    <BarChart3 className="h-5 w-5 mr-2" />
+                    KPI IT
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex justify-between">
-                    <span className="text-sm">Vulnerabilità Critiche</span>
-                    <span className="font-bold text-red-500">12</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm">Patch Missing</span>
-                    <span className="font-bold text-yellow-500">23</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm">Sistemi Non Conformi</span>
-                    <span className="font-bold text-orange-500">8</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm">Tempo Medio Remediation</span>
-                    <span className="font-bold">15 giorni</span>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Attività completate</span>
+                      <span className="font-medium">{tasks.filter(t => t.progress === 100).length}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Tempo medio remediation</span>
+                      <span className="font-medium">12 giorni</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Efficienza del team</span>
+                      <span className="font-medium">85%</span>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
-
-              {/* Compliance Metrics */}
-              <Card className="border-border">
+              
+              <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center text-green-600">
-                    <CheckCircle className="w-5 h-5 mr-2" />
-                    Metriche Compliance
+                  <CardTitle className="flex items-center">
+                    <Users className="h-5 w-5 mr-2" />
+                    KPI Compliance
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex justify-between">
-                    <span className="text-sm">Conformità NIS2</span>
-                    <span className="font-bold text-yellow-500">68%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm">Gap Identificati</span>
-                    <span className="font-bold text-red-500">45</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm">Controlli Implementati</span>
-                    <span className="font-bold text-green-500">127</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm">Audit Readiness</span>
-                    <span className="font-bold text-yellow-500">72%</span>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Conformità raggiunta</span>
+                      <span className="font-medium">78%</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Gap critici risolti</span>
+                      <span className="font-medium">{tasks.filter(t => t.priority === 'critical' && t.progress === 100).length}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Audit readiness</span>
+                      <span className="font-medium">Good</span>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
-
-              {/* Executive Metrics */}
-              <Card className="border-border">
+              
+              <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center text-purple-600">
-                    <Users className="w-5 h-5 mr-2" />
-                    Metriche Direzione
+                  <CardTitle className="flex items-center">
+                    <DollarSign className="h-5 w-5 mr-2" />
+                    KPI Executive
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex justify-between">
-                    <span className="text-sm">ROI Sicurezza</span>
-                    <span className="font-bold text-green-500">3.2x</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm">Rischio Residuo</span>
-                    <span className="font-bold text-yellow-500">Medio</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm">Costi Evitati</span>
-                    <span className="font-bold text-green-500">€65K</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm">Business Continuity</span>
-                    <span className="font-bold text-green-500">94%</span>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Riduzione del rischio</span>
+                      <span className="font-medium">65%</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Budget utilizzato</span>
+                      <span className="font-medium">€45,000</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">ROI sicurezza</span>
+                      <span className="font-medium">3.2x</span>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
