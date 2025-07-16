@@ -37,14 +37,21 @@ import { toast } from '@/hooks/use-toast';
 const Remediation: React.FC = () => {
   const [selectedTimeframe, setSelectedTimeframe] = useState('90days');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [draggedTask, setDraggedTask] = useState<string | null>(null);
-  const [draggedOver, setDraggedOver] = useState<string | null>(null);
-  const [taskOrder, setTaskOrder] = useState<string[]>([]);
-  const [hiddenTasks, setHiddenTasks] = useState<Set<string>>(new Set());
-  const [deletedTasks, setDeletedTasks] = useState<Set<string>>(new Set());
-  const [realTasks, setRealTasks] = useState<any[]>([]);
-  const [taskDates, setTaskDates] = useState<Record<string, { startDate: string, endDate: string }>>({});
-  const [resizingTask, setResizingTask] = useState<{ id: string, side: 'left' | 'right' } | null>(null);
+  const [draggedTask, setDraggedTask] = useState<number | null>(null);
+  const [draggedOver, setDraggedOver] = useState<number | null>(null);
+  const [taskOrder, setTaskOrder] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
+  const [resizingTask, setResizingTask] = useState<{ id: number, side: 'left' | 'right' } | null>(null);
+  const [taskDates, setTaskDates] = useState<Record<number, { startDate: string, endDate: string }>>({
+    1: { startDate: '2025-01-15', endDate: '2025-03-01' },
+    2: { startDate: '2025-01-20', endDate: '2025-02-15' },
+    3: { startDate: '2025-02-01', endDate: '2025-04-01' },
+    4: { startDate: '2025-01-25', endDate: '2025-02-25' },
+    5: { startDate: '2025-02-15', endDate: '2025-03-15' },
+    6: { startDate: '2025-03-01', endDate: '2025-04-15' },
+    7: { startDate: '2025-02-10', endDate: '2025-03-20' }
+  });
+  const [hiddenTasks, setHiddenTasks] = useState<Set<number>>(new Set());
+  const [deletedTasks, setDeletedTasks] = useState<Set<number>>(new Set());
   const [newRemediation, setNewRemediation] = useState({
     category: '',
     priority: '',
@@ -55,51 +62,17 @@ const Remediation: React.FC = () => {
     complexity: 'medium'
   });
 
-  // Carica i task reali dal database
-  useEffect(() => {
-    const loadRealTasks = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('remediation_tasks')
-          .select('*')
-          .eq('organization_id', '8112bd1d-5907-4292-af35-41db7bfbaf3a')
-          .order('display_order');
-        
-        if (error) throw error;
-        
-        if (data && data.length > 0) {
-          setRealTasks(data);
-          const taskIds = data.map(task => task.id);
-          setTaskOrder(taskIds);
-          
-          // Imposta le date dei task
-          const dates: Record<string, { startDate: string, endDate: string }> = {};
-          data.forEach(task => {
-            dates[task.id] = {
-              startDate: task.start_date,
-              endDate: task.end_date
-            };
-          });
-          setTaskDates(dates);
-          
-          // Imposta visibilità e stato eliminazione
-          const hidden = new Set(data.filter(task => task.is_hidden).map(task => task.id));
-          const deleted = new Set(data.filter(task => task.is_deleted).map(task => task.id));
-          setHiddenTasks(hidden);
-          setDeletedTasks(deleted);
-        }
-      } catch (error) {
-        console.error('Errore nel caricamento dei task:', error);
-        toast({
-          title: "Errore",
-          description: "Impossibile caricare i task dal database.",
-          variant: "destructive"
-        });
-      }
+  // Funzione per convertire ID mock a UUID per il database
+  const getUUIDForMockId = async (mockId: number) => {
+    // Qui potresti implementare una mappatura tra ID mock e UUID reali
+    // Per ora genero un UUID fittizio basato sull'ID mock
+    const mockUUIDs: Record<number, string> = {
+      1: '89862a35-1eec-4489-889b-5781e6e78dd4',
+      2: '27afa77b-05a1-4ae3-8bdf-ea39f84135b2',
+      // Aggiungi altri mapping se necessario
     };
-
-    loadRealTasks();
-  }, []);
+    return mockUUIDs[mockId] || `mock-${mockId}-uuid`;
+  };
 
   // Categorie critiche che necessitano remediation (status: not_started o planned_in_progress)
   const criticalCategories = [
@@ -307,16 +280,16 @@ const Remediation: React.FC = () => {
   };
 
   // Funzioni per il Gantt Chart con drag & drop
-  const handleDragStart = (taskId: string) => {
+  const handleDragStart = (taskId: number) => {
     setDraggedTask(taskId);
   };
 
-  const handleDragOver = (e: React.DragEvent, taskId: string) => {
+  const handleDragOver = (e: React.DragEvent, taskId: number) => {
     e.preventDefault();
     setDraggedOver(taskId);
   };
 
-  const handleDrop = (e: React.DragEvent, targetTaskId: string) => {
+  const handleDrop = (e: React.DragEvent, targetTaskId: number) => {
     e.preventDefault();
     if (draggedTask && draggedTask !== targetTaskId) {
       const newOrder = [...taskOrder];
@@ -341,7 +314,7 @@ const Remediation: React.FC = () => {
   };
 
   // Funzioni per il resize delle barre
-  const handleResizeStart = (e: React.MouseEvent, taskId: string, side: 'left' | 'right') => {
+  const handleResizeStart = (e: React.MouseEvent, taskId: number, side: 'left' | 'right') => {
     e.stopPropagation();
     setResizingTask({ id: taskId, side });
     
@@ -403,18 +376,19 @@ const Remediation: React.FC = () => {
     document.addEventListener('mouseup', handleMouseUp);
   };
 
-  const recalculateDates = (order: string[]) => {
+  const recalculateDates = (order: number[]) => {
     // Logica per riallocare le date quando i task si sovrappongono
     console.log('Recalculating dates for order:', order);
   };
 
   // Funzioni per il salvataggio nel database
-  const saveTaskOrder = async (newOrder: string[]) => {
+  const saveTaskOrder = async (newOrder: number[]) => {
     try {
-      const updates = newOrder.map((taskId, index) => ({
-        id: taskId,
+      // Converte gli ID mock a UUID per il salvataggio nel database
+      const updates = await Promise.all(newOrder.map(async (taskId, index) => ({
+        id: await getUUIDForMockId(taskId),
         display_order: index
-      }));
+      })));
 
       for (const update of updates) {
         const { error } = await supabase
@@ -439,15 +413,16 @@ const Remediation: React.FC = () => {
     }
   };
 
-  const saveTaskDates = async (taskId: string, startDate: string, endDate: string) => {
+  const saveTaskDates = async (taskId: number, startDate: string, endDate: string) => {
     try {
+      const uuid = await getUUIDForMockId(taskId);
       const { error } = await supabase
         .from('remediation_tasks')
         .update({ 
           start_date: startDate,
           end_date: endDate
         })
-        .eq('id', taskId);
+        .eq('id', uuid);
       
       if (error) throw error;
 
@@ -465,12 +440,13 @@ const Remediation: React.FC = () => {
     }
   };
 
-  const saveTaskVisibility = async (taskId: string, isHidden: boolean) => {
+  const saveTaskVisibility = async (taskId: number, isHidden: boolean) => {
     try {
+      const uuid = await getUUIDForMockId(taskId);
       const { error } = await supabase
         .from('remediation_tasks')
         .update({ is_hidden: isHidden })
-        .eq('id', taskId);
+        .eq('id', uuid);
       
       if (error) throw error;
 
@@ -488,12 +464,13 @@ const Remediation: React.FC = () => {
     }
   };
 
-  const saveTaskDeletion = async (taskId: string, isDeleted: boolean) => {
+  const saveTaskDeletion = async (taskId: number, isDeleted: boolean) => {
     try {
+      const uuid = await getUUIDForMockId(taskId);
       const { error } = await supabase
         .from('remediation_tasks')
         .update({ is_deleted: isDeleted })
-        .eq('id', taskId);
+        .eq('id', uuid);
       
       if (error) throw error;
 
@@ -511,7 +488,7 @@ const Remediation: React.FC = () => {
     }
   };
 
-  const handleToggleVisibility = (taskId: string) => {
+  const handleToggleVisibility = (taskId: number) => {
     setHiddenTasks(prev => {
       const newSet = new Set(prev);
       const isHidden = !newSet.has(taskId);
@@ -529,7 +506,7 @@ const Remediation: React.FC = () => {
     });
   };
 
-  const handleDeleteTask = (taskId: string) => {
+  const handleDeleteTask = (taskId: number) => {
     setDeletedTasks(prev => new Set([...prev, taskId]));
     // Rimuovi anche dai task nascosti se era presente
     setHiddenTasks(prev => {
@@ -544,7 +521,7 @@ const Remediation: React.FC = () => {
     saveTaskDeletion(taskId, true);
   };
 
-  const handleRestoreTask = (taskId: string) => {
+  const handleRestoreTask = (taskId: number) => {
     setDeletedTasks(prev => {
       const newSet = new Set(prev);
       newSet.delete(taskId);
@@ -1140,7 +1117,7 @@ const Remediation: React.FC = () => {
                       </div>
                       <div className="space-y-2">
                         {Array.from(deletedTasks).map(taskId => {
-                          const deletedAction = realTasks.find(action => action.id === taskId);
+                          const deletedAction = ganttActions.find(action => action.id === taskId);
                           return deletedAction ? (
                             <div key={taskId} className="flex items-center justify-between p-2 bg-muted/30 rounded-lg border border-dashed">
                               <div className="flex items-center space-x-2">
