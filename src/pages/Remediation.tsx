@@ -15,6 +15,8 @@ import { useRemediationTasks, type RemediationTask, type GanttTask } from '@/hoo
 import { useRemediationTemplates } from '@/hooks/useRemediationTemplates';
 import { useAssessmentGapAnalysis } from '@/hooks/useAssessmentGapAnalysis';
 import { TemplateSelectionModal } from '@/components/remediation/TemplateSelectionModal';
+import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 const Remediation: React.FC = () => {
   const [selectedTimeframe, setSelectedTimeframe] = useState('3months');
@@ -43,9 +45,7 @@ const Remediation: React.FC = () => {
 
   const { templates, getCategories } = useRemediationTemplates();
   const { generateAutomaticPlan } = useAssessmentGapAnalysis();
-
-  // Get organization_id from user context (you might need to implement this)
-  const organizationId = "00000000-0000-0000-0000-000000000000"; // Replace with actual user's organization_id
+  const { toast } = useToast();
 
   // Initialize task order when tasks are loaded
   useEffect(() => {
@@ -206,7 +206,23 @@ const Remediation: React.FC = () => {
 
   const handleGenerateAutomaticPlan = async () => {
     try {
-      const recommendedTemplates = await generateAutomaticPlan(organizationId, templates);
+      // Get current user's organization
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('auth_user_id', (await supabase.auth.getUser()).data.user?.id)
+        .single();
+
+      if (userError || !userData?.organization_id) {
+        toast({
+          title: "Errore",
+          description: "Utente non autenticato o organizzazione non trovata",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const recommendedTemplates = await generateAutomaticPlan(userData.organization_id, templates);
       
       // Create tasks from recommended templates
       for (const template of recommendedTemplates) {
