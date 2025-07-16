@@ -56,14 +56,102 @@ export const useRemediationTasks = () => {
 
   const createTask = async (taskData: Omit<RemediationTask, 'id' | 'created_at' | 'updated_at'>) => {
     try {
-      // Get current user's organization
-      const { data: userData, error: userError } = await supabase
+      // Get current user's organization with better error handling
+      console.log('Getting current user...');
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError) {
+        console.error('Auth error:', authError);
+        throw authError;
+      }
+      
+      if (!user) {
+        console.error('No authenticated user found');
+        toast({
+          title: "Errore",
+          description: "Utente non autenticato. Effettua il login per continuare.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log('User found:', user.id);
+      console.log('Fetching user organization...');
+      
+      let { data: userData, error: userError } = await supabase
         .from('users')
         .select('organization_id')
-        .eq('auth_user_id', (await supabase.auth.getUser()).data.user?.id)
+        .eq('auth_user_id', user.id)
         .single();
 
-      if (userError) throw userError;
+      console.log('User data query result:', { userData, userError });
+
+      // If user doesn't exist in users table, create a default one
+      if (userError && userError.code === 'PGRST116') { // No rows returned
+        console.log('User not found in users table, creating default user...');
+        
+        // For now, we'll use the first organization as default
+        // In production, you might want to handle this differently
+        const { data: defaultOrg } = await supabase
+          .from('organizations')
+          .select('id')
+          .limit(1)
+          .single();
+
+        if (defaultOrg) {
+          const { data: newUser, error: createError } = await supabase
+            .from('users')
+            .insert([{
+              auth_user_id: user.id,
+              email: user.email || 'unknown@example.com',
+              full_name: user.user_metadata?.full_name || 'Utente',
+              organization_id: defaultOrg.id,
+              user_type: 'client'
+            }])
+            .select('organization_id')
+            .single();
+
+          if (createError) {
+            console.error('Error creating user:', createError);
+            toast({
+              title: "Errore",
+              description: "Impossibile creare il profilo utente. Contatta l'amministratore.",
+              variant: "destructive",
+            });
+            return;
+          }
+
+          userData = newUser;
+          console.log('Created new user with organization_id:', userData.organization_id);
+        } else {
+          toast({
+            title: "Errore",
+            description: "Nessuna organizzazione trovata nel sistema. Contatta l'amministratore.",
+            variant: "destructive",
+          });
+          return;
+        }
+      } else if (userError) {
+        console.error('User error:', userError);
+        toast({
+          title: "Errore",
+          description: "Errore nel recupero dei dati utente. Contatta l'amministratore.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (!userData?.organization_id) {
+        console.error('No organization_id found for user');
+        toast({
+          title: "Errore",
+          description: "Organizzazione non trovata per questo utente. Contatta l'amministratore.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log('Creating task with organization_id:', userData.organization_id);
 
       const { data, error } = await supabase
         .from('remediation_tasks')
@@ -74,7 +162,10 @@ export const useRemediationTasks = () => {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Insert error:', error);
+        throw error;
+      }
 
       setTasks(prev => [...prev, { ...data, dependencies: data.dependencies || [] }]);
       toast({
