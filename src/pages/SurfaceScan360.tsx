@@ -42,7 +42,7 @@ import {
   Network
 } from 'lucide-react';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Tooltip } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Tooltip as RechartsTooltip } from 'recharts';
 
 const SurfaceScan360: React.FC = () => {
   const [openTooltip, setOpenTooltip] = useState<number | null>(null);
@@ -273,7 +273,7 @@ const SurfaceScan360: React.FC = () => {
             </div>
             {variation && (
               <div className="text-xs text-muted-foreground">
-                Variazione: {variation > 0 ? '+' : ''}{variation} vs mese precedente
+                Variazione: {parseFloat(variation) > 0 ? '+' : ''}{variation} vs mese precedente
               </div>
             )}
           </div>
@@ -532,7 +532,7 @@ const SurfaceScan360: React.FC = () => {
                               <stop offset="100%" stopColor="hsl(var(--chart-3))" stopOpacity={0.05} />
                             </linearGradient>
                           </defs>
-                          <Tooltip content={<EPSSTooltip />} />
+                          <RechartsTooltip content={<EPSSTooltip />} />
                           <Line 
                             type="monotone" 
                             dataKey="epss_score" 
@@ -608,7 +608,7 @@ const SurfaceScan360: React.FC = () => {
                               <Cell key={`cell-${index}`} fill={entry.color} />
                             ))}
                           </Pie>
-                          <Tooltip />
+                          <RechartsTooltip />
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
