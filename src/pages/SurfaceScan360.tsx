@@ -533,33 +533,7 @@ const SurfaceScan360: React.FC = () => {
                     </p>
                   </CardHeader>
                   <CardContent>
-                    <div className="mb-4">
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground mb-2">
-                        <div className="flex items-center gap-1">
-                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#10b981' }}></div>
-                          <span>Basso (&lt;4)</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#f59e0b' }}></div>
-                          <span>Medio (4-7)</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#ef4444' }}></div>
-                          <span>Alto (&gt;7)</span>
-                        </div>
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        <div className="flex items-center gap-2 mb-1">
-                          <div className="w-4 h-0.5 border-t-2 border-dashed border-gray-400"></div>
-                          <span>Soglie di rischio (4 e 7)</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-0.5 bg-chart-3"></div>
-                          <span>Trend EPSS mensile</span>
-                        </div>
-                      </div>
-                    </div>
-                    <ChartContainer config={chartConfig} className="h-[300px]">
+                    <ChartContainer config={chartConfig} className="h-[250px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={monthlyData}>
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -608,6 +582,53 @@ const SurfaceScan360: React.FC = () => {
                         </LineChart>
                       </ResponsiveContainer>
                     </ChartContainer>
+                    
+                    {/* Comprehensive Legend */}
+                    <div className="mt-4 space-y-3">
+                      <div className="border-t border-border pt-3">
+                        <h4 className="text-sm font-semibold text-foreground mb-2">Legenda</h4>
+                        
+                        {/* Risk Level Legend */}
+                        <div className="mb-3">
+                          <p className="text-xs text-muted-foreground mb-2">Livelli di Rischio EPSS:</p>
+                          <div className="flex flex-wrap items-center gap-4 text-xs">
+                            <div className="flex items-center gap-1">
+                              <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                              <span>Basso (&lt;4)</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <div className="w-3 h-3 rounded-full bg-orange-500"></div>
+                              <span>Medio (4-7)</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                              <span>Alto (&gt;7)</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Chart Elements Legend */}
+                        <div className="mb-3">
+                          <p className="text-xs text-muted-foreground mb-2">Elementi del Grafico:</p>
+                          <div className="flex flex-wrap items-center gap-4 text-xs">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-0.5 bg-chart-3"></div>
+                              <span>Trend EPSS mensile</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-0.5 border-t-2 border-dashed border-gray-400"></div>
+                              <span>Soglie di rischio</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* EPSS Explanation */}
+                        <div className="text-xs text-muted-foreground">
+                          <p><strong>EPSS Score:</strong> Punteggio da 0 a 10 che indica la probabilità di sfruttamento di una vulnerabilità nei prossimi 30 giorni.</p>
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="mt-4 p-3 bg-muted/50 rounded-lg">
                       <div className="flex items-center gap-2 text-sm">
                         <Activity className="w-4 h-4 text-chart-3" />
