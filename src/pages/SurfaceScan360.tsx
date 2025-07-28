@@ -240,9 +240,43 @@ const SurfaceScan360: React.FC = () => {
 
   // Helper function to get EPSS risk level and color
   const getEPSSRiskLevel = (score: number) => {
-    if (score < 4) return { level: 'Basso', color: 'hsl(var(--primary))' };
-    if (score < 7) return { level: 'Medio', color: 'hsl(var(--chart-2))' };
-    return { level: 'Alto', color: 'hsl(var(--destructive))' };
+    if (score < 4) return { level: 'Basso', color: '#10b981' }; // Green
+    if (score < 7) return { level: 'Medio', color: '#f59e0b' }; // Orange (more visible)
+    return { level: 'Alto', color: '#ef4444' }; // Red
+  };
+
+  // Custom dot component for dynamic coloring
+  const CustomDot = (props: any) => {
+    const { cx, cy, payload } = props;
+    const riskInfo = getEPSSRiskLevel(payload.epss_score);
+    
+    return (
+      <circle
+        cx={cx}
+        cy={cy}
+        r={6}
+        fill={riskInfo.color}
+        stroke="hsl(var(--background))"
+        strokeWidth={2}
+      />
+    );
+  };
+
+  // Custom active dot component
+  const CustomActiveDot = (props: any) => {
+    const { cx, cy, payload } = props;
+    const riskInfo = getEPSSRiskLevel(payload.epss_score);
+    
+    return (
+      <circle
+        cx={cx}
+        cy={cy}
+        r={8}
+        fill={riskInfo.color}
+        stroke="hsl(var(--background))"
+        strokeWidth={3}
+      />
+    );
   };
 
   // Custom EPSS tooltip component
@@ -500,18 +534,28 @@ const SurfaceScan360: React.FC = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="mb-4">
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground mb-2">
                         <div className="flex items-center gap-1">
-                          <div className="w-2 h-2 rounded-full bg-primary"></div>
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#10b981' }}></div>
                           <span>Basso (&lt;4)</span>
                         </div>
                         <div className="flex items-center gap-1">
-                          <div className="w-2 h-2 rounded-full bg-chart-2"></div>
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#f59e0b' }}></div>
                           <span>Medio (4-7)</span>
                         </div>
                         <div className="flex items-center gap-1">
-                          <div className="w-2 h-2 rounded-full bg-destructive"></div>
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#ef4444' }}></div>
                           <span>Alto (&gt;7)</span>
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className="w-4 h-0.5 border-t-2 border-dashed border-gray-400"></div>
+                          <span>Soglie di rischio (4 e 7)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-0.5 bg-chart-3"></div>
+                          <span>Trend EPSS mensile</span>
                         </div>
                       </div>
                     </div>
@@ -525,7 +569,6 @@ const SurfaceScan360: React.FC = () => {
                             domain={[0, 10]}
                             ticks={[0, 2, 4, 6, 8, 10]}
                           />
-                          {/* Reference lines for risk levels */}
                           <defs>
                             <linearGradient id="epssGradient" x1="0" y1="0" x2="0" y2="1">
                               <stop offset="0%" stopColor="hsl(var(--chart-3))" stopOpacity={0.3} />
@@ -538,34 +581,25 @@ const SurfaceScan360: React.FC = () => {
                             dataKey="epss_score" 
                             stroke="hsl(var(--chart-3))" 
                             strokeWidth={3}
-                            dot={{ 
-                              fill: "#3b82f6", 
-                              stroke: "hsl(var(--background))",
-                              strokeWidth: 2,
-                              r: 6
-                            }}
-                            activeDot={{ 
-                              r: 8, 
-                              fill: "#2563eb",
-                              stroke: "hsl(var(--background))",
-                              strokeWidth: 3
-                            }}
+                            dot={<CustomDot />}
+                            activeDot={<CustomActiveDot />}
                             fill="url(#epssGradient)"
                           />
-                          {/* Reference lines */}
+                          {/* Reference line for medium risk threshold */}
                           <Line 
                             type="monotone" 
                             dataKey={() => 4} 
-                            stroke="hsl(var(--chart-2))" 
+                            stroke="#9ca3af" 
                             strokeWidth={1}
                             strokeDasharray="5 5"
                             dot={false}
                             activeDot={false}
                           />
+                          {/* Reference line for high risk threshold */}
                           <Line 
                             type="monotone" 
                             dataKey={() => 7} 
-                            stroke="hsl(var(--destructive))" 
+                            stroke="#9ca3af" 
                             strokeWidth={1}
                             strokeDasharray="5 5"
                             dot={false}
