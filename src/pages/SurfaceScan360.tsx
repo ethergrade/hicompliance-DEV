@@ -42,7 +42,7 @@ import {
   Network
 } from 'lucide-react';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Tooltip } from 'recharts';
 
 const SurfaceScan360: React.FC = () => {
   const [openTooltip, setOpenTooltip] = useState<number | null>(null);
@@ -236,6 +236,51 @@ const SurfaceScan360: React.FC = () => {
 
   const toggleTooltip = (index: number) => {
     setOpenTooltip(openTooltip === index ? null : index);
+  };
+
+  // Helper function to get EPSS risk level and color
+  const getEPSSRiskLevel = (score: number) => {
+    if (score < 4) return { level: 'Basso', color: 'hsl(var(--primary))' };
+    if (score < 7) return { level: 'Medio', color: 'hsl(var(--chart-2))' };
+    return { level: 'Alto', color: 'hsl(var(--destructive))' };
+  };
+
+  // Custom EPSS tooltip component
+  const EPSSTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0];
+      const currentScore = data.value;
+      const currentIndex = monthlyData.findIndex(item => item.mese === label);
+      const previousScore = currentIndex > 0 ? monthlyData[currentIndex - 1].epss_score : null;
+      const variation = previousScore ? (currentScore - previousScore).toFixed(1) : null;
+      const riskInfo = getEPSSRiskLevel(currentScore);
+      
+      return (
+        <div className="bg-background border border-border rounded-lg p-3 shadow-lg">
+          <div className="font-medium text-foreground mb-2">{label} 2024</div>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <div 
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: riskInfo.color }}
+              />
+              <span className="text-sm text-foreground font-medium">
+                EPSS Score: {currentScore}
+              </span>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Livello di rischio: <span style={{ color: riskInfo.color }}>{riskInfo.level}</span>
+            </div>
+            {variation && (
+              <div className="text-xs text-muted-foreground">
+                Variazione: {variation > 0 ? '+' : ''}{variation} vs mese precedente
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+    return null;
   };
 
   return (
@@ -442,29 +487,103 @@ const SurfaceScan360: React.FC = () => {
                   </CardContent>
                 </Card>
 
-                {/* EPSS Score Timeline */}
+                {/* Enhanced EPSS Score Timeline */}
                 <Card className="border-border">
                   <CardHeader>
-                    <CardTitle>EPSS Score Mensile</CardTitle>
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="w-5 h-5 text-chart-3" />
+                      EPSS Score Mensile
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Exploit Prediction Scoring System - predice la probabilità di sfruttamento delle vulnerabilità
+                    </p>
                   </CardHeader>
                   <CardContent>
+                    <div className="mb-4">
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <div className="flex items-center gap-1">
+                          <div className="w-2 h-2 rounded-full bg-primary"></div>
+                          <span>Basso (&lt;4)</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <div className="w-2 h-2 rounded-full bg-chart-2"></div>
+                          <span>Medio (4-7)</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <div className="w-2 h-2 rounded-full bg-destructive"></div>
+                          <span>Alto (&gt;7)</span>
+                        </div>
+                      </div>
+                    </div>
                     <ChartContainer config={chartConfig} className="h-[300px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={monthlyData}>
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                           <XAxis dataKey="mese" className="text-muted-foreground" />
-                          <YAxis className="text-muted-foreground" />
-                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <YAxis 
+                            className="text-muted-foreground" 
+                            domain={[0, 10]}
+                            ticks={[0, 2, 4, 6, 8, 10]}
+                          />
+                          {/* Reference lines for risk levels */}
+                          <defs>
+                            <linearGradient id="epssGradient" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="hsl(var(--chart-3))" stopOpacity={0.3} />
+                              <stop offset="100%" stopColor="hsl(var(--chart-3))" stopOpacity={0.05} />
+                            </linearGradient>
+                          </defs>
+                          <Tooltip content={<EPSSTooltip />} />
                           <Line 
                             type="monotone" 
                             dataKey="epss_score" 
                             stroke="hsl(var(--chart-3))" 
-                            strokeWidth={2}
-                            dot={{ fill: "hsl(var(--chart-3))" }}
+                            strokeWidth={3}
+                            dot={{ 
+                              fill: "hsl(var(--chart-3))", 
+                              stroke: "hsl(var(--background))",
+                              strokeWidth: 2,
+                              r: 6
+                            }}
+                            activeDot={{ 
+                              r: 8, 
+                              fill: "hsl(var(--chart-3))",
+                              stroke: "hsl(var(--background))",
+                              strokeWidth: 3
+                            }}
+                            fill="url(#epssGradient)"
+                          />
+                          {/* Reference lines */}
+                          <Line 
+                            type="monotone" 
+                            dataKey={() => 4} 
+                            stroke="hsl(var(--chart-2))" 
+                            strokeWidth={1}
+                            strokeDasharray="5 5"
+                            dot={false}
+                            activeDot={false}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey={() => 7} 
+                            stroke="hsl(var(--destructive))" 
+                            strokeWidth={1}
+                            strokeDasharray="5 5"
+                            dot={false}
+                            activeDot={false}
                           />
                         </LineChart>
                       </ResponsiveContainer>
                     </ChartContainer>
+                    <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Activity className="w-4 h-4 text-chart-3" />
+                        <span className="font-medium">Trend Attuale:</span>
+                        <span className="text-green-500">↓ Miglioramento (-1.6 vs Gen 2024)</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Il punteggio EPSS è diminuito significativamente, indicando una riduzione del rischio di sfruttamento.
+                      </p>
+                    </div>
                   </CardContent>
                 </Card>
 
