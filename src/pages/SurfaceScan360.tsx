@@ -539,14 +539,14 @@ const SurfaceScan360: React.FC = () => {
                             stroke="hsl(var(--chart-3))" 
                             strokeWidth={3}
                             dot={{ 
-                              fill: "hsl(var(--chart-3))", 
+                              fill: "#3b82f6", 
                               stroke: "hsl(var(--background))",
                               strokeWidth: 2,
                               r: 6
                             }}
                             activeDot={{ 
                               r: 8, 
-                              fill: "hsl(var(--chart-3))",
+                              fill: "#2563eb",
                               stroke: "hsl(var(--background))",
                               strokeWidth: 3
                             }}
