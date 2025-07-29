@@ -51,6 +51,7 @@ import {
 } from 'lucide-react';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Tooltip as RechartsTooltip } from 'recharts';
+import SecurityFindings from '@/components/surface-scan/SecurityFindings';
 
 const SurfaceScan360: React.FC = () => {
   const [openTooltip, setOpenTooltip] = useState<number | null>(null);
@@ -80,7 +81,6 @@ const SurfaceScan360: React.FC = () => {
     { ip: '203.0.113.186', hostname: 'monitor.cliente1.com', score: 77, risk: 'Medio', status: 'Attenzione', ports: [443, 9090], services: ['HTTPS', 'Prometheus'] },
   ];
 
-  // Filter assets based on search and filters
   const filteredAssets = allPublicAssets.filter(asset => {
     const matchesSearch = searchTerm === '' || 
       asset.ip.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -98,7 +98,6 @@ const SurfaceScan360: React.FC = () => {
   const indexOfFirstAsset = indexOfLastAsset - assetsPerPage;
   const currentAssets = filteredAssets.slice(indexOfFirstAsset, indexOfLastAsset);
 
-  // Reset to first page when filters change
   React.useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, statusFilter, riskFilter]);
@@ -185,7 +184,6 @@ const SurfaceScan360: React.FC = () => {
     }
   };
 
-  // Monthly monitoring data
   const monthlyData = [
     { mese: 'Gen', porte_aperte: 45, porte_chiuse: 23, cve_critiche: 12, cve_risolte: 8, epss_score: 6.2 },
     { mese: 'Feb', porte_aperte: 52, porte_chiuse: 18, cve_critiche: 15, cve_risolte: 11, epss_score: 6.8 },
@@ -252,7 +250,6 @@ const SurfaceScan360: React.FC = () => {
     setOpenTooltip(openTooltip === index ? null : index);
   };
 
-  // Helper function to get EPSS risk level and color
   const getEPSSRiskLevel = (score: number) => {
     if (score < 4) return { level: 'Basso', color: '#10b981' }; // Green
     if (score < 7) return { level: 'Medio', color: '#f59e0b' }; // Orange (more visible)
@@ -420,6 +417,9 @@ const SurfaceScan360: React.FC = () => {
               </CardContent>
             </Card>
           </div>
+
+          {/* Security Findings Section - NEW */}
+          <SecurityFindings />
 
           {/* Monthly Monitoring Section */}
           {monthlyMonitoring && (
