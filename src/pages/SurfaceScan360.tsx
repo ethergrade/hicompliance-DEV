@@ -27,6 +27,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { 
   Globe, 
   Shield, 
@@ -40,7 +45,9 @@ import {
   BarChart3,
   Activity,
   Network,
-  TrendingDown
+  TrendingDown,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Tooltip as RechartsTooltip } from 'recharts';
@@ -52,6 +59,11 @@ const SurfaceScan360: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [riskFilter, setRiskFilter] = useState('all');
   const [monthlyMonitoring, setMonthlyMonitoring] = useState(false);
+  
+  // Collapsible states for legends
+  const [cveCollegendOpen, setCveLegendOpen] = useState(false);
+  const [epssLegendOpen, setEpssLegendOpen] = useState(false);
+  
   const assetsPerPage = 5;
   
   const allPublicAssets = [
@@ -501,7 +513,7 @@ const SurfaceScan360: React.FC = () => {
                   </CardContent>
                 </Card>
 
-                {/* CVE Timeline with Enhanced Legend */}
+                {/* CVE Timeline with Collapsible Legend */}
                 <Card className="border-border">
                   <CardHeader>
                     <CardTitle>CVE Critiche vs Risolte</CardTitle>
@@ -520,75 +532,65 @@ const SurfaceScan360: React.FC = () => {
                       </ResponsiveContainer>
                     </ChartContainer>
 
-                    {/* Enhanced CVE Legend - Always Visible */}
-                    <div className="mt-4 p-4 bg-muted/30 rounded-lg border border-border">
-                      <div className="space-y-4">
-                        <div>
-                          <h4 className="text-sm font-bold text-foreground mb-3 flex items-center gap-2">
-                            <Shield className="w-4 h-4" />
-                            Legenda Grafico CVE
-                          </h4>
-                          
-                          {/* Bar Colors Legend */}
-                          <div className="mb-4">
-                            <p className="text-sm font-medium text-foreground mb-3">🎯 Colori delle Barre:</p>
-                            <div className="grid grid-cols-2 gap-4">
-                              <div className="flex items-center gap-2 p-2 bg-red-50 rounded-lg border border-red-200">
-                                <div className="w-6 h-4 bg-destructive rounded flex-shrink-0"></div>
-                                <div>
-                                  <span className="text-sm font-medium text-red-800">CVE Critiche</span>
-                                  <div className="text-xs text-red-600">Vulnerabilità non risolte</div>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
-                                <div className="w-6 h-4 bg-primary rounded flex-shrink-0"></div>
-                                <div>
-                                  <span className="text-sm font-medium text-blue-800">CVE Risolte</span>
-                                  <div className="text-xs text-blue-600">Vulnerabilità corrette</div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                          
+                    {/* Collapsible CVE Legend */}
+                    <div className="mt-4 p-3 bg-muted/30 rounded-lg border border-border">
+                      {/* Always visible color legend */}
+                      <div className="grid grid-cols-2 gap-3 mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-3 bg-destructive rounded flex-shrink-0"></div>
+                          <span className="text-sm font-medium">CVE Critiche</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-3 bg-primary rounded flex-shrink-0"></div>
+                          <span className="text-sm font-medium">CVE Risolte</span>
+                        </div>
+                      </div>
+
+                      {/* Collapsible detailed legend */}
+                      <Collapsible open={cveCollegendOpen} onOpenChange={setCveLegendOpen}>
+                        <CollapsibleTrigger asChild>
+                          <Button variant="ghost" size="sm" className="w-full justify-between text-sm p-2">
+                            <span className="flex items-center gap-2">
+                              <BarChart3 className="w-4 h-4" />
+                              Dettagli Legenda
+                            </span>
+                            {cveCollegendOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="space-y-4 mt-3">
                           {/* CVE Definition */}
-                          <div className="mb-4">
-                            <p className="text-sm font-medium text-foreground mb-3">📋 Cosa sono le CVE?</p>
-                            <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
-                              <div className="flex items-start gap-2">
-                                <AlertTriangle className="w-4 h-4 text-purple-600 mt-0.5 flex-shrink-0" />
-                                <div>
-                                  <p className="text-sm font-medium text-purple-800 mb-1">Common Vulnerabilities and Exposures</p>
-                                  <p className="text-xs text-purple-700">
-                                    Sistema di identificazione standardizzato per vulnerabilità di sicurezza note. 
-                                    Ogni CVE ha un ID univoco e descrive una specifica falla di sicurezza.
-                                  </p>
-                                </div>
+                          <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                            <div className="flex items-start gap-2">
+                              <AlertTriangle className="w-4 h-4 text-purple-600 mt-0.5 flex-shrink-0" />
+                              <div>
+                                <p className="text-sm font-medium text-purple-800 mb-1">📋 Cosa sono le CVE?</p>
+                                <p className="text-xs text-purple-700">
+                                  Sistema di identificazione standardizzato per vulnerabilità di sicurezza note. 
+                                  Ogni CVE ha un ID univoco e descrive una specifica falla di sicurezza.
+                                </p>
                               </div>
                             </div>
                           </div>
 
                           {/* Trend Indicators */}
-                          <div className="mb-4">
-                            <p className="text-sm font-medium text-foreground mb-3">📈 Indicatori di Trend:</p>
-                            <div className="grid grid-cols-2 gap-4">
-                              <div className="flex items-center gap-2 p-2 bg-green-50 rounded-lg border border-green-200">
-                                <TrendingDown className="w-4 h-4 text-green-600 flex-shrink-0" />
-                                <div>
-                                  <span className="text-sm font-medium text-green-800">CVE Critiche ↓</span>
-                                  <div className="text-xs text-green-600">Tendenza positiva</div>
-                                </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="flex items-center gap-2 p-2 bg-green-50 rounded-lg border border-green-200">
+                              <TrendingDown className="w-4 h-4 text-green-600 flex-shrink-0" />
+                              <div>
+                                <span className="text-sm font-medium text-green-800">CVE Critiche ↓</span>
+                                <div className="text-xs text-green-600">Tendenza positiva</div>
                               </div>
-                              <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
-                                <TrendingUp className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                                <div>
-                                  <span className="text-sm font-medium text-blue-800">CVE Risolte ↑</span>
-                                  <div className="text-xs text-blue-600">Attività di remediation</div>
-                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
+                              <TrendingUp className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                              <div>
+                                <span className="text-sm font-medium text-blue-800">CVE Risolte ↑</span>
+                                <div className="text-xs text-blue-600">Attività remediation</div>
                               </div>
                             </div>
                           </div>
 
-                          {/* Monthly Comparison Explanation */}
+                          {/* Monthly Comparison */}
                           <div className="p-3 bg-orange-50 rounded-lg border border-orange-200">
                             <div className="flex items-start gap-2">
                               <BarChart3 className="w-4 h-4 text-orange-600 mt-0.5 flex-shrink-0" />
@@ -601,8 +603,8 @@ const SurfaceScan360: React.FC = () => {
                               </div>
                             </div>
                           </div>
-                        </div>
-                      </div>
+                        </CollapsibleContent>
+                      </Collapsible>
                     </div>
 
                     {/* Current Status */}
@@ -613,14 +615,11 @@ const SurfaceScan360: React.FC = () => {
                         <span className="text-primary">20 CVE risolte a Dicembre</span>
                         <span className="text-destructive">vs 5 critiche attive</span>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Ottimo rapporto di remediation - il team di sicurezza sta efficacemente gestendo le vulnerabilità.
-                      </p>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Enhanced EPSS Score Timeline */}
+                {/* Enhanced EPSS Score Timeline with Collapsible Legend */}
                 <Card className="border-border">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -658,7 +657,6 @@ const SurfaceScan360: React.FC = () => {
                             activeDot={<CustomActiveDot />}
                             fill="url(#epssGradient)"
                           />
-                          {/* Reference line for medium risk threshold */}
                           <Line 
                             type="monotone" 
                             dataKey={() => 4} 
@@ -668,7 +666,6 @@ const SurfaceScan360: React.FC = () => {
                             dot={false}
                             activeDot={false}
                           />
-                          {/* Reference line for high risk threshold */}
                           <Line 
                             type="monotone" 
                             dataKey={() => 7} 
@@ -682,59 +679,49 @@ const SurfaceScan360: React.FC = () => {
                       </ResponsiveContainer>
                     </ChartContainer>
                     
-                    {/* Enhanced Fixed Legend - Always Visible */}
-                    <div className="mt-4 p-4 bg-muted/30 rounded-lg border border-border">
-                      <div className="space-y-4">
-                        <div>
-                          <h4 className="text-sm font-bold text-foreground mb-3 flex items-center gap-2">
-                            <BarChart3 className="w-4 h-4" />
-                            Legenda Grafico EPSS
-                          </h4>
-                          
-                          {/* Risk Level Legend */}
-                          <div className="mb-4">
-                            <p className="text-sm font-medium text-foreground mb-3">📊 Livelli di Rischio EPSS:</p>
-                            <div className="grid grid-cols-3 gap-4">
-                              <div className="flex items-center gap-2 p-2 bg-green-50 rounded-lg border border-green-200">
-                                <div className="w-4 h-4 rounded-full bg-green-500 flex-shrink-0"></div>
-                                <div>
-                                  <span className="text-sm font-medium text-green-800">Basso</span>
-                                  <div className="text-xs text-green-600">&lt; 4.0</div>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2 p-2 bg-orange-50 rounded-lg border border-orange-200">
-                                <div className="w-4 h-4 rounded-full bg-orange-500 flex-shrink-0"></div>
-                                <div>
-                                  <span className="text-sm font-medium text-orange-800">Medio</span>
-                                  <div className="text-xs text-orange-600">4.0 - 7.0</div>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2 p-2 bg-red-50 rounded-lg border border-red-200">
-                                <div className="w-4 h-4 rounded-full bg-red-500 flex-shrink-0"></div>
-                                <div>
-                                  <span className="text-sm font-medium text-red-800">Alto</span>
-                                  <div className="text-xs text-red-600">&gt; 7.0</div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                          
+                    {/* Collapsible EPSS Legend */}
+                    <div className="mt-4 p-3 bg-muted/30 rounded-lg border border-border">
+                      {/* Always visible risk levels */}
+                      <div className="grid grid-cols-3 gap-3 mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full bg-green-500 flex-shrink-0"></div>
+                          <span className="text-sm font-medium text-green-800">Basso &lt; 4.0</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full bg-orange-500 flex-shrink-0"></div>
+                          <span className="text-sm font-medium text-orange-800">Medio 4.0-7.0</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full bg-red-500 flex-shrink-0"></div>
+                          <span className="text-sm font-medium text-red-800">Alto &gt; 7.0</span>
+                        </div>
+                      </div>
+
+                      {/* Collapsible detailed legend */}
+                      <Collapsible open={epssLegendOpen} onOpenChange={setEpssLegendOpen}>
+                        <CollapsibleTrigger asChild>
+                          <Button variant="ghost" size="sm" className="w-full justify-between text-sm p-2">
+                            <span className="flex items-center gap-2">
+                              <BarChart3 className="w-4 h-4" />
+                              Dettagli Legenda
+                            </span>
+                            {epssLegendOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="space-y-4 mt-3">
                           {/* Chart Elements Legend */}
-                          <div className="mb-4">
-                            <p className="text-sm font-medium text-foreground mb-3">🎯 Elementi del Grafico:</p>
-                            <div className="flex flex-wrap items-center gap-6">
-                              <div className="flex items-center gap-2">
-                                <div className="w-6 h-1 bg-chart-3 rounded"></div>
-                                <span className="text-sm">Trend EPSS mensile</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <div className="w-6 h-0.5 border-t-2 border-dashed border-gray-400"></div>
-                                <span className="text-sm">Soglie di rischio</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <div className="w-3 h-3 rounded-full border-2 border-background bg-chart-3"></div>
-                                <span className="text-sm">Punti dati colorati per rischio</span>
-                              </div>
+                          <div className="flex flex-wrap items-center gap-6 p-3 bg-gray-50 rounded-lg border">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-1 bg-chart-3 rounded"></div>
+                              <span className="text-sm">Trend EPSS mensile</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-0.5 border-t-2 border-dashed border-gray-400"></div>
+                              <span className="text-sm">Soglie di rischio</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full border-2 border-background bg-chart-3"></div>
+                              <span className="text-sm">Punti colorati per rischio</span>
                             </div>
                           </div>
                           
@@ -751,8 +738,8 @@ const SurfaceScan360: React.FC = () => {
                               </div>
                             </div>
                           </div>
-                        </div>
-                      </div>
+                        </CollapsibleContent>
+                      </Collapsible>
                     </div>
 
                     {/* Current Status */}
@@ -762,9 +749,6 @@ const SurfaceScan360: React.FC = () => {
                         <span className="font-medium">Trend Attuale:</span>
                         <span className="text-green-500">↓ Miglioramento (-1.6 vs Gen 2024)</span>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Il punteggio EPSS è diminuito significativamente, indicando una riduzione del rischio di sfruttamento.
-                      </p>
                     </div>
                   </CardContent>
                 </Card>
