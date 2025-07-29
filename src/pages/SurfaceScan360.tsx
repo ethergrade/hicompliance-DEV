@@ -63,6 +63,7 @@ const SurfaceScan360: React.FC = () => {
   // Collapsible states for legends
   const [cveCollegendOpen, setCveLegendOpen] = useState(false);
   const [epssLegendOpen, setEpssLegendOpen] = useState(false);
+  const [riskTrendLegendOpen, setRiskTrendLegendOpen] = useState(false);
   
   const assetsPerPage = 5;
   
@@ -782,13 +783,13 @@ const SurfaceScan360: React.FC = () => {
                 </Card>
               </div>
 
-              {/* Risk Trend Analysis */}
+              {/* Risk Trend Analysis with Collapsible Legend */}
               <Card className="border-border">
                 <CardHeader>
                   <CardTitle>Analisi Trend Rischio Mensile</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <ChartContainer config={chartConfig} className="h-[400px]">
+                  <ChartContainer config={chartConfig} className="h-[350px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={riskTrendData}>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -801,6 +802,116 @@ const SurfaceScan360: React.FC = () => {
                       </BarChart>
                     </ResponsiveContainer>
                   </ChartContainer>
+
+                  {/* Collapsible Risk Trend Legend */}
+                  <div className="mt-4 p-3 bg-muted/30 rounded-lg border border-border">
+                    {/* Always visible color legend */}
+                    <div className="grid grid-cols-3 gap-3 mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-3 bg-destructive rounded flex-shrink-0"></div>
+                        <span className="text-sm font-medium text-red-800">Rischio Alto</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-3 bg-chart-2 rounded flex-shrink-0"></div>
+                        <span className="text-sm font-medium text-orange-800">Rischio Medio</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-3 bg-primary rounded flex-shrink-0"></div>
+                        <span className="text-sm font-medium text-blue-800">Rischio Basso</span>
+                      </div>
+                    </div>
+
+                    {/* Collapsible detailed legend */}
+                    <Collapsible open={riskTrendLegendOpen} onOpenChange={setRiskTrendLegendOpen}>
+                      <CollapsibleTrigger asChild>
+                        <Button variant="ghost" size="sm" className="w-full justify-between text-sm p-2">
+                          <span className="flex items-center gap-2">
+                            <BarChart3 className="w-4 h-4" />
+                            Dettagli Legenda
+                          </span>
+                          {riskTrendLegendOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        </Button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="space-y-4 mt-3">
+                        {/* Stacked Bar Explanation */}
+                        <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-200">
+                          <div className="flex items-start gap-2">
+                            <BarChart3 className="w-4 h-4 text-indigo-600 mt-0.5 flex-shrink-0" />
+                            <div>
+                              <p className="text-sm font-medium text-indigo-800 mb-1">📊 Grafico a Barre Impilate</p>
+                              <p className="text-xs text-indigo-700">
+                                Ogni barra rappresenta il 100% degli asset, suddivisi per livello di rischio. 
+                                L'altezza delle sezioni mostra la distribuzione percentuale dei rischi.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Risk Level Definitions */}
+                        <div className="grid grid-cols-1 gap-3">
+                          <div className="flex items-center gap-2 p-2 bg-red-50 rounded-lg border border-red-200">
+                            <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0" />
+                            <div>
+                              <span className="text-sm font-medium text-red-800">Rischio Alto:</span>
+                              <div className="text-xs text-red-600">CVE critiche, porte critiche esposte, configurazioni pericolose</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 p-2 bg-orange-50 rounded-lg border border-orange-200">
+                            <Eye className="w-4 h-4 text-orange-600 flex-shrink-0" />
+                            <div>
+                              <span className="text-sm font-medium text-orange-800">Rischio Medio:</span>
+                              <div className="text-xs text-orange-600">Vulnerabilità moderate, configurazioni sub-ottimali</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 p-2 bg-green-50 rounded-lg border border-green-200">
+                            <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+                            <div>
+                              <span className="text-sm font-medium text-green-800">Rischio Basso:</span>
+                              <div className="text-xs text-green-600">Asset sicuri, configurazioni corrette, vulnerabilità minori</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Trend Interpretation */}
+                        <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                          <div className="flex items-start gap-2">
+                            <TrendingUp className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                            <div>
+                              <p className="text-sm font-medium text-blue-800 mb-1">📈 Interpretazione del Trend</p>
+                              <p className="text-xs text-blue-700">
+                                Un trend positivo mostra il rischio alto in diminuzione e il rischio basso in aumento nel tempo. 
+                                Questo indica miglioramenti nella postura di sicurezza complessiva.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Security Objectives */}
+                        <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                          <div className="flex items-start gap-2">
+                            <Shield className="w-4 h-4 text-purple-600 mt-0.5 flex-shrink-0" />
+                            <div>
+                              <p className="text-sm font-medium text-purple-800 mb-1">🎯 Obiettivi di Sicurezza</p>
+                              <p className="text-xs text-purple-700">
+                                Idealmente: Rischio Alto &lt; 10%, Rischio Medio &lt; 30%, Rischio Basso &gt; 60%. 
+                                Il trend dovrebbe mostrare una riduzione costante dei rischi alti e medi.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </div>
+
+                  {/* Current Status */}
+                  <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                    <div className="flex items-center gap-2 text-sm">
+                      <TrendingUp className="w-4 h-4 text-green-500" />
+                      <span className="font-medium">Trend Positivo:</span>
+                      <span className="text-green-500">Rischio basso al 69% (+12% vs Gen 2024)</span>
+                      <span className="text-red-500">Rischio alto ridotto al 6% (-9% vs Gen 2024)</span>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </>
