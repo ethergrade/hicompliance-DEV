@@ -39,7 +39,8 @@ import {
   Calendar,
   BarChart3,
   Activity,
-  Network
+  Network,
+  TrendingDown
 } from 'lucide-react';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Tooltip as RechartsTooltip } from 'recharts';
@@ -500,13 +501,13 @@ const SurfaceScan360: React.FC = () => {
                   </CardContent>
                 </Card>
 
-                {/* CVE Timeline */}
+                {/* CVE Timeline with Enhanced Legend */}
                 <Card className="border-border">
                   <CardHeader>
                     <CardTitle>CVE Critiche vs Risolte</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <ChartContainer config={chartConfig} className="h-[300px]">
+                    <ChartContainer config={chartConfig} className="h-[250px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={monthlyData}>
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -518,6 +519,104 @@ const SurfaceScan360: React.FC = () => {
                         </BarChart>
                       </ResponsiveContainer>
                     </ChartContainer>
+
+                    {/* Enhanced CVE Legend - Always Visible */}
+                    <div className="mt-4 p-4 bg-muted/30 rounded-lg border border-border">
+                      <div className="space-y-4">
+                        <div>
+                          <h4 className="text-sm font-bold text-foreground mb-3 flex items-center gap-2">
+                            <Shield className="w-4 h-4" />
+                            Legenda Grafico CVE
+                          </h4>
+                          
+                          {/* Bar Colors Legend */}
+                          <div className="mb-4">
+                            <p className="text-sm font-medium text-foreground mb-3">🎯 Colori delle Barre:</p>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="flex items-center gap-2 p-2 bg-red-50 rounded-lg border border-red-200">
+                                <div className="w-6 h-4 bg-destructive rounded flex-shrink-0"></div>
+                                <div>
+                                  <span className="text-sm font-medium text-red-800">CVE Critiche</span>
+                                  <div className="text-xs text-red-600">Vulnerabilità non risolte</div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
+                                <div className="w-6 h-4 bg-primary rounded flex-shrink-0"></div>
+                                <div>
+                                  <span className="text-sm font-medium text-blue-800">CVE Risolte</span>
+                                  <div className="text-xs text-blue-600">Vulnerabilità corrette</div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {/* CVE Definition */}
+                          <div className="mb-4">
+                            <p className="text-sm font-medium text-foreground mb-3">📋 Cosa sono le CVE?</p>
+                            <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                              <div className="flex items-start gap-2">
+                                <AlertTriangle className="w-4 h-4 text-purple-600 mt-0.5 flex-shrink-0" />
+                                <div>
+                                  <p className="text-sm font-medium text-purple-800 mb-1">Common Vulnerabilities and Exposures</p>
+                                  <p className="text-xs text-purple-700">
+                                    Sistema di identificazione standardizzato per vulnerabilità di sicurezza note. 
+                                    Ogni CVE ha un ID univoco e descrive una specifica falla di sicurezza.
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Trend Indicators */}
+                          <div className="mb-4">
+                            <p className="text-sm font-medium text-foreground mb-3">📈 Indicatori di Trend:</p>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="flex items-center gap-2 p-2 bg-green-50 rounded-lg border border-green-200">
+                                <TrendingDown className="w-4 h-4 text-green-600 flex-shrink-0" />
+                                <div>
+                                  <span className="text-sm font-medium text-green-800">CVE Critiche ↓</span>
+                                  <div className="text-xs text-green-600">Tendenza positiva</div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
+                                <TrendingUp className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                                <div>
+                                  <span className="text-sm font-medium text-blue-800">CVE Risolte ↑</span>
+                                  <div className="text-xs text-blue-600">Attività di remediation</div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Monthly Comparison Explanation */}
+                          <div className="p-3 bg-orange-50 rounded-lg border border-orange-200">
+                            <div className="flex items-start gap-2">
+                              <BarChart3 className="w-4 h-4 text-orange-600 mt-0.5 flex-shrink-0" />
+                              <div>
+                                <p className="text-sm font-medium text-orange-800 mb-1">💡 Confronto Mensile</p>
+                                <p className="text-xs text-orange-700">
+                                  Il rapporto ideale mostra CVE critiche in diminuzione e CVE risolte stabili o in aumento, 
+                                  indicando un miglioramento continuo della postura di sicurezza.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Current Status */}
+                    <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                      <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle className="w-4 h-4 text-primary" />
+                        <span className="font-medium">Stato Attuale:</span>
+                        <span className="text-primary">20 CVE risolte a Dicembre</span>
+                        <span className="text-destructive">vs 5 critiche attive</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Ottimo rapporto di remediation - il team di sicurezza sta efficacemente gestendo le vulnerabilità.
+                      </p>
+                    </div>
                   </CardContent>
                 </Card>
 
