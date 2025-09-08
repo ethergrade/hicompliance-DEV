@@ -162,7 +162,7 @@ const Index = () => {
           </h1>
           <p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto">
             HiCompliance offre una soluzione completa per la gestione del rischio cyber, 
-            la conformità NIS2 e il monitoraggio continuo della sicurezza aziendale.
+            la conformità alle direttive e alle best practices di settore e il monitoraggio continuo della sicurezza aziendale.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             {showAuthenticatedHeader ? <Link to="/dashboard">
