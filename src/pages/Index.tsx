@@ -26,39 +26,51 @@ const Index = () => {
   const features = [{
     icon: Shield,
     title: "Dashboard Centralizzata",
-    description: "Monitoraggio in tempo reale dei servizi HiSolution con metriche di sicurezza e health score",
+    description: "Monitoraggio in tempo reale della postura di sicurezza aziendale con metriche avanzate, health score dei servizi critici e correlazione degli eventi di sicurezza per una visibilità completa del risk landscape",
     color: "text-blue-500",
     bgColor: "bg-blue-500/10"
   }, {
     icon: Globe,
     title: "SurfaceScan360",
-    description: "Scansione completa della superficie di attacco dell'organizzazione",
+    description: "Scansione continua e automatizzata della superficie di attacco con identificazione di asset esposti, analisi delle vulnerabilità CVSS/EPSS e mappatura completa del perimetro digitale dell'organizzazione",
     color: "text-green-500",
     bgColor: "bg-green-500/10"
   }, {
     icon: Eye,
     title: "DarkRisk360",
-    description: "Monitoraggio delle minacce nel dark web e intelligence sulle vulnerabilità",
+    description: "Intelligence avanzata su minacce emergenti attraverso monitoraggio del dark web, analisi predittiva dei threat actor e identificazione proattiva di data breach e credential compromise",
     color: "text-purple-500",
     bgColor: "bg-purple-500/10"
   }, {
     icon: ClipboardCheck,
     title: "Assessment NIS2",
-    description: "Valutazione completa della conformità alla direttiva NIS2 con report dettagliati",
+    description: "Framework di valutazione della conformità NIS2 con gap analysis automatizzata, roadmap di compliance personalizzata e documentazione audit-ready per soddisfare i requisiti normativi",
     color: "text-orange-500",
     bgColor: "bg-orange-500/10"
   }, {
+    icon: FileText,
+    title: "Piani di Remediation Dinamici",
+    description: "Generazione automatizzata di piani di remediation personalizzati basati su risk scoring, prioritizzazione intelligente delle vulnerabilità e timeline ottimizzate per la riduzione del rischio cyber",
+    color: "text-indigo-500",
+    bgColor: "bg-indigo-500/10"
+  }, {
+    icon: AlertTriangle,
+    title: "Incident Response Plan",
+    description: "Framework personalizzato di incident response conforme alle best practice internazionali (NIST, ISO 27035) con playbook automatizzati, catena di escalation e procedure di business continuity",
+    color: "text-red-500",
+    bgColor: "bg-red-500/10"
+  }, {
     icon: BarChart3,
     title: "Analytics Avanzate",
-    description: "Dashboard analitiche per trend di sicurezza e KPI di conformità",
+    description: "Intelligence operativa attraverso dashboard analitiche avanzate, trend analysis delle minacce, KPI di sicurezza e risk metrics per supportare il decision making strategico",
     color: "text-cyan-500",
     bgColor: "bg-cyan-500/10"
   }, {
     icon: AlertTriangle,
     title: "Threat Management",
-    description: "Gestione centralizzata delle minacce e incident response automatizzato",
-    color: "text-red-500",
-    bgColor: "bg-red-500/10"
+    description: "Piattaforma centralizzata per la gestione delle minacce con correlation engine avanzato, automated response capabilities e integration con security orchestration per una difesa proattiva",
+    color: "text-amber-500",
+    bgColor: "bg-amber-500/10"
   }];
   const hiSolutionServices = [{
     icon: Shield,
