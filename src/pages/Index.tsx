@@ -180,7 +180,7 @@ const Index = () => {
               size="lg" 
               variant="outline" 
               className="text-lg px-8"
-              onClick={() => document.getElementById('valutazione-nis2')?.scrollIntoView({ behavior: 'smooth' })}
+              onClick={() => document.querySelector('[data-demo-form]')?.scrollIntoView({ behavior: 'smooth' })}
             >
               Scopri di Più
             </Button>
