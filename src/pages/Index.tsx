@@ -26,49 +26,49 @@ const Index = () => {
   const features = [{
     icon: Shield,
     title: "Dashboard Centralizzata",
-    description: "Monitoraggio in tempo reale della postura di sicurezza aziendale con metriche avanzate, health score dei servizi critici e correlazione degli eventi di sicurezza per una visibilità completa del risk landscape",
+    description: "Monitoraggio in tempo reale della postura di sicurezza con metriche avanzate, health score e correlazione eventi per visibilità completa del risk landscape",
     color: "text-blue-500",
     bgColor: "bg-blue-500/10"
   }, {
     icon: Globe,
     title: "SurfaceScan360",
-    description: "Scansione continua e automatizzata della superficie di attacco con identificazione di asset esposti, analisi delle vulnerabilità CVSS/EPSS e mappatura completa del perimetro digitale dell'organizzazione",
+    description: "Scansione automatizzata della superficie di attacco con identificazione asset esposti, analisi vulnerabilità CVSS/EPSS e mappatura perimetro digitale",
     color: "text-green-500",
     bgColor: "bg-green-500/10"
   }, {
     icon: Eye,
     title: "DarkRisk360",
-    description: "Intelligence avanzata su minacce emergenti attraverso monitoraggio del dark web, analisi predittiva dei threat actor e identificazione proattiva di data breach e credential compromise",
+    description: "Intelligence su minacce emergenti tramite monitoraggio dark web, analisi predittiva threat actor e identificazione proattiva di data breach",
     color: "text-purple-500",
     bgColor: "bg-purple-500/10"
   }, {
     icon: ClipboardCheck,
     title: "Assessment NIS2",
-    description: "Framework di valutazione della conformità NIS2 con gap analysis automatizzata, roadmap di compliance personalizzata e documentazione audit-ready per soddisfare i requisiti normativi",
+    description: "Framework di valutazione conformità NIS2 con gap analysis automatizzata, roadmap personalizzata e documentazione audit-ready",
     color: "text-orange-500",
     bgColor: "bg-orange-500/10"
   }, {
-    icon: FileText,
+    icon: Network,
     title: "Piani di Remediation Dinamici",
-    description: "Generazione automatizzata di piani di remediation personalizzati basati su risk scoring, prioritizzazione intelligente delle vulnerabilità e timeline ottimizzate per la riduzione del rischio cyber",
+    description: "Generazione automatizzata di piani remediation personalizzati con risk scoring, prioritizzazione intelligente e timeline ottimizzate",
     color: "text-indigo-500",
     bgColor: "bg-indigo-500/10"
   }, {
     icon: AlertTriangle,
     title: "Incident Response Plan",
-    description: "Framework personalizzato di incident response conforme alle best practice internazionali (NIST, ISO 27035) con playbook automatizzati, catena di escalation e procedure di business continuity",
+    description: "Framework incident response conforme a best practice (NIST, ISO 27035) con playbook automatizzati e procedure business continuity",
     color: "text-red-500",
     bgColor: "bg-red-500/10"
   }, {
     icon: BarChart3,
     title: "Analytics Avanzate",
-    description: "Intelligence operativa attraverso dashboard analitiche avanzate, trend analysis delle minacce, KPI di sicurezza e risk metrics per supportare il decision making strategico",
+    description: "Intelligence operativa con dashboard analitiche avanzate, trend analysis minacce e risk metrics per decision making strategico",
     color: "text-cyan-500",
     bgColor: "bg-cyan-500/10"
   }, {
-    icon: AlertTriangle,
+    icon: Monitor,
     title: "Threat Management",
-    description: "Piattaforma centralizzata per la gestione delle minacce con correlation engine avanzato, automated response capabilities e integration con security orchestration per una difesa proattiva",
+    description: "Piattaforma centralizzata gestione minacce con correlation engine avanzato e automated response per difesa proattiva",
     color: "text-amber-500",
     bgColor: "bg-amber-500/10"
   }];
