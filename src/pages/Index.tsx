@@ -197,7 +197,7 @@ const Index = () => {
                   <stat.icon className="w-6 h-6 text-white" />
                 </div>
                 <div className="text-3xl font-bold text-foreground mb-2">{stat.value}</div>
-                <div className="text-sm text-muted-foreground">{stat.label}</div>
+                <div className="text-sm text-muted-foreground">Conformità NIST/NIS2/ISO</div>
               </div>)}
           </div>
         </div>
