@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Shield, Monitor, Globe, Eye, ClipboardCheck, BarChart3, AlertTriangle, FileText, Users, CheckCircle, ArrowRight, Lock, Cloud, Network, Mail, Download, Activity } from 'lucide-react';
+import DemoRequestForm from '@/components/forms/DemoRequestForm';
 const Index = () => {
   const {
     user,
@@ -230,6 +231,9 @@ const Index = () => {
           </div>
         </div>
       </section>
+
+      {/* Demo Request CTA */}
+      <DemoRequestForm />
 
       {/* HiSolution Services */}
       <section className="py-20 bg-muted/30 text-center">
