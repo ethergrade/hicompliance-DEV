@@ -44,7 +44,7 @@ const Index = () => {
     bgColor: "bg-purple-500/10"
   }, {
     icon: ClipboardCheck,
-    title: "Assessment NIS2",
+    title: "Assessment NIST/NIS2/ISO",
     description: "Framework di valutazione conformità NIS2 con gap analysis automatizzata, roadmap personalizzata e documentazione audit-ready",
     color: "text-orange-500",
     bgColor: "bg-orange-500/10"
