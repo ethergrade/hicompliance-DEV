@@ -115,7 +115,7 @@ const DemoRequestForm = () => {
   };
 
   return (
-    <section className="py-20 bg-gradient-to-br from-primary/5 via-background to-primary/5">
+    <section data-demo-form className="py-20 bg-gradient-to-br from-primary/5 via-background to-primary/5">
       <div className="container mx-auto px-4 text-center">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-4xl font-bold mb-6">
