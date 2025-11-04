@@ -34,6 +34,7 @@ import {
 import { useAuth } from '@/components/auth/AuthProvider';
 import { LogoutButton } from '@/components/auth/LogoutButton';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { useRolePermissions } from '@/hooks/useRolePermissions';
 
 const navigation = [
   {
@@ -95,8 +96,8 @@ const adminNavigation = [
     icon: Users,
   },
   {
-    title: 'Impostazioni',
-    href: '/admin/settings',
+    title: 'Gestione Ruoli',
+    href: '/admin/role-settings',
     icon: Settings,
   },
 ];
@@ -107,11 +108,12 @@ export const AppSidebar: React.FC = () => {
   const collapsed = state === 'collapsed';
   const { userProfile } = useAuth();
   const { isSuperAdmin, isSales } = useUserRoles();
+  const { isModuleEnabled } = useRolePermissions();
   
   const isAdmin = userProfile?.user_type === 'admin';
 
-  // Show all navigation to everyone (will be filtered later for sales)
-  const filteredNavigation = navigation;
+  // Filter navigation based on role permissions
+  const filteredNavigation = navigation.filter(item => isModuleEnabled(item.href));
 
   return (
     <Sidebar className="bg-sidebar-background border-sidebar-border">
@@ -162,69 +164,81 @@ export const AppSidebar: React.FC = () => {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
-            Incident Remediation
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton 
-                  asChild
-                  className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                >
-                  <NavLink to="/incident-response">
-                    <AlertTriangle className="w-4 h-4" />
-                    {!collapsed && <span>Incident Response</span>}
-                  </NavLink>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton 
-                  asChild
-                  className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                >
-                  <NavLink to="/threat-management">
-                    <Shield className="w-4 h-4" />
-                    {!collapsed && <span>Threat Management</span>}
-                  </NavLink>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {(isModuleEnabled('/incident-response') || isModuleEnabled('/threat-management')) && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
+              Incident Remediation
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {isModuleEnabled('/incident-response') && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton 
+                      asChild
+                      className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    >
+                      <NavLink to="/incident-response">
+                        <AlertTriangle className="w-4 h-4" />
+                        {!collapsed && <span>Incident Response</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
+                {isModuleEnabled('/threat-management') && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton 
+                      asChild
+                      className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    >
+                      <NavLink to="/threat-management">
+                        <Shield className="w-4 h-4" />
+                        {!collapsed && <span>Threat Management</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
-            Impostazioni
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton 
-                  asChild
-                  className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                >
-                  <NavLink to="/settings/users">
-                    <Users className="w-4 h-4" />
-                    {!collapsed && <span>Utenti</span>}
-                  </NavLink>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton 
-                  asChild
-                  className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                >
-                  <NavLink to="/settings/integrations">
-                    <Network className="w-4 h-4" />
-                    {!collapsed && <span>Integrazioni</span>}
-                  </NavLink>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {(isModuleEnabled('/settings/users') || isModuleEnabled('/settings/integrations')) && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
+              Impostazioni
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {isModuleEnabled('/settings/users') && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton 
+                      asChild
+                      className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    >
+                      <NavLink to="/settings/users">
+                        <Users className="w-4 h-4" />
+                        {!collapsed && <span>Utenti</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
+                {isModuleEnabled('/settings/integrations') && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton 
+                      asChild
+                      className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    >
+                      <NavLink to="/settings/integrations">
+                        <Network className="w-4 h-4" />
+                        {!collapsed && <span>Integrazioni</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         {(isAdmin || isSuperAdmin) && (
           <SidebarGroup>
