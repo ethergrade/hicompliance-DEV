@@ -52,6 +52,9 @@ import {
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Tooltip as RechartsTooltip } from 'recharts';
 import SecurityFindings from '@/components/surface-scan/SecurityFindings';
+import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
+import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceScanAlertConfigDialog';
+import { useSurfaceScanAlerts, SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
 
 const SurfaceScan360: React.FC = () => {
   const [openTooltip, setOpenTooltip] = useState<number | null>(null);
@@ -60,11 +63,20 @@ const SurfaceScan360: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [riskFilter, setRiskFilter] = useState('all');
   const [monthlyMonitoring, setMonthlyMonitoring] = useState(false);
+  const [alertDialogOpen, setAlertDialogOpen] = useState(false);
   
   // Collapsible states for legends
   const [cveCollegendOpen, setCveLegendOpen] = useState(false);
   const [epssLegendOpen, setEpssLegendOpen] = useState(false);
   const [riskTrendLegendOpen, setRiskTrendLegendOpen] = useState(false);
+  
+  // Alert management
+  const { alerts, createAlert } = useSurfaceScanAlerts();
+  const activeAlertsCount = alerts.filter(a => a.is_active).length;
+
+  const handleCreateAlert = async (data: { alert_email: string; alert_types: SurfaceScanAlertTypes }) => {
+    return await createAlert(data);
+  };
   
   const assetsPerPage = 5;
   
@@ -373,7 +385,13 @@ const SurfaceScan360: React.FC = () => {
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-muted-foreground">Vulnerabilità Critiche</p>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-sm text-muted-foreground">Vulnerabilità Critiche</p>
+                      <AlertBellButton
+                        alertCount={activeAlertsCount}
+                        onClick={() => setAlertDialogOpen(true)}
+                      />
+                    </div>
                     <p className="text-2xl font-bold text-red-500">8</p>
                   </div>
                   <AlertTriangle className="w-8 h-8 text-red-500" />
@@ -1120,6 +1138,14 @@ const SurfaceScan360: React.FC = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Alert Configuration Dialog */}
+        <SurfaceScanAlertConfigDialog
+          open={alertDialogOpen}
+          onOpenChange={setAlertDialogOpen}
+          onSubmit={handleCreateAlert}
+          mode="create"
+        />
       </DashboardLayout>
     </TooltipProvider>
   );

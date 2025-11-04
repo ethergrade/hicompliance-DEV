@@ -249,6 +249,19 @@ export const AppSidebar: React.FC = () => {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 )}
+                {isModuleEnabled('/settings/surface-scan-alerts') && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton 
+                      asChild
+                      className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    >
+                      <NavLink to="/settings/surface-scan-alerts">
+                        <Bell className="w-4 h-4" />
+                        {!collapsed && <span>Alert SurfaceScan</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

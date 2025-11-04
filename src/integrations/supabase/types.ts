@@ -655,6 +655,47 @@ export type Database = {
         }
         Relationships: []
       }
+      surface_scan_alerts: {
+        Row: {
+          alert_email: string
+          alert_types: Json
+          created_at: string
+          id: string
+          is_active: boolean
+          organization_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          alert_email: string
+          alert_types?: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          organization_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          alert_email?: string
+          alert_types?: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          organization_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_scan_alerts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string
