@@ -127,6 +127,19 @@ const Remediation: React.FC = () => {
 
         // Crea i task mancanti basati sui dati mock del gantt
         const tasksToCreate = [];
+        
+        // Mappatura priorità italiana -> inglese per il database
+        const priorityMapping: Record<string, string> = {
+          'Critica': 'critical',
+          'Alta': 'high',
+          'Media': 'medium',
+          'Bassa': 'low',
+          'critica': 'critical',
+          'alta': 'high',
+          'media': 'medium',
+          'bassa': 'low'
+        };
+        
         ganttActions.forEach((action, index) => {
           const uuid = mockUUIDs[action.id as keyof typeof mockUUIDs];
           if (uuid && !existingIds.has(uuid)) {
@@ -138,7 +151,7 @@ const Remediation: React.FC = () => {
               end_date: action.endDate,
               progress: action.progress,
               assignee: action.assignee,
-              priority: action.priority,
+              priority: priorityMapping[action.priority] || 'medium',
               color: action.color,
               display_order: index,
               organization_id: organizationId // Ora uso l'organization_id dell'utente
@@ -420,13 +433,23 @@ const Remediation: React.FC = () => {
       const startDate = format(new Date(), 'yyyy-MM-dd');
       const endDate = format(addDays(new Date(), Number(estimatedDays)), 'yyyy-MM-dd');
 
+      // Mappatura priorità italiana -> inglese per il database
+      const priorityMapping: Record<string, string> = {
+        'critica': 'critical',
+        'alta': 'high',
+        'media': 'medium',
+        'bassa': 'low'
+      };
+
       // Determina il colore in base alla priorità
-      const priorityColors = {
+      const priorityColors: Record<string, string> = {
         'critica': '#DC2626',
         'alta': '#EA580C',
         'media': '#EAB308',
         'bassa': '#22C55E'
       };
+
+      const dbPriority = priorityMapping[newRemediation.priority] || 'medium';
 
       const newTask = {
         organization_id: userData.organization_id,
@@ -436,8 +459,8 @@ const Remediation: React.FC = () => {
         end_date: endDate,
         progress: 0,
         assignee: newRemediation.assignedTeam,
-        priority: newRemediation.priority,
-        color: priorityColors[newRemediation.priority as keyof typeof priorityColors] || '#3b82f6',
+        priority: dbPriority,
+        color: priorityColors[newRemediation.priority] || '#3b82f6',
         display_order: taskOrder.length, // Metti il nuovo task alla fine
         is_hidden: false,
         is_deleted: false,
