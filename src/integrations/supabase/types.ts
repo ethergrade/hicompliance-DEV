@@ -202,6 +202,50 @@ export type Database = {
         }
         Relationships: []
       }
+      incident_documents: {
+        Row: {
+          category: Database["public"]["Enums"]["document_category"]
+          file_path: string
+          file_size: number
+          file_type: string
+          id: string
+          name: string
+          updated_at: string
+          uploaded_at: string
+          uploaded_by: string
+        }
+        Insert: {
+          category?: Database["public"]["Enums"]["document_category"]
+          file_path: string
+          file_size: number
+          file_type: string
+          id?: string
+          name: string
+          updated_at?: string
+          uploaded_at?: string
+          uploaded_by: string
+        }
+        Update: {
+          category?: Database["public"]["Enums"]["document_category"]
+          file_path?: string
+          file_size?: number
+          file_type?: string
+          id?: string
+          name?: string
+          updated_at?: string
+          uploaded_at?: string
+          uploaded_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "incident_documents_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_generation_index: {
         Row: {
           azienda: string
@@ -623,6 +667,15 @@ export type Database = {
     Enums: {
       app_role: "super_admin" | "sales" | "client"
       assessment_status: "not_applicable" | "planned_in_progress" | "completed"
+      document_category:
+        | "Piano Generale"
+        | "Checklist / OPL / SOP"
+        | "Template"
+        | "Processo"
+        | "Legal"
+        | "Audit"
+        | "Tecnico"
+        | "Varie"
       service_status: "active" | "inactive" | "maintenance" | "alert"
       user_type: "admin" | "client"
     }
@@ -754,6 +807,16 @@ export const Constants = {
     Enums: {
       app_role: ["super_admin", "sales", "client"],
       assessment_status: ["not_applicable", "planned_in_progress", "completed"],
+      document_category: [
+        "Piano Generale",
+        "Checklist / OPL / SOP",
+        "Template",
+        "Processo",
+        "Legal",
+        "Audit",
+        "Tecnico",
+        "Varie",
+      ],
       service_status: ["active", "inactive", "maintenance", "alert"],
       user_type: ["admin", "client"],
     },
