@@ -119,10 +119,11 @@ export const IRPDocumentEditor = ({ open, onOpenChange }: IRPDocumentEditorProps
               </p>
             </div>
             <ScrollArea className="flex-1">
-              <IRPContactsTable
-                contacts={localDocument.sections.contacts}
-                onUpdateContact={updateContactEscalation}
-              />
+            <IRPContactsTable
+              contacts={localDocument.sections.contacts}
+              onUpdateContact={updateContactEscalation}
+              onReload={handleReloadContacts}
+            />
             </ScrollArea>
           </TabsContent>
         </Tabs>
