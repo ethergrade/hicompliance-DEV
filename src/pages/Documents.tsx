@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
+import type { Database } from '@/integrations/supabase/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
 import {
@@ -21,18 +22,21 @@ import {
   FolderInput
 } from 'lucide-react';
 
-const DOCUMENT_CATEGORIES = [
+// Use the database enum type directly to stay in sync
+type DocumentCategory = Database['public']['Enums']['document_category'];
+
+// Define display categories (excluding deprecated "Audit" which is now "ISO & Audit")
+const DOCUMENT_CATEGORIES: DocumentCategory[] = [
   'Piano Generale',
   'Checklist / OPL / SOP',
   'Template',
   'Processo',
   'Legal',
-  'Audit',
+  'ISO & Audit',
+  'NIS2',
   'Tecnico',
   'Varie'
-] as const;
-
-type DocumentCategory = typeof DOCUMENT_CATEGORIES[number];
+];
 
 interface Document {
   id: string;

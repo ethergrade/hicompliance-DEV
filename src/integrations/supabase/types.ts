@@ -706,6 +706,8 @@ export type Database = {
         | "Audit"
         | "Tecnico"
         | "Varie"
+        | "NIS2"
+        | "ISO & Audit"
       service_status: "active" | "inactive" | "maintenance" | "alert"
       user_type: "admin" | "client"
     }
@@ -846,6 +848,8 @@ export const Constants = {
         "Audit",
         "Tecnico",
         "Varie",
+        "NIS2",
+        "ISO & Audit",
       ],
       service_status: ["active", "inactive", "maintenance", "alert"],
       user_type: ["admin", "client"],
