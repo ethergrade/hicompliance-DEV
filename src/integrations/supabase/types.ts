@@ -540,6 +540,27 @@ export type Database = {
         }
         Relationships: []
       }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
       users: {
         Row: {
           auth_user_id: string | null
@@ -586,12 +607,21 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      get_current_user_type: {
-        Args: Record<PropertyKey, never>
-        Returns: string
+      get_current_user_type: { Args: never; Returns: string }
+      get_user_roles: {
+        Args: { _user_id: string }
+        Returns: Database["public"]["Enums"]["app_role"][]
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
       }
     }
     Enums: {
+      app_role: "super_admin" | "sales" | "client"
       assessment_status: "not_applicable" | "planned_in_progress" | "completed"
       service_status: "active" | "inactive" | "maintenance" | "alert"
       user_type: "admin" | "client"
@@ -722,6 +752,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      app_role: ["super_admin", "sales", "client"],
       assessment_status: ["not_applicable", "planned_in_progress", "completed"],
       service_status: ["active", "inactive", "maintenance", "alert"],
       user_type: ["admin", "client"],

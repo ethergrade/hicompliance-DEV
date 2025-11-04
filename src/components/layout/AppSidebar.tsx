@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/sidebar';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { LogoutButton } from '@/components/auth/LogoutButton';
+import { useUserRoles } from '@/hooks/useUserRoles';
 
 const navigation = [
   {
@@ -100,8 +101,14 @@ export const AppSidebar: React.FC = () => {
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
   const { userProfile } = useAuth();
+  const { isSuperAdmin, isSales } = useUserRoles();
   
   const isAdmin = userProfile?.user_type === 'admin';
+
+  // Filter navigation based on role
+  const filteredNavigation = isSales 
+    ? navigation.filter(item => ['/', '/dashboard', '/assessment'].includes(item.href))
+    : navigation;
 
   return (
     <Sidebar className="bg-sidebar-background border-sidebar-border">
@@ -126,7 +133,7 @@ export const AppSidebar: React.FC = () => {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navigation.map((item) => {
+              {filteredNavigation.map((item) => {
                 const isActive = location.pathname === item.href;
                 return (
                   <SidebarMenuItem key={item.href}>
@@ -152,10 +159,11 @@ export const AppSidebar: React.FC = () => {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
-            Incident Remediation
-          </SidebarGroupLabel>
+        {!isSales && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
+              Incident Remediation
+            </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
@@ -182,12 +190,14 @@ export const AppSidebar: React.FC = () => {
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
-        </SidebarGroup>
+          </SidebarGroup>
+        )}
 
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
-            Impostazioni
-          </SidebarGroupLabel>
+        {!isSales && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
+              Impostazioni
+            </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
@@ -214,9 +224,10 @@ export const AppSidebar: React.FC = () => {
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
-        </SidebarGroup>
+          </SidebarGroup>
+        )}
 
-        {isAdmin && (
+        {(isAdmin || isSuperAdmin) && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
               Amministrazione
@@ -260,7 +271,7 @@ export const AppSidebar: React.FC = () => {
                 {userProfile?.organizations?.name || 'Organizzazione'}
               </p>
               <p className="text-xs text-cyan-400">
-                {isAdmin ? 'Amministratore' : 'Cliente'}
+                {isSuperAdmin ? 'Super Admin' : isSales ? 'Sales' : isAdmin ? 'Amministratore' : 'Cliente'}
               </p>
             </div>
             <LogoutButton 

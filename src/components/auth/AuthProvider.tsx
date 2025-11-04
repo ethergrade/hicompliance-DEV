@@ -81,9 +81,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signIn = async (email: string, password: string) => {
     try {
-      // Handle special admin case - convert admin to real email
-      const loginEmail = email === 'admin' ? 'admin@admin.com' : email;
-      const loginPassword = email === 'admin' ? 'adminadmin' : password;
+      // Handle special cases for admin and sales
+      let loginEmail = email;
+      let loginPassword = password;
+      
+      if (email === 'admin') {
+        loginEmail = 'admin@admin.com';
+        loginPassword = 'adminadmin';
+      } else if (email === 'sales') {
+        loginEmail = 'sales@sales.com';
+        loginPassword = 'salessales';
+      }
 
       const { data, error } = await supabase.auth.signInWithPassword({
         email: loginEmail,
@@ -163,6 +171,84 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           toast({
             title: "Accesso admin effettuato",
             description: "Account admin creato e login completato",
+          });
+
+          return { error: null };
+        } else if ((email === 'sales' || email === 'sales@sales.com') && error.message.includes('Invalid login credentials')) {
+          // If sales login fails, try to sign up the sales user first
+          console.log('Tentativo di registrazione sales...');
+          
+          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+            email: 'sales@sales.com',
+            password: 'salessales',
+            options: {
+              emailRedirectTo: `${window.location.origin}/dashboard`,
+              data: {
+                full_name: 'Sales User',
+                user_type: 'client'
+              }
+            }
+          });
+
+          if (signUpError) {
+            console.error('Errore registrazione sales:', signUpError);
+            toast({
+              title: "Errore di registrazione sales",
+              description: signUpError.message,
+              variant: "destructive",
+            });
+            return { error: signUpError };
+          }
+
+          console.log('Sales registrato, tentativo di login...');
+
+          // Wait a moment for the signup to complete
+          await new Promise(resolve => setTimeout(resolve, 1000));
+
+          // Try to login again after signup
+          const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+            email: 'sales@sales.com',
+            password: 'salessales',
+          });
+
+          if (loginError) {
+            console.error('Errore login dopo registrazione:', loginError);
+            toast({
+              title: "Sales registrato",
+              description: "Account sales creato. Riprova il login tra qualche secondo.",
+              variant: "default",
+            });
+            return { error: loginError };
+          }
+
+          // Update the user profile with sales details and sync auth_user_id
+          if (loginData.user) {
+            console.log('Aggiornamento profilo sales...');
+            
+            // Update the existing sales user record with auth_user_id
+            await supabase
+              .from('users')
+              .update({
+                auth_user_id: loginData.user.id,
+              })
+              .eq('email', 'sales@sales.com');
+
+            // Assign sales role
+            await supabase
+              .from('user_roles')
+              .insert({
+                user_id: loginData.user.id,
+                role: 'sales'
+              })
+              .select()
+              .single();
+
+            console.log('Profilo sales aggiornato');
+          }
+
+          toast({
+            title: "Accesso sales effettuato",
+            description: "Account sales creato e login completato",
           });
 
           return { error: null };
