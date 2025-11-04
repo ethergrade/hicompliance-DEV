@@ -42,15 +42,7 @@ const Remediation: React.FC = () => {
   const [draggedOver, setDraggedOver] = useState<number | null>(null);
   const [taskOrder, setTaskOrder] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
   const [resizingTask, setResizingTask] = useState<{ id: number, side: 'left' | 'right' } | null>(null);
-  const [taskDates, setTaskDates] = useState<Record<number, { startDate: string, endDate: string }>>({
-    1: { startDate: '2025-01-15', endDate: '2025-03-01' },
-    2: { startDate: '2025-01-20', endDate: '2025-02-15' },
-    3: { startDate: '2025-02-01', endDate: '2025-04-01' },
-    4: { startDate: '2025-01-25', endDate: '2025-02-25' },
-    5: { startDate: '2025-02-15', endDate: '2025-03-15' },
-    6: { startDate: '2025-03-01', endDate: '2025-04-15' },
-    7: { startDate: '2025-02-10', endDate: '2025-03-20' }
-  });
+  const [taskDates, setTaskDates] = useState<Record<number, { startDate: string, endDate: string }>>({});
   const [hiddenTasks, setHiddenTasks] = useState<Set<number>>(new Set());
   const [deletedTasks, setDeletedTasks] = useState<Set<number>>(new Set());
   const [editingTaskTitle, setEditingTaskTitle] = useState<number | null>(null);
@@ -83,9 +75,9 @@ const Remediation: React.FC = () => {
     return mockUUIDs[mockId] || crypto.randomUUID();
   };
 
-  // Carica l'ordine dei task dal database all'avvio
+  // Carica TUTTI i dati dei task dal database all'avvio
   useEffect(() => {
-    const initializeMockTasks = async () => {
+    const loadAllTaskData = async () => {
       try {
         // Prima ottieni l'organization_id dell'utente corrente
         const { data: { user } } = await supabase.auth.getUser();
@@ -111,10 +103,10 @@ const Remediation: React.FC = () => {
           return;
         }
 
-        // Verifica quali task esistono già per questa organizzazione
+        // Verifica quali task esistono già per questa organizzazione - CARICA TUTTI I CAMPI
         const { data: existingTasks, error: fetchError } = await supabase
           .from('remediation_tasks')
-          .select('id, display_order')
+          .select('*')
           .eq('organization_id', organizationId);
 
         if (fetchError) throw fetchError;
@@ -160,7 +152,9 @@ const Remediation: React.FC = () => {
               color: action.color,
               display_order: index,
               organization_id: organizationId,
-              budget: action.budget || 0
+              budget: action.budget || 0,
+              is_hidden: false,
+              is_deleted: false
             });
           }
         });
@@ -176,10 +170,10 @@ const Remediation: React.FC = () => {
           }
         }
 
-        // Ora carica l'ordine dal database
+        // Ora carica TUTTI i dati dal database
         const { data: tasks, error } = await supabase
           .from('remediation_tasks')
-          .select('id, display_order')
+          .select('*')
           .eq('organization_id', organizationId)
           .order('display_order', { ascending: true });
 
@@ -197,6 +191,7 @@ const Remediation: React.FC = () => {
             '6e7d8c9b-0a1f-2e3d-4c5b-6a7f8e9d0c1b': 7
           };
 
+          // Popola l'ordine dei task
           const orderedIds = tasks
             .map(task => reverseMapping[task.id])
             .filter(id => id !== undefined)
@@ -207,98 +202,75 @@ const Remediation: React.FC = () => {
             });
 
           if (orderedIds.length > 0) {
-            // Mantieni tutti i task mock (1-7) ma riordina quelli che esistono nel database
             const allMockIds = [1, 2, 3, 4, 5, 6, 7];
             const remainingIds = allMockIds.filter(id => !orderedIds.includes(id));
             setTaskOrder([...orderedIds, ...remainingIds]);
           }
-        }
-      } catch (error) {
-        console.error('Errore nell\'inizializzazione dei task:', error);
-        // Mantieni l'ordine di default in caso di errore
-      }
-    };
 
-    initializeMockTasks();
-  }, []);
-
-  // Carica i budget dal database
-  useEffect(() => {
-    const loadBudgets = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-
-        const { data: userData } = await supabase
-          .from('users')
-          .select('organization_id')
-          .eq('auth_user_id', user.id)
-          .single();
-
-        if (!userData?.organization_id) return;
-
-        const { data: tasks, error } = await supabase
-          .from('remediation_tasks')
-          .select('id, budget')
-          .eq('organization_id', userData.organization_id);
-
-        if (error) throw error;
-
-        if (tasks) {
-          const reverseMapping: Record<string, number> = {
-            '89862a35-1eec-4489-889b-5781e6e78dd4': 1,
-            '27afa77b-05a1-4ae3-8bdf-ea39f84135b2': 2,
-            'c3f8b7d2-4e1a-4c9b-8f7e-2d5a6b8c9e0f': 3,
-            'f1e2d3c4-b5a6-9c8d-7e6f-0a1b2c3d4e5f': 4,
-            '8a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d': 5,
-            '7f8e9d0c-1b2a-3c4d-5e6f-7a8b9c0d1e2f': 6,
-            '6e7d8c9b-0a1f-2e3d-4c5b-6a7f8e9d0c1b': 7
-          };
-
-          const budgetMap: Record<number, number> = {};
-          
-          // Aggiorna i task nel database con i budget di default se mancano
-          const updatesToMake = [];
-          
-          for (const task of tasks) {
+          // Popola le date dei task dal database
+          const datesMap: Record<number, { startDate: string, endDate: string }> = {};
+          tasks.forEach(task => {
             const mockId = reverseMapping[task.id];
             if (mockId) {
-              const defaultAction = ganttActions.find(a => a.id === mockId);
-              const budgetValue = task.budget ? Number(task.budget) : 0;
-              
-              // Se il budget nel database è 0 ma abbiamo un default, aggiorna il database
-              if (budgetValue === 0 && defaultAction?.budget) {
-                updatesToMake.push({
-                  id: task.id,
-                  budget: defaultAction.budget
-                });
-                budgetMap[mockId] = defaultAction.budget;
-              } else {
-                budgetMap[mockId] = budgetValue;
-              }
+              datesMap[mockId] = {
+                startDate: task.start_date,
+                endDate: task.end_date
+              };
             }
-          }
-          
-          // Esegui gli aggiornamenti in batch se necessario
-          if (updatesToMake.length > 0) {
-            for (const update of updatesToMake) {
-              await supabase
-                .from('remediation_tasks')
-                .update({ budget: update.budget })
-                .eq('id', update.id)
-                .eq('organization_id', userData.organization_id);
+          });
+          setTaskDates(datesMap);
+
+          // Popola i budget dal database
+          const budgetMap: Record<number, number> = {};
+          tasks.forEach(task => {
+            const mockId = reverseMapping[task.id];
+            if (mockId) {
+              budgetMap[mockId] = task.budget ? Number(task.budget) : 0;
             }
-          }
-          
+          });
           setTaskBudgets(budgetMap);
+
+          // Popola i task nascosti dal database
+          const hidden = new Set<number>();
+          tasks.forEach(task => {
+            const mockId = reverseMapping[task.id];
+            if (mockId && task.is_hidden) {
+              hidden.add(mockId);
+            }
+          });
+          setHiddenTasks(hidden);
+
+          // Popola i task eliminati dal database
+          const deleted = new Set<number>();
+          tasks.forEach(task => {
+            const mockId = reverseMapping[task.id];
+            if (mockId && task.is_deleted) {
+              deleted.add(mockId);
+            }
+          });
+          setDeletedTasks(deleted);
+
+          console.log('Dati caricati dal database:', {
+            tasks: tasks.length,
+            dates: Object.keys(datesMap).length,
+            budgets: Object.keys(budgetMap).length,
+            hidden: hidden.size,
+            deleted: deleted.size
+          });
         }
       } catch (error) {
-        console.error('Errore nel caricamento dei budget:', error);
+        console.error('Errore nel caricamento dei dati:', error);
+        toast({
+          title: "Errore",
+          description: "Impossibile caricare i dati dei task dal database.",
+          variant: "destructive"
+        });
       }
     };
 
-    loadBudgets();
+    loadAllTaskData();
   }, []);
+
 
   // Categorie critiche che necessitano remediation (status: not_started o planned_in_progress)
   const criticalCategories = [
@@ -1127,13 +1099,16 @@ const Remediation: React.FC = () => {
       .filter(id => !deletedTasks.has(id))
       .map(id => {
         const baseAction = ganttActions.find(action => action.id === id)!;
-        const dates = taskDates[id];
+        // Usa i dati dal database come priorità, fallback sui dati mock
+        const dates = taskDates[id] || { startDate: baseAction.startDate, endDate: baseAction.endDate };
+        const budget = taskBudgets[id] !== undefined ? taskBudgets[id] : baseAction.budget;
+        
         return {
           ...baseAction,
           startDate: dates.startDate,
           endDate: dates.endDate,
           isHidden: hiddenTasks.has(id),
-          budget: taskBudgets[id] !== undefined ? taskBudgets[id] : baseAction.budget
+          budget: budget
         };
       });
 
