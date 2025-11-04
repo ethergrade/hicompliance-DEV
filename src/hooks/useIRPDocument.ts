@@ -97,32 +97,12 @@ export const useIRPDocument = () => {
           date: new Date().toLocaleDateString('it-IT'),
           version: '1.0',
           sections: {
-            introduction: 'Questo documento definisce le procedure operative per la gestione degli incidenti di sicurezza informatica.',
-            severity: [
-              { level: 'Critico', description: 'Impatto grave sull\'operatività aziendale', responseTime: 'Immediato' },
-              { level: 'Alto', description: 'Impatto significativo su sistemi critici', responseTime: 'Entro 1 ora' },
-              { level: 'Medio', description: 'Impatto limitato su sistemi non critici', responseTime: 'Entro 4 ore' },
-              { level: 'Basso', description: 'Impatto minimo', responseTime: 'Entro 24 ore' },
-            ],
-            roles: [
-              { role: 'Incident Manager', responsibilities: 'Coordina la risposta all\'incidente', contact: userData.full_name || '' },
-              { role: 'Security Team', responsibilities: 'Analisi tecnica e contenimento', contact: '' },
-              { role: 'Communication Lead', responsibilities: 'Gestione comunicazioni interne ed esterne', contact: '' },
-            ],
+            introduction: '',
+            severity: [],
+            roles: [],
             contacts: loadedContacts || [],
-            communications: 'Le comunicazioni seguiranno il seguente processo: notifica immediata al team di sicurezza, escalation al management per incidenti critici, comunicazione ai clienti se necessario.',
-            procedures: [
-              {
-                title: 'Rilevamento e Notifica',
-                steps: ['Identificazione dell\'incidente', 'Classificazione della gravità', 'Notifica al team di risposta'],
-                assignedTo: 'Security Team',
-              },
-              {
-                title: 'Contenimento',
-                steps: ['Isolamento dei sistemi compromessi', 'Prevenzione della propagazione', 'Conservazione delle evidenze'],
-                assignedTo: 'Incident Manager',
-              },
-            ],
+            communications: '',
+            procedures: [],
           },
         };
         setDocument(defaultDoc);
