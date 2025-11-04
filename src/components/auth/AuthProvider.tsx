@@ -233,17 +233,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               })
               .eq('email', 'sales@sales.com');
 
-            // Assign sales role
-            await supabase
+            // Assign sales role (upsert to avoid duplicates)
+            const { error: roleError } = await supabase
               .from('user_roles')
-              .insert({
+              .upsert({
                 user_id: loginData.user.id,
                 role: 'sales'
-              })
-              .select()
-              .single();
+              }, {
+                onConflict: 'user_id,role'
+              });
 
-            console.log('Profilo sales aggiornato');
+            if (roleError) {
+              console.error('Errore assegnazione ruolo sales:', roleError);
+            }
+
+            console.log('Profilo sales aggiornato con ruolo');
           }
 
           toast({
