@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EmergencyContactForm } from '@/components/emergency/EmergencyContactForm';
+import { IRPDocumentEditor } from '@/components/irp/IRPDocumentEditor';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -39,6 +40,7 @@ const IncidentResponse: React.FC = () => {
   const [selectedProcedure, setSelectedProcedure] = useState<string | null>(null);
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
   const [loading, setLoading] = useState(true);
+  const [irpEditorOpen, setIrpEditorOpen] = useState(false);
   const { toast } = useToast();
 
   // Procedure operative per incident response
@@ -327,7 +329,7 @@ const IncidentResponse: React.FC = () => {
           <TabsContent value="procedures" className="space-y-6">
             <Button 
               className="w-full bg-primary text-primary-foreground"
-              onClick={() => console.log('Downloading complete plan')}
+              onClick={() => setIrpEditorOpen(true)}
             >
               <Download className="w-4 h-4 mr-2" />
               Scarica Incident Response Plan Completo
@@ -447,6 +449,8 @@ const IncidentResponse: React.FC = () => {
           </TabsContent>
         </Tabs>
       </div>
+
+      <IRPDocumentEditor open={irpEditorOpen} onOpenChange={setIrpEditorOpen} />
     </DashboardLayout>
   );
 };
