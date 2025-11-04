@@ -79,6 +79,73 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => subscription.unsubscribe();
   }, []);
 
+  // Helper function to ensure user data integrity after login
+  const ensureUserDataIntegrity = async (authUserId: string, email: string) => {
+    try {
+      // Check if user record exists and has correct auth_user_id
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('id, auth_user_id, email')
+        .eq('email', email)
+        .single();
+
+      if (existingUser && !existingUser.auth_user_id) {
+        // Fix missing auth_user_id
+        console.log(`Fixing auth_user_id for ${email}...`);
+        await supabase
+          .from('users')
+          .update({ auth_user_id: authUserId })
+          .eq('email', email);
+      }
+
+      // For sales users, ensure role is assigned
+      if (email === 'sales@sales.com') {
+        const { data: existingRole } = await supabase
+          .from('user_roles')
+          .select('*')
+          .eq('user_id', authUserId)
+          .eq('role', 'sales')
+          .single();
+
+        if (!existingRole) {
+          console.log('Assigning sales role...');
+          await supabase
+            .from('user_roles')
+            .upsert({
+              user_id: authUserId,
+              role: 'sales'
+            }, {
+              onConflict: 'user_id,role'
+            });
+        }
+      }
+
+      // For admin users, ensure super_admin role is assigned
+      if (email === 'admin@admin.com') {
+        const { data: existingRole } = await supabase
+          .from('user_roles')
+          .select('*')
+          .eq('user_id', authUserId)
+          .eq('role', 'super_admin')
+          .single();
+
+        if (!existingRole) {
+          console.log('Assigning super_admin role...');
+          await supabase
+            .from('user_roles')
+            .upsert({
+              user_id: authUserId,
+              role: 'super_admin'
+            }, {
+              onConflict: 'user_id,role'
+            });
+        }
+      }
+    } catch (error) {
+      console.error('Error ensuring user data integrity:', error);
+    }
+  };
+
   const signIn = async (email: string, password: string) => {
     try {
       // Handle special cases for admin and sales
@@ -97,6 +164,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email: loginEmail,
         password: loginPassword,
       });
+
+      // After successful login, ensure auth_user_id and roles are correctly set
+      if (data?.user && !error) {
+        await ensureUserDataIntegrity(data.user.id, loginEmail);
+      }
 
       if (error) {
         // If admin login fails, try to sign up the admin user first
