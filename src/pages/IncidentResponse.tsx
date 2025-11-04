@@ -311,17 +311,11 @@ const IncidentResponse: React.FC = () => {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-white">Incident Response Plan</h1>
-            <p className="text-gray-400">
-              Procedure operative e documentazione per la gestione degli incidenti di sicurezza
-            </p>
-          </div>
-          <Button className="bg-primary text-primary-foreground">
-            <Download className="w-4 h-4 mr-2" />
-            Scarica Piano Completo
-          </Button>
+        <div>
+          <h1 className="text-3xl font-bold text-white">Incident Response Plan</h1>
+          <p className="text-gray-400">
+            Procedure operative e documentazione per la gestione degli incidenti di sicurezza
+          </p>
         </div>
 
         <Tabs defaultValue="procedures" className="space-y-6">
@@ -331,6 +325,14 @@ const IncidentResponse: React.FC = () => {
           </TabsList>
 
           <TabsContent value="procedures" className="space-y-6">
+            <Button 
+              className="w-full bg-primary text-primary-foreground"
+              onClick={() => console.log('Downloading complete plan')}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Scarica Incident Response Plan Completo
+            </Button>
+            
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {procedures.map((procedure) => (
                 <Card key={procedure.id} className="border-border bg-card hover:bg-card/80 transition-colors cursor-pointer">
