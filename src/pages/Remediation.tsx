@@ -52,6 +52,7 @@ const Remediation: React.FC = () => {
   });
   const [hiddenTasks, setHiddenTasks] = useState<Set<number>>(new Set());
   const [deletedTasks, setDeletedTasks] = useState<Set<number>>(new Set());
+  const [editingTaskTitle, setEditingTaskTitle] = useState<number | null>(null);
   const [newRemediation, setNewRemediation] = useState({
     category: '',
     priority: '',
@@ -832,6 +833,65 @@ const Remediation: React.FC = () => {
     }
   };
 
+  const saveTaskTitle = async (taskId: number, newTitle: string) => {
+    try {
+      // Valida l'input
+      const trimmedTitle = newTitle.trim();
+      if (!trimmedTitle) {
+        toast({
+          title: "Errore",
+          description: "Il titolo non può essere vuoto.",
+          variant: "destructive"
+        });
+        return false;
+      }
+
+      if (trimmedTitle.length > 500) {
+        toast({
+          title: "Errore",
+          description: "Il titolo è troppo lungo (massimo 500 caratteri).",
+          variant: "destructive"
+        });
+        return false;
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return false;
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      if (!userData?.organization_id) return false;
+
+      const uuid = await getUUIDForMockId(taskId);
+      const { error } = await supabase
+        .from('remediation_tasks')
+        .update({ task: trimmedTitle })
+        .eq('id', uuid)
+        .eq('organization_id', userData.organization_id);
+      
+      if (error) throw error;
+
+      toast({
+        title: "Titolo aggiornato",
+        description: "Il titolo del task è stato salvato nel database."
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('Errore nel salvataggio del titolo:', error);
+      toast({
+        title: "Errore",
+        description: "Impossibile salvare il titolo del task.",
+        variant: "destructive"
+      });
+      return false;
+    }
+  };
+
   const handleToggleVisibility = (taskId: number) => {
     setHiddenTasks(prev => {
       const newSet = new Set(prev);
@@ -1339,7 +1399,29 @@ const Remediation: React.FC = () => {
                         {/* Task info */}
                         <div className="w-64 flex-shrink-0 pr-4">
                           <div className="flex items-center space-x-2">
-                            <div className={`text-sm font-medium ${action.isHidden ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
+                            <div 
+                              contentEditable={!action.isHidden}
+                              suppressContentEditableWarning
+                              onBlur={(e) => {
+                                const newTitle = e.currentTarget.textContent || '';
+                                if (newTitle !== action.task) {
+                                  saveTaskTitle(action.id, newTitle);
+                                }
+                                setEditingTaskTitle(null);
+                              }}
+                              onFocus={() => setEditingTaskTitle(action.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  e.currentTarget.blur();
+                                }
+                              }}
+                              className={`text-sm font-medium outline-none ${
+                                action.isHidden 
+                                  ? 'text-muted-foreground line-through cursor-not-allowed' 
+                                  : 'text-foreground cursor-text hover:bg-muted/30 px-1 rounded'
+                              } ${editingTaskTitle === action.id ? 'bg-muted/50' : ''}`}
+                            >
                               {action.task}
                             </div>
                             {action.isHidden && (
