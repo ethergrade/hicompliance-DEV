@@ -385,27 +385,98 @@ const Remediation: React.FC = () => {
     return baseEstimates[categoryType as keyof typeof baseEstimates]?.[complexity as keyof typeof baseEstimates['identity_management']] || 20;
   };
 
-  const handleCreateRemediation = () => {
+  const handleCreateRemediation = async () => {
     const estimatedDays = newRemediation.estimatedDays || calculateDays(newRemediation.complexity, newRemediation.category);
     const estimatedBudget = newRemediation.estimatedBudget || calculateBudget(Number(estimatedDays), newRemediation.complexity);
     
-    console.log('Creating remediation:', {
-      ...newRemediation,
-      estimatedDays,
-      estimatedBudget: `€${estimatedBudget.toLocaleString()}`
-    });
-    
-    // Reset form
-    setNewRemediation({
-      category: '',
-      priority: '',
-      description: '',
-      estimatedDays: '',
-      estimatedBudget: '',
-      assignedTeam: '',
-      complexity: 'medium'
-    });
-    setIsCreateModalOpen(false);
+    try {
+      // Ottieni l'organization_id dell'utente corrente
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "Errore",
+          description: "Devi essere autenticato per creare una remediation.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      if (userError || !userData?.organization_id) {
+        toast({
+          title: "Errore",
+          description: "Impossibile trovare l'organizzazione dell'utente.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Calcola la data di inizio (oggi) e la data di fine basata sui giorni stimati
+      const startDate = format(new Date(), 'yyyy-MM-dd');
+      const endDate = format(addDays(new Date(), Number(estimatedDays)), 'yyyy-MM-dd');
+
+      // Determina il colore in base alla priorità
+      const priorityColors = {
+        'critica': '#DC2626',
+        'alta': '#EA580C',
+        'media': '#EAB308',
+        'bassa': '#22C55E'
+      };
+
+      const newTask = {
+        organization_id: userData.organization_id,
+        task: newRemediation.description,
+        category: newRemediation.category,
+        start_date: startDate,
+        end_date: endDate,
+        progress: 0,
+        assignee: newRemediation.assignedTeam,
+        priority: newRemediation.priority,
+        color: priorityColors[newRemediation.priority as keyof typeof priorityColors] || '#3b82f6',
+        display_order: taskOrder.length, // Metti il nuovo task alla fine
+        is_hidden: false,
+        is_deleted: false,
+        dependencies: []
+      };
+
+      const { error: insertError } = await supabase
+        .from('remediation_tasks')
+        .insert(newTask);
+
+      if (insertError) throw insertError;
+
+      toast({
+        title: "Remediation creata",
+        description: "Il nuovo task di remediation è stato salvato nel database.",
+      });
+
+      // Reset form
+      setNewRemediation({
+        category: '',
+        priority: '',
+        description: '',
+        estimatedDays: '',
+        estimatedBudget: '',
+        assignedTeam: '',
+        complexity: 'medium'
+      });
+      setIsCreateModalOpen(false);
+
+      // Ricarica la pagina per mostrare il nuovo task
+      window.location.reload();
+    } catch (error) {
+      console.error('Errore nella creazione della remediation:', error);
+      toast({
+        title: "Errore",
+        description: "Impossibile creare la remediation.",
+        variant: "destructive"
+      });
+    }
   };
 
   // Funzioni per il Gantt Chart con drag & drop
@@ -661,6 +732,78 @@ const Remediation: React.FC = () => {
       toast({
         title: "Errore",
         description: "Impossibile salvare lo stato di eliminazione.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const saveTaskProgress = async (taskId: number, progress: number) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      if (!userData?.organization_id) return;
+
+      const uuid = await getUUIDForMockId(taskId);
+      const { error } = await supabase
+        .from('remediation_tasks')
+        .update({ progress })
+        .eq('id', uuid)
+        .eq('organization_id', userData.organization_id);
+      
+      if (error) throw error;
+
+      toast({
+        title: "Progress aggiornato",
+        description: "Il progresso del task è stato salvato nel database."
+      });
+    } catch (error) {
+      console.error('Errore nel salvataggio del progress:', error);
+      toast({
+        title: "Errore",
+        description: "Impossibile salvare il progresso del task.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const saveTaskAssignee = async (taskId: number, assignee: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      if (!userData?.organization_id) return;
+
+      const uuid = await getUUIDForMockId(taskId);
+      const { error } = await supabase
+        .from('remediation_tasks')
+        .update({ assignee })
+        .eq('id', uuid)
+        .eq('organization_id', userData.organization_id);
+      
+      if (error) throw error;
+
+      toast({
+        title: "Assegnatario aggiornato",
+        description: "L'assegnatario del task è stato salvato nel database."
+      });
+    } catch (error) {
+      console.error('Errore nel salvataggio dell\'assegnatario:', error);
+      toast({
+        title: "Errore",
+        description: "Impossibile salvare l'assegnatario del task.",
         variant: "destructive"
       });
     }
