@@ -49,6 +49,7 @@ const Remediation: React.FC = () => {
   const [editingTask, setEditingTask] = useState<number | null>(null);
   const [editTaskData, setEditTaskData] = useState<any>(null);
   const [taskBudgets, setTaskBudgets] = useState<Record<number, number>>({});
+  const [allTasksData, setAllTasksData] = useState<Record<number, any>>({});
   const [newRemediation, setNewRemediation] = useState({
     category: '',
     priority: '',
@@ -175,7 +176,7 @@ const Remediation: React.FC = () => {
       if (error) throw error;
 
       if (tasks && tasks.length > 0) {
-        // Mappa gli UUID reali agli ID mock
+        // Mappa gli UUID reali agli ID mock ESISTENTI
         const reverseMapping: Record<string, number> = {
           '89862a35-1eec-4489-889b-5781e6e78dd4': 1,
           '27afa77b-05a1-4ae3-8bdf-ea39f84135b2': 2,
@@ -185,6 +186,17 @@ const Remediation: React.FC = () => {
           '7f8e9d0c-1b2a-3c4d-5e6f-7a8b9c0d1e2f': 6,
           '6e7d8c9b-0a1f-2e3d-4c5b-6a7f8e9d0c1b': 7
         };
+
+        // Assegna nuovi ID mock ai task che non sono nella mappatura
+        let nextMockId = 8;
+        tasks.forEach(task => {
+          if (!reverseMapping[task.id]) {
+            reverseMapping[task.id] = nextMockId++;
+          }
+        });
+
+        console.log('Mappatura completa:', reverseMapping);
+        console.log('Task dal database:', tasks.length);
 
         // Popola l'ordine dei task
         const orderedIds = tasks
@@ -196,57 +208,68 @@ const Remediation: React.FC = () => {
             return (taskA?.display_order || 0) - (taskB?.display_order || 0);
           });
 
-        if (orderedIds.length > 0) {
-          const allMockIds = [1, 2, 3, 4, 5, 6, 7];
-          const remainingIds = allMockIds.filter(id => !orderedIds.includes(id));
-          setTaskOrder([...orderedIds, ...remainingIds]);
-        }
+        console.log('Task ordinati:', orderedIds);
+        setTaskOrder(orderedIds);
 
-        // Popola le date dei task dal database
+        // Popola TUTTI i dati dei task dal database
+        const allDataMap: Record<number, any> = {};
         const datesMap: Record<number, { startDate: string, endDate: string }> = {};
+        const budgetMap: Record<number, number> = {};
+        const hidden = new Set<number>();
+        const deleted = new Set<number>();
+
+        // Mappatura priorità database -> italiana
+        const priorityDisplayMapping: Record<string, string> = {
+          'critical': 'Critica',
+          'high': 'Alta',
+          'medium': 'Media',
+          'low': 'Bassa'
+        };
+
         tasks.forEach(task => {
           const mockId = reverseMapping[task.id];
           if (mockId) {
+            // Salva tutti i dati del task
+            allDataMap[mockId] = {
+              id: mockId,
+              task: task.task,
+              category: task.category,
+              startDate: task.start_date,
+              endDate: task.end_date,
+              progress: task.progress,
+              assignee: task.assignee,
+              priority: priorityDisplayMapping[task.priority] || 'Media',
+              color: task.color,
+              budget: task.budget ? Number(task.budget) : 0,
+              dependencies: task.dependencies || []
+            };
+
             datesMap[mockId] = {
               startDate: task.start_date,
               endDate: task.end_date
             };
-          }
-        });
-        setTaskDates(datesMap);
 
-        // Popola i budget dal database
-        const budgetMap: Record<number, number> = {};
-        tasks.forEach(task => {
-          const mockId = reverseMapping[task.id];
-          if (mockId) {
             budgetMap[mockId] = task.budget ? Number(task.budget) : 0;
+
+            if (task.is_hidden) {
+              hidden.add(mockId);
+            }
+
+            if (task.is_deleted) {
+              deleted.add(mockId);
+            }
           }
         });
+
+        setAllTasksData(allDataMap);
+        setTaskDates(datesMap);
         setTaskBudgets(budgetMap);
-
-        // Popola i task nascosti dal database
-        const hidden = new Set<number>();
-        tasks.forEach(task => {
-          const mockId = reverseMapping[task.id];
-          if (mockId && task.is_hidden) {
-            hidden.add(mockId);
-          }
-        });
         setHiddenTasks(hidden);
-
-        // Popola i task eliminati dal database
-        const deleted = new Set<number>();
-        tasks.forEach(task => {
-          const mockId = reverseMapping[task.id];
-          if (mockId && task.is_deleted) {
-            deleted.add(mockId);
-          }
-        });
         setDeletedTasks(deleted);
 
         console.log('Dati caricati dal database:', {
           tasks: tasks.length,
+          allData: Object.keys(allDataMap).length,
           dates: Object.keys(datesMap).length,
           budgets: Object.keys(budgetMap).length,
           hidden: hidden.size,
@@ -1115,8 +1138,22 @@ const Remediation: React.FC = () => {
     const orderedActions = taskOrder
       .filter(id => !deletedTasks.has(id))
       .map(id => {
-        const baseAction = ganttActions.find(action => action.id === id)!;
-        // Usa i dati dal database come priorità, fallback sui dati mock
+        // Prova prima a trovare il task nei dati dal database
+        const dbTask = allTasksData[id];
+        if (dbTask) {
+          return {
+            ...dbTask,
+            isHidden: hiddenTasks.has(id)
+          };
+        }
+        
+        // Fallback sui dati mock se il task non è nel DB
+        const baseAction = ganttActions.find(action => action.id === id);
+        if (!baseAction) {
+          console.warn('Task non trovato:', id);
+          return null;
+        }
+        
         const dates = taskDates[id] || { startDate: baseAction.startDate, endDate: baseAction.endDate };
         const budget = taskBudgets[id] !== undefined ? taskBudgets[id] : baseAction.budget;
         
@@ -1127,7 +1164,8 @@ const Remediation: React.FC = () => {
           isHidden: hiddenTasks.has(id),
           budget: budget
         };
-      });
+      })
+      .filter(action => action !== null);
 
     return orderedActions.map(action => {
       const actionStart = parseISO(action.startDate);
