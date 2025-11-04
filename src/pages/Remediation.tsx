@@ -256,12 +256,40 @@ const Remediation: React.FC = () => {
           };
 
           const budgetMap: Record<number, number> = {};
-          tasks.forEach(task => {
+          
+          // Aggiorna i task nel database con i budget di default se mancano
+          const updatesToMake = [];
+          
+          for (const task of tasks) {
             const mockId = reverseMapping[task.id];
             if (mockId) {
-              budgetMap[mockId] = Number(task.budget) || 0;
+              const defaultAction = ganttActions.find(a => a.id === mockId);
+              const budgetValue = task.budget ? Number(task.budget) : 0;
+              
+              // Se il budget nel database è 0 ma abbiamo un default, aggiorna il database
+              if (budgetValue === 0 && defaultAction?.budget) {
+                updatesToMake.push({
+                  id: task.id,
+                  budget: defaultAction.budget
+                });
+                budgetMap[mockId] = defaultAction.budget;
+              } else {
+                budgetMap[mockId] = budgetValue;
+              }
             }
-          });
+          }
+          
+          // Esegui gli aggiornamenti in batch se necessario
+          if (updatesToMake.length > 0) {
+            for (const update of updatesToMake) {
+              await supabase
+                .from('remediation_tasks')
+                .update({ budget: update.budget })
+                .eq('id', update.id)
+                .eq('organization_id', userData.organization_id);
+            }
+          }
+          
           setTaskBudgets(budgetMap);
         }
       } catch (error) {
@@ -1069,7 +1097,7 @@ const Remediation: React.FC = () => {
         description: "Le modifiche sono state salvate con successo."
       });
 
-      // Aggiorna i budget locali
+      // Aggiorna i budget locali immediatamente
       setTaskBudgets(prev => ({
         ...prev,
         [editingTask]: editTaskData.budget || 0
@@ -1078,8 +1106,8 @@ const Remediation: React.FC = () => {
       setEditingTask(null);
       setEditTaskData(null);
       
-      // Ricarica la pagina per mostrare le modifiche
-      setTimeout(() => window.location.reload(), 1000);
+      // Non ricaricare la pagina, basta aggiornare lo stato locale
+      // setTimeout(() => window.location.reload(), 1000);
     } catch (error) {
       console.error('Errore nel salvataggio delle modifiche:', error);
       toast({
