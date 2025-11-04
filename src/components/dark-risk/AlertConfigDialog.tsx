@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -20,9 +20,19 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { AlertTypes } from '@/hooks/useDarkRiskAlerts';
+import { useOrganizationUsers } from '@/hooks/useOrganizationUsers';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 const alertFormSchema = z.object({
+  target_user_id: z.string().optional(),
   alert_email: z
     .string()
     .trim()
@@ -45,7 +55,7 @@ type AlertFormValues = z.infer<typeof alertFormSchema>;
 interface AlertConfigDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (data: { alert_email: string; alert_types: AlertTypes }) => Promise<boolean>;
+  onSubmit: (data: { alert_email: string; alert_types: AlertTypes; target_user_id?: string }) => Promise<boolean>;
   defaultValues?: AlertFormValues;
   mode?: 'create' | 'edit';
 }
@@ -65,9 +75,14 @@ export const AlertConfigDialog: React.FC<AlertConfigDialogProps> = ({
   defaultValues,
   mode = 'create',
 }) => {
+  const { userProfile } = useAuth();
+  const { users, loading: usersLoading } = useOrganizationUsers();
+  const isAdmin = userProfile?.user_type === 'admin';
+
   const form = useForm<AlertFormValues>({
     resolver: zodResolver(alertFormSchema),
     defaultValues: defaultValues || {
+      target_user_id: '',
       alert_email: '',
       alert_types: {
         credenziali_compromesse: false,
@@ -79,8 +94,25 @@ export const AlertConfigDialog: React.FC<AlertConfigDialogProps> = ({
     },
   });
 
+  // Reset form when dialog opens
+  useEffect(() => {
+    if (open && !defaultValues) {
+      form.reset({
+        target_user_id: '',
+        alert_email: '',
+        alert_types: {
+          credenziali_compromesse: false,
+          dati_carte_credito: false,
+          database_leak: false,
+          email_compromesse: false,
+          dati_sensibili: false,
+        },
+      });
+    }
+  }, [open, defaultValues, form]);
+
   const handleSubmit = async (data: AlertFormValues) => {
-    const submitData: { alert_email: string; alert_types: AlertTypes } = {
+    const submitData: { alert_email: string; alert_types: AlertTypes; target_user_id?: string } = {
       alert_email: data.alert_email,
       alert_types: {
         credenziali_compromesse: data.alert_types.credenziali_compromesse,
@@ -89,6 +121,7 @@ export const AlertConfigDialog: React.FC<AlertConfigDialogProps> = ({
         email_compromesse: data.alert_types.email_compromesse,
         dati_sensibili: data.alert_types.dati_sensibili,
       },
+      target_user_id: data.target_user_id || undefined,
     };
     const success = await onSubmit(submitData);
     if (success) {
@@ -111,6 +144,33 @@ export const AlertConfigDialog: React.FC<AlertConfigDialogProps> = ({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+            {isAdmin && mode === 'create' && (
+              <FormField
+                control={form.control}
+                name="target_user_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Utente Destinatario</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleziona utente (opzionale - se vuoto, alert per te)" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {users.map((user) => (
+                          <SelectItem key={user.auth_user_id} value={user.auth_user_id}>
+                            {user.full_name} ({user.email})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
             <FormField
               control={form.control}
               name="alert_email"
