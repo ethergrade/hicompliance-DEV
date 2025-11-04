@@ -75,199 +75,200 @@ const Remediation: React.FC = () => {
     return mockUUIDs[mockId] || crypto.randomUUID();
   };
 
-  // Carica TUTTI i dati dei task dal database all'avvio
-  useEffect(() => {
-    const loadAllTaskData = async () => {
-      try {
-        // Prima ottieni l'organization_id dell'utente corrente
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          console.log('Utente non autenticato');
-          return;
+  // Funzione per ricaricare i dati dei task dal database
+  const loadAllTaskData = async () => {
+    try {
+      // Prima ottieni l'organization_id dell'utente corrente
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.log('Utente non autenticato');
+        return;
+      }
+
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      if (userError) {
+        console.error('Errore nel recupero dei dati utente:', userError);
+        return;
+      }
+
+      const organizationId = userData?.organization_id;
+      if (!organizationId) {
+        console.log('Organization ID non trovato per l\'utente');
+        return;
+      }
+
+      // Verifica quali task esistono già per questa organizzazione - CARICA TUTTI I CAMPI
+      const { data: existingTasks, error: fetchError } = await supabase
+        .from('remediation_tasks')
+        .select('*')
+        .eq('organization_id', organizationId);
+
+      if (fetchError) throw fetchError;
+
+      const existingIds = new Set(existingTasks?.map(t => t.id) || []);
+      const mockUUIDs = {
+        1: '89862a35-1eec-4489-889b-5781e6e78dd4',
+        2: '27afa77b-05a1-4ae3-8bdf-ea39f84135b2',
+        3: 'c3f8b7d2-4e1a-4c9b-8f7e-2d5a6b8c9e0f',
+        4: 'f1e2d3c4-b5a6-9c8d-7e6f-0a1b2c3d4e5f',
+        5: '8a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d',
+        6: '7f8e9d0c-1b2a-3c4d-5e6f-7a8b9c0d1e2f',
+        7: '6e7d8c9b-0a1f-2e3d-4c5b-6a7f8e9d0c1b'
+      };
+
+      // Crea i task mancanti basati sui dati mock del gantt
+      const tasksToCreate = [];
+      
+      // Mappatura priorità italiana -> inglese per il database
+      const priorityMapping: Record<string, string> = {
+        'Critica': 'critical',
+        'Alta': 'high',
+        'Media': 'medium',
+        'Bassa': 'low',
+        'critica': 'critical',
+        'alta': 'high',
+        'media': 'medium',
+        'bassa': 'low'
+      };
+      
+      ganttActions.forEach((action, index) => {
+        const uuid = mockUUIDs[action.id as keyof typeof mockUUIDs];
+        if (uuid && !existingIds.has(uuid)) {
+          tasksToCreate.push({
+            id: uuid,
+            task: action.task,
+            category: action.category,
+            start_date: action.startDate,
+            end_date: action.endDate,
+            progress: action.progress,
+            assignee: action.assignee,
+            priority: priorityMapping[action.priority] || 'medium',
+            color: action.color,
+            display_order: index,
+            organization_id: organizationId,
+            budget: action.budget || 0,
+            is_hidden: false,
+            is_deleted: false
+          });
         }
+      });
 
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('organization_id')
-          .eq('auth_user_id', user.id)
-          .single();
-
-        if (userError) {
-          console.error('Errore nel recupero dei dati utente:', userError);
-          return;
-        }
-
-        const organizationId = userData?.organization_id;
-        if (!organizationId) {
-          console.log('Organization ID non trovato per l\'utente');
-          return;
-        }
-
-        // Verifica quali task esistono già per questa organizzazione - CARICA TUTTI I CAMPI
-        const { data: existingTasks, error: fetchError } = await supabase
+      if (tasksToCreate.length > 0) {
+        const { error: insertError } = await supabase
           .from('remediation_tasks')
-          .select('*')
-          .eq('organization_id', organizationId);
+          .insert(tasksToCreate);
 
-        if (fetchError) throw fetchError;
+        if (insertError) {
+          console.error('Errore nella creazione dei task:', insertError);
+          return;
+        }
+      }
 
-        const existingIds = new Set(existingTasks?.map(t => t.id) || []);
-        const mockUUIDs = {
-          1: '89862a35-1eec-4489-889b-5781e6e78dd4',
-          2: '27afa77b-05a1-4ae3-8bdf-ea39f84135b2',
-          3: 'c3f8b7d2-4e1a-4c9b-8f7e-2d5a6b8c9e0f',
-          4: 'f1e2d3c4-b5a6-9c8d-7e6f-0a1b2c3d4e5f',
-          5: '8a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d',
-          6: '7f8e9d0c-1b2a-3c4d-5e6f-7a8b9c0d1e2f',
-          7: '6e7d8c9b-0a1f-2e3d-4c5b-6a7f8e9d0c1b'
+      // Ora carica TUTTI i dati dal database
+      const { data: tasks, error } = await supabase
+        .from('remediation_tasks')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .order('display_order', { ascending: true });
+
+      if (error) throw error;
+
+      if (tasks && tasks.length > 0) {
+        // Mappa gli UUID reali agli ID mock
+        const reverseMapping: Record<string, number> = {
+          '89862a35-1eec-4489-889b-5781e6e78dd4': 1,
+          '27afa77b-05a1-4ae3-8bdf-ea39f84135b2': 2,
+          'c3f8b7d2-4e1a-4c9b-8f7e-2d5a6b8c9e0f': 3,
+          'f1e2d3c4-b5a6-9c8d-7e6f-0a1b2c3d4e5f': 4,
+          '8a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d': 5,
+          '7f8e9d0c-1b2a-3c4d-5e6f-7a8b9c0d1e2f': 6,
+          '6e7d8c9b-0a1f-2e3d-4c5b-6a7f8e9d0c1b': 7
         };
 
-        // Crea i task mancanti basati sui dati mock del gantt
-        const tasksToCreate = [];
-        
-        // Mappatura priorità italiana -> inglese per il database
-        const priorityMapping: Record<string, string> = {
-          'Critica': 'critical',
-          'Alta': 'high',
-          'Media': 'medium',
-          'Bassa': 'low',
-          'critica': 'critical',
-          'alta': 'high',
-          'media': 'medium',
-          'bassa': 'low'
-        };
-        
-        ganttActions.forEach((action, index) => {
-          const uuid = mockUUIDs[action.id as keyof typeof mockUUIDs];
-          if (uuid && !existingIds.has(uuid)) {
-            tasksToCreate.push({
-              id: uuid,
-              task: action.task,
-              category: action.category,
-              start_date: action.startDate,
-              end_date: action.endDate,
-              progress: action.progress,
-              assignee: action.assignee,
-              priority: priorityMapping[action.priority] || 'medium',
-              color: action.color,
-              display_order: index,
-              organization_id: organizationId,
-              budget: action.budget || 0,
-              is_hidden: false,
-              is_deleted: false
-            });
+        // Popola l'ordine dei task
+        const orderedIds = tasks
+          .map(task => reverseMapping[task.id])
+          .filter(id => id !== undefined)
+          .sort((a, b) => {
+            const taskA = tasks.find(t => reverseMapping[t.id] === a);
+            const taskB = tasks.find(t => reverseMapping[t.id] === b);
+            return (taskA?.display_order || 0) - (taskB?.display_order || 0);
+          });
+
+        if (orderedIds.length > 0) {
+          const allMockIds = [1, 2, 3, 4, 5, 6, 7];
+          const remainingIds = allMockIds.filter(id => !orderedIds.includes(id));
+          setTaskOrder([...orderedIds, ...remainingIds]);
+        }
+
+        // Popola le date dei task dal database
+        const datesMap: Record<number, { startDate: string, endDate: string }> = {};
+        tasks.forEach(task => {
+          const mockId = reverseMapping[task.id];
+          if (mockId) {
+            datesMap[mockId] = {
+              startDate: task.start_date,
+              endDate: task.end_date
+            };
           }
         });
+        setTaskDates(datesMap);
 
-        if (tasksToCreate.length > 0) {
-          const { error: insertError } = await supabase
-            .from('remediation_tasks')
-            .insert(tasksToCreate);
-
-          if (insertError) {
-            console.error('Errore nella creazione dei task:', insertError);
-            return;
+        // Popola i budget dal database
+        const budgetMap: Record<number, number> = {};
+        tasks.forEach(task => {
+          const mockId = reverseMapping[task.id];
+          if (mockId) {
+            budgetMap[mockId] = task.budget ? Number(task.budget) : 0;
           }
-        }
+        });
+        setTaskBudgets(budgetMap);
 
-        // Ora carica TUTTI i dati dal database
-        const { data: tasks, error } = await supabase
-          .from('remediation_tasks')
-          .select('*')
-          .eq('organization_id', organizationId)
-          .order('display_order', { ascending: true });
-
-        if (error) throw error;
-
-        if (tasks && tasks.length > 0) {
-          // Mappa gli UUID reali agli ID mock
-          const reverseMapping: Record<string, number> = {
-            '89862a35-1eec-4489-889b-5781e6e78dd4': 1,
-            '27afa77b-05a1-4ae3-8bdf-ea39f84135b2': 2,
-            'c3f8b7d2-4e1a-4c9b-8f7e-2d5a6b8c9e0f': 3,
-            'f1e2d3c4-b5a6-9c8d-7e6f-0a1b2c3d4e5f': 4,
-            '8a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d': 5,
-            '7f8e9d0c-1b2a-3c4d-5e6f-7a8b9c0d1e2f': 6,
-            '6e7d8c9b-0a1f-2e3d-4c5b-6a7f8e9d0c1b': 7
-          };
-
-          // Popola l'ordine dei task
-          const orderedIds = tasks
-            .map(task => reverseMapping[task.id])
-            .filter(id => id !== undefined)
-            .sort((a, b) => {
-              const taskA = tasks.find(t => reverseMapping[t.id] === a);
-              const taskB = tasks.find(t => reverseMapping[t.id] === b);
-              return (taskA?.display_order || 0) - (taskB?.display_order || 0);
-            });
-
-          if (orderedIds.length > 0) {
-            const allMockIds = [1, 2, 3, 4, 5, 6, 7];
-            const remainingIds = allMockIds.filter(id => !orderedIds.includes(id));
-            setTaskOrder([...orderedIds, ...remainingIds]);
+        // Popola i task nascosti dal database
+        const hidden = new Set<number>();
+        tasks.forEach(task => {
+          const mockId = reverseMapping[task.id];
+          if (mockId && task.is_hidden) {
+            hidden.add(mockId);
           }
+        });
+        setHiddenTasks(hidden);
 
-          // Popola le date dei task dal database
-          const datesMap: Record<number, { startDate: string, endDate: string }> = {};
-          tasks.forEach(task => {
-            const mockId = reverseMapping[task.id];
-            if (mockId) {
-              datesMap[mockId] = {
-                startDate: task.start_date,
-                endDate: task.end_date
-              };
-            }
-          });
-          setTaskDates(datesMap);
+        // Popola i task eliminati dal database
+        const deleted = new Set<number>();
+        tasks.forEach(task => {
+          const mockId = reverseMapping[task.id];
+          if (mockId && task.is_deleted) {
+            deleted.add(mockId);
+          }
+        });
+        setDeletedTasks(deleted);
 
-          // Popola i budget dal database
-          const budgetMap: Record<number, number> = {};
-          tasks.forEach(task => {
-            const mockId = reverseMapping[task.id];
-            if (mockId) {
-              budgetMap[mockId] = task.budget ? Number(task.budget) : 0;
-            }
-          });
-          setTaskBudgets(budgetMap);
-
-          // Popola i task nascosti dal database
-          const hidden = new Set<number>();
-          tasks.forEach(task => {
-            const mockId = reverseMapping[task.id];
-            if (mockId && task.is_hidden) {
-              hidden.add(mockId);
-            }
-          });
-          setHiddenTasks(hidden);
-
-          // Popola i task eliminati dal database
-          const deleted = new Set<number>();
-          tasks.forEach(task => {
-            const mockId = reverseMapping[task.id];
-            if (mockId && task.is_deleted) {
-              deleted.add(mockId);
-            }
-          });
-          setDeletedTasks(deleted);
-
-          console.log('Dati caricati dal database:', {
-            tasks: tasks.length,
-            dates: Object.keys(datesMap).length,
-            budgets: Object.keys(budgetMap).length,
-            hidden: hidden.size,
-            deleted: deleted.size
-          });
-        }
-      } catch (error) {
-        console.error('Errore nel caricamento dei dati:', error);
-        toast({
-          title: "Errore",
-          description: "Impossibile caricare i dati dei task dal database.",
-          variant: "destructive"
+        console.log('Dati caricati dal database:', {
+          tasks: tasks.length,
+          dates: Object.keys(datesMap).length,
+          budgets: Object.keys(budgetMap).length,
+          hidden: hidden.size,
+          deleted: deleted.size
         });
       }
-    };
+    } catch (error) {
+      console.error('Errore nel caricamento dei dati:', error);
+      toast({
+        title: "Errore",
+        description: "Impossibile caricare i dati dei task dal database.",
+        variant: "destructive"
+      });
+    }
+  };
 
+  // Carica TUTTI i dati dei task dal database all'avvio
+  useEffect(() => {
     loadAllTaskData();
   }, []);
 
@@ -554,8 +555,8 @@ const Remediation: React.FC = () => {
       });
       setIsCreateModalOpen(false);
 
-      // Ricarica la pagina per mostrare il nuovo task
-      window.location.reload();
+      // Ricarica i dati dal database per mostrare il nuovo task
+      await loadAllTaskData();
     } catch (error) {
       console.error('Errore nella creazione della remediation:', error);
       toast({
