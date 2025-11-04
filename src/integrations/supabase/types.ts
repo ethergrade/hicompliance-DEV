@@ -505,6 +505,7 @@ export type Database = {
       remediation_tasks: {
         Row: {
           assignee: string | null
+          budget: number | null
           category: string
           color: string
           created_at: string
@@ -523,6 +524,7 @@ export type Database = {
         }
         Insert: {
           assignee?: string | null
+          budget?: number | null
           category: string
           color?: string
           created_at?: string
@@ -541,6 +543,7 @@ export type Database = {
         }
         Update: {
           assignee?: string | null
+          budget?: number | null
           category?: string
           color?: string
           created_at?: string
