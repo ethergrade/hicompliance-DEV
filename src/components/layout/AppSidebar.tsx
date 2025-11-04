@@ -110,10 +110,8 @@ export const AppSidebar: React.FC = () => {
   
   const isAdmin = userProfile?.user_type === 'admin';
 
-  // Filter navigation based on role
-  const filteredNavigation = isSales 
-    ? navigation.filter(item => ['/', '/dashboard', '/assessment'].includes(item.href))
-    : navigation;
+  // Show all navigation to everyone (will be filtered later for sales)
+  const filteredNavigation = navigation;
 
   return (
     <Sidebar className="bg-sidebar-background border-sidebar-border">
@@ -164,11 +162,10 @@ export const AppSidebar: React.FC = () => {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {!isSales && (
-          <SidebarGroup>
-            <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
-              Incident Remediation
-            </SidebarGroupLabel>
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
+            Incident Remediation
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
@@ -195,14 +192,12 @@ export const AppSidebar: React.FC = () => {
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
-          </SidebarGroup>
-        )}
+        </SidebarGroup>
 
-        {!isSales && (
-          <SidebarGroup>
-            <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
-              Impostazioni
-            </SidebarGroupLabel>
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
+            Impostazioni
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
@@ -229,8 +224,7 @@ export const AppSidebar: React.FC = () => {
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
-          </SidebarGroup>
-        )}
+        </SidebarGroup>
 
         {(isAdmin || isSuperAdmin) && (
           <SidebarGroup>
