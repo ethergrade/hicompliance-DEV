@@ -78,11 +78,15 @@ export const useRolePermissions = () => {
     // Super admins see everything
     if (isSuperAdmin) return true;
     
-    // If no permissions loaded yet, allow (default behavior)
-    if (permissions.length === 0) return true;
+    // Security: If user has NO roles, hide everything by default
+    if (roles.length === 0) return false;
+    
+    // Security: If no permissions loaded yet for this role, hide by default
+    if (permissions.length === 0) return false;
 
     const permission = permissions.find(p => p.module_path === modulePath);
-    return permission ? permission.is_enabled : true;
+    // Default to hidden if no explicit permission exists
+    return permission ? permission.is_enabled : false;
   };
 
   return {
