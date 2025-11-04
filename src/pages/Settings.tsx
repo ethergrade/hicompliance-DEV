@@ -1,0 +1,210 @@
+import React, { useState } from 'react';
+import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { useDarkRiskAlerts } from '@/hooks/useDarkRiskAlerts';
+import { AlertConfigDialog } from '@/components/dark-risk/AlertConfigDialog';
+import { AlertTypes } from '@/hooks/useDarkRiskAlerts';
+
+const alertTypeLabels: Record<keyof AlertTypes, string> = {
+  credenziali_compromesse: 'Credenziali Compromesse',
+  dati_carte_credito: 'Carte di Credito',
+  database_leak: 'Database Leak',
+  email_compromesse: 'Email Compromesse',
+  dati_sensibili: 'Dati Sensibili',
+};
+
+const Settings: React.FC = () => {
+  const { alerts, loading, createAlert, updateAlert, deleteAlert, toggleAlertStatus } = useDarkRiskAlerts();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingAlert, setEditingAlert] = useState<typeof alerts[0] | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [alertToDelete, setAlertToDelete] = useState<string | null>(null);
+
+  const handleCreateAlert = async (data: { alert_email: string; alert_types: AlertTypes }) => {
+    return await createAlert(data);
+  };
+
+  const handleUpdateAlert = async (data: { alert_email: string; alert_types: AlertTypes }) => {
+    if (!editingAlert) return false;
+    return await updateAlert(editingAlert.id, data);
+  };
+
+  const handleDeleteClick = (alertId: string) => {
+    setAlertToDelete(alertId);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (alertToDelete) {
+      await deleteAlert(alertToDelete);
+      setDeleteDialogOpen(false);
+      setAlertToDelete(null);
+    }
+  };
+
+  const handleEditClick = (alert: typeof alerts[0]) => {
+    setEditingAlert(alert);
+    setDialogOpen(true);
+  };
+
+  const handleDialogClose = () => {
+    setDialogOpen(false);
+    setEditingAlert(null);
+  };
+
+  const getActiveAlertTypes = (alertTypes: AlertTypes) => {
+    return Object.entries(alertTypes)
+      .filter(([_, value]) => value)
+      .map(([key]) => alertTypeLabels[key as keyof AlertTypes]);
+  };
+
+  return (
+    <DashboardLayout>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Impostazioni Alert DarkRisk360</h1>
+            <p className="text-muted-foreground mt-2">
+              Gestisci le notifiche per le minacce rilevate sul dark web
+            </p>
+          </div>
+          <Button onClick={() => setDialogOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Nuovo Alert
+          </Button>
+        </div>
+
+        {loading ? (
+          <Card>
+            <CardContent className="p-6">
+              <p className="text-center text-muted-foreground">Caricamento alert...</p>
+            </CardContent>
+          </Card>
+        ) : alerts.length === 0 ? (
+          <Card>
+            <CardContent className="p-6">
+              <div className="text-center">
+                <p className="text-muted-foreground mb-4">
+                  Non hai ancora configurato nessun alert
+                </p>
+                <Button onClick={() => setDialogOpen(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Crea il tuo primo alert
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4">
+            {alerts.map((alert) => (
+              <Card key={alert.id}>
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <CardTitle className="text-lg">{alert.alert_email}</CardTitle>
+                      <CardDescription>
+                        Creato il {new Date(alert.created_at).toLocaleDateString('it-IT')}
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={alert.is_active}
+                        onCheckedChange={(checked) => toggleAlertStatus(alert.id, checked)}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEditClick(alert)}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteClick(alert.id)}
+                      >
+                        <Trash2 className="w-4 h-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-sm font-medium mb-2">Tipi di minacce monitorate:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {getActiveAlertTypes(alert.alert_types).map((type) => (
+                          <Badge key={type} variant="secondary">
+                            {type}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={alert.is_active ? 'default' : 'outline'}>
+                        {alert.is_active ? 'Attivo' : 'Disattivo'}
+                      </Badge>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        <AlertConfigDialog
+          open={dialogOpen && !editingAlert}
+          onOpenChange={handleDialogClose}
+          onSubmit={handleCreateAlert}
+          mode="create"
+        />
+
+        {editingAlert && (
+          <AlertConfigDialog
+            open={dialogOpen && !!editingAlert}
+            onOpenChange={handleDialogClose}
+            onSubmit={handleUpdateAlert}
+            defaultValues={{
+              alert_email: editingAlert.alert_email,
+              alert_types: editingAlert.alert_types,
+            }}
+            mode="edit"
+          />
+        )}
+
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Elimina Alert</AlertDialogTitle>
+              <AlertDialogDescription>
+                Sei sicuro di voler eliminare questo alert? Questa azione non può essere annullata.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annulla</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDeleteConfirm}>
+                Elimina
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </DashboardLayout>
+  );
+};
+
+export default Settings;

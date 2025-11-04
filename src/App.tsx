@@ -21,6 +21,7 @@ import ThreatManagement from "./pages/ThreatManagement";
 import Integrations from "./pages/Integrations";
 import Users from "./pages/Users";
 import RoleSettings from "./pages/RoleSettings";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -49,6 +50,7 @@ const App = () => (
             <Route path="/threat-management" element={<ThreatManagement />} />
             <Route path="/settings/users" element={<Users />} />
             <Route path="/settings/integrations" element={<Integrations />} />
+            <Route path="/settings/alerts" element={<Settings />} />
             <Route path="/admin/role-settings" element={<RoleSettings />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

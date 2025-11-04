@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -13,8 +13,16 @@ import {
   Lock,
   TrendingDown
 } from 'lucide-react';
+import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
+import { AlertConfigDialog } from '@/components/dark-risk/AlertConfigDialog';
+import { useDarkRiskAlerts } from '@/hooks/useDarkRiskAlerts';
 
 const DarkRisk360: React.FC = () => {
+  const { alerts, createAlert } = useDarkRiskAlerts();
+  const [alertDialogOpen, setAlertDialogOpen] = useState(false);
+  
+  const activeAlertsCount = alerts.filter(a => a.is_active).length;
+  
   const darkWebThreats = [
     { 
       type: 'Credenziali Compromesse', 
@@ -87,8 +95,14 @@ const DarkRisk360: React.FC = () => {
           <Card className="border-border">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Minacce Attive</p>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm text-muted-foreground">Minacce Attive</p>
+                    <AlertBellButton
+                      alertCount={activeAlertsCount}
+                      onClick={() => setAlertDialogOpen(true)}
+                    />
+                  </div>
                   <p className="text-2xl font-bold text-red-500">47</p>
                 </div>
                 <AlertTriangle className="w-8 h-8 text-red-500" />
@@ -99,8 +113,14 @@ const DarkRisk360: React.FC = () => {
           <Card className="border-border">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Credenziali Leak</p>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm text-muted-foreground">Credenziali Leak</p>
+                    <AlertBellButton
+                      alertCount={activeAlertsCount}
+                      onClick={() => setAlertDialogOpen(true)}
+                    />
+                  </div>
                   <p className="text-2xl font-bold text-orange-500">24</p>
                 </div>
                 <UserX className="w-8 h-8 text-orange-500" />
@@ -202,6 +222,13 @@ const DarkRisk360: React.FC = () => {
             </div>
           </CardContent>
         </Card>
+
+        <AlertConfigDialog
+          open={alertDialogOpen}
+          onOpenChange={setAlertDialogOpen}
+          onSubmit={createAlert}
+          mode="create"
+        />
       </div>
     </DashboardLayout>
   );

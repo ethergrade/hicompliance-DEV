@@ -131,6 +131,47 @@ export type Database = {
           },
         ]
       }
+      dark_risk_alerts: {
+        Row: {
+          alert_email: string
+          alert_types: Json
+          created_at: string
+          id: string
+          is_active: boolean
+          organization_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          alert_email: string
+          alert_types?: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          organization_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          alert_email?: string
+          alert_types?: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          organization_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dark_risk_alerts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       emergency_contacts: {
         Row: {
           category: string
