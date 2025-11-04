@@ -38,16 +38,16 @@ export const generateIRPDocument = async (data: IRPDocumentData) => {
       paragraphLoop: true,
       linebreaks: true,
       delimiters: {
-        start: '{',
-        end: '}'
+        start: '[',
+        end: ']'
       }
     });
     
     // 4. Prepare data for template
     const templateData = {
-      companyName: data.companyName,
+      'NOME AZIENDA': data.companyName,
+      'DATA ELABORAZIONE': data.date,
       companyAddress: data.companyAddress,
-      date: data.date,
       version: data.version,
       contacts: data.sections.contacts.map(contact => ({
         nome: contact.name,
