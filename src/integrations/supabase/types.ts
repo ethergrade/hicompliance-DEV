@@ -287,6 +287,47 @@ export type Database = {
           },
         ]
       }
+      irp_documents: {
+        Row: {
+          created_at: string
+          document_data: Json
+          id: string
+          is_published: boolean
+          organization_id: string | null
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          document_data?: Json
+          id?: string
+          is_published?: boolean
+          organization_id?: string | null
+          updated_at?: string
+          user_id: string
+          version?: number
+        }
+        Update: {
+          created_at?: string
+          document_data?: Json
+          id?: string
+          is_published?: boolean
+          organization_id?: string | null
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "irp_documents_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_generation_index: {
         Row: {
           azienda: string
