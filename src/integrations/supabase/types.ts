@@ -557,6 +557,36 @@ export type Database = {
         }
         Relationships: []
       }
+      role_module_permissions: {
+        Row: {
+          created_at: string
+          id: string
+          is_enabled: boolean
+          module_name: string
+          module_path: string
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          module_name: string
+          module_path: string
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          module_name?: string
+          module_path?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       services: {
         Row: {
           code: string
