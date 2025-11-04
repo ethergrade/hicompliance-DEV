@@ -325,9 +325,8 @@ const IncidentResponse: React.FC = () => {
         </div>
 
         <Tabs defaultValue="procedures" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="procedures">Procedure Operative</TabsTrigger>
-            <TabsTrigger value="documents">Gestione Documenti</TabsTrigger>
             <TabsTrigger value="contacts">Contatti di Emergenza</TabsTrigger>
           </TabsList>
 
@@ -389,74 +388,6 @@ const IncidentResponse: React.FC = () => {
                   </CardContent>
                 </Card>
               ))}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="documents" className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card className="border-border bg-card">
-                <CardHeader>
-                  <CardTitle className="text-white">Documenti Disponibili</CardTitle>
-                  <p className="text-gray-400">
-                    Scarica i documenti di supporto per l'incident response
-                  </p>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {documents.map((doc, index) => (
-                      <div key={index} className="flex items-center justify-between p-3 border border-border rounded-lg">
-                        <div className="flex items-center space-x-3">
-                          <FileText className="w-5 h-5 text-primary" />
-                          <div>
-                            <p className="text-sm font-medium text-white">{doc.name}</p>
-                            <p className="text-xs text-gray-400">
-                              {doc.type} • {doc.size} • Aggiornato: {doc.updated}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <Badge variant="secondary" className="text-xs">
-                            {doc.category}
-                          </Badge>
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={() => downloadDocument(doc.name)}
-                          >
-                            <Download className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-border bg-card">
-                <CardHeader>
-                  <CardTitle className="text-white">Caricamento Documenti</CardTitle>
-                  <p className="text-gray-400">
-                    Area per caricare documenti personalizzati della tua organizzazione
-                  </p>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
-                    <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-white mb-2">Trascina i file qui o clicca per selezionare</p>
-                    <p className="text-sm text-gray-400">PDF, DOCX, TXT fino a 10MB</p>
-                    <Button variant="outline" className="mt-4">
-                      Seleziona File
-                    </Button>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-white">Documenti caricati:</p>
-                    <div className="text-sm text-gray-400">
-                      Nessun documento personalizzato caricato
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
             </div>
           </TabsContent>
 

@@ -15,6 +15,7 @@ import Remediation from "./pages/Remediation";
 import Analytics from "./pages/Analytics";
 import Threats from "./pages/Threats";
 import Reports from "./pages/Reports";
+import Documents from "./pages/Documents";
 import IncidentResponse from "./pages/IncidentResponse";
 import ThreatManagement from "./pages/ThreatManagement";
 import Integrations from "./pages/Integrations";
@@ -42,6 +43,7 @@ const App = () => (
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/threats" element={<Threats />} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="/documents" element={<Documents />} />
             <Route path="/incident-response" element={<IncidentResponse />} />
             <Route path="/threat-management" element={<ThreatManagement />} />
             <Route path="/settings/users" element={<Users />} />
