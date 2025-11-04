@@ -61,8 +61,6 @@ const Remediation: React.FC = () => {
 
   // Funzione per convertire ID mock a UUID per il database
   const getUUIDForMockId = async (mockId: number) => {
-    // Qui potresti implementare una mappatura tra ID mock e UUID reali
-    // Per ora genero un UUID fittizio basato sull'ID mock
     const mockUUIDs: Record<number, string> = {
       1: '89862a35-1eec-4489-889b-5781e6e78dd4',
       2: '27afa77b-05a1-4ae3-8bdf-ea39f84135b2',
@@ -74,8 +72,6 @@ const Remediation: React.FC = () => {
     };
     return mockUUIDs[mockId] || crypto.randomUUID();
   };
-
-  // Funzione per ricaricare i dati dei task dal database
   const loadAllTaskData = async () => {
     try {
       // Prima ottieni l'organization_id dell'utente corrente
@@ -463,12 +459,17 @@ const Remediation: React.FC = () => {
   };
 
   const handleCreateRemediation = async () => {
+    console.log('=== INIZIO CREAZIONE REMEDIATION ===');
+    console.log('Dati remediation:', newRemediation);
+    
     const estimatedDays = newRemediation.estimatedDays || calculateDays(newRemediation.complexity, newRemediation.category);
     const estimatedBudget = newRemediation.estimatedBudget || calculateBudget(Number(estimatedDays), newRemediation.complexity);
     
     try {
       // Ottieni l'organization_id dell'utente corrente
       const { data: { user } } = await supabase.auth.getUser();
+      console.log('Utente autenticato:', user?.id);
+      
       if (!user) {
         toast({
           title: "Errore",
@@ -483,6 +484,8 @@ const Remediation: React.FC = () => {
         .select('organization_id')
         .eq('auth_user_id', user.id)
         .single();
+
+      console.log('Dati utente:', userData, 'Errore:', userError);
 
       if (userError || !userData?.organization_id) {
         toast({
@@ -532,11 +535,21 @@ const Remediation: React.FC = () => {
         budget: Number(estimatedBudget) || 0
       };
 
-      const { error: insertError } = await supabase
-        .from('remediation_tasks')
-        .insert(newTask);
+      console.log('Task da inserire:', newTask);
 
-      if (insertError) throw insertError;
+      const { data: insertedData, error: insertError } = await supabase
+        .from('remediation_tasks')
+        .insert(newTask)
+        .select();
+
+      console.log('Risultato insert:', { insertedData, insertError });
+
+      if (insertError) {
+        console.error('Errore insert:', insertError);
+        throw insertError;
+      }
+
+      console.log('Task inserito con successo:', insertedData);
 
       toast({
         title: "Remediation creata",
@@ -555,8 +568,11 @@ const Remediation: React.FC = () => {
       });
       setIsCreateModalOpen(false);
 
-      // Ricarica i dati dal database per mostrare il nuovo task
-      await loadAllTaskData();
+      // Ricarica i dati dal database
+      console.log('Ricarico pagina...');
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
     } catch (error) {
       console.error('Errore nella creazione della remediation:', error);
       toast({
