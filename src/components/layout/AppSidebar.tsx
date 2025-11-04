@@ -16,7 +16,8 @@ import {
   Eye,
   ClipboardCheck,
   Home,
-  Wrench
+  Wrench,
+  Bell
 } from 'lucide-react';
 import {
   Sidebar,
@@ -231,6 +232,19 @@ export const AppSidebar: React.FC = () => {
                       <NavLink to="/settings/integrations">
                         <Network className="w-4 h-4" />
                         {!collapsed && <span>Integrazioni</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
+                {isModuleEnabled('/settings/alerts') && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton 
+                      asChild
+                      className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    >
+                      <NavLink to="/settings/alerts">
+                        <Bell className="w-4 h-4" />
+                        {!collapsed && <span>Alert DarkRisk</span>}
                       </NavLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
