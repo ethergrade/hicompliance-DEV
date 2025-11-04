@@ -203,7 +203,7 @@ export const AppSidebar: React.FC = () => {
           </SidebarGroup>
         )}
 
-        {(isModuleEnabled('/settings/users') || isModuleEnabled('/settings/integrations')) && (
+        {(isModuleEnabled('/settings/users') || isModuleEnabled('/settings/integrations') || isModuleEnabled('/settings/alerts') || isModuleEnabled('/settings/surface-scan-alerts')) && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
               Impostazioni

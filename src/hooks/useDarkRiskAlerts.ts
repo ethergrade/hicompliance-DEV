@@ -47,7 +47,11 @@ export const useDarkRiskAlerts = () => {
     }
   };
 
-  const createAlert = async (data: { alert_email: string; alert_types: AlertTypes }) => {
+  const createAlert = async (data: { 
+    alert_email: string; 
+    alert_types: AlertTypes;
+    target_user_id?: string; // Per admin che creano alert per altri utenti
+  }) => {
     try {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) throw new Error('User not authenticated');
@@ -58,10 +62,13 @@ export const useDarkRiskAlerts = () => {
         .eq('auth_user_id', userData.user.id)
         .single();
 
+      // Usa target_user_id se fornito (per admin), altrimenti usa l'utente corrente
+      const targetUserId = data.target_user_id || userData.user.id;
+
       const { error } = await supabase
         .from('dark_risk_alerts')
         .insert({
-          user_id: userData.user.id,
+          user_id: targetUserId,
           organization_id: userRecord?.organization_id || null,
           alert_email: data.alert_email,
           alert_types: data.alert_types as any,

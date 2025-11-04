@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,10 +14,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, User } from 'lucide-react';
 import { useDarkRiskAlerts } from '@/hooks/useDarkRiskAlerts';
 import { AlertConfigDialog } from '@/components/dark-risk/AlertConfigDialog';
 import { AlertTypes } from '@/hooks/useDarkRiskAlerts';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 const alertTypeLabels: Record<keyof AlertTypes, string> = {
   credenziali_compromesse: 'Credenziali Compromesse',
@@ -28,17 +30,43 @@ const alertTypeLabels: Record<keyof AlertTypes, string> = {
 };
 
 const Settings: React.FC = () => {
+  const { userProfile } = useAuth();
+  const isAdmin = userProfile?.user_type === 'admin';
   const { alerts, loading, createAlert, updateAlert, deleteAlert, toggleAlertStatus } = useDarkRiskAlerts();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingAlert, setEditingAlert] = useState<typeof alerts[0] | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [alertToDelete, setAlertToDelete] = useState<string | null>(null);
+  const [userNames, setUserNames] = useState<Record<string, string>>({});
 
-  const handleCreateAlert = async (data: { alert_email: string; alert_types: AlertTypes }) => {
+  // Carica i nomi utente per gli alert (solo per admin)
+  useEffect(() => {
+    if (!isAdmin || alerts.length === 0) return;
+    
+    const fetchUserNames = async () => {
+      const userIds = [...new Set(alerts.map(a => a.user_id))];
+      const { data } = await supabase
+        .from('users')
+        .select('auth_user_id, full_name, email')
+        .in('auth_user_id', userIds);
+      
+      if (data) {
+        const names: Record<string, string> = {};
+        data.forEach((user) => {
+          names[user.auth_user_id] = `${user.full_name} (${user.email})`;
+        });
+        setUserNames(names);
+      }
+    };
+
+    fetchUserNames();
+  }, [alerts, isAdmin]);
+
+  const handleCreateAlert = async (data: { alert_email: string; alert_types: AlertTypes; target_user_id?: string }) => {
     return await createAlert(data);
   };
 
-  const handleUpdateAlert = async (data: { alert_email: string; alert_types: AlertTypes }) => {
+  const handleUpdateAlert = async (data: { alert_email: string; alert_types: AlertTypes; target_user_id?: string }) => {
     if (!editingAlert) return false;
     return await updateAlert(editingAlert.id, data);
   };
@@ -119,6 +147,14 @@ const Settings: React.FC = () => {
                       <CardDescription>
                         Creato il {new Date(alert.created_at).toLocaleDateString('it-IT')}
                       </CardDescription>
+                      {isAdmin && userNames[alert.user_id] && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <User className="w-4 h-4 text-muted-foreground" />
+                          <span className="text-sm text-muted-foreground">
+                            {userNames[alert.user_id]}
+                          </span>
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <Switch
