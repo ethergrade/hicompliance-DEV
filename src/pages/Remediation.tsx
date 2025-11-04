@@ -1078,9 +1078,7 @@ const Remediation: React.FC = () => {
 
       const uuid = await getUUIDForMockId(editingTask);
       
-      console.log('Salvataggio task:', editingTask, 'Budget:', editTaskData.budget, 'UUID:', uuid, 'Org:', userData.organization_id);
-      
-      const { data: updateData, error } = await supabase
+      const { error } = await supabase
         .from('remediation_tasks')
         .update({
           task: editTaskData.task,
@@ -1091,26 +1089,9 @@ const Remediation: React.FC = () => {
           budget: Number(editTaskData.budget) || 0
         })
         .eq('id', uuid)
-        .eq('organization_id', userData.organization_id)
-        .select();
+        .eq('organization_id', userData.organization_id);
 
-      console.log('Risultato UPDATE:', { updateData, error });
-
-      if (error) {
-        console.error('Errore UPDATE:', error);
-        throw error;
-      }
-
-      console.log('Budget salvato con successo nel database');
-
-      // Verifica che il budget sia stato salvato correttamente
-      const { data: verifyData, error: verifyError } = await supabase
-        .from('remediation_tasks')
-        .select('budget')
-        .eq('id', uuid)
-        .single();
-      
-      console.log('Budget verificato dal database:', { budget: verifyData?.budget, error: verifyError });
+      if (error) throw error;
 
       toast({
         title: "Task aggiornato",
@@ -1119,14 +1100,10 @@ const Remediation: React.FC = () => {
 
       // Aggiorna i budget locali immediatamente
       const newBudget = Number(editTaskData.budget) || 0;
-      setTaskBudgets(prev => {
-        const updated = {
-          ...prev,
-          [editingTask]: newBudget
-        };
-        console.log('Budget locali aggiornati:', updated);
-        return updated;
-      });
+      setTaskBudgets(prev => ({
+        ...prev,
+        [editingTask]: newBudget
+      }));
 
       setEditingTask(null);
       setEditTaskData(null);
