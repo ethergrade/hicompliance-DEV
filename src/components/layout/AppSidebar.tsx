@@ -81,6 +81,11 @@ const navigation = [
     href: '/reports',
     icon: FileText,
   },
+  {
+    title: 'Gestione Documenti',
+    href: '/documents',
+    icon: FileText,
+  },
 ];
 
 const adminNavigation = [
