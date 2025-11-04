@@ -30,7 +30,8 @@ import {
   Eye,
   EyeOff,
   Trash2,
-  MoreHorizontal
+  MoreHorizontal,
+  Settings
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
@@ -53,6 +54,8 @@ const Remediation: React.FC = () => {
   const [hiddenTasks, setHiddenTasks] = useState<Set<number>>(new Set());
   const [deletedTasks, setDeletedTasks] = useState<Set<number>>(new Set());
   const [editingTaskTitle, setEditingTaskTitle] = useState<number | null>(null);
+  const [editingTask, setEditingTask] = useState<number | null>(null);
+  const [editTaskData, setEditTaskData] = useState<any>(null);
   const [newRemediation, setNewRemediation] = useState({
     category: '',
     priority: '',
@@ -946,6 +949,79 @@ const Remediation: React.FC = () => {
     saveTaskDeletion(taskId, false);
   };
 
+  const handleEditTask = (action: any) => {
+    setEditingTask(action.id);
+    setEditTaskData({
+      task: action.task,
+      category: action.category,
+      assignee: action.assignee,
+      priority: action.priority,
+      progress: action.progress
+    });
+  };
+
+  const handleSaveEditedTask = async () => {
+    if (!editingTask || !editTaskData) return;
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      if (!userData?.organization_id) return;
+
+      // Mappatura priorità italiana -> inglese
+      const priorityMapping: Record<string, string> = {
+        'Critica': 'critical',
+        'Alta': 'high',
+        'Media': 'medium',
+        'Bassa': 'low',
+        'critica': 'critical',
+        'alta': 'high',
+        'media': 'medium',
+        'bassa': 'low'
+      };
+
+      const uuid = await getUUIDForMockId(editingTask);
+      const { error } = await supabase
+        .from('remediation_tasks')
+        .update({
+          task: editTaskData.task,
+          category: editTaskData.category,
+          assignee: editTaskData.assignee,
+          priority: priorityMapping[editTaskData.priority] || 'medium',
+          progress: editTaskData.progress
+        })
+        .eq('id', uuid)
+        .eq('organization_id', userData.organization_id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Task aggiornato",
+        description: "Le modifiche sono state salvate con successo."
+      });
+
+      setEditingTask(null);
+      setEditTaskData(null);
+      
+      // Ricarica la pagina per mostrare le modifiche
+      setTimeout(() => window.location.reload(), 1000);
+    } catch (error) {
+      console.error('Errore nel salvataggio delle modifiche:', error);
+      toast({
+        title: "Errore",
+        description: "Impossibile salvare le modifiche.",
+        variant: "destructive"
+      });
+    }
+  };
+
   const getGanttData = () => {
     const startDate = new Date('2025-01-01');
     const endDate = new Date('2025-05-01');
@@ -1193,6 +1269,127 @@ const Remediation: React.FC = () => {
                     </Button>
                   </div>
                 </div>
+              </DialogContent>
+            </Dialog>
+            
+            {/* Dialog di modifica attività */}
+            <Dialog open={editingTask !== null} onOpenChange={(open) => {
+              if (!open) {
+                setEditingTask(null);
+                setEditTaskData(null);
+              }
+            }}>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center">
+                    <Settings className="w-5 h-5 mr-2" />
+                    Modifica Attività
+                  </DialogTitle>
+                </DialogHeader>
+                
+                {editTaskData && (
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-task">Descrizione Attività</Label>
+                      <Textarea
+                        id="edit-task"
+                        value={editTaskData.task}
+                        onChange={(e) => setEditTaskData(prev => ({ ...prev, task: e.target.value }))}
+                        placeholder="Descrizione dell'attività"
+                        rows={3}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-category">Categoria</Label>
+                        <Select 
+                          value={editTaskData.category} 
+                          onValueChange={(value) => setEditTaskData(prev => ({ ...prev, category: value }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Seleziona categoria" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Gestione delle identità">Gestione delle identità</SelectItem>
+                            <SelectItem value="Sviluppo software">Sviluppo software</SelectItem>
+                            <SelectItem value="Gestione fornitori">Gestione fornitori</SelectItem>
+                            <SelectItem value="Business Continuity">Business Continuity</SelectItem>
+                            <SelectItem value="Incident Response">Incident Response</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-priority">Priorità</Label>
+                        <Select 
+                          value={editTaskData.priority} 
+                          onValueChange={(value) => setEditTaskData(prev => ({ ...prev, priority: value }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Seleziona priorità" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Critica">Critica</SelectItem>
+                            <SelectItem value="Alta">Alta</SelectItem>
+                            <SelectItem value="Media">Media</SelectItem>
+                            <SelectItem value="Bassa">Bassa</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-assignee">Team Assegnato</Label>
+                        <Select 
+                          value={editTaskData.assignee} 
+                          onValueChange={(value) => setEditTaskData(prev => ({ ...prev, assignee: value }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Seleziona team" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="IT Security Team">IT Security Team</SelectItem>
+                            <SelectItem value="Security Auditor">Security Auditor</SelectItem>
+                            <SelectItem value="DevSecOps Team">DevSecOps Team</SelectItem>
+                            <SelectItem value="HR & Security">HR & Security</SelectItem>
+                            <SelectItem value="Procurement Team">Procurement Team</SelectItem>
+                            <SelectItem value="Operations Team">Operations Team</SelectItem>
+                            <SelectItem value="Compliance Team">Compliance Team</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-progress">Progresso (%)</Label>
+                        <Input
+                          id="edit-progress"
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={editTaskData.progress}
+                          onChange={(e) => setEditTaskData(prev => ({ ...prev, progress: Number(e.target.value) }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end space-x-2 pt-4">
+                      <Button 
+                        variant="outline" 
+                        onClick={() => {
+                          setEditingTask(null);
+                          setEditTaskData(null);
+                        }}
+                      >
+                        Annulla
+                      </Button>
+                      <Button onClick={handleSaveEditedTask} className="bg-primary">
+                        Salva Modifiche
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </DialogContent>
             </Dialog>
             
@@ -1450,6 +1647,15 @@ const Remediation: React.FC = () => {
 
                         {/* Controlli azione */}
                         <div className="flex items-center space-x-1 mr-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEditTask(action)}
+                            title="Modifica attività"
+                            className="h-6 w-6 p-0 hover:bg-primary/10 hover:text-primary"
+                          >
+                            <Settings className="w-3 h-3" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
