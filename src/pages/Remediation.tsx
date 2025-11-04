@@ -56,6 +56,7 @@ const Remediation: React.FC = () => {
   const [editingTaskTitle, setEditingTaskTitle] = useState<number | null>(null);
   const [editingTask, setEditingTask] = useState<number | null>(null);
   const [editTaskData, setEditTaskData] = useState<any>(null);
+  const [taskBudgets, setTaskBudgets] = useState<Record<number, number>>({});
   const [newRemediation, setNewRemediation] = useState({
     category: '',
     priority: '',
@@ -158,7 +159,8 @@ const Remediation: React.FC = () => {
               priority: priorityMapping[action.priority] || 'medium',
               color: action.color,
               display_order: index,
-              organization_id: organizationId // Ora uso l'organization_id dell'utente
+              organization_id: organizationId,
+              budget: action.budget || 0
             });
           }
         });
@@ -218,6 +220,56 @@ const Remediation: React.FC = () => {
     };
 
     initializeMockTasks();
+  }, []);
+
+  // Carica i budget dal database
+  useEffect(() => {
+    const loadBudgets = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data: userData } = await supabase
+          .from('users')
+          .select('organization_id')
+          .eq('auth_user_id', user.id)
+          .single();
+
+        if (!userData?.organization_id) return;
+
+        const { data: tasks, error } = await supabase
+          .from('remediation_tasks')
+          .select('id, budget')
+          .eq('organization_id', userData.organization_id);
+
+        if (error) throw error;
+
+        if (tasks) {
+          const reverseMapping: Record<string, number> = {
+            '89862a35-1eec-4489-889b-5781e6e78dd4': 1,
+            '27afa77b-05a1-4ae3-8bdf-ea39f84135b2': 2,
+            'c3f8b7d2-4e1a-4c9b-8f7e-2d5a6b8c9e0f': 3,
+            'f1e2d3c4-b5a6-9c8d-7e6f-0a1b2c3d4e5f': 4,
+            '8a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d': 5,
+            '7f8e9d0c-1b2a-3c4d-5e6f-7a8b9c0d1e2f': 6,
+            '6e7d8c9b-0a1f-2e3d-4c5b-6a7f8e9d0c1b': 7
+          };
+
+          const budgetMap: Record<number, number> = {};
+          tasks.forEach(task => {
+            const mockId = reverseMapping[task.id];
+            if (mockId) {
+              budgetMap[mockId] = Number(task.budget) || 0;
+            }
+          });
+          setTaskBudgets(budgetMap);
+        }
+      } catch (error) {
+        console.error('Errore nel caricamento dei budget:', error);
+      }
+    };
+
+    loadBudgets();
   }, []);
 
   // Categorie critiche che necessitano remediation (status: not_started o planned_in_progress)
@@ -280,7 +332,8 @@ const Remediation: React.FC = () => {
       assignee: 'IT Security Team',
       priority: 'Critica',
       dependencies: [],
-      color: '#DC2626'
+      color: '#DC2626',
+      budget: 16500
     },
     {
       id: 2,
@@ -292,7 +345,8 @@ const Remediation: React.FC = () => {
       assignee: 'Security Auditor',
       priority: 'Critica',
       dependencies: [],
-      color: '#DC2626'
+      color: '#DC2626',
+      budget: 8000
     },
     {
       id: 3,
@@ -304,7 +358,8 @@ const Remediation: React.FC = () => {
       assignee: 'DevSecOps Team',
       priority: 'Alta',
       dependencies: [],
-      color: '#EA580C'
+      color: '#EA580C',
+      budget: 18000
     },
     {
       id: 4,
@@ -316,7 +371,8 @@ const Remediation: React.FC = () => {
       assignee: 'HR & Security',
       priority: 'Alta',
       dependencies: [],
-      color: '#EA580C'
+      color: '#EA580C',
+      budget: 7500
     },
     {
       id: 5,
@@ -328,7 +384,8 @@ const Remediation: React.FC = () => {
       assignee: 'Procurement Team',
       priority: 'Media',
       dependencies: [],
-      color: '#EAB308'
+      color: '#EAB308',
+      budget: 4500
     },
     {
       id: 6,
@@ -340,7 +397,8 @@ const Remediation: React.FC = () => {
       assignee: 'Operations Team',
       priority: 'Alta',
       dependencies: [],
-      color: '#EA580C'
+      color: '#EA580C',
+      budget: 6000
     },
     {
       id: 7,
@@ -352,7 +410,8 @@ const Remediation: React.FC = () => {
       assignee: 'IT Security Team',
       priority: 'Alta',
       dependencies: [],
-      color: '#EA580C'
+      color: '#EA580C',
+      budget: 8000
     }
   ];
 
@@ -468,7 +527,8 @@ const Remediation: React.FC = () => {
         display_order: taskOrder.length, // Metti il nuovo task alla fine
         is_hidden: false,
         is_deleted: false,
-        dependencies: []
+        dependencies: [],
+        budget: Number(estimatedBudget) || 0
       };
 
       const { error: insertError } = await supabase
@@ -956,7 +1016,8 @@ const Remediation: React.FC = () => {
       category: action.category,
       assignee: action.assignee,
       priority: action.priority,
-      progress: action.progress
+      progress: action.progress,
+      budget: action.budget || 0
     });
   };
 
@@ -995,7 +1056,8 @@ const Remediation: React.FC = () => {
           category: editTaskData.category,
           assignee: editTaskData.assignee,
           priority: priorityMapping[editTaskData.priority] || 'medium',
-          progress: editTaskData.progress
+          progress: editTaskData.progress,
+          budget: editTaskData.budget || 0
         })
         .eq('id', uuid)
         .eq('organization_id', userData.organization_id);
@@ -1006,6 +1068,12 @@ const Remediation: React.FC = () => {
         title: "Task aggiornato",
         description: "Le modifiche sono state salvate con successo."
       });
+
+      // Aggiorna i budget locali
+      setTaskBudgets(prev => ({
+        ...prev,
+        [editingTask]: editTaskData.budget || 0
+      }));
 
       setEditingTask(null);
       setEditTaskData(null);
@@ -1037,7 +1105,8 @@ const Remediation: React.FC = () => {
           ...baseAction,
           startDate: dates.startDate,
           endDate: dates.endDate,
-          isHidden: hiddenTasks.has(id)
+          isHidden: hiddenTasks.has(id),
+          budget: taskBudgets[id] !== undefined ? taskBudgets[id] : baseAction.budget
         };
       });
 
@@ -1059,6 +1128,11 @@ const Remediation: React.FC = () => {
 
   const ganttData = getGanttData();
 
+  // Calcola il budget totale sommando tutti i budget delle attività attive
+  const totalBudget = ganttData
+    .filter(action => !action.isHidden)
+    .reduce((sum, action) => sum + (action.budget || 0), 0);
+
   // Generiamo le settimane per l'header del Gantt
   const generateWeeks = () => {
     const weeks = [];
@@ -1078,7 +1152,7 @@ const Remediation: React.FC = () => {
 
   const weeks = generateWeeks();
   const actionableMetrics = {
-    totalBudget: '€62,500',
+    totalBudget: `€${totalBudget.toLocaleString('it-IT')}`,
     estimatedCompletion: '120 giorni',
     riskReduction: '65%',
     complianceImprovement: '60%',
@@ -1372,6 +1446,19 @@ const Remediation: React.FC = () => {
                           onChange={(e) => setEditTaskData(prev => ({ ...prev, progress: Number(e.target.value) }))}
                         />
                       </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-budget">Budget Allocato (€)</Label>
+                      <Input
+                        id="edit-budget"
+                        type="number"
+                        min="0"
+                        step="100"
+                        value={editTaskData.budget || 0}
+                        onChange={(e) => setEditTaskData(prev => ({ ...prev, budget: Number(e.target.value) }))}
+                        placeholder="Budget in euro"
+                      />
                     </div>
 
                     <div className="flex justify-end space-x-2 pt-4">
