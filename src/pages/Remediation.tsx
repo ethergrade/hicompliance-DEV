@@ -99,104 +99,25 @@ const Remediation: React.FC = () => {
         return;
       }
 
-      // Verifica quali task esistono già per questa organizzazione - CARICA TUTTI I CAMPI
-      const { data: existingTasks, error: fetchError } = await supabase
-        .from('remediation_tasks')
-        .select('*')
-        .eq('organization_id', organizationId);
+      // Carica tutti i task esistenti per questa organizzazione
 
-      if (fetchError) throw fetchError;
-
-      const existingIds = new Set(existingTasks?.map(t => t.id) || []);
-      const mockUUIDs = {
-        1: '89862a35-1eec-4489-889b-5781e6e78dd4',
-        2: '27afa77b-05a1-4ae3-8bdf-ea39f84135b2',
-        3: 'c3f8b7d2-4e1a-4c9b-8f7e-2d5a6b8c9e0f',
-        4: 'f1e2d3c4-b5a6-9c8d-7e6f-0a1b2c3d4e5f',
-        5: '8a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d',
-        6: '7f8e9d0c-1b2a-3c4d-5e6f-7a8b9c0d1e2f',
-        7: '6e7d8c9b-0a1f-2e3d-4c5b-6a7f8e9d0c1b'
-      };
-
-      // Crea i task mancanti basati sui dati mock del gantt
-      const tasksToCreate = [];
-      
-      // Mappatura priorità italiana -> inglese per il database
-      const priorityMapping: Record<string, string> = {
-        'Critica': 'critical',
-        'Alta': 'high',
-        'Media': 'medium',
-        'Bassa': 'low',
-        'critica': 'critical',
-        'alta': 'high',
-        'media': 'medium',
-        'bassa': 'low'
-      };
-      
-      ganttActions.forEach((action, index) => {
-        const uuid = mockUUIDs[action.id as keyof typeof mockUUIDs];
-        if (uuid && !existingIds.has(uuid)) {
-          tasksToCreate.push({
-            id: uuid,
-            task: action.task,
-            category: action.category,
-            start_date: action.startDate,
-            end_date: action.endDate,
-            progress: action.progress,
-            assignee: action.assignee,
-            priority: priorityMapping[action.priority] || 'medium',
-            color: action.color,
-            display_order: index,
-            organization_id: organizationId,
-            budget: action.budget || 0,
-            is_hidden: false,
-            is_deleted: false
-          });
-        }
-      });
-
-      if (tasksToCreate.length > 0) {
-        const { error: insertError } = await supabase
-          .from('remediation_tasks')
-          .insert(tasksToCreate);
-
-        if (insertError) {
-          console.error('Errore nella creazione dei task:', insertError);
-          return;
-        }
-      }
-
-      // Ora carica TUTTI i dati dal database
       const { data: tasks, error } = await supabase
         .from('remediation_tasks')
         .select('*')
         .eq('organization_id', organizationId)
+        .eq('is_deleted', false)
         .order('display_order', { ascending: true });
 
       if (error) throw error;
 
       if (tasks && tasks.length > 0) {
-        // Mappa gli UUID reali agli ID mock ESISTENTI
-        const reverseMapping: Record<string, number> = {
-          '89862a35-1eec-4489-889b-5781e6e78dd4': 1,
-          '27afa77b-05a1-4ae3-8bdf-ea39f84135b2': 2,
-          'c3f8b7d2-4e1a-4c9b-8f7e-2d5a6b8c9e0f': 3,
-          'f1e2d3c4-b5a6-9c8d-7e6f-0a1b2c3d4e5f': 4,
-          '8a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d': 5,
-          '7f8e9d0c-1b2a-3c4d-5e6f-7a8b9c0d1e2f': 6,
-          '6e7d8c9b-0a1f-2e3d-4c5b-6a7f8e9d0c1b': 7
-        };
-
-        // Assegna nuovi ID mock ai task che non sono nella mappatura
-        let nextMockId = 8;
-        tasks.forEach(task => {
-          if (!reverseMapping[task.id]) {
-            reverseMapping[task.id] = nextMockId++;
-          }
+        // Crea una mappatura UUID -> mockId sequenziale
+        const reverseMapping: Record<string, number> = {};
+        tasks.forEach((task, index) => {
+          reverseMapping[task.id] = index + 1;
         });
 
-        console.log('Mappatura completa:', reverseMapping);
-        console.log('Task dal database:', tasks.length);
+        console.log('Task caricati dal database:', tasks.length);
 
         // Popola l'ordine dei task
         const orderedIds = tasks
@@ -591,11 +512,8 @@ const Remediation: React.FC = () => {
       });
       setIsCreateModalOpen(false);
 
-      // Ricarica i dati dal database
-      console.log('Ricarico pagina...');
-      setTimeout(() => {
-        window.location.reload();
-      }, 500);
+      // Ricarica i dati dal database senza refresh della pagina
+      await loadAllTaskData();
     } catch (error) {
       console.error('Errore nella creazione della remediation:', error);
       toast({
