@@ -99,33 +99,39 @@ const Remediation: React.FC = () => {
         return;
       }
 
-      // Carica tutti i task esistenti per questa organizzazione
-
-      const { data: tasks, error } = await supabase
+      // Carica TUTTI i task per questa organizzazione (attivi e eliminati)
+      const { data: allTasks, error } = await supabase
         .from('remediation_tasks')
         .select('*')
         .eq('organization_id', organizationId)
-        .eq('is_deleted', false)
         .order('display_order', { ascending: true });
 
       if (error) throw error;
 
-      if (tasks && tasks.length > 0) {
+      if (allTasks && allTasks.length > 0) {
+        // Separa task attivi ed eliminati
+        const activeTasks = allTasks.filter(t => !t.is_deleted);
+        const deletedTasksList = allTasks.filter(t => t.is_deleted);
+
         // Crea una mappatura UUID -> mockId sequenziale
         const reverseMapping: Record<string, number> = {};
-        tasks.forEach((task, index) => {
+        allTasks.forEach((task, index) => {
           reverseMapping[task.id] = index + 1;
         });
 
-        console.log('Task caricati dal database:', tasks.length);
+        console.log('Task caricati dal database:', {
+          totali: allTasks.length,
+          attivi: activeTasks.length,
+          eliminati: deletedTasksList.length
+        });
 
-        // Popola l'ordine dei task
-        const orderedIds = tasks
+        // Popola l'ordine dei task (solo attivi)
+        const orderedIds = activeTasks
           .map(task => reverseMapping[task.id])
           .filter(id => id !== undefined)
           .sort((a, b) => {
-            const taskA = tasks.find(t => reverseMapping[t.id] === a);
-            const taskB = tasks.find(t => reverseMapping[t.id] === b);
+            const taskA = allTasks.find(t => reverseMapping[t.id] === a);
+            const taskB = allTasks.find(t => reverseMapping[t.id] === b);
             return (taskA?.display_order || 0) - (taskB?.display_order || 0);
           });
 
@@ -147,7 +153,7 @@ const Remediation: React.FC = () => {
           'low': 'Bassa'
         };
 
-        tasks.forEach(task => {
+        allTasks.forEach(task => {
           const mockId = reverseMapping[task.id];
           if (mockId) {
             // Salva tutti i dati del task
@@ -189,7 +195,7 @@ const Remediation: React.FC = () => {
         setDeletedTasks(deleted);
 
         console.log('Dati caricati dal database:', {
-          tasks: tasks.length,
+          tasks: allTasks.length,
           allData: Object.keys(allDataMap).length,
           dates: Object.keys(datesMap).length,
           budgets: Object.keys(budgetMap).length,
@@ -210,6 +216,28 @@ const Remediation: React.FC = () => {
   // Carica TUTTI i dati dei task dal database all'avvio
   useEffect(() => {
     loadAllTaskData();
+
+    // Setup realtime updates per sincronizzare automaticamente i task
+    const channel = supabase
+      .channel('remediation-tasks-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'remediation_tasks'
+        },
+        (payload) => {
+          console.log('Realtime update ricevuto:', payload);
+          // Ricarica i dati quando c'è un cambiamento
+          loadAllTaskData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
 
@@ -1542,9 +1570,17 @@ const Remediation: React.FC = () => {
         </div>
 
         <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="overview">Panoramica Remediation</TabsTrigger>
             <TabsTrigger value="gantt">GANTT Operativo</TabsTrigger>
+            <TabsTrigger value="deleted" className="relative">
+              Azioni Eliminate
+              {deletedTasks.size > 0 && (
+                <Badge variant="destructive" className="ml-2 h-5 px-1.5 text-xs">
+                  {deletedTasks.size}
+                </Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="metrics">Metriche & KPI</TabsTrigger>
           </TabsList>
           
@@ -1794,37 +1830,6 @@ const Remediation: React.FC = () => {
                     ))}
                   </div>
 
-                  {/* Tasks eliminati - sezione di ripristino */}
-                  {deletedTasks.size > 0 && (
-                    <div className="mt-6 pt-4 border-t border-border">
-                      <div className="flex items-center justify-between mb-4">
-                        <h4 className="text-sm font-medium text-muted-foreground">Azioni Eliminate</h4>
-                      </div>
-                      <div className="space-y-2">
-                        {Array.from(deletedTasks).map(taskId => {
-                          const deletedAction = ganttActions.find(action => action.id === taskId);
-                          return deletedAction ? (
-                            <div key={taskId} className="flex items-center justify-between p-2 bg-muted/30 rounded-lg border border-dashed">
-                              <div className="flex items-center space-x-2">
-                                <Trash2 className="w-4 h-4 text-muted-foreground" />
-                                <span className="text-sm text-muted-foreground line-through">
-                                  {deletedAction.task}
-                                </span>
-                              </div>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleRestoreTask(taskId)}
-                                className="text-xs"
-                              >
-                                Ripristina
-                              </Button>
-                            </div>
-                          ) : null;
-                        })}
-                      </div>
-                    </div>
-                  )}
 
                   {/* Legend */}
                   <div className="mt-6 pt-4 border-t border-border">
@@ -1860,6 +1865,95 @@ const Remediation: React.FC = () => {
                       </div>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="deleted" className="space-y-6">
+            <Card className="border-border">
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <Trash2 className="w-5 h-5 mr-2 text-destructive" />
+                  Azioni Eliminate - Storico Remediation
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {deletedTasks.size === 0 ? (
+                  <div className="text-center py-12">
+                    <Trash2 className="w-12 h-12 mx-auto text-muted-foreground/30 mb-4" />
+                    <p className="text-muted-foreground">Nessuna azione eliminata</p>
+                    <p className="text-sm text-muted-foreground/70 mt-2">
+                      Le azioni eliminate appariranno qui e potranno essere ripristinate
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {Array.from(deletedTasks).map(taskId => {
+                      const deletedAction = allTasksData[taskId];
+                      if (!deletedAction) return null;
+
+                      return (
+                        <div 
+                          key={taskId} 
+                          className="flex items-center justify-between p-4 bg-destructive/5 rounded-lg border border-destructive/20 hover:bg-destructive/10 transition-colors"
+                        >
+                          <div className="flex items-center space-x-4 flex-1">
+                            <div className="p-2 rounded-lg bg-destructive/10">
+                              <Trash2 className="w-5 h-5 text-destructive" />
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="font-medium text-foreground line-through">
+                                {deletedAction.task}
+                              </h4>
+                              <div className="flex items-center space-x-3 mt-1">
+                                <span className="text-sm text-muted-foreground">
+                                  Categoria: {deletedAction.category}
+                                </span>
+                                <span className="text-sm text-muted-foreground">•</span>
+                                <span className="text-sm text-muted-foreground">
+                                  Team: {deletedAction.assignee}
+                                </span>
+                                <span className="text-sm text-muted-foreground">•</span>
+                                <Badge 
+                                  variant={
+                                    deletedAction.priority === 'Critica' ? 'destructive' : 
+                                    deletedAction.priority === 'Alta' ? 'default' : 
+                                    'secondary'
+                                  }
+                                  className="opacity-60"
+                                >
+                                  {deletedAction.priority}
+                                </Badge>
+                              </div>
+                              <div className="flex items-center space-x-3 mt-2 text-xs text-muted-foreground">
+                                <span>
+                                  Date: {format(parseISO(deletedAction.startDate), 'dd/MM/yyyy')} - {format(parseISO(deletedAction.endDate), 'dd/MM/yyyy')}
+                                </span>
+                                <span>•</span>
+                                <span>
+                                  Budget: €{deletedAction.budget?.toLocaleString() || '0'}
+                                </span>
+                                <span>•</span>
+                                <span>
+                                  Progress: {deletedAction.progress}%
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <Button
+                            onClick={() => handleRestoreTask(taskId)}
+                            variant="outline"
+                            size="sm"
+                            className="border-primary/30 hover:bg-primary hover:text-primary-foreground"
+                          >
+                            <CheckCircle className="w-4 h-4 mr-2" />
+                            Ripristina
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
