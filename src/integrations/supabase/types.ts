@@ -142,12 +142,20 @@ export type Database = {
           hypervisors_count: number | null
           id: string
           locations_count: number | null
+          miscellaneous_network_devices_count: number | null
           notes: string | null
           organization_id: string | null
           servers_count: number | null
           total_network_devices_count: number | null
           updated_at: string
           users_count: number | null
+          va_ip_punctual_count: number | null
+          va_subnet_21_count: number | null
+          va_subnet_22_count: number | null
+          va_subnet_23_count: number | null
+          va_subnet_24_count: number | null
+          va_subnet_25_count: number | null
+          va_total_ips_count: number | null
           virtual_machines_count: number | null
         }
         Insert: {
@@ -160,12 +168,20 @@ export type Database = {
           hypervisors_count?: number | null
           id?: string
           locations_count?: number | null
+          miscellaneous_network_devices_count?: number | null
           notes?: string | null
           organization_id?: string | null
           servers_count?: number | null
           total_network_devices_count?: number | null
           updated_at?: string
           users_count?: number | null
+          va_ip_punctual_count?: number | null
+          va_subnet_21_count?: number | null
+          va_subnet_22_count?: number | null
+          va_subnet_23_count?: number | null
+          va_subnet_24_count?: number | null
+          va_subnet_25_count?: number | null
+          va_total_ips_count?: number | null
           virtual_machines_count?: number | null
         }
         Update: {
@@ -178,12 +194,20 @@ export type Database = {
           hypervisors_count?: number | null
           id?: string
           locations_count?: number | null
+          miscellaneous_network_devices_count?: number | null
           notes?: string | null
           organization_id?: string | null
           servers_count?: number | null
           total_network_devices_count?: number | null
           updated_at?: string
           users_count?: number | null
+          va_ip_punctual_count?: number | null
+          va_subnet_21_count?: number | null
+          va_subnet_22_count?: number | null
+          va_subnet_23_count?: number | null
+          va_subnet_24_count?: number | null
+          va_subnet_25_count?: number | null
+          va_total_ips_count?: number | null
           virtual_machines_count?: number | null
         }
         Relationships: [
