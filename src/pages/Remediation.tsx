@@ -231,8 +231,44 @@ const Remediation: React.FC = () => {
         },
         (payload) => {
           console.log('Realtime update ricevuto:', payload);
-          // Ricarica i dati quando c'è un cambiamento
-          loadAllTaskData();
+          
+          // Aggiorna solo il task specifico invece di ricaricare tutto
+          if (payload.eventType === 'UPDATE' && payload.new) {
+            const newData = payload.new as any;
+            
+            // Trova l'ID locale corrispondente all'UUID del database
+            setAllTasksData(prev => {
+              const mockId = Object.keys(prev).find(key => prev[Number(key)]?.id === newData.id);
+              
+              if (mockId) {
+                const id = Number(mockId);
+                
+                // Aggiorna tutti gli stati locali
+                setTaskDates(dates => ({
+                  ...dates,
+                  [id]: {
+                    startDate: newData.start_date,
+                    endDate: newData.end_date
+                  }
+                }));
+                
+                setTaskBudgets(budgets => ({
+                  ...budgets,
+                  [id]: newData.budget
+                }));
+                
+                return {
+                  ...prev,
+                  [id]: newData
+                };
+              }
+              
+              return prev;
+            });
+          } else if (payload.eventType === 'INSERT' || payload.eventType === 'DELETE') {
+            // Per INSERT e DELETE ricarica tutto
+            loadAllTaskData();
+          }
         }
       )
       .subscribe();
