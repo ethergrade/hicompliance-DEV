@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { GanttChart } from '@/components/remediation/GanttChart';
 import { format, addDays, differenceInDays, parseISO } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { 
@@ -41,10 +42,7 @@ import { toast } from '@/hooks/use-toast';
 const Remediation: React.FC = () => {
   const [selectedTimeframe, setSelectedTimeframe] = useState('90days');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [draggedTask, setDraggedTask] = useState<number | null>(null);
-  const [draggedOver, setDraggedOver] = useState<number | null>(null);
   const [taskOrder, setTaskOrder] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
-  const [resizingTask, setResizingTask] = useState<{ id: number, side: 'left' | 'right' } | null>(null);
   const [taskDates, setTaskDates] = useState<Record<number, { startDate: string, endDate: string }>>({});
   const [hiddenTasks, setHiddenTasks] = useState<Set<number>>(new Set());
   const [deletedTasks, setDeletedTasks] = useState<Set<number>>(new Set());
@@ -557,153 +555,6 @@ const Remediation: React.FC = () => {
     }
   };
 
-  // Funzioni per il Gantt Chart con drag & drop
-  const handleDragStart = (taskId: number) => {
-    setDraggedTask(taskId);
-  };
-
-  const handleDragOver = (e: React.DragEvent, taskId: number) => {
-    e.preventDefault();
-    setDraggedOver(taskId);
-  };
-
-  const handleDrop = (e: React.DragEvent, targetTaskId: number) => {
-    e.preventDefault();
-    if (draggedTask && draggedTask !== targetTaskId) {
-      const newOrder = [...taskOrder];
-      const draggedIndex = newOrder.indexOf(draggedTask);
-      const targetIndex = newOrder.indexOf(targetTaskId);
-      
-      // Rimuovi il task dalla posizione originale
-      newOrder.splice(draggedIndex, 1);
-      // Inserisci nella nuova posizione
-      newOrder.splice(targetIndex, 0, draggedTask);
-      
-      setTaskOrder(newOrder);
-      
-      // Salva il nuovo ordine nel database
-      saveTaskOrder(newOrder);
-      
-      // Ricalcola le date per evitare sovrapposizioni
-      recalculateDates(newOrder);
-    }
-    setDraggedTask(null);
-    setDraggedOver(null);
-  };
-
-  // Funzioni per il resize delle barre
-  const handleResizeStart = (e: React.MouseEvent, taskId: number, side: 'left' | 'right') => {
-    e.stopPropagation();
-    setResizingTask({ id: taskId, side });
-    
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      const ganttContainer = document.querySelector('.gantt-timeline') as HTMLElement;
-      if (!ganttContainer) return;
-      
-      const containerRect = ganttContainer.getBoundingClientRect();
-      const relativeX = moveEvent.clientX - containerRect.left;
-      const percentage = Math.max(0, Math.min(100, (relativeX / containerRect.width) * 100));
-      
-      // Converti percentuale in data
-      const startDate = new Date('2025-01-01');
-      const endDate = new Date('2025-05-01');
-      const totalDays = differenceInDays(endDate, startDate);
-      const targetDays = Math.round((percentage / 100) * totalDays);
-      const targetDate = format(addDays(startDate, targetDays), 'yyyy-MM-dd');
-      
-      setTaskDates(prev => {
-        const currentDates = prev[taskId];
-        let newDates = prev;
-        
-        if (side === 'left') {
-          // Non permettere che la data di inizio superi quella di fine
-          const endDateObj = parseISO(currentDates.endDate);
-          const newStartDateObj = parseISO(targetDate);
-          if (newStartDateObj < endDateObj) {
-            newDates = {
-              ...prev,
-              [taskId]: { ...currentDates, startDate: targetDate }
-            };
-            // Salva le nuove date nel database
-            saveTaskDates(taskId, targetDate, currentDates.endDate);
-          }
-        } else {
-          // Non permettere che la data di fine sia prima di quella di inizio
-          const startDateObj = parseISO(currentDates.startDate);
-          const newEndDateObj = parseISO(targetDate);
-          if (newEndDateObj > startDateObj) {
-            newDates = {
-              ...prev,
-              [taskId]: { ...currentDates, endDate: targetDate }
-            };
-            // Salva le nuove date nel database
-            saveTaskDates(taskId, currentDates.startDate, targetDate);
-          }
-        }
-        return newDates;
-      });
-    };
-    
-    const handleMouseUp = () => {
-      setResizingTask(null);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-    
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  };
-
-  const recalculateDates = (order: number[]) => {
-    // Logica per riallocare le date quando i task si sovrappongono
-    console.log('Recalculating dates for order:', order);
-  };
-
-  // Funzioni per il salvataggio nel database
-  const saveTaskOrder = async (newOrder: number[]) => {
-    try {
-      // Ottieni l'organization_id dell'utente corrente
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('auth_user_id', user.id)
-        .single();
-
-      if (!userData?.organization_id) return;
-
-      // Converte gli ID mock a UUID per il salvataggio nel database
-      const updates = await Promise.all(newOrder.map(async (taskId, index) => ({
-        id: await getUUIDForMockId(taskId),
-        display_order: index
-      })));
-
-      for (const update of updates) {
-        const { error } = await supabase
-          .from('remediation_tasks')
-          .update({ display_order: update.display_order })
-          .eq('id', update.id)
-          .eq('organization_id', userData.organization_id);
-        
-        if (error) throw error;
-      }
-
-      toast({
-        title: "Ordine salvato",
-        description: "L'ordine dei task è stato aggiornato nel database."
-      });
-    } catch (error) {
-      console.error('Errore nel salvataggio dell\'ordine:', error);
-      toast({
-        title: "Errore",
-        description: "Impossibile salvare l'ordine dei task.",
-        variant: "destructive"
-      });
-    }
-  };
-
   const saveTaskDates = async (taskId: number, startDate: string, endDate: string) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -728,6 +579,12 @@ const Remediation: React.FC = () => {
         .eq('organization_id', userData.organization_id);
       
       if (error) throw error;
+
+      // Aggiorna anche lo stato locale
+      setTaskDates(prev => ({
+        ...prev,
+        [taskId]: { startDate, endDate }
+      }));
 
       toast({
         title: "Date aggiornate",
@@ -988,10 +845,7 @@ const Remediation: React.FC = () => {
     // Riaggiungilo all'ordine se non c'è già
     setTaskOrder(prev => {
       if (!prev.includes(taskId)) {
-        const newOrder = [...prev, taskId];
-        // Salva il nuovo ordine nel database
-        saveTaskOrder(newOrder);
-        return newOrder;
+        return [...prev, taskId];
       }
       return prev;
     });
@@ -1749,228 +1603,15 @@ const Remediation: React.FC = () => {
           </TabsContent>
 
           <TabsContent value="gantt" className="space-y-6">
-            <Card className="border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Calendar className="w-5 h-5 mr-2 text-primary" />
-                  GANTT Operativo - Timeline Remediation
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  {/* Header timeline */}
-                  <div className="mb-4">
-                    <div className="flex">
-                      <div className="w-64 flex-shrink-0"></div>
-                      <div className="flex-1 flex border-b border-border">
-                        {weeks.map((week, index) => (
-                          <div 
-                            key={index} 
-                            className="flex-1 text-center text-xs text-muted-foreground py-2 border-r border-border/50"
-                          >
-                            {week.label}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Gantt bars con drag & drop */}
-                  <div className="space-y-3">
-                    {ganttData.map((action) => (
-                      <div 
-                        key={action.id} 
-                        className={`flex items-center transition-all duration-200 rounded-lg p-2 cursor-move
-                          ${draggedTask === action.id ? 'opacity-50 scale-95' : ''}
-                          ${draggedOver === action.id ? 'bg-primary/10 border-l-4 border-primary' : ''}
-                          ${action.isHidden ? 'opacity-30 bg-muted/10' : ''}
-                          hover:bg-muted/30
-                        `}
-                        draggable={!action.isHidden}
-                        onDragStart={() => !action.isHidden && handleDragStart(action.id)}
-                        onDragOver={(e) => !action.isHidden && handleDragOver(e, action.id)}
-                        onDrop={(e) => !action.isHidden && handleDrop(e, action.id)}
-                        onDragEnd={() => {
-                          setDraggedTask(null);
-                          setDraggedOver(null);
-                        }}
-                      >
-                        {/* Task info */}
-                        <div className="w-64 flex-shrink-0 pr-4">
-                          <div className="flex items-center space-x-2">
-                            <div 
-                              contentEditable={!action.isHidden}
-                              suppressContentEditableWarning
-                              onBlur={(e) => {
-                                const newTitle = e.currentTarget.textContent || '';
-                                if (newTitle !== action.task) {
-                                  saveTaskTitle(action.id, newTitle);
-                                }
-                                setEditingTaskTitle(null);
-                              }}
-                              onFocus={() => setEditingTaskTitle(action.id)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  e.currentTarget.blur();
-                                }
-                              }}
-                              className={`text-sm font-medium outline-none ${
-                                action.isHidden 
-                                  ? 'text-muted-foreground line-through cursor-not-allowed' 
-                                  : 'text-foreground cursor-text hover:bg-muted/30 px-1 rounded'
-                              } ${editingTaskTitle === action.id ? 'bg-muted/50' : ''}`}
-                            >
-                              {action.task}
-                            </div>
-                            {action.isHidden && (
-                              <Badge variant="outline" className="text-xs">
-                                <EyeOff className="w-3 h-3 mr-1" />
-                                Nascosto
-                              </Badge>
-                            )}
-                          </div>
-                          <div className={`text-xs ${action.isHidden ? 'text-muted-foreground/50' : 'text-muted-foreground'}`}>
-                            {action.assignee}
-                          </div>
-                          <div className="flex items-center space-x-2 mt-1">
-                            <Badge 
-                              variant={action.priority === 'Critica' ? 'destructive' : 
-                                      action.priority === 'Alta' ? 'default' : 'secondary'} 
-                              className={`text-xs ${action.isHidden ? 'opacity-50' : ''}`}
-                            >
-                              {action.priority}
-                            </Badge>
-                            <span className={`text-xs ${action.isHidden ? 'text-muted-foreground/50' : 'text-muted-foreground'}`}>
-                              {action.progress}%
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Controlli azione */}
-                        <div className="flex items-center space-x-1 mr-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleEditTask(action)}
-                            title="Modifica attività"
-                            className="h-6 w-6 p-0 hover:bg-primary/10 hover:text-primary"
-                          >
-                            <Settings className="w-3 h-3" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleToggleVisibility(action.id)}
-                            title={action.isHidden ? "Mostra azione" : "Nascondi azione"}
-                            className="h-6 w-6 p-0 hover:bg-muted"
-                          >
-                            {action.isHidden ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteTask(action.id)}
-                            title="Elimina azione"
-                            className="h-6 w-6 p-0 hover:bg-destructive/10 hover:text-destructive"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        </div>
-
-                        {/* Gantt timeline */}
-                        <div className="flex-1 relative h-8 bg-muted/20 rounded gantt-timeline">
-                          {/* Task bar con handle di resize */}
-                          <div
-                            className="absolute h-6 top-1 rounded-sm flex items-center group transition-all duration-200"
-                            style={{
-                              left: `${action.startOffset}%`,
-                              width: `${action.width}%`,
-                              backgroundColor: action.isHidden ? '#9CA3AF40' : action.color + '40',
-                              border: `2px solid ${action.isHidden ? '#9CA3AF' : action.color}`,
-                              transform: draggedTask === action.id ? 'scale(0.95)' : 'scale(1)',
-                              zIndex: resizingTask?.id === action.id ? 10 : 1,
-                              opacity: action.isHidden ? 0.5 : 1
-                            }}
-                          >
-                            {/* Handle sinistra per resize start date */}
-                            {!action.isHidden && (
-                              <div
-                                className="absolute left-0 top-0 w-2 h-full bg-primary/80 rounded-l-sm cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary"
-                                onMouseDown={(e) => handleResizeStart(e, action.id, 'left')}
-                                title="Trascina per modificare data inizio"
-                              />
-                            )}
-                            
-                            {/* Progress bar */}
-                            <div
-                              className="h-full rounded-sm transition-all duration-200 pointer-events-none"
-                              style={{
-                                width: `${action.progress}%`,
-                                backgroundColor: action.isHidden ? '#9CA3AF' : action.color,
-                                minWidth: action.progress > 0 ? '4px' : '0'
-                              }}
-                            />
-                            
-                            {/* Handle destra per resize end date */}
-                            {!action.isHidden && (
-                              <div
-                                className="absolute right-0 top-0 w-2 h-full bg-primary/80 rounded-r-sm cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary"
-                                onMouseDown={(e) => handleResizeStart(e, action.id, 'right')}
-                                title="Trascina per modificare data fine"
-                              />
-                            )}
-                          </div>
-                          
-                          {/* Tooltip info con durata aggiornata */}
-                          <div className="absolute top-8 left-0 text-xs text-muted-foreground whitespace-nowrap">
-                            {format(parseISO(action.startDate), 'dd/MM')} - {format(parseISO(action.endDate), 'dd/MM')}
-                            <span className="text-primary ml-2">
-                              ({action.duration} giorni)
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-
-                  {/* Legend */}
-                  <div className="mt-6 pt-4 border-t border-border">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-6 text-xs">
-                          <div className="flex items-center space-x-2">
-                            <div className="w-4 h-2 bg-red-600 rounded"></div>
-                            <span>Critica</span>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <div className="w-4 h-2 bg-orange-600 rounded"></div>
-                            <span>Alta</span>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <div className="w-4 h-2 bg-yellow-600 rounded"></div>
-                            <span>Media</span>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <div className="w-4 h-2 bg-gray-400 rounded opacity-50"></div>
-                            <span>Nascosto</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-4 text-xs text-muted-foreground">
-                          <div className="flex items-center space-x-2">
-                            <EyeOff className="w-3 h-3" />
-                            <span>Nascondi/Mostra</span>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Trash2 className="w-3 h-3" />
-                            <span>Elimina azione</span>
-                          </div>
-                        </div>
-                      </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <GanttChart
+              tasks={ganttData}
+              ganttStartDate={new Date('2025-01-01')}
+              ganttEndDate={new Date('2025-05-01')}
+              onDateChange={(taskId, startDate, endDate) => saveTaskDates(taskId, startDate, endDate)}
+              onEditTask={(task) => handleEditTask(task)}
+              onToggleVisibility={(taskId) => handleToggleVisibility(taskId)}
+              onDeleteTask={(taskId) => handleDeleteTask(taskId)}
+            />
           </TabsContent>
 
           <TabsContent value="deleted" className="space-y-6">
