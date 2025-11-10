@@ -11,6 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import type { Database } from '@/integrations/supabase/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { useNavigate } from 'react-router-dom';
 import {
   Download,
   FileText,
@@ -19,7 +20,8 @@ import {
   File,
   FolderOpen,
   Edit2,
-  FolderInput
+  FolderInput,
+  Package
 } from 'lucide-react';
 
 // Use the database enum type directly to stay in sync
@@ -65,6 +67,7 @@ const Documents: React.FC = () => {
   const [newCategory, setNewCategory] = useState<DocumentCategory>('Varie');
   const { toast } = useToast();
   const { user } = useAuth();
+  const navigate = useNavigate();
   
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -349,11 +352,21 @@ const Documents: React.FC = () => {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Gestione Documenti</h1>
-          <p className="text-muted-foreground">
-            Organizza i tuoi documenti per categoria
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">Gestione Documenti</h1>
+            <p className="text-muted-foreground">
+              Organizza i tuoi documenti per categoria
+            </p>
+          </div>
+          <Button
+            onClick={() => navigate('/asset-inventory')}
+            variant="outline"
+            className="flex items-center gap-2"
+          >
+            <Package className="w-4 h-4" />
+            Inventario Asset Tecnici
+          </Button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">

@@ -131,6 +131,71 @@ export type Database = {
           },
         ]
       }
+      asset_inventory: {
+        Row: {
+          access_points_count: number | null
+          access_switches_count: number | null
+          core_switches_count: number | null
+          created_at: string
+          endpoints_count: number | null
+          firewalls_count: number | null
+          hypervisors_count: number | null
+          id: string
+          locations_count: number | null
+          notes: string | null
+          organization_id: string | null
+          servers_count: number | null
+          total_network_devices_count: number | null
+          updated_at: string
+          users_count: number | null
+          virtual_machines_count: number | null
+        }
+        Insert: {
+          access_points_count?: number | null
+          access_switches_count?: number | null
+          core_switches_count?: number | null
+          created_at?: string
+          endpoints_count?: number | null
+          firewalls_count?: number | null
+          hypervisors_count?: number | null
+          id?: string
+          locations_count?: number | null
+          notes?: string | null
+          organization_id?: string | null
+          servers_count?: number | null
+          total_network_devices_count?: number | null
+          updated_at?: string
+          users_count?: number | null
+          virtual_machines_count?: number | null
+        }
+        Update: {
+          access_points_count?: number | null
+          access_switches_count?: number | null
+          core_switches_count?: number | null
+          created_at?: string
+          endpoints_count?: number | null
+          firewalls_count?: number | null
+          hypervisors_count?: number | null
+          id?: string
+          locations_count?: number | null
+          notes?: string | null
+          organization_id?: string | null
+          servers_count?: number | null
+          total_network_devices_count?: number | null
+          updated_at?: string
+          users_count?: number | null
+          virtual_machines_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_inventory_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dark_risk_alerts: {
         Row: {
           alert_email: string
