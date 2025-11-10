@@ -11,7 +11,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format, addDays, differenceInDays, parseISO } from 'date-fns';
+import { cn } from '@/lib/utils';
 import { 
   AlertTriangle,
   Calendar,
@@ -57,7 +60,8 @@ const Remediation: React.FC = () => {
     estimatedDays: '',
     estimatedBudget: '',
     assignedTeam: '',
-    complexity: 'medium'
+    complexity: 'medium',
+    startDate: ''
   });
 
   // Funzione per convertire ID mock a UUID per il database
@@ -468,9 +472,9 @@ const Remediation: React.FC = () => {
         return;
       }
 
-      // Calcola la data di inizio (oggi) e la data di fine basata sui giorni stimati
-      const startDate = format(new Date(), 'yyyy-MM-dd');
-      const endDate = format(addDays(new Date(), Number(estimatedDays)), 'yyyy-MM-dd');
+      // Calcola la data di inizio (usa quella scelta o oggi) e la data di fine basata sui giorni stimati
+      const startDate = newRemediation.startDate || format(new Date(), 'yyyy-MM-dd');
+      const endDate = format(addDays(new Date(startDate), Number(estimatedDays)), 'yyyy-MM-dd');
 
       // Mappatura priorità italiana -> inglese per il database
       const priorityMapping: Record<string, string> = {
@@ -536,7 +540,8 @@ const Remediation: React.FC = () => {
         estimatedDays: '',
         estimatedBudget: '',
         assignedTeam: '',
-        complexity: 'medium'
+        complexity: 'medium',
+        startDate: ''
       });
       setIsCreateModalOpen(false);
 
@@ -1003,7 +1008,9 @@ const Remediation: React.FC = () => {
       assignee: action.assignee,
       priority: action.priority,
       progress: action.progress,
-      budget: action.budget || 0
+      budget: action.budget || 0,
+      startDate: action.startDate,
+      endDate: action.endDate
     });
   };
 
@@ -1044,7 +1051,9 @@ const Remediation: React.FC = () => {
           assignee: editTaskData.assignee,
           priority: priorityMapping[editTaskData.priority] || 'medium',
           progress: editTaskData.progress,
-          budget: Number(editTaskData.budget) || 0
+          budget: Number(editTaskData.budget) || 0,
+          start_date: editTaskData.startDate,
+          end_date: editTaskData.endDate
         })
         .eq('id', uuid)
         .eq('organization_id', userData.organization_id);
@@ -1304,6 +1313,37 @@ const Remediation: React.FC = () => {
                     </Select>
                   </div>
 
+                  <div className="space-y-2">
+                    <Label>Data Inizio</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !newRemediation.startDate && "text-muted-foreground"
+                          )}
+                        >
+                          <Calendar className="mr-2 h-4 w-4" />
+                          {newRemediation.startDate ? format(new Date(newRemediation.startDate), "PPP") : "Seleziona data (default: oggi)"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <CalendarComponent
+                          mode="single"
+                          selected={newRemediation.startDate ? new Date(newRemediation.startDate) : undefined}
+                          onSelect={(date) =>
+                            setNewRemediation(prev => ({
+                              ...prev,
+                              startDate: date ? format(date, "yyyy-MM-dd") : ""
+                            }))
+                          }
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+
                   {/* Anteprima calcoli */}
                   <Card className="bg-muted/50">
                     <CardContent className="p-4">
@@ -1462,6 +1502,70 @@ const Remediation: React.FC = () => {
                         onChange={(e) => setEditTaskData(prev => ({ ...prev, budget: Number(e.target.value) }))}
                         placeholder="Budget in euro"
                       />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Data Inizio</Label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full justify-start text-left font-normal",
+                                !editTaskData.startDate && "text-muted-foreground"
+                              )}
+                            >
+                              <Calendar className="mr-2 h-4 w-4" />
+                              {editTaskData.startDate ? format(new Date(editTaskData.startDate), "PPP") : "Seleziona data"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <CalendarComponent
+                              mode="single"
+                              selected={editTaskData.startDate ? new Date(editTaskData.startDate) : undefined}
+                              onSelect={(date) =>
+                                setEditTaskData(prev => ({
+                                  ...prev,
+                                  startDate: date ? format(date, "yyyy-MM-dd") : ""
+                                }))
+                              }
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Data Fine</Label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full justify-start text-left font-normal",
+                                !editTaskData.endDate && "text-muted-foreground"
+                              )}
+                            >
+                              <Calendar className="mr-2 h-4 w-4" />
+                              {editTaskData.endDate ? format(new Date(editTaskData.endDate), "PPP") : "Seleziona data"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <CalendarComponent
+                              mode="single"
+                              selected={editTaskData.endDate ? new Date(editTaskData.endDate) : undefined}
+                              onSelect={(date) =>
+                                setEditTaskData(prev => ({
+                                  ...prev,
+                                  endDate: date ? format(date, "yyyy-MM-dd") : ""
+                                }))
+                              }
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
                     </div>
 
                     <div className="flex justify-end space-x-2 pt-4">
