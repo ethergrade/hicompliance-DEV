@@ -112,7 +112,7 @@ const Dashboard: React.FC = () => {
         {/* Quick Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <MetricCard
-            title="Conformità NIS2"
+            title="NIS2/NIST/ISO"
             value="Moderato"
             percentage={mockData.nis2Compliance}
             status="warning"
