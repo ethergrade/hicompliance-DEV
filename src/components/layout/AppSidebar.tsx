@@ -17,7 +17,8 @@ import {
   ClipboardCheck,
   Home,
   Wrench,
-  Bell
+  Bell,
+  Package
 } from 'lucide-react';
 import {
   Sidebar,
@@ -87,6 +88,11 @@ const navigation = [
     title: 'Gestione Documenti',
     href: '/documents',
     icon: FileText,
+  },
+  {
+    title: 'Inventario Asset',
+    href: '/asset-inventory',
+    icon: Package,
   },
 ];
 
