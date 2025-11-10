@@ -25,7 +25,15 @@ interface AssetInventoryData {
   core_switches_count: number;
   access_switches_count: number;
   access_points_count: number;
+  miscellaneous_network_devices_count: number;
   total_network_devices_count: number;
+  va_ip_punctual_count: number;
+  va_subnet_25_count: number;
+  va_subnet_24_count: number;
+  va_subnet_23_count: number;
+  va_subnet_22_count: number;
+  va_subnet_21_count: number;
+  va_total_ips_count: number;
   notes: string;
 }
 
@@ -47,7 +55,15 @@ const AssetInventory: React.FC = () => {
     core_switches_count: 0,
     access_switches_count: 0,
     access_points_count: 0,
+    miscellaneous_network_devices_count: 0,
     total_network_devices_count: 0,
+    va_ip_punctual_count: 0,
+    va_subnet_25_count: 0,
+    va_subnet_24_count: 0,
+    va_subnet_23_count: 0,
+    va_subnet_22_count: 0,
+    va_subnet_21_count: 0,
+    va_total_ips_count: 0,
     notes: '',
   });
 
@@ -72,7 +88,8 @@ const AssetInventory: React.FC = () => {
       data.firewalls_count + 
       data.core_switches_count + 
       data.access_switches_count + 
-      data.access_points_count;
+      data.access_points_count +
+      data.miscellaneous_network_devices_count;
     
     if (total !== data.total_network_devices_count) {
       setData(prev => ({ ...prev, total_network_devices_count: total }));
@@ -82,6 +99,29 @@ const AssetInventory: React.FC = () => {
     data.core_switches_count,
     data.access_switches_count,
     data.access_points_count,
+    data.miscellaneous_network_devices_count,
+  ]);
+
+  useEffect(() => {
+    // Auto-calculate total IPs for VA
+    const totalIps = 
+      data.va_ip_punctual_count + 
+      (data.va_subnet_25_count * 126) + 
+      (data.va_subnet_24_count * 254) + 
+      (data.va_subnet_23_count * 510) + 
+      (data.va_subnet_22_count * 1022) + 
+      (data.va_subnet_21_count * 2046);
+    
+    if (totalIps !== data.va_total_ips_count) {
+      setData(prev => ({ ...prev, va_total_ips_count: totalIps }));
+    }
+  }, [
+    data.va_ip_punctual_count,
+    data.va_subnet_25_count,
+    data.va_subnet_24_count,
+    data.va_subnet_23_count,
+    data.va_subnet_22_count,
+    data.va_subnet_21_count,
   ]);
 
   const loadData = async () => {
@@ -117,7 +157,15 @@ const AssetInventory: React.FC = () => {
           core_switches_count: 0,
           access_switches_count: 0,
           access_points_count: 0,
+          miscellaneous_network_devices_count: 0,
           total_network_devices_count: 0,
+          va_ip_punctual_count: 0,
+          va_subnet_25_count: 0,
+          va_subnet_24_count: 0,
+          va_subnet_23_count: 0,
+          va_subnet_22_count: 0,
+          va_subnet_21_count: 0,
+          va_total_ips_count: 0,
           notes: '',
         });
       }
@@ -391,11 +439,104 @@ const AssetInventory: React.FC = () => {
                 />
               </div>
               <div className="space-y-2">
+                <Label htmlFor="miscellaneous_network_devices_count">Dispositivi di rete varie</Label>
+                <Input
+                  id="miscellaneous_network_devices_count"
+                  type="number"
+                  min="0"
+                  value={data.miscellaneous_network_devices_count}
+                  onChange={(e) => handleNumberChange('miscellaneous_network_devices_count', e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="total_network_devices_count">Dispositivi di rete totali</Label>
                 <Input
                   id="total_network_devices_count"
                   type="number"
                   value={data.total_network_devices_count}
+                  disabled
+                  className="bg-muted"
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* IP and Subnets for VA */}
+          <Card className="border-border bg-card lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="text-foreground flex items-center gap-2">
+                <Network className="w-5 h-5" />
+                IP puntuali o Subnet da scansionare per VA
+              </CardTitle>
+              <CardDescription>Configurazione degli indirizzi IP da scansionare</CardDescription>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="va_ip_punctual_count">IP Puntuali</Label>
+                <Input
+                  id="va_ip_punctual_count"
+                  type="number"
+                  min="0"
+                  value={data.va_ip_punctual_count}
+                  onChange={(e) => handleNumberChange('va_ip_punctual_count', e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="va_subnet_25_count">Quantità di subnet /25 (126 IP) da scansionare</Label>
+                <Input
+                  id="va_subnet_25_count"
+                  type="number"
+                  min="0"
+                  value={data.va_subnet_25_count}
+                  onChange={(e) => handleNumberChange('va_subnet_25_count', e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="va_subnet_24_count">Quantità di subnet /24 (254 IP) da scansionare</Label>
+                <Input
+                  id="va_subnet_24_count"
+                  type="number"
+                  min="0"
+                  value={data.va_subnet_24_count}
+                  onChange={(e) => handleNumberChange('va_subnet_24_count', e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="va_subnet_23_count">Quantità di subnet /23 (510 IP) da scansionare</Label>
+                <Input
+                  id="va_subnet_23_count"
+                  type="number"
+                  min="0"
+                  value={data.va_subnet_23_count}
+                  onChange={(e) => handleNumberChange('va_subnet_23_count', e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="va_subnet_22_count">Quantità di subnet /22 (1022 IP) da scansionare</Label>
+                <Input
+                  id="va_subnet_22_count"
+                  type="number"
+                  min="0"
+                  value={data.va_subnet_22_count}
+                  onChange={(e) => handleNumberChange('va_subnet_22_count', e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="va_subnet_21_count">Quantità di subnet /21 (2046 IP) da scansionare</Label>
+                <Input
+                  id="va_subnet_21_count"
+                  type="number"
+                  min="0"
+                  value={data.va_subnet_21_count}
+                  onChange={(e) => handleNumberChange('va_subnet_21_count', e.target.value)}
+                />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="va_total_ips_count">IP Totali (1000IP = 1 Collector VA)</Label>
+                <Input
+                  id="va_total_ips_count"
+                  type="number"
+                  value={data.va_total_ips_count}
                   disabled
                   className="bg-muted"
                 />
