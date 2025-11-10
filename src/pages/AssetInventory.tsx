@@ -8,7 +8,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { useUserRoles } from '@/hooks/useUserRoles';
 import { Server, Network, HardDrive, Users as UsersIcon, MapPin, Save } from 'lucide-react';
+import { ClientSelector } from '@/components/asset-inventory/ClientSelector';
 
 interface AssetInventoryData {
   id?: string;
@@ -30,8 +32,10 @@ interface AssetInventoryData {
 const AssetInventory: React.FC = () => {
   const { toast } = useToast();
   const { userProfile } = useAuth();
+  const { isSuperAdmin, isSales } = useUserRoles();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const [data, setData] = useState<AssetInventoryData>({
     users_count: 0,
     locations_count: 0,
@@ -48,8 +52,19 @@ const AssetInventory: React.FC = () => {
   });
 
   useEffect(() => {
-    loadData();
-  }, [userProfile]);
+    // For admin/sales, wait for org selection. For clients, use their org
+    if (isSuperAdmin || isSales) {
+      setLoading(false);
+    } else if (userProfile?.organization_id) {
+      setSelectedOrgId(userProfile.organization_id);
+    }
+  }, [userProfile, isSuperAdmin, isSales]);
+
+  useEffect(() => {
+    if (selectedOrgId) {
+      loadData();
+    }
+  }, [selectedOrgId]);
 
   useEffect(() => {
     // Auto-calculate total network devices
@@ -70,16 +85,17 @@ const AssetInventory: React.FC = () => {
   ]);
 
   const loadData = async () => {
-    if (!userProfile?.organization_id) {
+    if (!selectedOrgId) {
       setLoading(false);
       return;
     }
 
+    setLoading(true);
     try {
       const { data: existingData, error } = await supabase
         .from('asset_inventory')
         .select('*')
-        .eq('organization_id', userProfile.organization_id)
+        .eq('organization_id', selectedOrgId)
         .maybeSingle();
 
       if (error && error.code !== 'PGRST116') {
@@ -88,6 +104,22 @@ const AssetInventory: React.FC = () => {
 
       if (existingData) {
         setData(existingData);
+      } else {
+        // Reset form for new organization
+        setData({
+          users_count: 0,
+          locations_count: 0,
+          endpoints_count: 0,
+          servers_count: 0,
+          hypervisors_count: 0,
+          virtual_machines_count: 0,
+          firewalls_count: 0,
+          core_switches_count: 0,
+          access_switches_count: 0,
+          access_points_count: 0,
+          total_network_devices_count: 0,
+          notes: '',
+        });
       }
     } catch (error) {
       console.error('Error loading asset inventory:', error);
@@ -102,10 +134,10 @@ const AssetInventory: React.FC = () => {
   };
 
   const handleSave = async () => {
-    if (!userProfile?.organization_id) {
+    if (!selectedOrgId) {
       toast({
         title: "Errore",
-        description: "Organizzazione non trovata",
+        description: "Seleziona un cliente",
         variant: "destructive"
       });
       return;
@@ -115,7 +147,7 @@ const AssetInventory: React.FC = () => {
     try {
       const payload = {
         ...data,
-        organization_id: userProfile.organization_id,
+        organization_id: selectedOrgId,
       };
 
       if (data.id) {
@@ -161,15 +193,7 @@ const AssetInventory: React.FC = () => {
     setData(prev => ({ ...prev, [field]: numValue }));
   };
 
-  if (loading) {
-    return (
-      <DashboardLayout>
-        <div className="flex items-center justify-center h-64">
-          <p className="text-muted-foreground">Caricamento...</p>
-        </div>
-      </DashboardLayout>
-    );
-  }
+  const canManageClients = isSuperAdmin || isSales;
 
   return (
     <DashboardLayout>
@@ -181,9 +205,44 @@ const AssetInventory: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* General Info */}
+        {canManageClients && (
           <Card className="border-border bg-card">
+            <CardHeader>
+              <CardTitle className="text-foreground">Cliente</CardTitle>
+              <CardDescription>Seleziona o crea un nuovo cliente</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ClientSelector
+                selectedOrgId={selectedOrgId}
+                onOrgChange={setSelectedOrgId}
+                disabled={saving}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {!selectedOrgId && canManageClients && (
+          <Card className="border-border bg-card">
+            <CardContent className="py-8 text-center">
+              <p className="text-muted-foreground">
+                Seleziona un cliente per visualizzare e modificare l'inventario
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {selectedOrgId && (
+          <>
+            {loading ? (
+              <Card className="border-border bg-card">
+                <CardContent className="py-8 text-center">
+                  <p className="text-muted-foreground">Caricamento...</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* General Info */}
+                <Card className="border-border bg-card">
             <CardHeader>
               <CardTitle className="text-foreground flex items-center gap-2">
                 <UsersIcon className="w-5 h-5" />
@@ -377,7 +436,10 @@ const AssetInventory: React.FC = () => {
               </Button>
             </CardContent>
           </Card>
-        </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
     </DashboardLayout>
   );
