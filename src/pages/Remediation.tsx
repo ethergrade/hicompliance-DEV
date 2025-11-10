@@ -580,11 +580,23 @@ const Remediation: React.FC = () => {
       
       if (error) throw error;
 
-      // Aggiorna anche lo stato locale
+      // Aggiorna entrambi gli stati locali immediatamente per feedback UI istantaneo
       setTaskDates(prev => ({
         ...prev,
         [taskId]: { startDate, endDate }
       }));
+      
+      setAllTasksData(prev => {
+        const updated = { ...prev };
+        if (updated[taskId]) {
+          updated[taskId] = { 
+            ...updated[taskId], 
+            start_date: startDate, 
+            end_date: endDate 
+          };
+        }
+        return updated;
+      });
 
       toast({
         title: "Date aggiornate",
@@ -919,12 +931,38 @@ const Remediation: React.FC = () => {
         description: "Le modifiche sono state salvate con successo."
       });
 
-      // Aggiorna i budget locali immediatamente
+      // Aggiorna tutti gli stati locali immediatamente per feedback UI istantaneo
       const newBudget = Number(editTaskData.budget) || 0;
       setTaskBudgets(prev => ({
         ...prev,
         [editingTask]: newBudget
       }));
+
+      setTaskDates(prev => ({
+        ...prev,
+        [editingTask]: { 
+          startDate: editTaskData.startDate, 
+          endDate: editTaskData.endDate 
+        }
+      }));
+
+      setAllTasksData(prev => {
+        const updated = { ...prev };
+        if (updated[editingTask]) {
+          updated[editingTask] = {
+            ...updated[editingTask],
+            task: editTaskData.task,
+            category: editTaskData.category,
+            assignee: editTaskData.assignee,
+            priority: priorityMapping[editTaskData.priority] || 'medium',
+            progress: editTaskData.progress,
+            budget: newBudget,
+            start_date: editTaskData.startDate,
+            end_date: editTaskData.endDate,
+          };
+        }
+        return updated;
+      });
 
       setEditingTask(null);
       setEditTaskData(null);
