@@ -175,21 +175,15 @@ const DarkRisk360: React.FC = () => {
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-4">
-                      <div className="flex items-center space-x-3">
-                        <div className="text-2xl font-bold">
-                          <span className={getSeverityColor(threat.severity)}>
-                            {threat.count}
-                          </span>
-                        </div>
-                        <Badge variant={getSeverityBadge(threat.severity) as any}>
-                          {threat.severity}
-                        </Badge>
+                    <div className="flex items-center space-x-3">
+                      <div className="text-2xl font-bold">
+                        <span className={getSeverityColor(threat.severity)}>
+                          {threat.count}
+                        </span>
                       </div>
-                      <Button variant="outline" size="sm">
-                        <Eye className="w-4 h-4 mr-1" />
-                        Analizza
-                      </Button>
+                      <Badge variant={getSeverityBadge(threat.severity) as any}>
+                        {threat.severity}
+                      </Badge>
                     </div>
                   </div>
                 );
