@@ -107,16 +107,15 @@ const GanttBarComponent: React.FC<GanttBarProps> = ({
       <div className="flex-1 relative h-10 min-w-0">
         <div
           className={cn(
-            "absolute h-7 rounded transition-all duration-75 cursor-grab active:cursor-grabbing hover:shadow-lg hover:scale-[1.02]",
-            isBeingDragged && "opacity-80 shadow-xl scale-[1.01] cursor-grabbing"
+            "absolute h-7 rounded cursor-grab active:cursor-grabbing hover:shadow-lg",
+            isBeingDragged ? "opacity-80 shadow-xl cursor-grabbing" : "transition-all duration-75 hover:scale-[1.02]"
           )}
           style={{
             left: `${task.startOffset}%`,
             width: `${task.width}%`,
             backgroundColor: task.color || '#3b82f6',
             top: '50%',
-            transform: 'translateY(-50%)',
-            willChange: isBeingDragged ? 'transform, opacity' : 'auto'
+            transform: 'translateY(-50%)'
           }}
           onMouseDown={(e) => {
             e.preventDefault();

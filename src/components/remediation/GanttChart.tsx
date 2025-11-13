@@ -46,10 +46,9 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 }) => {
   const timelineContainerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const tempDatesRef = useRef<{ taskId: number; startDate: string; endDate: string } | null>(null);
+  const [tempDates, setTempDates] = useState<{ taskId: number; startDate: string; endDate: string } | null>(null);
   const [draggedTaskId, setDraggedTaskId] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const [visualUpdate, setVisualUpdate] = useState(0); // Force re-render for visual feedback
   
   const { resizingTask, startResize, handleMouseMove, stopResize } = useGanttResize({
     onDateChange,
@@ -81,6 +80,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 
     console.log('✅ useEffect: resizingTask attivo', resizingTask);
     let rafId: number | null = null;
+    let latestDates: typeof tempDates = null;
     
     const handleMove = (e: MouseEvent) => {
       e.preventDefault();
@@ -102,15 +102,15 @@ export const GanttChart: React.FC<GanttChartProps> = ({
         
         if (newDates) {
           console.log('🔄 Aggiornamento date temporanee:', newDates);
-          tempDatesRef.current = newDates;
-          setVisualUpdate(prev => prev + 1);
+          latestDates = newDates;
+          setTempDates(newDates);
         }
         rafId = null;
       });
     };
 
     const handleUp = (e: MouseEvent) => {
-      console.log('🛑 handleUp chiamato');
+      console.log('🛑 handleUp chiamato', latestDates);
       e.preventDefault();
       
       if (rafId !== null) {
@@ -118,12 +118,11 @@ export const GanttChart: React.FC<GanttChartProps> = ({
         rafId = null;
       }
       
-      if (tempDatesRef.current) {
-        console.log('💾 Salvataggio date finali:', tempDatesRef.current);
-        stopResize(tempDatesRef.current);
+      if (latestDates) {
+        console.log('💾 Salvataggio date finali:', latestDates);
+        stopResize(latestDates);
       }
-      tempDatesRef.current = null;
-      setVisualUpdate(prev => prev + 1);
+      setTempDates(null);
     };
 
     console.log('🎧 Aggiungo listener per mousemove e mouseup');
@@ -142,8 +141,8 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 
   // Optimized task date calculation
   const getTaskWithUpdatedDates = useCallback((task: GanttTask) => {
-    const dates = tempDatesRef.current?.taskId === task.id 
-      ? tempDatesRef.current 
+    const dates = tempDates?.taskId === task.id 
+      ? tempDates 
       : { startDate: task.startDate, endDate: task.endDate };
     const totalDays = differenceInDays(ganttEndDate, ganttStartDate);
     const taskStart = new Date(dates.startDate);
@@ -159,7 +158,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
       width: (duration / totalDays) * 100,
       duration
     };
-  }, [ganttStartDate, ganttEndDate, visualUpdate]);
+  }, [tempDates, ganttStartDate, ganttEndDate]);
 
   const handleDragStart = (taskId: number) => {
     setDraggedTaskId(taskId);
