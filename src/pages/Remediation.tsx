@@ -1068,6 +1068,57 @@ const Remediation: React.FC = () => {
 
   const ganttData = getGanttData();
 
+  const handleReorderTasks = async (taskId: number, newIndex: number) => {
+    try {
+      const currentIndex = taskOrder.indexOf(taskId);
+      if (currentIndex === -1) return;
+
+      const newOrder = [...taskOrder];
+      newOrder.splice(currentIndex, 1);
+      newOrder.splice(newIndex, 0, taskId);
+      
+      setTaskOrder(newOrder);
+
+      // Salva l'ordine nel database
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      if (!userData?.organization_id) return;
+
+      // Aggiorna display_order per tutti i task nell'ordine corretto
+      const updates = newOrder.map((id, idx) => ({
+        id: allTasksData[id]?.id || id,
+        display_order: idx
+      }));
+
+      for (const update of updates) {
+        await supabase
+          .from('remediation_tasks')
+          .update({ display_order: update.display_order })
+          .eq('id', update.id)
+          .eq('organization_id', userData.organization_id);
+      }
+
+      toast({
+        title: "Ordine aggiornato",
+        description: "L'ordine delle attività è stato salvato.",
+      });
+    } catch (error) {
+      console.error('Errore nel riordinamento:', error);
+      toast({
+        title: "Errore",
+        description: "Impossibile salvare l'ordine delle attività.",
+        variant: "destructive"
+      });
+    }
+  };
+
   // Calcola il budget totale sommando tutti i budget delle attività attive
   const totalBudget = ganttData
     .filter(action => !action.isHidden)
@@ -1685,6 +1736,7 @@ const Remediation: React.FC = () => {
               onEditTask={(task) => handleEditTask(task)}
               onToggleVisibility={(taskId) => handleToggleVisibility(taskId)}
               onDeleteTask={(taskId) => handleDeleteTask(taskId)}
+              onReorderTasks={handleReorderTasks}
             />
           </TabsContent>
 

@@ -4,6 +4,7 @@ import { GanttBar } from './GanttBar';
 import { useGanttResize } from '@/hooks/useGanttResize';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Calendar } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface GanttTask {
   id: number;
@@ -29,6 +30,7 @@ interface GanttChartProps {
   onEditTask: (task: GanttTask) => void;
   onToggleVisibility: (taskId: number) => void;
   onDeleteTask: (taskId: number) => void;
+  onReorderTasks: (taskId: number, newIndex: number) => void;
 }
 
 export const GanttChart: React.FC<GanttChartProps> = ({
@@ -38,10 +40,13 @@ export const GanttChart: React.FC<GanttChartProps> = ({
   onDateChange,
   onEditTask,
   onToggleVisibility,
-  onDeleteTask
+  onDeleteTask,
+  onReorderTasks
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [tempDates, setTempDates] = useState<{ taskId: number; startDate: string; endDate: string } | null>(null);
+  const [draggedTaskId, setDraggedTaskId] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   
   const { resizingTask, startResize, handleMouseMove, stopResize } = useGanttResize({
     onDateChange,
@@ -128,6 +133,27 @@ export const GanttChart: React.FC<GanttChartProps> = ({
     };
   }, [tempDates, ganttStartDate, ganttEndDate]);
 
+  const handleDragStart = (taskId: number) => {
+    setDraggedTaskId(taskId);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    setDragOverIndex(index);
+  };
+
+  const handleDragEnd = () => {
+    if (draggedTaskId !== null && dragOverIndex !== null) {
+      onReorderTasks(draggedTaskId, dragOverIndex);
+    }
+    setDraggedTaskId(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -157,19 +183,33 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 
           {/* Task Bars */}
           <div>
-            {tasks.map((task) => {
-              const updatedTask = getTaskWithUpdatedDates(task);
+            {tasks.map((task, index) => {
+              const processedTask = getTaskWithUpdatedDates(task);
+              const isDragging = draggedTaskId === task.id;
+              const isDropTarget = dragOverIndex === index;
               
               return (
-                <GanttBar
+                <div
                   key={task.id}
-                  task={updatedTask}
-                  isBeingDragged={resizingTask?.id === task.id}
-                  onResizeStart={(e, side) => startResize(e, task.id, side, task.startDate, task.endDate)}
-                  onEdit={() => onEditTask(task)}
-                  onToggleVisibility={() => onToggleVisibility(task.id)}
-                  onDelete={() => onDeleteTask(task.id)}
-                />
+                  className={cn(
+                    "relative transition-all",
+                    isDropTarget && "border-t-2 border-primary"
+                  )}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDragLeave={handleDragLeave}
+                >
+                  <GanttBar
+                    task={processedTask}
+                    isBeingDragged={resizingTask?.id === task.id}
+                    isDraggingVertically={isDragging}
+                    onResizeStart={(e, side) => startResize(e, task.id, side, task.startDate, task.endDate)}
+                    onEdit={() => onEditTask(processedTask)}
+                    onToggleVisibility={() => onToggleVisibility(task.id)}
+                    onDelete={() => onDeleteTask(task.id)}
+                    onDragStart={() => handleDragStart(task.id)}
+                    onDragEnd={handleDragEnd}
+                  />
+                </div>
               );
             })}
           </div>
