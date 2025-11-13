@@ -20,24 +20,41 @@ interface GanttBarProps {
     duration: number;
   };
   isBeingDragged: boolean;
+  isDraggingVertically?: boolean;
   onResizeStart: (e: React.MouseEvent, side: 'left' | 'right' | 'middle') => void;
   onEdit: () => void;
   onToggleVisibility: () => void;
   onDelete: () => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
 }
 
 const GanttBarComponent: React.FC<GanttBarProps> = ({
   task,
   isBeingDragged,
+  isDraggingVertically,
   onResizeStart,
   onEdit,
   onToggleVisibility,
-  onDelete
+  onDelete,
+  onDragStart,
+  onDragEnd
 }) => {
   return (
-    <div className="flex items-center min-h-[48px] border-b border-border/50 hover:bg-muted/30 group">
+    <div className={cn(
+      "flex items-center min-h-[48px] border-b border-border/50 hover:bg-muted/30 group transition-opacity",
+      isDraggingVertically && "opacity-50"
+    )}>
       {/* Task Info - Width increased for better readability */}
-      <div className="w-80 px-3 py-2 flex items-center justify-between shrink-0">
+      <div 
+        className="w-80 px-3 py-2 flex items-center justify-between shrink-0 cursor-move"
+        draggable
+        onDragStart={(e) => {
+          e.stopPropagation();
+          onDragStart();
+        }}
+        onDragEnd={onDragEnd}
+      >
         <div className="flex-1 min-w-0 mr-2">
           <p className={cn(
             "text-sm font-medium leading-tight mb-0.5",
