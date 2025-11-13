@@ -107,15 +107,16 @@ const GanttBarComponent: React.FC<GanttBarProps> = ({
       <div className="flex-1 relative h-10 min-w-0">
         <div
           className={cn(
-            "absolute h-7 rounded cursor-move transition-opacity will-change-transform",
-            isBeingDragged && "opacity-70 scale-[0.98]"
+            "absolute h-7 rounded transition-all duration-75 cursor-grab active:cursor-grabbing hover:shadow-lg hover:scale-[1.02]",
+            isBeingDragged && "opacity-80 shadow-xl scale-[1.01] cursor-grabbing"
           )}
           style={{
             left: `${task.startOffset}%`,
             width: `${task.width}%`,
             backgroundColor: task.color || '#3b82f6',
             top: '50%',
-            transform: 'translateY(-50%)'
+            transform: 'translateY(-50%)',
+            willChange: isBeingDragged ? 'transform, opacity' : 'auto'
           }}
           onMouseDown={(e) => {
             e.preventDefault();
@@ -130,7 +131,7 @@ const GanttBarComponent: React.FC<GanttBarProps> = ({
 
           {/* Left Resize Handle */}
           <div
-            className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-white/40 rounded-l opacity-0 group-hover:opacity-100 transition-opacity"
+            className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/50 rounded-l opacity-0 group-hover:opacity-100 transition-all active:bg-white/60"
             onMouseDown={(e) => {
               e.stopPropagation();
               e.preventDefault();
@@ -140,7 +141,7 @@ const GanttBarComponent: React.FC<GanttBarProps> = ({
           
           {/* Right Resize Handle */}
           <div
-            className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-white/40 rounded-r opacity-0 group-hover:opacity-100 transition-opacity"
+            className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/50 rounded-r opacity-0 group-hover:opacity-100 transition-all active:bg-white/60"
             onMouseDown={(e) => {
               e.stopPropagation();
               e.preventDefault();

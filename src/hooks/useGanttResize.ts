@@ -17,7 +17,6 @@ interface ResizingTask {
 
 export const useGanttResize = ({ onDateChange, ganttStartDate, ganttEndDate }: UseGanttResizeProps) => {
   const [resizingTask, setResizingTask] = useState<ResizingTask | null>(null);
-  const lastProcessedX = useRef<number>(0);
 
   const startResize = useCallback((
     e: React.MouseEvent,
@@ -28,8 +27,6 @@ export const useGanttResize = ({ onDateChange, ganttStartDate, ganttEndDate }: U
   ) => {
     e.preventDefault();
     e.stopPropagation();
-    
-    lastProcessedX.current = e.clientX;
     
     setResizingTask({
       id: taskId,
@@ -43,18 +40,9 @@ export const useGanttResize = ({ onDateChange, ganttStartDate, ganttEndDate }: U
   const handleMouseMove = useCallback((e: MouseEvent, containerWidth: number) => {
     if (!resizingTask) return null;
 
-    // Skip if mouse hasn't moved enough (reduces calculations)
-    const deltaFromLast = Math.abs(e.clientX - lastProcessedX.current);
-    if (deltaFromLast < 3) return null;
-    
-    lastProcessedX.current = e.clientX;
-
     const deltaX = e.clientX - resizingTask.initialX;
     const totalDays = differenceInDays(ganttEndDate, ganttStartDate);
     const daysMoved = Math.round((deltaX / containerWidth) * totalDays);
-
-    // Early exit if no movement
-    if (daysMoved === 0) return null;
 
     const currentStartDate = parseISO(resizingTask.initialStartDate);
     const currentEndDate = parseISO(resizingTask.initialEndDate);
@@ -83,20 +71,14 @@ export const useGanttResize = ({ onDateChange, ganttStartDate, ganttEndDate }: U
       }
     }
 
-    // Only return if dates actually changed
-    if (newStartDate === resizingTask.initialStartDate && newEndDate === resizingTask.initialEndDate) {
-      return null;
-    }
-
     return { taskId: resizingTask.id, startDate: newStartDate, endDate: newEndDate };
   }, [resizingTask, ganttStartDate, ganttEndDate]);
 
-  const stopResize = useCallback((finalDates: { startDate: string; endDate: string } | null) => {
+  const stopResize = useCallback((finalDates: { startDate: string; endDate: string; taskId: number } | null) => {
     if (resizingTask && finalDates) {
-      onDateChange(resizingTask.id, finalDates.startDate, finalDates.endDate);
+      onDateChange(finalDates.taskId, finalDates.startDate, finalDates.endDate);
     }
     setResizingTask(null);
-    lastProcessedX.current = 0;
   }, [resizingTask, onDateChange]);
 
   return {
