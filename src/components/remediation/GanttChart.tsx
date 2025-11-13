@@ -71,14 +71,16 @@ export const GanttChart: React.FC<GanttChartProps> = ({
     return result;
   }, [ganttStartDate, ganttEndDate]);
 
-  // Throttled mouse move handler
+  // Optimized mouse move handler with RAF
   useEffect(() => {
     if (!resizingTask) return;
 
     let rafId: number | null = null;
     
     const handleMove = (e: MouseEvent) => {
-      if (rafId) return; // Skip if already processing
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
       
       rafId = requestAnimationFrame(() => {
         if (!containerRef.current) {
@@ -97,18 +99,19 @@ export const GanttChart: React.FC<GanttChartProps> = ({
     };
 
     const handleUp = () => {
-      if (rafId) {
+      if (rafId !== null) {
         cancelAnimationFrame(rafId);
+        rafId = null;
       }
       stopResize(tempDates);
       setTempDates(null);
     };
 
-    document.addEventListener('mousemove', handleMove, { passive: true });
+    document.addEventListener('mousemove', handleMove);
     document.addEventListener('mouseup', handleUp);
 
     return () => {
-      if (rafId) {
+      if (rafId !== null) {
         cancelAnimationFrame(rafId);
       }
       document.removeEventListener('mousemove', handleMove);
