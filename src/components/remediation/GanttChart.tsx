@@ -44,11 +44,12 @@ export const GanttChart: React.FC<GanttChartProps> = ({
   onDeleteTask,
   onReorderTasks
 }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const timelineContainerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [tempDates, setTempDates] = useState<{ taskId: number; startDate: string; endDate: string } | null>(null);
+  const tempDatesRef = useRef<{ taskId: number; startDate: string; endDate: string } | null>(null);
   const [draggedTaskId, setDraggedTaskId] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [visualUpdate, setVisualUpdate] = useState(0); // Force re-render for visual feedback
   
   const { resizingTask, startResize, handleMouseMove, stopResize } = useGanttResize({
     onDateChange,
@@ -78,33 +79,42 @@ export const GanttChart: React.FC<GanttChartProps> = ({
     let rafId: number | null = null;
     
     const handleMove = (e: MouseEvent) => {
+      e.preventDefault();
+      
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
       }
       
       rafId = requestAnimationFrame(() => {
-        if (!containerRef.current) {
+        if (!timelineContainerRef.current) {
           rafId = null;
           return;
         }
         
-        const containerWidth = containerRef.current.offsetWidth;
+        const containerWidth = timelineContainerRef.current.offsetWidth;
         const newDates = handleMouseMove(e, containerWidth);
         
         if (newDates) {
-          setTempDates(newDates);
+          tempDatesRef.current = newDates;
+          setVisualUpdate(prev => prev + 1); // Force re-render for visual feedback
         }
         rafId = null;
       });
     };
 
-    const handleUp = () => {
+    const handleUp = (e: MouseEvent) => {
+      e.preventDefault();
+      
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
         rafId = null;
       }
-      stopResize(tempDates);
-      setTempDates(null);
+      
+      if (tempDatesRef.current) {
+        stopResize(tempDatesRef.current);
+      }
+      tempDatesRef.current = null;
+      setVisualUpdate(prev => prev + 1);
     };
 
     document.addEventListener('mousemove', handleMove);
@@ -117,11 +127,13 @@ export const GanttChart: React.FC<GanttChartProps> = ({
       document.removeEventListener('mousemove', handleMove);
       document.removeEventListener('mouseup', handleUp);
     };
-  }, [resizingTask, handleMouseMove, stopResize, tempDates]);
+  }, [resizingTask, handleMouseMove, stopResize]);
 
   // Optimized task date calculation
   const getTaskWithUpdatedDates = useCallback((task: GanttTask) => {
-    const dates = tempDates?.taskId === task.id ? tempDates : { startDate: task.startDate, endDate: task.endDate };
+    const dates = tempDatesRef.current?.taskId === task.id 
+      ? tempDatesRef.current 
+      : { startDate: task.startDate, endDate: task.endDate };
     const totalDays = differenceInDays(ganttEndDate, ganttStartDate);
     const taskStart = new Date(dates.startDate);
     const taskEnd = new Date(dates.endDate);
@@ -136,7 +148,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
       width: (duration / totalDays) * 100,
       duration
     };
-  }, [tempDates, ganttStartDate, ganttEndDate]);
+  }, [ganttStartDate, ganttEndDate, visualUpdate]);
 
   const handleDragStart = (taskId: number) => {
     setDraggedTaskId(taskId);
@@ -212,7 +224,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
             <div className="w-80 px-4 py-2.5 font-medium text-sm shrink-0 bg-muted/50">
               Attività
             </div>
-            <div className="flex-1 flex min-w-0" ref={containerRef}>
+            <div className="flex-1 flex min-w-0" ref={timelineContainerRef}>
               {weeks.map((week, index) => (
                 <div
                   key={index}
