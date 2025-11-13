@@ -25,6 +25,7 @@ export const useGanttResize = ({ onDateChange, ganttStartDate, ganttEndDate }: U
     startDate: string,
     endDate: string
   ) => {
+    console.log('🎯 startResize chiamato', { taskId, side, clientX: e.clientX, startDate, endDate });
     e.preventDefault();
     e.stopPropagation();
     
@@ -43,6 +44,14 @@ export const useGanttResize = ({ onDateChange, ganttStartDate, ganttEndDate }: U
     const deltaX = e.clientX - resizingTask.initialX;
     const totalDays = differenceInDays(ganttEndDate, ganttStartDate);
     const daysMoved = Math.round((deltaX / containerWidth) * totalDays);
+
+    console.log('📍 handleMouseMove', { 
+      deltaX, 
+      containerWidth, 
+      daysMoved, 
+      clientX: e.clientX,
+      initialX: resizingTask.initialX 
+    });
 
     const currentStartDate = parseISO(resizingTask.initialStartDate);
     const currentEndDate = parseISO(resizingTask.initialEndDate);
@@ -71,6 +80,7 @@ export const useGanttResize = ({ onDateChange, ganttStartDate, ganttEndDate }: U
       }
     }
 
+    console.log('📅 Date calcolate', { newStartDate, newEndDate, taskId: resizingTask.id });
     return { taskId: resizingTask.id, startDate: newStartDate, endDate: newEndDate };
   }, [resizingTask, ganttStartDate, ganttEndDate]);
 

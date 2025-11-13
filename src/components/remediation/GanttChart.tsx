@@ -74,8 +74,12 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 
   // Optimized mouse move handler with RAF
   useEffect(() => {
-    if (!resizingTask) return;
+    if (!resizingTask) {
+      console.log('⚠️ useEffect: nessun resizingTask attivo');
+      return;
+    }
 
+    console.log('✅ useEffect: resizingTask attivo', resizingTask);
     let rafId: number | null = null;
     
     const handleMove = (e: MouseEvent) => {
@@ -87,22 +91,26 @@ export const GanttChart: React.FC<GanttChartProps> = ({
       
       rafId = requestAnimationFrame(() => {
         if (!timelineContainerRef.current) {
+          console.error('❌ timelineContainerRef.current è null');
           rafId = null;
           return;
         }
         
         const containerWidth = timelineContainerRef.current.offsetWidth;
+        console.log('📏 Container width:', containerWidth);
         const newDates = handleMouseMove(e, containerWidth);
         
         if (newDates) {
+          console.log('🔄 Aggiornamento date temporanee:', newDates);
           tempDatesRef.current = newDates;
-          setVisualUpdate(prev => prev + 1); // Force re-render for visual feedback
+          setVisualUpdate(prev => prev + 1);
         }
         rafId = null;
       });
     };
 
     const handleUp = (e: MouseEvent) => {
+      console.log('🛑 handleUp chiamato');
       e.preventDefault();
       
       if (rafId !== null) {
@@ -111,16 +119,19 @@ export const GanttChart: React.FC<GanttChartProps> = ({
       }
       
       if (tempDatesRef.current) {
+        console.log('💾 Salvataggio date finali:', tempDatesRef.current);
         stopResize(tempDatesRef.current);
       }
       tempDatesRef.current = null;
       setVisualUpdate(prev => prev + 1);
     };
 
+    console.log('🎧 Aggiungo listener per mousemove e mouseup');
     document.addEventListener('mousemove', handleMove);
     document.addEventListener('mouseup', handleUp);
 
     return () => {
+      console.log('🗑️ Rimuovo listener per mousemove e mouseup');
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
       }
