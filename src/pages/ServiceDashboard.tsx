@@ -2,6 +2,7 @@ import React from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { HiPatchDashboard } from '@/components/service-dashboards/HiPatchDashboard';
+import { HiFirewallDashboard } from '@/components/service-dashboards/HiFirewallDashboard';
 import { 
   Breadcrumb, 
   BreadcrumbItem, 
@@ -29,6 +30,8 @@ const ServiceDashboard: React.FC = () => {
     switch (serviceCode) {
       case 'hi_patch':
         return <HiPatchDashboard />;
+      case 'hi_firewall':
+        return <HiFirewallDashboard />;
       default:
         return (
           <div className="text-center py-12">
