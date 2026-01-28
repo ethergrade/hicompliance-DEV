@@ -329,27 +329,24 @@ const Dashboard: React.FC = () => {
             <div className="border-t border-border pt-6">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <div className="text-center p-4">
+                  <div className="text-2xl font-bold text-primary mb-1">
+                    8
+                  </div>
+                  <div className="text-sm text-muted-foreground">Servizi Connessi</div>
+                </div>
+                
+                <div className="text-center p-4">
                   <div className="text-2xl font-bold text-red-500 mb-1">
-                    {servicesWithCriticalHealth.length + servicesWithWarningHealth.length || 6}
+                    6
                   </div>
                   <div className="text-sm text-muted-foreground">Servizi in Allerta</div>
                 </div>
                 
                 <div className="text-center p-4">
                   <div className="text-2xl font-bold text-green-500 mb-1">
-                    {servicesWithGoodHealth.length || 2}
+                    8
                   </div>
                   <div className="text-sm text-muted-foreground">Servizi Operativi</div>
-                </div>
-                
-                <div className="text-center p-4">
-                  <div className="text-2xl font-bold text-yellow-500 mb-1">
-                    {hiSolutionServices.length > 0 ? Math.round(
-                      hiSolutionServices.reduce((acc, s) => acc + (s.health_score || 0), 0) / 
-                      hiSolutionServices.length
-                    ) : 76}%
-                  </div>
-                  <div className="text-sm text-muted-foreground">Punteggio Medio</div>
                 </div>
                 
                 <div className="text-center p-4">
@@ -366,9 +363,7 @@ const Dashboard: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* Additional Components */}
-        <ServiceStatusCard services={services} />
-        <HiSolutionStatusGrid services={services} />
+        {/* HiSolutionStatusGrid hidden - not used */}
       </div>
     </DashboardLayout>
   );
