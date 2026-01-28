@@ -44,11 +44,8 @@ const Dashboard: React.FC = () => {
           { id: '3', status: 'maintenance', health_score: 75, services: { name: 'HiMail', code: 'hi_mail' } },
           { id: '4', status: 'alert', health_score: 10, services: { name: 'HiLog', code: 'hi_log' } },
           { id: '5', status: 'maintenance', health_score: 65, services: { name: 'HiPatch', code: 'hi_patch' } },
-          { id: '6', status: 'active', health_score: 95, services: { name: 'HiMfa', code: 'hi_mfa' } },
-          { id: '7', status: 'active', health_score: 90, services: { name: 'HiTrack', code: 'hi_track' } },
-          { id: '8', status: 'maintenance', health_score: 70, services: { name: 'Cloud Security', code: 'cloud_security' } },
-          { id: '9', status: 'active', health_score: 88, services: { name: 'Endpoint Security', code: 'endpoint_security' } },
-          { id: '10', status: 'alert', health_score: 60, services: { name: 'Email Security', code: 'email_security' } }
+          { id: '6', status: 'active', health_score: 90, services: { name: 'HiTrack', code: 'hi_track' } },
+          { id: '7', status: 'active', health_score: 92, services: { name: 'HiDetect', code: 'hi_detect' } },
         ];
         setServices(mockServices);
       }
@@ -176,11 +173,8 @@ const Dashboard: React.FC = () => {
                     case 'hi_mail': return <Mail className="w-4 h-4" />;
                     case 'hi_log': return <FileText className="w-4 h-4" />;
                     case 'hi_patch': return <Download className="w-4 h-4" />;
-                    case 'hi_mfa': return <Lock className="w-4 h-4" />;
                     case 'hi_track': return <BarChart3 className="w-4 h-4" />;
-                    case 'cloud_security': return <Cloud className="w-4 h-4" />;
-                    case 'endpoint_security': return <Monitor className="w-4 h-4" />;
-                    case 'email_security': return <AtSign className="w-4 h-4" />;
+                    case 'hi_detect': return <Monitor className="w-4 h-4" />;
                     default: return <Shield className="w-4 h-4" />;
                   }
                 };
@@ -272,8 +266,8 @@ const Dashboard: React.FC = () => {
                   { name: 'HiMail', code: 'hi_mail', status: 'maintenance', issues: 2, resolved: 98 },
                   { name: 'HiLog', code: 'hi_log', status: 'alert', issues: 9, resolved: 54 },
                   { name: 'HiPatch', code: 'hi_patch', status: 'maintenance', issues: 2, resolved: 78 },
-                  { name: 'HiMfa', code: 'hi_mfa', status: 'active', issues: 0, resolved: 145 },
-                  { name: 'HiTrack', code: 'hi_track', status: 'active', issues: 0, resolved: 89 }
+                  { name: 'HiTrack', code: 'hi_track', status: 'active', issues: 0, resolved: 89 },
+                  { name: 'HiDetect', code: 'hi_detect', status: 'active', issues: 0, resolved: 127 }
                 ].map((service, index) => (
                   <div 
                     key={index} 
@@ -378,8 +372,8 @@ const Dashboard: React.FC = () => {
       hi_mail: 98,
       hi_log: 54,
       hi_patch: 78,
-      hi_mfa: 145,
       hi_track: 89,
+      hi_detect: 127,
     };
     return resolvedMap[code] || 0;
   }
