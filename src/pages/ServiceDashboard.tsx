@@ -5,6 +5,7 @@ import { HiPatchDashboard } from '@/components/service-dashboards/HiPatchDashboa
 import { HiFirewallDashboard } from '@/components/service-dashboards/HiFirewallDashboard';
 import { HiEndpointDashboard } from '@/components/service-dashboards/HiEndpointDashboard';
 import { HiMailDashboard } from '@/components/service-dashboards/HiMailDashboard';
+import { HiLogDashboard } from '@/components/service-dashboards/HiLogDashboard';
 import { 
   Breadcrumb, 
   BreadcrumbItem, 
@@ -38,6 +39,8 @@ const ServiceDashboard: React.FC = () => {
         return <HiEndpointDashboard />;
       case 'hi_mail':
         return <HiMailDashboard />;
+      case 'hi_log':
+        return <HiLogDashboard />;
       default:
         return (
           <div className="text-center py-12">
