@@ -56,43 +56,55 @@ const Dashboard: React.FC = () => {
   }, [userProfile]);
 
   // Calculate real metrics from services
-  const alertServices = services.filter(s => s.status === 'alert');
-  const activeServices = services.filter(s => s.status === 'active');
-  const maintenanceServices = services.filter(s => s.status === 'maintenance');
   // Services to exclude from display
   const excludedServices = ['hi_mfa', 'hi_cloud_optix', 'hi_phish_threat', 'hi_ztna'];
   const hiSolutionServices = services.filter(s => 
     s.services?.code?.startsWith('hi_') && !excludedServices.includes(s.services?.code)
   );
-  const totalIssues = alertServices.reduce((acc, service) => {
-    const issues = service.health_score ? Math.floor((100 - service.health_score) / 10) : 5;
-    return acc + issues;
+  
+  // Calculate metrics based on health score (not status)
+  // Health Score >= 80: Green (OK/Operational)
+  // Health Score >= 50 and < 80: Yellow (Warning)
+  // Health Score < 50: Red (Critical/Alert)
+  const servicesWithCriticalHealth = hiSolutionServices.filter(s => (s.health_score || 0) < 50);
+  const servicesWithWarningHealth = hiSolutionServices.filter(s => (s.health_score || 0) >= 50 && (s.health_score || 0) < 80);
+  const servicesWithGoodHealth = hiSolutionServices.filter(s => (s.health_score || 0) >= 80);
+  
+  // Total issues calculated from services with health < 80
+  const totalIssues = hiSolutionServices.reduce((acc, service) => {
+    const healthScore = service.health_score || 0;
+    if (healthScore < 80) {
+      // Calculate issues: lower health = more issues
+      const issues = Math.ceil((100 - healthScore) / 20);
+      return acc + issues;
+    }
+    return acc;
   }, 0);
 
   // Fallback data when no services loaded
   const fallbackData = {
     alertCount: 4,
-    activeCount: 3,
-    maintenanceCount: 3,
-    avgScore: 68,
+    activeCount: 2,
+    warningCount: 2,
+    avgScore: 47,
     totalIssues: 22
   };
 
   const mockData = {
-    nis2Compliance: alertServices.length > 3 ? 35 : 65,
+    nis2Compliance: servicesWithCriticalHealth.length > 3 ? 35 : 65,
     riskIndicator: 51,
     totalAssets: services.length || 8,
     activeThreats: totalIssues || fallbackData.totalIssues
   };
 
-  // Prepare chart data
+  // Prepare chart data based on health score thresholds
   const chartData = [
-    { name: 'Attivi', value: activeServices.length || fallbackData.activeCount, color: '#10b981' },
-    { name: 'Allerta', value: alertServices.length || fallbackData.alertCount, color: '#ef4444' },
-    { name: 'Manutenzione', value: maintenanceServices.length || fallbackData.maintenanceCount, color: '#f59e0b' }
+    { name: 'Operativi', value: servicesWithGoodHealth.length || fallbackData.activeCount, color: '#10b981' },
+    { name: 'Attenzione', value: servicesWithWarningHealth.length || fallbackData.warningCount, color: '#f59e0b' },
+    { name: 'Critici', value: servicesWithCriticalHealth.length || fallbackData.alertCount, color: '#ef4444' }
   ];
 
-  const COLORS = ['#10b981', '#ef4444', '#f59e0b'];
+  const COLORS = ['#10b981', '#f59e0b', '#ef4444'];
 
   return (
     <DashboardLayout>
@@ -123,7 +135,7 @@ const Dashboard: React.FC = () => {
           />
           <MetricCard
             title="Risk Score"
-            value={alertServices.length > 3 ? "Alto" : "Medio"}
+            value={servicesWithCriticalHealth.length > 3 ? "Alto" : servicesWithCriticalHealth.length > 1 ? "Medio" : "Basso"}
             percentage={mockData.riskIndicator}
             status="critical"
             description="Livello di rischio"
@@ -210,24 +222,20 @@ const Dashboard: React.FC = () => {
                   >
                     <div className="flex items-center justify-between mb-4">
                       <div className={`p-2 rounded-lg flex items-center justify-center ${
-                        status === 'alert' ? 'bg-red-500/10' : status === 'maintenance' ? 'bg-yellow-500/10' : 'bg-green-500/10'
+                        healthScore < 50 ? 'bg-red-500/10' : healthScore < 80 ? 'bg-yellow-500/10' : 'bg-green-500/10'
                       }`}>
                         <div className={`w-3 h-3 rounded-full ${
-                          status === 'alert' ? 'bg-red-500' : status === 'maintenance' ? 'bg-yellow-500' : 'bg-green-500'
+                          healthScore < 50 ? 'bg-red-500' : healthScore < 80 ? 'bg-yellow-500' : 'bg-green-500'
                         }`} />
                       </div>
                       <div className="text-right">
-                        {status === 'alert' ? (
-                          <div className="text-xl font-bold text-red-500">
-                            {issueCount}
-                          </div>
-                        ) : status === 'maintenance' ? (
-                          <div className="text-xl font-bold text-yellow-500">
-                            {Math.floor((100 - (orgService.health_score || 75)) / 15)}
-                          </div>
-                        ) : (
+                        {healthScore >= 80 ? (
                           <div className="text-sm text-green-500 font-semibold">
                             OK
+                          </div>
+                        ) : (
+                          <div className={`text-xl font-bold ${healthScore < 50 ? 'text-red-500' : 'text-yellow-500'}`}>
+                            {Math.ceil((100 - healthScore) / 20)}
                           </div>
                         )}
                       </div>
@@ -265,68 +273,71 @@ const Dashboard: React.FC = () => {
                 );
               }) : (
                 [
-                  { name: 'HiFirewall', code: 'hi_firewall', status: 'alert', issues: 8, resolved: 124 },
-                  { name: 'HiEndpoint', code: 'hi_endpoint', status: 'alert', issues: 3, resolved: 54 },
-                  { name: 'HiMail', code: 'hi_mail', status: 'maintenance', issues: 2, resolved: 98 },
-                  { name: 'HiLog', code: 'hi_log', status: 'alert', issues: 9, resolved: 54 },
-                  { name: 'HiPatch', code: 'hi_patch', status: 'maintenance', issues: 2, resolved: 78 },
-                  { name: 'HiTrack', code: 'hi_track', status: 'active', issues: 0, resolved: 89 },
-                  { name: 'HiDetect', code: 'hi_detect', status: 'active', issues: 0, resolved: 127 }
-                ].map((service, index) => (
-                  <div 
-                    key={index} 
-                    className="flex flex-col p-4 rounded-xl border border-border bg-card hover:bg-muted/30 transition-all duration-200 hover:shadow-lg cursor-pointer"
-                    onClick={() => navigate(`/dashboard/service/${service.code}`)}
-                  >
-                    <div className="flex items-center justify-between mb-4">
-                      <div className={`p-2 rounded-lg flex items-center justify-center ${
-                        service.status === 'alert' ? 'bg-red-500/10' : service.status === 'maintenance' ? 'bg-yellow-500/10' : 'bg-green-500/10'
-                      }`}>
-                        <div className={`w-3 h-3 rounded-full ${
-                          service.status === 'alert' ? 'bg-red-500' : service.status === 'maintenance' ? 'bg-yellow-500' : 'bg-green-500'
-                        }`} />
+                  { name: 'HiFirewall', code: 'hi_firewall', healthScore: 56, resolved: 124 },
+                  { name: 'HiEndpoint', code: 'hi_endpoint', healthScore: 26, resolved: 54 },
+                  { name: 'HiMail', code: 'hi_mail', healthScore: 13, resolved: 98 },
+                  { name: 'HiLog', code: 'hi_log', healthScore: 55, resolved: 54 },
+                  { name: 'HiPatch', code: 'hi_patch', healthScore: 23, resolved: 78 },
+                  { name: 'HiTrack', code: 'hi_track', healthScore: 88, resolved: 89 },
+                  { name: 'HiDetect', code: 'hi_detect', healthScore: 89, resolved: 127 },
+                  { name: 'HiMobile', code: 'hi_mobile', healthScore: 24, resolved: 89 }
+                ].map((service, index) => {
+                  const isGood = service.healthScore >= 80;
+                  const isWarning = service.healthScore >= 50 && service.healthScore < 80;
+                  const issues = isGood ? 0 : Math.ceil((100 - service.healthScore) / 20);
+                  
+                  return (
+                    <div 
+                      key={index} 
+                      className="flex flex-col p-4 rounded-xl border border-border bg-card hover:bg-muted/30 transition-all duration-200 hover:shadow-lg cursor-pointer"
+                      onClick={() => navigate(`/dashboard/service/${service.code}`)}
+                    >
+                      <div className="flex items-center justify-between mb-4">
+                        <div className={`p-2 rounded-lg flex items-center justify-center ${
+                          service.healthScore < 50 ? 'bg-red-500/10' : service.healthScore < 80 ? 'bg-yellow-500/10' : 'bg-green-500/10'
+                        }`}>
+                          <div className={`w-3 h-3 rounded-full ${
+                            service.healthScore < 50 ? 'bg-red-500' : service.healthScore < 80 ? 'bg-yellow-500' : 'bg-green-500'
+                          }`} />
+                        </div>
+                        <div className="text-right">
+                          {isGood ? (
+                            <div className="text-sm text-green-500 font-semibold">
+                              OK
+                            </div>
+                          ) : (
+                            <div className={`text-xl font-bold ${service.healthScore < 50 ? 'text-red-500' : 'text-yellow-500'}`}>
+                              {issues}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <div className="text-right">
-                        {service.status === 'alert' ? (
-                          <div className="text-xl font-bold text-red-500">
-                            {service.issues}
-                          </div>
-                        ) : service.status === 'maintenance' ? (
-                          <div className="text-xl font-bold text-yellow-500">
-                            {service.issues}
-                          </div>
-                        ) : (
-                          <div className="text-sm text-green-500 font-semibold">
-                            OK
-                          </div>
-                        )}
+                      
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-base mb-2">{service.name}</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {service.resolved} risolte negli ultimi 90 giorni
+                        </p>
                       </div>
                     </div>
-                    
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-base mb-2">{service.name}</h4>
-                      <p className="text-sm text-muted-foreground">
-                        {service.resolved} risolte negli ultimi 90 giorni
-                      </p>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
             {/* Statistiche riassuntive */}
             <div className="border-t border-border pt-6">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="text-center p-4">
+              <div className="text-center p-4">
                   <div className="text-2xl font-bold text-red-500 mb-1">
-                    {alertServices.length || 4}
+                    {servicesWithCriticalHealth.length + servicesWithWarningHealth.length || 6}
                   </div>
                   <div className="text-sm text-muted-foreground">Servizi in Allerta</div>
                 </div>
                 
                 <div className="text-center p-4">
                   <div className="text-2xl font-bold text-green-500 mb-1">
-                    {activeServices.length || 3}
+                    {servicesWithGoodHealth.length || 2}
                   </div>
                   <div className="text-sm text-muted-foreground">Servizi Operativi</div>
                 </div>
