@@ -8,6 +8,7 @@ import { LoginPage } from "@/components/auth/LoginPage";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
+import ServiceDashboard from "./pages/ServiceDashboard";
 import SurfaceScan360 from "./pages/SurfaceScan360";
 import DarkRisk360 from "./pages/DarkRisk360";
 import Assessment from "./pages/Assessment";
@@ -40,6 +41,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<LoginPage />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/dashboard/service/:serviceCode" element={<ServiceDashboard />} />
             <Route path="/surface-scan" element={<SurfaceScan360 />} />
             <Route path="/dark-risk" element={<DarkRisk360 />} />
             <Route path="/assessment" element={<Assessment />} />
