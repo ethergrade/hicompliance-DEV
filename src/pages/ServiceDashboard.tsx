@@ -23,7 +23,6 @@ const serviceNameMap: Record<string, string> = {
   'hi_endpoint': 'HiEndpoint',
   'hi_mail': 'HiMail',
   'hi_log': 'HiLog',
-  'hi_mfa': 'HiMfa',
   'hi_track': 'HiTrack',
   'hi_detect': 'HiDetect',
 };
