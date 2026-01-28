@@ -88,10 +88,10 @@ const windowsLogsData = [
 ];
 
 const windowsLogsTableData = [
-  { datetime: '28/01/2026 10:24:16', hostname: 'Salvetti', domain: 'IDROTHERM2K', username: 'm.salvetti@idrotherm2000.com', action: 'User Logged In With Cached Credentials', sourceIp: '127.0.0.1', type: 'Admin' },
-  { datetime: '28/01/2026 10:23:36', hostname: 'Veeam365', domain: '-', username: '(empty)', action: 'User Login Failure', sourceIp: '-', type: 'NA' },
-  { datetime: '28/01/2026 10:21:44', hostname: 'DESKTOP-GTEMH96', domain: '(empty)', username: 'user', action: 'User Logged In', sourceIp: '127.0.0.1', type: 'Standard User' },
-  { datetime: '28/01/2026 10:20:24', hostname: 'DESKTOP-GTEMH96', domain: '(empty)', username: 'user', action: 'User Logged Off', sourceIp: '-', type: 'NA' },
+  { datetime: '28/01/2026 10:24:16', hostname: 'WS-PC001', domain: 'DOMAIN', username: 'user001@company.local', action: 'User Logged In With Cached Credentials', sourceIp: '127.0.0.1', type: 'Admin' },
+  { datetime: '28/01/2026 10:23:36', hostname: 'SRV-BACKUP01', domain: '-', username: '(empty)', action: 'User Login Failure', sourceIp: '-', type: 'NA' },
+  { datetime: '28/01/2026 10:21:44', hostname: 'DESKTOP-PC002', domain: '(empty)', username: 'user', action: 'User Logged In', sourceIp: '127.0.0.1', type: 'Standard User' },
+  { datetime: '28/01/2026 10:20:24', hostname: 'DESKTOP-PC002', domain: '(empty)', username: 'user', action: 'User Logged Off', sourceIp: '-', type: 'NA' },
 ];
 
 const entraIdLogsData = [
@@ -104,9 +104,9 @@ const entraIdLogsData = [
 ];
 
 const entraIdTableData = [
-  { datetime: '28/01/2026 10:22:35', username: 'm.ceccarelli@idrotherm2000.com', application: 'Microsoft Account Controls V2', status: 'Success', location: 'Fiattone, Lucca, IT', sourceIp: '80.19.146.2' },
-  { datetime: '28/01/2026 10:19:10', username: 'l.giannotti@idrotherm2000.com', application: 'One Outlook Web', status: 'Success', location: 'Fiattone, Lucca, IT', sourceIp: '80.19.146.2' },
-  { datetime: '28/01/2026 10:13:09', username: 'elettrica@idrotherm2000.com', application: 'Azure Active Directory PowerShell', status: 'Failure', location: 'Los Angeles, California, US', sourceIp: '216.24.210.201' },
+  { datetime: '28/01/2026 10:22:35', username: 'user001@company.local', application: 'Microsoft Account Controls V2', status: 'Success', location: 'Milano, IT', sourceIp: '80.19.xxx.xxx' },
+  { datetime: '28/01/2026 10:19:10', username: 'user002@company.local', application: 'One Outlook Web', status: 'Success', location: 'Milano, IT', sourceIp: '80.19.xxx.xxx' },
+  { datetime: '28/01/2026 10:13:09', username: 'service@company.local', application: 'Azure Active Directory PowerShell', status: 'Failure', location: 'Los Angeles, California, US', sourceIp: '216.24.xxx.xxx' },
 ];
 
 const sharePointLogsData = [
@@ -117,9 +117,9 @@ const sharePointLogsData = [
 ];
 
 const securityEventsTableData = [
-  { datetime: '27/01/2026 14:41:50', severity: 'Low', event: 'Installation or use of Remote Desktop software', source: 'Windows', category: 'Processes', hostname: 'srv05', message: 'Process name: C:\\Users\\Administrator...' },
-  { datetime: '27/01/2026 11:17:37', severity: 'Medium', event: 'Microsoft 365 sign-in to administrative application', source: 'Microsoft365', category: 'Login', hostname: '-', message: 'User: Admin (admin@idrotherm2k.onmicrosoft.com)' },
-  { datetime: '27/01/2026 09:53:36', severity: 'High', event: 'Spike of failed remote logons', source: 'Windows', category: 'Login', hostname: 'SRVDC1', message: 'Failed logons count: 8' },
+  { datetime: '27/01/2026 14:41:50', severity: 'Low', event: 'Installation or use of Remote Desktop software', source: 'Windows', category: 'Processes', hostname: 'SRV-APP01', message: 'Process name: C:\\Users\\Administrator...' },
+  { datetime: '27/01/2026 11:17:37', severity: 'Medium', event: 'Microsoft 365 sign-in to administrative application', source: 'Microsoft365', category: 'Login', hostname: '-', message: 'User: Admin (admin@company.onmicrosoft.com)' },
+  { datetime: '27/01/2026 09:53:36', severity: 'High', event: 'Spike of failed remote logons', source: 'Windows', category: 'Login', hostname: 'SRV-DC01', message: 'Failed logons count: 8' },
 ];
 
 const startupShutdownData = [
@@ -134,30 +134,30 @@ const startupShutdownData = [
 ];
 
 const startupShutdownTableData = [
-  { datetime: '28/01/2026 10:21:44', hostname: 'DESKTOP-GTEMH96', operation: 'Startup (Fast Startup)' },
-  { datetime: '28/01/2026 10:20:26', hostname: 'DESKTOP-GTEMH96', operation: 'Shutdown (Fast Startup)' },
-  { datetime: '28/01/2026 09:43:20', hostname: 'Carrello202', operation: 'Startup (Fast Startup)' },
-  { datetime: '28/01/2026 09:29:41', hostname: 'DESKTOP-86QJLG0', operation: 'Previous Shutdown Was Unexpected' },
+  { datetime: '28/01/2026 10:21:44', hostname: 'DESKTOP-PC001', operation: 'Startup (Fast Startup)' },
+  { datetime: '28/01/2026 10:20:26', hostname: 'DESKTOP-PC001', operation: 'Shutdown (Fast Startup)' },
+  { datetime: '28/01/2026 09:43:20', hostname: 'WS-MOBILE01', operation: 'Startup (Fast Startup)' },
+  { datetime: '28/01/2026 09:29:41', hostname: 'DESKTOP-PC003', operation: 'Previous Shutdown Was Unexpected' },
 ];
 
 const firewallLogsTableData = [
-  { datetime: '27/01/2026 14:53:13', hostname: 'SFW X13304XQM3MVV4E', severity: 'Information', username: 'a.pecchi', actionType: 'Edit', action: 'Update', message: "Firewall Rule 'Manutenzione centralino' was updated..." },
-  { datetime: '27/01/2026 14:49:15', hostname: 'SFW X13304XQM3MVV4E', severity: 'Notice', username: 'a.pecchi', actionType: 'Info', action: 'Other management action', message: "User 'kalliope' Status was changed to 'ACTIVE'..." },
+  { datetime: '27/01/2026 14:53:13', hostname: 'SFW-001', severity: 'Information', username: 'admin01', actionType: 'Edit', action: 'Update', message: "Firewall Rule 'VPN Access' was updated..." },
+  { datetime: '27/01/2026 14:49:15', hostname: 'SFW-001', severity: 'Notice', username: 'admin01', actionType: 'Info', action: 'Other management action', message: "User 'svc_account' Status was changed to 'ACTIVE'..." },
 ];
 
 const hostsTableData = [
-  { hostname: 'alepoli', domain: 'IDROTHERM2000 SPA', osName: 'Windows 11 Pro', osVersion: '25H2', ipAddresses: ['192.168.100.163', 'fe80::8282:ab58:bedc:7bdb'], issues: 6 },
-  { hostname: 'ambrosini', domain: 'IDROTHERM2000 SPA', osName: 'Windows 11 Pro', osVersion: '25H2', ipAddresses: ['192.168.101.163', 'fe80::a799:56da:e6b1:272a'], issues: 7 },
-  { hostname: 'arianna', domain: 'IDROTHERM2000 SPA', osName: 'Windows 11 Pro', osVersion: '24H2', ipAddresses: ['192.168.100.164', 'fe80::c137:5034:a733:f264'], issues: 7 },
-  { hostname: 'capoturno', domain: 'IDROTHERM2K', osName: 'Windows 10 Pro', osVersion: '22H2', ipAddresses: ['192.168.40.51', 'fe80::bad1:6522:c896:6cc2'], issues: 10 },
+  { hostname: 'WS-PC001', domain: 'COMPANY SPA', osName: 'Windows 11 Pro', osVersion: '25H2', ipAddresses: ['192.168.100.xxx', 'fe80::xxxx:xxxx:xxxx:xxxx'], issues: 6 },
+  { hostname: 'WS-PC002', domain: 'COMPANY SPA', osName: 'Windows 11 Pro', osVersion: '25H2', ipAddresses: ['192.168.101.xxx', 'fe80::xxxx:xxxx:xxxx:xxxx'], issues: 7 },
+  { hostname: 'WS-PC003', domain: 'COMPANY SPA', osName: 'Windows 11 Pro', osVersion: '24H2', ipAddresses: ['192.168.100.xxx', 'fe80::xxxx:xxxx:xxxx:xxxx'], issues: 7 },
+  { hostname: 'WS-MOBILE01', domain: 'DOMAIN', osName: 'Windows 10 Pro', osVersion: '22H2', ipAddresses: ['192.168.40.xxx', 'fe80::xxxx:xxxx:xxxx:xxxx'], issues: 10 },
 ];
 
 const usersTableData = [
-  { name: 'admin', status: 'Enabled', domain: 'IDROTHERM2K.local', memberOf: '6 Groups', isAdmin: true },
-  { name: 'Administrator', status: 'Enabled', domain: 'IDROTHERM2K.local', memberOf: '7 Groups', isAdmin: true },
-  { name: 'Albino Bolpagni', status: 'Enabled', domain: 'IDROTHERM2K.local', memberOf: '7 Groups', isAdmin: false },
-  { name: 'alessandro billi', status: 'Enabled', domain: 'IDROTHERM2K.local', memberOf: '4 Groups', isAdmin: true },
-  { name: 'Alessio Motta', status: 'Disabled', domain: 'EUROTUBI.local', memberOf: 'EUROTUBI.local\\Domain Users', isAdmin: false },
+  { name: 'admin', status: 'Enabled', domain: 'DOMAIN.local', memberOf: '6 Groups', isAdmin: true },
+  { name: 'Administrator', status: 'Enabled', domain: 'DOMAIN.local', memberOf: '7 Groups', isAdmin: true },
+  { name: 'Mario Rossi', status: 'Enabled', domain: 'DOMAIN.local', memberOf: '7 Groups', isAdmin: false },
+  { name: 'Giuseppe Verdi', status: 'Enabled', domain: 'DOMAIN.local', memberOf: '4 Groups', isAdmin: true },
+  { name: 'Luca Bianchi', status: 'Disabled', domain: 'BRANCH.local', memberOf: 'BRANCH.local\\Domain Users', isAdmin: false },
 ];
 
 const actionColors: Record<string, string> = {
