@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { MetricCard } from '@/components/dashboard/MetricCard';
 import { ServiceStatusCard } from '@/components/dashboard/ServiceStatusCard';
@@ -21,6 +22,7 @@ import {
 } from 'lucide-react';
 
 const Dashboard: React.FC = () => {
+  const navigate = useNavigate();
   const { userProfile } = useAuth();
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -203,7 +205,11 @@ const Dashboard: React.FC = () => {
                 };
                 
                 return (
-                  <div key={index} className="flex flex-col p-4 rounded-xl border border-border bg-card hover:bg-muted/30 transition-all duration-200 hover:shadow-lg">
+                  <div 
+                    key={index} 
+                    className="flex flex-col p-4 rounded-xl border border-border bg-card hover:bg-muted/30 transition-all duration-200 hover:shadow-lg cursor-pointer"
+                    onClick={() => navigate(`/dashboard/service/${service.code}`)}
+                  >
                     <div className="flex items-center justify-between mb-4">
                       <div className={`p-2 rounded-lg flex items-center justify-center ${
                         status === 'alert' ? 'bg-red-500/10' : status === 'maintenance' ? 'bg-yellow-500/10' : 'bg-green-500/10'
@@ -261,12 +267,19 @@ const Dashboard: React.FC = () => {
                 );
               }) : (
                 [
-                  { name: 'HiFirewall', status: 'alert', issues: 8, resolved: 124 },
-                  { name: 'HiEndpoint', status: 'alert', issues: 3, resolved: 54 },
-                  { name: 'HiMail', status: 'maintenance', issues: 2, resolved: 98 },
-                  { name: 'HiLog', status: 'alert', issues: 9, resolved: 54 }
+                  { name: 'HiFirewall', code: 'hi_firewall', status: 'alert', issues: 8, resolved: 124 },
+                  { name: 'HiEndpoint', code: 'hi_endpoint', status: 'alert', issues: 3, resolved: 54 },
+                  { name: 'HiMail', code: 'hi_mail', status: 'maintenance', issues: 2, resolved: 98 },
+                  { name: 'HiLog', code: 'hi_log', status: 'alert', issues: 9, resolved: 54 },
+                  { name: 'HiPatch', code: 'hi_patch', status: 'maintenance', issues: 2, resolved: 78 },
+                  { name: 'HiMfa', code: 'hi_mfa', status: 'active', issues: 0, resolved: 145 },
+                  { name: 'HiTrack', code: 'hi_track', status: 'active', issues: 0, resolved: 89 }
                 ].map((service, index) => (
-                  <div key={index} className="flex flex-col p-4 rounded-xl border border-border bg-card hover:bg-muted/30 transition-all duration-200 hover:shadow-lg">
+                  <div 
+                    key={index} 
+                    className="flex flex-col p-4 rounded-xl border border-border bg-card hover:bg-muted/30 transition-all duration-200 hover:shadow-lg cursor-pointer"
+                    onClick={() => navigate(`/dashboard/service/${service.code}`)}
+                  >
                     <div className="flex items-center justify-between mb-4">
                       <div className={`p-2 rounded-lg flex items-center justify-center ${
                         service.status === 'alert' ? 'bg-red-500/10' : service.status === 'maintenance' ? 'bg-yellow-500/10' : 'bg-green-500/10'
