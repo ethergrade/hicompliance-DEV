@@ -8,7 +8,8 @@ import { HiMailDashboard } from '@/components/service-dashboards/HiMailDashboard
 import { HiLogDashboard } from '@/components/service-dashboards/HiLogDashboard';
 import { HiTrackDashboard } from '@/components/service-dashboards/HiTrackDashboard';
 import { HiDetectDashboard } from '@/components/service-dashboards/HiDetectDashboard';
-import { 
+import { HiMobileDashboard } from '@/components/service-dashboards/HiMobileDashboard';
+import {
   Breadcrumb,
   BreadcrumbItem, 
   BreadcrumbLink, 
@@ -25,6 +26,7 @@ const serviceNameMap: Record<string, string> = {
   'hi_log': 'HiLog',
   'hi_track': 'HiTrack',
   'hi_detect': 'HiDetect',
+  'hi_mobile': 'HiMobile',
 };
 
 const ServiceDashboard: React.FC = () => {
@@ -47,6 +49,8 @@ const ServiceDashboard: React.FC = () => {
         return <HiTrackDashboard />;
       case 'hi_detect':
         return <HiDetectDashboard />;
+      case 'hi_mobile':
+        return <HiMobileDashboard />;
       default:
         return (
           <div className="text-center py-12">
