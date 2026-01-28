@@ -81,8 +81,12 @@ const getResolvedCount = (code: string): number => {
 };
 
 export const HiSolutionStatusGrid: React.FC<HiSolutionStatusGridProps> = ({ services }) => {
-  // Filter only HiSolution services
-  const hiServices = services.filter(s => s.services.code.startsWith('hi_'));
+  // Services to exclude from display
+  const excludedServices = ['hi_mfa', 'hi_cloud_optix', 'hi_phish_threat', 'hi_ztna'];
+  // Filter only HiSolution services, excluding the removed ones
+  const hiServices = services.filter(s => 
+    s.services.code.startsWith('hi_') && !excludedServices.includes(s.services.code)
+  );
   
   return (
     <div className="space-y-6 hidden">

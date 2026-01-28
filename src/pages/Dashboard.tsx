@@ -59,7 +59,11 @@ const Dashboard: React.FC = () => {
   const alertServices = services.filter(s => s.status === 'alert');
   const activeServices = services.filter(s => s.status === 'active');
   const maintenanceServices = services.filter(s => s.status === 'maintenance');
-  const hiSolutionServices = services.filter(s => s.services?.code?.startsWith('hi_'));
+  // Services to exclude from display
+  const excludedServices = ['hi_mfa', 'hi_cloud_optix', 'hi_phish_threat', 'hi_ztna'];
+  const hiSolutionServices = services.filter(s => 
+    s.services?.code?.startsWith('hi_') && !excludedServices.includes(s.services?.code)
+  );
   const totalIssues = alertServices.reduce((acc, service) => {
     const issues = service.health_score ? Math.floor((100 - service.health_score) / 10) : 5;
     return acc + issues;
