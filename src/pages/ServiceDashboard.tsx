@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { HiPatchDashboard } from '@/components/service-dashboards/HiPatchDashboard';
 import { HiFirewallDashboard } from '@/components/service-dashboards/HiFirewallDashboard';
+import { HiEndpointDashboard } from '@/components/service-dashboards/HiEndpointDashboard';
 import { 
   Breadcrumb, 
   BreadcrumbItem, 
@@ -32,6 +33,8 @@ const ServiceDashboard: React.FC = () => {
         return <HiPatchDashboard />;
       case 'hi_firewall':
         return <HiFirewallDashboard />;
+      case 'hi_endpoint':
+        return <HiEndpointDashboard />;
       default:
         return (
           <div className="text-center py-12">
