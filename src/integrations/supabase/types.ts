@@ -267,9 +267,12 @@ export type Database = {
           created_at: string
           email: string
           id: string
+          irp_role: string | null
+          job_title: string | null
           name: string
           organization_id: string | null
           phone: string
+          responsibilities: string | null
           role: string
           updated_at: string
         }
@@ -278,9 +281,12 @@ export type Database = {
           created_at?: string
           email: string
           id?: string
+          irp_role?: string | null
+          job_title?: string | null
           name: string
           organization_id?: string | null
           phone: string
+          responsibilities?: string | null
           role: string
           updated_at?: string
         }
@@ -289,9 +295,12 @@ export type Database = {
           created_at?: string
           email?: string
           id?: string
+          irp_role?: string | null
+          job_title?: string | null
           name?: string
           organization_id?: string | null
           phone?: string
+          responsibilities?: string | null
           role?: string
           updated_at?: string
         }

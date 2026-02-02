@@ -4,17 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { EmergencyContactForm } from '@/components/emergency/EmergencyContactForm';
 import { IRPDocumentEditor } from '@/components/irp/IRPDocumentEditor';
+import { GovernanceContactsTable } from '@/components/irp/GovernanceContactsTable';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import {
   Download,
-  FileText,
   Clock,
-  AlertTriangle,
-  CheckCircle2,
-  PlayCircle,
   Users,
   Phone,
   Mail,
@@ -23,8 +19,7 @@ import {
   Database,
   Network,
   Lock,
-  Trash2,
-  Edit
+  Trash2
 } from 'lucide-react';
 
 interface EmergencyContact {
@@ -33,7 +28,7 @@ interface EmergencyContact {
   role: string;
   phone: string;
   email: string;
-  category: 'security' | 'it' | 'authorities';
+  category: string;
 }
 
 const IncidentResponse: React.FC = () => {
@@ -396,56 +391,7 @@ const IncidentResponse: React.FC = () => {
           </TabsContent>
 
           <TabsContent value="contacts" className="space-y-6">
-            {loading ? (
-              <div className="text-center text-gray-400">Caricamento contatti...</div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {['security', 'it', 'authorities'].map((category) => (
-                  <Card key={category} className="border-border bg-card">
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-white">{getCategoryTitle(category)}</CardTitle>
-                        <EmergencyContactForm onContactAdded={handleContactAdded} />
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {getContactsByCategory(category).length === 0 ? (
-                        <div className="text-gray-400 text-sm">Nessun contatto disponibile</div>
-                      ) : (
-                        getContactsByCategory(category).map((contact) => (
-                          <div key={contact.id} className="space-y-2 p-3 border border-border rounded-lg">
-                            <div className="flex items-center justify-between">
-                              <h4 className="text-white font-medium">{contact.name}</h4>
-                              <div className="flex items-center space-x-1">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => handleDeleteContact(contact.id)}
-                                  className="h-6 w-6 p-0 text-red-400 hover:text-red-300"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </Button>
-                              </div>
-                            </div>
-                            <p className="text-gray-400 text-sm">{contact.role}</p>
-                            <div className="space-y-1">
-                              <div className="flex items-center space-x-2">
-                                <Phone className="w-4 h-4 text-primary" />
-                                <span className="text-white text-sm">{contact.phone}</span>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <Mail className="w-4 h-4 text-primary" />
-                                <span className="text-white text-sm">{contact.email}</span>
-                              </div>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
+            <GovernanceContactsTable onDataChange={fetchEmergencyContacts} />
           </TabsContent>
         </Tabs>
       </div>
