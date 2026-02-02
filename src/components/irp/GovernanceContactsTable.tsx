@@ -3,7 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Plus, Trash2, Edit, Save, Eye, Info, Download, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -36,6 +37,7 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
   const [showExample, setShowExample] = useState(false);
   const [addingExampleIndex, setAddingExampleIndex] = useState<number | null>(null);
   const [addingAllExamples, setAddingAllExamples] = useState(false);
+  const [showConfirmAllDialog, setShowConfirmAllDialog] = useState(false);
   const { toast } = useToast();
 
   const fetchContacts = async () => {
@@ -386,7 +388,7 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
           
           {/* Button to add all example contacts */}
           <Button 
-            onClick={addAllExampleContacts}
+            onClick={() => setShowConfirmAllDialog(true)}
             disabled={addingAllExamples}
             className="w-full bg-primary text-primary-foreground"
           >
@@ -475,6 +477,35 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Confirmation Dialog for adding all examples */}
+      <AlertDialog open={showConfirmAllDialog} onOpenChange={setShowConfirmAllDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Conferma inserimento dati di esempio</AlertDialogTitle>
+            <AlertDialogDescription>
+              Stai per aggiungere {exampleContacts.length} contatti di esempio alla matrice.
+              {contacts.length > 0 && (
+                <span className="block mt-2 font-medium text-destructive">
+                  Attenzione: ci sono già {contacts.length} contatti nella matrice. I dati di esempio verranno aggiunti a quelli esistenti e potrebbero creare duplicati.
+                </span>
+              )}
+              <span className="block mt-2">Vuoi procedere?</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => {
+                setShowConfirmAllDialog(false);
+                addAllExampleContacts();
+              }}
+            >
+              Conferma
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 };
