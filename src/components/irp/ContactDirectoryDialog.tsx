@@ -2,9 +2,8 @@ import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Search, Plus, User, Mail, Phone, Briefcase } from 'lucide-react';
+import { Search, Plus, User, Mail, Phone, Briefcase, Download } from 'lucide-react';
 import { useContactDirectory } from '@/hooks/useContactDirectory';
 import { DirectoryContact } from '@/types/irp';
 import { ContactDirectoryForm } from './ContactDirectoryForm';
@@ -20,8 +19,16 @@ export const ContactDirectoryDialog: React.FC<ContactDirectoryDialogProps> = ({
   onOpenChange,
   onSelectContact
 }) => {
-  const { filteredContacts, loading, searchQuery, setSearchQuery, fetchContacts } = useContactDirectory();
+  const { 
+    filteredContacts, 
+    loading, 
+    searchQuery, 
+    setSearchQuery, 
+    fetchContacts,
+    importFromEmergencyContacts 
+  } = useContactDirectory();
   const [showAddForm, setShowAddForm] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const handleSelectContact = (contact: DirectoryContact) => {
     onSelectContact(contact);
@@ -31,6 +38,12 @@ export const ContactDirectoryDialog: React.FC<ContactDirectoryDialogProps> = ({
   const handleContactAdded = () => {
     setShowAddForm(false);
     fetchContacts();
+  };
+
+  const handleImport = async () => {
+    setImporting(true);
+    await importFromEmergencyContacts();
+    setImporting(false);
   };
 
   return (
@@ -57,7 +70,7 @@ export const ContactDirectoryDialog: React.FC<ContactDirectoryDialogProps> = ({
             </div>
 
             {/* Contact List */}
-            <ScrollArea className="h-[350px] pr-4">
+            <ScrollArea className="h-[300px] pr-4">
               {loading ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -67,7 +80,10 @@ export const ContactDirectoryDialog: React.FC<ContactDirectoryDialogProps> = ({
                   {searchQuery ? (
                     <p>Nessun contatto trovato per "{searchQuery}"</p>
                   ) : (
-                    <p>Nessun contatto nella rubrica</p>
+                    <div className="space-y-2">
+                      <p>Nessun contatto nella rubrica</p>
+                      <p className="text-sm">Importa i contatti esistenti o aggiungine di nuovi</p>
+                    </div>
                   )}
                 </div>
               ) : (
@@ -117,16 +133,30 @@ export const ContactDirectoryDialog: React.FC<ContactDirectoryDialogProps> = ({
               )}
             </ScrollArea>
 
-            {/* Add New Button */}
-            <div className="border-t border-border pt-4">
-              <Button
-                variant="outline"
-                onClick={() => setShowAddForm(true)}
-                className="w-full"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Aggiungi nuovo alla Rubrica
-              </Button>
+            {/* Action Buttons */}
+            <div className="border-t border-border pt-4 space-y-2">
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowAddForm(true)}
+                  className="flex-1"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Aggiungi nuovo
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={handleImport}
+                  disabled={importing}
+                  className="flex-1"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  {importing ? 'Importazione...' : 'Importa esistenti'}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground text-center">
+                "Importa esistenti" aggiungerà i contatti della tabella Governance alla rubrica
+              </p>
             </div>
           </div>
         </DialogContent>
