@@ -32,9 +32,12 @@ export const useIRPDocument = () => {
         id: contact.id,
         name: contact.name,
         role: contact.role,
+        job_title: (contact as any).job_title || contact.role,
+        irp_role: (contact as any).irp_role || '',
         phone: contact.phone,
         email: contact.email,
         category: contact.category,
+        responsibilities: (contact as any).responsibilities || '',
         escalationLevel: 3,
       }));
 

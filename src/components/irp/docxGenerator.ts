@@ -49,11 +49,13 @@ export const generateIRPDocument = async (data: IRPDocumentData) => {
       'DATA ELABORAZIONE': data.date,
       companyAddress: data.companyAddress,
       version: data.version,
+      cisoSubstitute: data.cisoSubstitute || '',
       contacts: data.sections.contacts.map(contact => ({
         nome: contact.name,
-        titolo: contact.role,
-        ruolo: mapCategoryToIRPRole(contact.category),
+        titolo: contact.job_title || contact.role,
+        ruolo: contact.irp_role || mapCategoryToIRPRole(contact.category),
         contatto: `${contact.phone} - ${contact.email}`,
+        responsabilita: contact.responsibilities || '',
         escalationLevel: contact.escalationLevel?.toString() || '3',
       })),
     };
