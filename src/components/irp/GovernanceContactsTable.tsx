@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Plus, Trash2, Edit, Save, Eye, Info } from 'lucide-react';
+import { Plus, Trash2, Edit, Save, Eye, Info, Download, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { EmergencyContact } from '@/types/irp';
@@ -34,6 +34,8 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
   const [formOpen, setFormOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<EmergencyContact | null>(null);
   const [showExample, setShowExample] = useState(false);
+  const [addingExampleIndex, setAddingExampleIndex] = useState<number | null>(null);
+  const [addingAllExamples, setAddingAllExamples] = useState(false);
   const { toast } = useToast();
 
   const fetchContacts = async () => {
@@ -125,6 +127,107 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
   const handleContactSaved = () => {
     fetchContacts();
     onDataChange?.();
+  };
+
+  const addExampleContact = async (exampleContact: typeof exampleContacts[0], index: number) => {
+    setAddingExampleIndex(index);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      if (!userData?.organization_id) throw new Error('Organization not found');
+
+      const { error } = await supabase
+        .from('emergency_contacts')
+        .insert({
+          name: exampleContact.name,
+          role: exampleContact.job_title, // Legacy field
+          job_title: exampleContact.job_title,
+          irp_role: exampleContact.irp_role,
+          phone: exampleContact.phone,
+          email: exampleContact.email,
+          responsibilities: exampleContact.responsibilities,
+          category: 'governance',
+          organization_id: userData.organization_id,
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: "Successo",
+        description: `Contatto "${exampleContact.name}" aggiunto alla matrice`
+      });
+
+      fetchContacts();
+      onDataChange?.();
+    } catch (error) {
+      console.error('Error adding example contact:', error);
+      toast({
+        title: "Errore",
+        description: "Errore durante l'aggiunta del contatto",
+        variant: "destructive"
+      });
+    } finally {
+      setAddingExampleIndex(null);
+    }
+  };
+
+  const addAllExampleContacts = async () => {
+    setAddingAllExamples(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      if (!userData?.organization_id) throw new Error('Organization not found');
+
+      const contactsToInsert = exampleContacts.map(contact => ({
+        name: contact.name,
+        role: contact.job_title, // Legacy field
+        job_title: contact.job_title,
+        irp_role: contact.irp_role,
+        phone: contact.phone,
+        email: contact.email,
+        responsibilities: contact.responsibilities,
+        category: 'governance',
+        organization_id: userData.organization_id,
+      }));
+
+      const { error } = await supabase
+        .from('emergency_contacts')
+        .insert(contactsToInsert);
+
+      if (error) throw error;
+
+      toast({
+        title: "Successo",
+        description: `${exampleContacts.length} contatti di esempio aggiunti alla matrice`
+      });
+
+      setShowExample(false);
+      fetchContacts();
+      onDataChange?.();
+    } catch (error) {
+      console.error('Error adding all example contacts:', error);
+      toast({
+        title: "Errore",
+        description: "Errore durante l'aggiunta dei contatti",
+        variant: "destructive"
+      });
+    } finally {
+      setAddingAllExamples(false);
+    }
   };
 
   if (loading) {
@@ -281,6 +384,20 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
             </DialogDescription>
           </DialogHeader>
           
+          {/* Button to add all example contacts */}
+          <Button 
+            onClick={addAllExampleContacts}
+            disabled={addingAllExamples}
+            className="w-full bg-primary text-primary-foreground"
+          >
+            {addingAllExamples ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4 mr-2" />
+            )}
+            Popola la matrice con tutti i dati di esempio
+          </Button>
+
           {/* Example introductory text */}
           <div className="p-4 bg-muted/30 rounded-lg border border-border">
             <p className="text-muted-foreground text-sm leading-relaxed">
@@ -301,6 +418,7 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
                   <TableHead className="text-foreground font-semibold">Ruolo</TableHead>
                   <TableHead className="text-foreground font-semibold">Informazioni di contatto</TableHead>
                   <TableHead className="text-foreground font-semibold">Responsabilità</TableHead>
+                  <TableHead className="text-foreground font-semibold w-24">Azione</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -325,6 +443,22 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
                       <div className="line-clamp-2">
                         {contact.responsibilities}
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => addExampleContact(contact, index)}
+                        disabled={addingExampleIndex === index || addingAllExamples}
+                        className="text-xs"
+                      >
+                        {addingExampleIndex === index ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Plus className="w-3 h-3 mr-1" />
+                        )}
+                        Aggiungi
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
