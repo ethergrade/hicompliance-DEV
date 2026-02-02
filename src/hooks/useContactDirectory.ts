@@ -13,6 +13,7 @@ interface UseContactDirectoryReturn {
   addContact: (contact: Omit<DirectoryContact, 'id' | 'organization_id' | 'created_at' | 'updated_at'>) => Promise<DirectoryContact | null>;
   updateContact: (id: string, contact: Partial<DirectoryContact>) => Promise<boolean>;
   deleteContact: (id: string) => Promise<boolean>;
+  importFromEmergencyContacts: () => Promise<{ imported: number; skipped: number }>;
 }
 
 export const useContactDirectory = (): UseContactDirectoryReturn => {
@@ -167,6 +168,116 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
     }
   };
 
+  const importFromEmergencyContacts = async (): Promise<{ imported: number; skipped: number }> => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Non autenticato');
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      if (!userData?.organization_id) throw new Error('Organizzazione non trovata');
+
+      // Fetch existing emergency contacts
+      const { data: emergencyContacts, error: fetchError } = await supabase
+        .from('emergency_contacts')
+        .select('*')
+        .eq('organization_id', userData.organization_id);
+
+      if (fetchError) throw fetchError;
+
+      if (!emergencyContacts || emergencyContacts.length === 0) {
+        toast({
+          title: "Info",
+          description: "Nessun contatto di emergenza da importare"
+        });
+        return { imported: 0, skipped: 0 };
+      }
+
+      // Fetch existing directory contacts to avoid duplicates
+      const { data: existingContacts } = await supabase
+        .from('contact_directory')
+        .select('first_name, last_name, email')
+        .eq('organization_id', userData.organization_id);
+
+      const existingSet = new Set(
+        (existingContacts || []).map(c => 
+          `${c.first_name?.toLowerCase()}_${c.last_name?.toLowerCase()}_${c.email?.toLowerCase()}`
+        )
+      );
+
+      // Parse names and prepare imports
+      const toImport: Array<{
+        organization_id: string;
+        first_name: string;
+        last_name: string;
+        job_title: string;
+        phone: string;
+        email: string;
+      }> = [];
+
+      let skipped = 0;
+
+      for (const contact of emergencyContacts) {
+        const nameParts = contact.name.split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+        
+        const key = `${firstName.toLowerCase()}_${lastName.toLowerCase()}_${contact.email?.toLowerCase()}`;
+        
+        if (existingSet.has(key)) {
+          skipped++;
+          continue;
+        }
+
+        // Add to set to avoid duplicates within import batch
+        existingSet.add(key);
+
+        toImport.push({
+          organization_id: userData.organization_id,
+          first_name: firstName,
+          last_name: lastName,
+          job_title: contact.job_title || contact.role || '',
+          phone: contact.phone || '',
+          email: contact.email || ''
+        });
+      }
+
+      if (toImport.length === 0) {
+        toast({
+          title: "Info",
+          description: `Tutti i contatti sono già presenti nella rubrica (${skipped} duplicati)`
+        });
+        return { imported: 0, skipped };
+      }
+
+      const { error: insertError } = await supabase
+        .from('contact_directory')
+        .insert(toImport);
+
+      if (insertError) throw insertError;
+
+      toast({
+        title: "Importazione completata",
+        description: `${toImport.length} contatti importati${skipped > 0 ? `, ${skipped} duplicati saltati` : ''}`
+      });
+
+      await fetchContacts();
+      return { imported: toImport.length, skipped };
+    } catch (error) {
+      console.error('Error importing contacts:', error);
+      toast({
+        title: "Errore",
+        description: "Impossibile importare i contatti",
+        variant: "destructive"
+      });
+      return { imported: 0, skipped: 0 };
+    }
+  };
+
   return {
     contacts,
     loading,
@@ -176,6 +287,7 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
     fetchContacts,
     addContact,
     updateContact,
-    deleteContact
+    deleteContact,
+    importFromEmergencyContacts
   };
 };
