@@ -14,11 +14,17 @@ const mapCategoryToIRPRole = (category: string): string => {
     'authorities': 'External Authority',
     'technical': 'Technical Support',
     'executive': 'Executive Team',
+    'governance': 'Governance Team',
   };
   return mapping[category.toLowerCase()] || 'Incident Response Team';
 };
 
-export const generateIRPDocument = async (data: IRPDocumentData) => {
+export interface GeneratedDocument {
+  blob: Blob;
+  fileName: string;
+}
+
+export const generateIRPDocument = async (data: IRPDocumentData): Promise<GeneratedDocument> => {
   try {
     // 1. Load the template from public folder
     const templatePath = '/irp/IRP_template.docx';
@@ -69,10 +75,12 @@ export const generateIRPDocument = async (data: IRPDocumentData) => {
       mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     });
     
-    // 7. Download the file
+    // 7. Create file name and download
     const fileName = `IRP_${data.companyName.replace(/\s+/g, '_')}_${data.date.replace(/\//g, '-')}.docx`;
     saveAs(output, fileName);
     
+    // Return blob and fileName for saving to documents
+    return { blob: output, fileName };
   } catch (error) {
     console.error('Error generating IRP document:', error);
     throw new Error('Failed to generate IRP document. Please check the template file.');
