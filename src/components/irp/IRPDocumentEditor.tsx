@@ -14,6 +14,7 @@ import { IRPSectionEditor } from './IRPSectionEditor';
 import { IRPContactsTable } from './IRPContactsTable';
 import { useIRPDocument } from '@/hooks/useIRPDocument';
 import { generateIRPDocument } from './docxGenerator';
+import { useDocumentSave } from '@/hooks/useDocumentSave';
 import { toast } from 'sonner';
 import { IRPDocumentData } from '@/types/irp';
 
@@ -24,6 +25,7 @@ interface IRPDocumentEditorProps {
 
 export const IRPDocumentEditor = ({ open, onOpenChange }: IRPDocumentEditorProps) => {
   const { document, loading, saving, contacts, saveDocument, reloadContacts } = useIRPDocument();
+  const { saveToDocuments } = useDocumentSave();
   const [localDocument, setLocalDocument] = useState<IRPDocumentData | null>(null);
   const [exporting, setExporting] = useState(false);
 
@@ -42,8 +44,22 @@ export const IRPDocumentEditor = ({ open, onOpenChange }: IRPDocumentEditorProps
     if (!localDocument) return;
     try {
       setExporting(true);
-      await generateIRPDocument(localDocument);
-      toast.success('Documento esportato con successo');
+      
+      // Generate document and get blob
+      const { blob, fileName } = await generateIRPDocument(localDocument);
+      
+      // Save to Gestione Documenti automatically
+      const saved = await saveToDocuments({
+        blob,
+        fileName,
+        category: 'Piano Generale'
+      });
+      
+      if (saved) {
+        toast.success('Documento esportato e salvato in Gestione Documenti');
+      } else {
+        toast.success('Documento esportato (salvataggio automatico non riuscito)');
+      }
     } catch (error) {
       console.error('Error exporting document:', error);
       toast.error('Errore nell\'esportazione del documento');
