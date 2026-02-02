@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { IRPDocumentEditor } from '@/components/irp/IRPDocumentEditor';
 import { GovernanceContactsTable } from '@/components/irp/GovernanceContactsTable';
+import { ContactDirectoryManager } from '@/components/irp/ContactDirectoryManager';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -316,9 +317,10 @@ const IncidentResponse: React.FC = () => {
         </div>
 
         <Tabs defaultValue="procedures" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="procedures">Procedure Operative</TabsTrigger>
             <TabsTrigger value="contacts">Contatti di Emergenza</TabsTrigger>
+            <TabsTrigger value="directory">Rubrica Contatti</TabsTrigger>
           </TabsList>
 
           <TabsContent value="procedures" className="space-y-6">
@@ -392,6 +394,10 @@ const IncidentResponse: React.FC = () => {
 
           <TabsContent value="contacts" className="space-y-6">
             <GovernanceContactsTable onDataChange={fetchEmergencyContacts} />
+          </TabsContent>
+
+          <TabsContent value="directory" className="space-y-6">
+            <ContactDirectoryManager />
           </TabsContent>
         </Tabs>
       </div>
