@@ -9,6 +9,20 @@ export interface EmergencyContact {
   category: string;
   responsibilities?: string; // Responsibilities description
   escalationLevel?: number;
+  directory_contact_id?: string; // Reference to contact_directory
+}
+
+export interface DirectoryContact {
+  id: string;
+  organization_id: string;
+  first_name: string;
+  last_name: string;
+  job_title?: string;
+  phone?: string;
+  email?: string;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface SeverityLevel {
