@@ -1,10 +1,13 @@
 export interface EmergencyContact {
   id: string;
   name: string;
-  role: string;
+  role: string; // Legacy field - kept for backward compatibility
+  job_title?: string; // Business title (e.g., "IT MANAGER", "CISO")
+  irp_role?: string; // Role in IRP (e.g., "Incident Response Team")
   phone: string;
   email: string;
   category: string;
+  responsibilities?: string; // Responsibilities description
   escalationLevel?: number;
 }
 
@@ -31,6 +34,7 @@ export interface IRPDocumentData {
   companyAddress: string;
   date: string;
   version: string;
+  cisoSubstitute?: string; // Name of person covering CISO role if not present
   sections: {
     introduction: string;
     severity: SeverityLevel[];
@@ -51,3 +55,19 @@ export interface IRPDocument {
   created_at?: string;
   updated_at?: string;
 }
+
+// Predefined IRP roles
+export const IRP_ROLES = [
+  'Incident Response Team',
+  'Steering Committee',
+  'Incident Response Manager',
+  'Incident Response Program Owner',
+  'Communications Lead',
+  'Legal Counsel',
+  'Cyber Insurance',
+  'Referente CSIRT',
+  'Technical Support',
+  'Executive Team',
+] as const;
+
+export type IRPRole = typeof IRP_ROLES[number];
