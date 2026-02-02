@@ -220,6 +220,53 @@ export type Database = {
           },
         ]
       }
+      contact_directory: {
+        Row: {
+          created_at: string | null
+          email: string | null
+          first_name: string
+          id: string
+          job_title: string | null
+          last_name: string
+          notes: string | null
+          organization_id: string | null
+          phone: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          email?: string | null
+          first_name: string
+          id?: string
+          job_title?: string | null
+          last_name: string
+          notes?: string | null
+          organization_id?: string | null
+          phone?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          email?: string | null
+          first_name?: string
+          id?: string
+          job_title?: string | null
+          last_name?: string
+          notes?: string | null
+          organization_id?: string | null
+          phone?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_directory_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dark_risk_alerts: {
         Row: {
           alert_email: string
@@ -265,6 +312,7 @@ export type Database = {
         Row: {
           category: string
           created_at: string
+          directory_contact_id: string | null
           email: string
           id: string
           irp_role: string | null
@@ -279,6 +327,7 @@ export type Database = {
         Insert: {
           category: string
           created_at?: string
+          directory_contact_id?: string | null
           email: string
           id?: string
           irp_role?: string | null
@@ -293,6 +342,7 @@ export type Database = {
         Update: {
           category?: string
           created_at?: string
+          directory_contact_id?: string | null
           email?: string
           id?: string
           irp_role?: string | null
@@ -305,6 +355,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "emergency_contacts_directory_contact_id_fkey"
+            columns: ["directory_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contact_directory"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "emergency_contacts_organization_id_fkey"
             columns: ["organization_id"]
