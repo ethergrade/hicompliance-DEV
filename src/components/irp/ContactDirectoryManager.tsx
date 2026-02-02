@@ -28,7 +28,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Search, Pencil, Trash2, Users, Download, Phone, Mail, Upload, FileSpreadsheet } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Users, Download, Phone, Mail, Upload, FileSpreadsheet, FileDown } from 'lucide-react';
 import { useContactDirectory } from '@/hooks/useContactDirectory';
 import { ContactDirectoryForm } from './ContactDirectoryForm';
 import { DirectoryContact } from '@/types/irp';
@@ -103,6 +103,15 @@ export const ContactDirectoryManager: React.FC = () => {
     setImporting(false);
   };
 
+  const columnWidths = [
+    { wch: 15 }, // Nome
+    { wch: 15 }, // Cognome
+    { wch: 20 }, // Titolo
+    { wch: 30 }, // Email
+    { wch: 18 }, // Telefono
+    { wch: 30 }, // Note
+  ];
+
   // Download template file
   const downloadTemplate = () => {
     const templateData = [
@@ -112,15 +121,7 @@ export const ContactDirectoryManager: React.FC = () => {
     ];
 
     const ws = XLSX.utils.aoa_to_sheet(templateData);
-    
-    ws['!cols'] = [
-      { wch: 15 },
-      { wch: 15 },
-      { wch: 20 },
-      { wch: 30 },
-      { wch: 18 },
-      { wch: 30 },
-    ];
+    ws['!cols'] = columnWidths;
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Contatti');
@@ -130,6 +131,44 @@ export const ContactDirectoryManager: React.FC = () => {
     toast({
       title: "Template scaricato",
       description: "Compila il file e importalo per aggiungere i contatti"
+    });
+  };
+
+  // Export all contacts to Excel
+  const exportContacts = () => {
+    if (filteredContacts.length === 0) {
+      toast({
+        title: "Nessun contatto",
+        description: "Non ci sono contatti da esportare",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const exportData = [
+      ['Nome', 'Cognome', 'Titolo Aziendale', 'Email', 'Telefono', 'Note'],
+      ...filteredContacts.map(c => [
+        c.first_name || '',
+        c.last_name || '',
+        c.job_title || '',
+        c.email || '',
+        c.phone || '',
+        c.notes || ''
+      ])
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(exportData);
+    ws['!cols'] = columnWidths;
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Contatti');
+    
+    const date = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(wb, `rubrica_contatti_${date}.xlsx`);
+    
+    toast({
+      title: "Export completato",
+      description: `${filteredContacts.length} contatti esportati`
     });
   };
 
@@ -306,6 +345,14 @@ export const ContactDirectoryManager: React.FC = () => {
               >
                 <Download className="w-4 h-4 mr-2" />
                 {importing ? 'Importazione...' : 'Importa da Governance'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={exportContacts}
+                disabled={filteredContacts.length === 0}
+              >
+                <FileDown className="w-4 h-4 mr-2" />
+                Esporta Excel
               </Button>
               <Button onClick={() => setFormDialogOpen(true)}>
                 <Plus className="w-4 h-4 mr-2" />
