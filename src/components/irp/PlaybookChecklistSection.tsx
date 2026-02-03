@@ -3,7 +3,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { ChevronDown, ChevronUp, MessageSquare } from 'lucide-react';
+import { ChevronDown, ChevronUp, MessageSquare, ExternalLink, Link as LinkIcon } from 'lucide-react';
 import { PlaybookChecklistItem } from '@/types/playbook';
 import { cn } from '@/lib/utils';
 
@@ -19,9 +19,17 @@ export const PlaybookChecklistSection: React.FC<PlaybookChecklistSectionProps> =
   showNotes = true,
 }) => {
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
+  const [showLinkInput, setShowLinkInput] = useState<Record<string, boolean>>({});
 
   const toggleNotes = (itemId: string) => {
     setExpandedNotes(prev => ({
+      ...prev,
+      [itemId]: !prev[itemId]
+    }));
+  };
+
+  const toggleLinkInput = (itemId: string) => {
+    setShowLinkInput(prev => ({
       ...prev,
       [itemId]: !prev[itemId]
     }));
@@ -40,7 +48,7 @@ export const PlaybookChecklistSection: React.FC<PlaybookChecklistSectionProps> =
           className={cn(
             "rounded-lg border p-3 transition-all",
             item.checked 
-              ? "bg-green-500/5 border-green-500/20" 
+              ? "bg-primary/5 border-primary/20" 
               : "bg-card border-border hover:border-primary/30"
           )}
         >
@@ -81,13 +89,58 @@ export const PlaybookChecklistSection: React.FC<PlaybookChecklistSectionProps> =
                 )}
               </label>
               
-              {showNotes && (
-                <div className="flex items-center gap-2">
+              {/* Link display when set */}
+              {item.link && item.link.trim() !== '' && (
+                <a 
+                  href={item.link} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  {item.linkLabel || 'Apri link'}
+                </a>
+              )}
+
+              {/* Link input field when expanded */}
+              {showLinkInput[item.id] && (
+                <div className="flex items-center gap-2 mt-2">
+                  <Input
+                    type="url"
+                    value={item.link || ''}
+                    onChange={(e) => onItemChange(item.id, { link: e.target.value })}
+                    placeholder="https://..."
+                    className="text-sm h-8 flex-1"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
+              )}
+              
+              <div className="flex items-center gap-2">
+                {/* Link button */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => toggleLinkInput(item.id)}
+                  className={cn(
+                    "h-6 px-2 text-xs text-muted-foreground hover:text-foreground",
+                    (item.link && item.link.trim() !== '') && "text-primary"
+                  )}
+                >
+                  <LinkIcon className="w-3 h-3 mr-1" />
+                  Link
+                </Button>
+
+                {showNotes && (
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => toggleNotes(item.id)}
-                    className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                    className={cn(
+                      "h-6 px-2 text-xs text-muted-foreground hover:text-foreground",
+                      item.notes && "text-primary"
+                    )}
                   >
                     <MessageSquare className="w-3 h-3 mr-1" />
                     Note
@@ -97,13 +150,13 @@ export const PlaybookChecklistSection: React.FC<PlaybookChecklistSectionProps> =
                       <ChevronDown className="w-3 h-3 ml-1" />
                     )}
                   </Button>
-                  {item.notes && !expandedNotes[item.id] && (
-                    <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-                      {item.notes}
-                    </span>
-                  )}
-                </div>
-              )}
+                )}
+                {item.notes && !expandedNotes[item.id] && (
+                  <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+                    {item.notes}
+                  </span>
+                )}
+              </div>
               
               {showNotes && expandedNotes[item.id] && (
                 <Textarea
