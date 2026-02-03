@@ -68,26 +68,6 @@ const IncidentResponse: React.FC = () => {
       templates: ['Notifica GDPR', 'Report interno', 'Comunicazione clienti']
     },
     {
-      id: 'malware-infection',
-      title: 'Infezione Malware',
-      category: 'Sicurezza',
-      severity: 'Alta',
-      icon: Shield,
-      duration: '1-3 ore',
-      description: 'Risposta rapida per contenere e rimuovere malware dai sistemi',
-      steps: [
-        'Disconnessione immediata dalla rete',
-        'Identificazione del tipo di malware',
-        'Scansione completa dei sistemi',
-        'Isolamento dei file infetti',
-        'Pulizia e bonifica',
-        'Ripristino dei backup',
-        'Rafforzamento delle difese'
-      ],
-      contacts: ['IT Security', 'System Admin', 'Network Team'],
-      templates: ['Report analisi malware', 'Piano di bonifica', 'Checklist sicurezza']
-    },
-    {
       id: 'phishing-attack',
       title: 'Attacco Phishing',
       category: 'Social Engineering',
@@ -149,15 +129,15 @@ const IncidentResponse: React.FC = () => {
     },
     {
       id: 'ransomware',
-      title: 'Attacco Ransomware',
+      title: 'Ransomware / Malware',
       category: 'Sicurezza',
       severity: 'Critica',
       icon: Lock,
-      duration: '4-12 ore',
-      description: 'Risposta completa agli attacchi ransomware',
+      duration: '1-4 ore',
+      description: 'Risposta completa agli attacchi ransomware e malware',
       steps: [
         'Isolamento immediato sistemi infetti',
-        'Identificazione variante ransomware',
+        'Identificazione variante ransomware/malware',
         'Valutazione dati crittografati',
         'Analisi disponibilità backup',
         'Decisione pagamento/ripristino',
