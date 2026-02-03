@@ -8,6 +8,7 @@ import { IRPDocumentEditor } from '@/components/irp/IRPDocumentEditor';
 import { GovernanceContactsTable } from '@/components/irp/GovernanceContactsTable';
 import { ContactDirectoryManager } from '@/components/irp/ContactDirectoryManager';
 import { PlaybookViewer } from '@/components/irp/PlaybookViewer';
+import { CriticalInfrastructureManager } from '@/components/irp/CriticalInfrastructureManager';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Playbook } from '@/types/playbook';
@@ -26,7 +27,8 @@ import {
   Network,
   Lock,
   Package,
-  Trash2
+  Trash2,
+  Server
 } from 'lucide-react';
 
 interface EmergencyContact {
@@ -388,10 +390,14 @@ const IncidentResponse: React.FC = () => {
         </div>
 
         <Tabs defaultValue="procedures" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="procedures">Procedure Operative</TabsTrigger>
             <TabsTrigger value="contacts">Contatti di Emergenza</TabsTrigger>
             <TabsTrigger value="directory">Rubrica Contatti</TabsTrigger>
+            <TabsTrigger value="infrastructure" className="flex items-center gap-1">
+              <Server className="h-4 w-4" />
+              Infrastruttura Critica
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="procedures" className="space-y-6">
@@ -481,6 +487,10 @@ const IncidentResponse: React.FC = () => {
 
           <TabsContent value="directory" className="space-y-6">
             <ContactDirectoryManager />
+          </TabsContent>
+
+          <TabsContent value="infrastructure" className="space-y-6">
+            <CriticalInfrastructureManager />
           </TabsContent>
         </Tabs>
       </div>
