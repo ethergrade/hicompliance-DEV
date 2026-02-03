@@ -1,9 +1,47 @@
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType, BorderStyle, AlignmentType } from 'docx';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType, BorderStyle, AlignmentType, ImageRun } from 'docx';
 import { saveAs } from 'file-saver';
 import { Playbook, PlaybookChecklistItem, calculatePlaybookProgress } from '@/types/playbook';
 
 const CHECKBOX_CHECKED = '☑';
 const CHECKBOX_UNCHECKED = '☐';
+
+// Convert base64 data URL to Uint8Array
+const base64ToUint8Array = (base64: string): Uint8Array => {
+  // Remove data URL prefix if present
+  const base64Data = base64.includes(',') ? base64.split(',')[1] : base64;
+  const binaryString = atob(base64Data);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+};
+
+// Get image dimensions from base64
+const getImageDimensions = (base64: string): Promise<{ width: number; height: number }> => {
+  return new Promise((resolve) => {
+    const img = document.createElement('img');
+    img.onload = () => {
+      resolve({ width: img.width, height: img.height });
+    };
+    img.onerror = () => {
+      resolve({ width: 400, height: 300 }); // Default fallback
+    };
+    img.src = base64;
+  });
+};
+
+// Calculate resized dimensions for Word document (max 400px width)
+const calculateDocxDimensions = (width: number, height: number, maxWidth: number = 400): { width: number; height: number } => {
+  if (width <= maxWidth) {
+    return { width, height };
+  }
+  const ratio = maxWidth / width;
+  return {
+    width: maxWidth,
+    height: Math.round(height * ratio),
+  };
+};
 
 const createCheckboxText = (checked: boolean): string => {
   return checked ? CHECKBOX_CHECKED : CHECKBOX_UNCHECKED;
@@ -37,7 +75,7 @@ const createSectionTitle = (title: string, subtitle?: string): Paragraph => {
   });
 };
 
-const createChecklistItem = (item: PlaybookChecklistItem): Paragraph[] => {
+const createChecklistItem = async (item: PlaybookChecklistItem): Promise<Paragraph[]> => {
   const paragraphs: Paragraph[] = [];
   
   let itemText = `${createCheckboxText(item.checked)} ${item.text}`;
@@ -63,6 +101,66 @@ const createChecklistItem = (item: PlaybookChecklistItem): Paragraph[] => {
       indent: { left: 360 },
     })
   );
+
+  // Add link if present
+  if (item.link && item.link.trim() !== '') {
+    paragraphs.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: `   🔗 Link: ${item.link}`,
+            size: 20,
+            color: '2563eb',
+          }),
+        ],
+        spacing: { before: 50, after: 50 },
+        indent: { left: 720 },
+      })
+    );
+  }
+
+  // Add screenshot if present
+  if (item.screenshot) {
+    try {
+      const imageData = base64ToUint8Array(item.screenshot);
+      const dimensions = await getImageDimensions(item.screenshot);
+      const docxDimensions = calculateDocxDimensions(dimensions.width, dimensions.height);
+      
+      paragraphs.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: `   📷 Screenshot${item.screenshotName ? `: ${item.screenshotName}` : ''}`,
+              size: 20,
+              italics: true,
+              color: '6b7280',
+            }),
+          ],
+          spacing: { before: 50, after: 50 },
+          indent: { left: 720 },
+        })
+      );
+
+      paragraphs.push(
+        new Paragraph({
+          children: [
+            new ImageRun({
+              data: imageData,
+              transformation: {
+                width: docxDimensions.width,
+                height: docxDimensions.height,
+              },
+              type: 'jpg',
+            }),
+          ],
+          spacing: { before: 100, after: 100 },
+          indent: { left: 720 },
+        })
+      );
+    } catch (error) {
+      console.error('Error adding image to document:', error);
+    }
+  }
 
   if (item.notes) {
     paragraphs.push(
@@ -271,7 +369,8 @@ export const generatePlaybookDocx = async (playbook: Playbook): Promise<void> =>
 
     if (section.type === 'checklist' && section.items) {
       for (const item of section.items) {
-        children.push(...createChecklistItem(item));
+        const itemParagraphs = await createChecklistItem(item);
+        children.push(...itemParagraphs);
       }
     }
   }

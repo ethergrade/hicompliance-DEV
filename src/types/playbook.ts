@@ -5,6 +5,8 @@ export interface PlaybookChecklistItem {
   text: string;
   checked: boolean;
   notes?: string;
+  screenshot?: string; // Base64 encoded image
+  screenshotName?: string; // Original filename
   link?: string; // Optional link URL for the item
   linkLabel?: string; // Optional custom label for the link
   hasInlineInput?: boolean;
