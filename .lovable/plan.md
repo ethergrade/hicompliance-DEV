@@ -1,215 +1,225 @@
 
-# Piano: Wizard "Infrastruttura Critica" per IRP Esteso
+# Piano: Analisi Rischi per IRP Esteso
 
-## Panoramica
-
-Creare una nuova scheda wizard nel modulo Incident Response che permette al cliente o al tecnico di censire l'infrastruttura critica dell'organizzazione. I dati compilati saranno persistiti automaticamente nel database Supabase e potranno essere esportati nel documento IRP "Esteso".
-
-Il wizard si compone di **due sezioni collegate**:
-1. **Asset Critici** - Dati identificativi e classificazione
-2. **Backup & Recovery** - Parametri di continuita' operativa
+## Obiettivo
+Creare una nuova scheda "Analisi Rischi" nel modulo Incident Response che permette di censire asset/archivi con le relative misure di sicurezza implementate. La matrice compilata verra' salvata automaticamente e, se completa, esportata come allegato nella "Gestione Documenti".
 
 ---
 
-## Struttura Dati
+## Analisi Excel - Struttura Dati
 
-### Tabella 1: Asset Critici
-| Campo | Tipo | Esempio |
-|-------|------|---------|
-| ID | Auto (C-01, C-02...) | C-01 |
-| Componente/Nome | Testo | Server applicazioni |
-| Criticita' | Scelta (H/M/L) | H |
-| Owner (Team) | Testo | IT Operations |
-| Gestione | Scelta (Interna/Esterna) | Interna |
-| Ubicazione/Region | Testo | Datacenter Milano |
-| Dati sensibili | Scelta (S/N) | S |
-| Dipendenze | Testo | Database Oracle |
-| Controlli principali | Testo | Firewall, IDS |
+L'Excel contiene una matrice di valutazione dove:
+- **Righe**: Asset/Archivi (raggruppati per fonte di rischio: Non Umane, Umane Esterne, Umane Interne)
+- **Colonne**: 33 misure di sicurezza raggruppate in categorie
+- **Valori**: Score 0-3 per ogni combinazione asset/misura
 
-### Tabella 2: Backup & Recovery (collegata via ID)
-| Campo | Tipo | Esempio |
-|-------|------|---------|
-| Backup | Scelta (S/N) | S |
-| Freq backup | Testo | Giornaliero |
-| Ultimo test | Data | 2026-01-15 |
-| RPO (h) | Numero | 4 |
-| RTO (h) | Numero | 8 |
-| Runbook/Link | URL/Testo | /docs/recovery.pdf |
-| Note IR | Testo libero | Procedura testata |
+### Legenda Score
+| Valore | Significato |
+|--------|-------------|
+| 0 | Non presente / Non applicabile |
+| 1 | Presente ma non incide sulla mitigazione |
+| 2 | Presente e parzialmente implementata |
+| 3 | Presente e totalmente implementata |
+
+---
+
+## Struttura Database
+
+### Nuova Tabella: `risk_analysis`
+
+```text
++---------------------+-------------+----------------------------------+
+| Campo               | Tipo        | Descrizione                      |
++---------------------+-------------+----------------------------------+
+| id                  | UUID        | Primary key                      |
+| organization_id     | UUID        | FK a organizations               |
+| asset_name          | TEXT        | Nome asset/archivio              |
+| threat_source       | TEXT        | non_umana/umana_esterna/interna  |
+| control_scores      | JSONB       | Mappa controllo -> score 0-3     |
+| risk_score          | INTEGER     | Score medio calcolato            |
+| notes               | TEXT        | Note libere                      |
+| created_at          | TIMESTAMPTZ | Data creazione                   |
+| updated_at          | TIMESTAMPTZ | Data aggiornamento               |
++---------------------+-------------+----------------------------------+
+```
+
+### Tabella di Supporto: `security_controls` (statica)
+Contiene i 33 controlli con categoria e ordine per popolare la UI.
 
 ---
 
 ## Interfaccia Utente
 
-### Nuova Tab "Infrastruttura Critica"
-La tab sara' aggiunta accanto alle esistenti (Procedure Operative, Contatti di Emergenza, Rubrica Contatti).
+### Approccio UX Proposto
+Invece di replicare l'intera matrice Excel (troppo complessa per un wizard), propongo un approccio **wizard guidato per asset**:
 
-### Layout Wizard
 ```text
 +----------------------------------------------------------+
-|  HEADER                                                   |
-|  [Responsabile: Head IT]  [Frequenza: Semestrale]        |
-|  [Progresso: 3/10 asset censiti]                         |
+|  ANALISI RISCHI - IRP Esteso                              |
 +----------------------------------------------------------+
-|  TABELLA ASSET CRITICI (scroll orizzontale)              |
-|  +------+---------------+------+-------+--------+...     |
-|  | ID   | Componente    | Crit | Owner | Gest.  |...     |
-|  +------+---------------+------+-------+--------+...     |
-|  | C-01 | Server App    | [H]  | IT    | [Int]  |...     |
-|  | C-02 | Database      | [H]  | DBA   | [Ext]  |...     |
-|  +------+---------------+------+-------+--------+...     |
+|                                                           |
+|  [Progresso: 2/5 asset analizzati] [Esporta Excel]       |
+|                                                           |
+|  +-- ELENCO ASSET ----------------------------------------+
+|  | Asset                    | Fonti | Completezza | Azioni|
+|  |--------------------------|-------|-------------|-------|
+|  | Server Applicazioni      | 3/3   | 85%         | [>]   |
+|  | Database Oracle          | 2/3   | 60%         | [>]   |
+|  | NAS Videosorveglianza    | 0/3   | 0%          | [>]   |
+|  +--------------------------------------------------------+
+|                                                           |
 |  [+ Aggiungi Asset]                                       |
-+----------------------------------------------------------+
-|  TABELLA BACKUP & RECOVERY                                |
-|  +------+--------+------+------------+-----+-----+...    |
-|  | ID   | Backup | Freq | Ultimo test| RPO | RTO |...    |
-|  +------+--------+------+------------+-----+-----+...    |
-|  | C-01 | [S]    | 24h  | [Date]     | 4   | 8   |...    |
-|  +------+--------+------+------------+-----+-----+...    |
-+----------------------------------------------------------+
-|  [Salva Bozza]     [Esporta Excel]                       |
+|                                                           |
 +----------------------------------------------------------+
 ```
 
-### Funzionalita' Wizard
-- **Auto-save**: Ogni modifica viene salvata automaticamente (debounce 2 secondi)
-- **ID automatico**: Generato sequenzialmente (C-01, C-02, ...)
-- **Datepicker**: Per campo "Ultimo test"
-- **Campi inline**: Modifica diretta nelle celle della tabella
-- **Drag & drop** (futuro): Riordinamento asset
-- **Validazione**: Campi obbligatori evidenziati
+### Wizard Dettaglio Asset (quando si clicca ">")
+
+```text
++----------------------------------------------------------+
+|  Asset: Server Applicazioni                    [< Torna] |
++----------------------------------------------------------+
+|                                                           |
+|  Seleziona fonte di rischio:                             |
+|  [Fonti Non Umane] [Fonti Umane Esterne] [Fonti Interne] |
+|                                                           |
+|  +-- SICUREZZA FISICA ------------------------------------+
+|  | Impianto antincendio          [0] [1] [2] [3]         |
+|  | Porta blindata                [0] [1] [2] [3]         |
+|  | Videosorveglianza             [0] [1] [2] [3]         |
+|  | Allarme                       [0] [1] [2] [3]         |
+|  | Archivio con serratura        [0] [1] [2] [3]         |
+|  | Estintori                     [0] [1] [2] [3]         |
+|  +--------------------------------------------------------+
+|                                                           |
+|  +-- CONTROLLO ACCESSI -----------------------------------+
+|  | Sistemi accesso controllato   [0] [1] [2] [3]         |
+|  | Armadio blindato/ignifugo     [0] [1] [2] [3]         |
+|  | Solo autorizzati              [0] [1] [2] [3]         |
+|  +--------------------------------------------------------+
+|                                                           |
+|  +-- SICUREZZA IT ----------------------------------------+
+|  | Firewall                      [0] [1] [2] [3]         |
+|  | Credenziali per addetto       [0] [1] [2] [3]         |
+|  | Complessita' password         [0] [1] [2] [3]         |
+|  | MFA                           [0] [1] [2] [3]         |
+|  | Antivirus/Antimalware         [0] [1] [2] [3]         |
+|  | Monitoraggio log              [0] [1] [2] [3]         |
+|  | Cifratura dati                [0] [1] [2] [3]         |
+|  +--------------------------------------------------------+
+|                                                           |
+|  ... altre categorie (Backup, Organizzativo, Compliance) |
+|                                                           |
+|  [Salvataggio automatico attivo]           [Risk: 2.3/3] |
++----------------------------------------------------------+
+```
 
 ---
 
-## Implementazione Tecnica
+## Categorizzazione Controlli
 
-### 1. Database - Nuova Tabella Supabase
+| Categoria | Controlli |
+|-----------|-----------|
+| **Sicurezza Fisica** | Antincendio, Porta blindata, Videosorveglianza, Allarme, Serratura, Estintori, Drenaggio, Accesso controllato locali, Armadio blindato |
+| **Controllo Accessi** | Archivio solo autorizzati, Max tentativi PSW, Sospensione sessioni |
+| **Gestione Documenti** | Distruggi documenti, Digitalizzazione |
+| **Sicurezza IT** | Firewall, Credenziali, Complessita' PSW, Log monitoring, MFA, Antivirus, Aggiornamenti SW, Cifratura |
+| **Continuita' Operativa** | Backup, Disaster Recovery |
+| **Organizzativo** | Formazione, Ruoli/Responsabilita', Gestione IT esterna, Tempi conservazione |
+| **Compliance** | Procedure Data Breach, Privacy docs, Consensi, Regolamento informatico, Diritti interessati |
 
-```sql
-CREATE TABLE critical_infrastructure (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id UUID REFERENCES organizations(id),
-  asset_id TEXT NOT NULL,  -- "C-01", "C-02", etc.
-  
-  -- Asset Critici fields
-  component_name TEXT NOT NULL,
-  criticality TEXT CHECK (criticality IN ('H', 'M', 'L')),
-  owner_team TEXT,
-  management_type TEXT CHECK (management_type IN ('internal', 'external')),
-  location TEXT,
-  sensitive_data TEXT CHECK (sensitive_data IN ('S', 'N', 'N/A')),
-  dependencies TEXT,
-  main_controls TEXT,
-  
-  -- Backup & Recovery fields  
-  has_backup TEXT CHECK (has_backup IN ('S', 'N')),
-  backup_frequency TEXT,
-  last_test_date DATE,
-  rpo_hours INTEGER,
-  rto_hours INTEGER,
-  runbook_link TEXT,
-  ir_notes TEXT,
-  
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  created_by UUID,
-  
-  UNIQUE(organization_id, asset_id)
-);
+---
 
--- RLS Policies
-ALTER TABLE critical_infrastructure ENABLE ROW LEVEL SECURITY;
+## Flusso Implementazione
 
-CREATE POLICY "Users can view own org infrastructure"
-  ON critical_infrastructure FOR SELECT
-  USING (organization_id IN (
-    SELECT organization_id FROM users 
-    WHERE auth_user_id = auth.uid()
-  ));
+### 1. Database Migration
+- Creare tabella `risk_analysis`
+- Creare tabella `security_controls` con seed dei 33 controlli
+- RLS policies per organization_id
 
-CREATE POLICY "Users can insert own org infrastructure"
-  ON critical_infrastructure FOR INSERT
-  WITH CHECK (organization_id IN (
-    SELECT organization_id FROM users 
-    WHERE auth_user_id = auth.uid()
-  ));
-
-CREATE POLICY "Users can update own org infrastructure"
-  ON critical_infrastructure FOR UPDATE
-  USING (organization_id IN (
-    SELECT organization_id FROM users 
-    WHERE auth_user_id = auth.uid()
-  ));
-
-CREATE POLICY "Users can delete own org infrastructure"
-  ON critical_infrastructure FOR DELETE
-  USING (organization_id IN (
-    SELECT organization_id FROM users 
-    WHERE auth_user_id = auth.uid()
-  ));
-```
-
-### 2. Nuovi File da Creare
+### 2. Nuovi File
 
 | File | Descrizione |
 |------|-------------|
-| `src/types/infrastructure.ts` | Tipi TypeScript per infrastruttura critica |
-| `src/hooks/useCriticalInfrastructure.ts` | Hook per CRUD asset |
-| `src/components/irp/CriticalInfrastructureManager.tsx` | Componente principale wizard |
-| `src/components/irp/CriticalAssetRow.tsx` | Riga editabile asset |
-| `src/components/irp/InfrastructureHeader.tsx` | Header con metadati |
+| `src/types/riskAnalysis.ts` | Tipi TypeScript |
+| `src/hooks/useRiskAnalysis.ts` | Hook CRUD per analisi rischi |
+| `src/data/securityControls.ts` | Definizione statica dei 33 controlli categorizzati |
+| `src/components/irp/RiskAnalysisManager.tsx` | Componente principale (lista asset) |
+| `src/components/irp/RiskAnalysisWizard.tsx` | Wizard dettaglio singolo asset |
+| `src/components/irp/RiskControlGroup.tsx` | Gruppo controlli con toggle 0-3 |
 
-### 3. Modifiche a File Esistenti
+### 3. Modifiche Esistenti
 
 | File | Modifica |
 |------|----------|
-| `src/pages/IncidentResponse.tsx` | Aggiungere nuova tab "Infrastruttura Critica" |
+| `src/pages/IncidentResponse.tsx` | Nuova tab "Analisi Rischi" |
+| `src/integrations/supabase/types.ts` | Aggiornamento tipi |
 
-### 4. Componente Principale
+---
 
+## Integrazione con Gestione Documenti
+
+Quando l'analisi e' compilata (almeno 1 asset con valutazioni):
+
+1. **Pulsante "Esporta Excel"**: Genera un file Excel con la matrice completa
+2. **Salvataggio automatico in Documenti**: 
+   - Quando l'utente esporta, il file viene caricato automaticamente su Supabase Storage
+   - Viene creato un record in `incident_documents` con categoria "Tecnico" o nuova categoria "Analisi Rischi"
+   - L'utente puo' accedervi dalla Gestione Documenti
+
+---
+
+## Integrazione con IRP Documento
+
+Nel generatore DOCX dell'IRP Esteso:
+- Se `risk_analysis` contiene dati per l'organizzazione
+- Viene aggiunta una sezione "Allegato: Analisi dei Rischi"
+- Con tabella riepilogativa degli asset e risk score medio
+- Il documento Excel viene referenziato come allegato
+
+---
+
+## Calcolo Risk Score
+
+Per ogni asset, il risk score viene calcolato come:
 ```text
-CriticalInfrastructureManager
-├── InfrastructureHeader (responsabile, frequenza, progresso)
-├── Card "Asset Critici"
-│   ├── ScrollArea (tabella editabile)
-│   │   └── CriticalAssetRow (per ogni asset)
-│   └── Button "Aggiungi Asset"
-├── Card "Backup & Recovery"  
-│   ├── ScrollArea (tabella editabile)
-│   │   └── BackupRecoveryRow (per ogni asset)
-│   └── (stesso dataset, vista diversa)
-└── Actions (Salva, Esporta Excel)
+Risk Score = (Somma score controlli valorizzati) / (Numero controlli valorizzati * 3) * 100
+
+Esempio:
+- 10 controlli valorizzati
+- Somma score = 25
+- Risk Score = 25 / (10 * 3) * 100 = 83%
 ```
 
----
-
-## Flusso Utente
-
-1. L'utente accede a **Incident Response > Infrastruttura Critica**
-2. Visualizza la tabella degli asset (vuota se primo accesso)
-3. Clicca **"+ Aggiungi Asset"** per creare un nuovo record
-4. Compila i campi inline (criticita', owner, ecc.)
-5. I dati si salvano automaticamente
-6. Nella sezione Backup, i dati RPO/RTO vengono compilati per lo stesso asset
-7. Puo' esportare in Excel o generare il documento IRP esteso
+Indicatori:
+- **0-40%**: Rischio Alto (rosso)
+- **41-70%**: Rischio Medio (giallo)
+- **71-100%**: Rischio Basso (verde)
 
 ---
 
-## Sequenza Implementazione
+## Vantaggi UX del Wizard
 
-1. Creare migrazione database con tabella e RLS
-2. Creare tipi TypeScript (`src/types/infrastructure.ts`)
-3. Creare hook `useCriticalInfrastructure` per gestione dati
-4. Creare componente `CriticalInfrastructureManager`
-5. Integrare in `IncidentResponse.tsx` come nuova tab
-6. Aggiungere export Excel
-7. (Futuro) Integrare nel generatore DOCX per IRP Esteso
+1. **Guidato**: L'utente compila un asset alla volta, non si perde in una matrice enorme
+2. **Progressivo**: Puo' salvare e riprendere in qualita ` momento
+3. **Auto-save**: Ogni modifica viene persistita automaticamente
+4. **Feedback visivo**: Score calcolato in tempo reale
+5. **Categorizzato**: Controlli raggruppati per facilitare la comprensione
+6. **3 fonti separate**: Per ogni asset si valutano le 3 fonti di minaccia distintamente
 
 ---
 
-## Note Tecniche
+## Riepilogo Tecnico
 
-- **Auto-save con debounce**: Uso di `useDebounce` hook per evitare troppe chiamate API
-- **Ottimistic updates**: Aggiornamento UI immediato, rollback in caso di errore
-- **Responsabile/Frequenza**: Campi configurabili in header, salvati come metadati org
-- **Compatibilita'**: Stesso pattern di GovernanceContactsTable e ContactDirectoryManager
+### Componenti da Creare
+- 1 migrazione database (2 tabelle + RLS)
+- 3 tipi TypeScript
+- 2 hooks React
+- 3 componenti UI
+- 1 file dati statici
+
+### Pattern Riutilizzati
+- Stesso pattern di `useCriticalInfrastructure` per CRUD
+- Stesso pattern di `CriticalInfrastructureManager` per UI tabellare
+- Export Excel come gia' implementato
+- Integrazione con `incident_documents` per allegati
