@@ -27,7 +27,7 @@ const dataExfiltrationBaseSections: PlaybookSection[] = [
         hasInlineInput: true,
         inlineInputLabel: '',
         inlineInputValue: '',
-        inlineInputPlaceholder: 'No / Sospetto / Confermata',
+        inlineInputPlaceholder: 'No / Sì',
       },
       { id: 'triage-2', text: 'Identificare canale egress (proxy/FW/DNS/cloud logs) e timeframe', checked: false },
       { id: 'triage-3', text: 'Identificare dataset e sistemi sorgente (DB/file share/cloud drive)', checked: false },
