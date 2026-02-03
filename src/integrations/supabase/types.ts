@@ -267,6 +267,86 @@ export type Database = {
           },
         ]
       }
+      critical_infrastructure: {
+        Row: {
+          asset_id: string
+          backup_frequency: string | null
+          component_name: string
+          created_at: string | null
+          created_by: string | null
+          criticality: string | null
+          dependencies: string | null
+          has_backup: string | null
+          id: string
+          ir_notes: string | null
+          last_test_date: string | null
+          location: string | null
+          main_controls: string | null
+          management_type: string | null
+          organization_id: string | null
+          owner_team: string | null
+          rpo_hours: number | null
+          rto_hours: number | null
+          runbook_link: string | null
+          sensitive_data: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          asset_id: string
+          backup_frequency?: string | null
+          component_name?: string
+          created_at?: string | null
+          created_by?: string | null
+          criticality?: string | null
+          dependencies?: string | null
+          has_backup?: string | null
+          id?: string
+          ir_notes?: string | null
+          last_test_date?: string | null
+          location?: string | null
+          main_controls?: string | null
+          management_type?: string | null
+          organization_id?: string | null
+          owner_team?: string | null
+          rpo_hours?: number | null
+          rto_hours?: number | null
+          runbook_link?: string | null
+          sensitive_data?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          asset_id?: string
+          backup_frequency?: string | null
+          component_name?: string
+          created_at?: string | null
+          created_by?: string | null
+          criticality?: string | null
+          dependencies?: string | null
+          has_backup?: string | null
+          id?: string
+          ir_notes?: string | null
+          last_test_date?: string | null
+          location?: string | null
+          main_controls?: string | null
+          management_type?: string | null
+          organization_id?: string | null
+          owner_team?: string | null
+          rpo_hours?: number | null
+          rto_hours?: number | null
+          runbook_link?: string | null
+          sensitive_data?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "critical_infrastructure_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dark_risk_alerts: {
         Row: {
           alert_email: string
