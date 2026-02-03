@@ -25,6 +25,7 @@ import {
   Database,
   Network,
   Lock,
+  Package,
   Trash2
 } from 'lucide-react';
 
@@ -167,6 +168,26 @@ const IncidentResponse: React.FC = () => {
       ],
       contacts: ['Crisis Team', 'Backup Admin', 'Legal Team'],
       templates: ['Piano crisis management', 'Valutazione impatto', 'Comunicazione stakeholder']
+    },
+    {
+      id: 'supply-chain',
+      title: 'Supply Chain Incident',
+      category: 'Supply Chain',
+      severity: 'Critica',
+      icon: Package,
+      duration: '2-6 ore',
+      description: 'Bloccare distribuzione di componenti compromessi, verificare integrità software, isolare impatto',
+      steps: [
+        'Identificare componente/fornitore impattato',
+        'Mappare sistemi dipendenti',
+        'Stop deploy e freeze release',
+        'Rollback a versione nota-buona',
+        'Rebuild artefatti da pipeline trusted',
+        'Aggiornare SBOM e policy',
+        'Comunicazioni a clienti/partner'
+      ],
+      contacts: ['CISO', 'Head IT/DevOps', 'IRM', 'Legal/Vendor mgmt'],
+      templates: ['Timeline vendor', 'SBOM aggiornato', 'Comunicazione clienti']
     }
   ];
 
