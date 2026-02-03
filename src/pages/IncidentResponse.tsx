@@ -108,24 +108,24 @@ const IncidentResponse: React.FC = () => {
       templates: ['Report DDoS', 'Comunicazione downtime', 'Piano mitigazione']
     },
     {
-      id: 'insider-threat',
-      title: 'Minaccia Interna',
-      category: 'Personale',
-      severity: 'Critica',
-      icon: Users,
-      duration: '2-6 ore',
-      description: 'Gestione di minacce provenienti da personale interno',
+      id: 'physical-security',
+      title: 'Physical Security Breach',
+      category: 'Sicurezza Fisica',
+      severity: 'Alta',
+      icon: Shield,
+      duration: '1-3 ore',
+      description: 'Preservare scena ed evidenze, ridurre rischio su dati, ripristinare sicurezza fisica e logica',
       steps: [
-        'Raccolta evidenze iniziali',
-        'Isolamento accessi dell\'utente',
-        'Analisi dei log di attività',
-        'Coordinamento con HR e Legal',
-        'Preservazione delle prove',
-        'Intervista del soggetto',
-        'Azioni disciplinari/legali'
+        'Confermare evento e delimitare area',
+        'Inventario asset coinvolti',
+        'Valutare dati potenzialmente esposti',
+        'Estrarre badge logs e CCTV',
+        'Revocare badge/accessi fisici',
+        'Remote wipe/lock endpoint',
+        'Hardening fisico e recovery'
       ],
-      contacts: ['CISO', 'HR Director', 'Legal Counsel'],
-      templates: ['Report investigativo', 'Documentazione legale', 'Piano disciplinare']
+      contacts: ['Head IT', 'Facilities/Security', 'Legal'],
+      templates: ['Report incidente', 'Chain of custody', 'Denuncia']
     },
     {
       id: 'ransomware',
