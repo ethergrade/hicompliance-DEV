@@ -18,9 +18,9 @@ const physicalSecurityBaseSections: PlaybookSection[] = [
     title: 'Triage',
     type: 'checklist',
     items: [
-      { id: 'tr1', text: 'Confermare evento e delimitare area', checked: false },
+      { id: 'tr1', text: 'Confermare evento e delimitare area', checked: false, hasInlineInput: true, inlineInputLabel: 'Evento confermato', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
       { id: 'tr2', text: 'Inventario asset coinvolti (seriali, asset tag)', checked: false },
-      { id: 'tr3', text: 'Valutare dati potenzialmente esposti (disk encryption? accessi?)', checked: false },
+      { id: 'tr3', text: 'Valutare dati potenzialmente esposti (disk encryption? accessi?)', checked: false, hasInlineInput: true, inlineInputLabel: 'Disk encryption attiva', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
       { id: 'tr4', text: 'Estrarre badge logs per timeframe', checked: false },
       { id: 'tr5', text: 'Estrarre filmati CCTV per timeframe', checked: false },
       { 
@@ -40,10 +40,10 @@ const physicalSecurityBaseSections: PlaybookSection[] = [
     type: 'checklist',
     items: [
       { id: 'c1', text: 'Revocare badge/accessi fisici correlati', checked: false },
-      { id: 'c2', text: 'Disabilitare account se device conteneva token/keys', checked: false },
+      { id: 'c2', text: 'Disabilitare account se device conteneva token/keys', checked: false, hasInlineInput: true, inlineInputLabel: 'Token/keys nel device', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
       { id: 'c3', text: 'Ruotare credenziali se device conteneva token/keys', checked: false },
-      { id: 'c4', text: 'Remote wipe/lock (se endpoint gestito)', checked: false },
-      { id: 'c5', text: 'Segregare rete se hardware manomesso (switch/rack)', checked: false },
+      { id: 'c4', text: 'Remote wipe/lock (se endpoint gestito)', checked: false, hasInlineInput: true, inlineInputLabel: 'Endpoint gestito', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
+      { id: 'c5', text: 'Segregare rete se hardware manomesso (switch/rack)', checked: false, hasInlineInput: true, inlineInputLabel: 'Hardware manomesso', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
     ]
   },
   {
@@ -76,8 +76,8 @@ const physicalSecurityBaseSections: PlaybookSection[] = [
       { id: 'ev1', text: 'Badge logs estratti', checked: false },
       { id: 'ev2', text: 'Estratti CCTV', checked: false },
       { id: 'ev3', text: 'Inventario asset', checked: false },
-      { id: 'ev4', text: 'Denuncia (se applicabile) e numero protocollo', checked: false },
-      { id: 'ev5', text: 'Chain of custody se acquisizioni forensi', checked: false },
+      { id: 'ev4', text: 'Denuncia (se applicabile) e numero protocollo', checked: false, hasInlineInput: true, inlineInputLabel: 'Denuncia presentata', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
+      { id: 'ev5', text: 'Chain of custody se acquisizioni forensi', checked: false, hasInlineInput: true, inlineInputLabel: 'Acquisizioni forensi', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
     ]
   },
 ];
