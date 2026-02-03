@@ -87,13 +87,13 @@ export const PlaybookViewer: React.FC<PlaybookViewerProps> = ({
     }
   }, [initialPlaybook]);
 
-  const handleOwnerChange = useCallback((inputId: string, value: string) => {
+  const handleOwnerChange = useCallback((inputId: string, value: string, contactId?: string) => {
     setPlaybookState(prev => {
       if (!prev) return prev;
       return {
         ...prev,
         owner: prev.owner.map(field =>
-          field.id === inputId ? { ...field, value } : field
+          field.id === inputId ? { ...field, value, contactId } : field
         ),
       };
     });

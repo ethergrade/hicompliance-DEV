@@ -5,6 +5,8 @@ export interface PlaybookChecklistItem {
   text: string;
   checked: boolean;
   notes?: string;
+  link?: string; // Optional link URL for the item
+  linkLabel?: string; // Optional custom label for the link
   hasInlineInput?: boolean;
   inlineInputLabel?: string;
   inlineInputValue?: string;
@@ -17,6 +19,8 @@ export interface PlaybookInputField {
   value: string;
   placeholder?: string;
   required?: boolean;
+  allowDirectoryPicker?: boolean; // Allow picking from contact directory
+  contactId?: string; // ID of selected contact from directory
 }
 
 export interface PlaybookSection {
