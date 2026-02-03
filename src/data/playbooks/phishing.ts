@@ -3,6 +3,7 @@ import { ransomwarePlaybook } from './ransomware';
 import { dataExfiltrationPlaybook } from './data-exfiltration';
 import { ddosPlaybook } from './ddos';
 import { physicalSecurityPlaybook } from './physical-security';
+import { unauthorizedAccessPlaybook } from './unauthorized-access';
 import { mergeCommonStandards } from './common-standards';
 
 const phishingBaseSections: PlaybookSection[] = [
@@ -146,4 +147,5 @@ export const playbooksMap: Record<string, Playbook> = {
   'data-breach': dataExfiltrationPlaybook,
   'ddos-attack': ddosPlaybook,
   'physical-security': physicalSecurityPlaybook,
+  'unauthorized-access': unauthorizedAccessPlaybook,
 };

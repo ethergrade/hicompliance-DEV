@@ -20,6 +20,7 @@ import {
   Phone,
   Mail,
   Shield,
+  ShieldAlert,
   Eye,
   Database,
   Network,
@@ -126,6 +127,26 @@ const IncidentResponse: React.FC = () => {
       ],
       contacts: ['Head IT', 'Facilities/Security', 'Legal'],
       templates: ['Report incidente', 'Chain of custody', 'Denuncia']
+    },
+    {
+      id: 'unauthorized-access',
+      title: 'Unauthorized Access / Intrusion',
+      category: 'Sicurezza',
+      severity: 'Critica',
+      icon: ShieldAlert,
+      duration: '2-4 ore',
+      description: 'Interrompere l\'accesso e il movimento laterale, rimuovere persistenze, ripristinare sicurezza',
+      steps: [
+        'Confermare intrusion e identificare entry point',
+        'Disabilitare account compromessi',
+        'Segmentazione d\'emergenza',
+        'Rimuovere backdoor e persistenze',
+        'Ripristinare servizi con policy rafforzate',
+        'Monitoraggio potenziato',
+        'Valutare notifica CSIRT/DPO'
+      ],
+      contacts: ['SOC/Head IT', 'Forensics', 'IRM', 'CISO'],
+      templates: ['Timeline incidente', 'Log autenticazioni', 'Report persistenze']
     },
     {
       id: 'ransomware',
