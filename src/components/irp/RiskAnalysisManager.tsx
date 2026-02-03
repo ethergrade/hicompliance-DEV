@@ -34,6 +34,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { RiskAnalysisWizard } from './RiskAnalysisWizard';
+import { RiskHeatMap } from './RiskHeatMap';
 import { useRiskAnalysis } from '@/hooks/useRiskAnalysis';
 import { useDocumentSave } from '@/hooks/useDocumentSave';
 import { THREAT_SOURCE_LABELS, ThreatSource, AssetSummary } from '@/types/riskAnalysis';
@@ -48,7 +49,9 @@ import {
   AlertTriangle,
   CheckCircle,
   Loader2,
-  Info
+  Info,
+  LayoutGrid,
+  List
 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -73,6 +76,7 @@ export const RiskAnalysisManager: React.FC = () => {
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
   const [newAssetName, setNewAssetName] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'heatmap'>('list');
 
   const assetSummaries = getAssetSummaries();
 
@@ -194,17 +198,17 @@ export const RiskAnalysisManager: React.FC = () => {
 
   const getRiskIcon = (level: 'low' | 'medium' | 'high') => {
     switch (level) {
-      case 'low': return <CheckCircle className="h-4 w-4 text-green-400" />;
-      case 'medium': return <AlertTriangle className="h-4 w-4 text-yellow-400" />;
-      case 'high': return <Shield className="h-4 w-4 text-red-400" />;
+      case 'low': return <CheckCircle className="h-4 w-4 text-primary" />;
+      case 'medium': return <AlertTriangle className="h-4 w-4 text-warning" />;
+      case 'high': return <Shield className="h-4 w-4 text-destructive" />;
     }
   };
 
   const getRiskBadgeVariant = (level: 'low' | 'medium' | 'high') => {
     switch (level) {
-      case 'low': return 'bg-green-500/20 text-green-400 border-green-500/50';
-      case 'medium': return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50';
-      case 'high': return 'bg-red-500/20 text-red-400 border-red-500/50';
+      case 'low': return 'bg-primary/20 text-primary border-primary/50';
+      case 'medium': return 'bg-warning/20 text-warning border-warning/50';
+      case 'high': return 'bg-destructive/20 text-destructive border-destructive/50';
     }
   };
 
@@ -248,6 +252,27 @@ export const RiskAnalysisManager: React.FC = () => {
               </p>
             </div>
             <div className="flex items-center gap-2">
+              {/* View Toggle */}
+              {assets.length > 0 && (
+                <div className="flex items-center border rounded-md">
+                  <Button
+                    variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="rounded-r-none"
+                    onClick={() => setViewMode('list')}
+                  >
+                    <List className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant={viewMode === 'heatmap' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="rounded-l-none"
+                    onClick={() => setViewMode('heatmap')}
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
               {assets.length > 0 && (
                 <Button variant="outline" size="sm" onClick={handleExportExcel}>
                   <FileSpreadsheet className="h-4 w-4 mr-1" />
@@ -305,24 +330,31 @@ export const RiskAnalysisManager: React.FC = () => {
         )}
       </Card>
 
-      {/* Legend */}
-      <Card className="bg-card border-border">
-        <CardContent className="py-3">
-          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-            <div className="flex items-center gap-1">
-              <Info className="h-3 w-3" />
-              <span>Score:</span>
+      {/* Legend - only show in list mode */}
+      {viewMode === 'list' && (
+        <Card className="bg-card border-border">
+          <CardContent className="py-3">
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <div className="flex items-center gap-1">
+                <Info className="h-3 w-3" />
+                <span>Score:</span>
+              </div>
+              <span>0 = Non presente</span>
+              <span>1 = Non incide</span>
+              <span>2 = Parziale</span>
+              <span>3 = Totale</span>
             </div>
-            <span>0 = Non presente</span>
-            <span>1 = Non incide</span>
-            <span>2 = Parziale</span>
-            <span>3 = Totale</span>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Asset List */}
-      {assetSummaries.length === 0 ? (
+      {/* Heatmap View */}
+      {viewMode === 'heatmap' && assetSummaries.length > 0 && (
+        <RiskHeatMap assets={assets} />
+      )}
+
+      {/* Asset List View */}
+      {viewMode === 'list' && assetSummaries.length === 0 ? (
         <Card className="bg-card border-border">
           <CardContent className="py-12 text-center">
             <Shield className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -336,7 +368,7 @@ export const RiskAnalysisManager: React.FC = () => {
             </Button>
           </CardContent>
         </Card>
-      ) : (
+      ) : viewMode === 'list' && (
         <Card className="bg-card border-border">
           <ScrollArea className="max-h-[500px]">
             <Table>
