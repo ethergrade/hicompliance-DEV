@@ -19,10 +19,10 @@ const ddosBaseSections: PlaybookSection[] = [
     title: 'Triage',
     type: 'checklist',
     items: [
-      { id: 'triage-1', text: 'Distinguere DDoS vs outage tecnico (guasto, config, capacity)', checked: false },
-      { id: 'triage-2', text: 'Identificare servizi/endpoint colpiti e pattern (L3/L4/L7)', checked: false },
+      { id: 'triage-1', text: 'Distinguere DDoS vs outage tecnico (guasto, config, capacity)', checked: false, hasInlineInput: true, inlineInputLabel: 'Tipo', inlineInputValue: '', inlineInputPlaceholder: 'DDoS / Outage tecnico' },
+      { id: 'triage-2', text: 'Identificare servizi/endpoint colpiti e pattern (L3/L4/L7)', checked: false, hasInlineInput: true, inlineInputLabel: 'Pattern', inlineInputValue: '', inlineInputPlaceholder: 'L3 / L4 / L7' },
       { id: 'triage-3', text: 'Misurare impatto su SLA e utenti', checked: false },
-      { id: 'triage-4', text: 'Severity: servizio critico down → ALTO/CRITICO', checked: false },
+      { id: 'triage-4', text: 'Severity: servizio critico down → ALTO/CRITICO', checked: false, hasInlineInput: true, inlineInputLabel: 'Severity', inlineInputValue: '', inlineInputPlaceholder: 'P1 / P2 / P3' },
     ],
   },
   {
@@ -33,8 +33,8 @@ const ddosBaseSections: PlaybookSection[] = [
     items: [
       { id: 'containment-1', text: 'Attivare mitigazione CDN/WAF (DDoS mode, bot protection)', checked: false },
       { id: 'containment-2', text: 'Rate limiting e regole WAF mirate (path, user-agent, geo)', checked: false },
-      { id: 'containment-3', text: 'Failover/scale out (se disponibile)', checked: false },
-      { id: 'containment-4', text: 'Coinvolgere ISP per scrubbing/blackhole controllato (se necessario)', checked: false },
+      { id: 'containment-3', text: 'Failover/scale out (se disponibile)', checked: false, hasInlineInput: true, inlineInputLabel: 'Failover disponibile', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
+      { id: 'containment-4', text: 'Coinvolgere ISP per scrubbing/blackhole controllato (se necessario)', checked: false, hasInlineInput: true, inlineInputLabel: 'ISP coinvolto', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
       { id: 'containment-5', text: 'Proteggere servizi core (priorità traffico, isolare admin, API critical)', checked: false },
     ],
   },
@@ -67,7 +67,7 @@ const ddosBaseSections: PlaybookSection[] = [
     items: [
       { id: 'evidence-1', text: 'Metriche traffico (pps, bps, req/s), log WAF/CDN', checked: false },
       { id: 'evidence-2', text: 'Timeline mitigazioni e cambi config', checked: false },
-      { id: 'evidence-3', text: 'Downtime totale e impatto utenti', checked: false },
+      { id: 'evidence-3', text: 'Downtime totale e impatto utenti', checked: false, hasInlineInput: true, inlineInputLabel: 'Downtime (ore)', inlineInputValue: '', inlineInputPlaceholder: 'es. 2' },
     ],
   },
   {

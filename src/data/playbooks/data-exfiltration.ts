@@ -31,8 +31,8 @@ const dataExfiltrationBaseSections: PlaybookSection[] = [
       },
       { id: 'triage-2', text: 'Identificare canale egress (proxy/FW/DNS/cloud logs) e timeframe', checked: false },
       { id: 'triage-3', text: 'Identificare dataset e sistemi sorgente (DB/file share/cloud drive)', checked: false },
-      { id: 'triage-4', text: 'Stimare quantità e categoria dati (personali, finanziari, IP)', checked: false },
-      { id: 'triage-5', text: 'Severity: dati sensibili + esfil confermata → CRITICO/ALTO', checked: false },
+      { id: 'triage-4', text: 'Stimare quantità e categoria dati (personali, finanziari, IP)', checked: false, hasInlineInput: true, inlineInputLabel: 'Categoria dati', inlineInputValue: '', inlineInputPlaceholder: 'Personali / Finanziari / IP / Altro' },
+      { id: 'triage-5', text: 'Severity: dati sensibili + esfil confermata → CRITICO/ALTO', checked: false, hasInlineInput: true, inlineInputLabel: 'Severity', inlineInputValue: '', inlineInputPlaceholder: 'P1 / P2 / P3' },
     ],
   },
   {
@@ -43,7 +43,7 @@ const dataExfiltrationBaseSections: PlaybookSection[] = [
       { id: 'containment-1', text: 'Bloccare canale egress (FW/Proxy/DNS, policy cloud)', checked: false },
       { id: 'containment-2', text: 'Revoke token/sessioni e bloccare account sospetti', checked: false },
       { id: 'containment-3', text: 'Revocare share/link pubblici e ridurre permessi (least privilege)', checked: false },
-      { id: 'containment-4', text: 'Attivare/rafforzare DLP (se disponibile)', checked: false },
+      { id: 'containment-4', text: 'Attivare/rafforzare DLP (se disponibile)', checked: false, hasInlineInput: true, inlineInputLabel: 'DLP disponibile', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
       { id: 'containment-5', text: 'Isolare backup e repository dati da rete compromessa', checked: false },
     ],
   },
@@ -72,8 +72,8 @@ const dataExfiltrationBaseSections: PlaybookSection[] = [
     title: 'Compliance',
     type: 'checklist',
     items: [
-      { id: 'compliance-1', text: 'NIS2: se significativo o malintento/transfrontaliero → CSIRT (24h/72h)', checked: false },
-      { id: 'compliance-2', text: 'GDPR: valutazione data breach e notifiche con DPO/Legal', checked: false },
+      { id: 'compliance-1', text: 'NIS2: se significativo o malintento/transfrontaliero → CSIRT (24h/72h)', checked: false, hasInlineInput: true, inlineInputLabel: 'Applicabile NIS2', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
+      { id: 'compliance-2', text: 'GDPR: valutazione data breach e notifiche con DPO/Legal', checked: false, hasInlineInput: true, inlineInputLabel: 'Notifica GDPR richiesta', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
     ],
   },
   {
