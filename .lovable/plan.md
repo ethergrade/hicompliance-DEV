@@ -1,199 +1,147 @@
 
-# Piano: Salvataggio Reattivo del Progresso Playbook
+# Piano: Aggiunta campi di scelta interattivi nei Playbook
 
 ## Obiettivo
-
-Implementare un sistema di salvataggio automatico che persista il progresso del playbook ogni volta che l'utente compila un campo o spunta un checkbox, senza richiedere un click esplicito. L'utente potra tornare dopo ore o giorni e trovare il lavoro esattamente dove lo aveva lasciato.
-
----
-
-## Strategia Tecnica
-
-### Approccio: Auto-save con Debounce
-
-Ogni modifica allo stato del playbook triggera un salvataggio automatico, con un debounce di 500-1000ms per evitare eccessive scritture su localStorage.
-
-```text
-+------------------+     +------------------+     +------------------+
-| Utente modifica  | --> | Debounce Timer   | --> | Salvataggio      |
-| checkbox/input   |     | (500ms)          |     | localStorage     |
-+------------------+     +------------------+     +------------------+
-                                                         |
-                                                         v
-                                               +------------------+
-                                               | Feedback visivo  |
-                                               | "Salvato"        |
-                                               +------------------+
-```
-
-### Componenti del Sistema
-
-1. **useAutoSave hook**: Custom hook per gestire il salvataggio automatico con debounce
-2. **Indicatore di stato**: Feedback visivo nell'header del playbook (Salvando... / Salvato)
-3. **Timestamp ultimo salvataggio**: Mostra quando e stato salvato l'ultima volta
+Analizzare ogni riga dei playbook e aggiungere campi `hasInlineInput` dove il cliente deve inserire una scelta (No/Sì), un valore numerico, o altre opzioni contestuali.
 
 ---
 
-## Modifiche ai File
+## Analisi per Playbook
 
-### 1. Nuovo Hook: `src/hooks/usePlaybookAutoSave.ts`
+### 1. PHISHING (phishing.ts)
 
-Hook dedicato per gestire:
-- Debounce del salvataggio (500ms di ritardo dopo l'ultima modifica)
-- Stato di salvataggio (idle / saving / saved)
-- Timestamp ultimo salvataggio
-- Cleanup automatico del timer
+| Sezione | ID | Testo attuale | Campo da aggiungere |
+|---------|-----|--------------|---------------------|
+| Triage | tr1 | Confermare se evento (tentativo) o incidente (accesso effettivo) | **Stato**: `Tentativo / Incidente` |
+| Triage | tr4 | Controllare se MFA by-passato | **MFA Bypassato**: `No / Sì` |
+| Triage | tr5 | Verificare se email di phishing ancora presenti in altre mailbox | **Presenti**: `No / Sì` |
+| Containment | c6 | Isolare endpoint se sospetto malware correlato | **Malware correlato**: `No / Sì` |
+| Containment | c7 | Se VIP/C-level: informare subito Crisis Manager | **VIP coinvolto**: `No / Sì` |
+| Containment | c9 | Verificare esfiltrazione: download massivo, mail forward esterne | **Esfiltrazione rilevata**: `No / Sì` |
+| Eradication | e5 | Se malware presente: seguire procedura Malware Infection | **Malware presente**: `No / Sì` |
+| Communications | com1 | Valutare obbligo notifica Data Breach (art. 33 GDPR) | **Notifica GDPR richiesta**: `No / Sì` |
+| Communications | com2 | Se dati personali/sanitari/finanziari: comunicare a interessati | **Dati sensibili coinvolti**: `No / Sì` |
 
+---
+
+### 2. DATA EXFILTRATION (data-exfiltration.ts)
+*Gia presente: triage-1 (Confermare esfiltrazione)*
+
+| Sezione | ID | Testo attuale | Campo da aggiungere |
+|---------|-----|--------------|---------------------|
+| Triage | triage-4 | Stimare quantità e categoria dati | **Categoria dati**: `Personali / Finanziari / IP / Altro` |
+| Triage | triage-5 | Severity: dati sensibili + esfil confermata | **Severity**: `P1 / P2 / P3` |
+| Containment | containment-4 | Attivare/rafforzare DLP (se disponibile) | **DLP disponibile**: `No / Sì` |
+| Compliance | compliance-1 | NIS2: se significativo o malintento/transfrontaliero | **Applicabile NIS2**: `No / Sì` |
+| Compliance | compliance-2 | GDPR: valutazione data breach e notifiche | **Notifica GDPR richiesta**: `No / Sì` |
+
+---
+
+### 3. DDOS (ddos.ts)
+
+| Sezione | ID | Testo attuale | Campo da aggiungere |
+|---------|-----|--------------|---------------------|
+| Triage | triage-1 | Distinguere DDoS vs outage tecnico | **Tipo**: `DDoS / Outage tecnico` |
+| Triage | triage-2 | Identificare pattern (L3/L4/L7) | **Pattern**: `L3 / L4 / L7` |
+| Triage | triage-4 | Severity: servizio critico down | **Severity**: `P1 / P2 / P3` |
+| Containment | containment-3 | Failover/scale out (se disponibile) | **Failover disponibile**: `No / Sì` |
+| Containment | containment-4 | Coinvolgere ISP per scrubbing/blackhole | **ISP coinvolto**: `No / Sì` |
+| Evidence | evidence-3 | Downtime totale e impatto utenti | **Downtime (ore)**: campo numerico |
+
+---
+
+### 4. PHYSICAL SECURITY (physical-security.ts)
+
+| Sezione | ID | Testo attuale | Campo da aggiungere |
+|---------|-----|--------------|---------------------|
+| Triage | tr1 | Confermare evento e delimitare area | **Evento confermato**: `No / Sì` |
+| Triage | tr3 | Valutare dati potenzialmente esposti (disk encryption? accessi?) | **Disk encryption attiva**: `No / Sì` |
+| Containment | c2 | Disabilitare account se device conteneva token/keys | **Token/keys nel device**: `No / Sì` |
+| Containment | c4 | Remote wipe/lock (se endpoint gestito) | **Endpoint gestito**: `No / Sì` |
+| Containment | c5 | Segregare rete se hardware manomesso | **Hardware manomesso**: `No / Sì` |
+| Evidence | ev4 | Denuncia (se applicabile) e numero protocollo | **Denuncia presentata**: `No / Sì` |
+| Evidence | ev5 | Chain of custody se acquisizioni forensi | **Acquisizioni forensi**: `No / Sì` |
+
+---
+
+### 5. UNAUTHORIZED ACCESS (unauthorized-access.ts)
+
+| Sezione | ID | Testo attuale | Campo da aggiungere |
+|---------|-----|--------------|---------------------|
+| Triage | tr1 | Confermare intrusion (evidenze accesso non autorizzato) | **Intrusione confermata**: `No / Sì` |
+| Triage | tr4 | Determinare se l'attaccante è ancora attivo | **Attaccante attivo**: `No / Sì` |
+| Eradication | e6 | Verificare rimozione completa backdoor | **Backdoor rimossa**: `No / Sì` |
+| Compliance | comp1 | Se malintento sospetto/confermato → valutare Pre-alert CSIRT 24h | **Malintento**: `No / Sospetto / Confermato` |
+| Compliance | comp2 | Se dati personali coinvolti → coinvolgere Legal/DPO | **Dati personali coinvolti**: `No / Sì` |
+
+---
+
+### 6. SUPPLY CHAIN (supply-chain.ts)
+
+| Sezione | ID | Testo attuale | Campo da aggiungere |
+|---------|-----|--------------|---------------------|
+| Triage | tr4 | Verificare integrità artefatti (hash, firme, provenance) | **Integrità verificata**: `No / Sì` |
+| Containment | c2 | Rollback a versione nota-buona | **Rollback eseguito**: `No / Sì` |
+| Eradication | e1 | Patch/upgrade a versione sicura | **Patch applicata**: `No / Sì` |
+| Recovery | r4 | Comunicazioni a clienti/partner se necessario | **Comunicazioni necessarie**: `No / Sì` |
+
+---
+
+### 7. RANSOMWARE (ransomware.ts)
+
+| Sezione | ID | Testo attuale | Campo da aggiungere |
+|---------|-----|--------------|---------------------|
+| Triage | triage-1 | Confermare se cifratura/malware è in corso (attivo o contenuto) | **Stato**: `Attivo / Contenuto` |
+| Triage | triage-4 | Verificare integrità e isolamento backup | **Backup integro/isolato**: `No / Sì` |
+| Triage | triage-5 | Severity: se sistemi core o downtime critico | **Severity**: `P1 / P2 / P3` |
+| Containment | containment-5 | Preservare evidenze (se forensics) | **Forensics richiesta**: `No / Sì` |
+| Containment | containment-7 | Avviare Situation Room se ALTO/CRITICO | **Situation Room attivata**: `No / Sì` |
+| Communications | comm-1 | Valutare CSIRT (NIS2) se significativo | **Notifica CSIRT**: `No / Sì` |
+| Communications | comm-2 | Valutare GDPR se dati personali esfiltrati | **Dati personali esfiltrati**: `No / Sì` |
+| Communications | comm-3 | Comunicazioni stakeholder (CdA/AD) per CRITICO | **Comunicazione CdA**: `No / Sì` |
+| Evidence | evidence-3 | Snapshot/immagini e chain of custody (se illegittimo) | **Illegittimo sospetto**: `No / Sì` |
+
+---
+
+## Riepilogo Modifiche
+
+| Playbook | Campi da aggiungere |
+|----------|---------------------|
+| Phishing | 9 nuovi campi |
+| Data Exfiltration | 5 nuovi campi |
+| DDoS | 6 nuovi campi |
+| Physical Security | 7 nuovi campi |
+| Unauthorized Access | 5 nuovi campi |
+| Supply Chain | 4 nuovi campi |
+| Ransomware | 9 nuovi campi |
+| **TOTALE** | **45 nuovi campi interattivi** |
+
+---
+
+## Dettaglio tecnico
+
+Per ogni campo, verrà aggiunto:
 ```typescript
-interface UsePlaybookAutoSaveReturn {
-  saveStatus: 'idle' | 'saving' | 'saved';
-  lastSaved: Date | null;
-  triggerSave: (playbook: Playbook) => void;
-}
+hasInlineInput: true,
+inlineInputLabel: 'Etichetta',
+inlineInputValue: '',
+inlineInputPlaceholder: 'Opzione1 / Opzione2'
 ```
 
-### 2. Modifica: `src/components/irp/PlaybookViewer.tsx`
-
-Modifiche principali:
-- Integrazione dell'hook usePlaybookAutoSave
-- Rimozione del pulsante "Salva Progresso" (ora automatico)
-- Aggiunta indicatore di stato nel header
-- Auto-save su ogni modifica di playbookState
-
-**Header con indicatore di stato:**
-```text
-+----------------------------------------------------------------+
-|  PLAYBOOK: Phishing / Account Compromise              [Media]  |
-|  Durata: 30 min - 1 ora                                        |
-|                                                                |
-|  [cloud-check icon] Salvato automaticamente - 2 min fa         |
-+----------------------------------------------------------------+
-```
-
-### 3. Modifica: `src/components/irp/PlaybookProgressBar.tsx` (opzionale)
-
-Aggiunta dello stato di salvataggio come informazione aggiuntiva nella progress bar.
+I tipi di input saranno:
+- **Scelte binarie**: `No / Sì`
+- **Scelte multiple**: `Opzione1 / Opzione2 / Opzione3`
+- **Valori numerici**: `es. 24` (per ore, minuti, etc.)
+- **Severity standard**: `P1 / P2 / P3`
 
 ---
 
-## Flusso di Salvataggio
+## File da modificare
 
-```text
-1. Utente spunta checkbox "Confermare se evento o incidente"
-         |
-         v
-2. handleItemChange() aggiorna playbookState
-         |
-         v
-3. useEffect detecta cambio in playbookState
-         |
-         v
-4. triggerSave() del hook avvia debounce timer
-         |
-         v
-5. Se nessuna modifica per 500ms:
-         |
-         v
-6. Salvataggio su localStorage
-         |
-         v
-7. Aggiornamento stato: "Salvato" + timestamp
-```
-
----
-
-## Dettagli Implementativi
-
-### usePlaybookAutoSave Hook
-
-```typescript
-export const usePlaybookAutoSave = (playbookId: string | null) => {
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const [lastSaved, setLastSaved] = useState<Date | null>(null);
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  const triggerSave = useCallback((playbook: Playbook) => {
-    // Clear existing timer
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-    
-    setSaveStatus('saving');
-    
-    // Debounce: save after 500ms of no changes
-    saveTimeoutRef.current = setTimeout(() => {
-      const storageKey = `playbook_progress_${playbook.id}`;
-      localStorage.setItem(storageKey, JSON.stringify(playbook));
-      setSaveStatus('saved');
-      setLastSaved(new Date());
-    }, 500);
-  }, []);
-  
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, []);
-  
-  return { saveStatus, lastSaved, triggerSave };
-};
-```
-
-### Indicatore di Stato nel Header
-
-Posizioni possibili:
-- Sotto la progress bar
-- Accanto al titolo
-- Nel footer (con timestamp)
-
-Scelta: sotto la progress bar, con icona + testo contestuale:
-- Icona cloud animata + "Salvando..." durante il salvataggio
-- Icona check + "Salvato automaticamente" + tempo relativo
-
-### Gestione Edge Cases
-
-1. **Chiusura improvvisa**: Il debounce di 500ms e abbastanza breve per catturare la maggior parte delle modifiche
-2. **Caricamento progresso esistente**: Gia implementato, carica da localStorage all'apertura
-3. **Reset playbook**: Rimuove da localStorage e resetta lastSaved
-4. **Conflitti**: Non applicabile per localStorage (single-user)
-
----
-
-## UI/UX Miglioramenti
-
-### Stato Visivo
-
-| Stato | Icona | Testo | Colore |
-|-------|-------|-------|--------|
-| Idle | - | - | - |
-| Saving | CloudUp (animato) | Salvando... | Muted |
-| Saved | CloudCheck | Salvato automaticamente - X min fa | Success |
-
-### Footer Semplificato
-
-Il pulsante "Salva Progresso" viene rimosso (ora automatico). Il footer diventa:
-- Sinistra: Reset
-- Destra: Scarica Checklist
-
----
-
-## File da Modificare
-
-| File | Modifiche |
-|------|-----------|
-| `src/hooks/usePlaybookAutoSave.ts` | NUOVO - Hook per auto-save con debounce |
-| `src/components/irp/PlaybookViewer.tsx` | Integrazione auto-save, rimozione pulsante manuale, aggiunta indicatore stato |
-
----
-
-## Riepilogo Funzionalita
-
-1. Salvataggio automatico ogni 500ms dopo l'ultima modifica
-2. Indicatore visivo "Salvando..." / "Salvato automaticamente"
-3. Timestamp dell'ultimo salvataggio con tempo relativo (es. "2 min fa")
-4. Persistenza in localStorage (ritorno dopo ore/giorni)
-5. Rimozione del pulsante manuale "Salva Progresso"
-6. Mantenimento del pulsante "Reset" per cancellare il progresso
+1. `src/data/playbooks/phishing.ts`
+2. `src/data/playbooks/data-exfiltration.ts`
+3. `src/data/playbooks/ddos.ts`
+4. `src/data/playbooks/physical-security.ts`
+5. `src/data/playbooks/unauthorized-access.ts`
+6. `src/data/playbooks/supply-chain.ts`
+7. `src/data/playbooks/ransomware.ts`
