@@ -1,5 +1,6 @@
 import { Playbook, PlaybookSection } from '@/types/playbook';
 import { ransomwarePlaybook } from './ransomware';
+import { dataExfiltrationPlaybook } from './data-exfiltration';
 import { mergeCommonStandards } from './common-standards';
 
 const phishingBaseSections: PlaybookSection[] = [
@@ -140,4 +141,5 @@ export const phishingPlaybook: Playbook = {
 export const playbooksMap: Record<string, Playbook> = {
   'phishing-attack': phishingPlaybook,
   'ransomware': ransomwarePlaybook,
+  'data-breach': dataExfiltrationPlaybook,
 };
