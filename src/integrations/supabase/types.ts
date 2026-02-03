@@ -877,6 +877,53 @@ export type Database = {
         }
         Relationships: []
       }
+      risk_analysis: {
+        Row: {
+          asset_name: string
+          control_scores: Json
+          created_at: string
+          created_by: string | null
+          id: string
+          notes: string | null
+          organization_id: string | null
+          risk_score: number | null
+          threat_source: string
+          updated_at: string
+        }
+        Insert: {
+          asset_name: string
+          control_scores?: Json
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          organization_id?: string | null
+          risk_score?: number | null
+          threat_source: string
+          updated_at?: string
+        }
+        Update: {
+          asset_name?: string
+          control_scores?: Json
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          organization_id?: string | null
+          risk_score?: number | null
+          threat_source?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "risk_analysis_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       role_module_permissions: {
         Row: {
           created_at: string
