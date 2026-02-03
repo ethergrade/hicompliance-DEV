@@ -18,7 +18,6 @@ import {
 } from '@/components/ui/accordion';
 import { 
   Download, 
-  Save, 
   Clock, 
   Target,
   Users,
@@ -30,6 +29,8 @@ import {
   RotateCcw,
   Trash2,
   Eye,
+  CloudUpload,
+  Cloud,
 } from 'lucide-react';
 import { Playbook, PlaybookChecklistItem, calculatePlaybookProgress } from '@/types/playbook';
 import { PlaybookProgressBar } from './PlaybookProgressBar';
@@ -37,6 +38,7 @@ import { PlaybookChecklistSection } from './PlaybookChecklistSection';
 import { PlaybookInputSection } from './PlaybookInputSection';
 import { generatePlaybookDocx } from './playbookDocxGenerator';
 import { useToast } from '@/hooks/use-toast';
+import { usePlaybookAutoSave, formatRelativeTime } from '@/hooks/usePlaybookAutoSave';
 import { cn } from '@/lib/utils';
 
 interface PlaybookViewerProps {
@@ -78,7 +80,9 @@ export const PlaybookViewer: React.FC<PlaybookViewerProps> = ({
   onOpenChange,
 }) => {
   const [playbookState, setPlaybookState] = useState<Playbook | null>(null);
+  const [, forceUpdate] = useState(0); // For relative time updates
   const { toast } = useToast();
+  const { saveStatus, lastSaved, triggerSave, resetSaveState } = usePlaybookAutoSave();
 
   useEffect(() => {
     if (initialPlaybook) {
@@ -86,6 +90,22 @@ export const PlaybookViewer: React.FC<PlaybookViewerProps> = ({
       setPlaybookState(JSON.parse(JSON.stringify(initialPlaybook)));
     }
   }, [initialPlaybook]);
+
+  // Auto-save when playbookState changes
+  useEffect(() => {
+    if (playbookState && open) {
+      triggerSave(playbookState);
+    }
+  }, [playbookState, open, triggerSave]);
+
+  // Update relative time display every minute
+  useEffect(() => {
+    if (!lastSaved) return;
+    const interval = setInterval(() => {
+      forceUpdate(n => n + 1);
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [lastSaved]);
 
   const handleOwnerChange = useCallback((inputId: string, value: string, contactId?: string) => {
     setPlaybookState(prev => {
@@ -118,17 +138,6 @@ export const PlaybookViewer: React.FC<PlaybookViewerProps> = ({
     });
   }, []);
 
-  const handleSave = useCallback(() => {
-    if (!playbookState) return;
-    // Save to localStorage for now (can be extended to database)
-    const storageKey = `playbook_progress_${playbookState.id}`;
-    localStorage.setItem(storageKey, JSON.stringify(playbookState));
-    toast({
-      title: "Progresso salvato",
-      description: "Il progresso del playbook è stato salvato localmente.",
-    });
-  }, [playbookState, toast]);
-
   const handleDownload = useCallback(async () => {
     if (!playbookState) return;
     try {
@@ -152,12 +161,13 @@ export const PlaybookViewer: React.FC<PlaybookViewerProps> = ({
       setPlaybookState(JSON.parse(JSON.stringify(initialPlaybook)));
       const storageKey = `playbook_progress_${initialPlaybook.id}`;
       localStorage.removeItem(storageKey);
+      resetSaveState();
       toast({
         title: "Reset completato",
         description: "Il playbook è stato riportato allo stato iniziale.",
       });
     }
-  }, [initialPlaybook, toast]);
+  }, [initialPlaybook, toast, resetSaveState]);
 
   // Load saved progress on mount
   useEffect(() => {
@@ -214,12 +224,30 @@ export const PlaybookViewer: React.FC<PlaybookViewerProps> = ({
             </div>
           </div>
 
-          <div className="mt-4">
+          <div className="mt-4 space-y-2">
             <PlaybookProgressBar
               completed={progress.completed}
               total={progress.total}
               percentage={progress.percentage}
             />
+            
+            {/* Auto-save status indicator */}
+            <div className="flex items-center gap-2 text-xs">
+              {saveStatus === 'saving' && (
+                <>
+                  <CloudUpload className="w-3.5 h-3.5 text-muted-foreground animate-pulse" />
+                  <span className="text-muted-foreground">Salvando...</span>
+                </>
+              )}
+              {saveStatus === 'saved' && lastSaved && (
+                <>
+                  <Cloud className="w-3.5 h-3.5 text-primary" />
+                  <span className="text-muted-foreground">
+                    Salvato automaticamente - {formatRelativeTime(lastSaved)}
+                  </span>
+                </>
+              )}
+            </div>
           </div>
         </SheetHeader>
 
@@ -331,13 +359,6 @@ export const PlaybookViewer: React.FC<PlaybookViewerProps> = ({
               Reset
             </Button>
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                onClick={handleSave}
-              >
-                <Save className="w-4 h-4 mr-2" />
-                Salva Progresso
-              </Button>
               <Button
                 onClick={handleDownload}
                 className="bg-primary text-primary-foreground"
