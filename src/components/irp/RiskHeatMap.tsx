@@ -1,12 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RiskAnalysisAsset, ThreatSource, THREAT_SOURCE_LABELS, CATEGORY_LABELS, SecurityControlCategory } from '@/types/riskAnalysis';
 import { SECURITY_CONTROLS, getAllCategories, getControlsByCategory } from '@/data/securityControls';
+import { useDocumentSave } from '@/hooks/useDocumentSave';
 import { cn } from '@/lib/utils';
+import { FileDown, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
 interface RiskHeatMapProps {
   assets: RiskAnalysisAsset[];
@@ -15,6 +21,9 @@ interface RiskHeatMapProps {
 export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
   const [selectedSource, setSelectedSource] = useState<ThreatSource>('non_umana');
   const [selectedCategory, setSelectedCategory] = useState<SecurityControlCategory | 'all'>('all');
+  const [exporting, setExporting] = useState(false);
+  const heatmapRef = useRef<HTMLDivElement>(null);
+  const { saveToDocuments } = useDocumentSave();
 
   // Get unique asset names
   const assetNames = [...new Set(assets.map(a => a.asset_name))];
@@ -60,6 +69,77 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
     return Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10;
   };
 
+  const handleExportPDF = async () => {
+    if (!heatmapRef.current) return;
+    
+    setExporting(true);
+    try {
+      // Capture the heatmap content
+      const canvas = await html2canvas(heatmapRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#1a1a2e', // Match dark theme background
+        logging: false,
+      });
+
+      // Calculate PDF dimensions
+      const imgWidth = 297; // A4 landscape width in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      
+      // Create PDF (landscape for wide heatmap)
+      const pdf = new jsPDF({
+        orientation: imgHeight > imgWidth ? 'portrait' : 'landscape',
+        unit: 'mm',
+        format: 'a4',
+      });
+
+      // Add title
+      const today = new Date().toLocaleDateString('it-IT');
+      pdf.setFontSize(16);
+      pdf.text('Analisi Rischi - Heat Map', 14, 15);
+      pdf.setFontSize(10);
+      pdf.text(`Data: ${today}`, 14, 22);
+      pdf.text(`Fonte: ${THREAT_SOURCE_LABELS[selectedSource]}`, 14, 28);
+
+      // Add canvas as image
+      const imgData = canvas.toDataURL('image/png');
+      const pdfWidth = pdf.internal.pageSize.getWidth() - 28;
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      pdf.addImage(imgData, 'PNG', 14, 35, pdfWidth, Math.min(pdfHeight, pdf.internal.pageSize.getHeight() - 45));
+
+      // Generate blob
+      const pdfBlob = pdf.output('blob');
+      const fileName = `Analisi_Rischi_HeatMap_${new Date().toISOString().split('T')[0]}.pdf`;
+
+      // Download file
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      // Save to documents
+      const saved = await saveToDocuments({
+        blob: pdfBlob,
+        fileName,
+        category: 'Tecnico',
+      });
+
+      if (saved) {
+        toast.success('PDF esportato e salvato in Gestione Documenti');
+      } else {
+        toast.success('PDF esportato');
+      }
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      toast.error('Errore nell\'esportazione PDF');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (assetNames.length === 0) {
     return (
       <Card className="bg-card border-border">
@@ -75,35 +155,52 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
       {/* Filters */}
       <Card className="bg-card border-border">
         <CardContent className="py-3">
-          <div className="flex flex-wrap items-center gap-4">
-            {/* Source Filter */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Fonte:</span>
-              <Tabs value={selectedSource} onValueChange={(v) => setSelectedSource(v as ThreatSource)}>
-                <TabsList className="h-8">
-                  {(['non_umana', 'umana_esterna', 'umana_interna'] as ThreatSource[]).map((source) => (
-                    <TabsTrigger key={source} value={source} className="text-xs px-2 h-6">
-                      {source === 'non_umana' ? 'Non Umane' : source === 'umana_esterna' ? 'Esterne' : 'Interne'}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-4">
+              {/* Source Filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Fonte:</span>
+                <Tabs value={selectedSource} onValueChange={(v) => setSelectedSource(v as ThreatSource)}>
+                  <TabsList className="h-8">
+                    {(['non_umana', 'umana_esterna', 'umana_interna'] as ThreatSource[]).map((source) => (
+                      <TabsTrigger key={source} value={source} className="text-xs px-2 h-6">
+                        {source === 'non_umana' ? 'Non Umane' : source === 'umana_esterna' ? 'Esterne' : 'Interne'}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+              </div>
+
+              {/* Category Filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Categoria:</span>
+                <Tabs value={selectedCategory} onValueChange={(v) => setSelectedCategory(v as SecurityControlCategory | 'all')}>
+                  <TabsList className="h-8">
+                    <TabsTrigger value="all" className="text-xs px-2 h-6">Tutte</TabsTrigger>
+                    {getAllCategories().map((cat) => (
+                      <TabsTrigger key={cat} value={cat} className="text-xs px-2 h-6">
+                        {CATEGORY_LABELS[cat].split(' ')[0]}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+              </div>
             </div>
 
-            {/* Category Filter */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Categoria:</span>
-              <Tabs value={selectedCategory} onValueChange={(v) => setSelectedCategory(v as SecurityControlCategory | 'all')}>
-                <TabsList className="h-8">
-                  <TabsTrigger value="all" className="text-xs px-2 h-6">Tutte</TabsTrigger>
-                  {getAllCategories().map((cat) => (
-                    <TabsTrigger key={cat} value={cat} className="text-xs px-2 h-6">
-                      {CATEGORY_LABELS[cat].split(' ')[0]}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
-            </div>
+            {/* Export PDF Button */}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleExportPDF}
+              disabled={exporting}
+            >
+              {exporting ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <FileDown className="h-4 w-4 mr-1" />
+              )}
+              Esporta PDF
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -137,7 +234,8 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
         </CardContent>
       </Card>
 
-      {/* Heatmap */}
+      {/* Heatmap - wrapped in ref for PDF export */}
+      <div ref={heatmapRef}>
       <Card className="bg-card border-border">
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center justify-between">
@@ -311,6 +409,7 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
           </TooltipProvider>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 };
