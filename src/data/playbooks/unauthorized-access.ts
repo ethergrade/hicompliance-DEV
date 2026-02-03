@@ -21,10 +21,10 @@ const unauthorizedAccessBaseSections: PlaybookSection[] = [
     title: 'Triage',
     type: 'checklist',
     items: [
-      { id: 'tr1', text: 'Confermare intrusion (evidenze accesso non autorizzato/abuso privilegi)', checked: false },
+      { id: 'tr1', text: 'Confermare intrusion (evidenze accesso non autorizzato/abuso privilegi)', checked: false, hasInlineInput: true, inlineInputLabel: 'Intrusione confermata', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
       { id: 'tr2', text: 'Identificare entry point', checked: false },
       { id: 'tr3', text: 'Identificare account coinvolti', checked: false },
-      { id: 'tr4', text: 'Determinare se l\'attaccante è ancora attivo (sessioni, beaconing)', checked: false },
+      { id: 'tr4', text: 'Determinare se l\'attaccante è ancora attivo (sessioni, beaconing)', checked: false, hasInlineInput: true, inlineInputLabel: 'Attaccante attivo', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
       { id: 'tr5', text: 'Scope: server, DB, app, cloud, AD/IAM', checked: false },
       { 
         id: 'tr6', 
@@ -61,7 +61,7 @@ const unauthorizedAccessBaseSections: PlaybookSection[] = [
       { id: 'e3', text: 'Rimuovere scheduled tasks malevoli', checked: false },
       { id: 'e4', text: 'Rimuovere servizi sospetti', checked: false },
       { id: 'e5', text: 'Rimuovere WMI persistence (Windows)', checked: false },
-      { id: 'e6', text: 'Verificare rimozione completa backdoor', checked: false },
+      { id: 'e6', text: 'Verificare rimozione completa backdoor', checked: false, hasInlineInput: true, inlineInputLabel: 'Backdoor rimossa', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
     ]
   },
   {
@@ -81,8 +81,8 @@ const unauthorizedAccessBaseSections: PlaybookSection[] = [
     title: 'Compliance',
     type: 'checklist',
     items: [
-      { id: 'comp1', text: 'Se malintento sospetto/confermato → valutare Pre-alert CSIRT 24h', checked: false },
-      { id: 'comp2', text: 'Se dati personali coinvolti → coinvolgere Legal/DPO', checked: false },
+      { id: 'comp1', text: 'Se malintento sospetto/confermato → valutare Pre-alert CSIRT 24h', checked: false, hasInlineInput: true, inlineInputLabel: 'Malintento', inlineInputValue: '', inlineInputPlaceholder: 'No / Sospetto / Confermato' },
+      { id: 'comp2', text: 'Se dati personali coinvolti → coinvolgere Legal/DPO', checked: false, hasInlineInput: true, inlineInputLabel: 'Dati personali coinvolti', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
     ]
   },
   {

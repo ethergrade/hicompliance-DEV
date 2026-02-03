@@ -25,11 +25,11 @@ const phishingBaseSections: PlaybookSection[] = [
     subtitle: 'Entro 60 min',
     type: 'checklist',
     items: [
-      { id: 'tr1', text: 'Confermare se evento (tentativo) o incidente (accesso effettivo)', checked: false },
+      { id: 'tr1', text: 'Confermare se evento (tentativo) o incidente (accesso effettivo)', checked: false, hasInlineInput: true, inlineInputLabel: 'Stato', inlineInputValue: '', inlineInputPlaceholder: 'Tentativo / Incidente' },
       { id: 'tr2', text: 'Identificare account/utente coinvolto (UPN, mailbox, app SaaS)', checked: false },
       { id: 'tr3', text: 'Verificare IdP/IAM logs: orari login, IP, device', checked: false },
-      { id: 'tr4', text: 'Controllare se MFA by-passato (token rubato, SIM swap, fatigue)', checked: false },
-      { id: 'tr5', text: 'Verificare se email di phishing ancora presenti in altre mailbox', checked: false },
+      { id: 'tr4', text: 'Controllare se MFA by-passato (token rubato, SIM swap, fatigue)', checked: false, hasInlineInput: true, inlineInputLabel: 'MFA Bypassato', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
+      { id: 'tr5', text: 'Verificare se email di phishing ancora presenti in altre mailbox', checked: false, hasInlineInput: true, inlineInputLabel: 'Presenti', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
       { id: 'tr6', text: 'Richiedere log Mail Transport se necessario', checked: false },
       { 
         id: 'tr7', 
@@ -52,10 +52,10 @@ const phishingBaseSections: PlaybookSection[] = [
       { id: 'c3', text: 'Revocare OAuth app sospette', checked: false },
       { id: 'c4', text: 'Rimuovere regole di inoltro/forwarding malevole', checked: false },
       { id: 'c5', text: 'Bloccare IP/dominio coinvolti se fattibile (firewall, WAF, proxy)', checked: false },
-      { id: 'c6', text: 'Isolare endpoint se sospetto malware correlato', checked: false },
-      { id: 'c7', text: 'Se VIP/C-level: informare subito Crisis Manager', checked: false },
+      { id: 'c6', text: 'Isolare endpoint se sospetto malware correlato', checked: false, hasInlineInput: true, inlineInputLabel: 'Malware correlato', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
+      { id: 'c7', text: 'Se VIP/C-level: informare subito Crisis Manager', checked: false, hasInlineInput: true, inlineInputLabel: 'VIP coinvolto', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
       { id: 'c8', text: 'Verificare attività laterale: access audit SharePoint, Teams, S3', checked: false },
-      { id: 'c9', text: 'Verificare esfiltrazione: download massivo, mail forward esterne', checked: false },
+      { id: 'c9', text: 'Verificare esfiltrazione: download massivo, mail forward esterne', checked: false, hasInlineInput: true, inlineInputLabel: 'Esfiltrazione rilevata', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
     ]
   },
   {
@@ -67,7 +67,7 @@ const phishingBaseSections: PlaybookSection[] = [
       { id: 'e2', text: 'Verificare token OAuth/refresh token invalidati', checked: false },
       { id: 'e3', text: 'Eliminare mail phishing da tutte le mailbox (purge)', checked: false },
       { id: 'e4', text: 'Bloccare URL/dominio sul filtro mail e proxy', checked: false },
-      { id: 'e5', text: 'Se malware presente: seguire procedura Malware Infection', checked: false },
+      { id: 'e5', text: 'Se malware presente: seguire procedura Malware Infection', checked: false, hasInlineInput: true, inlineInputLabel: 'Malware presente', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
     ]
   },
   {
@@ -86,8 +86,8 @@ const phishingBaseSections: PlaybookSection[] = [
     title: 'Comunicazioni e Compliance',
     type: 'checklist',
     items: [
-      { id: 'com1', text: 'Valutare obbligo notifica Data Breach (art. 33 GDPR) → coinvolgere DPO', checked: false },
-      { id: 'com2', text: 'Se dati personali/sanitari/finanziari: comunicare a interessati (art. 34)', checked: false },
+      { id: 'com1', text: 'Valutare obbligo notifica Data Breach (art. 33 GDPR) → coinvolgere DPO', checked: false, hasInlineInput: true, inlineInputLabel: 'Notifica GDPR richiesta', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
+      { id: 'com2', text: 'Se dati personali/sanitari/finanziari: comunicare a interessati (art. 34)', checked: false, hasInlineInput: true, inlineInputLabel: 'Dati sensibili coinvolti', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
     ]
   },
   {

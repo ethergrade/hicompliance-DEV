@@ -22,7 +22,7 @@ const supplyChainBaseSections: PlaybookSection[] = [
       { id: 'tr1', text: 'Identificare componente/fornitore impattato', checked: false },
       { id: 'tr2', text: 'Identificare versioni coinvolte', checked: false },
       { id: 'tr3', text: 'Mappare sistemi/app dipendenti (prod, staging, clienti)', checked: false },
-      { id: 'tr4', text: 'Verificare integrità artefatti (hash, firme, provenance)', checked: false },
+      { id: 'tr4', text: 'Verificare integrità artefatti (hash, firme, provenance)', checked: false, hasInlineInput: true, inlineInputLabel: 'Integrità verificata', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
       { 
         id: 'tr5', 
         text: 'Severity: se impatta produzione/servizi critici o clienti → ALTO/CRITICO', 
@@ -40,7 +40,7 @@ const supplyChainBaseSections: PlaybookSection[] = [
     type: 'checklist',
     items: [
       { id: 'c1', text: 'Stop deploy e freeze release (change freeze)', checked: false },
-      { id: 'c2', text: 'Rollback a versione nota-buona', checked: false },
+      { id: 'c2', text: 'Rollback a versione nota-buona', checked: false, hasInlineInput: true, inlineInputLabel: 'Rollback eseguito', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
       { id: 'c3', text: 'Bloccare aggiornamenti automatici/package (pin version)', checked: false },
       { id: 'c4', text: 'Revocare chiavi API e integrazioni vendor', checked: false },
       { id: 'c5', text: 'Ruotare credenziali integrazioni vendor', checked: false },
@@ -52,7 +52,7 @@ const supplyChainBaseSections: PlaybookSection[] = [
     title: 'Eradication',
     type: 'checklist',
     items: [
-      { id: 'e1', text: 'Patch/upgrade a versione sicura (vendor advisory)', checked: false },
+      { id: 'e1', text: 'Patch/upgrade a versione sicura (vendor advisory)', checked: false, hasInlineInput: true, inlineInputLabel: 'Patch applicata', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
       { id: 'e2', text: 'Rebuild artefatti da pipeline trusted e ambiente pulito', checked: false },
       { id: 'e3', text: 'Audit CI/CD: accessi, token, secret leakage', checked: false },
       { id: 'e4', text: 'Verificare runner non compromessi', checked: false },
@@ -68,7 +68,7 @@ const supplyChainBaseSections: PlaybookSection[] = [
       { id: 'r1', text: 'Ripristinare servizi', checked: false },
       { id: 'r2', text: 'Validare integrità end-to-end', checked: false },
       { id: 'r3', text: 'Monitoraggio mirato su componenti dipendenti', checked: false },
-      { id: 'r4', text: 'Comunicazioni a clienti/partner se necessario', checked: false },
+      { id: 'r4', text: 'Comunicazioni a clienti/partner se necessario', checked: false, hasInlineInput: true, inlineInputLabel: 'Comunicazioni necessarie', inlineInputValue: '', inlineInputPlaceholder: 'No / Sì' },
     ]
   },
   {
