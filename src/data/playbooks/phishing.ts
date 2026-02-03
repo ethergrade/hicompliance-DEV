@@ -10,10 +10,10 @@ export const phishingPlaybook: Playbook = {
   description: 'Gestione di campagne phishing e compromissione credenziali',
   purpose: 'Bloccare l\'accesso non autorizzato, limitare impatto su dati e reputazione, ripristinare fiducia nell\'account compromesso.',
   owner: [
-    { id: 'owner-tech', label: 'Owner tecnico', value: '', placeholder: 'Head IT / SOC', required: true },
-    { id: 'coordinamento', label: 'Coordinamento', value: '', placeholder: 'IRM', required: true },
-    { id: 'oversight', label: 'Oversight', value: '', placeholder: 'CISO', required: false },
-    { id: 'compliance', label: 'Compliance', value: '', placeholder: 'Legal/DPO (se dati personali impattati)', required: false },
+    { id: 'owner-tech', label: 'Owner tecnico', value: '', placeholder: 'Head IT / SOC', required: true, allowDirectoryPicker: true },
+    { id: 'coordinamento', label: 'Coordinamento', value: '', placeholder: 'IRM', required: true, allowDirectoryPicker: true },
+    { id: 'oversight', label: 'Oversight', value: '', placeholder: 'CISO', required: false, allowDirectoryPicker: true },
+    { id: 'compliance', label: 'Compliance', value: '', placeholder: 'Legal/DPO (se dati personali impattati)', required: false, allowDirectoryPicker: true },
   ],
   sections: [
     {
@@ -21,10 +21,10 @@ export const phishingPlaybook: Playbook = {
       title: 'Trigger tipici',
       type: 'checklist',
       items: [
-        { id: 't1', text: 'Segnalazione utente di email sospetta (link/allegato cliccato)', checked: false },
-        { id: 't2', text: 'Login anomalo (geo, impossible travel, device nuovo)', checked: false },
-        { id: 't3', text: 'Inbox rule/forwarding creati, OAuth app sconosciuta', checked: false },
-        { id: 't4', text: 'Accessi non coerenti a mailbox, CRM, cloud drive, VPN', checked: false },
+        { id: 't1', text: 'Segnalazione utente di email sospetta (link/allegato cliccato)', checked: false, link: '', linkLabel: 'Link all\'email' },
+        { id: 't2', text: 'Login anomalo (geo, impossible travel, device nuovo)', checked: false, link: '', linkLabel: 'Link al log' },
+        { id: 't3', text: 'Inbox rule/forwarding creati, OAuth app sconosciuta', checked: false, link: '', linkLabel: 'Link all\'evidenza' },
+        { id: 't4', text: 'Accessi non coerenti a mailbox, CRM, cloud drive, VPN', checked: false, link: '', linkLabel: 'Link al report' },
       ]
     },
     {
