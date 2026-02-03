@@ -1,5 +1,5 @@
 import { Playbook } from '@/types/playbook';
-
+import { ransomwarePlaybook } from './ransomware';
 export const phishingPlaybook: Playbook = {
   id: 'phishing-attack',
   title: 'Phishing / Account Compromise',
@@ -135,4 +135,5 @@ export const phishingPlaybook: Playbook = {
 // Export map of all playbooks for easy access
 export const playbooksMap: Record<string, Playbook> = {
   'phishing-attack': phishingPlaybook,
+  'ransomware': ransomwarePlaybook,
 };
