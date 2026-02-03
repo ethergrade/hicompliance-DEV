@@ -7,8 +7,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { IRPDocumentEditor } from '@/components/irp/IRPDocumentEditor';
 import { GovernanceContactsTable } from '@/components/irp/GovernanceContactsTable';
 import { ContactDirectoryManager } from '@/components/irp/ContactDirectoryManager';
+import { PlaybookViewer } from '@/components/irp/PlaybookViewer';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { Playbook } from '@/types/playbook';
+import { playbooksMap } from '@/data/playbooks/phishing';
+import { generatePlaybookDocx } from '@/components/irp/playbookDocxGenerator';
 import {
   Download,
   Clock,
@@ -37,6 +41,8 @@ const IncidentResponse: React.FC = () => {
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
   const [loading, setLoading] = useState(true);
   const [irpEditorOpen, setIrpEditorOpen] = useState(false);
+  const [playbookViewerOpen, setPlaybookViewerOpen] = useState(false);
+  const [selectedPlaybook, setSelectedPlaybook] = useState<Playbook | null>(null);
   const { toast } = useToast();
 
   // Procedure operative per incident response
@@ -301,9 +307,52 @@ const IncidentResponse: React.FC = () => {
     console.log(`Downloading: ${docName}`);
   };
 
-  const downloadProcedure = (procedure: any) => {
-    // Simulazione download procedura
-    console.log(`Downloading procedure: ${procedure.title}`);
+  const handleViewPlaybook = (procedureId: string) => {
+    const playbook = playbooksMap[procedureId];
+    if (playbook) {
+      setSelectedPlaybook(playbook);
+      setPlaybookViewerOpen(true);
+    } else {
+      toast({
+        title: "Playbook non disponibile",
+        description: "Il playbook interattivo per questa procedura sarà disponibile a breve.",
+        variant: "default"
+      });
+    }
+  };
+
+  const handleDownloadPlaybook = async (procedureId: string) => {
+    const playbook = playbooksMap[procedureId];
+    if (playbook) {
+      // Load saved progress if exists
+      const storageKey = `playbook_progress_${playbook.id}`;
+      const saved = localStorage.getItem(storageKey);
+      const playbookToExport = saved ? JSON.parse(saved) : playbook;
+      
+      try {
+        await generatePlaybookDocx(playbookToExport);
+        toast({
+          title: "Download completato",
+          description: "La checklist è stata scaricata in formato Word.",
+        });
+      } catch (error) {
+        console.error('Error generating DOCX:', error);
+        toast({
+          title: "Errore",
+          description: "Errore durante la generazione del documento.",
+          variant: "destructive",
+        });
+      }
+    } else {
+      // Fallback to legacy behavior
+      console.log(`Downloading procedure: ${procedureId}`);
+    }
+  };
+
+  // Check if a playbook has saved progress
+  const hasPlaybookProgress = (procedureId: string): boolean => {
+    const storageKey = `playbook_progress_${procedureId}`;
+    return localStorage.getItem(storageKey) !== null;
   };
 
   return (
@@ -334,22 +383,29 @@ const IncidentResponse: React.FC = () => {
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {procedures.map((procedure) => (
-                <Card key={procedure.id} className="border-border bg-card hover:bg-card/80 transition-colors cursor-pointer">
+                <Card key={procedure.id} className="border-border bg-card hover:bg-card/80 transition-colors">
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <procedure.icon className="w-8 h-8 text-primary" />
-                      <Badge variant="secondary" className={getSeverityBg(procedure.severity)}>
-                        <span className={getSeverityColor(procedure.severity)}>
-                          {procedure.severity}
-                        </span>
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        {hasPlaybookProgress(procedure.id) && (
+                          <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/20">
+                            In corso
+                          </Badge>
+                        )}
+                        <Badge variant="secondary" className={getSeverityBg(procedure.severity)}>
+                          <span className={getSeverityColor(procedure.severity)}>
+                            {procedure.severity}
+                          </span>
+                        </Badge>
+                      </div>
                     </div>
-                    <CardTitle className="text-white text-lg">{procedure.title}</CardTitle>
-                    <p className="text-sm text-gray-400">{procedure.description}</p>
+                    <CardTitle className="text-foreground text-lg">{procedure.title}</CardTitle>
+                    <p className="text-sm text-muted-foreground">{procedure.description}</p>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center text-gray-400">
+                      <div className="flex items-center text-muted-foreground">
                         <Clock className="w-4 h-4 mr-1" />
                         {procedure.duration}
                       </div>
@@ -357,8 +413,8 @@ const IncidentResponse: React.FC = () => {
                     </div>
                     
                     <div className="space-y-2">
-                      <p className="text-sm font-medium text-white">Passaggi principali:</p>
-                      <ul className="text-sm text-gray-400 space-y-1">
+                      <p className="text-sm font-medium text-foreground">Passaggi principali:</p>
+                      <ul className="text-sm text-muted-foreground space-y-1">
                         {procedure.steps.slice(0, 3).map((step, index) => (
                           <li key={index} className="flex items-start">
                             <span className="text-primary mr-2">•</span>
@@ -374,13 +430,18 @@ const IncidentResponse: React.FC = () => {
                     </div>
 
                     <div className="flex gap-2">
-                      <Button size="sm" variant="outline" className="flex-1">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="flex-1"
+                        onClick={() => handleViewPlaybook(procedure.id)}
+                      >
                         <Eye className="w-4 h-4 mr-1" />
                         Visualizza
                       </Button>
                       <Button 
                         size="sm" 
-                        onClick={() => downloadProcedure(procedure)}
+                        onClick={() => handleDownloadPlaybook(procedure.id)}
                         className="bg-primary text-primary-foreground"
                       >
                         <Download className="w-4 h-4" />
@@ -403,6 +464,11 @@ const IncidentResponse: React.FC = () => {
       </div>
 
       <IRPDocumentEditor open={irpEditorOpen} onOpenChange={setIrpEditorOpen} />
+      <PlaybookViewer 
+        playbook={selectedPlaybook} 
+        open={playbookViewerOpen} 
+        onOpenChange={setPlaybookViewerOpen} 
+      />
     </DashboardLayout>
   );
 };
