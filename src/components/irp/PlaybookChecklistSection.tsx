@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { ChevronDown, ChevronUp, MessageSquare, ExternalLink, Link as LinkIcon } from 'lucide-react';
+import { ChevronDown, ChevronUp, MessageSquare, ExternalLink, Link as LinkIcon, ImagePlus, X, Image } from 'lucide-react';
 import { PlaybookChecklistItem } from '@/types/playbook';
 import { cn } from '@/lib/utils';
 
@@ -13,6 +13,43 @@ interface PlaybookChecklistSectionProps {
   showNotes?: boolean;
 }
 
+// Compress and resize image to reduce storage size
+const compressImage = (file: File, maxWidth: number = 800): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = document.createElement('img');
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width;
+          width = maxWidth;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+        
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        resolve(dataUrl);
+      };
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+};
+
 export const PlaybookChecklistSection: React.FC<PlaybookChecklistSectionProps> = ({
   items,
   onItemChange,
@@ -20,6 +57,8 @@ export const PlaybookChecklistSection: React.FC<PlaybookChecklistSectionProps> =
 }) => {
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
   const [showLinkInput, setShowLinkInput] = useState<Record<string, boolean>>({});
+  const [expandedScreenshot, setExpandedScreenshot] = useState<Record<string, boolean>>({});
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const toggleNotes = (itemId: string) => {
     setExpandedNotes(prev => ({
@@ -33,6 +72,36 @@ export const PlaybookChecklistSection: React.FC<PlaybookChecklistSectionProps> =
       ...prev,
       [itemId]: !prev[itemId]
     }));
+  };
+
+  const toggleScreenshot = (itemId: string) => {
+    setExpandedScreenshot(prev => ({
+      ...prev,
+      [itemId]: !prev[itemId]
+    }));
+  };
+
+  const handleScreenshotUpload = async (itemId: string, file: File) => {
+    try {
+      const compressedImage = await compressImage(file);
+      onItemChange(itemId, { 
+        screenshot: compressedImage, 
+        screenshotName: file.name 
+      });
+    } catch (error) {
+      console.error('Error compressing image:', error);
+    }
+  };
+
+  const handleFileChange = (itemId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      handleScreenshotUpload(itemId, file);
+    }
+  };
+
+  const removeScreenshot = (itemId: string) => {
+    onItemChange(itemId, { screenshot: undefined, screenshotName: undefined });
   };
 
   const completedCount = items.filter(item => item.checked).length;
@@ -132,6 +201,25 @@ export const PlaybookChecklistSection: React.FC<PlaybookChecklistSectionProps> =
                   Link
                 </Button>
 
+                {/* Screenshot button */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => toggleScreenshot(item.id)}
+                  className={cn(
+                    "h-6 px-2 text-xs text-muted-foreground hover:text-foreground",
+                    item.screenshot && "text-primary"
+                  )}
+                >
+                  <Image className="w-3 h-3 mr-1" />
+                  Screenshot
+                  {expandedScreenshot[item.id] ? (
+                    <ChevronUp className="w-3 h-3 ml-1" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3 ml-1" />
+                  )}
+                </Button>
+
                 {showNotes && (
                   <Button
                     variant="ghost"
@@ -157,6 +245,51 @@ export const PlaybookChecklistSection: React.FC<PlaybookChecklistSectionProps> =
                   </span>
                 )}
               </div>
+
+              {/* Screenshot section */}
+              {expandedScreenshot[item.id] && (
+                <div className="mt-2 space-y-2">
+                  {item.screenshot ? (
+                    <div className="relative inline-block">
+                      <img 
+                        src={item.screenshot} 
+                        alt={item.screenshotName || 'Screenshot'} 
+                        className="max-w-full max-h-48 rounded-md border border-border"
+                      />
+                      <Button
+                        variant="destructive"
+                        size="icon"
+                        className="absolute -top-2 -right-2 h-6 w-6"
+                        onClick={() => removeScreenshot(item.id)}
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
+                      {item.screenshotName && (
+                        <p className="text-xs text-muted-foreground mt-1">{item.screenshotName}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        ref={(el) => fileInputRefs.current[item.id] = el}
+                        onChange={(e) => handleFileChange(item.id, e)}
+                        className="hidden"
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fileInputRefs.current[item.id]?.click()}
+                        className="text-xs"
+                      >
+                        <ImagePlus className="w-3.5 h-3.5 mr-1.5" />
+                        Carica Screenshot
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
               
               {showNotes && expandedNotes[item.id] && (
                 <Textarea
