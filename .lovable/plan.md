@@ -1,31 +1,44 @@
 
-# Piano: Analisi Rischi per IRP Esteso
+# Piano: Datestamp Playbook Completati e Sezione "Eventi Compliance"
 
 ## Obiettivo
-Creare una nuova scheda "Analisi Rischi" nel modulo Incident Response che permette di censire asset/archivi con le relative misure di sicurezza implementate. La matrice compilata verra' salvata automaticamente e, se completa, esportata come allegato nella "Gestione Documenti".
+1. Aggiungere un **datestamp** quando l'utente completa/compila un playbook (salvato automaticamente)
+2. Creare una nuova sezione **"Eventi Compliance"** nella pagina Remediation che mostra lo storico dei playbook compilati con data di completamento
 
 ---
 
-## Analisi Excel - Struttura Dati
+## Analisi Corrente
 
-L'Excel contiene una matrice di valutazione dove:
-- **Righe**: Asset/Archivi (raggruppati per fonte di rischio: Non Umane, Umane Esterne, Umane Interne)
-- **Colonne**: 33 misure di sicurezza raggruppate in categorie
-- **Valori**: Score 0-3 per ogni combinazione asset/misura
+### Come Funzionano i Playbook Oggi
+- I playbook sono salvati in **localStorage** con chiave `playbook_progress_{id}`
+- Il salvataggio avviene con **debounce 500ms** tramite `usePlaybookAutoSave`
+- I dati salvati includono tutto il playbook (owner, sections, checklist items)
+- **Manca** un campo per tracciare la data di completamento
 
-### Legenda Score
-| Valore | Significato |
-|--------|-------------|
-| 0 | Non presente / Non applicabile |
-| 1 | Presente ma non incide sulla mitigazione |
-| 2 | Presente e parzialmente implementata |
-| 3 | Presente e totalmente implementata |
+### Struttura Remediation
+La pagina ha 4 tab:
+1. Panoramica Remediation
+2. GANTT Operativo  
+3. Azioni Eliminate
+4. Metriche & KPI
 
 ---
 
-## Struttura Database
+## Soluzione Proposta
 
-### Nuova Tabella: `risk_analysis`
+### 1. Estensione Tipo Playbook
+
+Aggiungere nuovi campi al tipo `Playbook`:
+
+| Campo | Tipo | Descrizione |
+|-------|------|-------------|
+| `started_at` | string (ISO date) | Data primo salvataggio |
+| `completed_at` | string (ISO date) | Data raggiungimento 100% |
+| `last_updated_at` | string (ISO date) | Ultimo aggiornamento |
+
+### 2. Database: Nuova Tabella `playbook_completions`
+
+Per persistere su Supabase (oltre a localStorage):
 
 ```text
 +---------------------+-------------+----------------------------------+
@@ -33,193 +46,134 @@ L'Excel contiene una matrice di valutazione dove:
 +---------------------+-------------+----------------------------------+
 | id                  | UUID        | Primary key                      |
 | organization_id     | UUID        | FK a organizations               |
-| asset_name          | TEXT        | Nome asset/archivio              |
-| threat_source       | TEXT        | non_umana/umana_esterna/interna  |
-| control_scores      | JSONB       | Mappa controllo -> score 0-3     |
-| risk_score          | INTEGER     | Score medio calcolato            |
-| notes               | TEXT        | Note libere                      |
-| created_at          | TIMESTAMPTZ | Data creazione                   |
-| updated_at          | TIMESTAMPTZ | Data aggiornamento               |
+| user_id             | UUID        | FK a users                       |
+| playbook_id         | TEXT        | ID playbook (es. phishing-attack)|
+| playbook_title      | TEXT        | Titolo leggibile                 |
+| playbook_category   | TEXT        | Categoria (es. Social Engineering)|
+| playbook_severity   | TEXT        | Severity (Bassa/Media/Alta/Critica)|
+| progress_percentage | INTEGER     | Percentuale completamento        |
+| data                | JSONB       | Snapshot completo del playbook   |
+| started_at          | TIMESTAMPTZ | Data inizio compilazione         |
+| completed_at        | TIMESTAMPTZ | Data completamento (100%)        |
+| created_at          | TIMESTAMPTZ | Timestamp creazione record       |
+| updated_at          | TIMESTAMPTZ | Timestamp ultimo aggiornamento   |
 +---------------------+-------------+----------------------------------+
 ```
 
-### Tabella di Supporto: `security_controls` (statica)
-Contiene i 33 controlli con categoria e ordine per popolare la UI.
+### 3. Logica Datestamp
 
----
+Nel hook `usePlaybookAutoSave`:
 
-## Interfaccia Utente
+1. **Prima compilazione**: Setta `started_at` se non presente
+2. **Ogni salvataggio**: Aggiorna `last_updated_at`
+3. **Raggiungimento 100%**: Setta `completed_at` (una sola volta)
+4. **Sync su Supabase**: Upsert record in `playbook_completions`
 
-### Approccio UX Proposto
-Invece di replicare l'intera matrice Excel (troppo complessa per un wizard), propongo un approccio **wizard guidato per asset**:
+### 4. Nuova Tab "Eventi Compliance"
+
+Aggiungere quinta tab in Remediation:
 
 ```text
 +----------------------------------------------------------+
-|  ANALISI RISCHI - IRP Esteso                              |
+|  EVENTI COMPLIANCE                                        |
 +----------------------------------------------------------+
 |                                                           |
-|  [Progresso: 2/5 asset analizzati] [Esporta Excel]       |
+|  Filtri: [Tutti] [Completati] [In Corso]  [Cerca...]     |
 |                                                           |
-|  +-- ELENCO ASSET ----------------------------------------+
-|  | Asset                    | Fonti | Completezza | Azioni|
-|  |--------------------------|-------|-------------|-------|
-|  | Server Applicazioni      | 3/3   | 85%         | [>]   |
-|  | Database Oracle          | 2/3   | 60%         | [>]   |
-|  | NAS Videosorveglianza    | 0/3   | 0%          | [>]   |
+|  +-- STORICO PLAYBOOK ------------------------------------+
+|  | Data         | Playbook            | Stato    | Azioni |
+|  |--------------|---------------------|----------|--------|
+|  | 04/02/2026   | Phishing Attack     | 100% OK  | [>][D] |
+|  | 03/02/2026   | Ransomware          | 85% WIP  | [>][D] |
+|  | 01/02/2026   | Data Exfiltration   | 100% OK  | [>][D] |
 |  +--------------------------------------------------------+
 |                                                           |
-|  [+ Aggiungi Asset]                                       |
+|  Legenda:                                                 |
+|  - OK = Completato con data certificata                   |
+|  - WIP = Work in Progress                                 |
+|  - [>] = Riapri playbook                                  |
+|  - [D] = Esporta DOCX con datestamp                       |
 |                                                           |
 +----------------------------------------------------------+
 ```
 
-### Wizard Dettaglio Asset (quando si clicca ">")
+### 5. Salvataggio Automatico in Gestione Documenti
 
-```text
-+----------------------------------------------------------+
-|  Asset: Server Applicazioni                    [< Torna] |
-+----------------------------------------------------------+
-|                                                           |
-|  Seleziona fonte di rischio:                             |
-|  [Fonti Non Umane] [Fonti Umane Esterne] [Fonti Interne] |
-|                                                           |
-|  +-- SICUREZZA FISICA ------------------------------------+
-|  | Impianto antincendio          [0] [1] [2] [3]         |
-|  | Porta blindata                [0] [1] [2] [3]         |
-|  | Videosorveglianza             [0] [1] [2] [3]         |
-|  | Allarme                       [0] [1] [2] [3]         |
-|  | Archivio con serratura        [0] [1] [2] [3]         |
-|  | Estintori                     [0] [1] [2] [3]         |
-|  +--------------------------------------------------------+
-|                                                           |
-|  +-- CONTROLLO ACCESSI -----------------------------------+
-|  | Sistemi accesso controllato   [0] [1] [2] [3]         |
-|  | Armadio blindato/ignifugo     [0] [1] [2] [3]         |
-|  | Solo autorizzati              [0] [1] [2] [3]         |
-|  +--------------------------------------------------------+
-|                                                           |
-|  +-- SICUREZZA IT ----------------------------------------+
-|  | Firewall                      [0] [1] [2] [3]         |
-|  | Credenziali per addetto       [0] [1] [2] [3]         |
-|  | Complessita' password         [0] [1] [2] [3]         |
-|  | MFA                           [0] [1] [2] [3]         |
-|  | Antivirus/Antimalware         [0] [1] [2] [3]         |
-|  | Monitoraggio log              [0] [1] [2] [3]         |
-|  | Cifratura dati                [0] [1] [2] [3]         |
-|  +--------------------------------------------------------+
-|                                                           |
-|  ... altre categorie (Backup, Organizzativo, Compliance) |
-|                                                           |
-|  [Salvataggio automatico attivo]           [Risk: 2.3/3] |
-+----------------------------------------------------------+
-```
-
----
-
-## Categorizzazione Controlli
-
-| Categoria | Controlli |
-|-----------|-----------|
-| **Sicurezza Fisica** | Antincendio, Porta blindata, Videosorveglianza, Allarme, Serratura, Estintori, Drenaggio, Accesso controllato locali, Armadio blindato |
-| **Controllo Accessi** | Archivio solo autorizzati, Max tentativi PSW, Sospensione sessioni |
-| **Gestione Documenti** | Distruggi documenti, Digitalizzazione |
-| **Sicurezza IT** | Firewall, Credenziali, Complessita' PSW, Log monitoring, MFA, Antivirus, Aggiornamenti SW, Cifratura |
-| **Continuita' Operativa** | Backup, Disaster Recovery |
-| **Organizzativo** | Formazione, Ruoli/Responsabilita', Gestione IT esterna, Tempi conservazione |
-| **Compliance** | Procedure Data Breach, Privacy docs, Consensi, Regolamento informatico, Diritti interessati |
+Quando un playbook raggiunge il 100%:
+1. Genera automaticamente il DOCX
+2. Salva su Supabase Storage
+3. Crea record in `incident_documents` con:
+   - Nome: `Playbook_{titolo}_{YYYY-MM-DD}.docx`
+   - Categoria: "Checklist / OPL / SOP"
+   - Data: timestamp completamento
 
 ---
 
 ## Flusso Implementazione
 
-### 1. Database Migration
-- Creare tabella `risk_analysis`
-- Creare tabella `security_controls` con seed dei 33 controlli
-- RLS policies per organization_id
+### Fase 1: Database
+1. Creare migrazione per tabella `playbook_completions`
+2. Aggiungere RLS policies per organization_id
 
-### 2. Nuovi File
+### Fase 2: Tipi e Logica
+1. Estendere `PlaybookProgress` in `src/types/playbook.ts`
+2. Creare hook `usePlaybookCompletions` per CRUD su Supabase
+3. Modificare `usePlaybookAutoSave` per:
+   - Tracciare date (started/updated/completed)
+   - Sync con database
+   - Trigger export automatico al 100%
+
+### Fase 3: UI
+1. Creare componente `ComplianceEventsTab.tsx`
+2. Modificare `Remediation.tsx`:
+   - Aggiungere quinta tab "Eventi Compliance"
+   - Integrare nuovo componente
+3. Aggiungere badge/indicatore visivo per playbook completati in IncidentResponse
+
+---
+
+## File da Creare
 
 | File | Descrizione |
 |------|-------------|
-| `src/types/riskAnalysis.ts` | Tipi TypeScript |
-| `src/hooks/useRiskAnalysis.ts` | Hook CRUD per analisi rischi |
-| `src/data/securityControls.ts` | Definizione statica dei 33 controlli categorizzati |
-| `src/components/irp/RiskAnalysisManager.tsx` | Componente principale (lista asset) |
-| `src/components/irp/RiskAnalysisWizard.tsx` | Wizard dettaglio singolo asset |
-| `src/components/irp/RiskControlGroup.tsx` | Gruppo controlli con toggle 0-3 |
+| `src/hooks/usePlaybookCompletions.ts` | Hook CRUD per playbook_completions |
+| `src/components/remediation/ComplianceEventsTab.tsx` | Componente tab Eventi Compliance |
 
-### 3. Modifiche Esistenti
+## File da Modificare
 
 | File | Modifica |
 |------|----------|
-| `src/pages/IncidentResponse.tsx` | Nuova tab "Analisi Rischi" |
-| `src/integrations/supabase/types.ts` | Aggiornamento tipi |
+| `src/types/playbook.ts` | Aggiungere campi date a PlaybookProgress |
+| `src/hooks/usePlaybookAutoSave.ts` | Logica datestamp e sync Supabase |
+| `src/pages/Remediation.tsx` | Nuova tab "Eventi Compliance" |
+| `src/components/irp/PlaybookViewer.tsx` | Mostrare date nel viewer |
 
 ---
 
-## Integrazione con Gestione Documenti
+## Vantaggi
 
-Quando l'analisi e' compilata (almeno 1 asset con valutazioni):
-
-1. **Pulsante "Esporta Excel"**: Genera un file Excel con la matrice completa
-2. **Salvataggio automatico in Documenti**: 
-   - Quando l'utente esporta, il file viene caricato automaticamente su Supabase Storage
-   - Viene creato un record in `incident_documents` con categoria "Tecnico" o nuova categoria "Analisi Rischi"
-   - L'utente puo' accedervi dalla Gestione Documenti
+1. **Tracciabilita' Compliance**: Ogni playbook ha data certificata di completamento
+2. **Audit Trail**: Storico completo accessibile da Remediation
+3. **Documentazione Automatica**: DOCX generato e archiviato automaticamente
+4. **Persistenza**: Dati salvati su database (non solo localStorage)
+5. **Visibilita' Cross-modulo**: Link tra IRP e Remediation
 
 ---
 
-## Integrazione con IRP Documento
+## Dettagli Tecnici
 
-Nel generatore DOCX dell'IRP Esteso:
-- Se `risk_analysis` contiene dati per l'organizzazione
-- Viene aggiunta una sezione "Allegato: Analisi dei Rischi"
-- Con tabella riepilogativa degli asset e risk score medio
-- Il documento Excel viene referenziato come allegato
+### Calcolo Completamento
+Il playbook e' considerato "completato" quando:
+- Tutti i campi owner required sono compilati
+- Almeno l'80% delle checklist items sono spuntate
+- Oppure: progress_percentage = 100%
 
----
+### Formato Date
+- Tutte le date in formato ISO 8601 (es. `2026-02-04T10:30:00Z`)
+- Visualizzazione in formato italiano (es. `04/02/2026 10:30`)
 
-## Calcolo Risk Score
-
-Per ogni asset, il risk score viene calcolato come:
-```text
-Risk Score = (Somma score controlli valorizzati) / (Numero controlli valorizzati * 3) * 100
-
-Esempio:
-- 10 controlli valorizzati
-- Somma score = 25
-- Risk Score = 25 / (10 * 3) * 100 = 83%
-```
-
-Indicatori:
-- **0-40%**: Rischio Alto (rosso)
-- **41-70%**: Rischio Medio (giallo)
-- **71-100%**: Rischio Basso (verde)
-
----
-
-## Vantaggi UX del Wizard
-
-1. **Guidato**: L'utente compila un asset alla volta, non si perde in una matrice enorme
-2. **Progressivo**: Puo' salvare e riprendere in qualita ` momento
-3. **Auto-save**: Ogni modifica viene persistita automaticamente
-4. **Feedback visivo**: Score calcolato in tempo reale
-5. **Categorizzato**: Controlli raggruppati per facilitare la comprensione
-6. **3 fonti separate**: Per ogni asset si valutano le 3 fonti di minaccia distintamente
-
----
-
-## Riepilogo Tecnico
-
-### Componenti da Creare
-- 1 migrazione database (2 tabelle + RLS)
-- 3 tipi TypeScript
-- 2 hooks React
-- 3 componenti UI
-- 1 file dati statici
-
-### Pattern Riutilizzati
-- Stesso pattern di `useCriticalInfrastructure` per CRUD
-- Stesso pattern di `CriticalInfrastructureManager` per UI tabellare
-- Export Excel come gia' implementato
-- Integrazione con `incident_documents` per allegati
+### Export DOCX Automatico
+Al raggiungimento del 100%:
+1. Genera DOCX con `generatePlaybookDocx`
+2. Converte in Blob
+3. Salva tramite `useDocumentSave` con categoria "Checklist / OPL / SOP"
