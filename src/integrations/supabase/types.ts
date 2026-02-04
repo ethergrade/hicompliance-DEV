@@ -712,6 +712,7 @@ export type Database = {
       organization_profiles: {
         Row: {
           business_sector: string | null
+          ciso_substitute: string | null
           created_at: string
           email: string | null
           fiscal_code: string | null
@@ -730,6 +731,7 @@ export type Database = {
         }
         Insert: {
           business_sector?: string | null
+          ciso_substitute?: string | null
           created_at?: string
           email?: string | null
           fiscal_code?: string | null
@@ -748,6 +750,7 @@ export type Database = {
         }
         Update: {
           business_sector?: string | null
+          ciso_substitute?: string | null
           created_at?: string
           email?: string | null
           fiscal_code?: string | null
