@@ -11,7 +11,17 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { FileDown, Save, Loader2, AlertTriangle } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow 
+} from '@/components/ui/table';
+import { FileDown, Save, Loader2, AlertTriangle, Shield, BarChart3, TrendingUp, Info } from 'lucide-react';
 import { IRPSectionEditor } from './IRPSectionEditor';
 import { IRPContactsTable } from './IRPContactsTable';
 import { useIRPDocument } from '@/hooks/useIRPDocument';
@@ -22,6 +32,7 @@ import { toast } from 'sonner';
 import { IRPDocumentData, RiskAnalysisSummary } from '@/types/irp';
 import { CATEGORY_LABELS, SecurityControlCategory } from '@/types/riskAnalysis';
 import { getControlsByCategory, getAllCategories } from '@/data/securityControls';
+import { cn } from '@/lib/utils';
 
 interface IRPDocumentEditorProps {
   open: boolean;
@@ -158,9 +169,13 @@ export const IRPDocumentEditor = ({ open, onOpenChange }: IRPDocumentEditorProps
         </DialogHeader>
 
         <Tabs defaultValue="editor" className="flex-1 flex flex-col min-h-0">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="editor">Editor Sezioni</TabsTrigger>
             <TabsTrigger value="contacts">Contatti di Emergenza</TabsTrigger>
+            <TabsTrigger value="risk-preview" className="flex items-center gap-1">
+              <BarChart3 className="w-4 h-4" />
+              Anteprima Rischi
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="editor" className="flex-1 min-h-0">
@@ -185,6 +200,207 @@ export const IRPDocumentEditor = ({ open, onOpenChange }: IRPDocumentEditorProps
               onUpdateContact={updateContactEscalation}
               onReload={handleReloadContacts}
             />
+            </ScrollArea>
+          </TabsContent>
+
+          {/* Risk Analysis Preview Tab */}
+          <TabsContent value="risk-preview" className="flex-1 min-h-0">
+            <ScrollArea className="h-full pr-4">
+              <div className="space-y-6 pb-4">
+                {loadingRisk ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : riskAssets.length === 0 ? (
+                  <Card className="border-dashed">
+                    <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                      <Shield className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                      <h3 className="font-medium text-lg mb-2">Nessun dato di Analisi Rischi</h3>
+                      <p className="text-sm text-muted-foreground max-w-md">
+                        Compila prima l'Analisi Rischi nella sezione IRP per visualizzare qui 
+                        un'anteprima dei dati che verranno inclusi nel documento esportato.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <>
+                    {/* Summary Stats */}
+                    <div className="grid grid-cols-3 gap-4">
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                            <Shield className="w-4 h-4" />
+                            Asset Analizzati
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold">{riskAssets.length}</div>
+                        </CardContent>
+                      </Card>
+                      
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                            <TrendingUp className="w-4 h-4" />
+                            Risk Score Medio
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          {(() => {
+                            const avgScore = Math.round(
+                              riskAssets.reduce((sum, a) => sum + (a.risk_score || 0), 0) / riskAssets.length
+                            );
+                            return (
+                              <div className={cn(
+                                "text-2xl font-bold",
+                                avgScore >= 71 ? "text-green-600" :
+                                avgScore >= 41 ? "text-yellow-600" : "text-red-600"
+                              )}>
+                                {avgScore}%
+                              </div>
+                            );
+                          })()}
+                        </CardContent>
+                      </Card>
+                      
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                            <BarChart3 className="w-4 h-4" />
+                            Categorie Valutate
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold">{getAllCategories().length}</div>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    {/* Info Banner */}
+                    <div className="flex items-start gap-3 p-4 rounded-lg bg-primary/5 border border-primary/20">
+                      <Info className="w-5 h-5 text-primary mt-0.5" />
+                      <div className="text-sm">
+                        <p className="font-medium text-foreground">Anteprima dati per l'export</p>
+                        <p className="text-muted-foreground">
+                          Questi dati verranno inclusi nel documento IRP esportato se l'opzione 
+                          "Includi Analisi Rischi" è attiva.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Assets Table */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base">Dettaglio Asset e Risk Score</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="rounded-md border">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Asset</TableHead>
+                                <TableHead>Fonte Minaccia</TableHead>
+                                <TableHead className="text-center">Risk Score</TableHead>
+                                <TableHead className="text-center">Livello</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {riskAssets.map((asset) => {
+                                const threatLabels: Record<string, string> = {
+                                  non_umana: 'Fonti Non Umane',
+                                  umana_esterna: 'Fonti Umane Esterne',
+                                  umana_interna: 'Fonti Umane Interne',
+                                };
+                                const score = asset.risk_score || 0;
+                                const level = score >= 71 ? 'Basso' : score >= 41 ? 'Medio' : 'Alto';
+                                const levelColor = score >= 71 ? 'bg-green-500/10 text-green-600 border-green-500/20' :
+                                                   score >= 41 ? 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20' :
+                                                   'bg-red-500/10 text-red-600 border-red-500/20';
+                                
+                                return (
+                                  <TableRow key={asset.id}>
+                                    <TableCell className="font-medium">{asset.asset_name}</TableCell>
+                                    <TableCell className="text-muted-foreground">
+                                      {threatLabels[asset.threat_source] || asset.threat_source}
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <span className={cn(
+                                        "font-bold",
+                                        score >= 71 ? "text-green-600" :
+                                        score >= 41 ? "text-yellow-600" : "text-red-600"
+                                      )}>
+                                        {score}%
+                                      </span>
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <Badge variant="outline" className={levelColor}>
+                                        {level}
+                                      </Badge>
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Category Averages per Asset */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base">Medie per Categoria di Controllo</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="rounded-md border overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="sticky left-0 bg-background">Asset</TableHead>
+                                {getAllCategories().map(cat => (
+                                  <TableHead key={cat} className="text-center text-xs whitespace-nowrap px-2">
+                                    {CATEGORY_LABELS[cat].split(' ')[0]}
+                                  </TableHead>
+                                ))}
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {riskAssets.map((asset) => (
+                                <TableRow key={asset.id}>
+                                  <TableCell className="sticky left-0 bg-background font-medium text-sm">
+                                    {asset.asset_name.length > 20 
+                                      ? asset.asset_name.substring(0, 20) + '...' 
+                                      : asset.asset_name}
+                                  </TableCell>
+                                  {getAllCategories().map(cat => {
+                                    const avg = getCategoryAverage(asset, cat);
+                                    const pct = Math.round((avg / 3) * 100);
+                                    return (
+                                      <TableCell key={cat} className="text-center px-2">
+                                        <div className={cn(
+                                          "inline-flex items-center justify-center w-10 h-6 rounded text-xs font-medium",
+                                          pct >= 71 ? "bg-green-500/20 text-green-700" :
+                                          pct >= 41 ? "bg-yellow-500/20 text-yellow-700" :
+                                          "bg-red-500/20 text-red-700"
+                                        )}>
+                                          {avg.toFixed(1)}
+                                        </div>
+                                      </TableCell>
+                                    );
+                                  })}
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Scala: 0 (Assente) → 3 (Completo). Colori: 🔴 Alto rischio (&lt;41%) | 🟡 Medio (41-70%) | 🟢 Basso (&gt;70%)
+                        </p>
+                      </CardContent>
+                    </Card>
+                  </>
+                )}
+              </div>
             </ScrollArea>
           </TabsContent>
         </Tabs>
