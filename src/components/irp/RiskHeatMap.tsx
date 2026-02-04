@@ -22,6 +22,7 @@ interface RiskHeatMapProps {
 }
 
 const ALL_SOURCES: ThreatSource[] = ['non_umana', 'umana_esterna', 'umana_interna'];
+const ALL_CATEGORIES: SecurityControlCategory[] = ['sicurezza_fisica', 'controllo_accessi', 'gestione_documenti', 'sicurezza_it', 'continuita_operativa', 'organizzativo', 'compliance'];
 
 export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
   const [selectedSource, setSelectedSource] = useState<ThreatSource>('non_umana');
@@ -29,6 +30,7 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
   const [exporting, setExporting] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportSources, setExportSources] = useState<ThreatSource[]>([...ALL_SOURCES]);
+  const [exportCategories, setExportCategories] = useState<SecurityControlCategory[]>([...ALL_CATEGORIES]);
   const heatmapRef = useRef<HTMLDivElement>(null);
   const { saveToDocuments } = useDocumentSave();
 
@@ -84,8 +86,21 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
     );
   };
 
+  const toggleExportCategory = (category: SecurityControlCategory) => {
+    setExportCategories(prev => 
+      prev.includes(category) 
+        ? prev.filter(c => c !== category)
+        : [...prev, category]
+    );
+  };
+
+  // Get controls filtered by export categories
+  const getExportControls = () => {
+    return SECURITY_CONTROLS.filter(c => exportCategories.includes(c.category));
+  };
+
   const handleExportPDF = async () => {
-    if (!heatmapRef.current || exportSources.length === 0) return;
+    if (!heatmapRef.current || exportSources.length === 0 || exportCategories.length === 0) return;
     
     setExporting(true);
     setShowExportDialog(false);
@@ -108,14 +123,18 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
       pdf.text(`Data: ${today}`, 14, currentY);
       currentY += 5;
       pdf.text(`Fonti incluse: ${exportSources.map(s => THREAT_SOURCE_LABELS[s]).join(', ')}`, 14, currentY);
+      currentY += 5;
+      pdf.text(`Categorie: ${exportCategories.map(c => CATEGORY_LABELS[c]).join(', ')}`, 14, currentY);
       currentY += 10;
 
       // Capture heatmap for each selected source
       for (let i = 0; i < exportSources.length; i++) {
         const source = exportSources[i];
         
-        // Temporarily switch to this source for capture
+        // Temporarily switch to this source and set category to 'all' for capture
+        // We'll show only export categories in the captured view
         setSelectedSource(source);
+        setSelectedCategory('all');
         
         // Wait for render
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -249,22 +268,47 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
           <DialogHeader>
             <DialogTitle>Esporta PDF Heat Map</DialogTitle>
             <DialogDescription>
-              Seleziona le fonti di rischio da includere nel report
+              Seleziona le fonti di rischio e le categorie di controlli da includere nel report
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            {ALL_SOURCES.map((source) => (
-              <div key={source} className="flex items-center space-x-3">
-                <Checkbox
-                  id={`export-${source}`}
-                  checked={exportSources.includes(source)}
-                  onCheckedChange={() => toggleExportSource(source)}
-                />
-                <Label htmlFor={`export-${source}`} className="cursor-pointer">
-                  {THREAT_SOURCE_LABELS[source]}
-                </Label>
+          <div className="space-y-6 py-4">
+            {/* Sources Selection */}
+            <div className="space-y-3">
+              <Label className="text-sm font-medium">Fonti di Rischio</Label>
+              <div className="grid grid-cols-1 gap-2">
+                {ALL_SOURCES.map((source) => (
+                  <div key={source} className="flex items-center space-x-3">
+                    <Checkbox
+                      id={`export-source-${source}`}
+                      checked={exportSources.includes(source)}
+                      onCheckedChange={() => toggleExportSource(source)}
+                    />
+                    <Label htmlFor={`export-source-${source}`} className="cursor-pointer text-sm">
+                      {THREAT_SOURCE_LABELS[source]}
+                  </Label>
+                </div>
+              ))}
               </div>
-            ))}
+            </div>
+
+            {/* Categories Selection */}
+            <div className="space-y-3">
+              <Label className="text-sm font-medium">Categorie di Controlli</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {ALL_CATEGORIES.map((category) => (
+                  <div key={category} className="flex items-center space-x-3">
+                    <Checkbox
+                      id={`export-cat-${category}`}
+                      checked={exportCategories.includes(category)}
+                      onCheckedChange={() => toggleExportCategory(category)}
+                    />
+                    <Label htmlFor={`export-cat-${category}`} className="cursor-pointer text-sm">
+                      {CATEGORY_LABELS[category]}
+                    </Label>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowExportDialog(false)}>
@@ -272,7 +316,7 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
             </Button>
             <Button 
               onClick={handleExportPDF} 
-              disabled={exportSources.length === 0 || exporting}
+              disabled={exportSources.length === 0 || exportCategories.length === 0 || exporting}
             >
               {exporting ? (
                 <>
