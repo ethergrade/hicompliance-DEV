@@ -5,6 +5,9 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { RiskAnalysisAsset, ThreatSource, THREAT_SOURCE_LABELS, CATEGORY_LABELS, SecurityControlCategory } from '@/types/riskAnalysis';
 import { SECURITY_CONTROLS, getAllCategories, getControlsByCategory } from '@/data/securityControls';
 import { useDocumentSave } from '@/hooks/useDocumentSave';
@@ -18,10 +21,14 @@ interface RiskHeatMapProps {
   assets: RiskAnalysisAsset[];
 }
 
+const ALL_SOURCES: ThreatSource[] = ['non_umana', 'umana_esterna', 'umana_interna'];
+
 export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
   const [selectedSource, setSelectedSource] = useState<ThreatSource>('non_umana');
   const [selectedCategory, setSelectedCategory] = useState<SecurityControlCategory | 'all'>('all');
   const [exporting, setExporting] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportSources, setExportSources] = useState<ThreatSource[]>([...ALL_SOURCES]);
   const heatmapRef = useRef<HTMLDivElement>(null);
   const { saveToDocuments } = useDocumentSave();
 
@@ -69,44 +76,75 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
     return Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10;
   };
 
+  const toggleExportSource = (source: ThreatSource) => {
+    setExportSources(prev => 
+      prev.includes(source) 
+        ? prev.filter(s => s !== source)
+        : [...prev, source]
+    );
+  };
+
   const handleExportPDF = async () => {
-    if (!heatmapRef.current) return;
+    if (!heatmapRef.current || exportSources.length === 0) return;
     
     setExporting(true);
+    setShowExportDialog(false);
+    
     try {
-      // Capture the heatmap content
-      const canvas = await html2canvas(heatmapRef.current, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#1a1a2e', // Match dark theme background
-        logging: false,
-      });
-
-      // Calculate PDF dimensions
-      const imgWidth = 297; // A4 landscape width in mm
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      
-      // Create PDF (landscape for wide heatmap)
       const pdf = new jsPDF({
-        orientation: imgHeight > imgWidth ? 'portrait' : 'landscape',
+        orientation: 'landscape',
         unit: 'mm',
         format: 'a4',
       });
 
-      // Add title
       const today = new Date().toLocaleDateString('it-IT');
-      pdf.setFontSize(16);
-      pdf.text('Analisi Rischi - Heat Map', 14, 15);
-      pdf.setFontSize(10);
-      pdf.text(`Data: ${today}`, 14, 22);
-      pdf.text(`Fonte: ${THREAT_SOURCE_LABELS[selectedSource]}`, 14, 28);
+      let currentY = 15;
 
-      // Add canvas as image
-      const imgData = canvas.toDataURL('image/png');
-      const pdfWidth = pdf.internal.pageSize.getWidth() - 28;
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      
-      pdf.addImage(imgData, 'PNG', 14, 35, pdfWidth, Math.min(pdfHeight, pdf.internal.pageSize.getHeight() - 45));
+      // Title
+      pdf.setFontSize(16);
+      pdf.text('Analisi Rischi - Heat Map', 14, currentY);
+      currentY += 7;
+      pdf.setFontSize(10);
+      pdf.text(`Data: ${today}`, 14, currentY);
+      currentY += 5;
+      pdf.text(`Fonti incluse: ${exportSources.map(s => THREAT_SOURCE_LABELS[s]).join(', ')}`, 14, currentY);
+      currentY += 10;
+
+      // Capture heatmap for each selected source
+      for (let i = 0; i < exportSources.length; i++) {
+        const source = exportSources[i];
+        
+        // Temporarily switch to this source for capture
+        setSelectedSource(source);
+        
+        // Wait for render
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        const canvas = await html2canvas(heatmapRef.current, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#1a1a2e',
+          logging: false,
+        });
+
+        // Add page break if not first
+        if (i > 0) {
+          pdf.addPage();
+          currentY = 15;
+        }
+
+        // Add source title
+        pdf.setFontSize(12);
+        pdf.text(`Fonte: ${THREAT_SOURCE_LABELS[source]}`, 14, currentY);
+        currentY += 8;
+
+        // Add canvas as image
+        const imgData = canvas.toDataURL('image/png');
+        const pdfWidth = pdf.internal.pageSize.getWidth() - 28;
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+        
+        pdf.addImage(imgData, 'PNG', 14, currentY, pdfWidth, Math.min(pdfHeight, pdf.internal.pageSize.getHeight() - currentY - 10));
+      }
 
       // Generate blob
       const pdfBlob = pdf.output('blob');
@@ -191,7 +229,7 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
             <Button 
               variant="outline" 
               size="sm" 
-              onClick={handleExportPDF}
+              onClick={() => setShowExportDialog(true)}
               disabled={exporting}
             >
               {exporting ? (
@@ -204,6 +242,53 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Export Dialog */}
+      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Esporta PDF Heat Map</DialogTitle>
+            <DialogDescription>
+              Seleziona le fonti di rischio da includere nel report
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {ALL_SOURCES.map((source) => (
+              <div key={source} className="flex items-center space-x-3">
+                <Checkbox
+                  id={`export-${source}`}
+                  checked={exportSources.includes(source)}
+                  onCheckedChange={() => toggleExportSource(source)}
+                />
+                <Label htmlFor={`export-${source}`} className="cursor-pointer">
+                  {THREAT_SOURCE_LABELS[source]}
+                </Label>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowExportDialog(false)}>
+              Annulla
+            </Button>
+            <Button 
+              onClick={handleExportPDF} 
+              disabled={exportSources.length === 0 || exporting}
+            >
+              {exporting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Esportazione...
+                </>
+              ) : (
+                <>
+                  <FileDown className="h-4 w-4 mr-2" />
+                  Esporta ({exportSources.length} fonti)
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Legend */}
       <Card className="bg-card border-border">
