@@ -1,7 +1,7 @@
 import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
 import { saveAs } from 'file-saver';
-import { IRPDocumentData } from '@/types/irp';
+import { IRPDocumentData, RiskAnalysisSummary } from '@/types/irp';
 
 const mapCategoryToIRPRole = (category: string): string => {
   const mapping: Record<string, string> = {
@@ -17,6 +17,18 @@ const mapCategoryToIRPRole = (category: string): string => {
     'governance': 'Governance Team',
   };
   return mapping[category.toLowerCase()] || 'Incident Response Team';
+};
+
+const getRiskLevelLabel = (score: number): string => {
+  if (score >= 71) return 'Basso';
+  if (score >= 41) return 'Medio';
+  return 'Alto';
+};
+
+const getRiskLevelColor = (score: number): string => {
+  if (score >= 71) return '✅';
+  if (score >= 41) return '⚠️';
+  return '🔴';
 };
 
 export interface GeneratedDocument {
@@ -49,7 +61,23 @@ export const generateIRPDocument = async (data: IRPDocumentData): Promise<Genera
       }
     });
     
-    // 4. Prepare data for template
+    // 4. Prepare risk analysis data for template
+    const riskAnalysisData = data.riskAnalysis?.map(risk => ({
+      assetName: risk.assetName,
+      threatSource: risk.threatSource,
+      riskScore: `${risk.riskScore}%`,
+      riskLevel: getRiskLevelLabel(risk.riskScore),
+      riskIndicator: getRiskLevelColor(risk.riskScore),
+      categories: risk.categoryAverages.map(cat => ({
+        categoryName: cat.category,
+        categoryScore: cat.average.toFixed(1),
+      })),
+    })) || [];
+
+    // Check if risk analysis data exists
+    const hasRiskAnalysis = riskAnalysisData.length > 0;
+    
+    // 5. Prepare data for template
     const templateData = {
       'NOME AZIENDA': data.companyName,
       'DATA ELABORAZIONE': data.date,
@@ -64,18 +92,22 @@ export const generateIRPDocument = async (data: IRPDocumentData): Promise<Genera
         responsabilita: contact.responsibilities || '',
         escalationLevel: contact.escalationLevel?.toString() || '3',
       })),
+      // Risk Analysis data
+      hasRiskAnalysis,
+      riskAnalysis: riskAnalysisData,
+      riskAnalysisDate: data.date,
     };
     
-    // 5. Render the document with data
+    // 6. Render the document with data
     doc.render(templateData);
     
-    // 6. Generate the output
+    // 7. Generate the output
     const output = doc.getZip().generate({
       type: 'blob',
       mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     });
     
-    // 7. Create file name and download
+    // 8. Create file name and download
     const fileName = `IRP_${data.companyName.replace(/\s+/g, '_')}_${data.date.replace(/\//g, '-')}.docx`;
     saveAs(output, fileName);
     
