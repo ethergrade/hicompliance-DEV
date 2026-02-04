@@ -31,6 +31,7 @@ import {
   Eye,
   CloudUpload,
   Cloud,
+  Calendar,
 } from 'lucide-react';
 import { Playbook, PlaybookChecklistItem, calculatePlaybookProgress } from '@/types/playbook';
 import { PlaybookProgressBar } from './PlaybookProgressBar';
@@ -39,7 +40,19 @@ import { PlaybookInputSection } from './PlaybookInputSection';
 import { generatePlaybookDocx } from './playbookDocxGenerator';
 import { useToast } from '@/hooks/use-toast';
 import { usePlaybookAutoSave, formatRelativeTime } from '@/hooks/usePlaybookAutoSave';
+import { usePlaybookCompletions } from '@/hooks/usePlaybookCompletions';
 import { cn } from '@/lib/utils';
+
+const formatDateTime = (isoString: string): string => {
+  const date = new Date(isoString);
+  return date.toLocaleDateString('it-IT', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
 
 interface PlaybookViewerProps {
   playbook: Playbook | null;
@@ -83,6 +96,9 @@ export const PlaybookViewer: React.FC<PlaybookViewerProps> = ({
   const [, forceUpdate] = useState(0); // For relative time updates
   const { toast } = useToast();
   const { saveStatus, lastSaved, triggerSave, resetSaveState } = usePlaybookAutoSave();
+  const { getCompletion } = usePlaybookCompletions();
+
+  const completion = playbookState ? getCompletion(playbookState.id) : undefined;
 
   useEffect(() => {
     if (initialPlaybook) {
@@ -223,6 +239,24 @@ export const PlaybookViewer: React.FC<PlaybookViewerProps> = ({
               {playbookState.category}
             </div>
           </div>
+
+          {/* Date Section */}
+          {completion && (
+            <div className="flex flex-wrap items-center gap-4 text-sm mt-2">
+              {completion.started_at && (
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <Calendar className="w-4 h-4" />
+                  <span>Iniziato: {formatDateTime(completion.started_at)}</span>
+                </div>
+              )}
+              {completion.completed_at && (
+                <div className="flex items-center gap-1.5 text-primary">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Completato: {formatDateTime(completion.completed_at)}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="mt-4 space-y-2">
             <PlaybookProgressBar
