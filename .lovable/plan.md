@@ -1,71 +1,58 @@
 
-# Piano: Spostare "Eventi Compliance" come Pagina Separata nella Sidebar
+# Piano: Mostrare le Date nel PlaybookViewer
 
 ## Obiettivo
-Spostare la sezione "Eventi Compliance" dalla tab in Remediation a una voce separata nella sidebar, posizionandola sotto la sezione **"Incident Remediation"** accanto a "Incident Response".
+Aggiungere badge/sezione nell'header del PlaybookViewer che mostri:
+- **Iniziato**: 04/02/2026 10:30
+- **Completato**: 04/02/2026 15:45 (solo se progresso = 100%)
 
 ---
 
 ## Situazione Attuale
 
-### Sidebar - Sezione "Incident Remediation"
-Attualmente contiene:
-- Incident Response (`/incident-response`)
-- Threat Management (`/threat-management`)
+Le date vengono tracciate automaticamente nel database (`playbook_completions`):
+- `started_at`: impostato al primo salvataggio
+- `completed_at`: impostato quando si raggiunge il 100%
 
-### Pagina Remediation
-Contiene 5 tab:
-1. Panoramica Remediation
-2. GANTT Operativo  
-3. Azioni Eliminate
-4. Metriche & KPI
-5. **Eventi Compliance** (da spostare)
+Tuttavia, il `PlaybookViewer` non le visualizza perche':
+1. Non recupera i dati dal database all'apertura
+2. Le date non sono mostrate nell'interfaccia
 
 ---
 
 ## Modifiche Pianificate
 
-### 1. Creare Nuova Pagina `ComplianceEvents.tsx`
+### 1. Recuperare le Date dal Database
 
-Nuova pagina dedicata che utilizza il componente esistente `ComplianceEventsTab`:
+Modificare `PlaybookViewer.tsx` per:
+- Importare e usare `usePlaybookCompletions` hook
+- Recuperare il record corrispondente al playbook corrente
+- Estrarre `started_at` e `completed_at`
 
-```text
-/src/pages/ComplianceEvents.tsx
-+----------------------------------------+
-| DashboardLayout                        |
-|   Header: "Eventi Compliance"          |
-|   Breadcrumb: Incident Remediation >   |
-|               Eventi Compliance        |
-|   Content: <ComplianceEventsTab />     |
-+----------------------------------------+
-```
+### 2. Aggiungere Sezione Date nell'Header
 
-### 2. Aggiungere Route in App.tsx
+Posizionare i badge sotto le info esistenti (durata, categoria) e sopra la progress bar:
 
 ```text
-Route: /compliance-events
-Component: ComplianceEvents
++------------------------------------------+
+| Titolo Playbook                [Critica] |
+| Descrizione                              |
+|                                          |
+| Clock 4-8h  |  Target Phishing           |
+|                                          |
+| [Calendar] Iniziato: 04/02/2026 10:30    |  <-- NUOVO
+| [CheckCircle] Completato: 04/02/2026 15:45|  <-- NUOVO (se 100%)
+|                                          |
+| [======= Progress Bar 85% =========]     |
+| Cloud Salvato automaticamente - 2 min fa |
++------------------------------------------+
 ```
 
-### 3. Modificare Sidebar (AppSidebar.tsx)
+### 3. Formattazione Data
 
-Aggiungere voce nella sezione "Incident Remediation":
-
-```text
-Incident Remediation
-  ⚠ Incident Response
-  📋 Eventi Compliance   <-- NUOVO
-  🛡 Threat Management
-```
-
-Icona: `FileCheck` (gia' usata nel componente ComplianceEventsTab)
-
-### 4. Rimuovere Tab da Remediation.tsx
-
-Rimuovere:
-- `TabsTrigger` per "Eventi Compliance"
-- `TabsContent` con `<ComplianceEventsTab />`
-- Import del componente
+Creare funzione helper per formattare le date in formato italiano:
+- Input: ISO string (`2026-02-04T10:30:00.000Z`)
+- Output: `04/02/2026 10:30`
 
 ---
 
@@ -73,61 +60,65 @@ Rimuovere:
 
 | File | Modifica |
 |------|----------|
-| `src/pages/ComplianceEvents.tsx` | **NUOVO** - Pagina dedicata |
-| `src/App.tsx` | Aggiungere route `/compliance-events` |
-| `src/components/layout/AppSidebar.tsx` | Aggiungere voce menu sotto "Incident Remediation" |
-| `src/pages/Remediation.tsx` | Rimuovere tab "Eventi Compliance" |
+| `src/components/irp/PlaybookViewer.tsx` | Aggiungere recupero date e visualizzazione |
 
 ---
 
 ## Dettagli Implementazione
 
-### Nuova Pagina ComplianceEvents.tsx
+### Recupero Date
 
-La pagina:
-- Utilizza `DashboardLayout` come wrapper (stile consistente)
-- Include header con titolo e descrizione
-- Renderizza `ComplianceEventsTab` come contenuto principale
-- Mantiene la stessa logica e funzionalita'
+All'interno del componente:
+- Usare `usePlaybookCompletions` per ottenere `getCompletion`
+- Chiamare `getCompletion(playbookState.id)` per recuperare il record
+- Estrarre `started_at` e `completed_at`
 
-### Aggiornamento Sidebar
+### Nuovi Elementi UI
 
-Nella sezione "Incident Remediation" (linee 174-210 di AppSidebar.tsx):
-- Aggiungere check `isModuleEnabled('/compliance-events')`
-- Inserire `SidebarMenuItem` con:
-  - Icona: `FileCheck`
-  - Label: "Eventi Compliance"
-  - Link: `/compliance-events`
-  - Posizione: tra "Incident Response" e "Threat Management"
+Aggiungere dopo le info (durata/categoria) e prima della progress bar:
 
-### Permessi
+```tsx
+{/* Date Section */}
+{completion && (
+  <div className="flex flex-wrap items-center gap-3 text-sm mt-2">
+    {completion.started_at && (
+      <div className="flex items-center gap-1.5 text-muted-foreground">
+        <Calendar className="w-4 h-4" />
+        <span>Iniziato: {formatDateTime(completion.started_at)}</span>
+      </div>
+    )}
+    {completion.completed_at && (
+      <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+        <CheckCircle2 className="w-4 h-4" />
+        <span>Completato: {formatDateTime(completion.completed_at)}</span>
+      </div>
+    )}
+  </div>
+)}
+```
 
-Aggiungere nuovo modulo nella tabella `role_module_permissions`:
-- `module_path`: `/compliance-events`
-- `module_name`: `Eventi Compliance`
+### Funzione Helper
 
-Questo assicura che la visibilita' sia controllata dallo stesso sistema di permessi esistente.
+```tsx
+const formatDateTime = (isoString: string): string => {
+  const date = new Date(isoString);
+  return date.toLocaleDateString('it-IT', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+// Output: "04/02/2026, 10:30"
+```
 
 ---
 
 ## Risultato Finale
 
-```text
-SIDEBAR
-+----------------------------+
-| Sicurezza                  |
-|   Home                     |
-|   Dashboard                |
-|   ...                      |
-+----------------------------+
-| Incident Remediation       |
-|   ⚠ Incident Response     |
-|   📋 Eventi Compliance     | <-- NUOVO
-|   🛡 Threat Management     |
-+----------------------------+
-| Impostazioni               |
-|   ...                      |
-+----------------------------+
-```
+Nell'header del PlaybookViewer appariranno:
+- **Iniziato**: data/ora del primo salvataggio (icona calendario, testo grigio)
+- **Completato**: data/ora del completamento al 100% (icona check verde, solo se completato)
 
-La pagina Remediation tornera' ad avere 4 tab come originariamente previsto, mentre "Eventi Compliance" sara' accessibile direttamente dalla sidebar.
+Le date si aggiornano automaticamente grazie al sync gia' esistente nel sistema di auto-save.
