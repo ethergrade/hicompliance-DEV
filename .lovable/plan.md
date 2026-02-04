@@ -1,179 +1,133 @@
 
-# Piano: Datestamp Playbook Completati e Sezione "Eventi Compliance"
+# Piano: Spostare "Eventi Compliance" come Pagina Separata nella Sidebar
 
 ## Obiettivo
-1. Aggiungere un **datestamp** quando l'utente completa/compila un playbook (salvato automaticamente)
-2. Creare una nuova sezione **"Eventi Compliance"** nella pagina Remediation che mostra lo storico dei playbook compilati con data di completamento
+Spostare la sezione "Eventi Compliance" dalla tab in Remediation a una voce separata nella sidebar, posizionandola sotto la sezione **"Incident Remediation"** accanto a "Incident Response".
 
 ---
 
-## Analisi Corrente
+## Situazione Attuale
 
-### Come Funzionano i Playbook Oggi
-- I playbook sono salvati in **localStorage** con chiave `playbook_progress_{id}`
-- Il salvataggio avviene con **debounce 500ms** tramite `usePlaybookAutoSave`
-- I dati salvati includono tutto il playbook (owner, sections, checklist items)
-- **Manca** un campo per tracciare la data di completamento
+### Sidebar - Sezione "Incident Remediation"
+Attualmente contiene:
+- Incident Response (`/incident-response`)
+- Threat Management (`/threat-management`)
 
-### Struttura Remediation
-La pagina ha 4 tab:
+### Pagina Remediation
+Contiene 5 tab:
 1. Panoramica Remediation
 2. GANTT Operativo  
 3. Azioni Eliminate
 4. Metriche & KPI
+5. **Eventi Compliance** (da spostare)
 
 ---
 
-## Soluzione Proposta
+## Modifiche Pianificate
 
-### 1. Estensione Tipo Playbook
+### 1. Creare Nuova Pagina `ComplianceEvents.tsx`
 
-Aggiungere nuovi campi al tipo `Playbook`:
-
-| Campo | Tipo | Descrizione |
-|-------|------|-------------|
-| `started_at` | string (ISO date) | Data primo salvataggio |
-| `completed_at` | string (ISO date) | Data raggiungimento 100% |
-| `last_updated_at` | string (ISO date) | Ultimo aggiornamento |
-
-### 2. Database: Nuova Tabella `playbook_completions`
-
-Per persistere su Supabase (oltre a localStorage):
+Nuova pagina dedicata che utilizza il componente esistente `ComplianceEventsTab`:
 
 ```text
-+---------------------+-------------+----------------------------------+
-| Campo               | Tipo        | Descrizione                      |
-+---------------------+-------------+----------------------------------+
-| id                  | UUID        | Primary key                      |
-| organization_id     | UUID        | FK a organizations               |
-| user_id             | UUID        | FK a users                       |
-| playbook_id         | TEXT        | ID playbook (es. phishing-attack)|
-| playbook_title      | TEXT        | Titolo leggibile                 |
-| playbook_category   | TEXT        | Categoria (es. Social Engineering)|
-| playbook_severity   | TEXT        | Severity (Bassa/Media/Alta/Critica)|
-| progress_percentage | INTEGER     | Percentuale completamento        |
-| data                | JSONB       | Snapshot completo del playbook   |
-| started_at          | TIMESTAMPTZ | Data inizio compilazione         |
-| completed_at        | TIMESTAMPTZ | Data completamento (100%)        |
-| created_at          | TIMESTAMPTZ | Timestamp creazione record       |
-| updated_at          | TIMESTAMPTZ | Timestamp ultimo aggiornamento   |
-+---------------------+-------------+----------------------------------+
+/src/pages/ComplianceEvents.tsx
++----------------------------------------+
+| DashboardLayout                        |
+|   Header: "Eventi Compliance"          |
+|   Breadcrumb: Incident Remediation >   |
+|               Eventi Compliance        |
+|   Content: <ComplianceEventsTab />     |
++----------------------------------------+
 ```
 
-### 3. Logica Datestamp
-
-Nel hook `usePlaybookAutoSave`:
-
-1. **Prima compilazione**: Setta `started_at` se non presente
-2. **Ogni salvataggio**: Aggiorna `last_updated_at`
-3. **Raggiungimento 100%**: Setta `completed_at` (una sola volta)
-4. **Sync su Supabase**: Upsert record in `playbook_completions`
-
-### 4. Nuova Tab "Eventi Compliance"
-
-Aggiungere quinta tab in Remediation:
+### 2. Aggiungere Route in App.tsx
 
 ```text
-+----------------------------------------------------------+
-|  EVENTI COMPLIANCE                                        |
-+----------------------------------------------------------+
-|                                                           |
-|  Filtri: [Tutti] [Completati] [In Corso]  [Cerca...]     |
-|                                                           |
-|  +-- STORICO PLAYBOOK ------------------------------------+
-|  | Data         | Playbook            | Stato    | Azioni |
-|  |--------------|---------------------|----------|--------|
-|  | 04/02/2026   | Phishing Attack     | 100% OK  | [>][D] |
-|  | 03/02/2026   | Ransomware          | 85% WIP  | [>][D] |
-|  | 01/02/2026   | Data Exfiltration   | 100% OK  | [>][D] |
-|  +--------------------------------------------------------+
-|                                                           |
-|  Legenda:                                                 |
-|  - OK = Completato con data certificata                   |
-|  - WIP = Work in Progress                                 |
-|  - [>] = Riapri playbook                                  |
-|  - [D] = Esporta DOCX con datestamp                       |
-|                                                           |
-+----------------------------------------------------------+
+Route: /compliance-events
+Component: ComplianceEvents
 ```
 
-### 5. Salvataggio Automatico in Gestione Documenti
+### 3. Modificare Sidebar (AppSidebar.tsx)
 
-Quando un playbook raggiunge il 100%:
-1. Genera automaticamente il DOCX
-2. Salva su Supabase Storage
-3. Crea record in `incident_documents` con:
-   - Nome: `Playbook_{titolo}_{YYYY-MM-DD}.docx`
-   - Categoria: "Checklist / OPL / SOP"
-   - Data: timestamp completamento
+Aggiungere voce nella sezione "Incident Remediation":
 
----
+```text
+Incident Remediation
+  ⚠ Incident Response
+  📋 Eventi Compliance   <-- NUOVO
+  🛡 Threat Management
+```
 
-## Flusso Implementazione
+Icona: `FileCheck` (gia' usata nel componente ComplianceEventsTab)
 
-### Fase 1: Database
-1. Creare migrazione per tabella `playbook_completions`
-2. Aggiungere RLS policies per organization_id
+### 4. Rimuovere Tab da Remediation.tsx
 
-### Fase 2: Tipi e Logica
-1. Estendere `PlaybookProgress` in `src/types/playbook.ts`
-2. Creare hook `usePlaybookCompletions` per CRUD su Supabase
-3. Modificare `usePlaybookAutoSave` per:
-   - Tracciare date (started/updated/completed)
-   - Sync con database
-   - Trigger export automatico al 100%
-
-### Fase 3: UI
-1. Creare componente `ComplianceEventsTab.tsx`
-2. Modificare `Remediation.tsx`:
-   - Aggiungere quinta tab "Eventi Compliance"
-   - Integrare nuovo componente
-3. Aggiungere badge/indicatore visivo per playbook completati in IncidentResponse
+Rimuovere:
+- `TabsTrigger` per "Eventi Compliance"
+- `TabsContent` con `<ComplianceEventsTab />`
+- Import del componente
 
 ---
-
-## File da Creare
-
-| File | Descrizione |
-|------|-------------|
-| `src/hooks/usePlaybookCompletions.ts` | Hook CRUD per playbook_completions |
-| `src/components/remediation/ComplianceEventsTab.tsx` | Componente tab Eventi Compliance |
 
 ## File da Modificare
 
 | File | Modifica |
 |------|----------|
-| `src/types/playbook.ts` | Aggiungere campi date a PlaybookProgress |
-| `src/hooks/usePlaybookAutoSave.ts` | Logica datestamp e sync Supabase |
-| `src/pages/Remediation.tsx` | Nuova tab "Eventi Compliance" |
-| `src/components/irp/PlaybookViewer.tsx` | Mostrare date nel viewer |
+| `src/pages/ComplianceEvents.tsx` | **NUOVO** - Pagina dedicata |
+| `src/App.tsx` | Aggiungere route `/compliance-events` |
+| `src/components/layout/AppSidebar.tsx` | Aggiungere voce menu sotto "Incident Remediation" |
+| `src/pages/Remediation.tsx` | Rimuovere tab "Eventi Compliance" |
 
 ---
 
-## Vantaggi
+## Dettagli Implementazione
 
-1. **Tracciabilita' Compliance**: Ogni playbook ha data certificata di completamento
-2. **Audit Trail**: Storico completo accessibile da Remediation
-3. **Documentazione Automatica**: DOCX generato e archiviato automaticamente
-4. **Persistenza**: Dati salvati su database (non solo localStorage)
-5. **Visibilita' Cross-modulo**: Link tra IRP e Remediation
+### Nuova Pagina ComplianceEvents.tsx
+
+La pagina:
+- Utilizza `DashboardLayout` come wrapper (stile consistente)
+- Include header con titolo e descrizione
+- Renderizza `ComplianceEventsTab` come contenuto principale
+- Mantiene la stessa logica e funzionalita'
+
+### Aggiornamento Sidebar
+
+Nella sezione "Incident Remediation" (linee 174-210 di AppSidebar.tsx):
+- Aggiungere check `isModuleEnabled('/compliance-events')`
+- Inserire `SidebarMenuItem` con:
+  - Icona: `FileCheck`
+  - Label: "Eventi Compliance"
+  - Link: `/compliance-events`
+  - Posizione: tra "Incident Response" e "Threat Management"
+
+### Permessi
+
+Aggiungere nuovo modulo nella tabella `role_module_permissions`:
+- `module_path`: `/compliance-events`
+- `module_name`: `Eventi Compliance`
+
+Questo assicura che la visibilita' sia controllata dallo stesso sistema di permessi esistente.
 
 ---
 
-## Dettagli Tecnici
+## Risultato Finale
 
-### Calcolo Completamento
-Il playbook e' considerato "completato" quando:
-- Tutti i campi owner required sono compilati
-- Almeno l'80% delle checklist items sono spuntate
-- Oppure: progress_percentage = 100%
+```text
+SIDEBAR
++----------------------------+
+| Sicurezza                  |
+|   Home                     |
+|   Dashboard                |
+|   ...                      |
++----------------------------+
+| Incident Remediation       |
+|   ⚠ Incident Response     |
+|   📋 Eventi Compliance     | <-- NUOVO
+|   🛡 Threat Management     |
++----------------------------+
+| Impostazioni               |
+|   ...                      |
++----------------------------+
+```
 
-### Formato Date
-- Tutte le date in formato ISO 8601 (es. `2026-02-04T10:30:00Z`)
-- Visualizzazione in formato italiano (es. `04/02/2026 10:30`)
-
-### Export DOCX Automatico
-Al raggiungimento del 100%:
-1. Genera DOCX con `generatePlaybookDocx`
-2. Converte in Blob
-3. Salva tramite `useDocumentSave` con categoria "Checklist / OPL / SOP"
+La pagina Remediation tornera' ad avere 4 tab come originariamente previsto, mentre "Eventi Compliance" sara' accessibile direttamente dalla sidebar.
