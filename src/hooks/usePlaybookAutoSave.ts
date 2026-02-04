@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Playbook, calculatePlaybookProgress } from '@/types/playbook';
 import { supabase } from '@/integrations/supabase/client';
-import { generatePlaybookDocx } from '@/components/irp/playbookDocxGenerator';
+import { savePlaybookWithVersion } from '@/lib/playbookMigration';
 import { Packer } from 'docx';
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'syncing';
@@ -206,10 +206,9 @@ export const usePlaybookAutoSave = (): UsePlaybookAutoSaveReturn => {
 
     setSaveStatus('saving');
 
-    // Debounce: save to localStorage after 500ms
+    // Debounce: save to localStorage after 500ms (with version tag)
     saveTimeoutRef.current = setTimeout(() => {
-      const storageKey = `playbook_progress_${playbook.id}`;
-      localStorage.setItem(storageKey, JSON.stringify(playbook));
+      savePlaybookWithVersion(playbook.id, playbook);
       setSaveStatus('saved');
       setLastSaved(new Date());
 
