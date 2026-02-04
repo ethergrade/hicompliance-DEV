@@ -13,6 +13,7 @@ export interface OrganizationProfile {
   email: string | null;
   business_sector: string | null;
   nis2_classification: NIS2Classification | null;
+  ciso_substitute: string | null;
   created_at: string;
   updated_at: string;
 }
