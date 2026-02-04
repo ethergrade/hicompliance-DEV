@@ -778,6 +778,62 @@ export type Database = {
         }
         Relationships: []
       }
+      playbook_completions: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          data: Json
+          id: string
+          organization_id: string | null
+          playbook_category: string
+          playbook_id: string
+          playbook_severity: string
+          playbook_title: string
+          progress_percentage: number
+          started_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          data?: Json
+          id?: string
+          organization_id?: string | null
+          playbook_category: string
+          playbook_id: string
+          playbook_severity: string
+          playbook_title: string
+          progress_percentage?: number
+          started_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          data?: Json
+          id?: string
+          organization_id?: string | null
+          playbook_category?: string
+          playbook_id?: string
+          playbook_severity?: string
+          playbook_title?: string
+          progress_percentage?: number
+          started_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "playbook_completions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       remediation_tasks: {
         Row: {
           assignee: string | null
