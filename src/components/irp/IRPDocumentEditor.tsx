@@ -9,14 +9,19 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FileDown, Save, Loader2 } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { FileDown, Save, Loader2, AlertTriangle } from 'lucide-react';
 import { IRPSectionEditor } from './IRPSectionEditor';
 import { IRPContactsTable } from './IRPContactsTable';
 import { useIRPDocument } from '@/hooks/useIRPDocument';
 import { generateIRPDocument } from './docxGenerator';
 import { useDocumentSave } from '@/hooks/useDocumentSave';
+import { useRiskAnalysis } from '@/hooks/useRiskAnalysis';
 import { toast } from 'sonner';
-import { IRPDocumentData } from '@/types/irp';
+import { IRPDocumentData, RiskAnalysisSummary } from '@/types/irp';
+import { CATEGORY_LABELS, SecurityControlCategory } from '@/types/riskAnalysis';
+import { getControlsByCategory, getAllCategories } from '@/data/securityControls';
 
 interface IRPDocumentEditorProps {
   open: boolean;
@@ -26,8 +31,10 @@ interface IRPDocumentEditorProps {
 export const IRPDocumentEditor = ({ open, onOpenChange }: IRPDocumentEditorProps) => {
   const { document, loading, saving, contacts, saveDocument, reloadContacts } = useIRPDocument();
   const { saveToDocuments } = useDocumentSave();
+  const { assets: riskAssets, loading: loadingRisk } = useRiskAnalysis();
   const [localDocument, setLocalDocument] = useState<IRPDocumentData | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [includeRiskAnalysis, setIncludeRiskAnalysis] = useState(true);
 
   useEffect(() => {
     if (document) {
@@ -40,13 +47,51 @@ export const IRPDocumentEditor = ({ open, onOpenChange }: IRPDocumentEditorProps
     await saveDocument(localDocument);
   };
 
+  // Calculate category averages for risk analysis
+  const getCategoryAverage = (asset: typeof riskAssets[0], category: SecurityControlCategory): number => {
+    const controls = getControlsByCategory(category);
+    const scores = controls
+      .map(c => asset.control_scores[c.id])
+      .filter((s): s is number => typeof s === 'number');
+    
+    if (scores.length === 0) return 0;
+    return Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10;
+  };
+
+  // Prepare risk analysis data for export
+  const prepareRiskAnalysisData = (): RiskAnalysisSummary[] => {
+    if (!includeRiskAnalysis || riskAssets.length === 0) return [];
+
+    const threatSourceLabels: Record<string, string> = {
+      non_umana: 'Fonti Non Umane',
+      umana_esterna: 'Fonti Umane Esterne',
+      umana_interna: 'Fonti Umane Interne',
+    };
+
+    return riskAssets.map(asset => ({
+      assetName: asset.asset_name,
+      threatSource: threatSourceLabels[asset.threat_source] || asset.threat_source,
+      riskScore: asset.risk_score,
+      categoryAverages: getAllCategories().map(cat => ({
+        category: CATEGORY_LABELS[cat],
+        average: getCategoryAverage(asset, cat),
+      })),
+    }));
+  };
+
   const handleExport = async () => {
     if (!localDocument) return;
     try {
       setExporting(true);
       
+      // Prepare document with risk analysis data
+      const docWithRiskAnalysis: IRPDocumentData = {
+        ...localDocument,
+        riskAnalysis: prepareRiskAnalysisData(),
+      };
+      
       // Generate document and get blob
-      const { blob, fileName } = await generateIRPDocument(localDocument);
+      const { blob, fileName } = await generateIRPDocument(docWithRiskAnalysis);
       
       // Save to Gestione Documenti automatically
       const saved = await saveToDocuments({
@@ -144,35 +189,64 @@ export const IRPDocumentEditor = ({ open, onOpenChange }: IRPDocumentEditorProps
           </TabsContent>
         </Tabs>
 
-        <div className="flex justify-between pt-4 border-t">
-          <div className="flex gap-2">
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? (
+        <div className="flex flex-col gap-4 pt-4 border-t">
+          {/* Risk Analysis inclusion option */}
+          <div className="flex items-center justify-between bg-muted/50 p-3 rounded-lg">
+            <div className="flex items-center gap-3">
+              <Checkbox
+                id="include-risk-analysis"
+                checked={includeRiskAnalysis}
+                onCheckedChange={(checked) => setIncludeRiskAnalysis(checked === true)}
+              />
+              <div>
+                <Label htmlFor="include-risk-analysis" className="cursor-pointer font-medium">
+                  Includi Analisi Rischi
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {riskAssets.length > 0 
+                    ? `${riskAssets.length} asset analizzati disponibili`
+                    : 'Nessun dato di analisi rischi disponibile'}
+                </p>
+              </div>
+            </div>
+            {riskAssets.length === 0 && (
+              <div className="flex items-center gap-1 text-xs text-warning">
+                <AlertTriangle className="h-3 w-3" />
+                <span>Compila prima l'Analisi Rischi</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-between">
+            <div className="flex gap-2">
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Salvataggio...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    Salva Bozza
+                  </>
+                )}
+              </Button>
+            </div>
+            <Button onClick={handleExport} disabled={exporting || loadingRisk} variant="default">
+              {exporting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Salvataggio...
+                  Esportazione...
                 </>
               ) : (
                 <>
-                  <Save className="mr-2 h-4 w-4" />
-                  Salva Bozza
+                  <FileDown className="mr-2 h-4 w-4" />
+                  Esporta DOCX
                 </>
               )}
             </Button>
           </div>
-          <Button onClick={handleExport} disabled={exporting} variant="default">
-            {exporting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Esportazione...
-              </>
-            ) : (
-              <>
-                <FileDown className="mr-2 h-4 w-4" />
-                Esporta DOCX
-              </>
-            )}
-          </Button>
         </div>
       </DialogContent>
     </Dialog>

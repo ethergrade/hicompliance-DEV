@@ -43,6 +43,16 @@ export interface Procedure {
   assignedTo: string;
 }
 
+export interface RiskAnalysisSummary {
+  assetName: string;
+  threatSource: string;
+  riskScore: number;
+  categoryAverages: {
+    category: string;
+    average: number;
+  }[];
+}
+
 export interface IRPDocumentData {
   companyName: string;
   companyAddress: string;
@@ -57,6 +67,7 @@ export interface IRPDocumentData {
     communications: string;
     procedures: Procedure[];
   };
+  riskAnalysis?: RiskAnalysisSummary[];
 }
 
 export interface IRPDocument {
