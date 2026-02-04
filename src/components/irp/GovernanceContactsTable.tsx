@@ -5,13 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Trash2, Edit, Save, Eye, Info, Download, Loader2, Users } from 'lucide-react';
+import { Plus, Trash2, Edit, Save, Eye, Info, Download, Loader2, Users, Check } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { EmergencyContact, DirectoryContact } from '@/types/irp';
 import { IRPContactForm } from './IRPContactForm';
 import { ContactDirectoryDialog } from './ContactDirectoryDialog';
-
+import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
 interface GovernanceContactsTableProps {
   onDataChange?: () => void;
 }
@@ -31,7 +31,6 @@ const exampleContacts = [
 export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = ({ onDataChange }) => {
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
   const [loading, setLoading] = useState(true);
-  const [cisoSubstitute, setCisoSubstitute] = useState('');
   const [isEditingSubstitute, setIsEditingSubstitute] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<EmergencyContact | null>(null);
@@ -41,10 +40,14 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
   const [showConfirmAllDialog, setShowConfirmAllDialog] = useState(false);
   const [directoryOpen, setDirectoryOpen] = useState(false);
   const { toast } = useToast();
+  
+  // Use organization profile hook for CISO substitute persistence
+  const { formData, updateField, saving: savingProfile, lastSaved } = useOrganizationProfile();
+  const cisoSubstitute = formData.ciso_substitute;
 
   const handleSelectContactFromDirectory = (contact: DirectoryContact) => {
     const fullName = `${contact.first_name} ${contact.last_name}`;
-    setCisoSubstitute(fullName);
+    updateField('ciso_substitute', fullName);
     setDirectoryOpen(false);
     setIsEditingSubstitute(false);
   };
@@ -268,45 +271,61 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
         <CardContent className="space-y-6">
           {/* Introductory text with CISO substitute field */}
           <div className="p-4 bg-muted/30 rounded-lg border border-border">
-            <p className="text-muted-foreground text-sm leading-relaxed">
-              Nel caso la figura di <span className="font-semibold text-foreground">CISO</span> non sia presente in Azienda, 
-              questa figura compresa di ruoli e responsabilità sarà coperta da:{' '}
-              {isEditingSubstitute ? (
-                <span className="inline-flex items-center gap-2">
-                  <Input
-                    value={cisoSubstitute}
-                    onChange={(e) => setCisoSubstitute(e.target.value)}
-                    className="w-48 h-7 text-sm inline-block bg-background"
-                    placeholder="Nome e Cognome"
-                  />
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    className="h-7 px-2"
-                    onClick={() => setDirectoryOpen(true)}
-                    title="Seleziona dalla rubrica"
+            <div className="flex items-start justify-between gap-4">
+              <p className="text-muted-foreground text-sm leading-relaxed flex-1">
+                Nel caso la figura di <span className="font-semibold text-foreground">CISO</span> non sia presente in Azienda, 
+                questa figura compresa di ruoli e responsabilità sarà coperta da:{' '}
+                {isEditingSubstitute ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Input
+                      value={cisoSubstitute}
+                      onChange={(e) => updateField('ciso_substitute', e.target.value)}
+                      className="w-48 h-7 text-sm inline-block bg-background"
+                      placeholder="Nome e Cognome"
+                    />
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="h-7 px-2"
+                      onClick={() => setDirectoryOpen(true)}
+                      title="Seleziona dalla rubrica"
+                    >
+                      <Users className="w-3 h-3" />
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      className="h-7 px-2"
+                      onClick={() => setIsEditingSubstitute(false)}
+                    >
+                      <Save className="w-3 h-3" />
+                    </Button>
+                  </span>
+                ) : (
+                  <span 
+                    className="font-semibold text-primary cursor-pointer hover:underline"
+                    onClick={() => setIsEditingSubstitute(true)}
                   >
-                    <Users className="w-3 h-3" />
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    variant="ghost" 
-                    className="h-7 px-2"
-                    onClick={() => setIsEditingSubstitute(false)}
-                  >
-                    <Save className="w-3 h-3" />
-                  </Button>
-                </span>
-              ) : (
-                <span 
-                  className="font-semibold text-primary cursor-pointer hover:underline"
-                  onClick={() => setIsEditingSubstitute(true)}
-                >
-                  {cisoSubstitute || '[Clicca per inserire]'}
-                </span>
-              )}
-              {' '}che svolgerà le mansioni di CISO riportate nel documento.
-            </p>
+                    {cisoSubstitute || '[Clicca per inserire]'}
+                  </span>
+                )}
+                {' '}che svolgerà le mansioni di CISO riportate nel documento.
+              </p>
+              {/* Save status indicator */}
+              <div className="flex-shrink-0 text-xs text-muted-foreground">
+                {savingProfile ? (
+                  <span className="flex items-center gap-1">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Salvando...
+                  </span>
+                ) : lastSaved ? (
+                  <span className="flex items-center gap-1 text-primary">
+                    <Check className="w-3 h-3" />
+                    Salvato
+                  </span>
+                ) : null}
+              </div>
+            </div>
           </div>
 
           {/* Contacts Table */}

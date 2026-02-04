@@ -14,6 +14,7 @@ interface ProfileFormData {
   email: string;
   business_sector: string;
   nis2_classification: NIS2Classification | null;
+  ciso_substitute: string;
 }
 
 const INITIAL_FORM_DATA: ProfileFormData = {
@@ -26,7 +27,8 @@ const INITIAL_FORM_DATA: ProfileFormData = {
   phone: '',
   email: '',
   business_sector: '',
-  nis2_classification: null
+  nis2_classification: null,
+  ciso_substitute: ''
 };
 
 export function useOrganizationProfile() {
@@ -85,7 +87,8 @@ export function useOrganizationProfile() {
           phone: profileData.phone || '',
           email: profileData.email || '',
           business_sector: profileData.business_sector || '',
-          nis2_classification: profileData.nis2_classification
+          nis2_classification: profileData.nis2_classification,
+          ciso_substitute: profileData.ciso_substitute || ''
         });
       }
     } catch (error) {
@@ -117,7 +120,8 @@ export function useOrganizationProfile() {
         phone: data.phone || null,
         email: data.email || null,
         business_sector: data.business_sector || null,
-        nis2_classification: data.nis2_classification
+        nis2_classification: data.nis2_classification,
+        ciso_substitute: data.ciso_substitute || null
       };
 
       if (profile) {
