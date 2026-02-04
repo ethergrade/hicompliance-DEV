@@ -30,6 +30,7 @@ export interface PlaybookSection {
   title: string;
   subtitle?: string;
   type: 'text' | 'checklist' | 'input-list' | 'notes';
+  singleChoice?: boolean; // If true, only one item can be selected (radio button behavior)
   items?: PlaybookChecklistItem[];
   inputs?: PlaybookInputField[];
   content?: string;
@@ -88,10 +89,17 @@ export const calculatePlaybookProgress = (playbook: Playbook): { completed: numb
   // Count checklist items
   playbook.sections.forEach(section => {
     if (section.type === 'checklist' && section.items) {
-      section.items.forEach(item => {
+      if (section.singleChoice) {
+        // Single choice sections count as 1 item total, completed if any is selected
         total++;
-        if (item.checked) completed++;
-      });
+        if (section.items.some(item => item.checked)) completed++;
+      } else {
+        // Normal checklist: count all items
+        section.items.forEach(item => {
+          total++;
+          if (item.checked) completed++;
+        });
+      }
     }
     if (section.type === 'input-list' && section.inputs) {
       section.inputs.forEach(input => {
