@@ -42,6 +42,7 @@ import { generatePlaybookDocx } from './playbookDocxGenerator';
 import { useToast } from '@/hooks/use-toast';
 import { usePlaybookAutoSave, formatRelativeTime } from '@/hooks/usePlaybookAutoSave';
 import { usePlaybookCompletions } from '@/hooks/usePlaybookCompletions';
+import { loadPlaybookWithMigration } from '@/lib/playbookMigration';
 import { cn } from '@/lib/utils';
 
 const formatDateTime = (isoString: string): string => {
@@ -186,18 +187,14 @@ export const PlaybookViewer: React.FC<PlaybookViewerProps> = ({
     }
   }, [initialPlaybook, toast, resetSaveState]);
 
-  // Load saved progress on mount
+  // Load saved progress on mount with automatic migration
   useEffect(() => {
     if (initialPlaybook && open) {
-      const storageKey = `playbook_progress_${initialPlaybook.id}`;
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        try {
-          setPlaybookState(JSON.parse(saved));
-        } catch {
-          setPlaybookState(JSON.parse(JSON.stringify(initialPlaybook)));
-        }
-      }
+      const loadedPlaybook = loadPlaybookWithMigration(
+        initialPlaybook.id,
+        initialPlaybook
+      );
+      setPlaybookState(loadedPlaybook);
     }
   }, [initialPlaybook, open]);
 
