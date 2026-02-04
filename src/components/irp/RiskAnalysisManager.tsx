@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table,
   TableBody,
@@ -33,9 +35,17 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { RiskAnalysisWizard } from './RiskAnalysisWizard';
 import { RiskHeatMap } from './RiskHeatMap';
 import { useRiskAnalysis } from '@/hooks/useRiskAnalysis';
+import { useCriticalInfrastructure } from '@/hooks/useCriticalInfrastructure';
 import { useDocumentSave } from '@/hooks/useDocumentSave';
 import { THREAT_SOURCE_LABELS, ThreatSource, AssetSummary } from '@/types/riskAnalysis';
 import { SECURITY_CONTROLS, getAllCategories, getControlsByCategory } from '@/data/securityControls';
@@ -51,7 +61,8 @@ import {
   Loader2,
   Info,
   LayoutGrid,
-  List
+  List,
+  Database
 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -71,26 +82,47 @@ export const RiskAnalysisManager: React.FC = () => {
     getAssetByNameAndSource,
   } = useRiskAnalysis();
 
+  const { assets: infrastructureAssets, loading: loadingInfrastructure } = useCriticalInfrastructure();
   const { saveToDocuments } = useDocumentSave();
   
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
   const [newAssetName, setNewAssetName] = useState('');
+  const [selectedInfraAsset, setSelectedInfraAsset] = useState<string>('');
+  const [addMode, setAddMode] = useState<'select' | 'manual'>('select');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'heatmap'>('list');
 
   const assetSummaries = getAssetSummaries();
 
+  // Get infrastructure assets not yet in risk analysis
+  const availableInfraAssets = infrastructureAssets.filter(infra => {
+    const name = infra.component_name || infra.asset_id;
+    return name && !assetSummaries.some(s => s.assetName === name);
+  });
+
   const handleAddAsset = async () => {
-    if (!newAssetName.trim()) {
-      toast.error('Inserisci un nome per l\'asset');
-      return;
+    let assetName = '';
+    
+    if (addMode === 'select') {
+      if (!selectedInfraAsset) {
+        toast.error('Seleziona un asset dall\'infrastruttura critica');
+        return;
+      }
+      assetName = selectedInfraAsset;
+    } else {
+      if (!newAssetName.trim()) {
+        toast.error('Inserisci un nome per l\'asset');
+        return;
+      }
+      assetName = newAssetName.trim();
     }
 
-    const result = await addAsset(newAssetName.trim(), 'non_umana');
+    const result = await addAsset(assetName, 'non_umana');
     if (result) {
       setNewAssetName('');
+      setSelectedInfraAsset('');
       setDialogOpen(false);
-      setSelectedAsset(newAssetName.trim());
+      setSelectedAsset(assetName);
     }
   };
 
@@ -279,30 +311,105 @@ export const RiskAnalysisManager: React.FC = () => {
                   Esporta Excel
                 </Button>
               )}
-              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <Dialog open={dialogOpen} onOpenChange={(open) => {
+                setDialogOpen(open);
+                if (!open) {
+                  setNewAssetName('');
+                  setSelectedInfraAsset('');
+                  setAddMode('select');
+                }
+              }}>
                 <DialogTrigger asChild>
                   <Button size="sm">
                     <Plus className="h-4 w-4 mr-1" />
                     Aggiungi Asset
                   </Button>
                 </DialogTrigger>
-                <DialogContent>
+                <DialogContent className="max-w-md">
                   <DialogHeader>
-                    <DialogTitle>Nuovo Asset</DialogTitle>
+                    <DialogTitle>Nuovo Asset per Analisi Rischi</DialogTitle>
                   </DialogHeader>
-                  <div className="py-4">
-                    <Input
-                      placeholder="Nome asset (es. Server Applicazioni)"
-                      value={newAssetName}
-                      onChange={(e) => setNewAssetName(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleAddAsset()}
-                    />
+                  <div className="py-4 space-y-4">
+                    <Tabs value={addMode} onValueChange={(v) => setAddMode(v as 'select' | 'manual')}>
+                      <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="select" className="text-xs">
+                          <Database className="h-3.5 w-3.5 mr-1.5" />
+                          Da Infrastruttura
+                        </TabsTrigger>
+                        <TabsTrigger value="manual" className="text-xs">
+                          <Plus className="h-3.5 w-3.5 mr-1.5" />
+                          Nuovo Manuale
+                        </TabsTrigger>
+                      </TabsList>
+                      
+                      <TabsContent value="select" className="mt-4 space-y-3">
+                        {loadingInfrastructure ? (
+                          <div className="flex items-center justify-center py-4">
+                            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                          </div>
+                        ) : availableInfraAssets.length === 0 ? (
+                          <div className="text-center py-4 text-muted-foreground text-sm">
+                            <Database className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                            <p>Nessun asset disponibile.</p>
+                            <p className="text-xs mt-1">
+                              {infrastructureAssets.length > 0 
+                                ? "Tutti gli asset sono già in Analisi Rischi."
+                                : "Aggiungi asset in Infrastruttura Critica prima."}
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            <Label className="text-sm text-muted-foreground">
+                              Seleziona un asset dall'Infrastruttura Critica
+                            </Label>
+                            <Select value={selectedInfraAsset} onValueChange={setSelectedInfraAsset}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Seleziona asset..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {availableInfraAssets.map((infra) => {
+                                  const name = infra.component_name || infra.asset_id;
+                                  return (
+                                    <SelectItem key={infra.id} value={name}>
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="outline" className="text-[10px]">
+                                          {infra.asset_id}
+                                        </Badge>
+                                        <span>{infra.component_name || '(senza nome)'}</span>
+                                      </div>
+                                    </SelectItem>
+                                  );
+                                })}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">
+                              {availableInfraAssets.length} asset disponibili
+                            </p>
+                          </>
+                        )}
+                      </TabsContent>
+                      
+                      <TabsContent value="manual" className="mt-4 space-y-3">
+                        <Label className="text-sm text-muted-foreground">
+                          Inserisci il nome dell'asset
+                        </Label>
+                        <Input
+                          placeholder="es. Server Applicazioni"
+                          value={newAssetName}
+                          onChange={(e) => setNewAssetName(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleAddAsset()}
+                        />
+                      </TabsContent>
+                    </Tabs>
                   </div>
                   <DialogFooter>
                     <DialogClose asChild>
                       <Button variant="outline">Annulla</Button>
                     </DialogClose>
-                    <Button onClick={handleAddAsset} disabled={saving}>
+                    <Button 
+                      onClick={handleAddAsset} 
+                      disabled={saving || (addMode === 'select' && !selectedInfraAsset) || (addMode === 'manual' && !newAssetName.trim())}
+                    >
                       {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
                       Aggiungi
                     </Button>
