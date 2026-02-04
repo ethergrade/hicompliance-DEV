@@ -11,11 +11,18 @@ import {
   Clock,
   FileText,
   TrendingUp,
-  Users,
-  Target
+  Target,
+  Building2,
+  Shield,
+  AlertCircle
 } from 'lucide-react';
+import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
+import { NIS2_LABELS } from '@/types/organization';
 
 const Assessment: React.FC = () => {
+  // Organization profile for NIS2 classification
+  const { formData: orgProfile, loading: profileLoading } = useOrganizationProfile();
+
   // Animated states
   const [animatedProgress, setAnimatedProgress] = useState(0);
   const [animatedScore, setAnimatedScore] = useState(0);
@@ -25,6 +32,22 @@ const Assessment: React.FC = () => {
   const [animatedCategoryProgress, setAnimatedCategoryProgress] = useState<number[]>([]);
   const [animatedCategoryScores, setAnimatedCategoryScores] = useState<number[]>([]);
   const [animationsStarted, setAnimationsStarted] = useState(false);
+
+  const getNIS2Badge = () => {
+    if (!orgProfile.nis2_classification) return null;
+    
+    const badgeColors: Record<string, string> = {
+      essential: 'bg-red-500/10 text-red-500 border-red-500/20',
+      important: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
+      none: 'bg-muted text-muted-foreground border-border'
+    };
+
+    return (
+      <Badge variant="outline" className={badgeColors[orgProfile.nis2_classification]}>
+        {NIS2_LABELS[orgProfile.nis2_classification]}
+      </Badge>
+    );
+  };
 
   const assessmentCategories = [
     { 
@@ -274,6 +297,46 @@ const Assessment: React.FC = () => {
             Genera Report
           </Button>
         </div>
+
+        {/* Organization Profile Banner */}
+        {!profileLoading && (orgProfile.legal_name || orgProfile.nis2_classification) && (
+          <Card className="border-primary/20 bg-primary/5">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="p-2 rounded-lg bg-primary/10">
+                    <Building2 className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-foreground">
+                      {orgProfile.legal_name || 'Azienda non configurata'}
+                    </h3>
+                    {orgProfile.business_sector && (
+                      <p className="text-sm text-muted-foreground">{orgProfile.business_sector}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  {orgProfile.nis2_classification ? (
+                    <div className="flex items-center gap-2">
+                      <Shield className="h-5 w-5 text-primary" />
+                      <span className="text-sm font-medium">Classificazione NIS2:</span>
+                      {getNIS2Badge()}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-amber-500">
+                      <AlertCircle className="h-5 w-5" />
+                      <span className="text-sm">Classificazione NIS2 non impostata</span>
+                      <Button variant="outline" size="sm" asChild>
+                        <a href="/incident-response">Configura</a>
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Assessment Overview */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">

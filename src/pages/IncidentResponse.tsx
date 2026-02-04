@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { IRPDocumentEditor } from '@/components/irp/IRPDocumentEditor';
 import { GovernanceContactsTable } from '@/components/irp/GovernanceContactsTable';
 import { ContactDirectoryManager } from '@/components/irp/ContactDirectoryManager';
+import { OrganizationProfileForm } from '@/components/irp/OrganizationProfileForm';
 import { PlaybookViewer } from '@/components/irp/PlaybookViewer';
 import { CriticalInfrastructureManager } from '@/components/irp/CriticalInfrastructureManager';
 import { RiskAnalysisManager } from '@/components/irp/RiskAnalysisManager';
@@ -410,7 +411,7 @@ const IncidentResponse: React.FC = () => {
         <Tabs defaultValue="procedures" className="space-y-6">
           <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="procedures">Procedure Operative</TabsTrigger>
-            <TabsTrigger value="contacts">Contatti di Emergenza</TabsTrigger>
+            <TabsTrigger value="contacts">Contatti e Informazioni</TabsTrigger>
             <TabsTrigger value="directory">Rubrica Contatti</TabsTrigger>
             <TabsTrigger value="infrastructure" className="flex items-center gap-1">
               <Server className="h-4 w-4" />
@@ -504,6 +505,7 @@ const IncidentResponse: React.FC = () => {
           </TabsContent>
 
           <TabsContent value="contacts" className="space-y-6">
+            <OrganizationProfileForm />
             <GovernanceContactsTable onDataChange={fetchEmergencyContacts} />
           </TabsContent>
 

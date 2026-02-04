@@ -709,6 +709,71 @@ export type Database = {
           },
         ]
       }
+      organization_profiles: {
+        Row: {
+          business_sector: string | null
+          created_at: string
+          email: string | null
+          fiscal_code: string | null
+          id: string
+          legal_address: string | null
+          legal_name: string | null
+          nis2_classification:
+            | Database["public"]["Enums"]["nis2_classification"]
+            | null
+          operational_address: string | null
+          organization_id: string
+          pec: string | null
+          phone: string | null
+          updated_at: string
+          vat_number: string | null
+        }
+        Insert: {
+          business_sector?: string | null
+          created_at?: string
+          email?: string | null
+          fiscal_code?: string | null
+          id?: string
+          legal_address?: string | null
+          legal_name?: string | null
+          nis2_classification?:
+            | Database["public"]["Enums"]["nis2_classification"]
+            | null
+          operational_address?: string | null
+          organization_id: string
+          pec?: string | null
+          phone?: string | null
+          updated_at?: string
+          vat_number?: string | null
+        }
+        Update: {
+          business_sector?: string | null
+          created_at?: string
+          email?: string | null
+          fiscal_code?: string | null
+          id?: string
+          legal_address?: string | null
+          legal_name?: string | null
+          nis2_classification?:
+            | Database["public"]["Enums"]["nis2_classification"]
+            | null
+          operational_address?: string | null
+          organization_id?: string
+          pec?: string | null
+          phone?: string | null
+          updated_at?: string
+          vat_number?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_profiles_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_services: {
         Row: {
           created_at: string
@@ -1172,6 +1237,7 @@ export type Database = {
         | "Varie"
         | "NIS2"
         | "ISO & Audit"
+      nis2_classification: "essential" | "important" | "none"
       service_status: "active" | "inactive" | "maintenance" | "alert"
       user_type: "admin" | "client"
     }
@@ -1315,6 +1381,7 @@ export const Constants = {
         "NIS2",
         "ISO & Audit",
       ],
+      nis2_classification: ["essential", "important", "none"],
       service_status: ["active", "inactive", "maintenance", "alert"],
       user_type: ["admin", "client"],
     },
