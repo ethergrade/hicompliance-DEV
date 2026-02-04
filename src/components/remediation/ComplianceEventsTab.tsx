@@ -25,6 +25,17 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { 
   FileCheck, 
   Clock, 
@@ -35,7 +46,8 @@ import {
   AlertCircle,
   Loader2,
   CalendarCheck,
-  ClipboardList
+  ClipboardList,
+  Trash2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
@@ -71,10 +83,11 @@ const formatDate = (dateString: string | null) => {
 const ComplianceEventsTab: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { completions, isLoading, error } = usePlaybookCompletions();
+  const { completions, isLoading, error, deleteCompletion } = usePlaybookCompletions();
   const [filter, setFilter] = useState<FilterStatus>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [exportingId, setExportingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const filteredCompletions = completions.filter(c => {
     // Status filter
@@ -119,6 +132,32 @@ const ComplianceEventsTab: React.FC = () => {
       setExportingId(null);
     }
   }, [toast]);
+
+  const handleDelete = useCallback(async (completion: PlaybookCompletion) => {
+    setDeletingId(completion.id);
+    try {
+      const success = await deleteCompletion(completion.playbook_id);
+      if (success) {
+        // Clear localStorage for this playbook
+        localStorage.removeItem(`playbook_progress_${completion.playbook_id}`);
+        toast({
+          title: "Playbook eliminato",
+          description: `"${completion.playbook_title}" è stato rimosso dallo storico.`,
+        });
+      } else {
+        throw new Error('Delete failed');
+      }
+    } catch (err) {
+      console.error('Error deleting playbook:', err);
+      toast({
+        title: "Errore",
+        description: "Impossibile eliminare il playbook.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  }, [deleteCompletion, toast]);
 
   // Stats
   const totalPlaybooks = completions.length;
@@ -345,6 +384,48 @@ const ComplianceEventsTab: React.FC = () => {
                               <TooltipContent>Esporta DOCX</TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
+
+                          <AlertDialog>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <AlertDialogTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                      disabled={deletingId === completion.id}
+                                    >
+                                      {deletingId === completion.id ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="w-4 h-4" />
+                                      )}
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent>Elimina</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Eliminare questo playbook?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Stai per eliminare "{completion.playbook_title}" dallo storico compliance. 
+                                  Questa azione è irreversibile.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Annulla</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleDelete(completion)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Elimina
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </div>
                       </TableCell>
                     </TableRow>
