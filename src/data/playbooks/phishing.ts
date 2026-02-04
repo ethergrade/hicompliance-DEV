@@ -133,6 +133,7 @@ export const phishingPlaybook: Playbook = {
   description: 'Gestione di campagne phishing e compromissione credenziali',
   purpose: 'Bloccare l\'accesso non autorizzato, limitare impatto su dati e reputazione, ripristinare fiducia nell\'account compromesso.',
   owner: [
+    { id: 'incident-date', label: 'Data Incidente', value: '', placeholder: 'Seleziona data', required: true, fieldType: 'date', allowDirectoryPicker: false },
     { id: 'owner-tech', label: 'Owner tecnico', value: '', placeholder: 'Head IT / SOC', required: true, allowDirectoryPicker: true },
     { id: 'coordinamento', label: 'Coordinamento', value: '', placeholder: 'IRM', required: true, allowDirectoryPicker: true },
     { id: 'oversight', label: 'Oversight', value: '', placeholder: 'CISO', required: false, allowDirectoryPicker: true },
