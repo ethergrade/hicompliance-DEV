@@ -60,9 +60,18 @@ export interface PlaybookProgress {
   organization_id: string;
   user_id: string;
   data: Playbook;
+  started_at?: string;
   completed_at?: string;
+  last_updated_at?: string;
   created_at: string;
   updated_at: string;
+}
+
+// Extended interface for database sync
+export interface PlaybookWithTimestamps extends Playbook {
+  started_at?: string;
+  completed_at?: string;
+  last_updated_at?: string;
 }
 
 // Helper function to calculate progress
