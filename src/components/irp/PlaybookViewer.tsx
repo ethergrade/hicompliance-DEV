@@ -36,6 +36,7 @@ import {
 import { Playbook, PlaybookChecklistItem, calculatePlaybookProgress } from '@/types/playbook';
 import { PlaybookProgressBar } from './PlaybookProgressBar';
 import { PlaybookChecklistSection } from './PlaybookChecklistSection';
+import { PlaybookRadioSection } from './PlaybookRadioSection';
 import { PlaybookInputSection } from './PlaybookInputSection';
 import { generatePlaybookDocx } from './playbookDocxGenerator';
 import { useToast } from '@/hooks/use-toast';
@@ -319,8 +320,11 @@ export const PlaybookViewer: React.FC<PlaybookViewerProps> = ({
               className="space-y-2"
             >
               {playbookState.sections.map((section) => {
-                const sectionCompleted = section.items?.filter(i => i.checked).length || 0;
-                const sectionTotal = section.items?.length || 0;
+                // For singleChoice sections, count as 0/1 or 1/1
+                const sectionCompleted = section.singleChoice 
+                  ? (section.items?.some(i => i.checked) ? 1 : 0)
+                  : (section.items?.filter(i => i.checked).length || 0);
+                const sectionTotal = section.singleChoice ? 1 : (section.items?.length || 0);
                 
                 return (
                   <AccordionItem 
@@ -365,12 +369,21 @@ export const PlaybookViewer: React.FC<PlaybookViewerProps> = ({
                         </p>
                       )}
                       {section.type === 'checklist' && section.items && (
-                        <PlaybookChecklistSection
-                          items={section.items}
-                          onItemChange={(itemId, updates) => 
-                            handleItemChange(section.id, itemId, updates)
-                          }
-                        />
+                        section.singleChoice ? (
+                          <PlaybookRadioSection
+                            items={section.items}
+                            onItemChange={(itemId, updates) => 
+                              handleItemChange(section.id, itemId, updates)
+                            }
+                          />
+                        ) : (
+                          <PlaybookChecklistSection
+                            items={section.items}
+                            onItemChange={(itemId, updates) => 
+                              handleItemChange(section.id, itemId, updates)
+                            }
+                          />
+                        )
                       )}
                     </AccordionContent>
                   </AccordionItem>
