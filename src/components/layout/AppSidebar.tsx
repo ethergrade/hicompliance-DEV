@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { 
+import {
   LayoutDashboard,
   Shield,
   Users,
@@ -18,7 +18,8 @@ import {
   Home,
   Wrench,
   Bell,
-  Package
+  Package,
+  FileCheck
 } from 'lucide-react';
 import {
   Sidebar,
@@ -171,7 +172,7 @@ export const AppSidebar: React.FC = () => {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {(isModuleEnabled('/incident-response') || isModuleEnabled('/threat-management')) && (
+        {(isModuleEnabled('/incident-response') || isModuleEnabled('/compliance-events') || isModuleEnabled('/threat-management')) && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
               Incident Remediation
@@ -187,6 +188,19 @@ export const AppSidebar: React.FC = () => {
                       <NavLink to="/incident-response">
                         <AlertTriangle className="w-4 h-4" />
                         {!collapsed && <span>Incident Response</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
+                {isModuleEnabled('/compliance-events') && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton 
+                      asChild
+                      className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    >
+                      <NavLink to="/compliance-events">
+                        <FileCheck className="w-4 h-4" />
+                        {!collapsed && <span>Eventi Compliance</span>}
                       </NavLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

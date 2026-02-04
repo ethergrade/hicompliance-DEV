@@ -25,6 +25,7 @@ import Users from "./pages/Users";
 import RoleSettings from "./pages/RoleSettings";
 import Settings from "./pages/Settings";
 import SurfaceScanSettings from "./pages/SurfaceScanSettings";
+import ComplianceEvents from "./pages/ComplianceEvents";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -52,6 +53,7 @@ const App = () => (
             <Route path="/documents" element={<Documents />} />
             <Route path="/asset-inventory" element={<AssetInventory />} />
             <Route path="/incident-response" element={<IncidentResponse />} />
+            <Route path="/compliance-events" element={<ComplianceEvents />} />
             <Route path="/threat-management" element={<ThreatManagement />} />
             <Route path="/settings/users" element={<Users />} />
             <Route path="/settings/integrations" element={<Integrations />} />
