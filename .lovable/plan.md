@@ -1,118 +1,92 @@
 
-# Piano: Anagrafica Aziendale e Classificazione NIS2
+# Piano: Salvataggio Automatico Sostituto CISO
 
 ## Obiettivo
-Aggiungere una sezione "Anagrafica Azienda" nella tab "Contatti e Informazioni" (attualmente "Contatti di Emergenza") che permetta di inserire i dati aziendali e selezionare obbligatoriamente la classificazione NIS2 (Essenziale, Importante, o Nessuna delle due).
+Salvare automaticamente il nome del sostituto CISO nel database quando viene inserito manualmente o selezionato dalla rubrica contatti, così da non perdere il dato al ricaricamento della pagina.
+
+---
+
+## Analisi Attuale
+
+Il campo `cisoSubstitute` nel componente `GovernanceContactsTable.tsx`:
+- E' gestito solo come stato React locale (`useState('')`)
+- Non viene mai salvato su database
+- Viene perso al refresh della pagina
+
+---
+
+## Soluzione Proposta
+
+Estendere la tabella `organization_profiles` (già esistente) con un nuovo campo `ciso_substitute` per memorizzare il nome del sostituto.
 
 ---
 
 ## Modifiche Previste
 
-### 1. Rinominare la Tab
-La tab attuale "Contatti di Emergenza" diventerà **"Contatti e Informazioni"** nel file `IncidentResponse.tsx`.
+### 1. Database Migration
+Aggiungere il campo `ciso_substitute` alla tabella `organization_profiles`:
 
-### 2. Nuova Sezione "Anagrafica Azienda"
-Prima della sezione "Governance e Organi Decisionali", verrà aggiunto un form con:
-
-**Campi Anagrafica:**
-- Ragione Sociale
-- Partita IVA
-- Codice Fiscale
-- Sede Legale (indirizzo completo)
-- Sede Operativa (opzionale)
-- PEC
-- Telefono
-- Email aziendale
-- Settore di attività
-
-**Classificazione NIS2 (obbligatoria):**
-- Soggetto Essenziale
-- Soggetto Importante  
-- Nessuna delle due
-
-La selezione sarà tramite radio button con descrizioni esplicative per ogni opzione.
-
-### 3. Database
-Verrà creata una nuova tabella `organization_profiles` con i seguenti campi:
-- `id` (UUID, primary key)
-- `organization_id` (UUID, foreign key verso organizations)
-- `legal_name` (ragione sociale)
-- `vat_number` (partita IVA)
-- `fiscal_code` (codice fiscale)
-- `legal_address` (sede legale)
-- `operational_address` (sede operativa)
-- `pec` (email certificata)
-- `phone` (telefono)
-- `email` (email aziendale)
-- `business_sector` (settore)
-- `nis2_classification` (enum: 'essential', 'important', 'none')
-- `created_at`, `updated_at`
-
-Con policy RLS appropriate per la sicurezza.
-
-### 4. Sincronizzazione con Assessment
-I dati dell'anagrafica saranno disponibili nella pagina Assessment per mostrare:
-- Nome azienda
-- Classificazione NIS2 (con badge colorato)
-- Settore di attività
-
----
-
-## Componenti da Creare/Modificare
-
-| File | Azione |
-|------|--------|
-| `src/pages/IncidentResponse.tsx` | Rinominare tab, aggiungere componente anagrafica |
-| `src/components/irp/OrganizationProfileForm.tsx` | **Nuovo** - Form anagrafica aziendale |
-| `src/hooks/useOrganizationProfile.ts` | **Nuovo** - Hook per CRUD profilo |
-| `src/types/organization.ts` | **Nuovo** - Tipi TypeScript |
-| `src/pages/Assessment.tsx` | Aggiungere banner con classificazione NIS2 |
-| Database migration | Creare tabella `organization_profiles` |
-
----
-
-## Dettagli Tecnici
-
-### Struttura Form Anagrafica
-```text
-+--------------------------------------------------+
-| ANAGRAFICA AZIENDA                               |
-+--------------------------------------------------+
-| Ragione Sociale: [_______________]               |
-| Partita IVA:     [_______________]               |
-| Codice Fiscale:  [_______________]               |
-| Sede Legale:     [_______________]               |
-| Sede Operativa:  [_______________] (opzionale)   |
-| PEC:             [_______________]               |
-| Telefono:        [_______________]               |
-| Email:           [_______________]               |
-| Settore:         [Dropdown con opzioni]          |
-+--------------------------------------------------+
-| CLASSIFICAZIONE NIS2 (obbligatorio)              |
-+--------------------------------------------------+
-| ○ Soggetto Essenziale                            |
-|   Operatori di servizi essenziali (energia,      |
-|   trasporti, sanità, banche, infrastrutture...)  |
-|                                                  |
-| ○ Soggetto Importante                            |
-|   Fornitori di servizi digitali, produttori,     |
-|   gestori rifiuti, settore alimentare...         |
-|                                                  |
-| ○ Nessuna delle due                              |
-|   L'azienda non rientra nelle categorie NIS2     |
-+--------------------------------------------------+
+```sql
+ALTER TABLE public.organization_profiles 
+ADD COLUMN ciso_substitute TEXT;
 ```
 
-### Validazione
-- La classificazione NIS2 sarà obbligatoria
-- Partita IVA: validazione formato italiano (11 cifre)
-- PEC: validazione formato email
+### 2. Aggiornare i Tipi TypeScript
+Modificare `src/types/organization.ts` per includere il nuovo campo:
+- Aggiungere `ciso_substitute: string | null` all'interfaccia `OrganizationProfile`
 
-### Salvataggio Automatico
-Come le altre sezioni IRP, i dati verranno salvati automaticamente con debounce di 1.5 secondi e feedback visivo ("Salvando...", "Salvato").
+### 3. Aggiornare l'Hook useOrganizationProfile
+Modificare `src/hooks/useOrganizationProfile.ts`:
+- Aggiungere `ciso_substitute` a `ProfileFormData`
+- Aggiungere il campo nel payload di salvataggio
+- Caricare il valore durante il fetch
+
+### 4. Modificare GovernanceContactsTable
+Aggiornare `src/components/irp/GovernanceContactsTable.tsx`:
+- Importare e usare `useOrganizationProfile`
+- Inizializzare `cisoSubstitute` dal profilo caricato
+- Salvare automaticamente quando il valore cambia (con debounce)
+- Mostrare indicatore di stato "Salvando..." / "Salvato"
 
 ---
 
-## Ordine delle Sezioni nella Tab
-1. **Anagrafica Azienda** (nuovo)
-2. **Governance e Organi Decisionali** (esistente)
+## Flusso di Funzionamento
+
+```text
+Utente inserisce/seleziona nome
+         |
+         v
++----------------------+
+| Aggiorna stato locale|
++----------------------+
+         |
+         v (debounce 1.5s)
++----------------------+
+| Salva su database    |
+| organization_profiles|
++----------------------+
+         |
+         v
++----------------------+
+| Mostra "Salvato ✓"   |
++----------------------+
+```
+
+---
+
+## File da Modificare
+
+| File | Modifica |
+|------|----------|
+| Database migration | Aggiungere colonna `ciso_substitute` |
+| `src/types/organization.ts` | Aggiungere campo al tipo |
+| `src/hooks/useOrganizationProfile.ts` | Gestire load/save del campo |
+| `src/components/irp/GovernanceContactsTable.tsx` | Integrare hook e auto-save |
+
+---
+
+## Vantaggi
+- Riutilizza la tabella `organization_profiles` esistente (evita tabelle ridondanti)
+- Segue lo stesso pattern di auto-save usato nel form anagrafica
+- Il dato viene recuperato automaticamente al caricamento pagina
+- Feedback visivo per l'utente sullo stato di salvataggio
