@@ -5,11 +5,12 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Trash2, Edit, Save, Eye, Info, Download, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Edit, Save, Eye, Info, Download, Loader2, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { EmergencyContact } from '@/types/irp';
+import { EmergencyContact, DirectoryContact } from '@/types/irp';
 import { IRPContactForm } from './IRPContactForm';
+import { ContactDirectoryDialog } from './ContactDirectoryDialog';
 
 interface GovernanceContactsTableProps {
   onDataChange?: () => void;
@@ -38,7 +39,15 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
   const [addingExampleIndex, setAddingExampleIndex] = useState<number | null>(null);
   const [addingAllExamples, setAddingAllExamples] = useState(false);
   const [showConfirmAllDialog, setShowConfirmAllDialog] = useState(false);
+  const [directoryOpen, setDirectoryOpen] = useState(false);
   const { toast } = useToast();
+
+  const handleSelectContactFromDirectory = (contact: DirectoryContact) => {
+    const fullName = `${contact.first_name} ${contact.last_name}`;
+    setCisoSubstitute(fullName);
+    setDirectoryOpen(false);
+    setIsEditingSubstitute(false);
+  };
 
   const fetchContacts = async () => {
     try {
@@ -270,6 +279,15 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
                     className="w-48 h-7 text-sm inline-block bg-background"
                     placeholder="Nome e Cognome"
                   />
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="h-7 px-2"
+                    onClick={() => setDirectoryOpen(true)}
+                    title="Seleziona dalla rubrica"
+                  >
+                    <Users className="w-3 h-3" />
+                  </Button>
                   <Button 
                     size="sm" 
                     variant="ghost" 
@@ -506,6 +524,12 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ContactDirectoryDialog
+        open={directoryOpen}
+        onOpenChange={setDirectoryOpen}
+        onSelectContact={handleSelectContactFromDirectory}
+      />
     </>
   );
 };
