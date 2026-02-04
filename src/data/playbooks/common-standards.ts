@@ -7,6 +7,7 @@ export const commonStandardsSections: PlaybookSection[] = [
     title: 'Severity, SLA e Escalation',
     subtitle: 'riferimento unico',
     type: 'checklist',
+    singleChoice: true,
     items: [
       {
         id: 'sla-critico',
