@@ -21,6 +21,7 @@ export interface PlaybookInputField {
   value: string;
   placeholder?: string;
   required?: boolean;
+  fieldType?: 'text' | 'date'; // Default is 'text'
   allowDirectoryPicker?: boolean; // Allow picking from contact directory
   contactId?: string; // ID of selected contact from directory
 }

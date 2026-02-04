@@ -107,6 +107,7 @@ export const unauthorizedAccessPlaybook: Playbook = {
   description: 'Interrompere l\'accesso e il movimento laterale, rimuovere persistenze, ripristinare sicurezza',
   purpose: 'Interrompere l\'accesso e il movimento laterale, rimuovere persistenze, ripristinare sicurezza.',
   owner: [
+    { id: 'incident-date', label: 'Data Incidente', value: '', placeholder: 'Seleziona data', required: true, fieldType: 'date', allowDirectoryPicker: false },
     { id: 'owner-tech', label: 'Owner tecnico', value: '', placeholder: 'SOC/Head IT', required: true, allowDirectoryPicker: true },
     { id: 'forensics', label: 'Forensics', value: '', placeholder: 'Se sospetto illegittimo', required: false, allowDirectoryPicker: true },
     { id: 'coordinamento', label: 'Coordinamento', value: '', placeholder: 'IRM', required: true, allowDirectoryPicker: true },
