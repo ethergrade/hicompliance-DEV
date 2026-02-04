@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -43,6 +44,7 @@ interface EmergencyContact {
 }
 
 const IncidentResponse: React.FC = () => {
+  const location = useLocation();
   const [selectedProcedure, setSelectedProcedure] = useState<string | null>(null);
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,6 +52,20 @@ const IncidentResponse: React.FC = () => {
   const [playbookViewerOpen, setPlaybookViewerOpen] = useState(false);
   const [selectedPlaybook, setSelectedPlaybook] = useState<Playbook | null>(null);
   const { toast } = useToast();
+
+  // Handle navigation state to open a specific playbook
+  useEffect(() => {
+    const state = location.state as { openPlaybookId?: string } | null;
+    if (state?.openPlaybookId) {
+      const playbook = playbooksMap[state.openPlaybookId];
+      if (playbook) {
+        setSelectedPlaybook(playbook);
+        setPlaybookViewerOpen(true);
+      }
+      // Clear the state to prevent re-opening on subsequent renders
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   // Procedure operative per incident response
   const procedures = [
