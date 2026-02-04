@@ -96,6 +96,7 @@ export const supplyChainPlaybook: Playbook = {
   description: 'Bloccare distribuzione di componenti compromessi, verificare integrità software, isolare impatto su ambienti e clienti',
   purpose: 'Bloccare distribuzione di componenti compromessi, verificare integrità software, isolare impatto su ambienti e clienti.',
   owner: [
+    { id: 'incident-date', label: 'Data Incidente', value: '', placeholder: 'Seleziona data', required: true, fieldType: 'date', allowDirectoryPicker: false },
     { id: 'owner-tech', label: 'Owner tecnico', value: '', placeholder: 'CISO + Head IT/DevOps', required: true, allowDirectoryPicker: true },
     { id: 'coordinamento', label: 'Coordinamento', value: '', placeholder: 'IRM', required: true, allowDirectoryPicker: true },
     { id: 'legal', label: 'Legal/Vendor mgmt', value: '', placeholder: 'Gestione fornitore e comunicazioni', required: false, allowDirectoryPicker: true },

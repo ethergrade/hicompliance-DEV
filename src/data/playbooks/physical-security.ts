@@ -92,6 +92,7 @@ export const physicalSecurityPlaybook: Playbook = {
   description: 'Preservare scena ed evidenze, ridurre rischio su dati, ripristinare sicurezza fisica e logica',
   purpose: 'Preservare scena ed evidenze, ridurre rischio su dati, ripristinare sicurezza fisica e logica.',
   owner: [
+    { id: 'incident-date', label: 'Data Incidente', value: '', placeholder: 'Seleziona data', required: true, fieldType: 'date', allowDirectoryPicker: false },
     { id: 'owner-tech', label: 'Owner tecnico', value: '', placeholder: 'Head IT + Facilities/Security', required: true, allowDirectoryPicker: true },
     { id: 'coordinamento', label: 'Coordinamento', value: '', placeholder: 'IRM', required: true, allowDirectoryPicker: true },
     { id: 'oversight', label: 'Oversight', value: '', placeholder: 'CISO', required: false, allowDirectoryPicker: true },
