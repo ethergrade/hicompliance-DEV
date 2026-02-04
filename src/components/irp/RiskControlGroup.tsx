@@ -24,9 +24,9 @@ export const RiskControlGroup: React.FC<RiskControlGroupProps> = ({
     if (!isSelected) return '';
     switch (score) {
       case 0: return 'bg-muted text-muted-foreground';
-      case 1: return 'bg-destructive/20 text-destructive border-destructive/50';
+      case 1: return 'bg-primary/20 text-primary border-primary/50';
       case 2: return 'bg-amber-500/30 text-amber-400 border-amber-500/60';
-      case 3: return 'bg-primary/20 text-primary border-primary/50';
+      case 3: return 'bg-destructive/20 text-destructive border-destructive/50';
       default: return '';
     }
   };
