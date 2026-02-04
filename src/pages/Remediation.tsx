@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { GanttChart } from '@/components/remediation/GanttChart';
+import ComplianceEventsTab from '@/components/remediation/ComplianceEventsTab';
 import { format, addDays, differenceInDays, parseISO } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { 
@@ -35,7 +36,8 @@ import {
   EyeOff,
   Trash2,
   MoreHorizontal,
-  Settings
+  Settings,
+  FileCheck
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
@@ -1665,6 +1667,10 @@ const Remediation: React.FC = () => {
               )}
             </TabsTrigger>
             <TabsTrigger value="metrics">Metriche & KPI</TabsTrigger>
+            <TabsTrigger value="compliance" className="flex items-center gap-1">
+              <FileCheck className="w-4 h-4" />
+              Eventi Compliance
+            </TabsTrigger>
           </TabsList>
           
           <TabsContent value="overview" className="space-y-6">
@@ -1916,6 +1922,11 @@ const Remediation: React.FC = () => {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+          
+          {/* Tab Eventi Compliance */}
+          <TabsContent value="compliance" className="space-y-6">
+            <ComplianceEventsTab />
           </TabsContent>
         </Tabs>
       </div>
