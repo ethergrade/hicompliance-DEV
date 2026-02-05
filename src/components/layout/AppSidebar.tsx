@@ -20,7 +20,8 @@ import {
   Bell,
   Package,
   FileCheck,
-  Building2
+  Building2,
+  Newspaper
 } from 'lucide-react';
 import {
   Sidebar,
@@ -51,6 +52,11 @@ const navigation = [
     title: 'Dashboard',
     href: '/dashboard',
     icon: LayoutDashboard,
+  },
+  {
+    title: 'CyberNews',
+    href: '/cyber-news',
+    icon: Newspaper,
   },
   {
     title: 'Assessment',
