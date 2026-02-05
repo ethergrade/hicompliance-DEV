@@ -55,6 +55,11 @@ const navigation = [
     icon: LayoutDashboard,
   },
   {
+    title: 'CyberNews',
+    href: '/cyber-news',
+    icon: Newspaper,
+  },
+  {
     title: 'Assessment',
     href: '/assessment',
     icon: ClipboardCheck,
@@ -108,9 +113,9 @@ const adminNavigation = [
     icon: Building2,
   },
   {
-    title: 'CyberNews',
-    href: '/cyber-news',
-    icon: Newspaper,
+    title: 'Reportistica Aggregata',
+    href: '/admin/reporting',
+    icon: PieChart,
   },
   {
     title: 'Reportistica Aggregata',
@@ -317,8 +322,8 @@ export const AppSidebar: React.FC = () => {
               {adminNavigation.filter(item => {
                   // Show "Selezione Clienti" only for sales/admin who can manage multiple clients
                   if (item.href === '/clients') return canManageMultipleClients;
-                  // Show "CyberNews" and "Reportistica Aggregata" for admin/sales who can manage multiple clients
-                  if (item.href === '/cyber-news' || item.href === '/admin/reporting') return canManageMultipleClients;
+                  // Show "Reportistica Aggregata" for admin/sales who can manage multiple clients
+                  if (item.href === '/admin/reporting') return canManageMultipleClients;
                   // Show other admin items only for admin/superadmin
                   return isAdmin || isSuperAdmin;
                 }).map((item) => {
