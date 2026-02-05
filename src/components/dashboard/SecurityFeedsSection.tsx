@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -10,9 +10,32 @@ import { useACNFeeds, FeedItem } from '@/hooks/useACNFeeds';
 
 type SeverityFilter = 'all' | 'prioritari' | 'critica' | 'alta' | 'media' | 'bassa';
 
+const SEVERITY_FILTER_KEY = 'security_feeds_severity_filter';
+
+function getSavedFilter(): SeverityFilter {
+  try {
+    const saved = localStorage.getItem(SEVERITY_FILTER_KEY);
+    if (saved && ['all', 'prioritari', 'critica', 'alta', 'media', 'bassa'].includes(saved)) {
+      return saved as SeverityFilter;
+    }
+  } catch {
+    // Ignore localStorage errors
+  }
+  return 'all';
+}
+
 export const SecurityFeedsSection: React.FC = () => {
   const { nis2Feed, threatFeed, isLoading, error, refetch } = useACNFeeds();
-  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
+  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>(getSavedFilter);
+
+  // Persist filter to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(SEVERITY_FILTER_KEY, severityFilter);
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, [severityFilter]);
 
   const filteredThreatFeed = useMemo(() => {
     if (severityFilter === 'all') {
