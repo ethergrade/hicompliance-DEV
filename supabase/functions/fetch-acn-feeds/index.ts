@@ -490,20 +490,48 @@ async function fetchCVEFeed(): Promise<FeedItem[]> {
       
       if (!titleMatch) continue;
       
-      const title = titleMatch[1].trim();
+      // Clean title - decode HTML entities (may be double-encoded)
+      let title = titleMatch[1];
+      // Handle double-encoded entities like &amp;lt;
+      title = title
+        .replace(/&amp;lt;/g, '<')
+        .replace(/&amp;gt;/g, '>')
+        .replace(/&amp;amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/<[^>]+>/g, '')
+        .trim();
       const url = linkMatch ? linkMatch[1].trim() : 'https://cvefeed.io';
       
-      // Clean description
+      // Clean description - decode HTML entities and remove tags
       let description = 'Vulnerabilità CVE';
       if (descMatch) {
         description = descMatch[1]
           .replace(/<!\[CDATA\[/g, '')
           .replace(/\]\]>/g, '')
+          // Decode HTML entities
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&amp;/g, '&')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&nbsp;/g, ' ')
+          // Remove HTML tags
           .replace(/<[^>]+>/g, '')
           .replace(/\s+/g, ' ')
-          .trim()
-          .substring(0, 200);
-        if (description.length === 200) description += '...';
+          .trim();
+        
+        // Remove the repetitive CVE ID info at the beginning
+        const cveInfoPattern = /^CVE ID\s*:\s*CVE-[\d-]+\s*(?:Published\s*:.*?(?:ago|AM|PM))?\s*Description\s*:\s*/i;
+        description = description.replace(cveInfoPattern, '').trim();
+        
+        // Truncate if too long
+        if (description.length > 200) {
+          description = description.substring(0, 200) + '...';
+        }
       }
       
       let dateStr = 'Recente';
