@@ -50,8 +50,8 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
     switch (score) {
       case 0: return 'bg-muted text-muted-foreground';
       case 1: return 'bg-destructive/60 text-destructive-foreground';
-      case 2: return 'bg-warning/60 text-warning-foreground';
-      case 3: return 'bg-primary/60 text-primary-foreground';
+      case 2: return 'bg-amber-500/60 text-amber-900 dark:text-amber-100';
+      case 3: return 'bg-emerald-500/60 text-emerald-900 dark:text-emerald-100';
       default: return 'bg-muted/30';
     }
   };
@@ -337,7 +337,7 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
       {/* Legend */}
       <Card className="bg-card border-border">
         <CardContent className="py-2">
-          <div className="flex items-center gap-4 text-xs">
+          <div className="flex flex-wrap items-center gap-4 text-xs">
             <span className="text-muted-foreground">Legenda:</span>
             <div className="flex items-center gap-1">
               <div className="w-4 h-4 rounded bg-muted/30" />
@@ -345,19 +345,19 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
             </div>
             <div className="flex items-center gap-1">
               <div className="w-4 h-4 rounded bg-muted" />
-              <span>0</span>
+              <span>0 - Non presente</span>
             </div>
             <div className="flex items-center gap-1">
               <div className="w-4 h-4 rounded bg-destructive/60" />
-              <span>1</span>
+              <span>1 - Non incide</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-4 rounded bg-warning/60" />
-              <span>2</span>
+              <div className="w-4 h-4 rounded bg-amber-500/60" />
+              <span>2 - Parziale</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-4 rounded bg-primary/60" />
-              <span>3</span>
+              <div className="w-4 h-4 rounded bg-emerald-500/60" />
+              <span>3 - Totale</span>
             </div>
           </div>
         </CardContent>
@@ -443,8 +443,8 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
                       <div className={cn(
                         'w-12 shrink-0 flex items-center justify-center text-xs font-semibold border-l border-border',
                         asset ? (
-                          asset.risk_score >= 71 ? 'text-primary' :
-                          asset.risk_score >= 41 ? 'text-warning' :
+                          asset.risk_score >= 71 ? 'text-emerald-600 dark:text-emerald-400' :
+                          asset.risk_score >= 41 ? 'text-amber-600 dark:text-amber-400' :
                           'text-destructive'
                         ) : 'text-muted-foreground'
                       )}>
@@ -503,8 +503,8 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
                                 className={cn(
                                   'w-20 h-10 shrink-0 flex items-center justify-center text-xs font-medium border-l border-border/30',
                                   avg === null ? 'bg-muted/30 text-muted-foreground' :
-                                  avg >= 2.5 ? 'bg-primary/40 text-primary-foreground' :
-                                  avg >= 1.5 ? 'bg-warning/40 text-warning-foreground' :
+                                  avg >= 2.5 ? 'bg-emerald-500/40 text-emerald-900 dark:text-emerald-100' :
+                                  avg >= 1.5 ? 'bg-amber-500/40 text-amber-900 dark:text-amber-100' :
                                   'bg-destructive/40 text-destructive-foreground'
                                 )}
                               >
@@ -522,8 +522,8 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
                       <div className={cn(
                         'w-16 shrink-0 flex items-center justify-center text-xs font-semibold border-l border-border',
                         asset ? (
-                          asset.risk_score >= 71 ? 'bg-primary/20 text-primary' :
-                          asset.risk_score >= 41 ? 'bg-warning/20 text-warning' :
+                          asset.risk_score >= 71 ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
+                          asset.risk_score >= 41 ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400' :
                           'bg-destructive/20 text-destructive'
                         ) : 'text-muted-foreground'
                       )}>
