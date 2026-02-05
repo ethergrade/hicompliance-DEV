@@ -21,7 +21,8 @@ import {
   Package,
   FileCheck,
   Building2,
-  Newspaper
+  Newspaper,
+  PieChart
 } from 'lucide-react';
 import {
   Sidebar,
@@ -110,6 +111,11 @@ const adminNavigation = [
     title: 'Selezione Clienti',
     href: '/clients',
     icon: Building2,
+  },
+  {
+    title: 'Reportistica Aggregata',
+    href: '/admin/reporting',
+    icon: PieChart,
   },
   {
     title: 'Gestione Clienti',
@@ -311,6 +317,8 @@ export const AppSidebar: React.FC = () => {
                 {adminNavigation.filter(item => {
                   // Show "Selezione Clienti" only for sales/admin who can manage multiple clients
                   if (item.href === '/clients') return canManageMultipleClients;
+                  // Show "Reportistica Aggregata" for admin/sales who can manage multiple clients
+                  if (item.href === '/admin/reporting') return canManageMultipleClients;
                   // Show other admin items only for admin/superadmin
                   return isAdmin || isSuperAdmin;
                 }).map((item) => {
