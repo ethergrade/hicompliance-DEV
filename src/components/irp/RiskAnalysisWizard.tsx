@@ -95,9 +95,9 @@ export const RiskAnalysisWizard: React.FC<RiskAnalysisWizardProps> = ({
   };
 
   const getRiskColor = (score: number) => {
-    if (score >= 71) return 'text-green-400';
-    if (score >= 41) return 'text-yellow-400';
-    return 'text-red-400';
+    if (score >= 71) return 'text-emerald-500';
+    if (score >= 41) return 'text-amber-500';
+    return 'text-destructive';
   };
 
   const getRiskLabel = (score: number) => {

@@ -23,10 +23,10 @@ export const RiskControlGroup: React.FC<RiskControlGroupProps> = ({
   const getScoreColor = (score: number | null, isSelected: boolean) => {
     if (!isSelected) return '';
     switch (score) {
-      case 0: return 'bg-emerald-500/30 text-emerald-400 border-emerald-500/60';
-      case 1: return 'bg-primary/20 text-primary border-primary/50';
+      case 0: return 'bg-muted text-muted-foreground border-muted';
+      case 1: return 'bg-destructive/30 text-destructive border-destructive/50';
       case 2: return 'bg-amber-500/30 text-amber-400 border-amber-500/60';
-      case 3: return 'bg-destructive/20 text-destructive border-destructive/50';
+      case 3: return 'bg-emerald-500/30 text-emerald-400 border-emerald-500/60';
       default: return '';
     }
   };
