@@ -6,8 +6,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { History, Plus, Pencil, Trash2, User } from 'lucide-react';
+import { History, Plus, Pencil, Trash2, User, Download } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 interface AuditLog {
   id: string;
@@ -65,7 +67,46 @@ const getActionLabel = (action: string) => {
   }
 };
 
+const exportToCSV = (logs: AuditLog[], filename: string) => {
+  const headers = ['Data', 'Azione', 'Servizio', 'Utente', 'Dettagli'];
+  
+  const rows = logs.map(log => {
+    const date = format(new Date(log.created_at), "dd/MM/yyyy HH:mm", { locale: it });
+    const action = getActionLabel(log.action);
+    const service = log.service_name;
+    const user = log.changed_by_email || 'Sistema';
+    
+    let details = '';
+    if (log.action === 'updated' && log.old_values && log.new_values) {
+      const changes: string[] = [];
+      if (log.old_values.is_active !== log.new_values.is_active) {
+        changes.push(`Stato: ${log.old_values.is_active ? 'Attivo' : 'Inattivo'} → ${log.new_values.is_active ? 'Attivo' : 'Inattivo'}`);
+      }
+      if (log.old_values.api_url !== log.new_values.api_url) {
+        changes.push('URL API modificato');
+      }
+      details = changes.join('; ');
+    }
+    
+    return [date, action, service, user, details];
+  });
+
+  const csvContent = [
+    headers.join(';'),
+    ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(';'))
+  ].join('\n');
+
+  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+};
+
 export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organizationId }) => {
+  const { toast } = useToast();
+  
   const { data: logs = [], isLoading } = useQuery({
     queryKey: ['integration-audit-logs', organizationId],
     queryFn: async () => {
@@ -83,6 +124,25 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
     },
     enabled: !!organizationId,
   });
+
+  const handleExport = () => {
+    if (logs.length === 0) {
+      toast({
+        title: 'Nessun dato',
+        description: 'Non ci sono log da esportare',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    const filename = `audit_integrazioni_${format(new Date(), 'yyyy-MM-dd_HH-mm')}.csv`;
+    exportToCSV(logs, filename);
+    
+    toast({
+      title: 'Esportazione completata',
+      description: `File ${filename} scaricato`,
+    });
+  };
 
   if (isLoading) {
     return (
@@ -107,13 +167,27 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
   return (
     <Card className="border-border">
       <CardHeader className="pb-3">
-        <CardTitle className="text-lg flex items-center gap-2">
-          <History className="w-5 h-5 text-primary" />
-          Storico Modifiche
-        </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Ultime {logs.length} modifiche alle integrazioni
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <History className="w-5 h-5 text-primary" />
+              Storico Modifiche
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Ultime {logs.length} modifiche alle integrazioni
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExport}
+            disabled={logs.length === 0}
+            className="gap-2"
+          >
+            <Download className="w-4 h-4" />
+            Esporta CSV
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         <ScrollArea className="h-[400px] pr-3">
