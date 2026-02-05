@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { OrganizationProfile, NIS2Classification } from '@/types/organization';
+ import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 interface ProfileFormData {
   legal_name: string;
@@ -40,36 +41,23 @@ export function useOrganizationProfile() {
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const { toast } = useToast();
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Fetch current user's organization
-  const fetchOrganizationId = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
-
-    const { data: userData } = await supabase
-      .from('users')
-      .select('organization_id')
-      .eq('auth_user_id', user.id)
-      .single();
-
-    return userData?.organization_id || null;
-  }, []);
+  const { organizationId: clientOrgId, isLoading: clientLoading } = useClientOrganization();
 
   // Fetch profile
   const fetchProfile = useCallback(async () => {
+    if (clientLoading || !clientOrgId) {
+      setLoading(false);
+      return;
+    }
+    
     setLoading(true);
     try {
-      const orgId = await fetchOrganizationId();
-      if (!orgId) {
-        setLoading(false);
-        return;
-      }
-      setOrganizationId(orgId);
+      setOrganizationId(clientOrgId);
 
       const { data, error } = await supabase
         .from('organization_profiles')
         .select('*')
-        .eq('organization_id', orgId)
+        .eq('organization_id', clientOrgId)
         .maybeSingle();
 
       if (error) throw error;
@@ -101,7 +89,7 @@ export function useOrganizationProfile() {
     } finally {
       setLoading(false);
     }
-  }, [fetchOrganizationId, toast]);
+  }, [clientOrgId, clientLoading, toast]);
 
   // Save profile with debounce
   const saveProfile = useCallback(async (data: ProfileFormData) => {
@@ -178,14 +166,15 @@ export function useOrganizationProfile() {
 
   // Initial fetch
   useEffect(() => {
-    fetchProfile();
-    
+    if (!clientLoading) {
+      fetchProfile();
+    }
     return () => {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [fetchProfile]);
+  }, [fetchProfile, clientLoading, clientOrgId]);
 
   return {
     profile,

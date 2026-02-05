@@ -2,33 +2,29 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { CriticalInfrastructureAsset, CriticalInfrastructureUpdate } from '@/types/infrastructure';
+ import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 export const useCriticalInfrastructure = () => {
   const [assets, setAssets] = useState<CriticalInfrastructureAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const { organizationId: clientOrgId, isLoading: clientLoading } = useClientOrganization();
 
   const loadAssets = useCallback(async () => {
+    if (clientLoading || !clientOrgId) {
+      setLoading(false);
+      return;
+    }
+    
     try {
       setLoading(true);
-      const { data: userData } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('auth_user_id', (await supabase.auth.getUser()).data.user?.id)
-        .single();
-
-      if (!userData?.organization_id) {
-        setLoading(false);
-        return;
-      }
-
-      setOrganizationId(userData.organization_id);
+      setOrganizationId(clientOrgId);
 
       const { data, error } = await supabase
         .from('critical_infrastructure')
         .select('*')
-        .eq('organization_id', userData.organization_id)
+        .eq('organization_id', clientOrgId)
         .order('asset_id');
 
       if (error) throw error;
@@ -40,7 +36,7 @@ export const useCriticalInfrastructure = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [clientOrgId, clientLoading]);
 
   const generateNextAssetId = useCallback(() => {
     if (assets.length === 0) return 'C-01';
@@ -155,8 +151,10 @@ export const useCriticalInfrastructure = () => {
   }, [assets]);
 
   useEffect(() => {
-    loadAssets();
-  }, [loadAssets]);
+    if (!clientLoading) {
+      loadAssets();
+    }
+  }, [loadAssets, clientLoading, clientOrgId]);
 
   return {
     assets,

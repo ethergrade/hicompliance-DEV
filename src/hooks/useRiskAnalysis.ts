@@ -10,33 +10,29 @@ import {
   AssetSummary
 } from '@/types/riskAnalysis';
 import { SECURITY_CONTROLS } from '@/data/securityControls';
+ import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 export const useRiskAnalysis = () => {
   const [assets, setAssets] = useState<RiskAnalysisAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const { organizationId: clientOrgId, isLoading: clientLoading } = useClientOrganization();
 
   const loadAssets = useCallback(async () => {
+    if (clientLoading || !clientOrgId) {
+      setLoading(false);
+      return;
+    }
+    
     try {
       setLoading(true);
-      const { data: userData } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('auth_user_id', (await supabase.auth.getUser()).data.user?.id)
-        .single();
-
-      if (!userData?.organization_id) {
-        setLoading(false);
-        return;
-      }
-
-      setOrganizationId(userData.organization_id);
+      setOrganizationId(clientOrgId);
 
       const { data, error } = await supabase
         .from('risk_analysis')
         .select('*')
-        .eq('organization_id', userData.organization_id)
+        .eq('organization_id', clientOrgId)
         .order('asset_name')
         .order('threat_source');
 
@@ -55,7 +51,7 @@ export const useRiskAnalysis = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [clientOrgId, clientLoading]);
 
   const calculateRiskScore = (controlScores: ControlScores): number => {
     const values = Object.values(controlScores).filter((v): v is number => typeof v === 'number');
@@ -255,8 +251,10 @@ export const useRiskAnalysis = () => {
   }, [assets]);
 
   useEffect(() => {
-    loadAssets();
-  }, [loadAssets]);
+    if (!clientLoading) {
+      loadAssets();
+    }
+  }, [loadAssets, clientLoading, clientOrgId]);
 
   return {
     assets,

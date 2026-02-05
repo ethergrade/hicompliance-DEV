@@ -4,6 +4,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/components/auth/AuthProvider";
+ import { ClientProvider } from "@/contexts/ClientContext";
+ import { ClientSelectionGuard } from "@/components/guards/ClientSelectionGuard";
 import { LoginPage } from "@/components/auth/LoginPage";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import Index from "./pages/Index";
@@ -26,6 +28,7 @@ import RoleSettings from "./pages/RoleSettings";
 import Settings from "./pages/Settings";
 import SurfaceScanSettings from "./pages/SurfaceScanSettings";
 import ComplianceEvents from "./pages/ComplianceEvents";
+ import ClientSelection from "./pages/ClientSelection";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -36,34 +39,37 @@ const App = () => (
       <Toaster />
       <Sonner />
       <AuthProvider>
+        <ClientProvider>
         <BrowserRouter>
           <ScrollToTop />
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<LoginPage />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/dashboard/service/:serviceCode" element={<ServiceDashboard />} />
-            <Route path="/surface-scan" element={<SurfaceScan360 />} />
-            <Route path="/dark-risk" element={<DarkRisk360 />} />
-            <Route path="/assessment" element={<Assessment />} />
-            <Route path="/remediation" element={<Remediation />} />
-            <Route path="/analytics" element={<Analytics />} />
-            <Route path="/threats" element={<Threats />} />
-            <Route path="/reports" element={<Reports />} />
-            <Route path="/documents" element={<Documents />} />
-            <Route path="/asset-inventory" element={<AssetInventory />} />
-            <Route path="/incident-response" element={<IncidentResponse />} />
-            <Route path="/compliance-events" element={<ComplianceEvents />} />
-            <Route path="/threat-management" element={<ThreatManagement />} />
-            <Route path="/settings/users" element={<Users />} />
-            <Route path="/settings/integrations" element={<Integrations />} />
-            <Route path="/settings/alerts" element={<Settings />} />
-            <Route path="/settings/surface-scan-alerts" element={<SurfaceScanSettings />} />
-            <Route path="/admin/role-settings" element={<RoleSettings />} />
+            <Route path="/clients" element={<ClientSelection />} />
+            <Route path="/dashboard" element={<ClientSelectionGuard><Dashboard /></ClientSelectionGuard>} />
+            <Route path="/dashboard/service/:serviceCode" element={<ClientSelectionGuard><ServiceDashboard /></ClientSelectionGuard>} />
+            <Route path="/surface-scan" element={<ClientSelectionGuard><SurfaceScan360 /></ClientSelectionGuard>} />
+            <Route path="/dark-risk" element={<ClientSelectionGuard><DarkRisk360 /></ClientSelectionGuard>} />
+            <Route path="/assessment" element={<ClientSelectionGuard><Assessment /></ClientSelectionGuard>} />
+            <Route path="/remediation" element={<ClientSelectionGuard><Remediation /></ClientSelectionGuard>} />
+            <Route path="/analytics" element={<ClientSelectionGuard><Analytics /></ClientSelectionGuard>} />
+            <Route path="/threats" element={<ClientSelectionGuard><Threats /></ClientSelectionGuard>} />
+            <Route path="/reports" element={<ClientSelectionGuard><Reports /></ClientSelectionGuard>} />
+            <Route path="/documents" element={<ClientSelectionGuard><Documents /></ClientSelectionGuard>} />
+            <Route path="/asset-inventory" element={<ClientSelectionGuard><AssetInventory /></ClientSelectionGuard>} />
+            <Route path="/incident-response" element={<ClientSelectionGuard><IncidentResponse /></ClientSelectionGuard>} />
+            <Route path="/compliance-events" element={<ClientSelectionGuard><ComplianceEvents /></ClientSelectionGuard>} />
+            <Route path="/threat-management" element={<ClientSelectionGuard><ThreatManagement /></ClientSelectionGuard>} />
+            <Route path="/settings/users" element={<ClientSelectionGuard><Users /></ClientSelectionGuard>} />
+            <Route path="/settings/integrations" element={<ClientSelectionGuard><Integrations /></ClientSelectionGuard>} />
+            <Route path="/settings/alerts" element={<ClientSelectionGuard><Settings /></ClientSelectionGuard>} />
+            <Route path="/settings/surface-scan-alerts" element={<ClientSelectionGuard><SurfaceScanSettings /></ClientSelectionGuard>} />
+            <Route path="/admin/role-settings" element={<ClientSelectionGuard><RoleSettings /></ClientSelectionGuard>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
+        </ClientProvider>
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
