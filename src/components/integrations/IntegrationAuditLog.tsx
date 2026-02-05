@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { History, Plus, Pencil, Trash2, User, Download, CalendarIcon, Filter, X, Save } from 'lucide-react';
+import { History, Plus, Pencil, Trash2, User, Download, CalendarIcon, Filter, X, Save, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useUserPreferences } from '@/hooks/useUserPreferences';
@@ -33,6 +33,9 @@ interface AuditLog {
 interface IntegrationAuditLogProps {
   organizationId: string | null;
 }
+
+const PAGE_SIZE_OPTIONS = [25, 50, 100];
+const DEFAULT_PAGE_SIZE = 25;
 
 const ActionIcon: React.FC<{ action: string }> = ({ action }) => {
   switch (action) {
@@ -122,6 +125,7 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
       auditLogActionFilter: 'all',
       auditLogDateFrom: undefined,
       auditLogDateTo: undefined,
+      itemsPerPage: DEFAULT_PAGE_SIZE,
     },
   });
 
@@ -129,6 +133,8 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
   const [actionFilter, setActionFilter] = useState<string>('all');
   const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
   const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
   // Sync local state from preferences on load
   useEffect(() => {
@@ -136,20 +142,41 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
       setActionFilter(preferences.auditLogActionFilter || 'all');
       setDateFrom(preferences.auditLogDateFrom ? new Date(preferences.auditLogDateFrom) : undefined);
       setDateTo(preferences.auditLogDateTo ? new Date(preferences.auditLogDateTo) : undefined);
+      setPageSize(preferences.itemsPerPage || DEFAULT_PAGE_SIZE);
     }
   }, [preferences]);
+
+  // Get total count first
+  const { data: totalCount = 0 } = useQuery({
+    queryKey: ['integration-audit-logs-count', organizationId],
+    queryFn: async () => {
+      if (!organizationId) return 0;
+      
+      const { count, error } = await supabase
+        .from('integration_audit_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('organization_id', organizationId);
+      
+      if (error) throw error;
+      return count || 0;
+    },
+    enabled: !!organizationId,
+  });
   
   const { data: logs = [], isLoading } = useQuery({
-    queryKey: ['integration-audit-logs', organizationId],
+    queryKey: ['integration-audit-logs', organizationId, currentPage, pageSize],
     queryFn: async () => {
       if (!organizationId) return [];
+      
+      const from = (currentPage - 1) * pageSize;
+      const to = from + pageSize - 1;
       
       const { data, error } = await supabase
         .from('integration_audit_logs')
         .select('*')
         .eq('organization_id', organizationId)
         .order('created_at', { ascending: false })
-        .limit(100);
+        .range(from, to);
       
       if (error) throw error;
       return data as AuditLog[];
@@ -177,10 +204,12 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
     });
   }, [logs, actionFilter, dateFrom, dateTo]);
 
+  const totalPages = Math.ceil(totalCount / pageSize);
   const hasActiveFilters = actionFilter !== 'all' || dateFrom || dateTo;
 
   const handleActionFilterChange = (value: string) => {
     setActionFilter(value);
+    setCurrentPage(1); // Reset to first page when filter changes
     if (canManage) {
       updatePreferences({ auditLogActionFilter: value });
     }
@@ -188,6 +217,7 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
 
   const handleDateFromChange = (date: Date | undefined) => {
     setDateFrom(date);
+    setCurrentPage(1);
     if (canManage) {
       updatePreferences({ auditLogDateFrom: date?.toISOString() });
     }
@@ -195,8 +225,18 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
 
   const handleDateToChange = (date: Date | undefined) => {
     setDateTo(date);
+    setCurrentPage(1);
     if (canManage) {
       updatePreferences({ auditLogDateTo: date?.toISOString() });
+    }
+  };
+
+  const handlePageSizeChange = (value: string) => {
+    const newSize = parseInt(value, 10);
+    setPageSize(newSize);
+    setCurrentPage(1);
+    if (canManage) {
+      updatePreferences({ itemsPerPage: newSize });
     }
   };
 
@@ -204,6 +244,7 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
     setActionFilter('all');
     setDateFrom(undefined);
     setDateTo(undefined);
+    setCurrentPage(1);
     if (canManage) {
       updatePreferences({
         auditLogActionFilter: 'all',
@@ -263,7 +304,7 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
               {isSaving && <Save className="w-4 h-4 text-muted-foreground animate-pulse" />}
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              {filteredLogs.length} di {logs.length} modifiche
+              {totalCount} modifiche totali
             </p>
           </div>
           {/* Export button - only for Admin/Sales */}
@@ -374,7 +415,7 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
         )}
       </CardHeader>
       <CardContent>
-        <ScrollArea className="h-[350px] pr-3">
+        <ScrollArea className="h-[320px] pr-3">
           {filteredLogs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               <History className="w-10 h-10 mb-3 opacity-50" />
@@ -447,6 +488,51 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
             </div>
           )}
         </ScrollArea>
+
+        {/* Pagination */}
+        {totalCount > 0 && (
+          <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Righe per pagina:</span>
+              <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
+                <SelectTrigger className="w-[70px] h-7 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAGE_SIZE_OPTIONS.map(size => (
+                    <SelectItem key={size} value={size.toString()}>{size}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">
+                Pagina {currentPage} di {totalPages || 1}
+              </span>
+              <div className="flex gap-1">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage >= totalPages}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
