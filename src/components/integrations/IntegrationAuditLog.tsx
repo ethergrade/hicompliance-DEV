@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
+import { format, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,8 +8,12 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { History, Plus, Pencil, Trash2, User, Download } from 'lucide-react';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { History, Plus, Pencil, Trash2, User, Download, CalendarIcon, Filter, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 
 interface AuditLog {
   id: string;
@@ -106,6 +110,9 @@ const exportToCSV = (logs: AuditLog[], filename: string) => {
 
 export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organizationId }) => {
   const { toast } = useToast();
+  const [actionFilter, setActionFilter] = useState<string>('all');
+  const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
+  const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
   
   const { data: logs = [], isLoading } = useQuery({
     queryKey: ['integration-audit-logs', organizationId],
@@ -117,7 +124,7 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
         .select('*')
         .eq('organization_id', organizationId)
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(100);
       
       if (error) throw error;
       return data as AuditLog[];
@@ -125,8 +132,36 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
     enabled: !!organizationId,
   });
 
+  const filteredLogs = useMemo(() => {
+    return logs.filter(log => {
+      // Filter by action
+      if (actionFilter !== 'all' && log.action !== actionFilter) {
+        return false;
+      }
+      
+      // Filter by date range
+      const logDate = new Date(log.created_at);
+      if (dateFrom && isBefore(logDate, startOfDay(dateFrom))) {
+        return false;
+      }
+      if (dateTo && isAfter(logDate, endOfDay(dateTo))) {
+        return false;
+      }
+      
+      return true;
+    });
+  }, [logs, actionFilter, dateFrom, dateTo]);
+
+  const hasActiveFilters = actionFilter !== 'all' || dateFrom || dateTo;
+
+  const clearFilters = () => {
+    setActionFilter('all');
+    setDateFrom(undefined);
+    setDateTo(undefined);
+  };
+
   const handleExport = () => {
-    if (logs.length === 0) {
+    if (filteredLogs.length === 0) {
       toast({
         title: 'Nessun dato',
         description: 'Non ci sono log da esportare',
@@ -136,11 +171,11 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
     }
     
     const filename = `audit_integrazioni_${format(new Date(), 'yyyy-MM-dd_HH-mm')}.csv`;
-    exportToCSV(logs, filename);
+    exportToCSV(filteredLogs, filename);
     
     toast({
       title: 'Esportazione completata',
-      description: `File ${filename} scaricato`,
+      description: `File ${filename} scaricato (${filteredLogs.length} record)`,
     });
   };
 
@@ -174,31 +209,128 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
               Storico Modifiche
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              Ultime {logs.length} modifiche alle integrazioni
+              {filteredLogs.length} di {logs.length} modifiche
             </p>
           </div>
           <Button
             variant="outline"
             size="sm"
             onClick={handleExport}
-            disabled={logs.length === 0}
+            disabled={filteredLogs.length === 0}
             className="gap-2"
           >
             <Download className="w-4 h-4" />
             Esporta CSV
           </Button>
         </div>
+        
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-border">
+          <Filter className="w-4 h-4 text-muted-foreground" />
+          
+          {/* Action Filter */}
+          <Select value={actionFilter} onValueChange={setActionFilter}>
+            <SelectTrigger className="w-[140px] h-8 text-xs">
+              <SelectValue placeholder="Tipo azione" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tutte le azioni</SelectItem>
+              <SelectItem value="created">Creata</SelectItem>
+              <SelectItem value="updated">Modificata</SelectItem>
+              <SelectItem value="deleted">Eliminata</SelectItem>
+            </SelectContent>
+          </Select>
+          
+          {/* Date From */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn(
+                  "h-8 text-xs gap-1.5",
+                  !dateFrom && "text-muted-foreground"
+                )}
+              >
+                <CalendarIcon className="w-3.5 h-3.5" />
+                {dateFrom ? format(dateFrom, "dd/MM/yyyy", { locale: it }) : "Da"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="single"
+                selected={dateFrom}
+                onSelect={setDateFrom}
+                initialFocus
+                className="pointer-events-auto"
+              />
+            </PopoverContent>
+          </Popover>
+          
+          {/* Date To */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn(
+                  "h-8 text-xs gap-1.5",
+                  !dateTo && "text-muted-foreground"
+                )}
+              >
+                <CalendarIcon className="w-3.5 h-3.5" />
+                {dateTo ? format(dateTo, "dd/MM/yyyy", { locale: it }) : "A"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="single"
+                selected={dateTo}
+                onSelect={setDateTo}
+                initialFocus
+                className="pointer-events-auto"
+              />
+            </PopoverContent>
+          </Popover>
+          
+          {/* Clear Filters */}
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearFilters}
+              className="h-8 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
+            >
+              <X className="w-3.5 h-3.5" />
+              Cancella filtri
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
-        <ScrollArea className="h-[400px] pr-3">
-          {logs.length === 0 ? (
+        <ScrollArea className="h-[350px] pr-3">
+          {filteredLogs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               <History className="w-10 h-10 mb-3 opacity-50" />
-              <p className="text-sm">Nessuna modifica registrata</p>
+              <p className="text-sm">
+                {logs.length === 0 
+                  ? 'Nessuna modifica registrata' 
+                  : 'Nessun risultato con i filtri selezionati'}
+              </p>
+              {hasActiveFilters && (
+                <Button
+                  variant="link"
+                  size="sm"
+                  onClick={clearFilters}
+                  className="mt-2"
+                >
+                  Cancella filtri
+                </Button>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
-              {logs.map((log) => (
+              {filteredLogs.map((log) => (
                 <div
                   key={log.id}
                   className="p-3 rounded-lg border border-border bg-card/50 hover:bg-card transition-colors"
