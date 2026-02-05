@@ -234,50 +234,165 @@
    return items;
  }
  
- // Fallback: scrape ACN threat page
- async function scrapeACNThreatFeed(): Promise<FeedItem[]> {
-   const items: FeedItem[] = [];
-   
-   try {
-     console.log('Fetching ACN RSS page...');
-     const response = await fetch('https://www.acn.gov.it/portale/feedrss', {
-       headers: {
-         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-       },
-     });
-     
-     if (!response.ok) {
-       console.error('ACN RSS fetch failed:', response.status);
-       return items;
-     }
-     
-     const html = await response.text();
-     
-     // Extract feed items from the page
-     const linkPattern = /<a[^>]*href="([^"]*)"[^>]*>[\s\S]*?<(?:h[1-6]|strong|span)[^>]*>([^<]+)</gi;
-     let match;
-     
-     while ((match = linkPattern.exec(html)) !== null && items.length < 8) {
-       const url = match[1].startsWith('http') ? match[1] : 'https://www.acn.gov.it' + match[1];
-       const title = match[2].replace(/\s+/g, ' ').trim();
-       
-       if (title.length > 15) {
-         items.push({
-           title,
-           description: 'Alert di sicurezza da ACN',
-           url,
-           date: 'Recente',
-           type: 'threat',
-           severity: 'media',
-         });
-       }
-     }
-   } catch (error) {
-     console.error('Error scraping ACN RSS page:', error);
-   }
-   
-   return items;
- }
+// Fallback: scrape ACN threat page
+async function scrapeACNThreatFeed(): Promise<FeedItem[]> {
+  const items: FeedItem[] = [];
+  
+  // Domains and keywords to exclude (social media, sharing links, etc.)
+  const excludedDomains = [
+    'linkedin.com', 'twitter.com', 'facebook.com', 'youtube.com', 
+    'instagram.com', 'whatsapp.com', 't.me', 'telegram.me',
+    'share', 'mailto:', 'javascript:'
+  ];
+  
+  const excludedKeywords = [
+    'apre una nuova finestra', 'condividi', 'share', 'segui', 'follow',
+    'linkedin', 'twitter', 'facebook', 'youtube', 'instagram', 'telegram',
+    'cookie', 'privacy', 'accedi', 'login', 'registrati'
+  ];
+  
+  try {
+    console.log('Fetching ACN RSS page...');
+    const response = await fetch('https://www.acn.gov.it/portale/feedrss', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+    });
+    
+    if (!response.ok) {
+      console.error('ACN RSS fetch failed:', response.status);
+      return items;
+    }
+    
+    const html = await response.text();
+    console.log('ACN RSS HTML length:', html.length);
+    
+    // Look for RSS feed links on the page
+    const rssLinkPattern = /<a[^>]*href="([^"]*\.xml[^"]*|[^"]*rss[^"]*|[^"]*feed[^"]*)"[^>]*>/gi;
+    const rssLinks: string[] = [];
+    let rssMatch;
+    while ((rssMatch = rssLinkPattern.exec(html)) !== null) {
+      const link = rssMatch[1];
+      if (link.includes('.xml') || (link.includes('rss') && !excludedDomains.some(d => link.includes(d)))) {
+        rssLinks.push(link.startsWith('http') ? link : 'https://www.acn.gov.it' + link);
+      }
+    }
+    
+    console.log('Found RSS links:', rssLinks.length);
+    
+    // Try to fetch actual RSS feeds
+    for (const rssUrl of rssLinks.slice(0, 3)) {
+      try {
+        console.log('Trying RSS feed:', rssUrl);
+        const rssResponse = await fetch(rssUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/rss+xml,application/xml,text/xml,*/*',
+          },
+        });
+        
+        if (rssResponse.ok) {
+          const rssXml = await rssResponse.text();
+          
+          // Parse RSS items
+          const itemPattern = /<item>[\s\S]*?<\/item>/gi;
+          const rssItems = rssXml.match(itemPattern) || [];
+          
+          for (const item of rssItems.slice(0, 8 - items.length)) {
+            const titleMatch = item.match(/<title>(?:<!\[CDATA\[)?([^\]<]+)/i);
+            const linkMatch = item.match(/<link>([^<]+)/i);
+            const descMatch = item.match(/<description>(?:<!\[CDATA\[)?([^\]<]{0,300})/i);
+            const dateMatch = item.match(/<pubDate>([^<]+)/i);
+            
+            if (!titleMatch) continue;
+            
+            const title = titleMatch[1].trim();
+            const url = linkMatch ? linkMatch[1].trim() : rssUrl;
+            
+            // Skip if title contains excluded keywords
+            const lowerTitle = title.toLowerCase();
+            if (excludedKeywords.some(kw => lowerTitle.includes(kw))) continue;
+            if (title.length < 20) continue;
+            
+            const description = descMatch 
+              ? descMatch[1].replace(/<[^>]+>/g, '').trim().substring(0, 150) + '...'
+              : 'Alert di sicurezza';
+            
+            let dateStr = 'Recente';
+            if (dateMatch) {
+              try {
+                const parsed = new Date(dateMatch[1]);
+                if (!isNaN(parsed.getTime())) {
+                  dateStr = formatDate(parsed);
+                }
+              } catch (e) {
+                // Keep default
+              }
+            }
+            
+            const severity = extractSeverity(title + ' ' + description);
+            
+            items.push({
+              title,
+              description,
+              url,
+              date: dateStr,
+              type: 'threat',
+              severity: severity || 'media',
+            });
+          }
+          
+          if (items.length >= 5) break;
+        }
+      } catch (e) {
+        console.log('Failed to fetch RSS:', rssUrl, e);
+      }
+    }
+    
+    // If still no items, try extracting news-like links from the page
+    if (items.length === 0) {
+      console.log('No RSS items found, trying HTML extraction...');
+      
+      // Look for article/news blocks
+      const articlePattern = /<article[^>]*>[\s\S]*?<\/article>/gi;
+      const articles = html.match(articlePattern) || [];
+      
+      for (const article of articles.slice(0, 8)) {
+        const titleMatch = article.match(/<a[^>]*href="([^"]*)"[^>]*>[\s\S]*?<(?:h[1-6]|strong)[^>]*>([^<]+)</i);
+        
+        if (!titleMatch) continue;
+        
+        const url = titleMatch[1];
+        const title = titleMatch[2].replace(/\s+/g, ' ').trim();
+        
+        // Filter out social/irrelevant links
+        const lowerTitle = title.toLowerCase();
+        const lowerUrl = url.toLowerCase();
+        
+        if (excludedDomains.some(d => lowerUrl.includes(d))) continue;
+        if (excludedKeywords.some(kw => lowerTitle.includes(kw))) continue;
+        if (title.length < 20) continue;
+        
+        const fullUrl = url.startsWith('http') ? url : 'https://www.acn.gov.it' + url;
+        
+        items.push({
+          title,
+          description: 'Alert di sicurezza da ACN',
+          url: fullUrl,
+          date: 'Recente',
+          type: 'threat',
+          severity: 'media',
+        });
+      }
+    }
+    
+    console.log('Scraped ACN threat items:', items.length);
+  } catch (error) {
+    console.error('Error scraping ACN RSS page:', error);
+  }
+  
+  return items;
+}
  
  serve(async (req) => {
    // Handle CORS preflight
