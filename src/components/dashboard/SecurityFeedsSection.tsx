@@ -2,11 +2,12 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ExternalLink, Shield, AlertTriangle, RefreshCw, Filter, Bug, Search, X } from 'lucide-react';
+import { ExternalLink, Shield, AlertTriangle, RefreshCw, Filter, Bug, Search, X, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { SecurityFeedCard } from './SecurityFeedCard';
+import { EPSSPredictionCard } from './EPSSPredictionCard';
 import { useACNFeeds, FeedItem } from '@/hooks/useACNFeeds';
 
 type SeverityFilter = 'all' | 'prioritari' | 'critica' | 'alta' | 'media' | 'bassa';
@@ -46,7 +47,7 @@ function filterBySearch<T extends FeedItem>(items: T[], query: string): T[] {
 }
 
 export const SecurityFeedsSection: React.FC = () => {
-  const { nis2Feed, threatFeed, cveFeed, isLoading, error, refetch } = useACNFeeds();
+  const { nis2Feed, threatFeed, cveFeed, epssFeed, isLoading, error, refetch } = useACNFeeds();
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>(getSavedFilter);
   const [searchQuery, setSearchQuery] = useState(getSavedSearchQuery);
 
@@ -377,6 +378,74 @@ export const SecurityFeedsSection: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {filteredCveFeed.slice(0, 9).map((item, index) => (
                 <SecurityFeedCard key={index} item={item} />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* EPSS Predictions Section */}
+      <Card className="border-border bg-gradient-to-br from-card to-card/80">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                <TrendingUp className="w-5 h-5 text-emerald-500" />
+              </div>
+              <div>
+                <CardTitle className="text-xl">EPSS Predictions - Top CVE</CardTitle>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Vulnerabilità con maggiore probabilità di exploit (ultimi 2 giorni)
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30">
+                {epssFeed.length} predictions
+              </Badge>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={refetch}
+                disabled={isLoading}
+              >
+                <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+              </Button>
+              <a
+                href="https://cvefeed.io/epss/exploit-prediction-scoring-system/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1"
+              >
+                Vedi tutti
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                <div key={i} className="p-3 rounded-lg border border-border">
+                  <Skeleton className="h-3 w-1/2 mb-2" />
+                  <Skeleton className="h-5 w-3/4 mb-2" />
+                  <Skeleton className="h-3 w-1/3" />
+                </div>
+              ))}
+            </div>
+          ) : epssFeed.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+              <p className="text-sm">Nessuna prediction disponibile</p>
+              <Button variant="ghost" size="sm" onClick={refetch} className="mt-2">
+                Riprova
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              {epssFeed.slice(0, 12).map((prediction, index) => (
+                <EPSSPredictionCard key={index} prediction={prediction} />
               ))}
             </div>
           )}
