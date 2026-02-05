@@ -2,15 +2,17 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ExternalLink, Shield, AlertTriangle, RefreshCw, Filter, Bug } from 'lucide-react';
+import { ExternalLink, Shield, AlertTriangle, RefreshCw, Filter, Bug, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { SecurityFeedCard } from './SecurityFeedCard';
 import { useACNFeeds, FeedItem } from '@/hooks/useACNFeeds';
 
 type SeverityFilter = 'all' | 'prioritari' | 'critica' | 'alta' | 'media' | 'bassa';
 
 const SEVERITY_FILTER_KEY = 'security_feeds_severity_filter';
+const SEARCH_QUERY_KEY = 'security_feeds_search_query';
 
 function getSavedFilter(): SeverityFilter {
   try {
@@ -24,9 +26,29 @@ function getSavedFilter(): SeverityFilter {
   return 'all';
 }
 
+function getSavedSearchQuery(): string {
+  try {
+    return localStorage.getItem(SEARCH_QUERY_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+// Filter items by search query
+function filterBySearch<T extends FeedItem>(items: T[], query: string): T[] {
+  if (!query.trim()) return items;
+  const lowerQuery = query.toLowerCase().trim();
+  return items.filter(item => 
+    item.title.toLowerCase().includes(lowerQuery) ||
+    item.description.toLowerCase().includes(lowerQuery) ||
+    (item.cveId && item.cveId.toLowerCase().includes(lowerQuery))
+  );
+}
+
 export const SecurityFeedsSection: React.FC = () => {
   const { nis2Feed, threatFeed, cveFeed, isLoading, error, refetch } = useACNFeeds();
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>(getSavedFilter);
+  const [searchQuery, setSearchQuery] = useState(getSavedSearchQuery);
 
   // Persist filter to localStorage
   useEffect(() => {
@@ -37,19 +59,38 @@ export const SecurityFeedsSection: React.FC = () => {
     }
   }, [severityFilter]);
 
+  // Persist search query to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(SEARCH_QUERY_KEY, searchQuery);
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, [searchQuery]);
+
+  // Apply search filter to all feeds
+  const filteredNis2Feed = useMemo(() => filterBySearch(nis2Feed, searchQuery), [nis2Feed, searchQuery]);
+  const filteredCveFeed = useMemo(() => filterBySearch(cveFeed, searchQuery), [cveFeed, searchQuery]);
+
   const filteredThreatFeed = useMemo(() => {
-    if (severityFilter === 'all') {
-      return threatFeed;
-    }
+    let filtered = threatFeed;
+    
+    // Apply severity filter
     if (severityFilter === 'prioritari') {
-      return threatFeed.filter((item) => item.severity === 'critica' || item.severity === 'alta');
+      filtered = filtered.filter((item) => item.severity === 'critica' || item.severity === 'alta');
+    } else if (severityFilter !== 'all') {
+      filtered = filtered.filter((item) => item.severity === severityFilter);
     }
-    return threatFeed.filter((item) => item.severity === severityFilter);
-  }, [threatFeed, severityFilter]);
+    
+    // Apply search filter
+    return filterBySearch(filtered, searchQuery);
+  }, [threatFeed, severityFilter, searchQuery]);
 
   const prioritariCount = useMemo(() => {
     return threatFeed.filter(i => i.severity === 'critica' || i.severity === 'alta').length;
   }, [threatFeed]);
+
+  const totalResults = filteredNis2Feed.length + filteredThreatFeed.length + filteredCveFeed.length;
 
   const severityFilters: { value: SeverityFilter; label: string; color: string; count?: number }[] = [
     { value: 'all', label: 'Tutti', color: 'bg-muted text-muted-foreground' },
@@ -86,6 +127,35 @@ export const SecurityFeedsSection: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Search Bar */}
+      <div className="relative">
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Cerca notizie per parole chiave, CVE ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 pr-10"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          {searchQuery && (
+            <Badge variant="secondary" className="whitespace-nowrap">
+              {totalResults} risultati
+            </Badge>
+          )}
+        </div>
+      </div>
+
       {/* Top row: NIS2 and Threat feeds */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* NIS2 Feed */}
@@ -124,16 +194,23 @@ export const SecurityFeedsSection: React.FC = () => {
             <ScrollArea className="h-[280px] pr-3">
               {isLoading ? (
                 <FeedSkeleton />
-              ) : error && nis2Feed.length === 0 ? (
+              ) : error && filteredNis2Feed.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                   <p className="text-sm">Nessun aggiornamento disponibile</p>
                   <Button variant="ghost" size="sm" onClick={refetch} className="mt-2">
                     Riprova
                   </Button>
                 </div>
+              ) : filteredNis2Feed.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                  <p className="text-sm">Nessun risultato per "{searchQuery}"</p>
+                  <Button variant="ghost" size="sm" onClick={() => setSearchQuery('')} className="mt-2">
+                    Cancella ricerca
+                  </Button>
+                </div>
               ) : (
                 <div className="space-y-3">
-                  {nis2Feed.slice(0, 6).map((item, index) => (
+                  {filteredNis2Feed.slice(0, 6).map((item, index) => (
                     <SecurityFeedCard key={index} item={item} />
                   ))}
                 </div>
@@ -256,7 +333,7 @@ export const SecurityFeedsSection: React.FC = () => {
             </div>
             <div className="flex items-center gap-3">
               <Badge variant="outline" className="bg-orange-500/10 text-orange-500 border-orange-500/30">
-                {cveFeed.length} CVE
+                {filteredCveFeed.length} CVE
               </Badge>
               <Button
                 variant="ghost"
@@ -282,16 +359,23 @@ export const SecurityFeedsSection: React.FC = () => {
         <CardContent>
           {isLoading ? (
             <CVEFeedSkeleton />
-          ) : error && cveFeed.length === 0 ? (
+          ) : error && filteredCveFeed.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
               <p className="text-sm">Nessuna vulnerabilità disponibile</p>
               <Button variant="ghost" size="sm" onClick={refetch} className="mt-2">
                 Riprova
               </Button>
             </div>
+          ) : filteredCveFeed.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+              <p className="text-sm">Nessun risultato per "{searchQuery}"</p>
+              <Button variant="ghost" size="sm" onClick={() => setSearchQuery('')} className="mt-2">
+                Cancella ricerca
+              </Button>
+            </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {cveFeed.slice(0, 9).map((item, index) => (
+              {filteredCveFeed.slice(0, 9).map((item, index) => (
                 <SecurityFeedCard key={index} item={item} />
               ))}
             </div>
