@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Shield, Smartphone, ShieldBan, Download, FileText, Key, Mail, Plus, Settings, Trash2 } from "lucide-react";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { ClientSelectionGuard } from "@/components/guards/ClientSelectionGuard";
+import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditLog";
 
 interface HiSolutionService {
   id: string;
@@ -458,6 +459,9 @@ const Integrations = () => {
             </CardContent>
           </Card>
         )}
+
+        {/* Audit Log */}
+        <IntegrationAuditLog organizationId={organizationId} />
       </div>
     </DashboardLayout>
   );
