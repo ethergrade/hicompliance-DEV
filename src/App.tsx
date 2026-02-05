@@ -29,6 +29,7 @@ import Settings from "./pages/Settings";
 import SurfaceScanSettings from "./pages/SurfaceScanSettings";
 import ComplianceEvents from "./pages/ComplianceEvents";
  import ClientSelection from "./pages/ClientSelection";
+import CyberNews from "./pages/CyberNews";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -47,6 +48,7 @@ const App = () => (
             <Route path="/auth" element={<LoginPage />} />
             <Route path="/clients" element={<ClientSelection />} />
             <Route path="/dashboard" element={<ClientSelectionGuard><Dashboard /></ClientSelectionGuard>} />
+            <Route path="/cyber-news" element={<ClientSelectionGuard><CyberNews /></ClientSelectionGuard>} />
             <Route path="/dashboard/service/:serviceCode" element={<ClientSelectionGuard><ServiceDashboard /></ClientSelectionGuard>} />
             <Route path="/surface-scan" element={<ClientSelectionGuard><SurfaceScan360 /></ClientSelectionGuard>} />
             <Route path="/dark-risk" element={<ClientSelectionGuard><DarkRisk360 /></ClientSelectionGuard>} />
