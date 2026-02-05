@@ -14,6 +14,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useForm } from "react-hook-form";
 import { useToast } from "@/hooks/use-toast";
 import { Shield, Smartphone, ShieldBan, Download, FileText, Key, Mail, Plus, Settings } from "lucide-react";
+import { useClientOrganization } from "@/hooks/useClientOrganization";
+import { ClientSelectionGuard } from "@/components/guards/ClientSelectionGuard";
 
 interface HiSolutionService {
   id: string;
@@ -57,6 +59,7 @@ const Integrations = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { organizationId, needsClientSelection, canManageMultipleClients, selectedOrganization } = useClientOrganization();
 
   const form = useForm<IntegrationFormData>({
     defaultValues: {
@@ -82,50 +85,37 @@ const Integrations = () => {
     },
   });
 
-  // Fetch organization integrations
+  // Fetch organization integrations - filter by selected organization for sales/admin
   const { data: integrations = [] } = useQuery({
-    queryKey: ["organization-integrations"],
+    queryKey: ["organization-integrations", organizationId],
     queryFn: async () => {
+      if (!organizationId) return [];
+      
       const { data, error } = await supabase
         .from("organization_integrations")
         .select(`
           *,
           hisolution_services(*)
         `)
+        .eq("organization_id", organizationId)
         .order("created_at", { ascending: false });
       
       if (error) throw error;
       return data as OrganizationIntegration[];
     },
+    enabled: !!organizationId,
   });
 
-  // Get user's organization
-  const { data: currentUser } = useQuery({
-    queryKey: ["current-user"],
-    queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("User not authenticated");
-
-      const { data, error } = await supabase
-        .from("users")
-        .select("organization_id, user_type")
-        .eq("auth_user_id", user.id)
-        .single();
-
-      if (error) throw error;
-      return data;
-    },
-  });
 
   // Create or update integration
   const createIntegrationMutation = useMutation({
     mutationFn: async (data: IntegrationFormData) => {
-      if (!currentUser?.organization_id) {
-        throw new Error("Organization not found");
+      if (!organizationId) {
+        throw new Error("Nessuna organizzazione selezionata");
       }
 
       const integrationData = {
-        organization_id: currentUser.organization_id,
+        organization_id: organizationId,
         service_id: data.service_id,
         api_url: data.api_url,
         api_key: data.api_key,
@@ -149,7 +139,7 @@ const Integrations = () => {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["organization-integrations"] });
+      queryClient.invalidateQueries({ queryKey: ["organization-integrations", organizationId] });
       setIsDialogOpen(false);
       setSelectedIntegration(null);
       form.reset();
@@ -199,6 +189,17 @@ const Integrations = () => {
     service => !integrations.some(integration => integration.service_id === service.id)
   );
 
+  // Sales/Admin need to select a client first
+  if (needsClientSelection) {
+    return (
+      <DashboardLayout>
+        <ClientSelectionGuard>
+          <div />
+        </ClientSelectionGuard>
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -206,7 +207,10 @@ const Integrations = () => {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Integrazioni HiSolution</h1>
             <p className="text-muted-foreground">
-              Configura le integrazioni con i servizi HiSolution per la tua organizzazione
+              Configura le integrazioni con i servizi HiSolution
+              {canManageMultipleClients && selectedOrganization && (
+                <span className="font-medium text-primary"> per {selectedOrganization.name}</span>
+              )}
             </p>
           </div>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
