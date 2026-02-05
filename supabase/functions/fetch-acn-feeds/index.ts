@@ -560,10 +560,15 @@ async function fetchCVEFeed(): Promise<FeedItem[]> {
       const cveMatch = title.match(/CVE-\d{4}-\d+/i);
       const cveId = cveMatch ? cveMatch[0].toUpperCase() : undefined;
       
+      // Use NVD URL which is always valid, fallback to original URL
+      const nvdUrl = cveId 
+        ? `https://nvd.nist.gov/vuln/detail/${cveId}` 
+        : url;
+      
       items.push({
         title,
         description,
-        url,
+        url: nvdUrl,
         date: dateStr,
         type: 'cve',
         severity,
