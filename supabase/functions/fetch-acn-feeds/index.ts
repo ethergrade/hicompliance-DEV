@@ -654,7 +654,8 @@ async function scrapeEPSSPredictions(): Promise<EPSSPrediction[]> {
           prediction,
           cvssScore,
           severity,
-          url: `https://cvefeed.io/vuln/detail/${cveId}`,
+          // Use NVD URL which is always valid for any CVE
+          url: `https://nvd.nist.gov/vuln/detail/${cveId}`,
         });
         console.log(`Found EPSS prediction: ${cveId} +${prediction}% ${severity}`);
       }
