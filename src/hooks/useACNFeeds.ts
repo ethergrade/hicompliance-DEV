@@ -9,6 +9,8 @@ export interface FeedItem {
   type: 'nis2' | 'threat' | 'cve';
   severity?: 'critica' | 'alta' | 'media' | 'bassa';
   cveId?: string;
+  epssScore?: number;
+  epssPercentile?: number;
 }
 
 export interface EPSSPrediction {
