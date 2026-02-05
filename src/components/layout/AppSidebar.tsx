@@ -19,7 +19,8 @@ import {
   Wrench,
   Bell,
   Package,
-  FileCheck
+  FileCheck,
+  Building2
 } from 'lucide-react';
 import {
   Sidebar,
@@ -38,6 +39,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { LogoutButton } from '@/components/auth/LogoutButton';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useRolePermissions } from '@/hooks/useRolePermissions';
+ import { useClientContext } from '@/contexts/ClientContext';
 
 const navigation = [
   {
@@ -99,6 +101,11 @@ const navigation = [
 
 const adminNavigation = [
   {
+    title: 'Selezione Clienti',
+    href: '/clients',
+    icon: Building2,
+  },
+  {
     title: 'Gestione Clienti',
     href: '/admin/clients',
     icon: Users,
@@ -117,6 +124,7 @@ export const AppSidebar: React.FC = () => {
   const { userProfile } = useAuth();
   const { isSuperAdmin, isSales } = useUserRoles();
   const { isModuleEnabled } = useRolePermissions();
+  const { selectedOrganization, canManageMultipleClients } = useClientContext();
   
   const isAdmin = userProfile?.user_type === 'admin';
 
@@ -287,14 +295,19 @@ export const AppSidebar: React.FC = () => {
           </SidebarGroup>
         )}
 
-        {(isAdmin || isSuperAdmin) && (
+        {(isAdmin || isSuperAdmin || isSales) && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
-              Amministrazione
+              {canManageMultipleClients ? 'Gestione Multi-Cliente' : 'Amministrazione'}
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {adminNavigation.map((item) => {
+                {adminNavigation.filter(item => {
+                  // Show "Selezione Clienti" only for sales/admin who can manage multiple clients
+                  if (item.href === '/clients') return canManageMultipleClients;
+                  // Show other admin items only for admin/superadmin
+                  return isAdmin || isSuperAdmin;
+                }).map((item) => {
                   const isActive = location.pathname === item.href;
                   return (
                     <SidebarMenuItem key={item.href}>
@@ -328,7 +341,9 @@ export const AppSidebar: React.FC = () => {
             <div className="text-sm">
               <p className="text-sidebar-foreground font-medium">{userProfile?.full_name}</p>
               <p className="text-sidebar-foreground/60 text-xs">
-                {userProfile?.organizations?.name || 'Organizzazione'}
+              {canManageMultipleClients && selectedOrganization 
+                ? selectedOrganization.name 
+                : userProfile?.organizations?.name || 'Organizzazione'}
               </p>
               <p className="text-xs text-cyan-400">
                 {isSuperAdmin ? 'Super Admin' : isSales ? 'Sales' : isAdmin ? 'Amministratore' : 'Cliente'}
