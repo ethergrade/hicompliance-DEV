@@ -4,8 +4,201 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Shield, Monitor, Globe, Eye, ClipboardCheck, BarChart3, AlertTriangle, FileText, Users, CheckCircle, ArrowRight, Lock, Cloud, Network, Mail, Download, Activity } from 'lucide-react';
+import { Shield, Monitor, Globe, Eye, ClipboardCheck, BarChart3, AlertTriangle, FileText, Users, CheckCircle, ArrowRight, Lock, Cloud, Network, Mail, Download, Activity, TrendingUp, Bug, ExternalLink, Newspaper } from 'lucide-react';
 import DemoRequestForm from '@/components/forms/DemoRequestForm';
+import { useACNFeeds } from '@/hooks/useACNFeeds';
+import { Skeleton } from '@/components/ui/skeleton';
+
+// CyberNews Preview Component for landing page
+const CyberNewsPreviewSection = () => {
+  const { epssFeed, cveFeed, threatFeed, isLoading } = useACNFeeds();
+  
+  const getSeverityColor = (severity: string) => {
+    switch (severity) {
+      case 'CRITICAL': return 'bg-red-500/10 text-red-500 border-red-500/30';
+      case 'HIGH': return 'bg-orange-500/10 text-orange-500 border-orange-500/30';
+      case 'MEDIUM': return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/30';
+      case 'LOW': return 'bg-green-500/10 text-green-500 border-green-500/30';
+      default: return 'bg-muted text-muted-foreground';
+    }
+  };
+
+  const topEpss = epssFeed.slice(0, 4);
+  const topCve = cveFeed.slice(0, 3);
+  const topThreats = threatFeed.slice(0, 3);
+
+  return (
+    <section className="py-20 bg-background">
+      <div className="container mx-auto px-4">
+        <div className="text-center mb-12">
+          <Badge variant="secondary" className="mb-4">
+            <Newspaper className="w-3 h-3 mr-1" />
+            Real-time Feed
+          </Badge>
+          <h2 className="text-4xl font-bold mb-4">CyberNews & EPSS Predictions</h2>
+          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+            Feed in tempo reale su vulnerabilità CVE, previsioni EPSS e alert di sicurezza CSIRT Italia
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* EPSS Predictions */}
+          <Card className="border-border">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-md bg-emerald-500/10">
+                  <TrendingUp className="w-4 h-4 text-emerald-500" />
+                </div>
+                <CardTitle className="text-lg">EPSS Predictions</CardTitle>
+              </div>
+              <CardDescription className="text-xs">
+                CVE con probabilità di exploit in crescita
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {isLoading ? (
+                [...Array(4)].map((_, i) => <Skeleton key={i} className="h-14 w-full" />)
+              ) : topEpss.length > 0 ? (
+                topEpss.map((prediction, idx) => (
+                  <a
+                    key={idx}
+                    href={prediction.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group flex items-center justify-between p-3 rounded-lg border border-border bg-card/30 hover:bg-card hover:border-primary/30 transition-all"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`px-2 py-1 rounded font-bold text-sm ${getSeverityColor(prediction.severity)}`}>
+                        {prediction.cvssScore.toFixed(1)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm text-foreground truncate">{prediction.cveId}</p>
+                        <p className="text-xs text-muted-foreground truncate">{prediction.vendor}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 text-emerald-500 shrink-0">
+                      <TrendingUp className="w-3 h-3" />
+                      <span className="text-xs font-medium">+{prediction.prediction.toFixed(1)}%</span>
+                    </div>
+                  </a>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">Nessun dato disponibile</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* CVE Feed */}
+          <Card className="border-border">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-md bg-orange-500/10">
+                  <Bug className="w-4 h-4 text-orange-500" />
+                </div>
+                <CardTitle className="text-lg">CVE High Severity</CardTitle>
+              </div>
+              <CardDescription className="text-xs">
+                Vulnerabilità critiche da cvefeed.io
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {isLoading ? (
+                [...Array(3)].map((_, i) => <Skeleton key={i} className="h-16 w-full" />)
+              ) : topCve.length > 0 ? (
+                topCve.map((item, idx) => (
+                  <a
+                    key={idx}
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group block p-3 rounded-lg border border-border bg-card/30 hover:bg-card hover:border-orange-500/30 transition-all"
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      {item.cveId && (
+                        <Badge variant="outline" className="text-[10px] bg-orange-500/10 text-orange-500 border-orange-500/30">
+                          {item.cveId}
+                        </Badge>
+                      )}
+                      {item.epssScore && (
+                        <span className="text-[10px] text-muted-foreground">EPSS: {item.epssScore.toFixed(1)}%</span>
+                      )}
+                    </div>
+                    <p className="text-sm font-medium text-foreground line-clamp-2 group-hover:text-primary transition-colors">
+                      {item.title}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">{item.date}</p>
+                  </a>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">Nessun dato disponibile</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Threat Alerts */}
+          <Card className="border-border">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-md bg-red-500/10">
+                  <AlertTriangle className="w-4 h-4 text-red-500" />
+                </div>
+                <CardTitle className="text-lg">Alert Sicurezza</CardTitle>
+              </div>
+              <CardDescription className="text-xs">
+                Ultimi alert CSIRT Italia
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {isLoading ? (
+                [...Array(3)].map((_, i) => <Skeleton key={i} className="h-16 w-full" />)
+              ) : topThreats.length > 0 ? (
+                topThreats.map((item, idx) => (
+                  <a
+                    key={idx}
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group block p-3 rounded-lg border border-border bg-card/30 hover:bg-card hover:border-red-500/30 transition-all"
+                  >
+                    {item.severity && (
+                      <Badge 
+                        variant="outline" 
+                        className={`text-[10px] mb-1 ${
+                          item.severity === 'critica' ? 'bg-red-500/10 text-red-500 border-red-500/30' :
+                          item.severity === 'alta' ? 'bg-orange-500/10 text-orange-500 border-orange-500/30' :
+                          item.severity === 'media' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/30' :
+                          'bg-green-500/10 text-green-500 border-green-500/30'
+                        }`}
+                      >
+                        {item.severity.toUpperCase()}
+                      </Badge>
+                    )}
+                    <p className="text-sm font-medium text-foreground line-clamp-2 group-hover:text-primary transition-colors">
+                      {item.title}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">{item.date}</p>
+                  </a>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">Nessun dato disponibile</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="text-center mt-8">
+          <Link to="/auth">
+            <Button variant="outline" className="gap-2">
+              Accedi per la versione completa
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+};
+
 const Index = () => {
   const {
     user,
@@ -259,6 +452,9 @@ const Index = () => {
           </div>
         </div>
       </section>
+
+      {/* CyberNews Preview Section */}
+      <CyberNewsPreviewSection />
 
       {/* CTA Section */}
       <section id="valutazione-nis2" className="py-20 bg-gradient-cyber">
