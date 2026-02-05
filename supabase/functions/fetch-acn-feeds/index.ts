@@ -15,6 +15,15 @@ interface FeedItem {
   severity?: 'critica' | 'alta' | 'media' | 'bassa';
   cveId?: string;
 }
+
+interface EPSSPrediction {
+  cveId: string;
+  vendor: string;
+  prediction: number;
+  cvssScore: number;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  url: string;
+}
  
  // Parse Italian date formats
  function parseItalianDate(dateStr: string): Date | null {
@@ -491,6 +500,65 @@ async function fetchCVEFeed(): Promise<FeedItem[]> {
   return items;
 }
 
+// Scrape EPSS Predictions from cvefeed.io
+async function scrapeEPSSPredictions(): Promise<EPSSPrediction[]> {
+  const predictions: EPSSPrediction[] = [];
+  
+  try {
+    console.log('Fetching EPSS predictions...');
+    const response = await fetch('https://cvefeed.io/epss/exploit-prediction-scoring-system/', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+    });
+    
+    if (!response.ok) {
+      console.error('EPSS fetch failed:', response.status);
+      return predictions;
+    }
+    
+    const html = await response.text();
+    console.log('EPSS HTML length:', html.length);
+    
+    // Parse the card elements for top predictions
+    // Pattern: <a href="https://cvefeed.io/vuln/detail/CVE-XXXX-XXXXX">
+    //   <p class="...">vendor</p>
+    //   <h4 class="...">CVE-XXXX-XXXXX</h4>
+    //   Prediction +XX.XX
+    //   <span class="...">X.X</span>
+    //   <small class="...">CRITICAL/HIGH</small>
+    
+    const cardPattern = /<a\s+href="https:\/\/cvefeed\.io\/vuln\/detail\/(CVE-\d{4}-\d+)"[^>]*>[\s\S]*?<p[^>]*class="[^"]*text-muted[^"]*"[^>]*>\s*([^<]+)<\/p>[\s\S]*?<h4[^>]*>(CVE-\d{4}-\d+)[\s\S]*?Prediction\s*\+?([\d.]+)[\s\S]*?<span[^>]*class="[^"]*avatar-title[^"]*"[^>]*>\s*([\d.]+)[\s\S]*?<small[^>]*>\s*(CRITICAL|HIGH|MEDIUM|LOW)\s*<\/small>/gi;
+    
+    let match;
+    while ((match = cardPattern.exec(html)) !== null && predictions.length < 12) {
+      const cveId = match[1];
+      const vendor = match[2].trim();
+      const prediction = parseFloat(match[4]);
+      const cvssScore = parseFloat(match[5]);
+      const severity = match[6].toUpperCase() as 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+      
+      if (cveId && !isNaN(prediction) && !isNaN(cvssScore)) {
+        predictions.push({
+          cveId,
+          vendor,
+          prediction,
+          cvssScore,
+          severity,
+          url: `https://cvefeed.io/vuln/detail/${cveId}`,
+        });
+      }
+    }
+    
+    console.log('Parsed EPSS predictions:', predictions.length);
+  } catch (error) {
+    console.error('Error scraping EPSS:', error);
+  }
+  
+  return predictions;
+}
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -501,10 +569,11 @@ serve(async (req) => {
     console.log('Fetching all feeds...');
     
     // Fetch all feeds in parallel
-    const [nis2Items, threatItems, cveItems] = await Promise.all([
+    const [nis2Items, threatItems, cveItems, epssPredictions] = await Promise.all([
       scrapeNIS2Feed(),
       scrapeThreatFeed(),
       fetchCVEFeed(),
+      scrapeEPSSPredictions(),
     ]);
     
     // If scraping returns empty, provide fallback data
@@ -564,8 +633,59 @@ serve(async (req) => {
         cveId: 'CVE-2026-0002',
       },
     ];
+
+    const epssFeed = epssPredictions.length > 0 ? epssPredictions : [
+      {
+        cveId: 'CVE-2016-10033',
+        vendor: 'joomla',
+        prediction: 94.47,
+        cvssScore: 9.8,
+        severity: 'CRITICAL' as const,
+        url: 'https://cvefeed.io/vuln/detail/CVE-2016-10033',
+      },
+      {
+        cveId: 'CVE-2014-0160',
+        vendor: 'ubuntu linux',
+        prediction: 94.46,
+        cvssScore: 7.5,
+        severity: 'HIGH' as const,
+        url: 'https://cvefeed.io/vuln/detail/CVE-2014-0160',
+      },
+      {
+        cveId: 'CVE-2020-3452',
+        vendor: 'cisco asa',
+        prediction: 94.45,
+        cvssScore: 7.5,
+        severity: 'HIGH' as const,
+        url: 'https://cvefeed.io/vuln/detail/CVE-2020-3452',
+      },
+      {
+        cveId: 'CVE-2021-26084',
+        vendor: 'confluence',
+        prediction: 94.44,
+        cvssScore: 9.8,
+        severity: 'CRITICAL' as const,
+        url: 'https://cvefeed.io/vuln/detail/CVE-2021-26084',
+      },
+      {
+        cveId: 'CVE-2017-10271',
+        vendor: 'weblogic',
+        prediction: 94.44,
+        cvssScore: 7.5,
+        severity: 'HIGH' as const,
+        url: 'https://cvefeed.io/vuln/detail/CVE-2017-10271',
+      },
+      {
+        cveId: 'CVE-2022-40684',
+        vendor: 'fortios',
+        prediction: 94.43,
+        cvssScore: 9.8,
+        severity: 'CRITICAL' as const,
+        url: 'https://cvefeed.io/vuln/detail/CVE-2022-40684',
+      },
+    ];
     
-    console.log('Returning feeds - NIS2:', nis2Feed.length, 'Threat:', threatFeed.length, 'CVE:', cveFeed.length);
+    console.log('Returning feeds - NIS2:', nis2Feed.length, 'Threat:', threatFeed.length, 'CVE:', cveFeed.length, 'EPSS:', epssFeed.length);
     
     return new Response(
       JSON.stringify({
@@ -574,6 +694,7 @@ serve(async (req) => {
           nis2: nis2Feed,
           threat: threatFeed,
           cve: cveFeed,
+          epss: epssFeed,
         },
         timestamp: new Date().toISOString(),
       }),
