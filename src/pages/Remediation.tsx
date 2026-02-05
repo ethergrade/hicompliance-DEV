@@ -38,9 +38,19 @@ import {
   Settings
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { useUserPreferences } from '@/hooks/useUserPreferences';
 
 const Remediation: React.FC = () => {
-  const [selectedTimeframe, setSelectedTimeframe] = useState('90days');
+  // Persistent preferences
+  const { preferences, updatePreferences } = useUserPreferences({
+    preferenceKey: 'remediation_filters',
+    defaultPreferences: {
+      selectedTimeframe: '90days',
+      defaultView: 'gantt',
+    },
+  });
+
+  const [selectedTimeframe, setSelectedTimeframeState] = useState('90days');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [taskOrder, setTaskOrder] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
   const [taskDates, setTaskDates] = useState<Record<number, { startDate: string, endDate: string }>>({});
@@ -61,6 +71,19 @@ const Remediation: React.FC = () => {
     complexity: 'medium',
     startDate: ''
   });
+
+  // Sync timeframe from persistent preferences
+  useEffect(() => {
+    if (preferences.selectedTimeframe) {
+      setSelectedTimeframeState(preferences.selectedTimeframe as string);
+    }
+  }, [preferences.selectedTimeframe]);
+
+  // Wrapper to update timeframe and persist
+  const setSelectedTimeframe = (value: string) => {
+    setSelectedTimeframeState(value);
+    updatePreferences({ selectedTimeframe: value });
+  };
 
   // Funzione per convertire ID mock a UUID per il database
   const getUUIDForMockId = async (mockId: number) => {
