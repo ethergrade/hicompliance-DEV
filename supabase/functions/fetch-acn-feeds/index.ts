@@ -587,8 +587,9 @@ async function scrapeEPSSPredictions(): Promise<EPSSPrediction[]> {
     console.log('Fetching EPSS predictions...');
     const response = await fetch('https://cvefeed.io/epss/exploit-prediction-scoring-system/', {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
       },
     });
     
@@ -600,25 +601,53 @@ async function scrapeEPSSPredictions(): Promise<EPSSPrediction[]> {
     const html = await response.text();
     console.log('EPSS HTML length:', html.length);
     
-    // Parse the card elements for top predictions
-    // Pattern: <a href="https://cvefeed.io/vuln/detail/CVE-XXXX-XXXXX">
-    //   <p class="...">vendor</p>
-    //   <h4 class="...">CVE-XXXX-XXXXX</h4>
-    //   Prediction +XX.XX
-    //   <span class="...">X.X</span>
-    //   <small class="...">CRITICAL/HIGH</small>
+    // Real HTML structure per card:
+    // <div class="col-lg-3 col-md-6">
+    //   <div class="card rounded-0 shadow-lg">
+    //     <div class="card-body">
+    //       <a href="https://cvefeed.io/vuln/detail/CVE-2016-10033">
+    //         <p class="text-uppercase ...">joomla</p>
+    //         <h4 class="...">CVE-2016-10033</h4>
+    //         <h4 class="text-success ...">Prediction +94.47</h4>
+    //         <span class="avatar-title bg-critical-subtle ...">9.8</span>
+    //         <small class="...">CRITICAL</small>
+    //       </a>
+    //     </div>
+    //   </div>
+    // </div>
     
-    const cardPattern = /<a\s+href="https:\/\/cvefeed\.io\/vuln\/detail\/(CVE-\d{4}-\d+)"[^>]*>[\s\S]*?<p[^>]*class="[^"]*text-muted[^"]*"[^>]*>\s*([^<]+)<\/p>[\s\S]*?<h4[^>]*>(CVE-\d{4}-\d+)[\s\S]*?Prediction\s*\+?([\d.]+)[\s\S]*?<span[^>]*class="[^"]*avatar-title[^"]*"[^>]*>\s*([\d.]+)[\s\S]*?<small[^>]*>\s*(CRITICAL|HIGH|MEDIUM|LOW)\s*<\/small>/gi;
-    
+    // Find all <a> tags that link to CVE details
+    const cardPattern = /<a\s+href="https:\/\/cvefeed\.io\/vuln\/detail\/(CVE-\d{4}-\d+)"[^>]*>([\s\S]*?)<\/a>/gi;
     let match;
+    const seenCves = new Set<string>();
+    
     while ((match = cardPattern.exec(html)) !== null && predictions.length < 12) {
       const cveId = match[1];
-      const vendor = match[2].trim();
-      const prediction = parseFloat(match[4]);
-      const cvssScore = parseFloat(match[5]);
-      const severity = match[6].toUpperCase() as 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+      const cardContent = match[2];
       
-      if (cveId && !isNaN(prediction) && !isNaN(cvssScore)) {
+      // Skip duplicates
+      if (seenCves.has(cveId)) continue;
+      seenCves.add(cveId);
+      
+      // Extract vendor from <p class="text-uppercase...">
+      const vendorMatch = cardContent.match(/<p[^>]*class="[^"]*text-uppercase[^"]*"[^>]*>\s*([^<]+)<\/p>/i);
+      const vendor = vendorMatch ? vendorMatch[1].trim() : 'Unknown';
+      
+      // Extract prediction value (e.g., "Prediction +94.47")
+      const predictionMatch = cardContent.match(/Prediction\s*\+?([\d.]+)/i);
+      if (!predictionMatch) continue; // Skip if no prediction (not an EPSS card)
+      
+      const prediction = parseFloat(predictionMatch[1]);
+      
+      // Extract CVSS score from <span class="avatar-title...">9.8</span>
+      const cvssMatch = cardContent.match(/<span[^>]*class="[^"]*avatar-title[^"]*"[^>]*>\s*([\d.]+)/i);
+      const cvssScore = cvssMatch ? parseFloat(cvssMatch[1]) : 0;
+      
+      // Extract severity from <small>CRITICAL</small>
+      const severityMatch = cardContent.match(/<small[^>]*>\s*(CRITICAL|HIGH|MEDIUM|LOW)\s*<\/small>/i);
+      const severity = (severityMatch ? severityMatch[1].toUpperCase() : 'HIGH') as 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+      
+      if (cveId && !isNaN(prediction) && prediction > 0) {
         predictions.push({
           cveId,
           vendor,
@@ -627,6 +656,7 @@ async function scrapeEPSSPredictions(): Promise<EPSSPrediction[]> {
           severity,
           url: `https://cvefeed.io/vuln/detail/${cveId}`,
         });
+        console.log(`Found EPSS prediction: ${cveId} +${prediction}% ${severity}`);
       }
     }
     
