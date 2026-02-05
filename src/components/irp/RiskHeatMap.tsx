@@ -46,13 +46,13 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
     : getControlsByCategory(selectedCategory);
 
   const getScoreColor = (score: number | null | undefined): string => {
-    if (score === null || score === undefined) return 'bg-muted/30';
+    if (score === null || score === undefined) return 'bg-muted/30 text-muted-foreground';
     switch (score) {
-      case 0: return 'bg-muted text-muted-foreground';
-      case 1: return 'bg-destructive/60 text-destructive-foreground';
-      case 2: return 'bg-amber-500/60 text-amber-900 dark:text-amber-100';
-      case 3: return 'bg-emerald-500/60 text-emerald-900 dark:text-emerald-100';
-      default: return 'bg-muted/30';
+      case 0: return 'bg-muted text-white';
+      case 1: return 'bg-destructive/80 text-white';
+      case 2: return 'bg-amber-500/80 text-white';
+      case 3: return 'bg-emerald-500/80 text-white';
+      default: return 'bg-muted/30 text-muted-foreground';
     }
   };
 
@@ -503,9 +503,9 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
                                 className={cn(
                                   'w-20 h-10 shrink-0 flex items-center justify-center text-xs font-medium border-l border-border/30',
                                   avg === null ? 'bg-muted/30 text-muted-foreground' :
-                                  avg >= 2.5 ? 'bg-emerald-500/40 text-emerald-900 dark:text-emerald-100' :
-                                  avg >= 1.5 ? 'bg-amber-500/40 text-amber-900 dark:text-amber-100' :
-                                  'bg-destructive/40 text-destructive-foreground'
+                                  avg >= 2.5 ? 'bg-emerald-500/80 text-white' :
+                                  avg >= 1.5 ? 'bg-amber-500/80 text-white' :
+                                  'bg-destructive/80 text-white'
                                 )}
                               >
                                 {avg !== null ? avg.toFixed(1) : '-'}
