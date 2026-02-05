@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { SecurityFeedCard } from './SecurityFeedCard';
 import { useACNFeeds, FeedItem } from '@/hooks/useACNFeeds';
 
-type SeverityFilter = 'all' | 'critica' | 'alta' | 'media' | 'bassa';
+type SeverityFilter = 'all' | 'prioritari' | 'critica' | 'alta' | 'media' | 'bassa';
 
 export const SecurityFeedsSection: React.FC = () => {
   const { nis2Feed, threatFeed, isLoading, error, refetch } = useACNFeeds();
@@ -18,11 +18,19 @@ export const SecurityFeedsSection: React.FC = () => {
     if (severityFilter === 'all') {
       return threatFeed;
     }
+    if (severityFilter === 'prioritari') {
+      return threatFeed.filter((item) => item.severity === 'critica' || item.severity === 'alta');
+    }
     return threatFeed.filter((item) => item.severity === severityFilter);
   }, [threatFeed, severityFilter]);
 
-  const severityFilters: { value: SeverityFilter; label: string; color: string }[] = [
+  const prioritariCount = useMemo(() => {
+    return threatFeed.filter(i => i.severity === 'critica' || i.severity === 'alta').length;
+  }, [threatFeed]);
+
+  const severityFilters: { value: SeverityFilter; label: string; color: string; count?: number }[] = [
     { value: 'all', label: 'Tutti', color: 'bg-muted text-muted-foreground' },
+    { value: 'prioritari', label: '⚡ Prioritari', color: 'bg-destructive/10 text-destructive border-destructive/30', count: prioritariCount },
     { value: 'critica', label: 'Critica', color: 'bg-red-500/10 text-red-500 border-red-500/30' },
     { value: 'alta', label: 'Alta', color: 'bg-orange-500/10 text-orange-500 border-orange-500/30' },
     { value: 'media', label: 'Media', color: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/30' },
@@ -146,7 +154,10 @@ export const SecurityFeedsSection: React.FC = () => {
                   `}
                 >
                   {filter.label}
-                  {filter.value !== 'all' && (
+                  {filter.value === 'prioritari' && filter.count !== undefined && (
+                    <span className="ml-1 opacity-70">({filter.count})</span>
+                  )}
+                  {filter.value !== 'all' && filter.value !== 'prioritari' && (
                     <span className="ml-1 opacity-70">
                       ({threatFeed.filter(i => i.severity === filter.value).length})
                     </span>
