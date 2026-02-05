@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns';
 import { it } from 'date-fns/locale';
@@ -11,9 +11,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { History, Plus, Pencil, Trash2, User, Download, CalendarIcon, Filter, X } from 'lucide-react';
+import { History, Plus, Pencil, Trash2, User, Download, CalendarIcon, Filter, X, Save } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { useUserPreferences } from '@/hooks/useUserPreferences';
+import { useUserRoles } from '@/hooks/useUserRoles';
 
 interface AuditLog {
   id: string;
@@ -110,9 +112,32 @@ const exportToCSV = (logs: AuditLog[], filename: string) => {
 
 export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organizationId }) => {
   const { toast } = useToast();
+  const { isSuperAdmin, isSales, loading: rolesLoading } = useUserRoles();
+  const canManage = isSuperAdmin || isSales;
+
+  // User preferences hook for persisting filters
+  const { preferences, updatePreferences, isSaving } = useUserPreferences({
+    preferenceKey: 'audit_log_filters',
+    defaultPreferences: {
+      auditLogActionFilter: 'all',
+      auditLogDateFrom: undefined,
+      auditLogDateTo: undefined,
+    },
+  });
+
+  // Local state synced with preferences
   const [actionFilter, setActionFilter] = useState<string>('all');
   const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
   const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
+
+  // Sync local state from preferences on load
+  useEffect(() => {
+    if (preferences) {
+      setActionFilter(preferences.auditLogActionFilter || 'all');
+      setDateFrom(preferences.auditLogDateFrom ? new Date(preferences.auditLogDateFrom) : undefined);
+      setDateTo(preferences.auditLogDateTo ? new Date(preferences.auditLogDateTo) : undefined);
+    }
+  }, [preferences]);
   
   const { data: logs = [], isLoading } = useQuery({
     queryKey: ['integration-audit-logs', organizationId],
@@ -154,10 +179,38 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
 
   const hasActiveFilters = actionFilter !== 'all' || dateFrom || dateTo;
 
+  const handleActionFilterChange = (value: string) => {
+    setActionFilter(value);
+    if (canManage) {
+      updatePreferences({ auditLogActionFilter: value });
+    }
+  };
+
+  const handleDateFromChange = (date: Date | undefined) => {
+    setDateFrom(date);
+    if (canManage) {
+      updatePreferences({ auditLogDateFrom: date?.toISOString() });
+    }
+  };
+
+  const handleDateToChange = (date: Date | undefined) => {
+    setDateTo(date);
+    if (canManage) {
+      updatePreferences({ auditLogDateTo: date?.toISOString() });
+    }
+  };
+
   const clearFilters = () => {
     setActionFilter('all');
     setDateFrom(undefined);
     setDateTo(undefined);
+    if (canManage) {
+      updatePreferences({
+        auditLogActionFilter: 'all',
+        auditLogDateFrom: undefined,
+        auditLogDateTo: undefined,
+      });
+    }
   };
 
   const handleExport = () => {
@@ -179,7 +232,7 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
     });
   };
 
-  if (isLoading) {
+  if (isLoading || rolesLoading) {
     return (
       <Card className="border-border">
         <CardHeader className="pb-3">
@@ -207,105 +260,118 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
             <CardTitle className="text-lg flex items-center gap-2">
               <History className="w-5 h-5 text-primary" />
               Storico Modifiche
+              {isSaving && <Save className="w-4 h-4 text-muted-foreground animate-pulse" />}
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
               {filteredLogs.length} di {logs.length} modifiche
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExport}
-            disabled={filteredLogs.length === 0}
-            className="gap-2"
-          >
-            <Download className="w-4 h-4" />
-            Esporta CSV
-          </Button>
-        </div>
-        
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-border">
-          <Filter className="w-4 h-4 text-muted-foreground" />
-          
-          {/* Action Filter */}
-          <Select value={actionFilter} onValueChange={setActionFilter}>
-            <SelectTrigger className="w-[140px] h-8 text-xs">
-              <SelectValue placeholder="Tipo azione" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tutte le azioni</SelectItem>
-              <SelectItem value="created">Creata</SelectItem>
-              <SelectItem value="updated">Modificata</SelectItem>
-              <SelectItem value="deleted">Eliminata</SelectItem>
-            </SelectContent>
-          </Select>
-          
-          {/* Date From */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn(
-                  "h-8 text-xs gap-1.5",
-                  !dateFrom && "text-muted-foreground"
-                )}
-              >
-                <CalendarIcon className="w-3.5 h-3.5" />
-                {dateFrom ? format(dateFrom, "dd/MM/yyyy", { locale: it }) : "Da"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar
-                mode="single"
-                selected={dateFrom}
-                onSelect={setDateFrom}
-                initialFocus
-                className="pointer-events-auto"
-              />
-            </PopoverContent>
-          </Popover>
-          
-          {/* Date To */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn(
-                  "h-8 text-xs gap-1.5",
-                  !dateTo && "text-muted-foreground"
-                )}
-              >
-                <CalendarIcon className="w-3.5 h-3.5" />
-                {dateTo ? format(dateTo, "dd/MM/yyyy", { locale: it }) : "A"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar
-                mode="single"
-                selected={dateTo}
-                onSelect={setDateTo}
-                initialFocus
-                className="pointer-events-auto"
-              />
-            </PopoverContent>
-          </Popover>
-          
-          {/* Clear Filters */}
-          {hasActiveFilters && (
+          {/* Export button - only for Admin/Sales */}
+          {canManage && (
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
-              onClick={clearFilters}
-              className="h-8 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
+              onClick={handleExport}
+              disabled={filteredLogs.length === 0}
+              className="gap-2"
             >
-              <X className="w-3.5 h-3.5" />
-              Cancella filtri
+              <Download className="w-4 h-4" />
+              Esporta CSV
             </Button>
           )}
         </div>
+        
+        {/* Filters - only for Admin/Sales */}
+        {canManage && (
+          <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-border">
+            <Filter className="w-4 h-4 text-muted-foreground" />
+            
+            {/* Action Filter */}
+            <Select value={actionFilter} onValueChange={handleActionFilterChange}>
+              <SelectTrigger className="w-[140px] h-8 text-xs">
+                <SelectValue placeholder="Tipo azione" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tutte le azioni</SelectItem>
+                <SelectItem value="created">Creata</SelectItem>
+                <SelectItem value="updated">Modificata</SelectItem>
+                <SelectItem value="deleted">Eliminata</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            {/* Date From */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    "h-8 text-xs gap-1.5",
+                    !dateFrom && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="w-3.5 h-3.5" />
+                  {dateFrom ? format(dateFrom, "dd/MM/yyyy", { locale: it }) : "Da"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={dateFrom}
+                  onSelect={handleDateFromChange}
+                  initialFocus
+                  className="pointer-events-auto"
+                />
+              </PopoverContent>
+            </Popover>
+            
+            {/* Date To */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    "h-8 text-xs gap-1.5",
+                    !dateTo && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="w-3.5 h-3.5" />
+                  {dateTo ? format(dateTo, "dd/MM/yyyy", { locale: it }) : "A"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={dateTo}
+                  onSelect={handleDateToChange}
+                  initialFocus
+                  className="pointer-events-auto"
+                />
+              </PopoverContent>
+            </Popover>
+            
+            {/* Clear Filters */}
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearFilters}
+                className="h-8 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-3.5 h-3.5" />
+                Cancella filtri
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* Read-only notice for regular users */}
+        {!canManage && (
+          <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
+            Vista in sola lettura. Contatta un amministratore per esportare i dati.
+          </p>
+        )}
       </CardHeader>
       <CardContent>
         <ScrollArea className="h-[350px] pr-3">
@@ -317,7 +383,7 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
                   ? 'Nessuna modifica registrata' 
                   : 'Nessun risultato con i filtri selezionati'}
               </p>
-              {hasActiveFilters && (
+              {hasActiveFilters && canManage && (
                 <Button
                   variant="link"
                   size="sm"
