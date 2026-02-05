@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   ClipboardCheck, 
   AlertTriangle, 
@@ -14,14 +15,52 @@ import {
   Target,
   Building2,
   Shield,
-  AlertCircle
+  AlertCircle,
+  Filter,
+  ArrowUpDown
 } from 'lucide-react';
 import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
 import { NIS2_LABELS } from '@/types/organization';
+import { useUserPreferences } from '@/hooks/useUserPreferences';
 
 const Assessment: React.FC = () => {
   // Organization profile for NIS2 classification
   const { formData: orgProfile, loading: profileLoading } = useOrganizationProfile();
+
+  // Persistent preferences
+  const { preferences, updatePreferences } = useUserPreferences({
+    preferenceKey: 'assessment_filters',
+    defaultPreferences: {
+      statusFilter: 'all',
+      sortBy: 'name',
+      sortOrder: 'asc',
+    },
+  });
+
+  // Filter and sort states synced with preferences
+  const [statusFilter, setStatusFilterState] = useState('all');
+  const [sortBy, setSortByState] = useState('name');
+
+  // Sync from preferences
+  useEffect(() => {
+    if (preferences.statusFilter) {
+      setStatusFilterState(preferences.statusFilter as string);
+    }
+    if (preferences.sortBy) {
+      setSortByState(preferences.sortBy as string);
+    }
+  }, [preferences.statusFilter, preferences.sortBy]);
+
+  // Wrapper functions to persist preferences
+  const setStatusFilter = (value: string) => {
+    setStatusFilterState(value);
+    updatePreferences({ statusFilter: value });
+  };
+
+  const setSortBy = (value: string) => {
+    setSortByState(value);
+    updatePreferences({ sortBy: value });
+  };
 
   // Animated states
   const [animatedProgress, setAnimatedProgress] = useState(0);
@@ -149,6 +188,25 @@ const Assessment: React.FC = () => {
       score: 40 
     },
   ];
+
+  // Filter and sort categories based on preferences
+  const filteredAndSortedCategories = assessmentCategories
+    .filter(cat => statusFilter === 'all' || cat.status === statusFilter)
+    .sort((a, b) => {
+      if (sortBy === 'name') {
+        return a.name.localeCompare(b.name);
+      } else if (sortBy === 'score') {
+        return b.score - a.score;
+      } else if (sortBy === 'progress') {
+        const progressA = a.completed / a.questions;
+        const progressB = b.completed / b.questions;
+        return progressB - progressA;
+      } else if (sortBy === 'status') {
+        const statusOrder = { 'not_started': 0, 'in_progress': 1, 'completed': 2 };
+        return statusOrder[a.status as keyof typeof statusOrder] - statusOrder[b.status as keyof typeof statusOrder];
+      }
+      return 0;
+    });
 
   const getRiskLevel = (score: number) => {
     if (score >= 71) return { level: 'Basso', color: 'text-green-500' };
@@ -432,49 +490,90 @@ const Assessment: React.FC = () => {
         {/* Assessment Categories */}
         <Card className="border-border">
           <CardHeader>
-            <CardTitle>Categorie Assessment</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>Categorie Assessment</CardTitle>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Filter className="w-4 h-4 text-muted-foreground" />
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-[140px] h-8 text-xs">
+                      <SelectValue placeholder="Stato" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tutti gli stati</SelectItem>
+                      <SelectItem value="completed">Completati</SelectItem>
+                      <SelectItem value="in_progress">In Corso</SelectItem>
+                      <SelectItem value="not_started">Non Iniziati</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <ArrowUpDown className="w-4 h-4 text-muted-foreground" />
+                  <Select value={sortBy} onValueChange={setSortBy}>
+                    <SelectTrigger className="w-[130px] h-8 text-xs">
+                      <SelectValue placeholder="Ordina" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="name">Nome</SelectItem>
+                      <SelectItem value="score">Punteggio</SelectItem>
+                      <SelectItem value="progress">Progresso</SelectItem>
+                      <SelectItem value="status">Stato</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+            {statusFilter !== 'all' && (
+              <p className="text-sm text-muted-foreground mt-2">
+                Mostrando {filteredAndSortedCategories.length} di {assessmentCategories.length} categorie
+              </p>
+            )}
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {assessmentCategories.map((category, index) => (
-                <div key={index} className="flex items-center justify-between p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors">
-                  <div className="flex items-center space-x-4">
-                    <div className="p-2 rounded-lg bg-primary/10">
-                      <ClipboardCheck className="w-5 h-5 text-primary" />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="font-medium">{category.name}</h4>
-                      <p className="text-sm text-muted-foreground">
-                        {category.completed}/{category.questions} domande completate
-                      </p>
-                      <div className="mt-2">
-                        <Progress 
-                          value={animatedCategoryProgress[index] || 0} 
-                          className="h-1.5 w-48" 
-                        />
+              {filteredAndSortedCategories.map((category, index) => {
+                // Find original index for animation values
+                const originalIndex = assessmentCategories.findIndex(c => c.name === category.name);
+                return (
+                  <div key={category.name} className="flex items-center justify-between p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors">
+                    <div className="flex items-center space-x-4">
+                      <div className="p-2 rounded-lg bg-primary/10">
+                        <ClipboardCheck className="w-5 h-5 text-primary" />
                       </div>
+                      <div className="flex-1">
+                        <h4 className="font-medium">{category.name}</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {category.completed}/{category.questions} domande completate
+                        </p>
+                        <div className="mt-2">
+                          <Progress 
+                            value={animatedCategoryProgress[originalIndex] || 0} 
+                            className="h-1.5 w-48" 
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-4">
+                      <div className="text-right">
+                        <div className="text-sm font-medium">Punteggio: {animatedCategoryScores[originalIndex] || 0}/100</div>
+                        <div className={`text-xs font-medium ${getRiskLevel(category.score).color}`}>
+                          Rischio: {getRiskLevel(category.score).level}
+                        </div>
+                        <div className="flex items-center space-x-1 mt-1">
+                          {getStatusIcon(category.status)}
+                          <Badge variant={getStatusBadge(category.status) as any}>
+                            {getStatusText(category.status)}
+                          </Badge>
+                        </div>
+                      </div>
+                      <Button variant="outline" size="sm">
+                        <FileText className="w-4 h-4 mr-1" />
+                        Modifica
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-4">
-                    <div className="text-right">
-                      <div className="text-sm font-medium">Punteggio: {animatedCategoryScores[index] || 0}/100</div>
-                      <div className={`text-xs font-medium ${getRiskLevel(category.score).color}`}>
-                        Rischio: {getRiskLevel(category.score).level}
-                      </div>
-                      <div className="flex items-center space-x-1 mt-1">
-                        {getStatusIcon(category.status)}
-                        <Badge variant={getStatusBadge(category.status) as any}>
-                          {getStatusText(category.status)}
-                        </Badge>
-                      </div>
-                    </div>
-                    <Button variant="outline" size="sm">
-                      <FileText className="w-4 h-4 mr-1" />
-                      Modifica
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>
