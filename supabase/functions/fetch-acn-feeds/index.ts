@@ -14,6 +14,8 @@ interface FeedItem {
   type: 'nis2' | 'threat' | 'cve';
   severity?: 'critica' | 'alta' | 'media' | 'bassa';
   cveId?: string;
+  epssScore?: number;
+  epssPercentile?: number;
 }
 
 interface EPSSPrediction {
@@ -23,6 +25,55 @@ interface EPSSPrediction {
   cvssScore: number;
   severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
   url: string;
+}
+
+interface EPSSData {
+  cve: string;
+  epss: string;
+  percentile: string;
+  date: string;
+}
+
+// Fetch EPSS scores from FIRST.org API
+async function fetchEPSSScores(cveIds: string[]): Promise<Map<string, { epss: number; percentile: number }>> {
+  const epssMap = new Map<string, { epss: number; percentile: number }>();
+  
+  if (cveIds.length === 0) return epssMap;
+  
+  try {
+    // FIRST API accepts comma-separated CVE IDs
+    const cveList = cveIds.join(',');
+    console.log('Fetching EPSS for CVEs:', cveIds.length);
+    
+    const response = await fetch(`https://api.first.org/data/v1/epss?cve=${cveList}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json',
+      },
+    });
+    
+    if (!response.ok) {
+      console.error('EPSS API fetch failed:', response.status);
+      return epssMap;
+    }
+    
+    const data = await response.json();
+    
+    if (data.data && Array.isArray(data.data)) {
+      for (const item of data.data as EPSSData[]) {
+        epssMap.set(item.cve.toUpperCase(), {
+          epss: parseFloat(item.epss) * 100, // Convert to percentage
+          percentile: parseFloat(item.percentile) * 100,
+        });
+      }
+    }
+    
+    console.log('EPSS scores fetched:', epssMap.size);
+  } catch (error) {
+    console.error('Error fetching EPSS scores:', error);
+  }
+  
+  return epssMap;
 }
  
  // Parse Italian date formats
@@ -576,6 +627,34 @@ serve(async (req) => {
       scrapeEPSSPredictions(),
     ]);
     
+    // Extract CVE IDs to fetch EPSS scores
+    const cveIds = cveItems
+      .map(item => item.cveId)
+      .filter((id): id is string => !!id);
+    
+    // Fetch EPSS scores for CVEs
+    const epssScores = await fetchEPSSScores(cveIds);
+    
+    // Enrich CVE items with EPSS scores
+    const enrichedCveItems = cveItems.map(item => {
+      if (item.cveId && epssScores.has(item.cveId)) {
+        const epssData = epssScores.get(item.cveId)!;
+        return {
+          ...item,
+          epssScore: epssData.epss,
+          epssPercentile: epssData.percentile,
+        };
+      }
+      return item;
+    });
+    
+    // Sort CVEs by EPSS score (highest first)
+    enrichedCveItems.sort((a, b) => {
+      const scoreA = a.epssScore ?? 0;
+      const scoreB = b.epssScore ?? 0;
+      return scoreB - scoreA;
+    });
+    
     // If scraping returns empty, provide fallback data
     const nis2Feed = nis2Items.length > 0 ? nis2Items : [
       {
@@ -613,7 +692,7 @@ serve(async (req) => {
       },
     ];
 
-    const cveFeed = cveItems.length > 0 ? cveItems : [
+    const cveFeed = enrichedCveItems.length > 0 ? enrichedCveItems : [
       {
         title: 'CVE-2026-0001: Critical vulnerability in enterprise software',
         description: 'Remote code execution vulnerability affecting multiple vendors...',
