@@ -56,20 +56,20 @@
          {item.description}
        </p>
        
-       <div className="flex items-center justify-between gap-2">
-         <span className="text-xs text-muted-foreground">
-           {item.date}
-         </span>
-         
-         {item.type === 'threat' && item.severity && (
-           <Badge 
-             variant="outline" 
-             className={`text-[10px] px-1.5 py-0 h-5 font-semibold ${getSeverityColor(item.severity)}`}
-           >
-             {getSeverityLabel(item.severity)}
-           </Badge>
-         )}
-       </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-muted-foreground">
+            {item.date}
+          </span>
+          
+          {(item.type === 'threat' || item.type === 'cve') && item.severity && (
+            <Badge 
+              variant="outline" 
+              className={`text-[10px] px-1.5 py-0 h-5 font-semibold ${getSeverityColor(item.severity)}`}
+            >
+              {getSeverityLabel(item.severity)}
+            </Badge>
+          )}
+        </div>
      </a>
    );
  };
