@@ -49,7 +49,7 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
     if (score === null || score === undefined) return 'bg-muted/30 text-muted-foreground';
     switch (score) {
       case 0: return 'bg-muted text-white';
-      case 1: return 'bg-destructive/80 text-white';
+      case 1: return 'bg-slate-400/80 text-white';
       case 2: return 'bg-amber-500/80 text-white';
       case 3: return 'bg-emerald-500/80 text-white';
       default: return 'bg-muted/30 text-muted-foreground';
@@ -348,7 +348,7 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
               <span>0 - Non presente</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-4 rounded bg-destructive/60" />
+              <div className="w-4 h-4 rounded bg-slate-400/80" />
               <span>1 - Non incide</span>
             </div>
             <div className="flex items-center gap-1">
@@ -505,7 +505,7 @@ export const RiskHeatMap: React.FC<RiskHeatMapProps> = ({ assets }) => {
                                   avg === null ? 'bg-muted/30 text-muted-foreground' :
                                   avg >= 2.5 ? 'bg-emerald-500/80 text-white' :
                                   avg >= 1.5 ? 'bg-amber-500/80 text-white' :
-                                  'bg-destructive/80 text-white'
+                                  'bg-slate-400/80 text-white'
                                 )}
                               >
                                 {avg !== null ? avg.toFixed(1) : '-'}
