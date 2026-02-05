@@ -1,13 +1,25 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ExternalLink, TrendingUp } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import type { FeedItem } from '@/hooks/useACNFeeds';
+import { useToast } from '@/hooks/use-toast';
 
 interface SecurityFeedCardProps {
   item: FeedItem;
 }
 
 export const SecurityFeedCard: React.FC<SecurityFeedCardProps> = ({ item }) => {
+  const { toast } = useToast();
+
+  const isFramed = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.self !== window.top;
+    } catch {
+      return true;
+    }
+  }, []);
+
   const getSeverityColor = (severity?: string) => {
     switch (severity) {
       case 'critica':
@@ -45,11 +57,38 @@ export const SecurityFeedCard: React.FC<SecurityFeedCardProps> = ({ item }) => {
     return 'text-emerald-500';
   };
 
+  const handleExternalClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
+    // In embedded previews (iframe sandbox), target=_blank can be blocked and the page
+    // tries to open inside the iframe, which many external sites refuse (ERR_BLOCKED_BY_RESPONSE).
+    if (!isFramed) return;
+
+    e.preventDefault();
+    const url = item.url;
+
+    const opened = window.open(url, '_blank', 'noopener,noreferrer');
+    if (opened) return;
+
+    // Fallback: copy the URL so the user can open it manually.
+    try {
+      await navigator.clipboard.writeText(url);
+      toast({
+        title: 'Link copiato',
+        description: 'In preview i popup possono essere bloccati. Incolla il link nel browser per aprirlo.',
+      });
+    } catch {
+      toast({
+        title: 'Impossibile aprire il link',
+        description: url,
+      });
+    }
+  };
+
   return (
     <a
       href={item.url}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={handleExternalClick}
       className="block p-3 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors group"
     >
       <div className="flex items-start justify-between gap-2 mb-1">
