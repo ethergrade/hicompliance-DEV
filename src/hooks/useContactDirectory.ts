@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { DirectoryContact } from '@/types/irp';
+ import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 interface UseContactDirectoryReturn {
   contacts: DirectoryContact[];
@@ -21,25 +22,17 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const { toast } = useToast();
+  const { organizationId: clientOrgId, isLoading: clientLoading } = useClientOrganization();
 
   const fetchContacts = useCallback(async () => {
+    if (clientLoading || !clientOrgId) return;
+    
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('auth_user_id', user.id)
-        .single();
-
-      if (!userData?.organization_id) return;
-
       const { data, error } = await supabase
         .from('contact_directory')
         .select('*')
-        .eq('organization_id', userData.organization_id)
+        .eq('organization_id', clientOrgId)
         .order('last_name', { ascending: true });
 
       if (error) throw error;
@@ -55,11 +48,13 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, clientOrgId, clientLoading]);
 
   useEffect(() => {
-    fetchContacts();
-  }, [fetchContacts]);
+    if (!clientLoading && clientOrgId) {
+      fetchContacts();
+    }
+  }, [fetchContacts, clientLoading, clientOrgId]);
 
   const filteredContacts = contacts.filter(contact => {
     if (!searchQuery.trim()) return true;
@@ -74,22 +69,13 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
 
   const addContact = async (contactData: Omit<DirectoryContact, 'id' | 'organization_id' | 'created_at' | 'updated_at'>): Promise<DirectoryContact | null> => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Non autenticato');
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('auth_user_id', user.id)
-        .single();
-
-      if (!userData?.organization_id) throw new Error('Organizzazione non trovata');
+      if (!clientOrgId) throw new Error('Organizzazione non trovata');
 
       const { data, error } = await supabase
         .from('contact_directory')
         .insert({
           ...contactData,
-          organization_id: userData.organization_id
+          organization_id: clientOrgId
         })
         .select()
         .single();
@@ -170,22 +156,13 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
 
   const importFromEmergencyContacts = async (): Promise<{ imported: number; skipped: number }> => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Non autenticato');
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('auth_user_id', user.id)
-        .single();
-
-      if (!userData?.organization_id) throw new Error('Organizzazione non trovata');
+      if (!clientOrgId) throw new Error('Organizzazione non trovata');
 
       // Fetch existing emergency contacts
       const { data: emergencyContacts, error: fetchError } = await supabase
         .from('emergency_contacts')
         .select('*')
-        .eq('organization_id', userData.organization_id);
+        .eq('organization_id', clientOrgId);
 
       if (fetchError) throw fetchError;
 
@@ -201,7 +178,7 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
       const { data: existingContacts } = await supabase
         .from('contact_directory')
         .select('first_name, last_name, email')
-        .eq('organization_id', userData.organization_id);
+        .eq('organization_id', clientOrgId);
 
       const existingSet = new Set(
         (existingContacts || []).map(c => 
@@ -237,7 +214,7 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
         existingSet.add(key);
 
         toImport.push({
-          organization_id: userData.organization_id,
+          organization_id: clientOrgId,
           first_name: firstName,
           last_name: lastName,
           job_title: contact.job_title || contact.role || '',

@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Playbook, calculatePlaybookProgress } from '@/types/playbook';
+ import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 export interface PlaybookCompletion {
   id: string;
@@ -32,34 +33,19 @@ export const usePlaybookCompletions = (): UsePlaybookCompletionsReturn => {
   const [completions, setCompletions] = useState<PlaybookCompletion[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { organizationId: clientOrgId, isLoading: clientLoading } = useClientOrganization();
 
   const fetchCompletions = useCallback(async () => {
+    if (clientLoading || !clientOrgId) return;
+    
     setIsLoading(true);
     setError(null);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setError('Utente non autenticato');
-        return;
-      }
-
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('auth_user_id', user.id)
-        .single();
-
-      if (userError || !userData?.organization_id) {
-        console.error('Error fetching user data:', userError);
-        setError('Impossibile recuperare i dati utente');
-        return;
-      }
-
       const { data, error: fetchError } = await supabase
         .from('playbook_completions')
         .select('*')
-        .eq('organization_id', userData.organization_id)
+        .eq('organization_id', clientOrgId)
         .order('updated_at', { ascending: false });
 
       if (fetchError) {
@@ -81,7 +67,7 @@ export const usePlaybookCompletions = (): UsePlaybookCompletionsReturn => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [clientOrgId, clientLoading]);
 
   const upsertCompletion = useCallback(async (playbook: Playbook): Promise<PlaybookCompletion | null> => {
     try {
@@ -91,14 +77,8 @@ export const usePlaybookCompletions = (): UsePlaybookCompletionsReturn => {
         return null;
       }
 
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('auth_user_id', user.id)
-        .single();
-
-      if (userError || !userData?.organization_id) {
-        console.error('Error fetching user data:', userError);
+      if (!clientOrgId) {
+        console.error('No organization selected');
         return null;
       }
 
@@ -110,13 +90,13 @@ export const usePlaybookCompletions = (): UsePlaybookCompletionsReturn => {
       const { data: existing } = await supabase
         .from('playbook_completions')
         .select('id, started_at, completed_at')
-        .eq('organization_id', userData.organization_id)
+        .eq('organization_id', clientOrgId)
         .eq('user_id', user.id)
         .eq('playbook_id', playbook.id)
         .maybeSingle();
 
       const completionData = {
-        organization_id: userData.organization_id,
+        organization_id: clientOrgId,
         user_id: user.id,
         playbook_id: playbook.id,
         playbook_title: playbook.title,
@@ -172,25 +152,16 @@ export const usePlaybookCompletions = (): UsePlaybookCompletionsReturn => {
       console.error('Error upserting completion:', err);
       return null;
     }
-  }, []);
+  }, [clientOrgId]);
 
   const deleteCompletion = useCallback(async (playbookId: string): Promise<boolean> => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return false;
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('auth_user_id', user.id)
-        .single();
-
-      if (!userData?.organization_id) return false;
+      if (!clientOrgId) return false;
 
       const { error } = await supabase
         .from('playbook_completions')
         .delete()
-        .eq('organization_id', userData.organization_id)
+        .eq('organization_id', clientOrgId)
         .eq('playbook_id', playbookId);
 
       if (error) throw error;
@@ -201,7 +172,7 @@ export const usePlaybookCompletions = (): UsePlaybookCompletionsReturn => {
       console.error('Error deleting completion:', err);
       return false;
     }
-  }, []);
+  }, [clientOrgId]);
 
   const getCompletion = useCallback((playbookId: string): PlaybookCompletion | undefined => {
     return completions.find(c => c.playbook_id === playbookId);
@@ -209,8 +180,10 @@ export const usePlaybookCompletions = (): UsePlaybookCompletionsReturn => {
 
   // Initial fetch
   useEffect(() => {
-    fetchCompletions();
-  }, [fetchCompletions]);
+    if (!clientLoading && clientOrgId) {
+      fetchCompletions();
+    }
+  }, [fetchCompletions, clientLoading, clientOrgId]);
 
   return {
     completions,
