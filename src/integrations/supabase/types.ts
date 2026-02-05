@@ -522,6 +522,53 @@ export type Database = {
           },
         ]
       }
+      integration_audit_logs: {
+        Row: {
+          action: string
+          changed_by: string | null
+          changed_by_email: string | null
+          created_at: string
+          id: string
+          integration_id: string | null
+          new_values: Json | null
+          old_values: Json | null
+          organization_id: string | null
+          service_name: string
+        }
+        Insert: {
+          action: string
+          changed_by?: string | null
+          changed_by_email?: string | null
+          created_at?: string
+          id?: string
+          integration_id?: string | null
+          new_values?: Json | null
+          old_values?: Json | null
+          organization_id?: string | null
+          service_name: string
+        }
+        Update: {
+          action?: string
+          changed_by?: string | null
+          changed_by_email?: string | null
+          created_at?: string
+          id?: string
+          integration_id?: string | null
+          new_values?: Json | null
+          old_values?: Json | null
+          organization_id?: string | null
+          service_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "integration_audit_logs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       irp_documents: {
         Row: {
           created_at: string
