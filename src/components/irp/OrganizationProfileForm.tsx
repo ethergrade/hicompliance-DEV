@@ -28,6 +28,12 @@ const isValidPec = (pec: string): boolean => {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pec);
 };
 
+const isValidFiscalCode = (fc: string): boolean => {
+  if (!fc) return true; // Empty is valid (not required)
+  // 11 digits for companies OR 16 alphanumeric for individuals
+  return /^\d{11}$/.test(fc) || /^[A-Z0-9]{16}$/.test(fc);
+};
+
 export const OrganizationProfileForm: React.FC = () => {
   const { formData, loading, saving, lastSaved, updateField } = useOrganizationProfile();
 
@@ -50,6 +56,18 @@ export const OrganizationProfileForm: React.FC = () => {
     }
     return { isValid: true, message: '' };
   }, [formData.pec]);
+
+  const fiscalCodeValidation = useMemo(() => {
+    if (!formData.fiscal_code) return { isValid: true, message: '' };
+    const len = formData.fiscal_code.length;
+    if (len > 0 && len !== 11 && len !== 16) {
+      return { isValid: false, message: `${len} caratteri (richiesti 11 o 16)` };
+    }
+    if (!isValidFiscalCode(formData.fiscal_code)) {
+      return { isValid: false, message: '11 cifre (azienda) o 16 caratteri alfanumerici (persona)' };
+    }
+    return { isValid: true, message: '' };
+  }, [formData.fiscal_code]);
 
   if (loading) {
     return (
@@ -136,8 +154,25 @@ export const OrganizationProfileForm: React.FC = () => {
                 id="fiscal_code"
                 placeholder="Es. 12345678901 o RSSMRA80A01H501U"
                 value={formData.fiscal_code}
-                onChange={(e) => updateField('fiscal_code', e.target.value.toUpperCase())}
+                onChange={(e) => {
+                  const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 16);
+                  updateField('fiscal_code', value);
+                }}
+                maxLength={16}
+                className={!fiscalCodeValidation.isValid ? 'border-destructive focus-visible:ring-destructive' : ''}
               />
+              {!fiscalCodeValidation.isValid && (
+                <p className="text-xs text-destructive flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  {fiscalCodeValidation.message}
+                </p>
+              )}
+              {fiscalCodeValidation.isValid && formData.fiscal_code && (formData.fiscal_code.length === 11 || formData.fiscal_code.length === 16) && (
+                <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Formato corretto
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="business_sector">Settore di Attività</Label>
