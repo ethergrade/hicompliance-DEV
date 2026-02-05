@@ -46,7 +46,11 @@ function filterBySearch<T extends FeedItem>(items: T[], query: string): T[] {
   );
 }
 
-export const SecurityFeedsSection: React.FC = () => {
+interface SecurityFeedsSectionProps {
+  compact?: boolean;
+}
+
+export const SecurityFeedsSection: React.FC<SecurityFeedsSectionProps> = ({ compact = false }) => {
   const { nis2Feed, threatFeed, cveFeed, epssFeed, isLoading, error, refetch } = useACNFeeds();
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>(getSavedFilter);
   const [searchQuery, setSearchQuery] = useState(getSavedSearchQuery);
@@ -125,6 +129,48 @@ export const SecurityFeedsSection: React.FC = () => {
       ))}
     </div>
   );
+
+  // In compact mode, only show NIS2 and Threat feeds without search
+  if (compact) {
+    return (
+      <Card className="border-border h-full">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-md bg-primary/10">
+                <Shield className="w-4 h-4 text-primary" />
+              </div>
+              <CardTitle className="text-lg">Security Feed</CardTitle>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={refetch}
+                disabled={isLoading}
+              >
+                <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <ScrollArea className="h-[350px] pr-3">
+            {isLoading ? (
+              <FeedSkeleton />
+            ) : (
+              <div className="space-y-3">
+                {[...nis2Feed.slice(0, 3), ...threatFeed.slice(0, 3)].map((item, index) => (
+                  <SecurityFeedCard key={index} item={item} />
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-6">
