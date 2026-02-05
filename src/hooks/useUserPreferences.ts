@@ -141,3 +141,41 @@ export const useUserPreferences = ({ preferenceKey, defaultPreferences = {} }: U
     isSaving: saveMutation.isPending,
   };
 };
+
+// Standalone function to reset all preferences for the current user
+export const useResetAllPreferences = () => {
+  const { user } = useAuth();
+  const { selectedOrganization } = useClientContext();
+  const queryClient = useQueryClient();
+
+  const resetAllPreferences = useCallback(async (currentOrgOnly: boolean = false) => {
+    if (!user?.id) return false;
+
+    try {
+      let query = supabase
+        .from('user_preferences')
+        .delete()
+        .eq('user_id', user.id);
+
+      if (currentOrgOnly && selectedOrganization?.id) {
+        query = query.eq('organization_id', selectedOrganization.id);
+      }
+
+      const { error } = await query;
+
+      if (error) {
+        console.error('Error resetting preferences:', error);
+        return false;
+      }
+
+      // Invalidate all preference queries
+      queryClient.invalidateQueries({ queryKey: ['user-preferences'] });
+      return true;
+    } catch (error) {
+      console.error('Error resetting preferences:', error);
+      return false;
+    }
+  }, [user?.id, selectedOrganization?.id, queryClient]);
+
+  return { resetAllPreferences };
+};
