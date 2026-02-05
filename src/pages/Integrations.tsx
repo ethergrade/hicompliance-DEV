@@ -9,11 +9,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { supabase } from "@/integrations/supabase/client";
 import { useForm } from "react-hook-form";
 import { useToast } from "@/hooks/use-toast";
-import { Shield, Smartphone, ShieldBan, Download, FileText, Key, Mail, Plus, Settings } from "lucide-react";
+import { Shield, Smartphone, ShieldBan, Download, FileText, Key, Mail, Plus, Settings, Trash2 } from "lucide-react";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { ClientSelectionGuard } from "@/components/guards/ClientSelectionGuard";
 
@@ -146,6 +147,32 @@ const Integrations = () => {
       toast({
         title: "Successo",
         description: selectedIntegration ? "Integrazione aggiornata con successo" : "Integrazione creata con successo",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Errore",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete integration mutation
+  const deleteIntegrationMutation = useMutation({
+    mutationFn: async (integrationId: string) => {
+      const { error } = await supabase
+        .from("organization_integrations")
+        .delete()
+        .eq("id", integrationId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["organization-integrations", organizationId] });
+      toast({
+        title: "Successo",
+        description: "Integrazione eliminata con successo",
       });
     },
     onError: (error) => {
@@ -369,15 +396,47 @@ const Integrations = () => {
                       </p>
                     </div>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full mt-4"
-                    onClick={() => openDialog(integration)}
-                  >
-                    <Settings className="w-4 h-4 mr-2" />
-                    Configura
-                  </Button>
+                  <div className="flex gap-2 mt-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => openDialog(integration)}
+                    >
+                      <Settings className="w-4 h-4 mr-2" />
+                      Configura
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Elimina integrazione</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Sei sicuro di voler eliminare l'integrazione con <strong>{integration.hisolution_services.name}</strong>?
+                            <br />
+                            Questa azione non può essere annullata.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Annulla</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => deleteIntegrationMutation.mutate(integration.id)}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            {deleteIntegrationMutation.isPending ? "Eliminando..." : "Elimina"}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
                 </CardContent>
               </Card>
             );
