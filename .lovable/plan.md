@@ -1,260 +1,187 @@
 
-
-# Piano: Gestione Multi-Cliente per Sales/Admin
+# Piano: Feed NIS2 e Vulnerabilita in Dashboard
 
 ## Panoramica
 
-Implementazione di un sistema che permette agli utenti Sales e Admin di gestire più clienti (organizzazioni), potendo selezionare quale cliente visualizzare e passare liberamente da uno all'altro.
-
-## Flusso Utente Finale
-
-1. L'utente Sales/Admin fa login
-2. Viene reindirizzato alla pagina `/clients` con la lista di tutti i clienti
-3. Seleziona un cliente e viene salvato il contesto
-4. Può navigare in tutti i moduli vedendo i dati di quel cliente
-5. Dall'header può cambiare cliente in qualsiasi momento o tornare alla selezione
+Aggiungere due feed informativi in fondo alla Dashboard:
+1. **Feed NIS2** - Novita e aggiornamenti normativi da ACN
+2. **Feed Threat/Vulnerabilita** - Alert di sicurezza CSIRT Italia
 
 ---
 
-## Fase 1: Database - RLS Policies
+## Architettura Proposta
 
-### Nuova Funzione Database
+Poiche le fonti ACN non espongono un RSS tradizionale, utilizzeremo web scraping tramite Edge Function che estrae e parsifica il contenuto HTML delle pagine.
 
-Creare una funzione per verificare se l'utente può gestire più organizzazioni:
-
-```sql
-CREATE OR REPLACE FUNCTION public.can_manage_all_organizations(_user_id uuid)
-RETURNS boolean
-LANGUAGE sql
-STABLE SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.user_roles
-    WHERE user_id = _user_id
-      AND role IN ('super_admin', 'sales')
-  )
-$$;
+```text
++----------------+     +------------------------+     +------------------+
+|   Dashboard    | --> | Edge Function (scrape) | --> | ACN/CSIRT Pages  |
+|   Component    |     |   - fetch-acn-feeds    |     |                  |
++----------------+     +------------------------+     +------------------+
+        |                        |
+        v                        v
++----------------+     +------------------------+
+|  FeedCard UI   |     |   Cache in Supabase    |
+|  (rolling)     |     |   (opzionale)          |
++----------------+     +------------------------+
 ```
-
-### Aggiornamento RLS Policies
-
-Per ogni tabella con dati cliente (organization_profiles, contact_directory, emergency_contacts, ecc.), aggiungere policy che permettano a sales/admin di accedere a tutte le organizzazioni:
-
-```sql
--- Esempio per organization_profiles
-CREATE POLICY "Sales can view all organization profiles"
-ON organization_profiles FOR SELECT
-USING (can_manage_all_organizations(auth.uid()));
-
--- Ripetere per tutte le tabelle rilevanti
-```
-
-**Tabelle da aggiornare:**
-- `organization_profiles`
-- `contact_directory`
-- `emergency_contacts`
-- `irp_documents`
-- `playbook_completions`
-- `risk_analysis`
-- `critical_infrastructure`
-- `remediation_tasks`
-- `assessment_responses`
-- `asset_inventory`
 
 ---
 
-## Fase 2: Client Context (React)
+## Fonti Dati
 
-### Nuovo Context: `ClientContext.tsx`
+| Feed | URL Sorgente | Tipo |
+|------|--------------|------|
+| NIS2 | `https://www.acn.gov.it/portale/nis/notizie-ed-eventi` | Scraping HTML |
+| Threat | `https://www.acn.gov.it/portale/feedrss` (CSIRT) | Scraping HTML |
 
-```text
-src/contexts/ClientContext.tsx
-```
+### Struttura Dati Estratti
 
-**Funzionalità:**
-- `selectedOrganization`: l'organizzazione attualmente selezionata
-- `setSelectedOrganization()`: cambia organizzazione
-- `clearSelection()`: torna alla selezione clienti
-- `canManageMultipleClients`: booleano che indica se l'utente è sales/admin
-- Persistenza in localStorage per ricordare la scelta
-
-**Struttura:**
-
-```text
-interface ClientContextType {
-  selectedOrganization: Organization | null;
-  setSelectedOrganization: (org: Organization) => void;
-  clearSelection: () => void;
-  canManageMultipleClients: boolean;
-  isLoadingClients: boolean;
+```typescript
+interface FeedItem {
+  title: string;
+  description: string;
+  url: string;
+  date: string;
+  type: 'nis2' | 'threat';
+  severity?: 'critica' | 'alta' | 'media' | 'bassa';
 }
 ```
 
 ---
 
-## Fase 3: Pagina Selezione Clienti
+## Componenti da Creare
 
-### Nuova Pagina: `/clients`
+### 1. Edge Function: `fetch-acn-feeds`
 
-```text
-src/pages/ClientSelection.tsx
-```
+Funzione che:
+- Effettua fetch delle due pagine ACN
+- Parsifica l'HTML estraendo titolo, descrizione, data, link
+- Ritorna array di FeedItem ordinati per data
 
-**Design della pagina:**
-- Header con titolo "Gestione Clienti"
-- Barra di ricerca per filtrare clienti
-- Griglia di cards con:
-  - Nome organizzazione
-  - Codice cliente
-  - Data creazione
-  - Badge con stato servizi attivi
-  - Pulsante "Gestisci" per selezionare
+**Endpoint**: `POST /functions/v1/fetch-acn-feeds`
 
-**Caratteristiche:**
-- Responsive: cards in griglia (1-3 colonne)
-- Ricerca in tempo reale
-- Ordinamento alfabetico
-- Loading skeleton durante il caricamento
-
----
-
-## Fase 4: Header con Indicatore Cliente
-
-### Nuovo Componente: `ClientIndicator.tsx`
+### 2. Hook: `useACNFeeds`
 
 ```text
-src/components/layout/ClientIndicator.tsx
+src/hooks/useACNFeeds.ts
 ```
 
-Un componente nell'header che mostra:
-- Nome del cliente attualmente selezionato
-- Pulsante per cambiare cliente (torna a /clients)
-- Visibile solo per utenti sales/admin
+Hook React che:
+- Chiama l'edge function
+- Gestisce loading/error state
+- Opzionale: cache locale per ridurre chiamate
 
-Verrà integrato nel `DashboardLayout.tsx` nell'area header.
-
----
-
-## Fase 5: Aggiornamento Hook Esistenti
-
-### Pattern Comune
-
-Tutti gli hook che attualmente ottengono `organization_id` dall'utente loggato devono essere aggiornati per usare il context:
-
-**Prima:**
-```typescript
-const { data: userData } = await supabase
-  .from('users')
-  .select('organization_id')
-  .eq('auth_user_id', user.id)
-  .single();
-```
-
-**Dopo:**
-```typescript
-const { selectedOrganization } = useClientContext();
-const organizationId = selectedOrganization?.id || userOrganizationId;
-```
-
-### Hook da Modificare
-
-| Hook | File |
-|------|------|
-| useOrganizationProfile | `src/hooks/useOrganizationProfile.ts` |
-| useContactDirectory | `src/hooks/useContactDirectory.ts` |
-| useIRPDocument | `src/hooks/useIRPDocument.ts` |
-| usePlaybookCompletions | `src/hooks/usePlaybookCompletions.ts` |
-| useRiskAnalysis | `src/hooks/useRiskAnalysis.ts` |
-| useCriticalInfrastructure | `src/hooks/useCriticalInfrastructure.ts` |
-
-### Nuovo Hook: `useClientOrganization`
+### 3. Componente: `SecurityFeedCard`
 
 ```text
-src/hooks/useClientOrganization.ts
+src/components/dashboard/SecurityFeedCard.tsx
 ```
 
-Hook helper che:
-1. Controlla se l'utente può gestire più clienti
-2. Restituisce l'`organization_id` corretto (da context o da profilo utente)
-3. Fornisce metodo per ricaricare l'organizzazione
+Card singola per visualizzare un feed item con:
+- Badge colorato per tipo (NIS2 blu, Threat rosso/arancio)
+- Titolo linkato
+- Descrizione troncata
+- Data formattata
 
----
-
-## Fase 6: Routing e Protezione
-
-### Aggiornamento App.tsx
-
-- Aggiungere route `/clients`
-- Wrappare le routes con `ClientProvider`
-- Redirect automatico a `/clients` per sales se nessun cliente selezionato
-
-### Componente Guard
+### 4. Componente: `SecurityFeedsSection`
 
 ```text
-src/components/guards/ClientSelectionGuard.tsx
+src/components/dashboard/SecurityFeedsSection.tsx
 ```
 
-Componente che verifica se:
-- L'utente è sales/admin
-- Ha un cliente selezionato
-- Altrimenti redirect a `/clients`
+Sezione che contiene:
+- Due colonne affiancate (NIS2 | Threat)
+- Scroll verticale per ogni colonna
+- Massimo 5-8 item per colonna
+- Link "Vedi tutti" per fonte esterna
 
 ---
 
-## Fase 7: Aggiornamento Sidebar
+## Design UI
 
-### Modifiche a `AppSidebar.tsx`
+Layout proposto per la sezione feed in fondo alla dashboard:
 
-Per utenti sales/admin:
-- Aggiungere voce "Selezione Clienti" in cima al menu
-- Mostrare nel footer il nome del cliente selezionato
-- Cambiare stile per indicare la "modalità gestione cliente"
+```text
++--------------------------------------------------+
+|                    Dashboard                      |
+|  [Metriche] [Servizi HiSolution] [Statistiche]   |
++--------------------------------------------------+
+|                                                   |
+|  +---------------------+  +---------------------+ |
+|  |   Novita NIS2       |  |  Alert Sicurezza   | |
+|  |   ----------------  |  |  ----------------   | |
+|  | * NIS2, aggiorna... |  | * Vulnerabilita... | |
+|  |   23 Dic 2025       |  |   CRITICA - 5 Feb  | |
+|  |                     |  |                     | |
+|  | * NIS: prossimi...  |  | * Risolte vuln...  | |
+|  |   22 Nov 2025       |  |   ALTA - 5 Feb     | |
+|  |                     |  |                     | |
+|  | * UNI/PdR 174...    |  | * Phishing camp... | |
+|  |   15 Mag 2025       |  |   MEDIA - 4 Feb    | |
+|  +---------------------+  +---------------------+ |
+|                                                   |
++--------------------------------------------------+
+```
 
 ---
 
-## Riepilogo File da Creare/Modificare
+## Dettagli Tecnici
 
-### Nuovi File
-1. `src/contexts/ClientContext.tsx` - Context per gestione cliente
-2. `src/pages/ClientSelection.tsx` - Pagina selezione clienti
-3. `src/components/layout/ClientIndicator.tsx` - Indicatore nell'header
-4. `src/components/guards/ClientSelectionGuard.tsx` - Guard per redirect
-5. `src/hooks/useClientOrganization.ts` - Hook helper
+### Edge Function - Parsing HTML
 
-### File da Modificare
-1. `src/App.tsx` - Nuove routes e provider
-2. `src/components/layout/DashboardLayout.tsx` - Aggiungere ClientIndicator
-3. `src/components/layout/AppSidebar.tsx` - Voce menu e stile
-4. `src/hooks/useOrganizationProfile.ts` - Usare context
-5. `src/hooks/useContactDirectory.ts` - Usare context
-6. `src/hooks/useIRPDocument.ts` - Usare context
-7. `src/hooks/usePlaybookCompletions.ts` - Usare context
-8. `src/hooks/useRiskAnalysis.ts` - Usare context
-9. `src/hooks/useCriticalInfrastructure.ts` - Usare context
+La funzione utilizzera regex o un parser DOM leggero per estrarre:
+- Titoli: elementi `<h3>` con link `<a>`
+- Date: testo tipo "News - 23 Dicembre 2025" o "Alert - 05/02/26"
+- Descrizioni: testo successivo al titolo
+- Severity per threat: parole chiave come "critica", "alta", "media"
 
-### Migrazioni Database
-1. Funzione `can_manage_all_organizations`
-2. RLS policies per SELECT su tutte le tabelle rilevanti
+### Caching
+
+Per evitare troppe richieste verso ACN:
+- Cache lato client con stale-while-revalidate (5 minuti)
+- Opzionale: tabella Supabase `feed_cache` per persistenza
+
+### Gestione Errori
+
+- Fallback a "Nessun aggiornamento disponibile" se scraping fallisce
+- Retry automatico dopo 30 secondi
+- Toast di errore solo in modalita sviluppo
+
+---
+
+## File da Creare
+
+| File | Descrizione |
+|------|-------------|
+| `supabase/functions/fetch-acn-feeds/index.ts` | Edge function per scraping |
+| `src/hooks/useACNFeeds.ts` | Hook per fetch e gestione dati |
+| `src/components/dashboard/SecurityFeedCard.tsx` | Card singolo item feed |
+| `src/components/dashboard/SecurityFeedsSection.tsx` | Sezione con due feed |
+
+## File da Modificare
+
+| File | Modifica |
+|------|----------|
+| `src/pages/Dashboard.tsx` | Aggiungere SecurityFeedsSection in fondo |
+| `supabase/config.toml` | Aggiungere configurazione fetch-acn-feeds |
 
 ---
 
 ## Ordine di Implementazione
 
-1. **Migrazioni DB** - Funzione e RLS policies
-2. **ClientContext** - Context base con persistenza
-3. **Pagina ClientSelection** - UI selezione clienti
-4. **useClientOrganization** - Hook helper
-5. **Aggiornamento hooks** - Tutti gli hook esistenti
-6. **Routing e guards** - Protezione routes
-7. **UI (Header + Sidebar)** - Indicatori visivi
+1. **Edge Function** - `fetch-acn-feeds` con parsing HTML
+2. **Hook** - `useACNFeeds` per consumare l'endpoint
+3. **Componenti UI** - SecurityFeedCard e SecurityFeedsSection
+4. **Integrazione** - Aggiungere sezione in Dashboard.tsx
+5. **Stile** - Affinare design e responsive
 
 ---
 
 ## Note Tecniche
 
-- Il localStorage viene usato per persistere la selezione tra sessioni
-- Gli utenti "client" normali non vedono nulla di diverso
-- Le RLS policies garantiscono sicurezza lato server
-- Il context viene resettato al logout
-
+- Lo scraping e necessario perche ACN non espone RSS pubblici funzionanti
+- La funzione edge ha timeout di 10 secondi per evitare blocchi
+- I link esterni si aprono in nuova tab (`target="_blank"`)
+- Il feed si aggiorna automaticamente ogni 5 minuti (client-side)
+- Badge severity con colori: critica=rosso, alta=arancio, media=giallo
