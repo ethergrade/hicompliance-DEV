@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { supabase } from '@/integrations/supabase/client';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+ import { SecurityFeedsSection } from '@/components/dashboard/SecurityFeedsSection';
 import { 
   Shield, 
   Monitor, 
@@ -364,6 +365,9 @@ const Dashboard: React.FC = () => {
         </Card>
 
         {/* HiSolutionStatusGrid hidden - not used */}
+       
+       {/* Security Feeds Section */}
+       <SecurityFeedsSection />
       </div>
     </DashboardLayout>
   );

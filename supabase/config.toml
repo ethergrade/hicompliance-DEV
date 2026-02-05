@@ -2,3 +2,6 @@ project_id = "hcllvyzhefcqftesahnv"
 
 [functions.send-demo-request]
 verify_jwt = false
+ 
+ [functions.fetch-acn-feeds]
+ verify_jwt = false
