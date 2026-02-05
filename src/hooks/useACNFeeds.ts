@@ -11,16 +11,27 @@ export interface FeedItem {
   cveId?: string;
 }
 
+export interface EPSSPrediction {
+  cveId: string;
+  vendor: string;
+  prediction: number;
+  cvssScore: number;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  url: string;
+}
+
 interface FeedsData {
   nis2: FeedItem[];
   threat: FeedItem[];
   cve: FeedItem[];
+  epss: EPSSPrediction[];
 }
 
 interface UseACNFeedsResult {
   nis2Feed: FeedItem[];
   threatFeed: FeedItem[];
   cveFeed: FeedItem[];
+  epssFeed: EPSSPrediction[];
   isLoading: boolean;
   error: string | null;
   refetch: () => void;
@@ -65,6 +76,7 @@ export function useACNFeeds(): UseACNFeedsResult {
   const [nis2Feed, setNis2Feed] = useState<FeedItem[]>([]);
   const [threatFeed, setThreatFeed] = useState<FeedItem[]>([]);
   const [cveFeed, setCveFeed] = useState<FeedItem[]>([]);
+  const [epssFeed, setEpssFeed] = useState<EPSSPrediction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,6 +88,7 @@ export function useACNFeeds(): UseACNFeedsResult {
         setNis2Feed(cached.nis2);
         setThreatFeed(cached.threat);
         setCveFeed(cached.cve || []);
+        setEpssFeed(cached.epss || []);
         setIsLoading(false);
         return;
       }
@@ -98,6 +111,7 @@ export function useACNFeeds(): UseACNFeedsResult {
         setNis2Feed(feedsData.nis2 || []);
         setThreatFeed(feedsData.threat || []);
         setCveFeed(feedsData.cve || []);
+        setEpssFeed(feedsData.epss || []);
         setCachedData(feedsData);
       } else {
         throw new Error('Invalid response format');
@@ -112,6 +126,7 @@ export function useACNFeeds(): UseACNFeedsResult {
         setNis2Feed(cached.nis2);
         setThreatFeed(cached.threat);
         setCveFeed(cached.cve || []);
+        setEpssFeed(cached.epss || []);
       }
     } finally {
       setIsLoading(false);
@@ -137,6 +152,7 @@ export function useACNFeeds(): UseACNFeedsResult {
     nis2Feed,
     threatFeed,
     cveFeed,
+    epssFeed,
     isLoading,
     error,
     refetch,
