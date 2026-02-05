@@ -149,21 +149,21 @@ export const RiskAnalysisWizard: React.FC<RiskAnalysisWizardProps> = ({
 
       {/* Source Tabs */}
       <Tabs value={activeSource} onValueChange={(v) => handleSourceChange(v as ThreatSource)}>
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-3 h-auto">
           {(['non_umana', 'umana_esterna', 'umana_interna'] as ThreatSource[]).map((source) => {
             const completion = getSourceCompletion(source);
             const hasData = existingSources.includes(source);
             
             return (
-              <TabsTrigger key={source} value={source} className="flex flex-col gap-0.5">
-                <span className="text-xs">{THREAT_SOURCE_LABELS[source]}</span>
-                <div className="flex items-center gap-1">
+              <TabsTrigger key={source} value={source} className="flex flex-col gap-1 py-2 px-2 min-h-[48px]">
+                <span className="text-xs whitespace-nowrap">{THREAT_SOURCE_LABELS[source]}</span>
+                <div className="flex items-center justify-center">
                   {hasData ? (
-                    <Badge variant={completion === 100 ? 'default' : 'secondary'} className="text-[10px] px-1">
+                    <Badge variant={completion === 100 ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0 h-5 min-w-[40px] flex items-center justify-center">
                       {completion}%
                     </Badge>
                   ) : (
-                    <Badge variant="outline" className="text-[10px] px-1">
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 min-w-[40px] flex items-center justify-center">
                       Nuovo
                     </Badge>
                   )}
