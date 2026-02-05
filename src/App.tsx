@@ -28,8 +28,9 @@ import RoleSettings from "./pages/RoleSettings";
 import Settings from "./pages/Settings";
 import SurfaceScanSettings from "./pages/SurfaceScanSettings";
 import ComplianceEvents from "./pages/ComplianceEvents";
- import ClientSelection from "./pages/ClientSelection";
+  import ClientSelection from "./pages/ClientSelection";
 import CyberNews from "./pages/CyberNews";
+import AdminReporting from "./pages/AdminReporting";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -67,6 +68,7 @@ const App = () => (
             <Route path="/settings/alerts" element={<ClientSelectionGuard><Settings /></ClientSelectionGuard>} />
             <Route path="/settings/surface-scan-alerts" element={<ClientSelectionGuard><SurfaceScanSettings /></ClientSelectionGuard>} />
             <Route path="/admin/role-settings" element={<ClientSelectionGuard><RoleSettings /></ClientSelectionGuard>} />
+            <Route path="/admin/reporting" element={<AdminReporting />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
