@@ -1,6 +1,7 @@
 import React from 'react';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from './AppSidebar';
+ import { ClientIndicator } from './ClientIndicator';
 import { Button } from '@/components/ui/button';
 import { Menu } from 'lucide-react';
 interface DashboardLayoutProps {
@@ -14,7 +15,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         <AppSidebar />
         
         <div className="flex-1 flex flex-col">
-          
+          <ClientIndicator />
           
           <main className="flex-1 p-6 overflow-auto">
             {children}

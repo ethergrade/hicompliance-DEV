@@ -1213,6 +1213,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_manage_all_organizations: {
+        Args: { _user_id: string }
+        Returns: boolean
+      }
       get_current_user_type: { Args: never; Returns: string }
       get_user_roles: {
         Args: { _user_id: string }
