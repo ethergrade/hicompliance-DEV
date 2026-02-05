@@ -1,11 +1,12 @@
 import React from 'react';
+import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Building2, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
+import { Building2, CheckCircle2, Loader2, AlertCircle, AlertTriangle } from 'lucide-react';
 import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
 import { 
   NIS2Classification, 
@@ -16,8 +17,39 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import { it } from 'date-fns/locale';
 
+// Validation helpers
+const isValidVatNumber = (vat: string): boolean => {
+  if (!vat) return true; // Empty is valid (not required)
+  return /^\d{11}$/.test(vat);
+};
+
+const isValidPec = (pec: string): boolean => {
+  if (!pec) return true; // Empty is valid (not required)
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pec);
+};
+
 export const OrganizationProfileForm: React.FC = () => {
   const { formData, loading, saving, lastSaved, updateField } = useOrganizationProfile();
+
+  // Validation states
+  const vatValidation = useMemo(() => {
+    if (!formData.vat_number) return { isValid: true, message: '' };
+    if (formData.vat_number.length > 0 && formData.vat_number.length < 11) {
+      return { isValid: false, message: `${formData.vat_number.length}/11 cifre` };
+    }
+    if (!isValidVatNumber(formData.vat_number)) {
+      return { isValid: false, message: 'Deve contenere esattamente 11 cifre' };
+    }
+    return { isValid: true, message: '' };
+  }, [formData.vat_number]);
+
+  const pecValidation = useMemo(() => {
+    if (!formData.pec) return { isValid: true, message: '' };
+    if (!isValidPec(formData.pec)) {
+      return { isValid: false, message: 'Formato email non valido' };
+    }
+    return { isValid: true, message: '' };
+  }, [formData.pec]);
 
   if (loading) {
     return (
@@ -83,7 +115,20 @@ export const OrganizationProfileForm: React.FC = () => {
                   const value = e.target.value.replace(/\D/g, '').slice(0, 11);
                   updateField('vat_number', value);
                 }}
+                className={!vatValidation.isValid ? 'border-destructive focus-visible:ring-destructive' : ''}
               />
+              {!vatValidation.isValid && (
+                <p className="text-xs text-destructive flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  {vatValidation.message}
+                </p>
+              )}
+              {vatValidation.isValid && formData.vat_number?.length === 11 && (
+                <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Formato corretto
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="fiscal_code">Codice Fiscale</Label>
@@ -144,7 +189,20 @@ export const OrganizationProfileForm: React.FC = () => {
                 placeholder="azienda@pec.it"
                 value={formData.pec}
                 onChange={(e) => updateField('pec', e.target.value)}
+                className={!pecValidation.isValid ? 'border-destructive focus-visible:ring-destructive' : ''}
               />
+              {!pecValidation.isValid && (
+                <p className="text-xs text-destructive flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  {pecValidation.message}
+                </p>
+              )}
+              {pecValidation.isValid && formData.pec && (
+                <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Formato corretto
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="phone">Telefono</Label>
