@@ -95,9 +95,17 @@ export const RiskAnalysisManager: React.FC = () => {
   const assetSummaries = getAssetSummaries();
 
   // Get infrastructure assets not yet in risk analysis
+  // Use asset_id as unique identifier to handle duplicate component_name
   const availableInfraAssets = infrastructureAssets.filter(infra => {
-    const name = infra.component_name || infra.asset_id;
-    return name && !assetSummaries.some(s => s.assetName === name);
+    const displayName = infra.component_name 
+      ? `${infra.component_name} (${infra.asset_id})` 
+      : infra.asset_id;
+    
+    // Check if this specific asset (by display name or asset_id) is already imported
+    return !assetSummaries.some(s => 
+      s.assetName === displayName || 
+      s.assetName === infra.asset_id
+    );
   });
 
   const handleAddAsset = async () => {
@@ -353,7 +361,7 @@ export const RiskAnalysisManager: React.FC = () => {
                             <p>Nessun asset disponibile.</p>
                             <p className="text-xs mt-1">
                               {infrastructureAssets.length > 0 
-                                ? "Tutti gli asset sono già in Analisi Rischi."
+                                ? `${infrastructureAssets.length} asset presenti, ma già tutti importati in Analisi Rischi.`
                                 : "Aggiungi asset in Infrastruttura Critica prima."}
                             </p>
                           </div>
@@ -368,9 +376,12 @@ export const RiskAnalysisManager: React.FC = () => {
                               </SelectTrigger>
                               <SelectContent>
                                 {availableInfraAssets.map((infra) => {
-                                  const name = infra.component_name || infra.asset_id;
+                                  // Use display name with asset_id to disambiguate duplicates
+                                  const displayName = infra.component_name 
+                                    ? `${infra.component_name} (${infra.asset_id})` 
+                                    : infra.asset_id;
                                   return (
-                                    <SelectItem key={infra.id} value={name}>
+                                    <SelectItem key={infra.id} value={displayName}>
                                       <div className="flex items-center gap-2">
                                         <Badge variant="outline" className="text-[10px]">
                                           {infra.asset_id}
@@ -383,7 +394,7 @@ export const RiskAnalysisManager: React.FC = () => {
                               </SelectContent>
                             </Select>
                             <p className="text-xs text-muted-foreground">
-                              {availableInfraAssets.length} asset disponibili
+                              {availableInfraAssets.length} asset disponibili su {infrastructureAssets.length} totali
                             </p>
                           </>
                         )}
