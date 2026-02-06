@@ -14,10 +14,11 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { supabase } from "@/integrations/supabase/client";
 import { useForm } from "react-hook-form";
 import { useToast } from "@/hooks/use-toast";
-import { Shield, Smartphone, ShieldBan, Download, FileText, Key, Mail, Plus, Settings, Trash2 } from "lucide-react";
+import { Shield, Smartphone, ShieldBan, Download, FileText, Key, Mail, Plus, Settings, Trash2, AlertTriangle } from "lucide-react";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { ClientSelectionGuard } from "@/components/guards/ClientSelectionGuard";
 import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditLog";
+import { useUserRoles } from "@/hooks/useUserRoles";
 
 interface HiSolutionService {
   id: string;
@@ -62,6 +63,7 @@ const Integrations = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { organizationId, needsClientSelection, canManageMultipleClients, selectedOrganization } = useClientOrganization();
+  const { isSuperAdmin, isSales, loading: rolesLoading } = useUserRoles();
 
   const form = useForm<IntegrationFormData>({
     defaultValues: {
@@ -216,6 +218,23 @@ const Integrations = () => {
   const availableServices = services.filter(
     service => !integrations.some(integration => integration.service_id === service.id)
   );
+
+  // Only Super Admin and Sales can access this page
+  if (!rolesLoading && !isSuperAdmin && !isSales) {
+    return (
+      <DashboardLayout>
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <AlertTriangle className="w-12 h-12 text-destructive mb-4" />
+            <h3 className="text-lg font-semibold mb-2">Accesso non autorizzato</h3>
+            <p className="text-muted-foreground text-center">
+              Solo gli utenti Super Admin e Sales possono accedere alla configurazione delle integrazioni API.
+            </p>
+          </CardContent>
+        </Card>
+      </DashboardLayout>
+    );
+  }
 
   // Sales/Admin need to select a client first
   if (needsClientSelection) {
