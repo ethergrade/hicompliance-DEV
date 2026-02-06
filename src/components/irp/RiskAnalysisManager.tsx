@@ -260,6 +260,16 @@ export const RiskAnalysisManager: React.FC = () => {
     }
   };
 
+  // Check if an asset is linked to Critical Infrastructure
+  const isLinkedToInfrastructure = (assetName: string): boolean => {
+    return infrastructureAssets.some(infra => {
+      const displayName = infra.component_name 
+        ? `${infra.component_name} (${infra.asset_id})` 
+        : infra.asset_id;
+      return displayName === assetName || infra.component_name === assetName;
+    });
+  };
+
   if (loading) {
     return (
       <Card className="bg-card border-border">
@@ -534,7 +544,21 @@ export const RiskAnalysisManager: React.FC = () => {
                     className="cursor-pointer hover:bg-muted/50"
                     onClick={() => setSelectedAsset(summary.assetName)}
                   >
-                    <TableCell className="font-medium">{summary.assetName}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{summary.assetName}</span>
+                        {isLinkedToInfrastructure(summary.assetName) && (
+                          <Badge 
+                            variant="outline" 
+                            className="text-[10px] px-1.5 py-0 h-5 bg-accent/50 text-accent-foreground border-accent"
+                            title="Collegato a Infrastruttura Critica"
+                          >
+                            <Database className="h-3 w-3 mr-1" />
+                            IC
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
                         {(['non_umana', 'umana_esterna', 'umana_interna'] as ThreatSource[]).map((source) => (
