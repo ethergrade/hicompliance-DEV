@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -91,6 +92,7 @@ export const RiskAnalysisManager: React.FC = () => {
   const [addMode, setAddMode] = useState<'select' | 'manual'>('select');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'heatmap'>('list');
+  const [syncToInfrastructure, setSyncToInfrastructure] = useState(true);
 
   const assetSummaries = getAssetSummaries();
 
@@ -125,11 +127,14 @@ export const RiskAnalysisManager: React.FC = () => {
       assetName = newAssetName.trim();
     }
 
-    const result = await addAsset(assetName, 'non_umana');
+    // For manual mode, optionally sync to infrastructure
+    const shouldSync = addMode === 'manual' && syncToInfrastructure;
+    const result = await addAsset(assetName, 'non_umana', shouldSync);
     if (result) {
       setNewAssetName('');
       setSelectedInfraAsset('');
       setDialogOpen(false);
+      setSyncToInfrastructure(true);
       setSelectedAsset(assetName);
     }
   };
@@ -325,6 +330,7 @@ export const RiskAnalysisManager: React.FC = () => {
                   setNewAssetName('');
                   setSelectedInfraAsset('');
                   setAddMode('select');
+                  setSyncToInfrastructure(true);
                 }
               }}>
                 <DialogTrigger asChild>
@@ -400,16 +406,35 @@ export const RiskAnalysisManager: React.FC = () => {
                         )}
                       </TabsContent>
                       
-                      <TabsContent value="manual" className="mt-4 space-y-3">
-                        <Label className="text-sm text-muted-foreground">
-                          Inserisci il nome dell'asset
-                        </Label>
-                        <Input
-                          placeholder="es. Server Applicazioni"
-                          value={newAssetName}
-                          onChange={(e) => setNewAssetName(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleAddAsset()}
-                        />
+                      <TabsContent value="manual" className="mt-4 space-y-4">
+                        <div className="space-y-2">
+                          <Label className="text-sm text-muted-foreground">
+                            Inserisci il nome dell'asset
+                          </Label>
+                          <Input
+                            placeholder="es. Server Applicazioni"
+                            value={newAssetName}
+                            onChange={(e) => setNewAssetName(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleAddAsset()}
+                          />
+                        </div>
+                        
+                        <div className="flex items-center space-x-2 pt-2 border-t">
+                          <Checkbox
+                            id="sync-infrastructure"
+                            checked={syncToInfrastructure}
+                            onCheckedChange={(checked) => setSyncToInfrastructure(checked === true)}
+                          />
+                          <label
+                            htmlFor="sync-infrastructure"
+                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                          >
+                            Sincronizza con Infrastruttura Critica
+                          </label>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Se attivo, l'asset verrà automaticamente aggiunto anche in Infrastruttura Critica con un nuovo ID (C-XX).
+                        </p>
                       </TabsContent>
                     </Tabs>
                   </div>
