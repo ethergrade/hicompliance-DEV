@@ -83,7 +83,7 @@ export const RiskAnalysisManager: React.FC = () => {
     getAssetByNameAndSource,
   } = useRiskAnalysis();
 
-  const { assets: infrastructureAssets, loading: loadingInfrastructure } = useCriticalInfrastructure();
+  const { assets: infrastructureAssets, loading: loadingInfrastructure, deleteAsset: deleteInfraAsset, reloadAssets: reloadInfraAssets } = useCriticalInfrastructure();
   const { saveToDocuments } = useDocumentSave();
   
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
@@ -93,6 +93,9 @@ export const RiskAnalysisManager: React.FC = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'heatmap'>('list');
   const [syncToInfrastructure, setSyncToInfrastructure] = useState(true);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [assetToDelete, setAssetToDelete] = useState<string | null>(null);
+  const [deleteFromInfra, setDeleteFromInfra] = useState(true);
 
   const assetSummaries = getAssetSummaries();
 
@@ -572,31 +575,18 @@ export const RiskAnalysisManager: React.FC = () => {
                         >
                           <ChevronRight className="h-4 w-4" />
                         </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Elimina Asset</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Sei sicuro di voler eliminare "{summary.assetName}" e tutte le sue valutazioni?
-                                Questa azione non può essere annullata.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Annulla</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => deleteAssetAllSources(summary.assetName)}
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              >
-                                Elimina
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => {
+                            setAssetToDelete(summary.assetName);
+                            setDeleteFromInfra(true);
+                            setDeleteDialogOpen(true);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -606,6 +596,89 @@ export const RiskAnalysisManager: React.FC = () => {
           </ScrollArea>
         </Card>
       )}
+
+      {/* Delete Confirmation Dialog with Infrastructure Sync Option */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Elimina Asset</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-4">
+                <p>
+                  Sei sicuro di voler eliminare "{assetToDelete}" e tutte le sue valutazioni?
+                  Questa azione non può essere annullata.
+                </p>
+                
+                {/* Check if this asset exists in infrastructure */}
+                {assetToDelete && infrastructureAssets.some(infra => {
+                  const displayName = infra.component_name 
+                    ? `${infra.component_name} (${infra.asset_id})` 
+                    : infra.asset_id;
+                  return displayName === assetToDelete || 
+                         infra.component_name === assetToDelete ||
+                         infra.asset_id === assetToDelete;
+                }) && (
+                  <div className="flex items-start space-x-2 pt-2 border-t">
+                    <Checkbox
+                      id="delete-from-infra"
+                      checked={deleteFromInfra}
+                      onCheckedChange={(checked) => setDeleteFromInfra(checked === true)}
+                    />
+                    <div className="grid gap-1.5 leading-none">
+                      <label
+                        htmlFor="delete-from-infra"
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer text-foreground"
+                      >
+                        Elimina anche da Infrastruttura Critica
+                      </label>
+                      <p className="text-xs text-muted-foreground">
+                        Questo asset è presente anche in Infrastruttura Critica. Seleziona per rimuoverlo da entrambe le sezioni.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setAssetToDelete(null)}>Annulla</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!assetToDelete) return;
+                
+                // First delete from risk analysis
+                await deleteAssetAllSources(assetToDelete);
+                
+                // If deleteFromInfra is checked, also delete matching assets from infrastructure
+                if (deleteFromInfra) {
+                  const matchingInfraAssets = infrastructureAssets.filter(infra => {
+                    const displayName = infra.component_name 
+                      ? `${infra.component_name} (${infra.asset_id})` 
+                      : infra.asset_id;
+                    return displayName === assetToDelete || 
+                           infra.component_name === assetToDelete ||
+                           infra.asset_id === assetToDelete;
+                  });
+                  
+                  for (const infra of matchingInfraAssets) {
+                    await deleteInfraAsset(infra.id);
+                  }
+                  
+                  if (matchingInfraAssets.length > 0) {
+                    reloadInfraAssets();
+                  }
+                }
+                
+                setAssetToDelete(null);
+                setDeleteDialogOpen(false);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Elimina
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
