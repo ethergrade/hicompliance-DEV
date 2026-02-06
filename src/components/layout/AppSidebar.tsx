@@ -118,11 +118,6 @@ const adminNavigation = [
     icon: PieChart,
   },
   {
-    title: 'Reportistica Aggregata',
-    href: '/admin/reporting',
-    icon: PieChart,
-  },
-  {
     title: 'Gestione Clienti',
     href: '/admin/clients',
     icon: Users,
