@@ -62,7 +62,11 @@ export const useRiskAnalysis = () => {
     return Math.round((sum / maxPossible) * 100);
   };
 
-  const addAsset = useCallback(async (assetName: string, threatSource: ThreatSource) => {
+  const addAsset = useCallback(async (
+    assetName: string, 
+    threatSource: ThreatSource,
+    syncToInfrastructure: boolean = false
+  ) => {
     if (!organizationId) {
       toast.error('Organizzazione non trovata');
       return null;
@@ -98,13 +102,54 @@ export const useRiskAnalysis = () => {
 
       if (error) throw error;
 
+      // If syncToInfrastructure is enabled, also create in critical_infrastructure
+      if (syncToInfrastructure) {
+        // Get current infrastructure assets to generate next ID
+        const { data: infraAssets } = await supabase
+          .from('critical_infrastructure')
+          .select('asset_id')
+          .eq('organization_id', organizationId)
+          .order('asset_id');
+
+        // Generate next asset_id (C-01, C-02, etc.)
+        let nextNumber = 1;
+        if (infraAssets && infraAssets.length > 0) {
+          const numbers = infraAssets
+            .map(a => {
+              const match = a.asset_id.match(/C-(\d+)/);
+              return match ? parseInt(match[1], 10) : 0;
+            })
+            .filter(n => !isNaN(n));
+          nextNumber = Math.max(...numbers, 0) + 1;
+        }
+        const newAssetId = `C-${String(nextNumber).padStart(2, '0')}`;
+
+        const { error: infraError } = await supabase
+          .from('critical_infrastructure')
+          .insert({
+            organization_id: organizationId,
+            asset_id: newAssetId,
+            component_name: assetName,
+            created_by: user.user?.id || null,
+          });
+
+        if (infraError) {
+          console.error('Error syncing to infrastructure:', infraError);
+          toast.warning('Asset creato ma sincronizzazione con Infrastruttura fallita');
+        } else {
+          toast.success(`Asset "${assetName}" creato e sincronizzato (${newAssetId})`);
+        }
+      }
+
       const insertedAsset = {
         ...data,
         control_scores: (data.control_scores || {}) as ControlScores,
       } as RiskAnalysisAsset;
       
       setAssets(prev => [...prev, insertedAsset]);
-      toast.success(`Asset "${assetName}" aggiunto`);
+      if (!syncToInfrastructure) {
+        toast.success(`Asset "${assetName}" aggiunto`);
+      }
       return insertedAsset;
     } catch (error) {
       console.error('Error adding asset:', error);
