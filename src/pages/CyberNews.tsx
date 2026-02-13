@@ -21,7 +21,7 @@ const CyberNews: React.FC = () => {
         </div>
 
         {/* Security Feeds */}
-        <SecurityFeedsSection />
+        <SecurityFeedsSection showNis2={false} />
       </div>
     </DashboardLayout>
   );
