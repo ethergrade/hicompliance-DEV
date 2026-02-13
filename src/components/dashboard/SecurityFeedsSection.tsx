@@ -48,9 +48,10 @@ function filterBySearch<T extends FeedItem>(items: T[], query: string): T[] {
 
 interface SecurityFeedsSectionProps {
   compact?: boolean;
+  showNis2?: boolean;
 }
 
-export const SecurityFeedsSection: React.FC<SecurityFeedsSectionProps> = ({ compact = false }) => {
+export const SecurityFeedsSection: React.FC<SecurityFeedsSectionProps> = ({ compact = false, showNis2 = true }) => {
   const { nis2Feed, threatFeed, cveFeed, epssFeed, isLoading, error, refetch } = useACNFeeds();
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>(getSavedFilter);
   const [searchQuery, setSearchQuery] = useState(getSavedSearchQuery);
@@ -95,7 +96,7 @@ export const SecurityFeedsSection: React.FC<SecurityFeedsSectionProps> = ({ comp
     return threatFeed.filter(i => i.severity === 'critica' || i.severity === 'alta').length;
   }, [threatFeed]);
 
-  const totalResults = filteredNis2Feed.length + filteredThreatFeed.length + filteredCveFeed.length;
+  const totalResults = (showNis2 ? filteredNis2Feed.length : 0) + filteredThreatFeed.length + filteredCveFeed.length;
 
   const severityFilters: { value: SeverityFilter; label: string; color: string; count?: number }[] = [
     { value: 'all', label: 'Tutti', color: 'bg-muted text-muted-foreground' },
@@ -204,8 +205,9 @@ export const SecurityFeedsSection: React.FC<SecurityFeedsSectionProps> = ({ comp
       </div>
 
       {/* Top row: NIS2 and Threat feeds */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className={`grid grid-cols-1 ${showNis2 ? 'lg:grid-cols-2' : ''} gap-6`}>
         {/* NIS2 Feed */}
+        {showNis2 && (
         <Card className="border-border">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
@@ -265,6 +267,7 @@ export const SecurityFeedsSection: React.FC<SecurityFeedsSectionProps> = ({ comp
             </ScrollArea>
           </CardContent>
         </Card>
+        )}
 
         {/* Threat Feed */}
         <Card className="border-border">
