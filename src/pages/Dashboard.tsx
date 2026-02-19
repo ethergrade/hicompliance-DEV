@@ -48,28 +48,18 @@ const Dashboard: React.FC = () => {
   const [selectedService, setSelectedService] = useState<{ name: string; code: string; id: string } | null>(null);
 
   useEffect(() => {
-    const fetchServices = async () => {
-      if (activeOrgId) {
-        const { data } = await supabase
-          .from('organization_services')
-          .select('*, services(*)')
-          .eq('organization_id', activeOrgId);
-        setServices(data || []);
-      } else {
-        setServices([
-          { id: '1', status: 'alert', health_score: 15, services: { name: 'HiFirewall', code: 'hi_firewall', id: 's1' } },
-          { id: '2', status: 'alert', health_score: 70, services: { name: 'HiEndpoint', code: 'hi_endpoint', id: 's2' } },
-          { id: '3', status: 'maintenance', health_score: 75, services: { name: 'HiMail', code: 'hi_mail', id: 's3' } },
-          { id: '4', status: 'alert', health_score: 10, services: { name: 'HiLog', code: 'hi_log', id: 's4' } },
-          { id: '5', status: 'maintenance', health_score: 65, services: { name: 'HiPatch', code: 'hi_patch', id: 's5' } },
-          { id: '6', status: 'active', health_score: 90, services: { name: 'HiTrack', code: 'hi_track', id: 's6' } },
-          { id: '7', status: 'active', health_score: 92, services: { name: 'HiDetect', code: 'hi_detect', id: 's7' } },
-        ]);
-      }
-      setLoading(false);
-    };
-    fetchServices();
-  }, [activeOrgId]);
+    setServices([
+      { id: '1', status: 'alert', health_score: 15, services: { name: 'HiFirewall', code: 'hi_firewall', id: 's1' } },
+      { id: '2', status: 'alert', health_score: 70, services: { name: 'HiEndpoint', code: 'hi_endpoint', id: 's2' } },
+      { id: '3', status: 'maintenance', health_score: 75, services: { name: 'HiMail', code: 'hi_mail', id: 's3' } },
+      { id: '4', status: 'alert', health_score: 10, services: { name: 'HiLog', code: 'hi_log', id: 's4' } },
+      { id: '5', status: 'maintenance', health_score: 65, services: { name: 'HiPatch', code: 'hi_patch', id: 's5' } },
+      { id: '6', status: 'active', health_score: 90, services: { name: 'HiTrack', code: 'hi_track', id: 's6' } },
+      { id: '7', status: 'active', health_score: 92, services: { name: 'HiDetect', code: 'hi_detect', id: 's7' } },
+      { id: '8', status: 'alert', health_score: 24, services: { name: 'HiMobile', code: 'hi_mobile', id: 's8' } },
+    ]);
+    setLoading(false);
+  }, []);
 
   const excludedServices = ['hi_mfa', 'hi_cloud_optix', 'hi_phish_threat', 'hi_ztna'];
   const hiSolutionServices = services.filter(s => 
