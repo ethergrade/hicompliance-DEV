@@ -1,65 +1,70 @@
 
 
-# Sistema di Connessione Rapida API per Servizi Dashboard
+# Modifica rapida Anagrafiche e Consistenze dalla Selezione Clienti
 
 ## Obiettivo
-Aggiungere un sistema "one-click" per collegare i servizi HiSolution direttamente dalla dashboard, con un dialog semplificato che richiede solo una stringa di connessione (API key/ID) e un URL, senza dover navigare alla pagina Integrazioni completa.
+Arricchire la pagina di selezione clienti (`/clients`) con la possibilita di visualizzare e modificare al volo i dati anagrafici (profilo organizzazione) e le consistenze tecniche (asset inventory) di ogni cliente, senza dover navigare alle pagine dedicate.
 
-## Cosa cambia per l'utente
-- Ogni card servizio nella dashboard mostra lo stato di connessione API (collegato / non collegato)
-- Cliccando su un servizio non collegato, si apre un dialog rapido con solo 2 campi: **URL API** e **Chiave API**
-- I servizi gia collegati mostrano un badge "API Connessa" verde
-- Un pulsante permette di scollegare rapidamente un servizio
+## Come funzionera per l'utente
+
+Ogni card cliente nella griglia mostrera due nuovi pulsanti accanto a "Gestisci":
+- **Anagrafica** (icona FileText) -- apre un dialog laterale (Sheet) con i campi principali del profilo aziendale
+- **Consistenze** (icona Server) -- apre un dialog laterale (Sheet) con i campi dell'inventario asset
+
+Le modifiche vengono salvate con un pulsante "Salva" nel pannello laterale, senza uscire dalla pagina di selezione clienti.
+
+```text
++-----------------------------------+
+| Card Cliente: Acme Corp (ACME)    |
+| Creato il 5 gennaio 2025          |
+|                                   |
+| [Anagrafica] [Consistenze]        |
+| [         Gestisci ->           ] |
++-----------------------------------+
+```
+
+Al click su "Anagrafica" si apre uno Sheet da destra con:
+- Ragione Sociale, P.IVA, Codice Fiscale
+- PEC, Telefono, Email
+- Settore, Classificazione NIS2
+
+Al click su "Consistenze" si apre uno Sheet da destra con:
+- Utenti, Sedi
+- Endpoint, Server, Hypervisor, VM
+- Dispositivi di rete (firewall, switch, AP)
+- IP/Subnet per VA (con calcolo automatico totali)
 
 ## Dettaglio tecnico
 
-### 1. Nuovo componente: `ServiceQuickConnect.tsx`
-Dialog modale semplificato che:
-- Mostra il nome del servizio selezionato
-- Richiede solo `api_url` e `api_key`
-- Inserisce/aggiorna un record in `organization_integrations` con `is_active: true` e `api_methods: {}`
-- Mostra feedback di successo/errore con toast
+### 1. Nuovo componente: `ClientProfileSheet.tsx`
+- Riceve `organizationId` e `open/onOpenChange`
+- Fetcha `organization_profiles` per quell'org
+- Form inline con i campi principali (legal_name, vat_number, fiscal_code, pec, phone, email, business_sector, nis2_classification)
+- Pulsante "Salva" che fa upsert su `organization_profiles`
+- Usa il componente Sheet di Radix UI
 
-### 2. Nuovo hook: `useServiceIntegrations.ts`
-Hook che:
-- Fetcha le `organization_integrations` per l'organizzazione corrente
-- Espone una funzione `isServiceConnected(serviceCode)` per verificare lo stato
-- Espone `connectService(serviceId, apiUrl, apiKey)` e `disconnectService(integrationId)`
-- Usa React Query con invalidazione automatica
+### 2. Nuovo componente: `ClientAssetSheet.tsx`
+- Riceve `organizationId` e `open/onOpenChange`
+- Fetcha `asset_inventory` per quell'org
+- Form con tutti i campi numerici dell'inventario, raggruppati per categoria
+- Calcolo automatico totali (rete, IP) come nella pagina AssetInventory
+- Pulsante "Salva" che fa upsert su `asset_inventory`
+- Usa il componente Sheet di Radix UI
 
-### 3. Modifica: `Dashboard.tsx`
-- Importa il nuovo hook e componente
-- Aggiunge un indicatore visivo (badge/icona) su ogni card servizio per mostrare se ha un'integrazione API attiva
-- Aggiunge un pulsante "Collega API" sulle card non collegate, e "Scollegato" / "Gestisci" su quelle collegate
-- Il dialog si apre con un click sulla card o sul pulsante
-
-### 4. Flusso utente
-
-```text
-Card Servizio (es. HiFirewall)
-  |
-  |-- Se NON collegato:
-  |     Badge grigio "API non connessa"
-  |     Click -> Apre dialog con:
-  |       - Nome servizio (readonly)
-  |       - Campo URL API
-  |       - Campo Chiave API  
-  |       - Pulsante "Collega"
-  |
-  |-- Se collegato:
-  |     Badge verde "API Connessa"
-  |     Click -> Naviga alla dashboard servizio (comportamento attuale)
-  |     Icona link/unlink per gestire connessione
-```
-
-### 5. Accesso
-- Super Admin e Sales possono collegare/scollegare servizi (coerente con la pagina Integrazioni)
-- I client vedono solo lo stato (collegato/non collegato) senza poter modificare
+### 3. Modifica: `ClientSelection.tsx`
+- Importa i due nuovi componenti Sheet
+- Aggiunge stato per `editingOrgId`, `sheetType` (profile/asset)
+- Aggiunge due pulsanti per card: "Anagrafica" e "Consistenze" con `stopPropagation` (non triggera la selezione)
+- Il click su "Gestisci" continua a selezionare il cliente e navigare alla dashboard
 
 ### File coinvolti
+
 | File | Azione |
 |------|--------|
-| `src/hooks/useServiceIntegrations.ts` | Nuovo - hook per gestire integrazioni |
-| `src/components/dashboard/ServiceQuickConnect.tsx` | Nuovo - dialog connessione rapida |
-| `src/pages/Dashboard.tsx` | Modifica - aggiunta badge e dialog alle card servizio |
+| `src/components/clients/ClientProfileSheet.tsx` | Nuovo -- sheet modifica anagrafica |
+| `src/components/clients/ClientAssetSheet.tsx` | Nuovo -- sheet modifica consistenze |
+| `src/pages/ClientSelection.tsx` | Modifica -- aggiunta pulsanti e integrazione sheet |
+
+### Nessuna modifica al database
+Tutti i dati sono gia nelle tabelle `organization_profiles` e `asset_inventory` con le RLS policy corrette per Sales e Super Admin.
 
