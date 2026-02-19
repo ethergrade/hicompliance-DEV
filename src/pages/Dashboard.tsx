@@ -4,7 +4,9 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { MetricCard } from '@/components/dashboard/MetricCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { useClientContext } from '@/contexts/ClientContext';
 import { supabase } from '@/integrations/supabase/client';
 import { SecurityFeedsSection } from '@/components/dashboard/SecurityFeedsSection';
 import { EPSSWidget } from '@/components/dashboard/EPSSWidget';
@@ -13,7 +15,7 @@ import { useServiceIntegrations } from '@/hooks/useServiceIntegrations';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { 
   Shield, Monitor, Mail, FileText, Download, 
-  BarChart3, Laptop, Link2, Unlink, Smartphone
+  BarChart3, Laptop, Link2, Unlink, Smartphone, Settings
 } from 'lucide-react';
 
 const getServiceIcon = (code: string) => {
@@ -33,6 +35,9 @@ const getServiceIcon = (code: string) => {
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { userProfile } = useAuth();
+  const { selectedOrganization } = useClientContext();
+  const activeOrgId = selectedOrganization?.id || userProfile?.organization_id;
+  const activeOrgName = selectedOrganization?.name || userProfile?.organizations?.name || 'Organizzazione';
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const { isServiceConnected, getIntegrationByCode, connectService, disconnectService, isConnecting, isDisconnecting } = useServiceIntegrations();
@@ -44,11 +49,11 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     const fetchServices = async () => {
-      if (userProfile?.organization_id) {
+      if (activeOrgId) {
         const { data } = await supabase
           .from('organization_services')
           .select('*, services(*)')
-          .eq('organization_id', userProfile.organization_id);
+          .eq('organization_id', activeOrgId);
         setServices(data || []);
       } else {
         setServices([
@@ -64,7 +69,7 @@ const Dashboard: React.FC = () => {
       setLoading(false);
     };
     fetchServices();
-  }, [userProfile]);
+  }, [activeOrgId]);
 
   const excludedServices = ['hi_mfa', 'hi_cloud_optix', 'hi_phish_threat', 'hi_ztna'];
   const hiSolutionServices = services.filter(s => 
@@ -203,7 +208,7 @@ const Dashboard: React.FC = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
-            <p className="text-muted-foreground">{userProfile?.organizations?.name || 'Organizzazione'}</p>
+            <p className="text-muted-foreground">{activeOrgName}</p>
           </div>
           <div className="text-right">
             <div className="text-4xl font-bold text-red-500 mb-1">{totalIssues || fallbackData.totalIssues}</div>
@@ -225,9 +230,17 @@ const Dashboard: React.FC = () => {
                 <CardTitle className="text-xl mb-2">Servizi HiSolution</CardTitle>
                 <p className="text-sm text-muted-foreground">Stato dei servizi in tempo reale</p>
               </div>
-              <div className="text-right">
-                <div className="text-2xl font-bold text-primary mb-1">{totalIssues || 23}</div>
-                <p className="text-xs text-muted-foreground">Issues Attive</p>
+              <div className="flex items-center gap-4">
+                {canManage && (
+                  <Button variant="outline" size="sm" onClick={() => navigate('/integrations')}>
+                    <Settings className="w-4 h-4 mr-1" />
+                    Impostazioni
+                  </Button>
+                )}
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-primary mb-1">{totalIssues || 23}</div>
+                  <p className="text-xs text-muted-foreground">Issues Attive</p>
+                </div>
               </div>
             </div>
           </CardHeader>
