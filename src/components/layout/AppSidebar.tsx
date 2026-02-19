@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -22,7 +22,9 @@ import {
   FileCheck,
   Building2,
   Newspaper,
-  PieChart
+  PieChart,
+  ChevronDown,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -37,6 +39,7 @@ import {
   SidebarFooter,
   useSidebar,
 } from '@/components/ui/sidebar';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { LogoutButton } from '@/components/auth/LogoutButton';
 import { useUserRoles } from '@/hooks/useUserRoles';
@@ -44,66 +47,26 @@ import { useRolePermissions } from '@/hooks/useRolePermissions';
  import { useClientContext } from '@/contexts/ClientContext';
 
 const navigation = [
-  {
-    title: 'Home',
-    href: '/',
-    icon: Home,
-  },
-  {
-    title: 'Dashboard',
-    href: '/dashboard',
-    icon: LayoutDashboard,
-  },
-  {
-    title: 'CyberNews',
-    href: '/cyber-news',
-    icon: Newspaper,
-  },
-  {
-    title: 'Assessment',
-    href: '/assessment',
-    icon: ClipboardCheck,
-  },
-  {
-    title: 'SurfaceScan360',
-    href: '/surface-scan',
-    icon: Globe,
-  },
-  {
-    title: 'DarkRisk360',
-    href: '/dark-risk',
-    icon: Eye,
-  },
-  {
-    title: 'Analisi',
-    href: '/analytics',
-    icon: BarChart3,
-  },
-  {
-    title: 'Remediation',
-    href: '/remediation',
-    icon: Wrench,
-  },
-  {
-    title: 'Minacce',
-    href: '/threats',
-    icon: AlertTriangle,
-  },
-  {
-    title: 'Report',
-    href: '/reports',
-    icon: FileText,
-  },
-  {
-    title: 'Gestione Documenti',
-    href: '/documents',
-    icon: FileText,
-  },
-  {
-    title: 'Inventario Asset',
-    href: '/asset-inventory',
-    icon: Package,
-  },
+  { title: 'Home', href: '/', icon: Home },
+  { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { title: 'CyberNews', href: '/cyber-news', icon: Newspaper },
+  { title: 'Analisi', href: '/analytics', icon: BarChart3 },
+  { title: 'Remediation', href: '/remediation', icon: Wrench },
+  { title: 'Minacce', href: '/threats', icon: AlertTriangle },
+  { title: 'Report', href: '/reports', icon: FileText },
+  { title: 'Gestione Documenti', href: '/documents', icon: FileText },
+  { title: 'Inventario Asset', href: '/asset-inventory', icon: Package },
+];
+
+const hiComplianceModules = [
+  { title: 'Assessment', href: '/assessment', icon: ClipboardCheck },
+  { title: 'SurfaceScan360', href: '/surface-scan', icon: Globe },
+  { title: 'DarkRisk360', href: '/dark-risk', icon: Eye },
+];
+
+const incidentSubItems = [
+  { title: 'Incident Response', href: '/incident-response', icon: AlertTriangle },
+  { title: 'Eventi Compliance', href: '/compliance-events', icon: FileCheck },
 ];
 
 const adminNavigation = [
@@ -140,8 +103,38 @@ export const AppSidebar: React.FC = () => {
   
   const isAdmin = userProfile?.user_type === 'admin';
 
-  // Filter navigation based on role permissions
   const filteredNavigation = navigation.filter(item => isModuleEnabled(item.href));
+
+  const hiComplianceActive = [...hiComplianceModules, ...incidentSubItems].some(
+    item => location.pathname === item.href
+  );
+  const incidentActive = incidentSubItems.some(item => location.pathname === item.href);
+
+  const [hiComplianceOpen, setHiComplianceOpen] = React.useState<boolean>(true);
+  const [incidentOpen, setIncidentOpen] = React.useState(incidentActive);
+
+  const renderNavItem = (item: { title: string; href: string; icon: React.ElementType }, indent = false) => {
+    const isActive = location.pathname === item.href;
+    return (
+      <SidebarMenuItem key={item.href}>
+        <SidebarMenuButton
+          asChild
+          className={`
+            ${indent ? 'ml-4 mr-2' : 'mx-2'} rounded-lg transition-all duration-200
+            ${isActive
+              ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-cyber'
+              : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground'
+            }
+          `}
+        >
+          <NavLink to={item.href}>
+            <item.icon className="w-4 h-4" />
+            {!collapsed && <span>{item.title}</span>}
+          </NavLink>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
+  };
 
   return (
     <Sidebar className="bg-sidebar-background border-sidebar-border">
@@ -160,84 +153,72 @@ export const AppSidebar: React.FC = () => {
       </SidebarHeader>
 
       <SidebarContent className="bg-sidebar-background">
+        {/* Main navigation */}
         <SidebarGroup>
           <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
-            Sicurezza
+            Generale
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {filteredNavigation.map((item) => {
-                const isActive = location.pathname === item.href;
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton 
-                      asChild
-                      className={`
-                        mx-2 rounded-lg transition-all duration-200
-                        ${isActive 
-                          ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-cyber' 
-                          : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground'
-                        }
-                      `}
-                    >
-                      <NavLink to={item.href}>
-                        <item.icon className="w-4 h-4" />
-                        {!collapsed && <span>{item.title}</span>}
-                      </NavLink>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              {filteredNavigation.map((item) => renderNavItem(item))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {(isModuleEnabled('/incident-response') || isModuleEnabled('/compliance-events') || isModuleEnabled('/threat-management')) && (
+        {/* HiCompliance collapsible group */}
+        <SidebarGroup>
+          <Collapsible open={hiComplianceOpen} onOpenChange={setHiComplianceOpen}>
+            <CollapsibleTrigger className="flex w-full items-center justify-between px-4 py-2 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>HiCompliance</span>
+              </div>
+              {!collapsed && (
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${hiComplianceOpen ? 'rotate-180' : ''}`} />
+              )}
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {hiComplianceModules
+                    .filter(item => isModuleEnabled(item.href))
+                    .map(item => renderNavItem(item))}
+
+                  {/* INCIDENT sub-collapsible */}
+                  {(isModuleEnabled('/incident-response') || isModuleEnabled('/compliance-events')) && (
+                    <li>
+                      <Collapsible open={incidentOpen} onOpenChange={setIncidentOpen}>
+                        <CollapsibleTrigger className="flex w-full items-center justify-between mx-2 px-3 py-2 text-sm rounded-lg text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors">
+                          <div className="flex items-center gap-2">
+                            <Shield className="w-4 h-4" />
+                            {!collapsed && <span>Incident</span>}
+                          </div>
+                          {!collapsed && (
+                            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${incidentOpen ? 'rotate-180' : ''}`} />
+                          )}
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <SidebarMenu>
+                            {incidentSubItems
+                              .filter(item => isModuleEnabled(item.href))
+                              .map(item => renderNavItem(item, true))}
+                          </SidebarMenu>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    </li>
+                  )}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </CollapsibleContent>
+          </Collapsible>
+        </SidebarGroup>
+
+        {/* Threat Management */}
+        {isModuleEnabled('/threat-management') && (
           <SidebarGroup>
-            <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
-              Incident Remediation
-            </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {isModuleEnabled('/incident-response') && (
-                  <SidebarMenuItem>
-                    <SidebarMenuButton 
-                      asChild
-                      className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                    >
-                      <NavLink to="/incident-response">
-                        <AlertTriangle className="w-4 h-4" />
-                        {!collapsed && <span>Incident Response</span>}
-                      </NavLink>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )}
-                {isModuleEnabled('/compliance-events') && (
-                  <SidebarMenuItem>
-                    <SidebarMenuButton 
-                      asChild
-                      className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                    >
-                      <NavLink to="/compliance-events">
-                        <FileCheck className="w-4 h-4" />
-                        {!collapsed && <span>Eventi Compliance</span>}
-                      </NavLink>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )}
-                {isModuleEnabled('/threat-management') && (
-                  <SidebarMenuItem>
-                    <SidebarMenuButton 
-                      asChild
-                      className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                    >
-                      <NavLink to="/threat-management">
-                        <Shield className="w-4 h-4" />
-                        {!collapsed && <span>Threat Management</span>}
-                      </NavLink>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )}
+                {renderNavItem({ title: 'Threat Management', href: '/threat-management', icon: Shield })}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
