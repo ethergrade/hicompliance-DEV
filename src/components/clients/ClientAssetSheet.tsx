@@ -1,13 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Loader2, Save } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Loader2, Check, CloudOff } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
 
 interface ClientAssetSheetProps {
   organizationId: string | null;
@@ -47,18 +46,25 @@ const INITIAL: AssetData = {
   notes: '',
 };
 
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+
 const ClientAssetSheet: React.FC<ClientAssetSheetProps> = ({
   organizationId, organizationName, open, onOpenChange,
 }) => {
-  const { toast } = useToast();
   const [form, setForm] = useState<AssetData>(INITIAL);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [recordId, setRecordId] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const saveTimeout = useRef<NodeJS.Timeout | null>(null);
+  const formRef = useRef(form);
+  const recordIdRef = useRef(recordId);
+  formRef.current = form;
+  recordIdRef.current = recordId;
 
   useEffect(() => {
     if (open && organizationId) fetchData();
-    if (!open) { setForm(INITIAL); setRecordId(null); }
+    if (!open) { setForm(INITIAL); setRecordId(null); setSaveStatus('idle'); }
+    return () => { if (saveTimeout.current) clearTimeout(saveTimeout.current); };
   }, [open, organizationId]);
 
   const fetchData = async () => {
@@ -74,31 +80,20 @@ const ClientAssetSheet: React.FC<ClientAssetSheetProps> = ({
       if (data) {
         setRecordId(data.id);
         setForm({
-          users_count: data.users_count ?? 0,
-          locations_count: data.locations_count ?? 0,
-          endpoints_count: data.endpoints_count ?? 0,
-          servers_count: data.servers_count ?? 0,
-          hypervisors_count: data.hypervisors_count ?? 0,
-          virtual_machines_count: data.virtual_machines_count ?? 0,
-          firewalls_count: data.firewalls_count ?? 0,
-          core_switches_count: data.core_switches_count ?? 0,
-          access_switches_count: data.access_switches_count ?? 0,
-          access_points_count: data.access_points_count ?? 0,
+          users_count: data.users_count ?? 0, locations_count: data.locations_count ?? 0,
+          endpoints_count: data.endpoints_count ?? 0, servers_count: data.servers_count ?? 0,
+          hypervisors_count: data.hypervisors_count ?? 0, virtual_machines_count: data.virtual_machines_count ?? 0,
+          firewalls_count: data.firewalls_count ?? 0, core_switches_count: data.core_switches_count ?? 0,
+          access_switches_count: data.access_switches_count ?? 0, access_points_count: data.access_points_count ?? 0,
           miscellaneous_network_devices_count: data.miscellaneous_network_devices_count ?? 0,
-          va_ip_punctual_count: data.va_ip_punctual_count ?? 0,
-          va_subnet_25_count: data.va_subnet_25_count ?? 0,
-          va_subnet_24_count: data.va_subnet_24_count ?? 0,
-          va_subnet_23_count: data.va_subnet_23_count ?? 0,
-          va_subnet_22_count: data.va_subnet_22_count ?? 0,
-          va_subnet_21_count: data.va_subnet_21_count ?? 0,
+          va_ip_punctual_count: data.va_ip_punctual_count ?? 0, va_subnet_25_count: data.va_subnet_25_count ?? 0,
+          va_subnet_24_count: data.va_subnet_24_count ?? 0, va_subnet_23_count: data.va_subnet_23_count ?? 0,
+          va_subnet_22_count: data.va_subnet_22_count ?? 0, va_subnet_21_count: data.va_subnet_21_count ?? 0,
           notes: data.notes ?? '',
         });
       }
-    } catch (err) {
-      console.error('Error fetching asset inventory:', err);
-    } finally {
-      setLoading(false);
-    }
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
   };
 
   const totalNetwork = useMemo(() =>
@@ -109,38 +104,49 @@ const ClientAssetSheet: React.FC<ClientAssetSheetProps> = ({
 
   const totalIPs = useMemo(() =>
     form.va_ip_punctual_count +
-    form.va_subnet_25_count * 128 +
-    form.va_subnet_24_count * 256 +
-    form.va_subnet_23_count * 512 +
-    form.va_subnet_22_count * 1024 +
+    form.va_subnet_25_count * 128 + form.va_subnet_24_count * 256 +
+    form.va_subnet_23_count * 512 + form.va_subnet_22_count * 1024 +
     form.va_subnet_21_count * 2048,
     [form.va_ip_punctual_count, form.va_subnet_25_count, form.va_subnet_24_count, form.va_subnet_23_count, form.va_subnet_22_count, form.va_subnet_21_count]
   );
 
-  const handleSave = async () => {
+  const saveData = useCallback(async () => {
     if (!organizationId) return;
-    setSaving(true);
+    setSaveStatus('saving');
     try {
-      const payload = {
-        organization_id: organizationId,
-        ...form,
-        total_network_devices_count: totalNetwork,
-        va_total_ips_count: totalIPs,
-      };
+      const f = formRef.current;
+      const tn = f.firewalls_count + f.core_switches_count + f.access_switches_count + f.access_points_count + f.miscellaneous_network_devices_count;
+      const ti = f.va_ip_punctual_count + f.va_subnet_25_count * 128 + f.va_subnet_24_count * 256 + f.va_subnet_23_count * 512 + f.va_subnet_22_count * 1024 + f.va_subnet_21_count * 2048;
+      const payload = { organization_id: organizationId, ...f, total_network_devices_count: tn, va_total_ips_count: ti };
 
       let error;
-      if (recordId) {
-        ({ error } = await supabase.from('asset_inventory').update(payload).eq('id', recordId));
+      if (recordIdRef.current) {
+        ({ error } = await supabase.from('asset_inventory').update(payload).eq('id', recordIdRef.current));
       } else {
-        ({ error } = await supabase.from('asset_inventory').insert(payload));
+        const res = await supabase.from('asset_inventory').insert(payload).select('id').single();
+        error = res.error;
+        if (res.data) setRecordId(res.data.id);
       }
       if (error) throw error;
-      toast({ title: 'Consistenze salvate con successo' });
-      onOpenChange(false);
-    } catch (err: any) {
-      toast({ title: 'Errore nel salvataggio', description: err.message, variant: 'destructive' });
-    } finally {
-      setSaving(false);
+      setSaveStatus('saved');
+    } catch {
+      setSaveStatus('error');
+    }
+  }, [organizationId]);
+
+  const handleChange = (field: keyof AssetData, value: number | string) => {
+    setForm(prev => ({ ...prev, [field]: value }));
+    setSaveStatus('idle');
+    if (saveTimeout.current) clearTimeout(saveTimeout.current);
+    saveTimeout.current = setTimeout(() => saveData(), 1500);
+  };
+
+  const statusBadge = () => {
+    switch (saveStatus) {
+      case 'saving': return <Badge variant="outline" className="text-xs gap-1"><Loader2 className="w-3 h-3 animate-spin" />Salvando...</Badge>;
+      case 'saved': return <Badge variant="outline" className="text-xs gap-1 border-green-500/30 text-green-500"><Check className="w-3 h-3" />Salvato</Badge>;
+      case 'error': return <Badge variant="outline" className="text-xs gap-1 border-destructive/30 text-destructive"><CloudOff className="w-3 h-3" />Errore</Badge>;
+      default: return null;
     }
   };
 
@@ -148,10 +154,9 @@ const ClientAssetSheet: React.FC<ClientAssetSheetProps> = ({
     <div className="space-y-1">
       <Label className="text-xs">{label}</Label>
       <Input
-        type="number"
-        min={0}
+        type="number" min={0}
         value={form[field] as number}
-        onChange={e => setForm(prev => ({ ...prev, [field]: parseInt(e.target.value) || 0 }))}
+        onChange={e => handleChange(field, parseInt(e.target.value) || 0)}
       />
     </div>
   );
@@ -160,8 +165,11 @@ const ClientAssetSheet: React.FC<ClientAssetSheetProps> = ({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-lg">
         <SheetHeader>
-          <SheetTitle>Consistenze{organizationName ? ` — ${organizationName}` : ''}</SheetTitle>
-          <SheetDescription>Modifica l'inventario asset dell'organizzazione</SheetDescription>
+          <div className="flex items-center justify-between">
+            <SheetTitle>Consistenze{organizationName ? ` — ${organizationName}` : ''}</SheetTitle>
+            {statusBadge()}
+          </div>
+          <SheetDescription>Le modifiche vengono salvate automaticamente</SheetDescription>
         </SheetHeader>
 
         {loading ? (
@@ -210,11 +218,6 @@ const ClientAssetSheet: React.FC<ClientAssetSheetProps> = ({
                 {numField('/22 (1024 IP)', 'va_subnet_22_count')}
                 {numField('/21 (2048 IP)', 'va_subnet_21_count')}
               </div>
-
-              <Button onClick={handleSave} disabled={saving} className="w-full mt-4">
-                {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                Salva Consistenze
-              </Button>
             </div>
           </ScrollArea>
         )}
