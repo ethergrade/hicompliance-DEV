@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { useClientContext } from '@/contexts/ClientContext';
 import { toast } from 'sonner';
 
 interface ServiceIntegration {
@@ -15,8 +16,11 @@ interface ServiceIntegration {
 
 export const useServiceIntegrations = () => {
   const { userProfile } = useAuth();
+  const { selectedOrganization } = useClientContext();
   const queryClient = useQueryClient();
-  const organizationId = userProfile?.organization_id;
+
+  // Use selected client org for sales/admin, fallback to user's own org
+  const organizationId = selectedOrganization?.id || userProfile?.organization_id;
 
   const { data: integrations = [], isLoading } = useQuery({
     queryKey: ['service-integrations', organizationId],
@@ -54,7 +58,6 @@ export const useServiceIntegrations = () => {
     mutationFn: async ({ serviceId, apiUrl, apiKey }: { serviceId: string; apiUrl: string; apiKey: string }) => {
       if (!organizationId) throw new Error('Nessuna organizzazione selezionata');
       
-      // Check if integration already exists for this service
       const { data: existing } = await supabase
         .from('organization_integrations')
         .select('id')
@@ -111,6 +114,7 @@ export const useServiceIntegrations = () => {
   return {
     integrations,
     isLoading,
+    organizationId,
     isServiceConnected,
     getIntegrationByCode,
     connectService: connectMutation.mutate,
