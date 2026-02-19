@@ -85,13 +85,8 @@ const Dashboard: React.FC = () => {
     activeThreats: totalIssues || fallbackData.totalIssues
   };
 
-  const handleServiceClick = (service: any, connected: boolean) => {
-    if (connected) {
-      navigate(`/dashboard/service/${service.code}`);
-    } else if (canManage) {
-      setSelectedService({ name: service.name, code: service.code, id: service.id });
-      setQuickConnectOpen(true);
-    }
+  const handleServiceClick = (service: any, _connected: boolean) => {
+    navigate(`/dashboard/service/${service.code}`);
   };
 
   const handleManageClick = (e: React.MouseEvent, service: any) => {
