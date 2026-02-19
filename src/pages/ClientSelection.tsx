@@ -6,11 +6,12 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, Building2, Calendar, ArrowRight, Users, FileText, Server } from 'lucide-react';
+import { Search, Building2, Calendar, ArrowRight, Users, FileText, Server, Plug } from 'lucide-react';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
 import ClientProfileSheet from '@/components/clients/ClientProfileSheet';
 import ClientAssetSheet from '@/components/clients/ClientAssetSheet';
+import ClientServicesDialog from '@/components/clients/ClientServicesDialog';
 
 const ClientSelection: React.FC = () => {
   const navigate = useNavigate();
@@ -20,6 +21,7 @@ const ClientSelection: React.FC = () => {
   const [editingOrgName, setEditingOrgName] = useState<string>('');
   const [profileOpen, setProfileOpen] = useState(false);
   const [assetOpen, setAssetOpen] = useState(false);
+  const [servicesOpen, setServicesOpen] = useState(false);
 
   const filteredOrganizations = organizations.filter(org => {
     if (!searchQuery.trim()) return true;
@@ -44,6 +46,13 @@ const ClientSelection: React.FC = () => {
     setEditingOrgId(org.id);
     setEditingOrgName(org.name);
     setAssetOpen(true);
+  };
+
+  const openServices = (e: React.MouseEvent, org: typeof organizations[0]) => {
+    e.stopPropagation();
+    setEditingOrgId(org.id);
+    setEditingOrgName(org.name);
+    setServicesOpen(true);
   };
 
   if (isLoadingClients) {
@@ -163,6 +172,15 @@ const ClientSelection: React.FC = () => {
                       <Server className="w-3.5 h-3.5 mr-1" />
                       Consistenze
                     </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 text-xs"
+                      onClick={(e) => openServices(e, org)}
+                    >
+                      <Plug className="w-3.5 h-3.5 mr-1" />
+                      Servizi
+                    </Button>
                   </div>
 
                   <Button
@@ -192,6 +210,14 @@ const ClientSelection: React.FC = () => {
         open={assetOpen}
         onOpenChange={setAssetOpen}
       />
+      {editingOrgId && (
+        <ClientServicesDialog
+          organizationId={editingOrgId}
+          organizationName={editingOrgName}
+          open={servicesOpen}
+          onOpenChange={setServicesOpen}
+        />
+      )}
     </div>
   );
 };
