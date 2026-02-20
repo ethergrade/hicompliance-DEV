@@ -1,70 +1,71 @@
 
+## Time-Range Selectors + Trend Micro-Charts on Metric Cards
 
-# Modifica rapida Anagrafiche e Consistenze dalla Selezione Clienti
+### What we're building
 
-## Obiettivo
-Arricchire la pagina di selezione clienti (`/clients`) con la possibilita di visualizzare e modificare al volo i dati anagrafici (profilo organizzazione) e le consistenze tecniche (asset inventory) di ogni cliente, senza dover navigare alle pagine dedicate.
+Two of the four `MetricCard` components on the Dashboard will be upgraded:
 
-## Come funzionera per l'utente
+1. **"Conformità NIS2/NIST/ISO"** card — adds a pill-group selector at the top with options **1y / 2y / 3y / 4y** (year-over-year compliance evolution). The percentage and label update per selection, improving over time.
 
-Ogni card cliente nella griglia mostrera due nuovi pulsanti accanto a "Gestisci":
-- **Anagrafica** (icona FileText) -- apre un dialog laterale (Sheet) con i campi principali del profilo aziendale
-- **Consistenze** (icona Server) -- apre un dialog laterale (Sheet) con i campi dell'inventario asset
+2. **"Risk Score"** card — adds a pill-group selector with **1d / 7d / 1m / 3m / 6m / 1y** (short-term risk tracking). Below the circular gauge and label, a **small sparkline/area chart** shows the risk trend for the selected range. The final data point (most recent) is always better than earlier ones to simulate an improving trajectory.
 
-Le modifiche vengono salvate con un pulsante "Salva" nel pannello laterale, senza uscire dalla pagina di selezione clienti.
+---
 
-```text
-+-----------------------------------+
-| Card Cliente: Acme Corp (ACME)    |
-| Creato il 5 gennaio 2025          |
-|                                   |
-| [Anagrafica] [Consistenze]        |
-| [         Gestisci ->           ] |
-+-----------------------------------+
-```
+### Approach
 
-Al click su "Anagrafica" si apre uno Sheet da destra con:
-- Ragione Sociale, P.IVA, Codice Fiscale
-- PEC, Telefono, Email
-- Settore, Classificazione NIS2
+Rather than modifying the generic `MetricCard` (which is used for all 4 cards), we create **two new dedicated card components** to keep concerns separated and avoid complicating the generic component:
 
-Al click su "Consistenze" si apre uno Sheet da destra con:
-- Utenti, Sedi
-- Endpoint, Server, Hypervisor, VM
-- Dispositivi di rete (firewall, switch, AP)
-- IP/Subnet per VA (con calcolo automatico totali)
+- `src/components/dashboard/ComplianceMetricCard.tsx` — Conformità NIS2/NIST/ISO with year selector
+- `src/components/dashboard/RiskScoreMetricCard.tsx` — Risk Score with time selector and sparkline
 
-## Dettaglio tecnico
+The two simple cards (Servizi Monitorati, Issues Totali) continue to use `MetricCard` unchanged.
 
-### 1. Nuovo componente: `ClientProfileSheet.tsx`
-- Riceve `organizationId` e `open/onOpenChange`
-- Fetcha `organization_profiles` per quell'org
-- Form inline con i campi principali (legal_name, vat_number, fiscal_code, pec, phone, email, business_sector, nis2_classification)
-- Pulsante "Salva" che fa upsert su `organization_profiles`
-- Usa il componente Sheet di Radix UI
+---
 
-### 2. Nuovo componente: `ClientAssetSheet.tsx`
-- Riceve `organizationId` e `open/onOpenChange`
-- Fetcha `asset_inventory` per quell'org
-- Form con tutti i campi numerici dell'inventario, raggruppati per categoria
-- Calcolo automatico totali (rete, IP) come nella pagina AssetInventory
-- Pulsante "Salva" che fa upsert su `asset_inventory`
-- Usa il componente Sheet di Radix UI
+### Mock Data Design
 
-### 3. Modifica: `ClientSelection.tsx`
-- Importa i due nuovi componenti Sheet
-- Aggiunge stato per `editingOrgId`, `sheetType` (profile/asset)
-- Aggiunge due pulsanti per card: "Anagrafica" e "Consistenze" con `stopPropagation` (non triggera la selezione)
-- Il click su "Gestisci" continua a selezionare il cliente e navigare alla dashboard
+**ComplianceMetricCard** (1y → 4y, improving trend):
 
-### File coinvolti
+| Range | Percentage | Label |
+|-------|-----------|-------|
+| 1y | 38% | Basso |
+| 2y | 52% | Moderato |
+| 3y | 65% | Moderato |
+| 4y | 78% | Buono |
 
-| File | Azione |
-|------|--------|
-| `src/components/clients/ClientProfileSheet.tsx` | Nuovo -- sheet modifica anagrafica |
-| `src/components/clients/ClientAssetSheet.tsx` | Nuovo -- sheet modifica consistenze |
-| `src/pages/ClientSelection.tsx` | Modifica -- aggiunta pulsanti e integrazione sheet |
+Status badge matches: critical → warning → warning → good
 
-### Nessuna modifica al database
-Tutti i dati sono gia nelle tabelle `organization_profiles` e `asset_inventory` con le RLS policy corrette per Sales e Super Admin.
+**RiskScoreMetricCard** (1d → 1y, improving trend, sparkline):
 
+| Range | % | Label | Sparkline points |
+|-------|---|-------|-----------------|
+| 1d | 74% | Alto | [82,79,76,74] |
+| 7d | 68% | Alto | [85,80,75,71,68] |
+| 1m | 61% | Medio | [80,72,65,61] |
+| 3m | 55% | Medio | [78,70,62,57,55] |
+| 6m | 47% | Medio | [75,65,55,50,47] |
+| 1y | 35% | Basso | [72,60,48,40,35] |
+
+The sparkline uses Recharts `AreaChart` (already installed) — small, minimal, no axes, just a thin colored area to convey direction.
+
+---
+
+### Files to Change
+
+**New files:**
+- `src/components/dashboard/ComplianceMetricCard.tsx`
+- `src/components/dashboard/RiskScoreMetricCard.tsx`
+
+**Modified files:**
+- `src/pages/Dashboard.tsx` — replace the first two `<MetricCard>` usages with the new components, add their imports
+
+---
+
+### Technical Details
+
+- Pill selectors are plain `<button>` elements styled with Tailwind, no external dependency needed
+- Active pill: solid primary background; inactive: outline/ghost
+- Sparkline: `<AreaChart>` from Recharts (already a dependency) inside a `ResponsiveContainer` with `h-16`, no axes, no grid, no tooltip — pure visual indicator
+- Smooth `transition-all duration-500` on the circular gauge when the percentage changes (already present in MetricCard SVG pattern)
+- Both new components are self-contained with their own state (`selectedRange`) so the Dashboard stays lean
+- The existing `MetricCard` component is untouched — the other two cards keep using it normally
