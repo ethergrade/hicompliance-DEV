@@ -50,7 +50,6 @@ const navigation = [
   { title: 'Home', href: '/', icon: Home },
   { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { title: 'CyberNews', href: '/cyber-news', icon: Newspaper },
-  { title: 'Analisi', href: '/analytics', icon: BarChart3 },
   { title: 'Minacce', href: '/threats', icon: AlertTriangle },
   { title: 'Report', href: '/reports', icon: FileText },
   { title: 'Gestione Documenti', href: '/documents', icon: FileText },
@@ -62,6 +61,7 @@ const hiComplianceModules = [
   { title: 'SurfaceScan360', href: '/surface-scan', icon: Globe },
   { title: 'DarkRisk360', href: '/dark-risk', icon: Eye },
   { title: 'Remediation', href: '/remediation', icon: Wrench },
+  { title: 'Analisi', href: '/analytics', icon: BarChart3 },
 ];
 
 const incidentSubItems = [
