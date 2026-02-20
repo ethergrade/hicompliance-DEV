@@ -238,10 +238,10 @@ const Dashboard: React.FC = () => {
               </div>
               <div className="flex items-center gap-4">
                 {canManage && (
-                  <Button variant="outline" size="sm" onClick={() => navigate('/integrations')}>
-                    <Settings className="w-4 h-4 mr-1" />
-                    Impostazioni
-                  </Button>
+                    <Button variant="outline" size="sm" onClick={() => navigate('/settings/integrations')}>
+                      <Settings className="w-4 h-4 mr-1" />
+                      Impostazioni
+                    </Button>
                 )}
                 <div className="text-right">
                   <div className="text-2xl font-bold text-primary mb-1">{totalIssues || 23}</div>
