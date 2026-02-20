@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { MetricCard } from '@/components/dashboard/MetricCard';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -203,11 +203,30 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <ComplianceMetricCard />
           <RiskScoreMetricCard />
-          <MetricCard title="Servizi Monitorati" value={hiSolutionServices.length} status="good" description="Servizi attivi" />
-          <MetricCard title="Issues Totali" value={mockData.activeThreats} status="critical" description="Da risolvere" />
+          {/* Merged card: Servizi Monitorati + Issues Totali */}
+          <Card className="relative overflow-hidden border-border shadow-cyber hover:shadow-glow transition-cyber animate-fade-in">
+            <CardContent className="p-0 h-full">
+              <div className="grid grid-cols-2 divide-x divide-border h-full">
+                {/* Servizi Monitorati */}
+                <div className="flex flex-col items-center justify-center p-5 text-center space-y-3">
+                  <p className="text-sm font-medium text-muted-foreground">Servizi Monitorati</p>
+                  <Badge variant="secondary" className="bg-cyber-green/20 text-cyber-green w-full justify-center">Buono</Badge>
+                  <div className="text-4xl font-bold text-foreground">{hiSolutionServices.length}</div>
+                  <p className="text-sm text-muted-foreground">Servizi attivi</p>
+                </div>
+                {/* Issues Totali */}
+                <div className="flex flex-col items-center justify-center p-5 text-center space-y-3">
+                  <p className="text-sm font-medium text-muted-foreground">Issues Totali</p>
+                  <Badge variant="secondary" className="bg-cyber-red/20 text-cyber-red w-full justify-center">Critico</Badge>
+                  <div className="text-4xl font-bold text-foreground">{mockData.activeThreats}</div>
+                  <p className="text-sm text-muted-foreground">Da risolvere</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         <Card className="border-border">
