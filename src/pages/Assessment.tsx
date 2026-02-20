@@ -1,10 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  RadarChart,
+  Radar,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  ResponsiveContainer,
+  Tooltip,
+  Legend,
+} from 'recharts';
 import { 
   ClipboardCheck, 
   AlertTriangle, 
@@ -483,6 +493,92 @@ const Assessment: React.FC = () => {
                   <div className="text-sm text-muted-foreground">Da Iniziare</div>
                 </div>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ── RADAR Chart NIS2/NIST/ISO Alignment ── */}
+        <Card className="border-border">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Allineamento NIS2 / NIST / ISO</CardTitle>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Radar aggiornato in tempo reale dai punteggi delle categorie assessment
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="inline-block w-3 h-0.5 bg-primary rounded" />
+                <span>Conformità Attuale</span>
+                <span className="inline-block w-3 h-0.5 bg-green-500 rounded ml-2" style={{ borderStyle: 'dashed' }} />
+                <span>Target</span>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[400px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart
+                  data={assessmentCategories.map((cat, i) => ({
+                    category: cat.name.length > 18 ? cat.name.substring(0, 16) + '…' : cat.name,
+                    fullName: cat.name,
+                    compliance: animatedCategoryScores[i] ?? 0,
+                    target: Math.min((animatedCategoryScores[i] ?? 0) + 15, 100),
+                  }))}
+                  margin={{ top: 20, right: 60, bottom: 20, left: 60 }}
+                >
+                  <PolarGrid stroke="hsl(var(--border))" />
+                  <PolarAngleAxis
+                    dataKey="category"
+                    tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+                  />
+                  <PolarRadiusAxis
+                    angle={90}
+                    domain={[0, 100]}
+                    tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }}
+                    tickCount={5}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                      color: 'hsl(var(--foreground))',
+                    }}
+                    formatter={(value: number, name: string, props: any) => [
+                      `${value}/100`,
+                      name === 'compliance' ? 'Conformità' : 'Target',
+                    ]}
+                    labelFormatter={(_: any, payload: any) =>
+                      payload?.[0]?.payload?.fullName ?? ''
+                    }
+                  />
+                  <Legend
+                    formatter={(value) => value === 'compliance' ? 'Conformità Attuale' : 'Target'}
+                    wrapperStyle={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}
+                  />
+                  <Radar
+                    name="compliance"
+                    dataKey="compliance"
+                    stroke="hsl(var(--primary))"
+                    fill="hsl(var(--primary))"
+                    fillOpacity={0.25}
+                    strokeWidth={2}
+                    isAnimationActive
+                    animationDuration={600}
+                  />
+                  <Radar
+                    name="target"
+                    dataKey="target"
+                    stroke="#22c55e"
+                    fill="transparent"
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    isAnimationActive
+                    animationDuration={600}
+                  />
+                </RadarChart>
+              </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
