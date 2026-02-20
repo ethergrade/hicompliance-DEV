@@ -11,6 +11,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { SecurityFeedsSection } from '@/components/dashboard/SecurityFeedsSection';
 import { EPSSWidget } from '@/components/dashboard/EPSSWidget';
 import { ServiceQuickConnect } from '@/components/dashboard/ServiceQuickConnect';
+import { ComplianceMetricCard } from '@/components/dashboard/ComplianceMetricCard';
+import { RiskScoreMetricCard } from '@/components/dashboard/RiskScoreMetricCard';
 import { useServiceIntegrations } from '@/hooks/useServiceIntegrations';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { 
@@ -202,8 +204,8 @@ const Dashboard: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <MetricCard title="Conformità NIS2/NIST/ISO" value="Moderato" percentage={mockData.nis2Compliance} status="warning" description="Conformità generale" />
-          <MetricCard title="Risk Score" value={servicesWithCriticalHealth.length > 3 ? "Alto" : servicesWithCriticalHealth.length > 1 ? "Medio" : "Basso"} percentage={mockData.riskIndicator} status="critical" description="Livello di rischio" />
+          <ComplianceMetricCard />
+          <RiskScoreMetricCard />
           <MetricCard title="Servizi Monitorati" value={hiSolutionServices.length} status="good" description="Servizi attivi" />
           <MetricCard title="Issues Totali" value={mockData.activeThreats} status="critical" description="Da risolvere" />
         </div>
