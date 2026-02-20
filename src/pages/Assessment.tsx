@@ -33,7 +33,21 @@ import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
 import { NIS2_LABELS } from '@/types/organization';
 import { useUserPreferences } from '@/hooks/useUserPreferences';
 
+type RadarYearRange = '1y' | '2y' | '3y' | '4y';
+
+// Historical radar data per year – aligned with ComplianceMetricCard percentages
+const RADAR_YEAR_DATA: Record<RadarYearRange, number[]> = {
+  '1y': [30, 35, 28, 40, 25, 38, 32, 45, 20, 35, 30, 38, 42, 28],
+  '2y': [45, 50, 42, 55, 38, 52, 48, 60, 35, 50, 45, 53, 57, 42],
+  '3y': [58, 62, 55, 68, 50, 65, 60, 72, 48, 63, 58, 66, 70, 55],
+  '4y': [72, 75, 68, 80, 65, 78, 73, 85, 62, 76, 71, 79, 83, 68],
+};
+
+const RADAR_TARGET_OFFSET = 15; // target is always +15 above compliance
+
 const Assessment: React.FC = () => {
+  const [radarYear, setRadarYear] = useState<RadarYearRange>('2y');
+
   // Organization profile for NIS2 classification
   const { formData: orgProfile, loading: profileLoading } = useOrganizationProfile();
 
@@ -500,18 +514,36 @@ const Assessment: React.FC = () => {
         {/* ── RADAR Chart NIS2/NIST/ISO Alignment ── */}
         <Card className="border-border">
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
                 <CardTitle>Allineamento NIS2 / NIST / ISO</CardTitle>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Radar aggiornato in tempo reale dai punteggi delle categorie assessment
+                  Evoluzione storica della conformità per categoria
                 </p>
               </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="inline-block w-3 h-0.5 bg-primary rounded" />
-                <span>Conformità Attuale</span>
-                <span className="inline-block w-3 h-0.5 bg-green-500 rounded ml-2" style={{ borderStyle: 'dashed' }} />
-                <span>Target</span>
+              <div className="flex items-center gap-3">
+                {/* Year pill selector */}
+                <div className="flex items-center gap-1">
+                  {(['1y', '2y', '3y', '4y'] as RadarYearRange[]).map((opt) => (
+                    <button
+                      key={opt}
+                      onClick={() => setRadarYear(opt)}
+                      className={`px-2.5 py-0.5 rounded-full text-xs font-semibold transition-all duration-200 ${
+                        radarYear === opt
+                          ? 'bg-primary text-primary-foreground'
+                          : 'border border-border text-muted-foreground hover:bg-muted/50'
+                      }`}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="inline-block w-3 h-0.5 bg-primary rounded" />
+                  <span>Conformità</span>
+                  <span className="inline-block w-3 h-0.5 rounded ml-2" style={{ backgroundColor: '#22c55e' }} />
+                  <span>Target</span>
+                </div>
               </div>
             </div>
           </CardHeader>
@@ -522,8 +554,8 @@ const Assessment: React.FC = () => {
                   data={assessmentCategories.map((cat, i) => ({
                     category: cat.name.length > 18 ? cat.name.substring(0, 16) + '…' : cat.name,
                     fullName: cat.name,
-                    compliance: animatedCategoryScores[i] ?? 0,
-                    target: Math.min((animatedCategoryScores[i] ?? 0) + 15, 100),
+                    compliance: RADAR_YEAR_DATA[radarYear][i] ?? 0,
+                    target: Math.min((RADAR_YEAR_DATA[radarYear][i] ?? 0) + RADAR_TARGET_OFFSET, 100),
                   }))}
                   margin={{ top: 20, right: 60, bottom: 20, left: 60 }}
                 >
