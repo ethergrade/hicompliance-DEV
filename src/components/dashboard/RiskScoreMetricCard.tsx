@@ -8,12 +8,12 @@ type TimeRange = '1d' | '7d' | '1m' | '3m' | '6m' | '1y';
 const TIME_OPTIONS: TimeRange[] = ['1d', '7d', '1m', '3m', '6m', '1y'];
 
 const DATA: Record<TimeRange, { percentage: number; label: string; status: 'critical' | 'warning' | 'good'; sparkline: number[] }> = {
-  '1d': { percentage: 74, label: 'Alto',  status: 'critical', sparkline: [82, 79, 76, 74] },
-  '7d': { percentage: 68, label: 'Alto',  status: 'critical', sparkline: [85, 80, 75, 71, 68] },
-  '1m': { percentage: 61, label: 'Medio', status: 'warning',  sparkline: [80, 72, 65, 61] },
-  '3m': { percentage: 55, label: 'Medio', status: 'warning',  sparkline: [78, 70, 62, 57, 55] },
-  '6m': { percentage: 47, label: 'Medio', status: 'warning',  sparkline: [75, 65, 55, 50, 47] },
-  '1y': { percentage: 35, label: 'Basso', status: 'good',     sparkline: [72, 60, 48, 40, 35] },
+  '1d': { percentage: 35, label: 'Basso', status: 'good',     sparkline: [48, 42, 38, 35] },
+  '7d': { percentage: 42, label: 'Medio', status: 'warning',  sparkline: [55, 50, 46, 44, 42] },
+  '1m': { percentage: 50, label: 'Medio', status: 'warning',  sparkline: [60, 55, 52, 50] },
+  '3m': { percentage: 55, label: 'Medio', status: 'warning',  sparkline: [65, 60, 57, 56, 55] },
+  '6m': { percentage: 65, label: 'Alto',  status: 'critical',  sparkline: [75, 70, 68, 66, 65] },
+  '1y': { percentage: 74, label: 'Alto',  status: 'critical', sparkline: [80, 78, 76, 75, 74] },
 };
 
 const CIRCUMFERENCE = 2 * Math.PI * 28;
