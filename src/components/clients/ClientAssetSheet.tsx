@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Loader2, Check, CloudOff } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -34,6 +35,18 @@ interface AssetData {
   va_subnet_22_count: number;
   va_subnet_21_count: number;
   notes: string;
+  hilog_syslog_count: number;
+  hilog_iis_count: number;
+  hilog_apache_count: number;
+  hilog_sql_count: number;
+  hilog_custom_path_count: number;
+  hilog_endpoint_count: number;
+  hilog_server_count: number;
+  hilog_dlp_linux_count: number;
+  hilog_dlp_windows_count: number;
+  hilog_sharepoint_dlp_enabled: boolean;
+  hilog_sharepoint_dlp_count: number;
+  hilog_entra_id_enabled: boolean;
 }
 
 const INITIAL: AssetData = {
@@ -44,6 +57,11 @@ const INITIAL: AssetData = {
   va_ip_punctual_count: 0, va_subnet_25_count: 0, va_subnet_24_count: 0,
   va_subnet_23_count: 0, va_subnet_22_count: 0, va_subnet_21_count: 0,
   notes: '',
+  hilog_syslog_count: 0, hilog_iis_count: 0, hilog_apache_count: 0,
+  hilog_sql_count: 0, hilog_custom_path_count: 0, hilog_endpoint_count: 0,
+  hilog_server_count: 0, hilog_dlp_linux_count: 0, hilog_dlp_windows_count: 0,
+  hilog_sharepoint_dlp_enabled: false, hilog_sharepoint_dlp_count: 0,
+  hilog_entra_id_enabled: false,
 };
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -72,24 +90,16 @@ const ClientAssetSheet: React.FC<ClientAssetSheetProps> = ({
     setLoading(true);
     try {
       const { data, error } = await supabase
-        .from('asset_inventory')
-        .select('*')
-        .eq('organization_id', organizationId)
-        .maybeSingle();
+        .from('asset_inventory').select('*').eq('organization_id', organizationId).maybeSingle();
       if (error) throw error;
       if (data) {
         setRecordId(data.id);
         setForm({
-          users_count: data.users_count ?? 0, locations_count: data.locations_count ?? 0,
-          endpoints_count: data.endpoints_count ?? 0, servers_count: data.servers_count ?? 0,
-          hypervisors_count: data.hypervisors_count ?? 0, virtual_machines_count: data.virtual_machines_count ?? 0,
-          firewalls_count: data.firewalls_count ?? 0, core_switches_count: data.core_switches_count ?? 0,
-          access_switches_count: data.access_switches_count ?? 0, access_points_count: data.access_points_count ?? 0,
-          miscellaneous_network_devices_count: data.miscellaneous_network_devices_count ?? 0,
-          va_ip_punctual_count: data.va_ip_punctual_count ?? 0, va_subnet_25_count: data.va_subnet_25_count ?? 0,
-          va_subnet_24_count: data.va_subnet_24_count ?? 0, va_subnet_23_count: data.va_subnet_23_count ?? 0,
-          va_subnet_22_count: data.va_subnet_22_count ?? 0, va_subnet_21_count: data.va_subnet_21_count ?? 0,
+          ...INITIAL,
+          ...data,
           notes: data.notes ?? '',
+          hilog_sharepoint_dlp_enabled: data.hilog_sharepoint_dlp_enabled ?? false,
+          hilog_entra_id_enabled: data.hilog_entra_id_enabled ?? false,
         });
       }
     } catch { /* ignore */ }
@@ -134,7 +144,7 @@ const ClientAssetSheet: React.FC<ClientAssetSheetProps> = ({
     }
   }, [organizationId]);
 
-  const handleChange = (field: keyof AssetData, value: number | string) => {
+  const handleChange = (field: keyof AssetData, value: number | string | boolean) => {
     setForm(prev => ({ ...prev, [field]: value }));
     setSaveStatus('idle');
     if (saveTimeout.current) clearTimeout(saveTimeout.current);
@@ -217,6 +227,43 @@ const ClientAssetSheet: React.FC<ClientAssetSheetProps> = ({
                 {numField('/23 (512 IP)', 'va_subnet_23_count')}
                 {numField('/22 (1024 IP)', 'va_subnet_22_count')}
                 {numField('/21 (2048 IP)', 'va_subnet_21_count')}
+              </div>
+
+              <Separator />
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Consistenze HiLog</p>
+              <div className="grid grid-cols-2 gap-3">
+                {numField('Syslog', 'hilog_syslog_count')}
+                {numField('IIS', 'hilog_iis_count')}
+                {numField('Apache', 'hilog_apache_count')}
+                {numField('SQL', 'hilog_sql_count')}
+                {numField('Custom PATH', 'hilog_custom_path_count')}
+                {numField('Endpoint sotto Log', 'hilog_endpoint_count')}
+                {numField('Server sotto Log', 'hilog_server_count')}
+                {numField('DLP Linux', 'hilog_dlp_linux_count')}
+                {numField('DLP Windows', 'hilog_dlp_windows_count')}
+              </div>
+
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">SharePoint DLP</Label>
+                  <Switch
+                    checked={form.hilog_sharepoint_dlp_enabled}
+                    onCheckedChange={(checked) => handleChange('hilog_sharepoint_dlp_enabled', checked)}
+                  />
+                </div>
+                {form.hilog_sharepoint_dlp_enabled && (
+                  <div className="pl-3 border-l-2 border-primary/20">
+                    {numField('Quantità SharePoint DLP', 'hilog_sharepoint_dlp_count')}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">Entra ID Microsoft</Label>
+                  <Switch
+                    checked={form.hilog_entra_id_enabled}
+                    onCheckedChange={(checked) => handleChange('hilog_entra_id_enabled', checked)}
+                  />
+                </div>
               </div>
             </div>
           </ScrollArea>
