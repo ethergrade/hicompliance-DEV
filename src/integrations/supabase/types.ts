@@ -139,6 +139,18 @@ export type Database = {
           created_at: string
           endpoints_count: number | null
           firewalls_count: number | null
+          hilog_apache_count: number | null
+          hilog_custom_path_count: number | null
+          hilog_dlp_linux_count: number | null
+          hilog_dlp_windows_count: number | null
+          hilog_endpoint_count: number | null
+          hilog_entra_id_enabled: boolean | null
+          hilog_iis_count: number | null
+          hilog_server_count: number | null
+          hilog_sharepoint_dlp_count: number | null
+          hilog_sharepoint_dlp_enabled: boolean | null
+          hilog_sql_count: number | null
+          hilog_syslog_count: number | null
           hypervisors_count: number | null
           id: string
           locations_count: number | null
@@ -165,6 +177,18 @@ export type Database = {
           created_at?: string
           endpoints_count?: number | null
           firewalls_count?: number | null
+          hilog_apache_count?: number | null
+          hilog_custom_path_count?: number | null
+          hilog_dlp_linux_count?: number | null
+          hilog_dlp_windows_count?: number | null
+          hilog_endpoint_count?: number | null
+          hilog_entra_id_enabled?: boolean | null
+          hilog_iis_count?: number | null
+          hilog_server_count?: number | null
+          hilog_sharepoint_dlp_count?: number | null
+          hilog_sharepoint_dlp_enabled?: boolean | null
+          hilog_sql_count?: number | null
+          hilog_syslog_count?: number | null
           hypervisors_count?: number | null
           id?: string
           locations_count?: number | null
@@ -191,6 +215,18 @@ export type Database = {
           created_at?: string
           endpoints_count?: number | null
           firewalls_count?: number | null
+          hilog_apache_count?: number | null
+          hilog_custom_path_count?: number | null
+          hilog_dlp_linux_count?: number | null
+          hilog_dlp_windows_count?: number | null
+          hilog_endpoint_count?: number | null
+          hilog_entra_id_enabled?: boolean | null
+          hilog_iis_count?: number | null
+          hilog_server_count?: number | null
+          hilog_sharepoint_dlp_count?: number | null
+          hilog_sharepoint_dlp_enabled?: boolean | null
+          hilog_sql_count?: number | null
+          hilog_syslog_count?: number | null
           hypervisors_count?: number | null
           id?: string
           locations_count?: number | null
