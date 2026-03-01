@@ -47,10 +47,12 @@ import { RiskAnalysisWizard } from './RiskAnalysisWizard';
 import { RiskHeatMap } from './RiskHeatMap';
 import { useRiskAnalysis } from '@/hooks/useRiskAnalysis';
 import { useCriticalInfrastructure } from '@/hooks/useCriticalInfrastructure';
+import { useConsistenze } from '@/hooks/useConsistenze';
 import { useDocumentSave } from '@/hooks/useDocumentSave';
 import { THREAT_SOURCE_LABELS, ThreatSource, AssetSummary } from '@/types/riskAnalysis';
 import { SECURITY_CONTROLS, getAllCategories, getControlsByCategory } from '@/data/securityControls';
 import { CATEGORY_LABELS } from '@/types/riskAnalysis';
+import { AREA_LABELS } from '@/types/consistenze';
 import { 
   Plus, 
   FileSpreadsheet, 
@@ -63,7 +65,8 @@ import {
   Info,
   LayoutGrid,
   List,
-  Database
+  Database,
+  Package
 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -84,12 +87,14 @@ export const RiskAnalysisManager: React.FC = () => {
   } = useRiskAnalysis();
 
   const { assets: infrastructureAssets, loading: loadingInfrastructure, deleteAsset: deleteInfraAsset, reloadAssets: reloadInfraAssets } = useCriticalInfrastructure();
+  const { items: consistenzeItems, loading: loadingConsistenze } = useConsistenze();
   const { saveToDocuments } = useDocumentSave();
   
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
   const [newAssetName, setNewAssetName] = useState('');
   const [selectedInfraAsset, setSelectedInfraAsset] = useState<string>('');
-  const [addMode, setAddMode] = useState<'select' | 'manual'>('select');
+  const [selectedConsistenzeItem, setSelectedConsistenzeItem] = useState<string>('');
+  const [addMode, setAddMode] = useState<'select' | 'consistenze' | 'manual'>('select');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'heatmap'>('list');
   const [syncToInfrastructure, setSyncToInfrastructure] = useState(true);
@@ -100,17 +105,20 @@ export const RiskAnalysisManager: React.FC = () => {
   const assetSummaries = getAssetSummaries();
 
   // Get infrastructure assets not yet in risk analysis
-  // Use asset_id as unique identifier to handle duplicate component_name
   const availableInfraAssets = infrastructureAssets.filter(infra => {
     const displayName = infra.component_name 
       ? `${infra.component_name} (${infra.asset_id})` 
       : infra.asset_id;
-    
-    // Check if this specific asset (by display name or asset_id) is already imported
     return !assetSummaries.some(s => 
       s.assetName === displayName || 
       s.assetName === infra.asset_id
     );
+  });
+
+  // Get consistenze items not yet in risk analysis
+  const availableConsistenzeItems = consistenzeItems.filter(item => {
+    const displayName = `${item.tecnologia || item.categoria} [${AREA_LABELS[item.area]}]`;
+    return !assetSummaries.some(s => s.assetName === displayName);
   });
 
   const handleAddAsset = async () => {
@@ -122,6 +130,12 @@ export const RiskAnalysisManager: React.FC = () => {
         return;
       }
       assetName = selectedInfraAsset;
+    } else if (addMode === 'consistenze') {
+      if (!selectedConsistenzeItem) {
+        toast.error('Seleziona un asset dalle Consistenze');
+        return;
+      }
+      assetName = selectedConsistenzeItem;
     } else {
       if (!newAssetName.trim()) {
         toast.error('Inserisci un nome per l\'asset');
@@ -136,6 +150,7 @@ export const RiskAnalysisManager: React.FC = () => {
     if (result) {
       setNewAssetName('');
       setSelectedInfraAsset('');
+      setSelectedConsistenzeItem('');
       setDialogOpen(false);
       setSyncToInfrastructure(true);
       setSelectedAsset(assetName);
@@ -342,6 +357,7 @@ export const RiskAnalysisManager: React.FC = () => {
                 if (!open) {
                   setNewAssetName('');
                   setSelectedInfraAsset('');
+                  setSelectedConsistenzeItem('');
                   setAddMode('select');
                   setSyncToInfrastructure(true);
                 }
@@ -357,15 +373,19 @@ export const RiskAnalysisManager: React.FC = () => {
                     <DialogTitle>Nuovo Asset per Analisi Rischi</DialogTitle>
                   </DialogHeader>
                   <div className="py-4 space-y-4">
-                    <Tabs value={addMode} onValueChange={(v) => setAddMode(v as 'select' | 'manual')}>
-                      <TabsList className="grid w-full grid-cols-2">
+                    <Tabs value={addMode} onValueChange={(v) => setAddMode(v as 'select' | 'consistenze' | 'manual')}>
+                      <TabsList className="grid w-full grid-cols-3">
                         <TabsTrigger value="select" className="text-xs">
                           <Database className="h-3.5 w-3.5 mr-1.5" />
                           Da Infrastruttura
                         </TabsTrigger>
+                        <TabsTrigger value="consistenze" className="text-xs">
+                          <Package className="h-3.5 w-3.5 mr-1.5" />
+                          Da Consistenze
+                        </TabsTrigger>
                         <TabsTrigger value="manual" className="text-xs">
                           <Plus className="h-3.5 w-3.5 mr-1.5" />
-                          Nuovo Manuale
+                          Manuale
                         </TabsTrigger>
                       </TabsList>
                       
@@ -395,7 +415,6 @@ export const RiskAnalysisManager: React.FC = () => {
                               </SelectTrigger>
                               <SelectContent>
                                 {availableInfraAssets.map((infra) => {
-                                  // Use display name with asset_id to disambiguate duplicates
                                   const displayName = infra.component_name 
                                     ? `${infra.component_name} (${infra.asset_id})` 
                                     : infra.asset_id;
@@ -414,6 +433,56 @@ export const RiskAnalysisManager: React.FC = () => {
                             </Select>
                             <p className="text-xs text-muted-foreground">
                               {availableInfraAssets.length} asset disponibili su {infrastructureAssets.length} totali
+                            </p>
+                          </>
+                        )}
+                      </TabsContent>
+
+                      <TabsContent value="consistenze" className="mt-4 space-y-3">
+                        {loadingConsistenze ? (
+                          <div className="flex items-center justify-center py-4">
+                            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                          </div>
+                        ) : availableConsistenzeItems.length === 0 ? (
+                          <div className="text-center py-4 text-muted-foreground text-sm">
+                            <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                            <p>Nessun asset disponibile.</p>
+                            <p className="text-xs mt-1">
+                              {consistenzeItems.length > 0
+                                ? `${consistenzeItems.length} item presenti, ma già tutti importati.`
+                                : "Aggiungi item nel modulo Consistenze prima."}
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            <Label className="text-sm text-muted-foreground">
+                              Seleziona un asset dalle Consistenze
+                            </Label>
+                            <Select value={selectedConsistenzeItem} onValueChange={setSelectedConsistenzeItem}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Seleziona asset..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {availableConsistenzeItems.map((item) => {
+                                  const displayName = `${item.tecnologia || item.categoria} [${AREA_LABELS[item.area]}]`;
+                                  return (
+                                    <SelectItem key={item.id} value={displayName}>
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="outline" className="text-[10px]">
+                                          {AREA_LABELS[item.area]}
+                                        </Badge>
+                                        <span>{item.tecnologia || item.categoria || '(senza nome)'}</span>
+                                        {item.fornitore && (
+                                          <span className="text-muted-foreground text-xs">— {item.fornitore}</span>
+                                        )}
+                                      </div>
+                                    </SelectItem>
+                                  );
+                                })}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">
+                              {availableConsistenzeItems.length} asset disponibili su {consistenzeItems.length} totali
                             </p>
                           </>
                         )}
@@ -457,7 +526,7 @@ export const RiskAnalysisManager: React.FC = () => {
                     </DialogClose>
                     <Button 
                       onClick={handleAddAsset} 
-                      disabled={saving || (addMode === 'select' && !selectedInfraAsset) || (addMode === 'manual' && !newAssetName.trim())}
+                      disabled={saving || (addMode === 'select' && !selectedInfraAsset) || (addMode === 'consistenze' && !selectedConsistenzeItem) || (addMode === 'manual' && !newAssetName.trim())}
                     >
                       {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
                       Aggiungi
