@@ -54,6 +54,7 @@ const navigation = [
   { title: 'Report', href: '/reports', icon: FileText },
   { title: 'Gestione Documenti', href: '/documents', icon: FileText },
   { title: 'Inventario Asset', href: '/asset-inventory', icon: Package },
+  { title: 'Consistenze', href: '/consistenze', icon: Package },
 ];
 
 const hiComplianceModules = [
