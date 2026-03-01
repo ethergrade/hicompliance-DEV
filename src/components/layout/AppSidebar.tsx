@@ -62,6 +62,7 @@ const hiComplianceModules = [
   { title: 'DarkRisk360', href: '/dark-risk', icon: Eye },
   { title: 'Remediation', href: '/remediation', icon: Wrench },
   { title: 'Analisi', href: '/analytics', icon: BarChart3 },
+  { title: 'Consistenze', href: '/consistenze', icon: Package },
 ];
 
 const incidentSubItems = [

@@ -31,6 +31,7 @@ import ComplianceEvents from "./pages/ComplianceEvents";
   import ClientSelection from "./pages/ClientSelection";
 import CyberNews from "./pages/CyberNews";
 import AdminReporting from "./pages/AdminReporting";
+import Consistenze from "./pages/Consistenze";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -69,6 +70,7 @@ const App = () => (
             <Route path="/settings/surface-scan-alerts" element={<ClientSelectionGuard><SurfaceScanSettings /></ClientSelectionGuard>} />
             <Route path="/admin/role-settings" element={<ClientSelectionGuard><RoleSettings /></ClientSelectionGuard>} />
             <Route path="/admin/reporting" element={<AdminReporting />} />
+            <Route path="/consistenze" element={<ClientSelectionGuard><Consistenze /></ClientSelectionGuard>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
