@@ -256,6 +256,184 @@ export type Database = {
           },
         ]
       }
+      asset_irp: {
+        Row: {
+          area: string
+          categoria: string
+          consistenza_item_id: string | null
+          created_at: string
+          criticita_score: number
+          esposizione_score: number
+          fornitore: string
+          id: string
+          last_sync_from_consistenze: string | null
+          organization_id: string
+          quantita: number
+          rischio_intrinseco: number
+          rischio_residuo: number
+          superficie_score: number
+          tecnologia: string
+          updated_at: string
+        }
+        Insert: {
+          area: string
+          categoria?: string
+          consistenza_item_id?: string | null
+          created_at?: string
+          criticita_score?: number
+          esposizione_score?: number
+          fornitore?: string
+          id?: string
+          last_sync_from_consistenze?: string | null
+          organization_id: string
+          quantita?: number
+          rischio_intrinseco?: number
+          rischio_residuo?: number
+          superficie_score?: number
+          tecnologia?: string
+          updated_at?: string
+        }
+        Update: {
+          area?: string
+          categoria?: string
+          consistenza_item_id?: string | null
+          created_at?: string
+          criticita_score?: number
+          esposizione_score?: number
+          fornitore?: string
+          id?: string
+          last_sync_from_consistenze?: string | null
+          organization_id?: string
+          quantita?: number
+          rischio_intrinseco?: number
+          rischio_residuo?: number
+          superficie_score?: number
+          tecnologia?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_irp_consistenza_item_id_fkey"
+            columns: ["consistenza_item_id"]
+            isOneToOne: false
+            referencedRelation: "consistenze_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_irp_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      consistenze_clienti: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          descrizione_telefoni: string | null
+          id: string
+          note_generali: string | null
+          nr_canali_fonia: number
+          nr_interni_telefonici: number
+          nr_sedi: number
+          organization_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          descrizione_telefoni?: string | null
+          id?: string
+          note_generali?: string | null
+          nr_canali_fonia?: number
+          nr_interni_telefonici?: number
+          nr_sedi?: number
+          organization_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          descrizione_telefoni?: string | null
+          id?: string
+          note_generali?: string | null
+          nr_canali_fonia?: number
+          nr_interni_telefonici?: number
+          nr_sedi?: number
+          organization_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consistenze_clienti_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      consistenze_items: {
+        Row: {
+          area: string
+          categoria: string
+          created_at: string
+          created_by: string | null
+          fornitore: string
+          id: string
+          metriche_json: Json
+          organization_id: string
+          quantita: number
+          scadenza: string | null
+          tecnologia: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          area: string
+          categoria?: string
+          created_at?: string
+          created_by?: string | null
+          fornitore?: string
+          id?: string
+          metriche_json?: Json
+          organization_id: string
+          quantita?: number
+          scadenza?: string | null
+          tecnologia?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          area?: string
+          categoria?: string
+          created_at?: string
+          created_by?: string | null
+          fornitore?: string
+          id?: string
+          metriche_json?: Json
+          organization_id?: string
+          quantita?: number
+          scadenza?: string | null
+          tecnologia?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consistenze_items_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contact_directory: {
         Row: {
           created_at: string | null
@@ -639,6 +817,38 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "irp_documents_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      irp_history: {
+        Row: {
+          area_scores_json: Json
+          id: string
+          irp_score: number
+          organization_id: string
+          snapshot_date: string
+        }
+        Insert: {
+          area_scores_json?: Json
+          id?: string
+          irp_score?: number
+          organization_id: string
+          snapshot_date?: string
+        }
+        Update: {
+          area_scores_json?: Json
+          id?: string
+          irp_score?: number
+          organization_id?: string
+          snapshot_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "irp_history_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -1334,6 +1544,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      calc_risk_intrinseco: {
+        Args: { criticita: number; esposizione: number; superficie: number }
+        Returns: number
+      }
       can_manage_all_organizations: {
         Args: { _user_id: string }
         Returns: boolean
