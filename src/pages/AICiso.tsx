@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Navigate } from 'react-router-dom';
-import { Send, Bot, Loader2 } from 'lucide-react';
+import { Navigate, Link } from 'react-router-dom';
+import { Send, Bot, Loader2, LayoutDashboard } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -72,7 +72,7 @@ const AICiso: React.FC = () => {
       {/* Sidebar */}
       <div className="w-64 border-r border-slate-800/60 bg-slate-950/80 backdrop-blur-sm z-10 flex-shrink-0">
         <div className="h-full flex flex-col">
-          <div className="p-4 border-b border-slate-800/60">
+          <div className="p-4 border-b border-slate-800/60 space-y-3">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-cyan-600/20 border border-cyan-500/30 flex items-center justify-center">
                 <Bot className="w-5 h-5 text-cyan-400" />
@@ -82,6 +82,13 @@ const AICiso: React.FC = () => {
                 <p className="text-[10px] text-slate-500">Assistant</p>
               </div>
             </div>
+            <Link
+              to="/dashboard"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs text-slate-400 hover:text-cyan-300 hover:bg-slate-800/60 transition-colors"
+            >
+              <LayoutDashboard className="w-3.5 h-3.5" />
+              Dashboard
+            </Link>
           </div>
           <ConversationHistory
             conversations={conversations}
