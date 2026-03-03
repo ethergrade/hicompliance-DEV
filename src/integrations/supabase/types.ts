@@ -692,6 +692,68 @@ export type Database = {
           },
         ]
       }
+      hilog_correlation_reports: {
+        Row: {
+          created_at: string
+          description: string | null
+          events_count: number
+          filter_config: Json
+          format: string
+          id: string
+          organization_id: string | null
+          report_data: Json
+          report_type: string
+          status: string
+          time_range_days: number
+          time_range_label: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          events_count?: number
+          filter_config?: Json
+          format?: string
+          id?: string
+          organization_id?: string | null
+          report_data?: Json
+          report_type?: string
+          status?: string
+          time_range_days: number
+          time_range_label: string
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          events_count?: number
+          filter_config?: Json
+          format?: string
+          id?: string
+          organization_id?: string | null
+          report_data?: Json
+          report_type?: string
+          status?: string
+          time_range_days?: number
+          time_range_label?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hilog_correlation_reports_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       hisolution_services: {
         Row: {
           code: string
