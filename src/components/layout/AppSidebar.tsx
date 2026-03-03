@@ -105,6 +105,7 @@ export const AppSidebar: React.FC = () => {
   const { selectedOrganization, canManageMultipleClients } = useClientContext();
   
   const isAdmin = userProfile?.user_type === 'admin';
+  const platformName = isSuperAdmin ? 'HiConsole' : 'HiCompliance';
 
   const filteredNavigation = navigation.filter(item => isModuleEnabled(item.href));
 
@@ -144,12 +145,12 @@ export const AppSidebar: React.FC = () => {
       <SidebarHeader className="p-4 border-b border-sidebar-border">
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 rounded-lg overflow-hidden">
-            <img src="/lovable-uploads/ebc3b9f3-fce3-4df9-a7f9-b0b576887830.png" alt="HiCompliance Logo" className="w-full h-full object-cover" />
+            <img src="/lovable-uploads/ebc3b9f3-fce3-4df9-a7f9-b0b576887830.png" alt={`${platformName} Logo`} className="w-full h-full object-cover" />
           </div>
           {!collapsed && (
             <div>
-              <h2 className="text-lg font-semibold text-sidebar-foreground">HiCompliance</h2>
-              <p className="text-xs text-sidebar-foreground/60">Cyber Risk Platform</p>
+              <h2 className="text-lg font-semibold text-sidebar-foreground">{platformName}</h2>
+              <p className="text-xs text-sidebar-foreground/60">{isSuperAdmin ? 'Admin Console' : 'Cyber Risk Platform'}</p>
             </div>
           )}
         </div>
