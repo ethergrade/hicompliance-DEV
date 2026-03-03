@@ -13,6 +13,19 @@ OBIETTIVO:
 - Fornisci raccomandazioni di remediation tecniche, passo-per-passo
 - Ordina remediation per priorità critica → bassa
 
+ANALISI UTENTE SPECIFICO:
+- Quando l'utente chiede di analizzare un utente specifico (es. "analizza user003"), usa i dati dettagliati in "hilog_user_activity" per quell'utente
+- Mostra tutte le azioni registrate: login, logout, login remoti, login falliti, accessi fuori orario
+- Mostra gli eventi di sicurezza specifici dell'utente con date e dettagli
+- Mostra le attivita DLP: USB inseriti, USB non autorizzati, upload verso cloud esterni
+- Mostra le attivita Entra ID: login da localita inusuali, app utilizzate
+- Calcola e mostra il livello di rischio dell'utente
+- Fornisci raccomandazioni specifiche per quell'utente
+- Se l'utente non esiste nei dati, comunica che non sono disponibili informazioni per quell'utente
+- Identifica rischi significativi
+- Fornisci raccomandazioni di remediation tecniche, passo-per-passo
+- Ordina remediation per priorità critica → bassa
+
 LIMITAZIONI (BOUNDARIES):
 - Non rispondere a richieste ESTERNE alla cybersicurezza
 - Se viene chiesto qualcosa fuori dominio, rispondi con: "Mi dispiace, posso assisterti solo con posture di rischio e remediation cybersecurity."
@@ -72,10 +85,7 @@ const MOCK_DATA_CONTEXT = {
     ]
   },
   endpoint_health: {
-    total_endpoints: 245,
-    protected: 235,
-    attention: 7,
-    offline: 3,
+    total_endpoints: 245, protected: 235, attention: 7, offline: 3,
     attention_details: [
       { hostname: "WS-PC-031", issue: "Antivirus signatures outdated (>7 days)", os: "Windows 11", last_seen: "2026-03-02T08:15:00Z" },
       { hostname: "WS-PC-044", issue: "EDR agent not responding", os: "Windows 10", last_seen: "2026-03-01T22:30:00Z" },
@@ -98,10 +108,7 @@ const MOCK_DATA_CONTEXT = {
     { cve: "CVE-2026-1102", severity: "Medium", cvss: 5.3, description: "Information Disclosure in VPN Gateway", affected_systems: ["FW-VPN-01"], status: "Patch Available", published: "2026-02-20" }
   ],
   patch_status: {
-    total_systems: 52,
-    fully_patched: 47,
-    pending: 3,
-    failed: 2,
+    total_systems: 52, fully_patched: 47, pending: 3, failed: 2,
     failed_details: [
       { system: "SRV2025-HYPERV", kb: "KB5062553", error: "Insufficient disk space", os: "Windows Server 2025", last_attempt: "2026-03-01T03:00:00Z" },
       { system: "WS-PC-031", kb: "KB5061234", error: "Update service corrupted", os: "Windows 11", last_attempt: "2026-02-28T22:00:00Z" }
@@ -120,8 +127,7 @@ const MOCK_DATA_CONTEXT = {
   ],
   logs: {
     aggregated_period: "last_24h",
-    total_events: 284521,
-    suspicious_events: 12,
+    total_events: 284521, suspicious_events: 12,
     suspicious_details: [
       { type: "Failed Login", count: 847, source: "Multiple IPs", target: "DC-01, DC-02" },
       { type: "Privilege Escalation Attempt", count: 3, source: "SRV-APP-03", target: "DC-01" },
@@ -131,12 +137,120 @@ const MOCK_DATA_CONTEXT = {
     ]
   },
   monitoring: {
-    siem_status: "Operational",
-    soc_analysts_on_duty: 2,
-    mean_time_to_detect: "4.2 min",
-    mean_time_to_respond: "18 min",
-    open_incidents: 3,
-    escalated_incidents: 1
+    siem_status: "Operational", soc_analysts_on_duty: 2,
+    mean_time_to_detect: "4.2 min", mean_time_to_respond: "18 min",
+    open_incidents: 3, escalated_incidents: 1
+  },
+  // Detailed per-user HiLog activity (last 90 days)
+  hilog_user_activity: {
+    user001: {
+      display: "user001@company.local", role: "Standard User", department: "Amministrazione",
+      workstations: ["WS-PC001"], ips: ["192.168.100.10"],
+      summary_90d: { logins: 178, logouts: 175, remote_logins: 12, failed_logins: 2, after_hours_logins: 0 },
+      entra_id: { successes: 165, failures: 1, interrupted: 3, apps_used: ["Microsoft Teams", "One Outlook Web"], locations: ["Milano, IT"] },
+      dlp_events: { usb_insertions: 2, usb_not_whitelist: 0, file_uploads_external: 0 },
+      security_events: [],
+      risk_level: "Basso", notes: "Utente standard, nessuna anomalia rilevata."
+    },
+    user002: {
+      display: "user002@company.local", role: "Standard User", department: "Risorse Umane",
+      workstations: ["WS-PC002"], ips: ["192.168.100.11"],
+      summary_90d: { logins: 185, logouts: 180, remote_logins: 22, failed_logins: 5, after_hours_logins: 3 },
+      entra_id: { successes: 190, failures: 3, interrupted: 5, apps_used: ["Microsoft Teams", "One Outlook Web", "SharePoint Online"], locations: ["Milano, IT", "Roma, IT"] },
+      dlp_events: { usb_insertions: 8, usb_not_whitelist: 3, file_uploads_external: 1 },
+      security_events: [
+        { date: "2026-02-15", event: "USB policy violation - unauthorized device", severity: "Medium", hostname: "WS-PC002" }
+      ],
+      risk_level: "Medio", notes: "3 inserimenti USB non autorizzati. 1 upload verso cloud esterno (Google Drive, 45MB). Da monitorare."
+    },
+    user003: {
+      display: "user003@company.local", role: "Standard User", department: "Commerciale",
+      workstations: ["WS-PC003", "WS-MOBILE01"], ips: ["192.168.100.13", "192.168.101.20"],
+      summary_90d: { logins: 210, logouts: 195, remote_logins: 48, failed_logins: 23, after_hours_logins: 14 },
+      entra_id: { successes: 245, failures: 18, interrupted: 12, apps_used: ["Microsoft Teams", "One Outlook Web", "SharePoint Online", "Azure Portal", "Microsoft Graph API"], locations: ["Milano, IT", "Roma, IT", "Napoli, IT", "Londra, UK", "Los Angeles, California, US"] },
+      dlp_events: { usb_insertions: 15, usb_not_whitelist: 9, file_uploads_external: 4, details: [
+        { date: "2026-01-10", type: "USB not whitelist", device: "SanDisk Ultra 64GB", hostname: "WS-PC003" },
+        { date: "2026-01-18", type: "USB not whitelist", device: "Unknown USB Mass Storage", hostname: "WS-MOBILE01" },
+        { date: "2026-02-02", type: "File upload external", destination: "Dropbox", size_mb: 120, hostname: "WS-PC003" },
+        { date: "2026-02-14", type: "File upload external", destination: "WeTransfer", size_mb: 340, hostname: "WS-PC003" },
+        { date: "2026-02-20", type: "USB not whitelist", device: "Kingston DT100G3 32GB", hostname: "WS-PC003" },
+        { date: "2026-02-25", type: "File upload external", destination: "Google Drive", size_mb: 85, hostname: "WS-MOBILE01" },
+        { date: "2026-03-01", type: "File upload external", destination: "Dropbox", size_mb: 210, hostname: "WS-PC003" }
+      ]},
+      security_events: [
+        { date: "2026-01-05", event: "After-hours login detected", severity: "Low", hostname: "WS-PC003", time: "23:15" },
+        { date: "2026-01-12", event: "Microsoft 365 sign-in from unusual location", severity: "Medium", location: "Londra, UK", ip: "95.173.200.55" },
+        { date: "2026-01-20", event: "Spike of failed remote logons", severity: "High", hostname: "WS-PC003", count: 8, ip: "203.0.113.45" },
+        { date: "2026-02-02", event: "Data exfiltration attempt", severity: "High", hostname: "WS-PC003", destination: "Dropbox", size_mb: 120 },
+        { date: "2026-02-08", event: "After-hours login detected", severity: "Low", hostname: "WS-MOBILE01", time: "01:30" },
+        { date: "2026-02-14", event: "Data exfiltration attempt", severity: "High", hostname: "WS-PC003", destination: "WeTransfer", size_mb: 340 },
+        { date: "2026-02-20", event: "USB policy violation - unauthorized device", severity: "Medium", hostname: "WS-PC003" },
+        { date: "2026-02-25", event: "Microsoft 365 sign-in from unusual location", severity: "Medium", location: "Los Angeles, California, US", ip: "216.24.50.10" },
+        { date: "2026-02-28", event: "Lateral movement detected", severity: "Medium", from: "WS-PC003", to: "SRV-APP01" },
+        { date: "2026-03-01", event: "Data exfiltration attempt", severity: "High", hostname: "WS-PC003", destination: "Dropbox", size_mb: 210 }
+      ],
+      windows_login_timeline: [
+        { date: "2026-03-02", logins: 4, failures: 1, remote: 2, logouts: 3, ips: ["192.168.100.13", "192.168.101.20"] },
+        { date: "2026-03-01", logins: 6, failures: 3, remote: 3, logouts: 4, ips: ["192.168.100.13", "203.0.113.45"] },
+        { date: "2026-02-28", logins: 5, failures: 2, remote: 2, logouts: 4, ips: ["192.168.100.13"] },
+        { date: "2026-02-27", logins: 3, failures: 0, remote: 1, logouts: 3, ips: ["192.168.100.13"] },
+        { date: "2026-02-26", logins: 4, failures: 1, remote: 1, logouts: 3, ips: ["192.168.100.13", "192.168.101.20"] },
+        { date: "2026-02-25", logins: 5, failures: 2, remote: 3, logouts: 4, ips: ["192.168.100.13", "216.24.50.10"] }
+      ],
+      risk_level: "Alto",
+      risk_score: 78,
+      notes: "Utente ad alto rischio. Pattern ripetuto di esfiltrazione dati verso servizi cloud non autorizzati (Dropbox, WeTransfer). 9 USB non in whitelist. 14 accessi fuori orario. Login da localita inusuali (UK, USA). Spike di login remoti falliti. Possibile insider threat o account compromesso."
+    },
+    user004: {
+      display: "user004@company.local", role: "Standard User", department: "IT",
+      workstations: ["WS-PC005"], ips: ["192.168.100.15"],
+      summary_90d: { logins: 195, logouts: 192, remote_logins: 35, failed_logins: 4, after_hours_logins: 8 },
+      entra_id: { successes: 210, failures: 2, interrupted: 4, apps_used: ["Microsoft Teams", "Azure Portal", "Azure Active Directory PowerShell", "Microsoft Graph API"], locations: ["Milano, IT"] },
+      dlp_events: { usb_insertions: 5, usb_not_whitelist: 1, file_uploads_external: 0 },
+      security_events: [
+        { date: "2026-02-10", event: "After-hours login detected", severity: "Low", hostname: "WS-PC005", time: "22:00" },
+        { date: "2026-02-22", event: "Installation or use of Remote Desktop software", severity: "Low", hostname: "WS-PC005" }
+      ],
+      risk_level: "Basso", notes: "IT department, accessi fuori orario giustificati da ruolo. Uso legittimo di PowerShell e Azure Portal."
+    },
+    user005: {
+      display: "user005@company.local", role: "Standard User", department: "Marketing",
+      workstations: ["WS-PC008"], ips: ["192.168.101.22"],
+      summary_90d: { logins: 160, logouts: 158, remote_logins: 8, failed_logins: 3, after_hours_logins: 1 },
+      entra_id: { successes: 155, failures: 2, interrupted: 2, apps_used: ["Microsoft Teams", "One Outlook Web"], locations: ["Milano, IT"] },
+      dlp_events: { usb_insertions: 12, usb_not_whitelist: 6, file_uploads_external: 2, details: [
+        { date: "2026-02-05", type: "USB not whitelist", device: "Personal iPhone", hostname: "WS-PC008" },
+        { date: "2026-02-18", type: "File upload external", destination: "Google Drive", size_mb: 55, hostname: "WS-PC008" }
+      ]},
+      security_events: [
+        { date: "2026-02-05", event: "USB policy violation - unauthorized device", severity: "Medium", hostname: "WS-PC008" },
+        { date: "2026-02-18", event: "Data exfiltration attempt", severity: "High", hostname: "WS-PC008", destination: "Google Drive", size_mb: 55 }
+      ],
+      risk_level: "Medio", notes: "6 USB non autorizzati (molti device personali). 1 upload esterno significativo. Da sensibilizzare su policy DLP."
+    },
+    admin01: {
+      display: "admin01@company.local", role: "Admin", department: "IT - Sysadmin",
+      workstations: ["SRV-DC01", "SRV-APP01", "SRV-APP02", "SRV-APP03"], ips: ["10.0.0.1", "10.0.0.10"],
+      summary_90d: { logins: 320, logouts: 310, remote_logins: 85, failed_logins: 8, after_hours_logins: 22 },
+      entra_id: { successes: 350, failures: 5, interrupted: 8, apps_used: ["Azure Portal", "Azure Active Directory PowerShell", "Microsoft Graph API", "Microsoft Teams"], locations: ["Milano, IT"] },
+      dlp_events: { usb_insertions: 3, usb_not_whitelist: 0, file_uploads_external: 0 },
+      security_events: [
+        { date: "2026-02-15", event: "Privilege escalation attempt", severity: "High", hostname: "SRV-APP-03", target: "DC-01", note: "Legittimo: manutenzione programmata" },
+        { date: "2026-02-28", event: "Suspicious PowerShell Execution", severity: "Medium", hostname: "SRV-APP-03", command: "Invoke-Command -ScriptBlock {...}", note: "Script di deploy automatizzato" }
+      ],
+      risk_level: "Medio-Basso", notes: "Account admin con privilegi elevati. Attivita coerente con ruolo sysadmin. Accessi fuori orario giustificati. Monitorare l'uso di PsExec e PowerShell remoto."
+    },
+    svc_backup: {
+      display: "svc_backup@company.local", role: "Service Account", department: "IT - Backup",
+      workstations: ["SRV-BACKUP-01", "SRV-BACKUP-02"], ips: ["10.0.0.50"],
+      summary_90d: { logins: 540, logouts: 540, remote_logins: 540, failed_logins: 12, after_hours_logins: 540 },
+      entra_id: { successes: 0, failures: 0, interrupted: 0, apps_used: [], locations: [] },
+      dlp_events: { usb_insertions: 0, usb_not_whitelist: 0, file_uploads_external: 0 },
+      security_events: [
+        { date: "2026-01-15", event: "Service account login from new IP", severity: "Low", hostname: "SRV-BACKUP-02", ip: "10.0.0.51" }
+      ],
+      risk_level: "Basso", notes: "Account di servizio per backup automatizzati. Login h24 atteso. 1 accesso da IP non standard da verificare."
+    }
   }
 };
 
