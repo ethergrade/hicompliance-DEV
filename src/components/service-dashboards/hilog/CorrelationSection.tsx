@@ -2,8 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Search, Link2 } from 'lucide-react';
+import { Link2, SlidersHorizontal } from 'lucide-react';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -12,6 +11,10 @@ import {
   windowsLogsTableData, entraIdTableData, securityEventsTableData, firewallLogsTableData,
   severityColors,
 } from './mockData';
+import { AdvancedFilterBuilder } from './AdvancedFilterBuilder';
+import {
+  AdvancedFilter, createEmptyFilter, evalAdvancedFilter,
+} from './filterEngine';
 
 interface CorrelatedEvent {
   datetime: string;
@@ -23,46 +26,41 @@ interface CorrelatedEvent {
   severity?: string;
 }
 
+// Build unified event pool once
+const buildEventPool = (): CorrelatedEvent[] => {
+  const results: CorrelatedEvent[] = [];
+
+  windowsLogsTableData.forEach(log => {
+    results.push({ datetime: log.datetime, source: 'Windows', event: log.action, hostname: log.hostname, username: log.username, sourceIp: log.sourceIp });
+  });
+
+  entraIdTableData.forEach(log => {
+    results.push({ datetime: log.datetime, source: 'Entra ID', event: `${log.application} - ${log.status}`, hostname: '-', username: log.username, sourceIp: log.sourceIp });
+  });
+
+  securityEventsTableData.forEach(log => {
+    results.push({ datetime: log.datetime, source: 'Security', event: log.event, hostname: log.hostname, username: log.username, sourceIp: log.sourceIp, severity: log.severity });
+  });
+
+  firewallLogsTableData.forEach(log => {
+    results.push({ datetime: log.datetime, source: 'Firewall', event: `${log.actionType} - ${log.action}`, hostname: log.hostname, username: log.username, sourceIp: log.sourceIp, severity: log.severity });
+  });
+
+  results.sort((a, b) => b.datetime.localeCompare(a.datetime));
+  return results;
+};
+
+const allEvents = buildEventPool();
+
 export const CorrelationSection: React.FC = () => {
-  const [correlationQuery, setCorrelationQuery] = useState('');
-  const [activeQuery, setActiveQuery] = useState('');
+  const [filter, setFilter] = useState<AdvancedFilter>(createEmptyFilter());
+  const [showBuilder, setShowBuilder] = useState(true);
 
   const correlatedEvents = useMemo(() => {
-    if (!activeQuery) return [];
-    const q = activeQuery.toLowerCase();
-    const results: CorrelatedEvent[] = [];
+    return evalAdvancedFilter(allEvents, filter);
+  }, [filter]);
 
-    windowsLogsTableData.forEach(log => {
-      if (log.username.toLowerCase().includes(q) || log.sourceIp.toLowerCase().includes(q) || log.hostname.toLowerCase().includes(q)) {
-        results.push({ datetime: log.datetime, source: 'Windows', event: log.action, hostname: log.hostname, username: log.username, sourceIp: log.sourceIp });
-      }
-    });
-
-    entraIdTableData.forEach(log => {
-      if (log.username.toLowerCase().includes(q) || log.sourceIp.toLowerCase().includes(q)) {
-        results.push({ datetime: log.datetime, source: 'Entra ID', event: `${log.application} - ${log.status}`, hostname: '-', username: log.username, sourceIp: log.sourceIp });
-      }
-    });
-
-    securityEventsTableData.forEach(log => {
-      if (log.username.toLowerCase().includes(q) || log.sourceIp.toLowerCase().includes(q) || log.hostname.toLowerCase().includes(q)) {
-        results.push({ datetime: log.datetime, source: 'Security', event: log.event, hostname: log.hostname, username: log.username, sourceIp: log.sourceIp, severity: log.severity });
-      }
-    });
-
-    firewallLogsTableData.forEach(log => {
-      if (log.username.toLowerCase().includes(q) || log.sourceIp.toLowerCase().includes(q) || log.hostname.toLowerCase().includes(q)) {
-        results.push({ datetime: log.datetime, source: 'Firewall', event: `${log.actionType} - ${log.action}`, hostname: log.hostname, username: log.username, sourceIp: log.sourceIp, severity: log.severity });
-      }
-    });
-
-    results.sort((a, b) => b.datetime.localeCompare(a.datetime));
-    return results;
-  }, [activeQuery]);
-
-  const handleSearch = () => {
-    setActiveQuery(correlationQuery.trim());
-  };
+  const hasConditions = filter.groups.some(g => g.conditions.some(c => c.value.trim()));
 
   const sourceColors: Record<string, string> = {
     'Windows': 'bg-blue-500/20 text-blue-500',
@@ -73,33 +71,38 @@ export const CorrelationSection: React.FC = () => {
 
   return (
     <section className="space-y-4">
-      <h2 className="text-2xl font-bold">Correlazioni Cross-Source</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold">Correlazioni Cross-Source</h2>
+        <Button
+          variant={showBuilder ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setShowBuilder(!showBuilder)}
+          className="gap-1.5"
+        >
+          <SlidersHorizontal className="w-4 h-4" />
+          Query Builder
+        </Button>
+      </div>
+
+      {showBuilder && (
+        <AdvancedFilterBuilder
+          filter={filter}
+          onChange={setFilter}
+          onClose={() => setShowBuilder(false)}
+        />
+      )}
+
       <Card className="border-border">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Link2 className="w-5 h-5 text-primary" />
-            Correlazione eventi per IP / Username / Hostname
+            Correlazione eventi booleana cross-source
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-2 mb-4">
-            <Input
-              placeholder="Inserisci IP, username o hostname (es. 203.0.113.45, user003, SRV-DC01)"
-              value={correlationQuery}
-              onChange={(e) => setCorrelationQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              className="flex-1"
-            />
-            <Button onClick={handleSearch}>
-              <Search className="w-4 h-4 mr-1" />
-              Correla
-            </Button>
-          </div>
-
-          {activeQuery && (
+          {hasConditions ? (
             <div className="space-y-4">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <span>Risultati per: <strong className="text-foreground">{activeQuery}</strong></span>
                 <Badge variant="outline">{correlatedEvents.length} eventi trovati</Badge>
                 <div className="flex gap-1 ml-auto">
                   {Object.entries(sourceColors).map(([src, cls]) => {
@@ -165,14 +168,14 @@ export const CorrelationSection: React.FC = () => {
                   </Table>
                 </>
               ) : (
-                <p className="text-sm text-muted-foreground text-center py-8">Nessun evento trovato per "{activeQuery}"</p>
+                <p className="text-sm text-muted-foreground text-center py-8">Nessun evento corrisponde ai criteri impostati.</p>
               )}
             </div>
-          )}
-
-          {!activeQuery && (
+          ) : (
             <div className="text-center py-8 text-sm text-muted-foreground">
-              Inserisci un IP, username o hostname per visualizzare tutti gli eventi correlati tra Windows, Entra ID, Firewall e Security Events.
+              Usa il Query Builder per costruire query booleane complesse (AND/OR) e correlare eventi tra Windows, Entra ID, Firewall e Security Events.
+              <br />
+              <span className="text-xs mt-1 block">Es: <code className="bg-muted px-1.5 py-0.5 rounded text-foreground/80">IP Sorgente contiene "203.0.113" AND Severity uguale a "Critical"</code></span>
             </div>
           )}
         </CardContent>
