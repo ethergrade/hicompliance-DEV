@@ -50,6 +50,7 @@ import { useRolePermissions } from '@/hooks/useRolePermissions';
 const navigation = [
   { title: 'Home', href: '/', icon: Home },
   { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { title: 'AI CISO', href: '/ai-ciso', icon: Bot, superAdminOnly: true },
   { title: 'CyberNews', href: '/cyber-news', icon: Newspaper },
   { title: 'Minacce', href: '/threats', icon: AlertTriangle },
   { title: 'Report', href: '/reports', icon: FileText },
@@ -107,7 +108,10 @@ export const AppSidebar: React.FC = () => {
   const isAdmin = userProfile?.user_type === 'admin';
   const platformName = isSuperAdmin ? 'HiConsole' : 'HiCompliance';
 
-  const filteredNavigation = navigation.filter(item => isModuleEnabled(item.href));
+  const filteredNavigation = navigation.filter(item => {
+    if ((item as any).superAdminOnly && !isSuperAdmin) return false;
+    return isModuleEnabled(item.href);
+  });
 
   const hiComplianceActive = [...hiComplianceModules, ...incidentSubItems].some(
     item => location.pathname === item.href
