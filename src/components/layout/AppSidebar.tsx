@@ -75,7 +75,7 @@ const incidentSubItems = [
 
 const adminNavigation = [
   {
-    title: 'Selezione Clienti',
+    title: 'Gestione Clienti',
     href: '/clients',
     icon: Building2,
   },
@@ -83,11 +83,6 @@ const adminNavigation = [
     title: 'Reportistica Aggregata',
     href: '/admin/reporting',
     icon: PieChart,
-  },
-  {
-    title: 'Gestione Clienti',
-    href: '/admin/clients',
-    icon: Users,
   },
   {
     title: 'Gestione Ruoli',
