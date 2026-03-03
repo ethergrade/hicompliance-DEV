@@ -7,16 +7,16 @@ type YearRange = '1y' | '2y' | '3y' | '4y';
 const YEAR_OPTIONS: YearRange[] = ['1y', '2y', '3y', '4y'];
 
 const DATA: Record<YearRange, { percentage: number; label: string; status: 'critical' | 'warning' | 'good' }> = {
-  '1y': { percentage: 38, label: 'Basso',    status: 'critical' },
-  '2y': { percentage: 52, label: 'Moderato', status: 'warning'  },
-  '3y': { percentage: 65, label: 'Moderato', status: 'warning'  },
-  '4y': { percentage: 78, label: 'Buono',    status: 'good'     },
+  '1y': { percentage: 78, label: 'Buono',    status: 'good'     },
+  '2y': { percentage: 65, label: 'Moderato', status: 'warning'  },
+  '3y': { percentage: 52, label: 'Moderato', status: 'warning'  },
+  '4y': { percentage: 38, label: 'Basso',    status: 'critical' },
 };
 
 const CIRCUMFERENCE = 2 * Math.PI * 28; // r=28
 
 export const ComplianceMetricCard: React.FC = () => {
-  const [selected, setSelected] = useState<YearRange>('2y');
+  const [selected, setSelected] = useState<YearRange>('1y');
   const { percentage, label, status } = DATA[selected];
 
   const strokeColor =

@@ -19,7 +19,7 @@ const DATA: Record<TimeRange, { percentage: number; label: string; status: 'crit
 const CIRCUMFERENCE = 2 * Math.PI * 28;
 
 export const RiskScoreMetricCard: React.FC = () => {
-  const [selected, setSelected] = useState<TimeRange>('3m');
+  const [selected, setSelected] = useState<TimeRange>('1d');
   const { percentage, label, status, sparkline } = DATA[selected];
 
   const strokeColor =
