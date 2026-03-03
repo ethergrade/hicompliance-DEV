@@ -1,213 +1,151 @@
 
 
-# Piano: Modulo "Consistenze" Completo con Integrazione IRP
+# Piano: Modulo AI CISO Assistant
 
 ## Panoramica
 
-Creare un nuovo modulo **Consistenze** con 5 aree tematiche (UCC, Security, Connessioni e Fonia, Networking, IT), tabelle dinamiche editabili, KPI automatici, export Excel, e integrazione con il motore di rischio IRP. Il modulo si integra nella sidebar sotto HiCompliance e riutilizza l'architettura multi-tenant esistente (organization_id + RLS).
+Nuovo modulo **AI CISO Assistant** accessibile solo a `super_admin`. Interfaccia chat stile Grok (sfondo con costellazioni animate, stelle e comete) che dialoga con OpenAI GPT-4o-mini per analizzare dati di sicurezza mock e fornire remediation, executive summary e report PDF.
 
 ---
 
-## FASE 1 -- Database (3 migrazioni)
+## Prerequisito: Chiave OpenAI
 
-### Migrazione 1: Tabelle Core
+Servira la tua chiave OpenAI API da salvare come secret Supabase `OPENAI_API_KEY`. Te la chiedero prima di implementare.
+
+---
+
+## FASE 1 -- Accesso Super Admin
+
+### 1a. Credenziali `superadmin@superadmin.com` / `superadmin@2026`
+
+Aggiungere nel `AuthProvider.tsx` la stessa logica shortcut gia presente per `admin` e `sales`:
+- Se email = `superadmin` -> redirect a `superadmin@superadmin.com` + password `superadmin@2026`
+- Auto-signup se non esiste, assegnazione ruolo `super_admin` nella tabella `user_roles`
+
+### 1b. Route protetta
+
+- Nuova route `/ai-ciso` visibile SOLO se `isSuperAdmin === true`
+- Non passa per `role_module_permissions` (hardcoded super_admin only)
+
+---
+
+## FASE 2 -- Edge Function `ai-ciso-chat`
+
+### 2a. `supabase/functions/ai-ciso-chat/index.ts`
+
+- Riceve `{ userPrompt, conversationHistory }` via POST
+- Costruisce i messaggi OpenAI:
+  - `system`: System Prompt dal MD 1 (guardrails inclusi dal MD 4)
+  - `assistant`: Dati mock di contesto (firewall, endpoint, vulnerabilita, patch, alert) basati sul template MD 2
+  - `user`: Prompt dell'utente
+- Chiama `gpt-4o-mini` con `max_tokens: 2000`
+- Ritorna la risposta strutturata
+- Gestisce guardrails: input validation, no prompt injection
+
+### 2b. Dati Mock
+
+Hardcoded nella edge function, un dataset realistico:
+- 245 endpoint (7 in attenzione, 3 offline)
+- 1842 connessioni firewall bloccate, 3 anomalie regole
+- 4 CVE (2 High, 1 Critical, 1 Medium)
+- 2 patch failed (SRV2025-HYPERV, WS-PC-031)
+- 1 alert critico ransomware (ALR-001)
+- Log aggregati con 12 eventi sospetti
+
+---
+
+## FASE 3 -- Database
+
+### 3a. Tabella `ai_ciso_conversations`
 
 ```text
-consistenze_clienti
+ai_ciso_conversations
   - id (uuid PK)
-  - organization_id (uuid, ref organizations)
-  - nr_sedi (integer, default 0)
-  - nr_interni_telefonici (integer, default 0)
-  - descrizione_telefoni (text)
-  - nr_canali_fonia (integer, default 0)
-  - note_generali (text)
-  - created_by (uuid)
-  - updated_by (uuid)
-  - created_at / updated_at (timestamptz)
-
-consistenze_items
-  - id (uuid PK)
-  - organization_id (uuid, ref organizations)
-  - area (text: UCC, SECURITY, CONN_FONIA, NETWORKING, IT)
-  - categoria (text)
-  - tecnologia (text)
-  - fornitore (text)
-  - quantita (integer, default 0)
-  - scadenza (date, nullable)
-  - metriche_json (jsonb, default '{}')
-  - created_by (uuid)
-  - updated_by (uuid)
-  - created_at / updated_at (timestamptz)
+  - user_id (uuid, ref auth.users)
+  - user_prompt (text)
+  - ai_response (text)
+  - context_data (jsonb)
+  - created_at (timestamptz)
 ```
 
-RLS policies: stesse pattern esistenti (`organization_id IN (SELECT ...)` per client, `can_manage_all_organizations()` per sales/admin). Trigger `update_updated_at_column` su entrambe.
+RLS: solo l'utente proprietario puo leggere/scrivere le proprie conversazioni. Policy aggiuntiva per super_admin che vede tutto.
 
-### Migrazione 2: Tabelle IRP Integration
+---
+
+## FASE 4 -- Pagina UI `/ai-ciso`
+
+### 4a. Sfondo animato stile Grok
+
+- Canvas o elementi CSS per:
+  - Campo stellare con punti luminosi fini che si muovono lentamente
+  - Linee di costellazione sottilissime che collegano stelle vicine
+  - Cometa che appare ogni ~15 secondi con scia luminosa
+- Colori coerenti con HiCompliance (cyan, slate, dark)
+
+### 4b. Interfaccia Chat
+
+- Area messaggi scrollabile con bubble utente (destra) e AI (sinistra)
+- Input in basso con placeholder "Analizza la postura di sicurezza..."
+- Quick action buttons (template dal MD 3):
+  - "Executive Summary"
+  - "Remediation Prioritizzata"
+  - "Trend Report"
+  - "Note Compliance NIS2/GDPR"
+- Risposte AI renderizzate con markdown (titoli, liste, badge colore per severity)
+
+### 4c. Generazione Report PDF
+
+- Pulsante "Genera Report PDF" sulla risposta AI
+- Usa `jspdf` (gia installato) per generare PDF con template dal MD 6:
+  - Executive Summary
+  - Risk Findings
+  - Remediation Plan
+  - Compliance Notes
+  - Trends & Metrics
+  - Timestamp e branding HiCompliance
+
+### 4d. Storico conversazioni
+
+- Sidebar sinistra con lista conversazioni precedenti (da `ai_ciso_conversations`)
+- Click per riaprire una conversazione passata
+
+---
+
+## FASE 5 -- Sidebar e Routing
+
+### 5a. `AppSidebar.tsx`
+
+Nuova voce nel gruppo admin (visibile solo super_admin):
+```text
+Gestione Multi-Cliente
+  ...
+  AI CISO Assistant   <-- NUOVO, icona Bot/Brain
+```
+
+### 5b. `App.tsx`
 
 ```text
-asset_irp
-  - id (uuid PK)
-  - organization_id (uuid)
-  - consistenza_item_id (uuid, ref consistenze_items, nullable)
-  - area (text)
-  - categoria (text)
-  - tecnologia (text)
-  - fornitore (text)
-  - quantita (integer)
-  - esposizione_score (numeric, default 0)
-  - criticita_score (numeric, default 0)
-  - superficie_score (numeric, default 1)
-  - rischio_intrinseco (numeric, default 0)
-  - rischio_residuo (numeric, default 0)
-  - last_sync_from_consistenze (timestamptz)
-  - created_at / updated_at (timestamptz)
-
-irp_history
-  - id (uuid PK)
-  - organization_id (uuid)
-  - irp_score (numeric)
-  - area_scores_json (jsonb)
-  - snapshot_date (timestamptz, default now())
+<Route path="/ai-ciso" element={<AICiso />} />
 ```
 
-Stesse RLS policies multi-tenant.
-
-### Migrazione 3: Funzione DB per calcolo rischio
-
-Funzione SQL `calc_risk_intrinseco(esposizione, criticita, superficie)` che applica la formula `min((esposizione * criticita * superficie) * 4, 100)`.
+Senza `ClientSelectionGuard` (e cross-organization).
 
 ---
 
-## FASE 2 -- Pagina Consistenze (nuova route `/consistenze`)
-
-### 2a. Nuova pagina `src/pages/Consistenze.tsx`
-
-Struttura a tab con 6 linguette:
-
-- **Overview** -- Riepilogo KPI per area, conteggio item, rischio medio, asset piu critico
-- **UCC** -- Campi generali (Nr Sedi, Nr Canali, Nr Interni, Descrizione Telefoni) + tabella dinamica (Categoria, Tecnologia, Fornitore, Quantita, Scadenza, Nr Canali, Nr Interni)
-- **Security** -- Nr Sedi + tabella (Categoria, Tecnologia, Fornitore, Scadenza, Client/Utenti, Server Fisici, Server Virtuali, IP Pubblici, VPN, Dispositivi Mobili)
-- **Connessioni e Fonia** -- Nr Sedi, Nr Interni, Descrizione Telefoni + tabella (Categoria, Tecnologia, Fornitore, Banda, Quantita, Scadenza)
-- **Networking** -- Nr Sedi + tabella (Categoria, Tecnologia, Fornitore, Quantita, Scadenza)
-- **IT** -- Nr Sedi + tabella (Categoria, Tecnologia, Fornitore, Quantita, Scadenza)
-
-### 2b. Componenti condivisi
-
-- `ConsistenzeAreaTable.tsx` -- Tabella dinamica riusabile con aggiunta/rimozione righe, editing inline, debounced auto-save
-- `ConsistenzeOverview.tsx` -- Dashboard KPI con card per area
-- `ConsistenzeKPICards.tsx` -- Calcolo KPI automatici per area (es. "Interni per sede", "Server per sede", "Banda per utente")
-
-### 2c. Categorie predefinite per area
-
-Ogni tab propone categorie suggerite (dropdown) ma permette anche testo libero:
-
-- **UCC**: Centralino, SBC, Gateway, Licenze
-- **Security**: Firewall, EDR, SIEM, MDR, Email Security, Backup
-- **Conn e Fonia**: FTTC, FTTH, MPLS, 4G Backup, SIP Trunk
-- **Networking**: Switch centro stella, Access Switch, Access Point, Router
-- **IT**: Server, PC, Notebook, Stampanti, NAS, Storage, Hypervisor
-
-### 2d. Logica di salvataggio
-
-- Dati generali cliente (nr_sedi, ecc.) salvati in `consistenze_clienti` (1 record per organization)
-- Ogni riga della tabella salvata come record in `consistenze_items`
-- Auto-save con debounce 1.5s (pattern esistente come CriticalInfrastructureManager)
-- Badge stato salvataggio ("Salvando..." / "Salvato")
-
-### 2e. Export
-
-- Pulsante "Esporta Excel" che genera un file XLSX con un foglio per area + foglio Overview KPI
-- Usa libreria `xlsx` gia installata
-
----
-
-## FASE 3 -- Integrazione IRP e Risk Engine
-
-### 3a. Hook `useConsistenzeRisk.ts`
-
-- Quando un item viene salvato/aggiornato in `consistenze_items`, sincronizza verso `asset_irp`
-- Calcola automaticamente i punteggi di rischio per area usando le regole definite nei documenti:
-  - **Esposizione** (0-5): basato su IP pubblici, VPN, accessi remoti
-  - **Criticita** (0-5): basato su tipo asset e impatto business
-  - **Superficie Attacco** (1-3): basato su quantita e distribuzione
-- Formula: `RISCHIO_INTRINSECO = min((ESP x CRIT x SUP) x 4, 100)`
-- Rischio residuo: `RISCHIO_RESIDUO = RISCHIO_INTRINSECO - (Maturity_Score_Area x 0.4)`
-
-### 3b. Scoring per area e totale
-
-- IRP per area = media ponderata dei rischi residui degli asset dell'area
-- IRP Totale = media ponderata delle 5 aree con pesi: Security 30%, IT 25%, Networking 15%, Conn/Fonia 15%, UCC 15%
-- Classificazione: 0-20 Basso, 21-40 Medio-Basso, 41-60 Medio, 61-80 Alto, 81-100 Critico
-
-### 3c. Overview con gauge rischio
-
-- Nell'Overview mostrare per ogni area: numero asset, rischio medio, asset piu critico
-- Gauge IRP Totale (0-100) con classificazione colore
-- Storico salvato in `irp_history` ad ogni ricalcolo
-
-### 3d. Flag automatici
-
-- Se rischio area > 60: badge "Intervento Prioritario"
-- Se rischio totale > 70: suggerimenti (Assessment avanzato, Remediation plan, Servizio gestito)
-
----
-
-## FASE 4 -- Routing e Sidebar
-
-### 4a. Aggiornare `AppSidebar.tsx`
-
-Aggiungere "Consistenze" nel gruppo HiCompliance, sotto "Analisi":
-
-```text
-HiCompliance
-  Assessment
-  SurfaceScan360
-  DarkRisk360
-  Remediation
-  Analisi
-  Consistenze    <-- NUOVO
-  Incident
-    Incident Response
-    Eventi Compliance
-```
-
-### 4b. Aggiornare `App.tsx`
-
-Nuova route: `/consistenze` con `ClientSelectionGuard`
-
----
-
-## FASE 5 -- Permessi e Sicurezza
-
-- **Sales/Super Admin**: vedono tutti i tenant, possono modificare tutto, esportare
-- **Client**: vede solo la propria organizzazione, puo modificare (controllato da RLS)
-- Le RLS policies riusano il pattern `can_manage_all_organizations()` gia consolidato
-- I campi `created_by` e `updated_by` tracciano chi ha fatto le modifiche
-
----
-
-## Riepilogo file da creare/modificare
+## Riepilogo file
 
 | File | Azione |
 |---|---|
-| `supabase/migrations/..._consistenze_tables.sql` | Creazione tabelle + RLS |
-| `supabase/migrations/..._irp_tables.sql` | Tabelle IRP + funzione rischio |
-| `src/pages/Consistenze.tsx` | Nuova pagina principale con tabs |
-| `src/components/consistenze/ConsistenzeOverview.tsx` | Overview con KPI e gauge |
-| `src/components/consistenze/ConsistenzeAreaTab.tsx` | Tab per singola area con tabella |
-| `src/components/consistenze/ConsistenzeAreaTable.tsx` | Tabella dinamica editabile |
-| `src/components/consistenze/ConsistenzeKPICards.tsx` | Card KPI per area |
-| `src/hooks/useConsistenze.ts` | Hook CRUD per consistenze_clienti + items |
-| `src/hooks/useConsistenzeRisk.ts` | Hook per calcolo e sync rischio IRP |
-| `src/components/layout/AppSidebar.tsx` | Aggiunta voce menu |
+| `supabase/functions/ai-ciso-chat/index.ts` | Edge function OpenAI |
+| `supabase/migrations/..._ai_ciso.sql` | Tabella conversazioni + RLS |
+| `src/pages/AICiso.tsx` | Pagina principale con chat + sfondo animato |
+| `src/components/ai-ciso/StarfieldBackground.tsx` | Canvas stelle/costellazioni/comete |
+| `src/components/ai-ciso/ChatMessage.tsx` | Bubble messaggio con markdown |
+| `src/components/ai-ciso/QuickActions.tsx` | Bottoni template prompt |
+| `src/components/ai-ciso/ConversationHistory.tsx` | Sidebar storico |
+| `src/components/ai-ciso/ReportGenerator.tsx` | Generazione PDF |
+| `src/hooks/useAICiso.ts` | Hook per chiamate edge function e CRUD conversazioni |
+| `src/components/auth/AuthProvider.tsx` | Shortcut login superadmin |
+| `src/components/layout/AppSidebar.tsx` | Voce menu super_admin |
 | `src/App.tsx` | Nuova route |
-| `src/integrations/supabase/types.ts` | Auto-aggiornamento tipi |
-
----
-
-## Note implementative
-
-- L'implementazione e progressiva: prima le tabelle DB, poi la UI base con CRUD, poi l'engine di rischio
-- Il modulo coesiste con l'attuale pagina `/asset-inventory` che gestisce le consistenze HiLog -- eventualmente in futuro si potra valutare di unificare
-- Data la complessita, l'implementazione procedera in piu step per garantire stabilita
 
