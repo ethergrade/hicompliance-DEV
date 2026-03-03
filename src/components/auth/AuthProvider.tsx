@@ -158,6 +158,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else if (email === 'sales') {
         loginEmail = 'sales@sales.com';
         loginPassword = 'salessales';
+      } else if (email === 'superadmin') {
+        loginEmail = 'superadmin@superadmin.com';
+        loginPassword = 'superadmin@2026';
       }
 
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -264,69 +267,76 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           if (signUpError) {
             console.error('Errore registrazione sales:', signUpError);
-            toast({
-              title: "Errore di registrazione sales",
-              description: signUpError.message,
-              variant: "destructive",
-            });
+            toast({ title: "Errore di registrazione sales", description: signUpError.message, variant: "destructive" });
             return { error: signUpError };
           }
 
-          console.log('Sales registrato, tentativo di login...');
-
-          // Wait a moment for the signup to complete
           await new Promise(resolve => setTimeout(resolve, 1000));
-
-          // Try to login again after signup
-          const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
-            email: 'sales@sales.com',
-            password: 'salessales',
-          });
+          const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({ email: 'sales@sales.com', password: 'salessales' });
 
           if (loginError) {
-            console.error('Errore login dopo registrazione:', loginError);
-            toast({
-              title: "Sales registrato",
-              description: "Account sales creato. Riprova il login tra qualche secondo.",
-              variant: "default",
-            });
+            toast({ title: "Sales registrato", description: "Account sales creato. Riprova il login tra qualche secondo.", variant: "default" });
             return { error: loginError };
           }
 
-          // Update the user profile with sales details and sync auth_user_id
           if (loginData.user) {
-            console.log('Aggiornamento profilo sales...');
-            
-            // Update the existing sales user record with auth_user_id
-            await supabase
-              .from('users')
-              .update({
-                auth_user_id: loginData.user.id,
-              })
-              .eq('email', 'sales@sales.com');
-
-            // Assign sales role (upsert to avoid duplicates)
-            const { error: roleError } = await supabase
-              .from('user_roles')
-              .upsert({
-                user_id: loginData.user.id,
-                role: 'sales'
-              }, {
-                onConflict: 'user_id,role'
-              });
-
-            if (roleError) {
-              console.error('Errore assegnazione ruolo sales:', roleError);
-            }
-
-            console.log('Profilo sales aggiornato con ruolo');
+            await supabase.from('users').update({ auth_user_id: loginData.user.id }).eq('email', 'sales@sales.com');
+            await supabase.from('user_roles').upsert({ user_id: loginData.user.id, role: 'sales' }, { onConflict: 'user_id,role' });
           }
 
-          toast({
-            title: "Accesso sales effettuato",
-            description: "Account sales creato e login completato",
+          toast({ title: "Accesso sales effettuato", description: "Account sales creato e login completato" });
+          return { error: null };
+        } else if ((email === 'superadmin' || email === 'superadmin@superadmin.com') && error.message.includes('Invalid login credentials')) {
+          console.log('Tentativo di registrazione superadmin...');
+          
+          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+            email: 'superadmin@superadmin.com',
+            password: 'superadmin@2026',
+            options: {
+              emailRedirectTo: `${window.location.origin}/dashboard`,
+              data: {
+                full_name: 'Super Administrator',
+                user_type: 'admin'
+              }
+            }
           });
 
+          if (signUpError) {
+            toast({ title: "Errore registrazione superadmin", description: signUpError.message, variant: "destructive" });
+            return { error: signUpError };
+          }
+
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({ email: 'superadmin@superadmin.com', password: 'superadmin@2026' });
+
+          if (loginError) {
+            toast({ title: "SuperAdmin registrato", description: "Riprova il login tra qualche secondo.", variant: "default" });
+            return { error: loginError };
+          }
+
+          if (loginData.user) {
+            // Get or create admin organization
+            const { data: adminOrg } = await supabase.from('organizations').select('id').eq('code', 'admin').single();
+
+            await supabase.from('users').update({ auth_user_id: loginData.user.id }).eq('email', 'superadmin@superadmin.com');
+
+            // If no user record exists, create one
+            const { data: existingUser } = await supabase.from('users').select('id').eq('email', 'superadmin@superadmin.com').single();
+            if (!existingUser) {
+              await supabase.from('users').insert({
+                auth_user_id: loginData.user.id,
+                email: 'superadmin@superadmin.com',
+                full_name: 'Super Administrator',
+                user_type: 'admin',
+                organization_id: adminOrg?.id,
+              });
+            }
+
+            // Assign super_admin role
+            await supabase.from('user_roles').upsert({ user_id: loginData.user.id, role: 'super_admin' }, { onConflict: 'user_id,role' });
+          }
+
+          toast({ title: "Accesso superadmin effettuato", description: "Account super admin creato e login completato" });
           return { error: null };
         } else {
           toast({
