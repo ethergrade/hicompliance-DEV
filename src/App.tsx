@@ -32,6 +32,7 @@ import ComplianceEvents from "./pages/ComplianceEvents";
 import CyberNews from "./pages/CyberNews";
 import AdminReporting from "./pages/AdminReporting";
 import Consistenze from "./pages/Consistenze";
+import AICiso from "./pages/AICiso";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -71,6 +72,7 @@ const App = () => (
             <Route path="/admin/role-settings" element={<ClientSelectionGuard><RoleSettings /></ClientSelectionGuard>} />
             <Route path="/admin/reporting" element={<AdminReporting />} />
             <Route path="/consistenze" element={<ClientSelectionGuard><Consistenze /></ClientSelectionGuard>} />
+            <Route path="/ai-ciso" element={<AICiso />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
