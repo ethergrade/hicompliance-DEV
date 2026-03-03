@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,7 @@ import {
 import { GlobalFilters, type HiLogFilters } from './hilog/GlobalFilters';
 import { PaginatedTable } from './hilog/PaginatedTable';
 import { CorrelationSection } from './hilog/CorrelationSection';
+import { AdvancedFilter, createEmptyFilter, evalAdvancedFilter } from './hilog/filterEngine';
 
 // Helper: check if any field in an object matches a search string
 const matchesSearch = (obj: Record<string, any>, search: string): boolean => {
@@ -42,9 +43,16 @@ export const HiLogDashboard: React.FC = () => {
   const [filters, setFilters] = useState<HiLogFilters>({
     globalSearch: '', severity: 'all', hostname: '', username: '', ip: '',
   });
+  const [advancedFilter, setAdvancedFilter] = useState<AdvancedFilter>(createEmptyFilter());
+  const [advancedMode, setAdvancedMode] = useState(false);
 
-  // Filter helpers
-  const applyGlobalFilters = <T extends Record<string, any>>(data: T[], extraFields?: { hostnameKey?: string; usernameKey?: string; ipKey?: string; severityKey?: string }): T[] => {
+  // Combined filter: basic + advanced
+  const applyAllFilters = useCallback(<T extends Record<string, any>>(data: T[], extraFields?: { hostnameKey?: string; usernameKey?: string; ipKey?: string; severityKey?: string }): T[] => {
+    // If advanced mode is active, use the boolean engine
+    if (advancedMode) {
+      return evalAdvancedFilter(data, advancedFilter);
+    }
+    // Otherwise use legacy simple filters
     return data.filter(item => {
       if (!matchesSearch(item, filters.globalSearch)) return false;
       const hk = extraFields?.hostnameKey || 'hostname';
@@ -62,22 +70,29 @@ export const HiLogDashboard: React.FC = () => {
       if (filters.severity !== 'all' && item[sk] && item[sk] !== filters.severity) return false;
       return true;
     });
-  };
+  }, [filters, advancedFilter, advancedMode]);
 
-  const filteredWindowsLogs = useMemo(() => applyGlobalFilters(windowsLogsTableData), [filters]);
-  const filteredEntraId = useMemo(() => applyGlobalFilters(entraIdTableData, { usernameKey: 'username', ipKey: 'sourceIp' }), [filters]);
-  const filteredSecurityEvents = useMemo(() => applyGlobalFilters(securityEventsTableData), [filters]);
-  const filteredFirewall = useMemo(() => applyGlobalFilters(firewallLogsTableData), [filters]);
-  const filteredHosts = useMemo(() => applyGlobalFilters(hostsTableData, { hostnameKey: 'hostname', usernameKey: 'domain', ipKey: 'ipAddresses' }), [filters]);
-  const filteredStartup = useMemo(() => applyGlobalFilters(startupShutdownTableData, { hostnameKey: 'hostname' }), [filters]);
-  const filteredUsersAD = useMemo(() => applyGlobalFilters(usersADData, { usernameKey: 'name', hostnameKey: 'domain' }), [filters]);
-  const filteredUsersLocal = useMemo(() => applyGlobalFilters(usersLocalData, { usernameKey: 'name', hostnameKey: 'domain' }), [filters]);
-  const filteredUsersEntra = useMemo(() => applyGlobalFilters(usersEntraData, { usernameKey: 'name', hostnameKey: 'domain' }), [filters]);
+  const filteredWindowsLogs = useMemo(() => applyAllFilters(windowsLogsTableData), [applyAllFilters]);
+  const filteredEntraId = useMemo(() => applyAllFilters(entraIdTableData, { usernameKey: 'username', ipKey: 'sourceIp' }), [applyAllFilters]);
+  const filteredSecurityEvents = useMemo(() => applyAllFilters(securityEventsTableData), [applyAllFilters]);
+  const filteredFirewall = useMemo(() => applyAllFilters(firewallLogsTableData), [applyAllFilters]);
+  const filteredHosts = useMemo(() => applyAllFilters(hostsTableData, { hostnameKey: 'hostname', usernameKey: 'domain', ipKey: 'ipAddresses' }), [applyAllFilters]);
+  const filteredStartup = useMemo(() => applyAllFilters(startupShutdownTableData, { hostnameKey: 'hostname' }), [applyAllFilters]);
+  const filteredUsersAD = useMemo(() => applyAllFilters(usersADData, { usernameKey: 'name', hostnameKey: 'domain' }), [applyAllFilters]);
+  const filteredUsersLocal = useMemo(() => applyAllFilters(usersLocalData, { usernameKey: 'name', hostnameKey: 'domain' }), [applyAllFilters]);
+  const filteredUsersEntra = useMemo(() => applyAllFilters(usersEntraData, { usernameKey: 'name', hostnameKey: 'domain' }), [applyAllFilters]);
 
   return (
     <div className="space-y-8">
       {/* Global Filters */}
-      <GlobalFilters filters={filters} onChange={setFilters} />
+      <GlobalFilters
+        filters={filters}
+        onChange={setFilters}
+        advancedFilter={advancedFilter}
+        onAdvancedFilterChange={setAdvancedFilter}
+        advancedMode={advancedMode}
+        onToggleAdvanced={() => setAdvancedMode(!advancedMode)}
+      />
 
       {/* Overview Section */}
       <section className="space-y-4">
