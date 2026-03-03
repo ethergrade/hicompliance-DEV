@@ -1,4 +1,27 @@
 // All data is anonymized per privacy requirements
+// Extended with 90 days of realistic historical data
+
+// Helper to generate dates going back N days from a reference
+const refDate = new Date(2026, 0, 28); // 28 Jan 2026
+
+const fmt = (d: Date) => {
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}:${ss}`;
+};
+
+const daysAgo = (n: number, h = 10, m = 0, s = 0) => {
+  const d = new Date(refDate);
+  d.setDate(d.getDate() - n);
+  d.setHours(h, m, s, 0);
+  return fmt(d);
+};
+
+const shortDate = (d: Date) => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
 
 export const overviewData = {
   refCode: 'HST-SIEM-0004',
@@ -21,6 +44,12 @@ export const overviewData = {
 };
 
 export const usbDrivesData = [
+  { date: '15/12/2025', whitelist: 3, notWhitelist: 42 },
+  { date: '22/12/2025', whitelist: 1, notWhitelist: 18 },
+  { date: '29/12/2025', whitelist: 4, notWhitelist: 55 },
+  { date: '05/01/2026', whitelist: 2, notWhitelist: 33 },
+  { date: '12/01/2026', whitelist: 6, notWhitelist: 47 },
+  { date: '19/01/2026', whitelist: 1, notWhitelist: 22 },
   { date: '26/01/2026', whitelist: 2, notWhitelist: 65 },
   { date: '27/01/2026', whitelist: 5, notWhitelist: 28 },
   { date: '28/01/2026', whitelist: 1, notWhitelist: 8 },
@@ -33,107 +62,210 @@ export const securityEventsData = [
   { name: 'Critical', value: 1, color: '#dc2626', lastReceived: '28/01/2026 08:03' },
 ];
 
+// Extended chart data with ~6 months of realistic data points
 export const windowsLogsData = [
   { date: '26/07', login: 150, remoteLogin: 20, logout: 100, authFailure: 5 },
   { date: '07/08', login: 200, remoteLogin: 30, logout: 150, authFailure: 10 },
   { date: '19/08', login: 180, remoteLogin: 25, logout: 120, authFailure: 8 },
   { date: '31/08', login: 220, remoteLogin: 35, logout: 180, authFailure: 15 },
   { date: '12/09', login: 250, remoteLogin: 40, logout: 200, authFailure: 12 },
+  { date: '28/09', login: 195, remoteLogin: 28, logout: 155, authFailure: 7 },
+  { date: '15/10', login: 310, remoteLogin: 55, logout: 260, authFailure: 22 },
+  { date: '30/10', login: 280, remoteLogin: 48, logout: 230, authFailure: 18 },
+  { date: '15/11', login: 15000, remoteLogin: 380, logout: 13500, authFailure: 150 },
   { date: '23/11', login: 20000, remoteLogin: 500, logout: 18000, authFailure: 200 },
   { date: '05/12', login: 19000, remoteLogin: 450, logout: 17000, authFailure: 180 },
+  { date: '20/12', login: 8500, remoteLogin: 210, logout: 7800, authFailure: 65 },
+  { date: '04/01', login: 17500, remoteLogin: 420, logout: 16000, authFailure: 155 },
+  { date: '18/01', login: 21000, remoteLogin: 530, logout: 19200, authFailure: 210 },
 ];
 
-export const windowsLogsTableData = [
-  { datetime: '28/01/2026 10:24:16', hostname: 'WS-PC001', domain: 'DOMAIN', username: 'user001@company.local', action: 'User Logged In With Cached Credentials', sourceIp: '192.168.100.10', type: 'Admin' },
-  { datetime: '28/01/2026 10:23:36', hostname: 'SRV-BACKUP01', domain: '-', username: '(empty)', action: 'User Login Failure', sourceIp: '192.168.100.50', type: 'NA' },
-  { datetime: '28/01/2026 10:21:44', hostname: 'WS-PC002', domain: 'DOMAIN', username: 'user002@company.local', action: 'User Logged In', sourceIp: '192.168.100.11', type: 'Standard User' },
-  { datetime: '28/01/2026 10:20:24', hostname: 'WS-PC002', domain: 'DOMAIN', username: 'user002@company.local', action: 'User Logged Off', sourceIp: '-', type: 'NA' },
-  { datetime: '28/01/2026 10:18:50', hostname: 'SRV-DC01', domain: 'DOMAIN', username: 'user003@company.local', action: 'User Logged In', sourceIp: '10.0.0.1', type: 'Admin' },
-  { datetime: '28/01/2026 10:15:22', hostname: 'WS-PC005', domain: 'DOMAIN', username: 'user004@company.local', action: 'User Login Failure', sourceIp: '192.168.100.15', type: 'Standard User' },
-  { datetime: '28/01/2026 10:12:01', hostname: 'WS-PC005', domain: 'DOMAIN', username: 'user004@company.local', action: 'User Login Failure', sourceIp: '192.168.100.15', type: 'Standard User' },
-  { datetime: '28/01/2026 10:10:33', hostname: 'SRV-APP01', domain: 'DOMAIN', username: 'user005@company.local', action: 'User Logged In', sourceIp: '10.0.0.10', type: 'Admin' },
-  { datetime: '28/01/2026 09:58:14', hostname: 'WS-PC008', domain: 'DOMAIN', username: 'user006@company.local', action: 'User Logged In With Cached Credentials', sourceIp: '192.168.101.20', type: 'Standard User' },
-  { datetime: '28/01/2026 09:55:41', hostname: 'WS-PC010', domain: 'DOMAIN', username: 'user007@company.local', action: 'User Logged In', sourceIp: '192.168.101.22', type: 'Standard User' },
-  { datetime: '28/01/2026 09:50:10', hostname: 'SRV-DC01', domain: 'DOMAIN', username: 'user008@company.local', action: 'User Login Failure', sourceIp: '10.0.0.1', type: 'NA' },
-  { datetime: '28/01/2026 09:48:05', hostname: 'SRV-APP02', domain: 'DOMAIN', username: 'user009@company.local', action: 'User Logged In', sourceIp: '10.0.0.11', type: 'Admin' },
-  { datetime: '28/01/2026 09:45:33', hostname: 'WS-PC012', domain: 'DOMAIN', username: 'user010@company.local', action: 'User Logged Off', sourceIp: '-', type: 'NA' },
-  { datetime: '28/01/2026 09:42:18', hostname: 'WS-PC015', domain: 'DOMAIN', username: 'user011@company.local', action: 'User Logged In', sourceIp: '192.168.100.25', type: 'Standard User' },
-  { datetime: '28/01/2026 09:39:55', hostname: 'WS-PC018', domain: 'DOMAIN', username: 'user012@company.local', action: 'User Logged In With Cached Credentials', sourceIp: '192.168.100.28', type: 'Standard User' },
-  { datetime: '28/01/2026 09:35:44', hostname: 'SRV-APP03', domain: 'DOMAIN', username: 'svc_backup@company.local', action: 'User Logged In', sourceIp: '10.0.0.12', type: 'Service Account' },
-  { datetime: '28/01/2026 09:30:12', hostname: 'WS-PC020', domain: 'DOMAIN', username: 'user013@company.local', action: 'User Login Failure', sourceIp: '192.168.101.30', type: 'Standard User' },
-  { datetime: '28/01/2026 09:28:01', hostname: 'WS-PC020', domain: 'DOMAIN', username: 'user013@company.local', action: 'User Login Failure', sourceIp: '192.168.101.30', type: 'Standard User' },
-  { datetime: '28/01/2026 09:25:48', hostname: 'WS-PC020', domain: 'DOMAIN', username: 'user013@company.local', action: 'User Login Failure', sourceIp: '192.168.101.30', type: 'Standard User' },
-  { datetime: '28/01/2026 09:20:33', hostname: 'SRV-DC01', domain: 'DOMAIN', username: 'admin01@company.local', action: 'User Logged In', sourceIp: '10.0.0.1', type: 'Admin' },
-  { datetime: '28/01/2026 09:15:11', hostname: 'WS-PC022', domain: 'DOMAIN', username: 'user014@company.local', action: 'User Logged In', sourceIp: '192.168.100.32', type: 'Standard User' },
-  { datetime: '28/01/2026 09:10:45', hostname: 'WS-MOBILE01', domain: 'DOMAIN', username: 'user015@company.local', action: 'User Logged In With Cached Credentials', sourceIp: '192.168.40.5', type: 'Standard User' },
-  { datetime: '28/01/2026 08:55:30', hostname: 'WS-PC025', domain: 'DOMAIN', username: 'user016@company.local', action: 'User Logged In', sourceIp: '192.168.100.35', type: 'Standard User' },
-  { datetime: '28/01/2026 08:50:18', hostname: 'SRV-BACKUP01', domain: 'DOMAIN', username: 'svc_backup@company.local', action: 'User Logged In', sourceIp: '10.0.0.50', type: 'Service Account' },
-  { datetime: '28/01/2026 08:45:02', hostname: 'WS-PC028', domain: 'DOMAIN', username: 'user017@company.local', action: 'User Login Failure', sourceIp: '192.168.101.38', type: 'Standard User' },
-  { datetime: '28/01/2026 08:40:55', hostname: 'WS-PC030', domain: 'DOMAIN', username: 'user018@company.local', action: 'User Logged In', sourceIp: '192.168.101.40', type: 'Standard User' },
-  { datetime: '28/01/2026 08:35:12', hostname: 'SRV-APP01', domain: 'DOMAIN', username: 'user019@company.local', action: 'User Logged Off', sourceIp: '-', type: 'NA' },
-  { datetime: '28/01/2026 08:30:44', hostname: 'WS-PC003', domain: 'DOMAIN', username: 'user020@company.local', action: 'User Logged In', sourceIp: '192.168.100.13', type: 'Standard User' },
-  { datetime: '28/01/2026 08:25:11', hostname: 'SRV-DC01', domain: 'DOMAIN', username: '(empty)', action: 'User Login Failure', sourceIp: '203.0.113.45', type: 'NA' },
-  { datetime: '28/01/2026 08:20:05', hostname: 'SRV-DC01', domain: 'DOMAIN', username: '(empty)', action: 'User Login Failure', sourceIp: '203.0.113.45', type: 'NA' },
-];
+const hostnames = ['WS-PC001','WS-PC002','WS-PC003','WS-PC005','WS-PC008','WS-PC010','WS-PC012','WS-PC015','WS-PC018','WS-PC020','WS-PC022','WS-PC025','WS-PC028','WS-PC030','WS-MOBILE01','SRV-DC01','SRV-APP01','SRV-APP02','SRV-APP03','SRV-BACKUP01'];
+const users = ['user001','user002','user003','user004','user005','user006','user007','user008','user009','user010','user011','user012','user013','user014','user015','user016','user017','user018','user019','user020','admin01','svc_backup'];
+const actions = ['User Logged In','User Logged In With Cached Credentials','User Login Failure','User Logged Off'];
+const types = ['Admin','Standard User','NA','Service Account'];
+const ips = ['192.168.100.10','192.168.100.11','192.168.100.13','192.168.100.15','192.168.101.20','192.168.101.22','192.168.100.25','192.168.100.28','192.168.101.30','192.168.100.32','192.168.100.35','192.168.101.38','192.168.101.40','192.168.40.5','10.0.0.1','10.0.0.10','10.0.0.11','10.0.0.12','10.0.0.50','203.0.113.45'];
 
+// Generate 90 days of Windows logs (3-5 events per day)
+const generateWindowsLogs = () => {
+  const logs: any[] = [];
+  for (let day = 0; day < 90; day++) {
+    const eventsPerDay = 3 + Math.floor(Math.random() * 3);
+    for (let e = 0; e < eventsPerDay; e++) {
+      const h = 7 + Math.floor(Math.random() * 12);
+      const m = Math.floor(Math.random() * 60);
+      const s = Math.floor(Math.random() * 60);
+      const hi = Math.floor(Math.random() * hostnames.length);
+      const ui = Math.floor(Math.random() * users.length);
+      const ai = Math.floor(Math.random() * actions.length);
+      const ti = actions[ai] === 'User Login Failure' ? 2 : (users[ui].startsWith('admin') || users[ui].startsWith('svc_') ? 0 : 1);
+      logs.push({
+        datetime: daysAgo(day, h, m, s),
+        hostname: hostnames[hi],
+        domain: 'DOMAIN',
+        username: `${users[ui]}@company.local`,
+        action: actions[ai],
+        sourceIp: actions[ai] === 'User Logged Off' ? '-' : ips[Math.floor(Math.random() * ips.length)],
+        type: types[ti],
+      });
+    }
+  }
+  return logs.sort((a, b) => {
+    const pa = a.datetime.split(/[/ :]/);
+    const pb = b.datetime.split(/[/ :]/);
+    const da = new Date(+pa[2], +pa[1]-1, +pa[0], +pa[3], +pa[4], +pa[5]);
+    const db = new Date(+pb[2], +pb[1]-1, +pb[0], +pb[3], +pb[4], +pb[5]);
+    return db.getTime() - da.getTime();
+  });
+};
+
+export const windowsLogsTableData = generateWindowsLogs();
+
+// Entra ID chart data extended
 export const entraIdLogsData = [
   { date: '07/08', success: 1200, interrupted: 100, failure: 50 },
   { date: '24/09', success: 1800, interrupted: 200, failure: 150 },
   { date: '06/10', success: 1500, interrupted: 150, failure: 100 },
   { date: '30/10', success: 300, interrupted: 50, failure: 20 },
+  { date: '15/11', success: 950, interrupted: 90, failure: 55 },
   { date: '23/11', success: 800, interrupted: 80, failure: 40 },
+  { date: '10/12', success: 1300, interrupted: 120, failure: 75 },
   { date: '17/12', success: 1100, interrupted: 100, failure: 60 },
+  { date: '02/01', success: 650, interrupted: 45, failure: 25 },
+  { date: '15/01', success: 1400, interrupted: 130, failure: 85 },
+  { date: '25/01', success: 1600, interrupted: 160, failure: 95 },
 ];
 
-export const entraIdTableData = [
-  { datetime: '28/01/2026 10:22:35', username: 'user001@company.local', application: 'Microsoft Account Controls V2', status: 'Success', location: 'Milano, IT', sourceIp: '80.19.100.10' },
-  { datetime: '28/01/2026 10:19:10', username: 'user002@company.local', application: 'One Outlook Web', status: 'Success', location: 'Milano, IT', sourceIp: '80.19.100.11' },
-  { datetime: '28/01/2026 10:13:09', username: 'service@company.local', application: 'Azure Active Directory PowerShell', status: 'Failure', location: 'Los Angeles, California, US', sourceIp: '216.24.50.10' },
-  { datetime: '28/01/2026 10:08:45', username: 'user003@company.local', application: 'Microsoft Teams', status: 'Success', location: 'Milano, IT', sourceIp: '80.19.100.12' },
-  { datetime: '28/01/2026 10:05:22', username: 'user004@company.local', application: 'SharePoint Online', status: 'Success', location: 'Roma, IT', sourceIp: '151.38.20.5' },
-  { datetime: '28/01/2026 09:58:11', username: 'user005@company.local', application: 'Microsoft Graph API', status: 'Success', location: 'Milano, IT', sourceIp: '80.19.100.13' },
-  { datetime: '28/01/2026 09:52:30', username: 'admin01@company.local', application: 'Azure Portal', status: 'Success', location: 'Milano, IT', sourceIp: '80.19.100.14' },
-  { datetime: '28/01/2026 09:45:18', username: 'user006@company.local', application: 'One Outlook Web', status: 'Interrupted', location: 'Londra, UK', sourceIp: '185.45.30.8' },
-  { datetime: '28/01/2026 09:40:05', username: 'unknown@external.com', application: 'Azure Active Directory PowerShell', status: 'Failure', location: 'Mosca, RU', sourceIp: '95.173.200.55' },
-  { datetime: '28/01/2026 09:35:44', username: 'user007@company.local', application: 'Microsoft Teams', status: 'Success', location: 'Milano, IT', sourceIp: '80.19.100.15' },
-  { datetime: '28/01/2026 09:30:12', username: 'user008@company.local', application: 'SharePoint Online', status: 'Failure', location: 'Milano, IT', sourceIp: '80.19.100.16' },
-  { datetime: '28/01/2026 09:25:50', username: 'user009@company.local', application: 'One Outlook Web', status: 'Success', location: 'Roma, IT', sourceIp: '151.38.20.6' },
-  { datetime: '28/01/2026 09:20:33', username: 'unknown2@external.com', application: 'Microsoft Graph API', status: 'Failure', location: 'Pechino, CN', sourceIp: '114.55.80.33' },
-  { datetime: '28/01/2026 09:15:18', username: 'user010@company.local', application: 'Microsoft Teams', status: 'Success', location: 'Milano, IT', sourceIp: '80.19.100.17' },
-  { datetime: '28/01/2026 09:10:05', username: 'user011@company.local', application: 'Azure Portal', status: 'Interrupted', location: 'Milano, IT', sourceIp: '80.19.100.18' },
-  { datetime: '28/01/2026 09:05:44', username: 'svc_backup@company.local', application: 'Azure Active Directory PowerShell', status: 'Success', location: 'Milano, IT', sourceIp: '80.19.100.19' },
-  { datetime: '28/01/2026 08:55:30', username: 'user012@company.local', application: 'One Outlook Web', status: 'Success', location: 'Napoli, IT', sourceIp: '2.36.80.5' },
-  { datetime: '28/01/2026 08:50:22', username: 'user013@company.local', application: 'SharePoint Online', status: 'Success', location: 'Milano, IT', sourceIp: '80.19.100.20' },
-  { datetime: '28/01/2026 08:40:11', username: 'admin01@company.local', application: 'Azure Portal', status: 'Success', location: 'Milano, IT', sourceIp: '80.19.100.14' },
-  { datetime: '28/01/2026 08:30:05', username: 'unknown3@external.com', application: 'Microsoft Graph API', status: 'Failure', location: 'San Pietroburgo, RU', sourceIp: '91.220.160.22' },
-];
+const entraApps = ['Microsoft Account Controls V2','One Outlook Web','Azure Active Directory PowerShell','Microsoft Teams','SharePoint Online','Microsoft Graph API','Azure Portal'];
+const entraStatuses = ['Success','Success','Success','Success','Failure','Interrupted'];
+const entraLocations = ['Milano, IT','Milano, IT','Milano, IT','Roma, IT','Napoli, IT','Londra, UK','Mosca, RU','Pechino, CN','Los Angeles, California, US','San Pietroburgo, RU'];
+const entraIps = ['80.19.100.10','80.19.100.11','80.19.100.12','80.19.100.13','80.19.100.14','80.19.100.15','80.19.100.16','80.19.100.17','80.19.100.18','80.19.100.19','80.19.100.20','151.38.20.5','151.38.20.6','2.36.80.5','185.45.30.8','95.173.200.55','216.24.50.10','114.55.80.33','91.220.160.22'];
+
+const generateEntraIdLogs = () => {
+  const logs: any[] = [];
+  for (let day = 0; day < 90; day++) {
+    const eventsPerDay = 2 + Math.floor(Math.random() * 4);
+    for (let e = 0; e < eventsPerDay; e++) {
+      const h = 7 + Math.floor(Math.random() * 13);
+      const m = Math.floor(Math.random() * 60);
+      const s = Math.floor(Math.random() * 60);
+      const ui = Math.floor(Math.random() * users.length);
+      const status = entraStatuses[Math.floor(Math.random() * entraStatuses.length)];
+      const locIdx = status === 'Failure' ? (5 + Math.floor(Math.random() * 5)) : Math.floor(Math.random() * 5);
+      logs.push({
+        datetime: daysAgo(day, h, m, s),
+        username: `${users[ui]}@company.local`,
+        application: entraApps[Math.floor(Math.random() * entraApps.length)],
+        status,
+        location: entraLocations[locIdx],
+        sourceIp: entraIps[Math.floor(Math.random() * entraIps.length)],
+      });
+    }
+  }
+  return logs.sort((a, b) => {
+    const pa = a.datetime.split(/[/ :]/);
+    const pb = b.datetime.split(/[/ :]/);
+    const da = new Date(+pa[2], +pa[1]-1, +pa[0], +pa[3], +pa[4], +pa[5]);
+    const db = new Date(+pb[2], +pb[1]-1, +pb[0], +pb[3], +pb[4], +pb[5]);
+    return db.getTime() - da.getTime();
+  });
+};
+
+export const entraIdTableData = generateEntraIdLogs();
 
 export const sharePointLogsData = [
   { date: '19/08', opening: 40000, adding: 20000, deleting: 2000 },
+  { date: '05/09', opening: 55000, adding: 28000, deleting: 3500 },
   { date: '18/10', opening: 150000, adding: 30000, deleting: 5000 },
   { date: '11/11', opening: 20000, adding: 40000, deleting: 8000 },
+  { date: '28/11', opening: 75000, adding: 22000, deleting: 4200 },
+  { date: '15/12', opening: 48000, adding: 18000, deleting: 2800 },
+  { date: '05/01', opening: 62000, adding: 31000, deleting: 4500 },
   { date: '22/01', opening: 35000, adding: 25000, deleting: 3000 },
 ];
 
-export const securityEventsTableData = [
-  { datetime: '28/01/2026 08:03:12', severity: 'Critical', event: 'Ransomware behavior detected', source: 'Windows', category: 'Malware', hostname: 'WS-PC025', message: 'Mass file encryption detected in C:\\Users\\user016\\Documents', username: 'user016@company.local', sourceIp: '192.168.100.35' },
-  { datetime: '27/01/2026 15:41:50', severity: 'High', event: 'Spike of failed remote logons', source: 'Windows', category: 'Login', hostname: 'SRV-DC01', message: 'Failed logons count: 28 in 5 minutes from 203.0.113.45', username: '(multiple)', sourceIp: '203.0.113.45' },
-  { datetime: '27/01/2026 14:41:50', severity: 'Low', event: 'Installation or use of Remote Desktop software', source: 'Windows', category: 'Processes', hostname: 'SRV-APP01', message: 'Process name: C:\\Users\\Administrator\\Downloads\\anydesk.exe', username: 'user005@company.local', sourceIp: '10.0.0.10' },
-  { datetime: '27/01/2026 11:17:37', severity: 'Medium', event: 'Microsoft 365 sign-in from unusual location', source: 'Microsoft365', category: 'Login', hostname: '-', message: 'User admin01@company.local logged in from Mosca, RU', username: 'admin01@company.local', sourceIp: '95.173.200.55' },
-  { datetime: '27/01/2026 10:30:22', severity: 'High', event: 'Privilege escalation attempt', source: 'Windows', category: 'Security', hostname: 'SRV-APP02', message: 'user009 attempted to add self to Domain Admins group', username: 'user009@company.local', sourceIp: '10.0.0.11' },
-  { datetime: '27/01/2026 09:15:44', severity: 'Medium', event: 'USB policy violation - unauthorized device', source: 'Windows', category: 'DLP', hostname: 'WS-PC008', message: 'USB mass storage device SanDisk Ultra 128GB connected, not in whitelist', username: 'user006@company.local', sourceIp: '192.168.101.20' },
-  { datetime: '27/01/2026 08:45:11', severity: 'Low', event: 'After-hours login detected', source: 'Windows', category: 'Login', hostname: 'WS-PC012', message: 'Login at 03:45 outside business hours (08:00-19:00)', username: 'user010@company.local', sourceIp: '192.168.100.25' },
-  { datetime: '27/01/2026 08:20:05', severity: 'Medium', event: 'Lateral movement detected', source: 'Windows', category: 'Network', hostname: 'SRV-DC01', message: 'user003 accessed 12 different hosts via SMB in 10 minutes', username: 'user003@company.local', sourceIp: '10.0.0.1' },
-  { datetime: '26/01/2026 22:10:33', severity: 'Low', event: 'Service account login from new IP', source: 'Windows', category: 'Login', hostname: 'SRV-APP03', message: 'svc_backup logged in from 192.168.101.99 (new IP)', username: 'svc_backup@company.local', sourceIp: '192.168.101.99' },
-  { datetime: '26/01/2026 18:55:20', severity: 'Medium', event: 'Brute force attack on RDP', source: 'Windows', category: 'Login', hostname: 'SRV-DC01', message: '47 failed login attempts from external IP 203.0.113.45', username: '(multiple)', sourceIp: '203.0.113.45' },
-  { datetime: '26/01/2026 16:30:15', severity: 'High', event: 'Data exfiltration attempt', source: 'Microsoft365', category: 'DLP', hostname: '-', message: 'user013 downloaded 2.3GB from SharePoint in 15 minutes', username: 'user013@company.local', sourceIp: '192.168.101.30' },
-  { datetime: '26/01/2026 14:12:08', severity: 'Low', event: 'Password policy violation', source: 'Windows', category: 'Security', hostname: 'SRV-DC01', message: 'user017 password does not meet complexity requirements', username: 'user017@company.local', sourceIp: '192.168.101.38' },
-  { datetime: '26/01/2026 11:45:30', severity: 'Medium', event: 'Suspicious PowerShell execution', source: 'Windows', category: 'Processes', hostname: 'WS-PC010', message: 'Encoded PowerShell command executed: -EncodedCommand JABX...', username: 'user007@company.local', sourceIp: '192.168.101.22' },
-  { datetime: '26/01/2026 09:20:18', severity: 'Low', event: 'New admin account created', source: 'Windows', category: 'Security', hostname: 'SRV-DC01', message: 'New account tmp_admin added to Administrators group', username: 'admin01@company.local', sourceIp: '10.0.0.1' },
-  { datetime: '25/01/2026 23:55:44', severity: 'Critical', event: 'Multiple failed logins followed by success', source: 'Windows', category: 'Login', hostname: 'SRV-DC01', message: '15 failures then successful login for admin01 from 203.0.113.45', username: 'admin01@company.local', sourceIp: '203.0.113.45' },
+// Security events extended with 90 days
+const secSeverities = ['Low','Medium','High','Critical'];
+const secEvents = [
+  { event: 'Ransomware behavior detected', source: 'Windows', category: 'Malware', severity: 'Critical' },
+  { event: 'Spike of failed remote logons', source: 'Windows', category: 'Login', severity: 'High' },
+  { event: 'Installation or use of Remote Desktop software', source: 'Windows', category: 'Processes', severity: 'Low' },
+  { event: 'Microsoft 365 sign-in from unusual location', source: 'Microsoft365', category: 'Login', severity: 'Medium' },
+  { event: 'Privilege escalation attempt', source: 'Windows', category: 'Security', severity: 'High' },
+  { event: 'USB policy violation - unauthorized device', source: 'Windows', category: 'DLP', severity: 'Medium' },
+  { event: 'After-hours login detected', source: 'Windows', category: 'Login', severity: 'Low' },
+  { event: 'Lateral movement detected', source: 'Windows', category: 'Network', severity: 'Medium' },
+  { event: 'Service account login from new IP', source: 'Windows', category: 'Login', severity: 'Low' },
+  { event: 'Brute force attack on RDP', source: 'Windows', category: 'Login', severity: 'Medium' },
+  { event: 'Data exfiltration attempt', source: 'Microsoft365', category: 'DLP', severity: 'High' },
+  { event: 'Password policy violation', source: 'Windows', category: 'Security', severity: 'Low' },
+  { event: 'Suspicious PowerShell execution', source: 'Windows', category: 'Processes', severity: 'Medium' },
+  { event: 'New admin account created', source: 'Windows', category: 'Security', severity: 'Low' },
+  { event: 'Multiple failed logins followed by success', source: 'Windows', category: 'Login', severity: 'Critical' },
+  { event: 'Unusual outbound traffic volume', source: 'Windows', category: 'Network', severity: 'Medium' },
+  { event: 'Credential dumping tool detected', source: 'Windows', category: 'Malware', severity: 'Critical' },
+  { event: 'DNS tunneling activity', source: 'Windows', category: 'Network', severity: 'High' },
+  { event: 'Unauthorized registry modification', source: 'Windows', category: 'Processes', severity: 'Medium' },
+  { event: 'Abnormal service installation', source: 'Windows', category: 'Security', severity: 'Medium' },
 ];
 
+const secMessages: Record<string, string[]> = {
+  'Ransomware behavior detected': ['Mass file encryption detected in C:\\Users\\{user}\\Documents', 'Suspicious file rename pattern detected on {host}'],
+  'Spike of failed remote logons': ['Failed logons count: {n} in 5 minutes from {ip}', '{n} RDP failures from external IP {ip}'],
+  'Privilege escalation attempt': ['{user} attempted to add self to Domain Admins group', 'Token elevation detected for {user} on {host}'],
+  'Brute force attack on RDP': ['{n} failed login attempts from external IP {ip}', 'Sustained brute force from {ip} over 30 minutes'],
+  'Data exfiltration attempt': ['{user} downloaded {n}GB from SharePoint in 15 minutes', 'Bulk email forwarding rule created by {user}'],
+  'Multiple failed logins followed by success': ['{n} failures then successful login for {user} from {ip}'],
+  'Credential dumping tool detected': ['Mimikatz signature detected on {host}', 'LSASS memory dump detected on {host}'],
+  'DNS tunneling activity': ['High-entropy DNS queries from {host} to suspicious domain', 'Unusual TXT record queries from {ip}'],
+};
+
+const generateSecurityEvents = () => {
+  const logs: any[] = [];
+  for (let day = 0; day < 90; day++) {
+    const count = day < 3 ? 3 : (Math.random() < 0.3 ? 2 : (Math.random() < 0.5 ? 1 : 0));
+    for (let e = 0; e < count; e++) {
+      const h = Math.floor(Math.random() * 24);
+      const m = Math.floor(Math.random() * 60);
+      const s = Math.floor(Math.random() * 60);
+      const se = secEvents[Math.floor(Math.random() * secEvents.length)];
+      const ui = Math.floor(Math.random() * users.length);
+      const hi = Math.floor(Math.random() * hostnames.length);
+      const ip = ips[Math.floor(Math.random() * ips.length)];
+      const msgs = secMessages[se.event] || [`${se.event} on ${hostnames[hi]} by ${users[ui]}@company.local`];
+      const msg = msgs[Math.floor(Math.random() * msgs.length)]
+        .replace('{user}', `${users[ui]}@company.local`)
+        .replace('{host}', hostnames[hi])
+        .replace('{ip}', ip)
+        .replace('{n}', String(5 + Math.floor(Math.random() * 50)));
+      logs.push({
+        datetime: daysAgo(day, h, m, s),
+        severity: se.severity,
+        event: se.event,
+        source: se.source,
+        category: se.category,
+        hostname: se.source === 'Microsoft365' ? '-' : hostnames[hi],
+        message: msg,
+        username: `${users[ui]}@company.local`,
+        sourceIp: ip,
+      });
+    }
+  }
+  return logs.sort((a, b) => {
+    const pa = a.datetime.split(/[/ :]/);
+    const pb = b.datetime.split(/[/ :]/);
+    const da = new Date(+pa[2], +pa[1]-1, +pa[0], +pa[3], +pa[4], +pa[5]);
+    const db = new Date(+pb[2], +pb[1]-1, +pb[0], +pb[3], +pb[4], +pb[5]);
+    return db.getTime() - da.getTime();
+  });
+};
+
+export const securityEventsTableData = generateSecurityEvents();
+
+// Startup/shutdown extended
 export const startupShutdownData = [
+  { date: '01/10', startup: 180, unexpected: 30, shutdown: 220 },
+  { date: '15/10', startup: 220, unexpected: 45, shutdown: 280 },
   { date: '30/10', startup: 200, unexpected: 50, shutdown: 300 },
   { date: '11/11', startup: 350, unexpected: 80, shutdown: 400 },
   { date: '23/11', startup: 400, unexpected: 100, shutdown: 500 },
@@ -144,41 +276,91 @@ export const startupShutdownData = [
   { date: '22/01', startup: 280, unexpected: 50, shutdown: 320 },
 ];
 
-export const startupShutdownTableData = [
-  { datetime: '28/01/2026 10:21:44', hostname: 'WS-PC002', operation: 'Startup (Fast Startup)' },
-  { datetime: '28/01/2026 10:20:26', hostname: 'WS-PC002', operation: 'Shutdown (Fast Startup)' },
-  { datetime: '28/01/2026 09:43:20', hostname: 'WS-MOBILE01', operation: 'Startup (Fast Startup)' },
-  { datetime: '28/01/2026 09:29:41', hostname: 'WS-PC003', operation: 'Previous Shutdown Was Unexpected' },
-  { datetime: '28/01/2026 09:15:10', hostname: 'WS-PC005', operation: 'Startup (Fast Startup)' },
-  { datetime: '28/01/2026 09:00:05', hostname: 'SRV-APP01', operation: 'Startup' },
-  { datetime: '28/01/2026 08:55:33', hostname: 'WS-PC008', operation: 'Startup (Fast Startup)' },
-  { datetime: '28/01/2026 08:50:12', hostname: 'WS-PC010', operation: 'Startup (Fast Startup)' },
-  { datetime: '28/01/2026 08:45:44', hostname: 'WS-PC012', operation: 'Startup (Fast Startup)' },
-  { datetime: '28/01/2026 08:40:20', hostname: 'WS-PC015', operation: 'Startup (Fast Startup)' },
-  { datetime: '28/01/2026 08:35:55', hostname: 'SRV-DC01', operation: 'Startup' },
-  { datetime: '28/01/2026 08:30:18', hostname: 'WS-PC018', operation: 'Startup (Fast Startup)' },
-  { datetime: '27/01/2026 23:50:05', hostname: 'WS-PC025', operation: 'Previous Shutdown Was Unexpected' },
-  { datetime: '27/01/2026 19:10:44', hostname: 'WS-PC022', operation: 'Shutdown (Fast Startup)' },
-  { datetime: '27/01/2026 19:05:33', hostname: 'WS-PC028', operation: 'Shutdown (Fast Startup)' },
+const startupOps = ['Startup (Fast Startup)','Shutdown (Fast Startup)','Previous Shutdown Was Unexpected','Startup'];
+
+const generateStartupLogs = () => {
+  const logs: any[] = [];
+  for (let day = 0; day < 90; day++) {
+    const count = 1 + Math.floor(Math.random() * 3);
+    for (let e = 0; e < count; e++) {
+      const h = 6 + Math.floor(Math.random() * 16);
+      const m = Math.floor(Math.random() * 60);
+      const s = Math.floor(Math.random() * 60);
+      logs.push({
+        datetime: daysAgo(day, h, m, s),
+        hostname: hostnames[Math.floor(Math.random() * hostnames.length)],
+        operation: startupOps[Math.floor(Math.random() * startupOps.length)],
+      });
+    }
+  }
+  return logs.sort((a, b) => {
+    const pa = a.datetime.split(/[/ :]/);
+    const pb = b.datetime.split(/[/ :]/);
+    const da = new Date(+pa[2], +pa[1]-1, +pa[0], +pa[3], +pa[4], +pa[5]);
+    const db = new Date(+pb[2], +pb[1]-1, +pb[0], +pb[3], +pb[4], +pb[5]);
+    return db.getTime() - da.getTime();
+  });
+};
+
+export const startupShutdownTableData = generateStartupLogs();
+
+// Firewall logs extended
+const fwActions = ['IPS Alert','Firewall Rule','Web Filter','VPN','NAT','Config Change','User Management','GeoIP Block','Application Control'];
+const fwActionTypes = ['Block','Drop','Allow','Edit','Info'];
+const fwSeverities = ['Critical','High','Medium','Information','Notice'];
+const fwMessages = [
+  "Intrusion attempt from {ip} - signature: ET SCAN Nmap",
+  "Blocked outbound connection to known C2 server 198.51.100.22:4443",
+  "Blocked access to malicious URL category from {ip}",
+  "VPN tunnel established: {user} from {ip}",
+  "SNAT applied: {ip} -> 80.19.100.1:443 (HTTPS)",
+  "SQL injection attempt detected from {ip} to 10.0.0.10:443",
+  "Blocked SSH brute force from {ip} (50 attempts)",
+  "Firewall Rule 'VPN Access' was updated by {user}",
+  "Blocked inbound from CN IP range to SRV-DC01",
+  "Port scan detected from {ip} targeting 10.0.0.0/24",
+  "Blocked BitTorrent traffic from {ip}",
+  "New firewall rule 'Block_CN_RU' created",
+  "DDoS mitigation activated for {ip}",
+  "Certificate mismatch on outbound TLS from {ip}",
 ];
 
-export const firewallLogsTableData = [
-  { datetime: '28/01/2026 10:15:13', hostname: 'SFW-001', severity: 'Critical', username: 'system', actionType: 'Block', action: 'IPS Alert', message: "Intrusion attempt from 203.0.113.45 - signature: ET SCAN Nmap", sourceIp: '203.0.113.45' },
-  { datetime: '28/01/2026 09:58:44', hostname: 'SFW-001', severity: 'High', username: 'system', actionType: 'Block', action: 'Firewall Rule', message: "Blocked outbound connection to known C2 server 198.51.100.22:4443", sourceIp: '192.168.100.35' },
-  { datetime: '28/01/2026 09:45:22', hostname: 'SFW-001', severity: 'Medium', username: 'system', actionType: 'Block', action: 'Web Filter', message: "Blocked access to malicious URL category from 192.168.101.22", sourceIp: '192.168.101.22' },
-  { datetime: '28/01/2026 09:30:11', hostname: 'SFW-001', severity: 'Information', username: 'system', actionType: 'Allow', action: 'VPN', message: "VPN tunnel established: user001@company.local from 80.19.100.10", sourceIp: '80.19.100.10' },
-  { datetime: '28/01/2026 09:15:05', hostname: 'SFW-001', severity: 'Information', username: 'system', actionType: 'Allow', action: 'NAT', message: "SNAT applied: 192.168.100.25 -> 80.19.100.1:443 (HTTPS)", sourceIp: '192.168.100.25' },
-  { datetime: '27/01/2026 18:30:44', hostname: 'SFW-001', severity: 'High', username: 'system', actionType: 'Drop', action: 'IPS Alert', message: "SQL injection attempt detected from 203.0.113.88 to 10.0.0.10:443", sourceIp: '203.0.113.88' },
-  { datetime: '27/01/2026 16:45:33', hostname: 'SFW-001', severity: 'Medium', username: 'system', actionType: 'Block', action: 'Firewall Rule', message: "Blocked SSH brute force from 198.51.100.15 (50 attempts)", sourceIp: '198.51.100.15' },
-  { datetime: '27/01/2026 14:53:13', hostname: 'SFW-001', severity: 'Information', username: 'admin01', actionType: 'Edit', action: 'Config Change', message: "Firewall Rule 'VPN Access' was updated by admin01", sourceIp: '10.0.0.1' },
-  { datetime: '27/01/2026 14:49:15', hostname: 'SFW-001', severity: 'Notice', username: 'admin01', actionType: 'Info', action: 'User Management', message: "User 'svc_account' Status was changed to 'ACTIVE'", sourceIp: '10.0.0.1' },
-  { datetime: '27/01/2026 12:20:08', hostname: 'SFW-001', severity: 'Medium', username: 'system', actionType: 'Block', action: 'GeoIP Block', message: "Blocked inbound from CN IP range 114.55.0.0/16 to SRV-DC01", sourceIp: '114.55.80.33' },
-  { datetime: '27/01/2026 10:05:55', hostname: 'SFW-001', severity: 'Information', username: 'system', actionType: 'Allow', action: 'VPN', message: "VPN tunnel established: user015@company.local from 192.168.40.5", sourceIp: '192.168.40.5' },
-  { datetime: '27/01/2026 08:30:22', hostname: 'SFW-001', severity: 'High', username: 'system', actionType: 'Drop', action: 'IPS Alert', message: "Port scan detected from 203.0.113.45 targeting 10.0.0.0/24", sourceIp: '203.0.113.45' },
-  { datetime: '26/01/2026 22:15:11', hostname: 'SFW-001', severity: 'Notice', username: 'system', actionType: 'Allow', action: 'NAT', message: "DNAT: 80.19.100.1:8443 -> 10.0.0.10:443 (web app)", sourceIp: '185.45.30.8' },
-  { datetime: '26/01/2026 20:45:33', hostname: 'SFW-001', severity: 'Medium', username: 'system', actionType: 'Block', action: 'Application Control', message: "Blocked BitTorrent traffic from 192.168.101.30", sourceIp: '192.168.101.30' },
-  { datetime: '26/01/2026 15:10:05', hostname: 'SFW-001', severity: 'Information', username: 'admin01', actionType: 'Edit', action: 'Config Change', message: "New firewall rule 'Block_CN_RU' created", sourceIp: '10.0.0.1' },
-];
+const generateFirewallLogs = () => {
+  const logs: any[] = [];
+  for (let day = 0; day < 90; day++) {
+    const count = 1 + Math.floor(Math.random() * 3);
+    for (let e = 0; e < count; e++) {
+      const h = Math.floor(Math.random() * 24);
+      const m = Math.floor(Math.random() * 60);
+      const s = Math.floor(Math.random() * 60);
+      const actionIdx = Math.floor(Math.random() * fwActions.length);
+      const ip = ips[Math.floor(Math.random() * ips.length)];
+      const ui = Math.floor(Math.random() * users.length);
+      const msg = fwMessages[Math.floor(Math.random() * fwMessages.length)]
+        .replace('{ip}', ip)
+        .replace('{user}', `${users[ui]}@company.local`);
+      logs.push({
+        datetime: daysAgo(day, h, m, s),
+        hostname: 'SFW-001',
+        severity: fwSeverities[Math.floor(Math.random() * fwSeverities.length)],
+        username: actionIdx >= 5 ? `${users[ui]}` : 'system',
+        actionType: fwActionTypes[Math.min(actionIdx, fwActionTypes.length - 1)],
+        action: fwActions[actionIdx],
+        message: msg,
+        sourceIp: ip,
+      });
+    }
+  }
+  return logs.sort((a, b) => {
+    const pa = a.datetime.split(/[/ :]/);
+    const pb = b.datetime.split(/[/ :]/);
+    const da = new Date(+pa[2], +pa[1]-1, +pa[0], +pa[3], +pa[4], +pa[5]);
+    const db = new Date(+pb[2], +pb[1]-1, +pb[0], +pb[3], +pb[4], +pb[5]);
+    return db.getTime() - da.getTime();
+  });
+};
+
+export const firewallLogsTableData = generateFirewallLogs();
 
 export const hostsTableData = [
   { hostname: 'WS-PC001', domain: 'COMPANY SPA', osName: 'Windows 11 Pro', osVersion: '25H2', ipAddresses: ['192.168.100.10'], issues: 6 },
