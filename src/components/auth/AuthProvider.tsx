@@ -98,44 +98,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .eq('email', email);
       }
 
-      // For sales users, ensure role is assigned
-      if (email === 'sales@sales.com') {
-        const { data: existingRole } = await supabase
-          .from('user_roles')
-          .select('*')
-          .eq('user_id', authUserId)
-          .eq('role', 'sales')
-          .single();
-
-        if (!existingRole) {
-          console.log('Assigning sales role...');
-          await supabase
-            .from('user_roles')
-            .upsert({
-              user_id: authUserId,
-              role: 'sales'
-            }, {
-              onConflict: 'user_id,role'
-            });
+      // If no user record exists at all, create one for known accounts
+      if (!existingUser) {
+        const knownAccounts: Record<string, { full_name: string; user_type: 'admin' | 'client'; orgCode: string }> = {
+          'superadmin@superadmin.com': { full_name: 'Super Administrator', user_type: 'admin', orgCode: 'admin' },
+          'admin@admin.com': { full_name: 'Administrator', user_type: 'admin', orgCode: 'admin' },
+          'sales@sales.com': { full_name: 'Sales User', user_type: 'client', orgCode: 'admin' },
+        };
+        const accountInfo = knownAccounts[email];
+        if (accountInfo) {
+          console.log(`Creating user record for ${email}...`);
+          const { data: org } = await supabase.from('organizations').select('id').eq('code', accountInfo.orgCode).single();
+          await supabase.from('users').insert({
+            auth_user_id: authUserId,
+            email,
+            full_name: accountInfo.full_name,
+            user_type: accountInfo.user_type,
+            organization_id: org?.id,
+          });
         }
       }
 
-      // For admin users, ensure super_admin role is assigned
-      if (email === 'admin@admin.com') {
+      // Role assignments for known accounts
+      const roleMap: Record<string, 'super_admin' | 'sales'> = {
+        'superadmin@superadmin.com': 'super_admin',
+        'admin@admin.com': 'super_admin',
+        'sales@sales.com': 'sales',
+      };
+      const expectedRole = roleMap[email];
+      if (expectedRole) {
         const { data: existingRole } = await supabase
           .from('user_roles')
           .select('*')
           .eq('user_id', authUserId)
-          .eq('role', 'super_admin')
+          .eq('role', expectedRole)
           .single();
 
         if (!existingRole) {
-          console.log('Assigning super_admin role...');
+          console.log(`Assigning ${expectedRole} role to ${email}...`);
           await supabase
             .from('user_roles')
             .upsert({
               user_id: authUserId,
-              role: 'super_admin'
+              role: expectedRole
             }, {
               onConflict: 'user_id,role'
             });
