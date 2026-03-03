@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,6 +29,29 @@ import { PaginatedTable } from './hilog/PaginatedTable';
 import { CorrelationSection } from './hilog/CorrelationSection';
 import { AdvancedFilter, createEmptyFilter, evalAdvancedFilter } from './hilog/filterEngine';
 
+const STORAGE_KEY = 'hilog_query_builder_state';
+
+const loadPersistedState = () => {
+  try {
+    const stored = sessionStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return {
+        filters: parsed.filters || { globalSearch: '', severity: 'all', hostname: '', username: '', ip: '' },
+        advancedFilter: parsed.advancedFilter || createEmptyFilter(),
+        advancedMode: parsed.advancedMode || false,
+      };
+    }
+  } catch {}
+  return null;
+};
+
+const persistState = (filters: HiLogFilters, advancedFilter: AdvancedFilter, advancedMode: boolean) => {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ filters, advancedFilter, advancedMode }));
+  } catch {}
+};
+
 // Helper: check if any field in an object matches a search string
 const matchesSearch = (obj: Record<string, any>, search: string): boolean => {
   if (!search) return true;
@@ -40,19 +63,26 @@ const matchesSearch = (obj: Record<string, any>, search: string): boolean => {
 };
 
 export const HiLogDashboard: React.FC = () => {
-  const [filters, setFilters] = useState<HiLogFilters>({
-    globalSearch: '', severity: 'all', hostname: '', username: '', ip: '',
-  });
-  const [advancedFilter, setAdvancedFilter] = useState<AdvancedFilter>(createEmptyFilter());
-  const [advancedMode, setAdvancedMode] = useState(false);
+  const persisted = useMemo(() => loadPersistedState(), []);
+  
+  const [filters, setFilters] = useState<HiLogFilters>(
+    persisted?.filters || { globalSearch: '', severity: 'all', hostname: '', username: '', ip: '' }
+  );
+  const [advancedFilter, setAdvancedFilter] = useState<AdvancedFilter>(
+    persisted?.advancedFilter || createEmptyFilter()
+  );
+  const [advancedMode, setAdvancedMode] = useState(persisted?.advancedMode || false);
+
+  // Persist state on every change
+  useEffect(() => {
+    persistState(filters, advancedFilter, advancedMode);
+  }, [filters, advancedFilter, advancedMode]);
 
   // Combined filter: basic + advanced
   const applyAllFilters = useCallback(<T extends Record<string, any>>(data: T[], extraFields?: { hostnameKey?: string; usernameKey?: string; ipKey?: string; severityKey?: string }): T[] => {
-    // If advanced mode is active, use the boolean engine
     if (advancedMode) {
       return evalAdvancedFilter(data, advancedFilter);
     }
-    // Otherwise use legacy simple filters
     return data.filter(item => {
       if (!matchesSearch(item, filters.globalSearch)) return false;
       const hk = extraFields?.hostnameKey || 'hostname';
@@ -108,7 +138,6 @@ export const HiLogDashboard: React.FC = () => {
       <section className="space-y-4">
         <h2 className="text-2xl font-bold">Overview</h2>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* System Info Card */}
           <Card className="border-border">
             <CardContent className="pt-6">
               <div className="space-y-4">
@@ -154,7 +183,6 @@ export const HiLogDashboard: React.FC = () => {
             </CardContent>
           </Card>
 
-          {/* Windows File Server Card */}
           <Card className="border-border">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm text-primary flex items-center gap-2">
@@ -175,7 +203,6 @@ export const HiLogDashboard: React.FC = () => {
             </CardContent>
           </Card>
 
-          {/* USB Drives Card */}
           <Card className="border-border">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm text-primary flex items-center gap-2">
@@ -360,10 +387,12 @@ export const HiLogDashboard: React.FC = () => {
                     {pageData.map((log, index) => (
                       <TableRow key={index}>
                         <TableCell className="text-sm text-muted-foreground">{log.datetime}</TableCell>
-                        <TableCell className="font-medium">{log.username}</TableCell>
+                        <TableCell className="text-sm">{log.username}</TableCell>
                         <TableCell className="text-sm">{log.application}</TableCell>
                         <TableCell>
-                          <Badge className={cn("font-medium", actionColors[log.status])}>{log.status}</Badge>
+                          <Badge className={cn("font-medium text-xs", actionColors[log.status] || 'bg-muted text-muted-foreground')}>
+                            {log.status}
+                          </Badge>
                         </TableCell>
                         <TableCell className="text-sm">{log.location}</TableCell>
                         <TableCell className="font-mono text-sm">{log.sourceIp}</TableCell>
@@ -377,14 +406,13 @@ export const HiLogDashboard: React.FC = () => {
         </Card>
       </section>
 
-      {/* Security Events Detailed */}
+      {/* Security Events Detail */}
       <section className="space-y-4">
-        <h2 className="text-2xl font-bold">Security Events - Dettaglio</h2>
         <Card className="border-border">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
-                <Shield className="w-5 h-5 text-orange-500" />Logs overview
+                <Shield className="w-5 h-5 text-red-500" />Security Events Detail
               </CardTitle>
               <Badge variant="outline">{filteredSecurityEvents.length} eventi</Badge>
             </div>
@@ -400,27 +428,25 @@ export const HiLogDashboard: React.FC = () => {
                       <TableHead>SEVERITY</TableHead>
                       <TableHead>EVENT</TableHead>
                       <TableHead>SOURCE</TableHead>
-                      <TableHead>CATEGORY</TableHead>
                       <TableHead>HOSTNAME</TableHead>
                       <TableHead>USERNAME</TableHead>
                       <TableHead>IP</TableHead>
-                      <TableHead>MESSAGE</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pageData.map((event, index) => (
+                    {pageData.map((ev, index) => (
                       <TableRow key={index}>
-                        <TableCell className="text-sm text-muted-foreground">{event.datetime}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{ev.datetime}</TableCell>
                         <TableCell>
-                          <Badge className={cn("font-medium", severityColors[event.severity])}>{event.severity}</Badge>
+                          <Badge className={cn("font-medium text-xs", severityColors[ev.severity] || '')}>
+                            {ev.severity}
+                          </Badge>
                         </TableCell>
-                        <TableCell className="font-medium text-primary">{event.event}</TableCell>
-                        <TableCell className="text-sm">{event.source}</TableCell>
-                        <TableCell className="text-sm">{event.category}</TableCell>
-                        <TableCell className="text-sm">{event.hostname}</TableCell>
-                        <TableCell className="text-sm">{event.username}</TableCell>
-                        <TableCell className="text-sm font-mono">{event.sourceIp}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{event.message}</TableCell>
+                        <TableCell className="text-sm max-w-xs truncate" title={ev.event}>{ev.event}</TableCell>
+                        <TableCell className="text-sm">{ev.source}</TableCell>
+                        <TableCell className="text-sm">{ev.hostname}</TableCell>
+                        <TableCell className="text-sm">{ev.username}</TableCell>
+                        <TableCell className="font-mono text-sm">{ev.sourceIp}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -431,14 +457,90 @@ export const HiLogDashboard: React.FC = () => {
         </Card>
       </section>
 
-      {/* Startup and Shutdown Section */}
+      {/* SharePoint DLP */}
       <section className="space-y-4">
-        <h2 className="text-2xl font-bold">Startup and Shutdown</h2>
+        <h2 className="text-2xl font-bold">SharePoint DLP</h2>
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle className="text-lg">File Operations</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={sharePointLogsData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" />
+                  <YAxis stroke="hsl(var(--muted-foreground))" />
+                  <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }} />
+                  <Legend />
+                  <Bar dataKey="opening" fill="#3b82f6" name="Opening" stackId="a" />
+                  <Bar dataKey="adding" fill="#22c55e" name="Adding" stackId="a" />
+                  <Bar dataKey="deleting" fill="#f87171" name="Deleting" stackId="a" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* Firewall Section */}
+      <section className="space-y-4">
+        <h2 className="text-2xl font-bold">Firewall</h2>
         <Card className="border-border">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
-                <Power className="w-5 h-5 text-green-500" />Logs overview
+                <Shield className="w-5 h-5 text-green-500" />Firewall Logs
+              </CardTitle>
+              <Badge variant="outline">{filteredFirewall.length} eventi</Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <PaginatedTable
+              data={filteredFirewall}
+              renderTable={(pageData) => (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>DATETIME</TableHead>
+                      <TableHead>SEVERITY</TableHead>
+                      <TableHead>ACTION TYPE</TableHead>
+                      <TableHead>ACTION</TableHead>
+                      <TableHead>MESSAGE</TableHead>
+                      <TableHead>SOURCE IP</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pageData.map((log, index) => (
+                      <TableRow key={index}>
+                        <TableCell className="text-sm text-muted-foreground">{log.datetime}</TableCell>
+                        <TableCell>
+                          <Badge className={cn("font-medium text-xs", severityColors[log.severity] || '')}>
+                            {log.severity}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm">{log.actionType}</TableCell>
+                        <TableCell className="text-sm">{log.action}</TableCell>
+                        <TableCell className="text-sm max-w-xs truncate" title={log.message}>{log.message}</TableCell>
+                        <TableCell className="font-mono text-sm">{log.sourceIp}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            />
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* Startup / Shutdown */}
+      <section className="space-y-4">
+        <h2 className="text-2xl font-bold">Startup / Shutdown</h2>
+        <Card className="border-border">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Power className="w-5 h-5 text-yellow-500" />Events
               </CardTitle>
               <Badge variant="outline">{filteredStartup.length} eventi</Badge>
             </div>
@@ -453,7 +555,7 @@ export const HiLogDashboard: React.FC = () => {
                   <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }} />
                   <Legend />
                   <Bar dataKey="startup" fill="#22c55e" name="Startup" stackId="a" />
-                  <Bar dataKey="unexpected" fill="#fbbf24" name="Previous Shutdown was unexpected" stackId="a" />
+                  <Bar dataKey="unexpected" fill="#f97316" name="Unexpected" stackId="a" />
                   <Bar dataKey="shutdown" fill="#3b82f6" name="Shutdown" stackId="a" />
                 </BarChart>
               </ResponsiveContainer>
@@ -476,60 +578,10 @@ export const HiLogDashboard: React.FC = () => {
                         <TableCell className="text-sm text-muted-foreground">{log.datetime}</TableCell>
                         <TableCell className="font-medium">{log.hostname}</TableCell>
                         <TableCell>
-                          <Badge className={cn("font-medium", actionColors[log.operation])}>{log.operation}</Badge>
+                          <Badge className={cn("font-medium text-xs", actionColors[log.operation] || 'bg-muted text-muted-foreground')}>
+                            {log.operation}
+                          </Badge>
                         </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            />
-          </CardContent>
-        </Card>
-      </section>
-
-      {/* Firewall Logs Section */}
-      <section className="space-y-4">
-        <h2 className="text-2xl font-bold">Firewall</h2>
-        <Card className="border-border">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Shield className="w-5 h-5 text-blue-500" />Logs overview
-              </CardTitle>
-              <Badge variant="outline">{filteredFirewall.length} eventi</Badge>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <PaginatedTable
-              data={filteredFirewall}
-              renderTable={(pageData) => (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>DATETIME</TableHead>
-                      <TableHead>HOSTNAME</TableHead>
-                      <TableHead>SEVERITY</TableHead>
-                      <TableHead>USERNAME</TableHead>
-                      <TableHead>ACTION TYPE</TableHead>
-                      <TableHead>ACTION</TableHead>
-                      <TableHead>SOURCE IP</TableHead>
-                      <TableHead>MESSAGE</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pageData.map((log, index) => (
-                      <TableRow key={index}>
-                        <TableCell className="text-sm text-muted-foreground">{log.datetime}</TableCell>
-                        <TableCell className="font-medium">{log.hostname}</TableCell>
-                        <TableCell>
-                          <Badge className={cn("font-medium", severityColors[log.severity])}>{log.severity}</Badge>
-                        </TableCell>
-                        <TableCell className="text-sm">{log.username}</TableCell>
-                        <TableCell className="text-sm text-primary">{log.actionType}</TableCell>
-                        <TableCell className="text-sm">{log.action}</TableCell>
-                        <TableCell className="text-sm font-mono">{log.sourceIp}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{log.message}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -547,9 +599,9 @@ export const HiLogDashboard: React.FC = () => {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
-                <HardDrive className="w-5 h-5 text-primary" />All Hosts
+                <HardDrive className="w-5 h-5 text-blue-500" />Registered Hosts
               </CardTitle>
-              <Badge variant="outline">{filteredHosts.length} host</Badge>
+              <Badge variant="outline">{filteredHosts.length} hosts</Badge>
             </div>
           </CardHeader>
           <CardContent>
@@ -561,30 +613,25 @@ export const HiLogDashboard: React.FC = () => {
                     <TableRow>
                       <TableHead>HOSTNAME</TableHead>
                       <TableHead>DOMAIN</TableHead>
-                      <TableHead>OS NAME</TableHead>
-                      <TableHead>OS VERSION</TableHead>
-                      <TableHead>IP ADDRESSES</TableHead>
+                      <TableHead>OS</TableHead>
+                      <TableHead>VERSION</TableHead>
+                      <TableHead>IP</TableHead>
                       <TableHead>ISSUES</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {pageData.map((host, index) => (
                       <TableRow key={index}>
-                        <TableCell className="font-medium text-primary">{host.hostname}</TableCell>
+                        <TableCell className="font-medium">{host.hostname}</TableCell>
                         <TableCell className="text-sm">{host.domain}</TableCell>
                         <TableCell className="text-sm">{host.osName}</TableCell>
+                        <TableCell className="text-sm">{host.osVersion}</TableCell>
+                        <TableCell className="font-mono text-sm">{host.ipAddresses.join(', ')}</TableCell>
                         <TableCell>
-                          <span className="text-sm">{host.osVersion}</span>
-                          {(host.osVersion === '24H2' || host.osVersion === '22H2' || host.osVersion === '1809') && (
-                            <Badge variant="outline" className="ml-2 text-orange-500 border-orange-500">!</Badge>
-                          )}
+                          <Badge variant={host.issues > 10 ? 'destructive' : host.issues > 5 ? 'secondary' : 'outline'}>
+                            {host.issues}
+                          </Badge>
                         </TableCell>
-                        <TableCell>
-                          {host.ipAddresses.map((ip, i) => (
-                            <div key={i} className="text-sm font-mono">{ip}</div>
-                          ))}
-                        </TableCell>
-                        <TableCell className="font-medium">{host.issues}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -595,53 +642,49 @@ export const HiLogDashboard: React.FC = () => {
         </Card>
       </section>
 
-      {/* Users and Admins Section */}
+      {/* Users Section */}
       <section className="space-y-4">
-        <h2 className="text-2xl font-bold">Users and Admins</h2>
+        <h2 className="text-2xl font-bold">Users</h2>
         <Card className="border-border">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
-              <Users className="w-5 h-5 text-primary" />Directory Users
+              <Users className="w-5 h-5 text-purple-500" />User Directory
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="active-directory" className="w-full">
-              <TabsList className="mb-4">
-                <TabsTrigger value="active-directory">Active Directory ({filteredUsersAD.length})</TabsTrigger>
+            <Tabs defaultValue="ad">
+              <TabsList>
+                <TabsTrigger value="ad">Active Directory ({filteredUsersAD.length})</TabsTrigger>
                 <TabsTrigger value="local">Local ({filteredUsersLocal.length})</TabsTrigger>
-                <TabsTrigger value="entra-id">Entra ID ({filteredUsersEntra.length})</TabsTrigger>
+                <TabsTrigger value="entra">Entra ID ({filteredUsersEntra.length})</TabsTrigger>
               </TabsList>
-              
-              <TabsContent value="active-directory">
+
+              <TabsContent value="ad">
                 <PaginatedTable
                   data={filteredUsersAD}
                   renderTable={(pageData) => (
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead></TableHead>
                           <TableHead>NAME</TableHead>
                           <TableHead>STATUS</TableHead>
                           <TableHead>DOMAIN</TableHead>
                           <TableHead>MEMBER OF</TableHead>
+                          <TableHead>ADMIN</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {pageData.map((user, index) => (
                           <TableRow key={index}>
+                            <TableCell className="font-medium">{user.name}</TableCell>
                             <TableCell>
-                              {user.isAdmin && (
-                                <Badge variant="outline" className="bg-primary/10 text-primary border-primary">👑</Badge>
-                              )}
-                            </TableCell>
-                            <TableCell className="font-medium text-primary">{user.name}</TableCell>
-                            <TableCell>
-                              <Badge className={cn("font-medium", user.status === 'Enabled' ? 'bg-green-500/20 text-green-500' : 'bg-muted text-muted-foreground')}>
+                              <Badge variant={user.status === 'Enabled' ? 'outline' : 'secondary'}>
                                 {user.status}
                               </Badge>
                             </TableCell>
                             <TableCell className="text-sm">{user.domain}</TableCell>
                             <TableCell className="text-sm">{user.memberOf}</TableCell>
+                            <TableCell>{user.isAdmin ? <Badge variant="destructive">Admin</Badge> : '-'}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -649,7 +692,7 @@ export const HiLogDashboard: React.FC = () => {
                   )}
                 />
               </TabsContent>
-              
+
               <TabsContent value="local">
                 <PaginatedTable
                   data={filteredUsersLocal}
@@ -657,29 +700,25 @@ export const HiLogDashboard: React.FC = () => {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead></TableHead>
                           <TableHead>NAME</TableHead>
                           <TableHead>STATUS</TableHead>
                           <TableHead>HOST</TableHead>
                           <TableHead>MEMBER OF</TableHead>
+                          <TableHead>ADMIN</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {pageData.map((user, index) => (
                           <TableRow key={index}>
+                            <TableCell className="font-medium">{user.name}</TableCell>
                             <TableCell>
-                              {user.isAdmin && (
-                                <Badge variant="outline" className="bg-primary/10 text-primary border-primary">👑</Badge>
-                              )}
-                            </TableCell>
-                            <TableCell className="font-medium text-primary">{user.name}</TableCell>
-                            <TableCell>
-                              <Badge className={cn("font-medium", user.status === 'Enabled' ? 'bg-green-500/20 text-green-500' : 'bg-muted text-muted-foreground')}>
+                              <Badge variant={user.status === 'Enabled' ? 'outline' : 'secondary'}>
                                 {user.status}
                               </Badge>
                             </TableCell>
                             <TableCell className="text-sm">{user.domain}</TableCell>
                             <TableCell className="text-sm">{user.memberOf}</TableCell>
+                            <TableCell>{user.isAdmin ? <Badge variant="destructive">Admin</Badge> : '-'}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -687,37 +726,33 @@ export const HiLogDashboard: React.FC = () => {
                   )}
                 />
               </TabsContent>
-              
-              <TabsContent value="entra-id">
+
+              <TabsContent value="entra">
                 <PaginatedTable
                   data={filteredUsersEntra}
                   renderTable={(pageData) => (
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead></TableHead>
                           <TableHead>NAME</TableHead>
                           <TableHead>STATUS</TableHead>
                           <TableHead>DOMAIN</TableHead>
                           <TableHead>MEMBER OF</TableHead>
+                          <TableHead>ADMIN</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {pageData.map((user, index) => (
                           <TableRow key={index}>
+                            <TableCell className="font-medium">{user.name}</TableCell>
                             <TableCell>
-                              {user.isAdmin && (
-                                <Badge variant="outline" className="bg-primary/10 text-primary border-primary">👑</Badge>
-                              )}
-                            </TableCell>
-                            <TableCell className="font-medium text-primary">{user.name}</TableCell>
-                            <TableCell>
-                              <Badge className={cn("font-medium", user.status === 'Enabled' ? 'bg-green-500/20 text-green-500' : 'bg-muted text-muted-foreground')}>
+                              <Badge variant={user.status === 'Enabled' ? 'outline' : 'secondary'}>
                                 {user.status}
                               </Badge>
                             </TableCell>
                             <TableCell className="text-sm">{user.domain}</TableCell>
                             <TableCell className="text-sm">{user.memberOf}</TableCell>
+                            <TableCell>{user.isAdmin ? <Badge variant="destructive">Admin</Badge> : '-'}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -730,7 +765,7 @@ export const HiLogDashboard: React.FC = () => {
         </Card>
       </section>
 
-      {/* Correlations Section */}
+      {/* Correlation Section */}
       <CorrelationSection />
     </div>
   );
