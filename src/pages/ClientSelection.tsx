@@ -1,27 +1,37 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useClientContext } from '@/contexts/ClientContext';
+import { useUserRoles } from '@/hooks/useUserRoles';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, Building2, Calendar, ArrowRight, Users, FileText, Server, Plug } from 'lucide-react';
+import { Search, Building2, Calendar, ArrowRight, Users, FileText, Server, Plug, Plus, Pencil, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
 import ClientProfileSheet from '@/components/clients/ClientProfileSheet';
 import ClientAssetSheet from '@/components/clients/ClientAssetSheet';
 import ClientServicesDialog from '@/components/clients/ClientServicesDialog';
+import ClientCrudDialog from '@/components/clients/ClientCrudDialog';
+import DeleteClientDialog from '@/components/clients/DeleteClientDialog';
 
 const ClientSelection: React.FC = () => {
   const navigate = useNavigate();
-  const { organizations, setSelectedOrganization, isLoadingClients, selectedOrganization } = useClientContext();
+  const { organizations, setSelectedOrganization, isLoadingClients, selectedOrganization, fetchOrganizations } = useClientContext();
+  const { isSuperAdmin } = useUserRoles();
   const [searchQuery, setSearchQuery] = useState('');
   const [editingOrgId, setEditingOrgId] = useState<string | null>(null);
   const [editingOrgName, setEditingOrgName] = useState<string>('');
   const [profileOpen, setProfileOpen] = useState(false);
   const [assetOpen, setAssetOpen] = useState(false);
   const [servicesOpen, setServicesOpen] = useState(false);
+
+  // CRUD state
+  const [crudOpen, setCrudOpen] = useState(false);
+  const [crudOrg, setCrudOrg] = useState<{ id: string; name: string; code: string } | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteOrg, setDeleteOrg] = useState<{ id: string; name: string } | null>(null);
 
   const filteredOrganizations = organizations.filter(org => {
     if (!searchQuery.trim()) return true;
@@ -55,6 +65,23 @@ const ClientSelection: React.FC = () => {
     setServicesOpen(true);
   };
 
+  const openCreate = () => {
+    setCrudOrg(null);
+    setCrudOpen(true);
+  };
+
+  const openEdit = (e: React.MouseEvent, org: typeof organizations[0]) => {
+    e.stopPropagation();
+    setCrudOrg({ id: org.id, name: org.name, code: org.code });
+    setCrudOpen(true);
+  };
+
+  const openDelete = (e: React.MouseEvent, org: typeof organizations[0]) => {
+    e.stopPropagation();
+    setDeleteOrg({ id: org.id, name: org.name });
+    setDeleteOpen(true);
+  };
+
   if (isLoadingClients) {
     return (
       <div className="min-h-screen bg-background p-6">
@@ -76,15 +103,25 @@ const ClientSelection: React.FC = () => {
       {/* Header */}
       <div className="border-b border-border bg-card/50">
         <div className="max-w-6xl mx-auto px-6 py-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <Users className="w-6 h-6 text-primary" />
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Users className="w-6 h-6 text-primary" />
+                </div>
+                <h1 className="text-3xl font-bold text-foreground">Gestione Clienti</h1>
+              </div>
+              <p className="text-muted-foreground ml-12">
+                Seleziona un cliente per visualizzare e gestire i suoi dati
+              </p>
             </div>
-            <h1 className="text-3xl font-bold text-foreground">Gestione Clienti</h1>
+            {isSuperAdmin && (
+              <Button onClick={openCreate} className="gap-2">
+                <Plus className="w-4 h-4" />
+                Nuovo Cliente
+              </Button>
+            )}
           </div>
-          <p className="text-muted-foreground ml-12">
-            Seleziona un cliente per visualizzare e gestire i suoi dati
-          </p>
         </div>
       </div>
 
@@ -137,9 +174,31 @@ const ClientSelection: React.FC = () => {
                     <div className="p-2 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors">
                       <Building2 className="w-5 h-5 text-primary" />
                     </div>
-                    {selectedOrganization?.id === org.id && (
-                      <Badge variant="default" className="text-xs">Attivo</Badge>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {selectedOrganization?.id === org.id && (
+                        <Badge variant="default" className="text-xs">Attivo</Badge>
+                      )}
+                      {isSuperAdmin && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => openEdit(e, org)}
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-destructive"
+                            onClick={(e) => openDelete(e, org)}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </div>
                   <CardTitle className="text-lg mt-3 group-hover:text-primary transition-colors">
                     {org.name}
@@ -154,39 +213,21 @@ const ClientSelection: React.FC = () => {
 
                   {/* Quick edit buttons */}
                   <div className="flex gap-2 mb-3">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 text-xs"
-                      onClick={(e) => openProfile(e, org)}
-                    >
+                    <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={(e) => openProfile(e, org)}>
                       <FileText className="w-3.5 h-3.5 mr-1" />
                       Anagrafica
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 text-xs"
-                      onClick={(e) => openAsset(e, org)}
-                    >
+                    <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={(e) => openAsset(e, org)}>
                       <Server className="w-3.5 h-3.5 mr-1" />
                       Consistenze
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 text-xs"
-                      onClick={(e) => openServices(e, org)}
-                    >
+                    <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={(e) => openServices(e, org)}>
                       <Plug className="w-3.5 h-3.5 mr-1" />
                       Servizi
                     </Button>
                   </div>
 
-                  <Button
-                    variant="ghost"
-                    className="w-full group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
-                  >
+                  <Button variant="ghost" className="w-full group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
                     <span>Gestisci</span>
                     <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
@@ -198,26 +239,15 @@ const ClientSelection: React.FC = () => {
       </div>
 
       {/* Sheets */}
-      <ClientProfileSheet
-        organizationId={editingOrgId}
-        organizationName={editingOrgName}
-        open={profileOpen}
-        onOpenChange={setProfileOpen}
-      />
-      <ClientAssetSheet
-        organizationId={editingOrgId}
-        organizationName={editingOrgName}
-        open={assetOpen}
-        onOpenChange={setAssetOpen}
-      />
+      <ClientProfileSheet organizationId={editingOrgId} organizationName={editingOrgName} open={profileOpen} onOpenChange={setProfileOpen} />
+      <ClientAssetSheet organizationId={editingOrgId} organizationName={editingOrgName} open={assetOpen} onOpenChange={setAssetOpen} />
       {editingOrgId && (
-        <ClientServicesDialog
-          organizationId={editingOrgId}
-          organizationName={editingOrgName}
-          open={servicesOpen}
-          onOpenChange={setServicesOpen}
-        />
+        <ClientServicesDialog organizationId={editingOrgId} organizationName={editingOrgName} open={servicesOpen} onOpenChange={setServicesOpen} />
       )}
+
+      {/* CRUD Dialogs */}
+      <ClientCrudDialog open={crudOpen} onOpenChange={setCrudOpen} organization={crudOrg} onSaved={fetchOrganizations} />
+      <DeleteClientDialog open={deleteOpen} onOpenChange={setDeleteOpen} organization={deleteOrg} onDeleted={fetchOrganizations} />
     </div>
   );
 };
