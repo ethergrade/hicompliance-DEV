@@ -60,10 +60,10 @@ export const GlobalFilters: React.FC<Props> = ({
     <div className="space-y-3">
       <Card className="border-border">
         <CardContent className="pt-4 pb-3">
-          <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-wrap items-end gap-2 w-full">
             {!advancedMode && (
               <>
-                <div className="flex-1 min-w-[200px]">
+                <div className="flex-1 min-w-0">
                   <Label className="text-xs text-muted-foreground mb-1 block">Ricerca globale</Label>
                   <div className="relative">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -75,7 +75,7 @@ export const GlobalFilters: React.FC<Props> = ({
                     />
                   </div>
                 </div>
-                <div className="w-[140px]">
+                <div className="w-28 shrink-0">
                   <Label className="text-xs text-muted-foreground mb-1 block">Severity</Label>
                   <Select value={filters.severity} onValueChange={(v) => update('severity', v)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -88,17 +88,17 @@ export const GlobalFilters: React.FC<Props> = ({
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="w-[160px]">
+                <div className="w-28 shrink-0">
                   <Label className="text-xs text-muted-foreground mb-1 block">Hostname</Label>
-                  <Input placeholder="es. SRV-DC01" value={filters.hostname} onChange={(e) => update('hostname', e.target.value)} />
+                  <Input placeholder="SRV-DC01" value={filters.hostname} onChange={(e) => update('hostname', e.target.value)} />
                 </div>
-                <div className="w-[180px]">
+                <div className="w-28 shrink-0">
                   <Label className="text-xs text-muted-foreground mb-1 block">Username</Label>
-                  <Input placeholder="es. user003" value={filters.username} onChange={(e) => update('username', e.target.value)} />
+                  <Input placeholder="user003" value={filters.username} onChange={(e) => update('username', e.target.value)} />
                 </div>
-                <div className="w-[160px]">
+                <div className="w-28 shrink-0">
                   <Label className="text-xs text-muted-foreground mb-1 block">IP</Label>
-                  <Input placeholder="es. 203.0.113" value={filters.ip} onChange={(e) => update('ip', e.target.value)} />
+                  <Input placeholder="203.0.113" value={filters.ip} onChange={(e) => update('ip', e.target.value)} />
                 </div>
               </>
             )}
