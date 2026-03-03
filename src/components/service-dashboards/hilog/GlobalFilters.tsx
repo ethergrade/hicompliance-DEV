@@ -11,6 +11,7 @@ import { AdvancedFilterBuilder } from './AdvancedFilterBuilder';
 import {
   AdvancedFilter, createEmptyFilter,
 } from './filterEngine';
+import { HiLogExcelExport } from './HiLogExcelExport';
 
 export interface HiLogFilters {
   globalSearch: string;
@@ -20,6 +21,15 @@ export interface HiLogFilters {
   ip: string;
 }
 
+interface DataSets {
+  windowsLogs: Record<string, any>[];
+  entraId: Record<string, any>[];
+  securityEvents: Record<string, any>[];
+  firewall: Record<string, any>[];
+  hosts: Record<string, any>[];
+  startup: Record<string, any>[];
+}
+
 interface Props {
   filters: HiLogFilters;
   onChange: (filters: HiLogFilters) => void;
@@ -27,11 +37,12 @@ interface Props {
   onAdvancedFilterChange: (f: AdvancedFilter) => void;
   advancedMode: boolean;
   onToggleAdvanced: () => void;
+  dataSets?: DataSets;
 }
 
 export const GlobalFilters: React.FC<Props> = ({
   filters, onChange, advancedFilter, onAdvancedFilterChange,
-  advancedMode, onToggleAdvanced,
+  advancedMode, onToggleAdvanced, dataSets,
 }) => {
   const update = (key: keyof HiLogFilters, value: string) => {
     onChange({ ...filters, [key]: value });
@@ -108,6 +119,7 @@ export const GlobalFilters: React.FC<Props> = ({
                   Reset
                 </Button>
               )}
+              {dataSets && <HiLogExcelExport dataSets={dataSets} />}
             </div>
           </div>
         </CardContent>

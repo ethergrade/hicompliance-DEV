@@ -82,6 +82,15 @@ export const HiLogDashboard: React.FC = () => {
   const filteredUsersLocal = useMemo(() => applyAllFilters(usersLocalData, { usernameKey: 'name', hostnameKey: 'domain' }), [applyAllFilters]);
   const filteredUsersEntra = useMemo(() => applyAllFilters(usersEntraData, { usernameKey: 'name', hostnameKey: 'domain' }), [applyAllFilters]);
 
+  const exportDataSets = useMemo(() => ({
+    windowsLogs: filteredWindowsLogs,
+    entraId: filteredEntraId,
+    securityEvents: filteredSecurityEvents,
+    firewall: filteredFirewall,
+    hosts: filteredHosts,
+    startup: filteredStartup,
+  }), [filteredWindowsLogs, filteredEntraId, filteredSecurityEvents, filteredFirewall, filteredHosts, filteredStartup]);
+
   return (
     <div className="space-y-8">
       {/* Global Filters */}
@@ -92,6 +101,7 @@ export const HiLogDashboard: React.FC = () => {
         onAdvancedFilterChange={setAdvancedFilter}
         advancedMode={advancedMode}
         onToggleAdvanced={() => setAdvancedMode(!advancedMode)}
+        dataSets={exportDataSets}
       />
 
       {/* Overview Section */}
