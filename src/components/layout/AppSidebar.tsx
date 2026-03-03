@@ -25,6 +25,7 @@ import {
   PieChart,
   ChevronDown,
   ShieldCheck,
+  Bot,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -326,6 +327,7 @@ export const AppSidebar: React.FC = () => {
                     </SidebarMenuItem>
                   );
                 })}
+                {isSuperAdmin && renderNavItem({ title: 'AI CISO Assistant', href: '/ai-ciso', icon: Bot })}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
