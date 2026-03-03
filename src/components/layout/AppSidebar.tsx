@@ -61,8 +61,8 @@ const hiComplianceModules = [
   { title: 'Assessment', href: '/assessment', icon: ClipboardCheck },
   { title: 'SurfaceScan360', href: '/surface-scan', icon: Globe },
   { title: 'DarkRisk360', href: '/dark-risk', icon: Eye },
-  { title: 'Remediation', href: '/remediation', icon: Wrench },
   { title: 'Analisi', href: '/analytics', icon: BarChart3 },
+  { title: 'Remediation', href: '/remediation', icon: Wrench },
   { title: 'Consistenze', href: '/consistenze', icon: Package },
 ];
 
