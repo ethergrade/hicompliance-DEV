@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useClientContext } from '@/contexts/ClientContext';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -84,50 +85,46 @@ const ClientSelection: React.FC = () => {
 
   if (isLoadingClients) {
     return (
-      <div className="min-h-screen bg-background p-6">
-        <div className="max-w-6xl mx-auto">
-          <Skeleton className="h-10 w-64 mb-6" />
-          <Skeleton className="h-12 w-full max-w-md mb-8" />
+      <DashboardLayout>
+        <div className="space-y-6">
+          <Skeleton className="h-10 w-64" />
+          <Skeleton className="h-12 w-full max-w-md" />
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[1, 2, 3, 4, 5, 6].map(i => (
               <Skeleton key={i} className="h-48 rounded-xl" />
             ))}
           </div>
         </div>
-      </div>
+      </DashboardLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b border-border bg-card/50">
-        <div className="max-w-6xl mx-auto px-6 py-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 rounded-lg bg-primary/10">
-                  <Users className="w-6 h-6 text-primary" />
-                </div>
-                <h1 className="text-3xl font-bold text-foreground">Gestione Clienti</h1>
+    <DashboardLayout>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <Users className="w-6 h-6 text-primary" />
               </div>
-              <p className="text-muted-foreground ml-12">
-                Seleziona un cliente per visualizzare e gestire i suoi dati
-              </p>
+              <h1 className="text-3xl font-bold text-foreground">Gestione Clienti</h1>
             </div>
-            {isSuperAdmin && (
-              <Button onClick={openCreate} className="gap-2">
-                <Plus className="w-4 h-4" />
-                Nuovo Cliente
-              </Button>
-            )}
+            <p className="text-muted-foreground ml-12">
+              Seleziona un cliente per visualizzare e gestire i suoi dati
+            </p>
           </div>
+          {isSuperAdmin && (
+            <Button onClick={openCreate} className="gap-2">
+              <Plus className="w-4 h-4" />
+              Nuovo Cliente
+            </Button>
+          )}
         </div>
-      </div>
 
-      <div className="max-w-6xl mx-auto p-6">
         {/* Search */}
-        <div className="relative max-w-md mb-8">
+        <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
           <Input
             placeholder="Cerca per nome o codice cliente..."
@@ -138,7 +135,7 @@ const ClientSelection: React.FC = () => {
         </div>
 
         {/* Stats */}
-        <div className="flex items-center gap-4 mb-6">
+        <div className="flex items-center gap-4">
           <Badge variant="outline" className="text-sm">
             {filteredOrganizations.length} {filteredOrganizations.length === 1 ? 'cliente' : 'clienti'}
           </Badge>
@@ -248,7 +245,7 @@ const ClientSelection: React.FC = () => {
       {/* CRUD Dialogs */}
       <ClientCrudDialog open={crudOpen} onOpenChange={setCrudOpen} organization={crudOrg} onSaved={fetchOrganizations} />
       <DeleteClientDialog open={deleteOpen} onOpenChange={setDeleteOpen} organization={deleteOrg} onDeleted={fetchOrganizations} />
-    </div>
+    </DashboardLayout>
   );
 };
 
