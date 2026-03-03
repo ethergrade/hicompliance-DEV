@@ -15,6 +15,7 @@ import { AdvancedFilterBuilder } from './AdvancedFilterBuilder';
 import {
   AdvancedFilter, createEmptyFilter, evalAdvancedFilter,
 } from './filterEngine';
+import { CorrelationExport } from './CorrelationExport';
 
 interface CorrelatedEvent {
   datetime: string;
@@ -102,15 +103,18 @@ export const CorrelationSection: React.FC = () => {
         <CardContent>
           {hasConditions ? (
             <div className="space-y-4">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
                 <Badge variant="outline">{correlatedEvents.length} eventi trovati</Badge>
-                <div className="flex gap-1 ml-auto">
+                <div className="flex gap-1">
                   {Object.entries(sourceColors).map(([src, cls]) => {
                     const count = correlatedEvents.filter(e => e.source === src).length;
                     return count > 0 ? (
                       <Badge key={src} className={cn("text-xs", cls)}>{src}: {count}</Badge>
                     ) : null;
                   })}
+                </div>
+                <div className="ml-auto">
+                  <CorrelationExport events={correlatedEvents} filter={filter} eventsCount={correlatedEvents.length} />
                 </div>
               </div>
 
