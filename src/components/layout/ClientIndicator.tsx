@@ -13,7 +13,7 @@
  
    const handleChangeClient = () => {
      clearSelection();
-     navigate('/clients');
+     navigate('/admin/clients');
    };
  
    return (
