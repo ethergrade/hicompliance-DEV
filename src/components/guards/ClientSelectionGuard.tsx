@@ -22,8 +22,8 @@
  
    // Se l'utente può gestire più clienti ma non ne ha selezionato uno
    // e non è già sulla pagina di selezione clienti
-   if (needsClientSelection && location.pathname !== '/clients') {
-     return <Navigate to="/clients" replace />;
+    if (needsClientSelection && location.pathname !== '/admin/clients') {
+      return <Navigate to="/admin/clients" replace />;
    }
  
    return <>{children}</>;

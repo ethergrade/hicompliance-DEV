@@ -76,7 +76,7 @@ const incidentSubItems = [
 const adminNavigation = [
   {
     title: 'Gestione Clienti',
-    href: '/clients',
+    href: '/admin/clients',
     icon: Building2,
   },
   {
@@ -300,7 +300,7 @@ export const AppSidebar: React.FC = () => {
               <SidebarMenu>
               {adminNavigation.filter(item => {
                   // Show "Selezione Clienti" only for sales/admin who can manage multiple clients
-                  if (item.href === '/clients') return canManageMultipleClients;
+                  if (item.href === '/admin/clients') return canManageMultipleClients;
                   // Show "Reportistica Aggregata" for admin/sales who can manage multiple clients
                   if (item.href === '/admin/reporting') return canManageMultipleClients;
                   // Show other admin items only for admin/superadmin
