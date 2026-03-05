@@ -1,66 +1,34 @@
 
 
-# Piano: HiLog Dashboard - Filtri avanzati, dati mock estesi e correlazioni
+## Problem
 
-## Panoramica
+The AI CISO chat output appears visually compressed -- paragraphs are too close together, bullet points lack spacing, and sections blend into each other. Two areas need fixing:
 
-Potenziamento significativo della dashboard HiLog con:
-1. Molti piu dati mock realistici (da ~4 righe per tabella a 20-40+)
-2. Filtri funzionanti per utente, IP, hostname, severity, date range
-3. Barra di ricerca globale attiva su tutte le sezioni
-4. Sezione correlazioni per collegare eventi tra sorgenti diverse
+1. **CSS styling** in `ChatMessage.tsx` -- the prose spacing classes are too tight (`prose-ul:my-1`, `prose-li:my-0.5`)
+2. **System prompt** in the edge function -- needs stronger formatting instructions to ensure the model outputs proper markdown with clear separation
 
-## Modifiche al file `HiLogDashboard.tsx`
+## Plan
 
-### 1. Dati mock estesi (tutti anonymized)
+### 1. Improve ChatMessage.tsx prose styling
 
-Espandere ogni dataset con dati credibili:
-- **Windows Logs**: ~30 righe con mix di login/logout/failure, utenti diversi (user001-user020), hostname diversi (WS-PC001-PC030, SRV-DC01, SRV-APP01-03, SRV-BACKUP01), IP vari (192.168.100.xxx, 192.168.101.xxx, 10.0.0.xxx)
-- **Entra ID**: ~20 righe con app diverse (Outlook, Teams, SharePoint, Azure PowerShell, Graph API), location diverse (Milano, Roma, Londra, sospette da Russia/Cina), status misti
-- **Security Events**: ~15 righe con severity miste, eventi come brute force, lateral movement, privilege escalation, anomalous login hours, USB policy violation
-- **Firewall**: ~15 righe con azioni diverse (Allow, Block, Drop), severity varie, regole VPN, NAT, IPS
-- **Hosts**: ~20 host con OS misti (Win 10/11/Server 2019/2022), issues count variabili
-- **Users**: ~15 utenti AD, ~10 local, ~12 Entra ID
-- **Startup/Shutdown**: ~15 righe
+Update the Tailwind prose classes to add more breathing room:
+- `prose-p:my-3` -- paragraph spacing
+- `prose-ul:my-3 prose-ol:my-3` -- list spacing  
+- `prose-li:my-1.5` -- item spacing
+- `prose-headings:mt-5 prose-headings:mb-3` -- header spacing
+- `prose-hr:my-4 prose-hr:border-slate-700/50` -- horizontal rule styling
+- Add a subtle left border accent on blockquotes for visual separation
 
-### 2. Stato e filtri funzionanti
+### 2. Refine system prompt formatting instructions
 
-Aggiungere state variables:
-```text
-globalSearch, severityFilter, sourceFilter, dateRangeFilter,
-hostnameFilter, usernameFilter, ipFilter, actionFilter
-```
+In `supabase/functions/ai-ciso-chat/index.ts`, update the `STILE DI RISPOSTA` section to explicitly instruct the model to:
+- Insert a blank line between every section and every bullet group
+- Use `---` horizontal rules between major sections
+- Start every response with a bold **TL;DR** line followed by a blank line
+- Use `###` sub-headers within sections for nested topics
+- Keep each bullet on its own line with a blank line after groups of related bullets
 
-Ogni tabella viene filtrata dai filtri attivi. Aggiungere una barra filtri globale in alto con:
-- Input ricerca globale (cerca in tutti i campi di tutte le tabelle)
-- Select severity (All / Low / Medium / High / Critical)
-- Select source (All / Windows / Entra ID / Firewall / Security)
-- Input hostname
-- Input username/IP
+### 3. Redeploy edge function
 
-### 3. Filtri per sezione
-
-Attivare i pulsanti "Add filter" gia presenti ma non funzionanti. Ogni sezione filtra i propri dati tramite il globalSearch + filtri specifici.
-
-### 4. Sezione Correlazioni (nuova)
-
-Nuova sezione in fondo con:
-- **Correlazione automatica**: dato un IP o username, mostra tutti gli eventi correlati tra Windows logs, Entra ID, firewall e security events
-- Input per inserire un IP o username da correlare
-- Tabella risultati aggregata con colonna "Source" che indica la provenienza
-- Timeline visiva degli eventi correlati
-
-### 5. Paginazione
-
-Aggiungere paginazione (10 righe per pagina) a tutte le tabelle piu grandi.
-
-## Riepilogo
-
-| Cosa | Dettaglio |
-|---|---|
-| File modificato | `src/components/service-dashboards/HiLogDashboard.tsx` |
-| Dati mock | Da ~20 righe totali a ~150+ |
-| Filtri | Globali + per sezione, tutti funzionanti |
-| Correlazioni | Nuova sezione cross-source |
-| Paginazione | Su tutte le tabelle |
+Deploy the updated `ai-ciso-chat` function with the refined prompt.
 
