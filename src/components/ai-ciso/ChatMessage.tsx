@@ -25,13 +25,16 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ role, content, onGener
           : 'bg-slate-800/60 border border-slate-700/30 text-slate-100'
       }`}>
         <div className="prose prose-sm prose-invert max-w-none
-          prose-headings:text-cyan-300 prose-headings:font-semibold prose-headings:mt-3 prose-headings:mb-2
+          prose-headings:text-cyan-300 prose-headings:font-semibold prose-headings:mt-5 prose-headings:mb-3
+          prose-p:my-3
           prose-strong:text-cyan-200
-          prose-ul:my-1 prose-li:my-0.5
+          prose-ul:my-3 prose-ol:my-3 prose-li:my-1.5
           prose-table:text-xs
           prose-th:text-cyan-300 prose-th:border-cyan-700/50
           prose-td:border-slate-700/50
           prose-code:text-cyan-300 prose-code:bg-slate-900/50 prose-code:px-1 prose-code:rounded
+          prose-hr:my-5 prose-hr:border-slate-700/50
+          prose-blockquote:border-l-2 prose-blockquote:border-cyan-500/40 prose-blockquote:pl-4 prose-blockquote:italic prose-blockquote:text-slate-300
         ">
           <ReactMarkdown>{content}</ReactMarkdown>
         </div>
