@@ -356,8 +356,8 @@ const Remediation: React.FC = () => {
       id: 1,
       task: 'Implementazione IAM centralizzato',
       category: 'Gestione delle identità',
-      startDate: '2025-01-15',
-      endDate: '2025-03-01',
+      startDate: '2026-01-15',
+      endDate: '2026-03-01',
       progress: 0,
       assignee: 'IT Security Team',
       priority: 'Critica',
@@ -369,8 +369,8 @@ const Remediation: React.FC = () => {
       id: 2,
       task: 'Audit accessi privilegiati',
       category: 'Gestione delle identità',
-      startDate: '2025-01-20',
-      endDate: '2025-02-15',
+      startDate: '2026-01-20',
+      endDate: '2026-02-15',
       progress: 0,
       assignee: 'Security Auditor',
       priority: 'Critica',
@@ -382,8 +382,8 @@ const Remediation: React.FC = () => {
       id: 3,
       task: 'Implementazione SAST/DAST',
       category: 'Sviluppo software',
-      startDate: '2025-02-01',
-      endDate: '2025-04-01',
+      startDate: '2026-02-01',
+      endDate: '2026-04-01',
       progress: 15,
       assignee: 'DevSecOps Team',
       priority: 'Alta',
@@ -395,8 +395,8 @@ const Remediation: React.FC = () => {
       id: 4,
       task: 'Training sviluppatori Secure Coding',
       category: 'Sviluppo software',
-      startDate: '2025-01-25',
-      endDate: '2025-02-25',
+      startDate: '2026-01-25',
+      endDate: '2026-02-25',
       progress: 0,
       assignee: 'HR & Security',
       priority: 'Alta',
@@ -408,8 +408,8 @@ const Remediation: React.FC = () => {
       id: 5,
       task: 'Assessment fornitori critici',
       category: 'Gestione fornitori',
-      startDate: '2025-02-15',
-      endDate: '2025-03-15',
+      startDate: '2026-02-15',
+      endDate: '2026-03-15',
       progress: 0,
       assignee: 'Procurement Team',
       priority: 'Media',
@@ -421,8 +421,8 @@ const Remediation: React.FC = () => {
       id: 6,
       task: 'Implementazione procedure backup',
       category: 'Business Continuity',
-      startDate: '2025-03-01',
-      endDate: '2025-04-15',
+      startDate: '2026-03-01',
+      endDate: '2026-04-15',
       progress: 0,
       assignee: 'Operations Team',
       priority: 'Alta',
@@ -434,8 +434,8 @@ const Remediation: React.FC = () => {
       id: 7,
       task: 'Implementazione Incident Remediation Plan',
       category: 'Incident Management',
-      startDate: '2025-02-10',
-      endDate: '2025-03-20',
+      startDate: '2026-02-10',
+      endDate: '2026-03-20',
       progress: 0,
       assignee: 'IT Security Team',
       priority: 'Alta',
@@ -1036,8 +1036,8 @@ const Remediation: React.FC = () => {
   };
 
   const getGanttData = () => {
-    const startDate = new Date('2025-01-01');
-    const endDate = new Date('2025-05-01');
+    const startDate = new Date('2026-01-01');
+    const endDate = new Date('2026-05-01');
     const totalDays = differenceInDays(endDate, startDate);
     
     // Filtra i task eliminati e ordina secondo l'ordine corrente
@@ -1150,8 +1150,8 @@ const Remediation: React.FC = () => {
   // Generiamo le settimane per l'header del Gantt
   const generateWeeks = () => {
     const weeks = [];
-    const startDate = new Date('2025-01-01');
-    const endDate = new Date('2025-05-01');
+    const startDate = new Date('2026-01-01');
+    const endDate = new Date('2026-05-01');
     let currentDate = startDate;
     
     while (currentDate < endDate) {
@@ -1753,8 +1753,8 @@ const Remediation: React.FC = () => {
           <TabsContent value="gantt" className="space-y-6">
             <GanttChart
               tasks={ganttData}
-              ganttStartDate={new Date('2025-01-01')}
-              ganttEndDate={new Date('2025-05-01')}
+              ganttStartDate={new Date('2026-01-01')}
+              ganttEndDate={new Date('2026-05-01')}
               onDateChange={(taskId, startDate, endDate) => saveTaskDates(taskId, startDate, endDate)}
               onEditTask={(task) => handleEditTask(task)}
               onToggleVisibility={(taskId) => handleToggleVisibility(taskId)}
