@@ -107,6 +107,14 @@ export const ComplianceMetricCard: React.FC = () => {
             <p className="text-xs text-muted-foreground">Livello di rischio</p>
           </div>
         </div>
+
+        <button
+          onClick={() => navigate('/assessment')}
+          className="mt-4 w-full flex items-center justify-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors py-1.5 border-t border-border"
+        >
+          <ExternalLink className="w-3 h-3" />
+          Visualizza Assessment
+        </button>
       </CardContent>
     </Card>
   );
