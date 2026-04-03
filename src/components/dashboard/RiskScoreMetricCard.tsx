@@ -44,7 +44,7 @@ export const RiskScoreMetricCard: React.FC = () => {
     <Card className="relative overflow-hidden border-border shadow-cyber hover:shadow-glow transition-cyber animate-fade-in">
       <CardHeader className="pb-2 text-center">
         <CardTitle className="text-sm font-medium text-muted-foreground mb-3">
-          Risk Score
+          True Risk Score
         </CardTitle>
 
         {/* Pill selector */}
