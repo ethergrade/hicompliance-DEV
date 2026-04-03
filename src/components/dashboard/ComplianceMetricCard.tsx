@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { ExternalLink } from 'lucide-react';
 
 type YearRange = '1y' | '2y' | '3y' | '4y';
 
@@ -35,6 +37,7 @@ const getBadgeClass = (status: string) =>
 export const ComplianceMetricCard: React.FC = () => {
   const [selected, setSelected] = useState<YearRange>('1y');
   const compliance = COMPLIANCE_DATA[selected];
+  const navigate = useNavigate();
   const risk = RISK_DATA[selected];
 
   const renderGauge = (percentage: number, status: string) => {
@@ -104,6 +107,14 @@ export const ComplianceMetricCard: React.FC = () => {
             <p className="text-xs text-muted-foreground">Livello di rischio</p>
           </div>
         </div>
+
+        <button
+          onClick={() => navigate('/assessment')}
+          className="mt-4 w-full flex items-center justify-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors py-1.5 border-t border-border"
+        >
+          <ExternalLink className="w-3 h-3" />
+          Visualizza Assessment
+        </button>
       </CardContent>
     </Card>
   );
