@@ -374,10 +374,26 @@ const Assessment: React.FC = () => {
               Valutazione conformità direttiva e best practices NIS2/NIST/ISO
             </p>
           </div>
-          <Button className="bg-primary text-primary-foreground">
-            <FileText className="w-4 h-4 mr-2" />
-            Genera Report
-          </Button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-card border border-border rounded-lg px-3 py-2">
+              <Clock className="w-4 h-4 text-muted-foreground" />
+              <Select value={radarYear} onValueChange={(v) => setRadarYear(v as RadarYearRange)}>
+                <SelectTrigger className="w-[130px] border-0 bg-transparent h-8 text-sm font-medium">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1y">2025 (1y)</SelectItem>
+                  <SelectItem value="2y">2024 (2y)</SelectItem>
+                  <SelectItem value="3y">2023 (3y)</SelectItem>
+                  <SelectItem value="4y">2022 (4y)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button className="bg-primary text-primary-foreground">
+              <FileText className="w-4 h-4 mr-2" />
+              Genera Report
+            </Button>
+          </div>
         </div>
 
         {/* Organization Profile Banner */}
