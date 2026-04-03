@@ -37,6 +37,7 @@ const getBadgeClass = (status: string) =>
 export const ComplianceMetricCard: React.FC = () => {
   const [selected, setSelected] = useState<YearRange>('1y');
   const compliance = COMPLIANCE_DATA[selected];
+  const navigate = useNavigate();
   const risk = RISK_DATA[selected];
 
   const renderGauge = (percentage: number, status: string) => {
