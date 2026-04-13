@@ -127,7 +127,14 @@ const Remediation: React.FC = () => {
       return;
     }
 
-    if (!data || data.length === 0) {
+    // Check if we need to seed: no tasks, or all tasks have dates before 2026 (old mock data)
+    const needsSeed = !data || data.length === 0 || data.every(t => t.start_date < '2026-01-01');
+
+    if (needsSeed) {
+      // Delete old tasks if any
+      if (data && data.length > 0) {
+        await supabase.from('remediation_tasks').delete().eq('organization_id', orgId);
+      }
       // Seed demo tasks
       const seedRows = DEMO_TASKS.map((t, i) => ({
         ...t,
