@@ -49,6 +49,36 @@ const RADAR_YEAR_DATA: Record<RadarYearRange, number[]> = {
 const RADAR_TARGET_OFFSET = 15; // target is always +15 above compliance
 
 const Assessment: React.FC = () => {
+  // Question responses state: { [questionId]: response }
+  const [responses, setResponses] = useState<Record<number, AssessmentResponse>>({});
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+
+  const toggleCategory = useCallback((name: string) => {
+    setExpandedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }, []);
+
+  const setResponse = useCallback((questionId: number, value: AssessmentResponse) => {
+    setResponses(prev => ({ ...prev, [questionId]: value }));
+  }, []);
+
+  // Compute counts per category from responses
+  const getCategoryCounts = useCallback((categoryName: string) => {
+    const cat = ASSESSMENT_CATEGORIES.find(c => c.name === categoryName);
+    if (!cat) return { completato: 0, pianificato_in_corso: 0, non_iniziato: 0, non_applicabile: 0, unanswered: 0 };
+    const counts = { completato: 0, pianificato_in_corso: 0, non_iniziato: 0, non_applicabile: 0, unanswered: 0 };
+    cat.questions.forEach(q => {
+      const r = responses[q.id];
+      if (r && r in counts) counts[r as keyof typeof counts]++;
+      else counts.unanswered++;
+    });
+    return counts;
+  }, [responses]);
+
   const [radarYear, setRadarYear] = useState<RadarYearRange>('1y');
 
   // Organization profile for NIS2 classification
