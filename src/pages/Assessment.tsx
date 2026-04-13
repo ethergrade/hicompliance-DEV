@@ -232,9 +232,15 @@ const Assessment: React.FC = () => {
      assessmentCategories.reduce((acc, cat) => acc + cat.questions, 0)) * 100
   );
 
-  const overallScore = Math.round(
-    assessmentCategories.reduce((acc, cat) => acc + cat.score, 0) / assessmentCategories.length
-  );
+  const overallScore = useMemo(() => {
+    const catsWithAnswers = assessmentCategories.filter(c => c.completed > 0);
+    if (catsWithAnswers.length === 0) return 0;
+    return Math.round(catsWithAnswers.reduce((acc, cat) => acc + cat.score, 0) / catsWithAnswers.length);
+  }, [assessmentCategories]);
+
+  const overallRisk = useMemo(() => getRiskFromScore(overallScore), [overallScore]);
+
+  const completedAreas = useMemo(() => assessmentCategories.filter(c => c.status === 'completed').length, [assessmentCategories]);
 
   // Animation function
   const animateValue = (
@@ -396,7 +402,7 @@ const Assessment: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Progresso Globale</p>
-                  <p className="text-2xl font-bold text-foreground">{animatedProgress}%</p>
+                  <p className="text-2xl font-bold text-foreground">{overallProgress}%</p>
                 </div>
                 <TrendingUp className="w-8 h-8 text-primary" />
               </div>
@@ -408,10 +414,11 @@ const Assessment: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Punteggio Conformità</p>
-                  <p className="text-2xl font-bold text-yellow-500">{animatedScore}/100</p>
+                  <p className={`text-2xl font-bold ${overallRisk.color}`}>{overallScore}/100</p>
                 </div>
-                <Target className="w-8 h-8 text-yellow-500" />
+                <Target className={`w-8 h-8 ${overallRisk.color}`} />
               </div>
+              <p className={`text-xs mt-1 ${overallRisk.color}`}>Rischio: {overallRisk.label}</p>
             </CardContent>
           </Card>
           
@@ -421,7 +428,7 @@ const Assessment: React.FC = () => {
                 <div>
                   <p className="text-sm text-muted-foreground">Aree Completate</p>
                   <p className="text-2xl font-bold text-green-500">
-                    {animatedCompleted}
+                    {completedAreas}/{assessmentCategories.length}
                   </p>
                 </div>
                 <CheckCircle className="w-8 h-8 text-green-500" />
@@ -452,26 +459,26 @@ const Assessment: React.FC = () => {
               <div>
                 <div className="flex justify-between text-sm mb-2">
                   <span>Progresso Assessment</span>
-                  <span>{animatedProgress}%</span>
+                  <span>{overallProgress}%</span>
                 </div>
-                <Progress value={animatedProgress} className="h-2" />
+                <Progress value={overallProgress} className="h-2" />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-500">
-                    {animatedCompleted}
+                    {completedAreas}
                   </div>
                   <div className="text-sm text-muted-foreground">Aree Completate</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-yellow-500">
-                    {animatedInProgress}
+                    {assessmentCategories.filter(c => c.status === 'in_progress').length}
                   </div>
                   <div className="text-sm text-muted-foreground">In Corso</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-gray-500">
-                    {animatedNotStarted}
+                    {assessmentCategories.filter(c => c.status === 'not_started').length}
                   </div>
                   <div className="text-sm text-muted-foreground">Da Iniziare</div>
                 </div>
