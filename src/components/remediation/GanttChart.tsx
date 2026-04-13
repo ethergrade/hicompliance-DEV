@@ -262,7 +262,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                         </div>
                       </div>
 
-                      <div className="relative min-w-[1100px]">
+                      <div className="relative" style={{ minWidth: `${timelineMinWidth}px` }}>
                         <div
                           className="absolute inset-0 grid pointer-events-none"
                           style={{ gridTemplateColumns: monthGridTemplate }}
