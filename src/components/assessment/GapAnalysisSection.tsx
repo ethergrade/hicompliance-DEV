@@ -77,7 +77,7 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
               <div>
                 <CardTitle className="text-base">Storico & Gap Analysis</CardTitle>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Salva snapshot annuali e confronta l'evoluzione nel tempo
+                  Snapshot salvati automaticamente ad ogni risposta — confronta l'evoluzione
                 </p>
               </div>
             </div>
@@ -89,8 +89,8 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
                 disabled={saving}
                 className="h-8 text-xs"
               >
-                <Save className="w-3.5 h-3.5 mr-1" />
-                {saving ? 'Salvataggio...' : `Salva Snapshot ${currentYear}`}
+                <Save className="w-3 h-3 mr-1" />
+                {saving ? 'Salvataggio...' : `Forza Snapshot ${currentYear}`}
               </Button>
             </div>
           </div>
@@ -99,7 +99,7 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
           {/* Snapshots timeline */}
           {snapshots.length > 0 ? (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-muted-foreground mr-1">Snapshot salvati:</span>
+              <span className="text-xs text-muted-foreground mr-1">Snapshot:</span>
               {snapshots.map(s => (
                 <Badge
                   key={s.id}
@@ -118,7 +118,7 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
             </div>
           ) : (
             <p className="text-xs text-muted-foreground">
-              Nessuno snapshot salvato. Salva il primo snapshot per abilitare la gap analysis.
+              Rispondi ad almeno una domanda per generare automaticamente il primo snapshot.
             </p>
           )}
         </CardContent>
