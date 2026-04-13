@@ -613,24 +613,22 @@ const Assessment: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* ── RADAR Chart NIS2/NIST/ISO Alignment ── */}
-        <Card className="border-border">
-          <CardHeader>
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <div>
-                <CardTitle>Allineamento NIS2 / NIST / ISO</CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Evoluzione storica della conformità per categoria
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                {/* Year pill selector */}
+        {/* ── RADAR Chart + Category Breakdown ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          {/* Radar Chart - Left */}
+          <Card className="border-border lg:col-span-2">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <CardTitle className="text-base">Allineamento NIS2 / NIST / ISO</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-0.5">Conformità per categoria</p>
+                </div>
                 <div className="flex items-center gap-1">
                   {(['1y', '2y', '3y', '4y'] as RadarYearRange[]).map((opt) => (
                     <button
                       key={opt}
                       onClick={() => setRadarYear(opt)}
-                      className={`px-2.5 py-0.5 rounded-full text-xs font-semibold transition-all duration-200 ${
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all ${
                         radarYear === opt
                           ? 'bg-primary text-primary-foreground'
                           : 'border border-border text-muted-foreground hover:bg-muted/50'
@@ -640,82 +638,105 @@ const Assessment: React.FC = () => {
                     </button>
                   ))}
                 </div>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="inline-block w-3 h-0.5 bg-primary rounded" />
-                  <span>Conformità</span>
-                  <span className="inline-block w-3 h-0.5 rounded ml-2" style={{ backgroundColor: '#22c55e' }} />
-                  <span>Target</span>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="h-[320px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart
+                    data={assessmentCategories.map((cat, i) => ({
+                      category: cat.name.length > 14 ? cat.name.substring(0, 12) + '…' : cat.name,
+                      fullName: cat.name,
+                      compliance: RADAR_YEAR_DATA[radarYear][i] ?? 0,
+                      target: Math.min((RADAR_YEAR_DATA[radarYear][i] ?? 0) + RADAR_TARGET_OFFSET, 100),
+                    }))}
+                    margin={{ top: 10, right: 40, bottom: 10, left: 40 }}
+                  >
+                    <PolarGrid stroke="hsl(var(--border))" />
+                    <PolarAngleAxis dataKey="category" tick={{ fontSize: 8, fill: 'hsl(var(--muted-foreground))' }} />
+                    <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 8, fill: 'hsl(var(--muted-foreground))' }} tickCount={5} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--card))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px',
+                        color: 'hsl(var(--foreground))',
+                      }}
+                      formatter={(value: number, name: string) => [
+                        `${value}/100`,
+                        name === 'compliance' ? 'Conformità' : 'Target',
+                      ]}
+                      labelFormatter={(_: any, payload: any) => payload?.[0]?.payload?.fullName ?? ''}
+                    />
+                    <Legend
+                      formatter={(value) => value === 'compliance' ? 'Conformità' : 'Target'}
+                      wrapperStyle={{ fontSize: '10px', color: 'hsl(var(--muted-foreground))' }}
+                    />
+                    <Radar name="compliance" dataKey="compliance" stroke="hsl(var(--primary))" fill="hsl(var(--primary))" fillOpacity={0.25} strokeWidth={2} isAnimationActive animationDuration={600} />
+                    <Radar name="target" dataKey="target" stroke="#22c55e" fill="transparent" strokeWidth={2} strokeDasharray="5 5" isAnimationActive animationDuration={600} />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Category Response Breakdown - Right */}
+          <Card className="border-border lg:col-span-3">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">Riepilogo Risposte per Categoria</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-0.5">Distribuzione dello stato delle risposte</p>
+                </div>
+                <div className="flex items-center gap-3 text-[10px] font-medium">
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-green-500" /> Completato</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-yellow-500" /> Pianificato</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-500" /> Non iniziato</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-muted-foreground/40" /> N/A</span>
                 </div>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[400px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <RadarChart
-                  data={assessmentCategories.map((cat, i) => ({
-                    category: cat.name.length > 18 ? cat.name.substring(0, 16) + '…' : cat.name,
-                    fullName: cat.name,
-                    compliance: RADAR_YEAR_DATA[radarYear][i] ?? 0,
-                    target: Math.min((RADAR_YEAR_DATA[radarYear][i] ?? 0) + RADAR_TARGET_OFFSET, 100),
-                  }))}
-                  margin={{ top: 20, right: 60, bottom: 20, left: 60 }}
-                >
-                  <PolarGrid stroke="hsl(var(--border))" />
-                  <PolarAngleAxis
-                    dataKey="category"
-                    tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
-                  />
-                  <PolarRadiusAxis
-                    angle={90}
-                    domain={[0, 100]}
-                    tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }}
-                    tickCount={5}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                      color: 'hsl(var(--foreground))',
-                    }}
-                    formatter={(value: number, name: string, props: any) => [
-                      `${value}/100`,
-                      name === 'compliance' ? 'Conformità' : 'Target',
-                    ]}
-                    labelFormatter={(_: any, payload: any) =>
-                      payload?.[0]?.payload?.fullName ?? ''
-                    }
-                  />
-                  <Legend
-                    formatter={(value) => value === 'compliance' ? 'Conformità Attuale' : 'Target'}
-                    wrapperStyle={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}
-                  />
-                  <Radar
-                    name="compliance"
-                    dataKey="compliance"
-                    stroke="hsl(var(--primary))"
-                    fill="hsl(var(--primary))"
-                    fillOpacity={0.25}
-                    strokeWidth={2}
-                    isAnimationActive
-                    animationDuration={600}
-                  />
-                  <Radar
-                    name="target"
-                    dataKey="target"
-                    stroke="#22c55e"
-                    fill="transparent"
-                    strokeWidth={2}
-                    strokeDasharray="5 5"
-                    isAnimationActive
-                    animationDuration={600}
-                  />
-                </RadarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="space-y-1.5 max-h-[320px] overflow-y-auto pr-1">
+                {assessmentCategories.map((cat) => {
+                  const total = cat.questions;
+                  const c = cat.counts;
+                  const answered = c.completato + c.pianificato_in_corso + c.non_iniziato + c.non_applicabile;
+                  return (
+                    <div key={cat.name} className="group rounded-lg border border-border/50 hover:border-border bg-card/50 hover:bg-muted/30 transition-all px-3 py-2">
+                      <div className="flex items-center justify-between gap-3 mb-1.5">
+                        <span className="text-xs font-medium text-foreground truncate flex-1">{cat.name}</span>
+                        <span className="text-[10px] text-muted-foreground whitespace-nowrap">{answered}/{total}</span>
+                      </div>
+                      {/* Stacked bar */}
+                      <div className="flex h-2 rounded-full overflow-hidden bg-muted/50 mb-1.5">
+                        {c.completato > 0 && (
+                          <div className="bg-green-500 transition-all" style={{ width: `${(c.completato / total) * 100}%` }} />
+                        )}
+                        {c.pianificato_in_corso > 0 && (
+                          <div className="bg-yellow-500 transition-all" style={{ width: `${(c.pianificato_in_corso / total) * 100}%` }} />
+                        )}
+                        {c.non_iniziato > 0 && (
+                          <div className="bg-red-500 transition-all" style={{ width: `${(c.non_iniziato / total) * 100}%` }} />
+                        )}
+                        {c.non_applicabile > 0 && (
+                          <div className="bg-muted-foreground/40 transition-all" style={{ width: `${(c.non_applicabile / total) * 100}%` }} />
+                        )}
+                      </div>
+                      {/* Count pills */}
+                      <div className="flex items-center gap-2 text-[10px]">
+                        <span className="text-green-500 font-semibold">{c.completato}</span>
+                        <span className="text-yellow-500 font-semibold">{c.pianificato_in_corso}</span>
+                        <span className="text-red-500 font-semibold">{c.non_iniziato}</span>
+                        <span className="text-muted-foreground font-semibold">{c.non_applicabile}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Assessment Categories */}
         <Card className="border-border">
