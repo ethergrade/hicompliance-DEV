@@ -709,18 +709,18 @@ const Assessment: React.FC = () => {
                     {isExpanded && catData && (
                       <div className="border-t border-border bg-muted/20">
                         <div className="p-3 border-b border-border bg-muted/40">
-                          <div className="grid grid-cols-[auto_1fr_auto] gap-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2">
-                            <span className="w-8">#</span>
+                          <div className="grid grid-cols-[2rem_1fr_420px] gap-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2">
+                            <span>#</span>
                             <span>Domanda</span>
-                            <span className="w-[200px] text-center">Risposta</span>
+                            <span className="text-center">Risposta</span>
                           </div>
                         </div>
                         <div className="divide-y divide-border">
                           {catData.questions.map((q, qi) => {
                             const currentResponse = responses[q.id] || null;
                             return (
-                              <div key={q.id} className="grid grid-cols-[auto_1fr_auto] gap-3 items-center px-5 py-3 hover:bg-muted/30 transition-colors">
-                                <span className="w-8 text-xs text-muted-foreground font-mono">{qi + 1}</span>
+                              <div key={q.id} className="grid grid-cols-[2rem_1fr_420px] gap-3 items-center px-5 py-3 hover:bg-muted/30 transition-colors">
+                                <span className="text-xs text-muted-foreground font-mono">{qi + 1}</span>
                                 <div className="flex items-start gap-2">
                                   <span className="text-sm text-foreground leading-relaxed">{q.question}</span>
                                   {q.priority === 'ALTA' && (
@@ -730,44 +730,28 @@ const Assessment: React.FC = () => {
                                     <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 bg-blue-500/10 text-blue-500 border-blue-500/20">BASSA</Badge>
                                   )}
                                 </div>
-                                <div className="w-[200px]">
-                                  <Select 
-                                    value={currentResponse || 'no_answer'} 
-                                    onValueChange={(v) => setResponse(q.id, v === 'no_answer' ? null : v as AssessmentResponse)}
-                                  >
-                                    <SelectTrigger className={`h-8 text-xs ${currentResponse ? RESPONSE_COLORS[currentResponse] : 'text-muted-foreground'}`}>
-                                      <SelectValue placeholder="Seleziona..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="no_answer">
-                                        <span className="text-muted-foreground">— Seleziona —</span>
-                                      </SelectItem>
-                                      <SelectItem value="completato">
-                                        <span className="flex items-center gap-2">
-                                          <span className="w-2 h-2 rounded-full bg-green-500" />
-                                          Completato
-                                        </span>
-                                      </SelectItem>
-                                      <SelectItem value="pianificato_in_corso">
-                                        <span className="flex items-center gap-2">
-                                          <span className="w-2 h-2 rounded-full bg-yellow-500" />
-                                          Pianificato / in corso
-                                        </span>
-                                      </SelectItem>
-                                      <SelectItem value="non_iniziato">
-                                        <span className="flex items-center gap-2">
-                                          <span className="w-2 h-2 rounded-full bg-gray-400" />
-                                          Non iniziato
-                                        </span>
-                                      </SelectItem>
-                                      <SelectItem value="non_applicabile">
-                                        <span className="flex items-center gap-2">
-                                          <span className="w-2 h-2 rounded-full bg-muted-foreground/40" />
-                                          Non applicabile
-                                        </span>
-                                      </SelectItem>
-                                    </SelectContent>
-                                  </Select>
+                                <div className="flex items-center gap-1.5">
+                                  {([
+                                    { value: 'completato', label: 'Completato', activeClass: 'bg-green-500 text-white border-green-600' },
+                                    { value: 'pianificato_in_corso', label: 'Pianificato', activeClass: 'bg-yellow-500 text-white border-yellow-600' },
+                                    { value: 'non_iniziato', label: 'Non iniziato', activeClass: 'bg-red-500 text-white border-red-600' },
+                                    { value: 'non_applicabile', label: 'N/A', activeClass: 'bg-muted-foreground/60 text-white border-muted-foreground/60' },
+                                  ] as const).map(opt => {
+                                    const isActive = currentResponse === opt.value;
+                                    return (
+                                      <button
+                                        key={opt.value}
+                                        onClick={() => setResponse(q.id, isActive ? null : opt.value as AssessmentResponse)}
+                                        className={`px-2.5 py-1 rounded text-[11px] font-medium border transition-all duration-150 ${
+                                          isActive 
+                                            ? opt.activeClass 
+                                            : 'border-border text-muted-foreground hover:bg-muted/60'
+                                        }`}
+                                      >
+                                        {opt.label}
+                                      </button>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             );
