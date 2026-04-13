@@ -5,57 +5,57 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/integrations/supabase/client';
+import { tenantsApi } from '@/lib/api';
 import { toast } from 'sonner';
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  organization?: { id: string; name: string; code: string } | null;
+  organization?: { id: string; name: string; ms_tenant_id: string | null } | null;
   onSaved: () => void;
 }
 
 const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, onSaved }) => {
   const [name, setName] = useState('');
-  const [code, setCode] = useState('');
+  const [msTenantId, setMsTenantId] = useState('');
   const [saving, setSaving] = useState(false);
   const isEdit = !!organization;
 
   useEffect(() => {
     if (organization) {
       setName(organization.name);
-      setCode(organization.code);
+      setMsTenantId(organization.ms_tenant_id || '');
     } else {
       setName('');
-      setCode('');
+      setMsTenantId('');
     }
   }, [organization, open]);
 
   const handleSave = async () => {
-    if (!name.trim() || !code.trim()) {
-      toast.error('Nome e codice sono obbligatori');
+    if (!name.trim()) {
+      toast.error('Il nome è obbligatorio');
       return;
     }
     setSaving(true);
     try {
       if (isEdit) {
-        const { error } = await supabase
-          .from('organizations')
-          .update({ name: name.trim(), code: code.trim() })
-          .eq('id', organization!.id);
-        if (error) throw error;
+        await tenantsApi.update(organization!.id, {
+          name: name.trim(),
+          ms_tenant_id: msTenantId.trim() || null,
+        });
         toast.success('Cliente aggiornato');
       } else {
-        const { error } = await supabase
-          .from('organizations')
-          .insert({ name: name.trim(), code: code.trim() });
-        if (error) throw error;
+        await tenantsApi.create({
+          name: name.trim(),
+          ms_tenant_id: msTenantId.trim() || null,
+        });
         toast.success('Cliente creato');
       }
       onSaved();
       onOpenChange(false);
-    } catch (err: any) {
-      toast.error(err.message || 'Errore nel salvataggio');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Errore nel salvataggio';
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -73,8 +73,8 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
             <Input value={name} onChange={e => setName(e.target.value)} placeholder="es. Azienda SRL" />
           </div>
           <div className="space-y-2">
-            <Label>Codice cliente</Label>
-            <Input value={code} onChange={e => setCode(e.target.value)} placeholder="es. AZ-001" />
+            <Label>MS Tenant ID</Label>
+            <Input value={msTenantId} onChange={e => setMsTenantId(e.target.value)} placeholder="es. xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
           </div>
         </div>
         <DialogFooter>

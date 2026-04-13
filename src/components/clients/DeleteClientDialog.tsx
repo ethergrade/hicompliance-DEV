@@ -4,7 +4,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
 } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
-import { supabase } from '@/integrations/supabase/client';
+import { tenantsApi } from '@/lib/api';
 import { toast } from 'sonner';
 
 interface Props {
@@ -22,16 +22,13 @@ const DeleteClientDialog: React.FC<Props> = ({ open, onOpenChange, organization,
     if (!organization) return;
     setDeleting(true);
     try {
-      const { error } = await supabase
-        .from('organizations')
-        .delete()
-        .eq('id', organization.id);
-      if (error) throw error;
+      await tenantsApi.delete(organization.id);
       toast.success(`Cliente "${organization.name}" eliminato`);
       onDeleted();
       onOpenChange(false);
-    } catch (err: any) {
-      toast.error(err.message || 'Errore nell\'eliminazione');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Errore nell'eliminazione";
+      toast.error(message);
     } finally {
       setDeleting(false);
       setConfirm('');

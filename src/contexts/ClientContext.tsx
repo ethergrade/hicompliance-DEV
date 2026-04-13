@@ -1,22 +1,16 @@
  import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
- import { supabase } from '@/integrations/supabase/client';
  import { useAuth } from '@/components/auth/AuthProvider';
  import { useUserRoles } from '@/hooks/useUserRoles';
- 
- interface Organization {
-   id: string;
-   name: string;
-   code: string;
-   created_at: string;
- }
+ import { tenantsApi } from '@/lib/api';
+ import type { TenantResource } from '@/types/api';
  
  interface ClientContextType {
-   selectedOrganization: Organization | null;
-   setSelectedOrganization: (org: Organization) => void;
+   selectedOrganization: TenantResource | null;
+   setSelectedOrganization: (org: TenantResource) => void;
    clearSelection: () => void;
    canManageMultipleClients: boolean;
    isLoadingClients: boolean;
-   organizations: Organization[];
+   organizations: TenantResource[];
    fetchOrganizations: () => Promise<void>;
    userOrganizationId: string | null;
  }
@@ -26,55 +20,42 @@
  const STORAGE_KEY = 'hicompliance_selected_org';
  
  export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-   const [selectedOrganization, setSelectedOrganizationState] = useState<Organization | null>(null);
-   const [organizations, setOrganizations] = useState<Organization[]>([]);
+   const [selectedOrganization, setSelectedOrganizationState] = useState<TenantResource | null>(null);
+   const [organizations, setOrganizations] = useState<TenantResource[]>([]);
    const [isLoadingClients, setIsLoadingClients] = useState(true);
    const [userOrganizationId, setUserOrganizationId] = useState<string | null>(null);
    const { user } = useAuth();
  const { isSuperAdmin, isSales, loading: rolesLoading } = useUserRoles();
    
    const canManageMultipleClients = isSuperAdmin || isSales;
- 
+
    // Fetch organizations for sales/admin users
    const fetchOrganizations = useCallback(async () => {
      if (!user || rolesLoading) return;
      
      setIsLoadingClients(true);
      try {
-       // First get user's own organization
        setUserOrganizationId(user.tenant_id || null);
- 
+
        if (canManageMultipleClients) {
-         // Sales/Admin: fetch all organizations
-         const { data, error } = await supabase
-           .from('organizations')
-           .select('id, name, code, created_at')
-           .order('name');
- 
-         if (error) throw error;
-         setOrganizations(data || []);
- 
+         // Sales/Admin: fetch all tenants
+         const tenants = await tenantsApi.listAll();
+         setOrganizations(tenants);
+
          // Try to restore from localStorage
          const storedOrgId = localStorage.getItem(STORAGE_KEY);
-         if (storedOrgId && data) {
-           const storedOrg = data.find(o => o.id === storedOrgId);
+         if (storedOrgId) {
+           const storedOrg = tenants.find(t => t.id === storedOrgId);
            if (storedOrg) {
              setSelectedOrganizationState(storedOrg);
            }
          }
        } else {
-         // Normal client: use their organization
+         // Normal client: use their own tenant
          if (user.tenant_id) {
-           const { data: orgData } = await supabase
-             .from('organizations')
-             .select('id, name, code, created_at')
-             .eq('id', user.tenant_id)
-             .single();
-           
-           if (orgData) {
-             setOrganizations([orgData]);
-             setSelectedOrganizationState(orgData);
-           }
+           const tenant = await tenantsApi.getOwn();
+           setOrganizations([tenant]);
+           setSelectedOrganizationState(tenant);
          }
        }
      } catch (error) {
@@ -85,7 +66,7 @@
    }, [user, canManageMultipleClients, rolesLoading]);
  
    // Set selected organization with persistence
-   const setSelectedOrganization = useCallback((org: Organization) => {
+   const setSelectedOrganization = useCallback((org: TenantResource) => {
      setSelectedOrganizationState(org);
      localStorage.setItem(STORAGE_KEY, org.id);
    }, []);
