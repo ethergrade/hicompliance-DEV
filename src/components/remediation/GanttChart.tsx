@@ -1,5 +1,5 @@
 import React, { useRef, useState, useMemo, useCallback } from 'react';
-import { format, addDays, differenceInDays, parseISO, addMonths, startOfMonth } from 'date-fns';
+import { format, differenceInDays, parseISO, addMonths, startOfMonth } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { useGanttDrag } from '@/hooks/useGanttResize';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -9,7 +9,7 @@ import { Calendar, ChevronLeft, ChevronRight, Settings, Trash2, GripVertical } f
 import { cn } from '@/lib/utils';
 
 export interface GanttTask {
-  id: number;
+  id: string;
   task: string;
   category: string;
   startDate: string;
@@ -19,6 +19,7 @@ export interface GanttTask {
   color: string;
   assignee: string;
   isHidden?: boolean;
+  budget?: number;
   startOffset: number;
   width: number;
   duration: number;
@@ -28,14 +29,13 @@ interface GanttChartProps {
   tasks: GanttTask[];
   ganttStartDate: Date;
   ganttEndDate: Date;
-  onDateChange: (taskId: number, startDate: string, endDate: string) => void;
+  onDateChange: (taskId: string, startDate: string, endDate: string) => void;
   onEditTask: (task: GanttTask) => void;
-  onToggleVisibility: (taskId: number) => void;
-  onDeleteTask: (taskId: number) => void;
-  onReorderTasks: (taskId: number, newIndex: number) => void;
+  onToggleVisibility: (taskId: string) => void;
+  onDeleteTask: (taskId: string) => void;
+  onReorderTasks: (taskId: string, newIndex: number) => void;
 }
 
-/* ─── helpers ─── */
 const MONTHS_IT = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
 
 const priorityBorder: Record<string, string> = {
@@ -53,14 +53,13 @@ export const GanttChart: React.FC<GanttChartProps> = ({
   onEditTask,
   onToggleVisibility: _onToggleVisibility,
   onDeleteTask,
-  onReorderTasks,
+  onReorderTasks: _onReorderTasks,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
 
-  /* live dates while dragging */
-  const [liveDates, setLiveDates] = useState<Record<number, { s: string; e: string }>>({});
-  const [activeDragId, setActiveDragId] = useState<number | null>(null);
+  const [liveDates, setLiveDates] = useState<Record<string, { s: string; e: string }>>({});
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
   const getTimelineWidth = useCallback(() => timelineRef.current?.offsetWidth ?? 1, []);
 
@@ -71,7 +70,6 @@ export const GanttChart: React.FC<GanttChartProps> = ({
     getTimelineWidth,
   });
 
-  /* months header */
   const months = useMemo(() => {
     const result: { label: string; weeks: number }[] = [];
     let cur = startOfMonth(ganttStartDate);
@@ -134,7 +132,6 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 
   const scroll = (dir: number) => scrollRef.current?.scrollBy({ left: dir * 300, behavior: 'smooth' });
 
-  /* today marker */
   const todayOffset = useMemo(() => {
     const d = differenceInDays(new Date(), ganttStartDate);
     if (d < 0 || d > totalDays) return null;
@@ -166,7 +163,6 @@ export const GanttChart: React.FC<GanttChartProps> = ({
           onPointerMove={onPointerMove}
           onPointerUp={handlePointerUp}
         >
-          {/* Month header */}
           <div className="flex border-b border-border bg-muted/50 sticky top-0 z-10">
             <div className="w-64 shrink-0 px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               Attività
@@ -184,9 +180,8 @@ export const GanttChart: React.FC<GanttChartProps> = ({
             </div>
           </div>
 
-          {/* Rows */}
           <div className="relative">
-            {tasks.map((task, _idx) => {
+            {tasks.map((task) => {
               const bar = getBarStyle(task);
               const isDragging = activeDragId === task.id;
 
@@ -198,7 +193,6 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                     isDragging && 'bg-muted/30',
                   )}
                 >
-                  {/* Left label */}
                   <div className={cn('w-64 shrink-0 px-3 flex items-center gap-2 border-l-2', priorityBorder[task.priority] || 'border-l-border')}>
                     <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />
                     <div className="flex-1 min-w-0">
@@ -206,24 +200,16 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                       <p className="text-[10px] text-muted-foreground truncate">{task.assignee}</p>
                     </div>
                     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        className="p-1 rounded hover:bg-muted"
-                        onClick={() => onEditTask(task)}
-                      >
+                      <button className="p-1 rounded hover:bg-muted" onClick={() => onEditTask(task)}>
                         <Settings className="h-3 w-3 text-muted-foreground" />
                       </button>
-                      <button
-                        className="p-1 rounded hover:bg-destructive/10"
-                        onClick={() => onDeleteTask(task.id)}
-                      >
+                      <button className="p-1 rounded hover:bg-destructive/10" onClick={() => onDeleteTask(task.id)}>
                         <Trash2 className="h-3 w-3 text-destructive/70" />
                       </button>
                     </div>
                   </div>
 
-                  {/* Timeline */}
                   <div className="flex-1 relative h-full min-w-[900px]">
-                    {/* Today line */}
                     {todayOffset !== null && (
                       <div
                         className="absolute top-0 bottom-0 w-px bg-primary/40 z-10 pointer-events-none"
@@ -251,7 +237,6 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                             }}
                             onPointerDown={(e) => handleBarPointerDown(e, task, 'middle')}
                           >
-                            {/* Progress overlay */}
                             {task.progress > 0 && (
                               <div
                                 className="absolute inset-y-0 left-0 bg-white/25 rounded-l-md pointer-events-none"
@@ -259,7 +244,6 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                               />
                             )}
 
-                            {/* Resize handles */}
                             <div
                               className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-l-md hover:bg-white/40 active:bg-white/50"
                               onPointerDown={(e) => {
@@ -275,7 +259,6 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                               }}
                             />
 
-                            {/* Bar label */}
                             <div className="absolute inset-0 flex items-center justify-between px-2 text-[10px] text-white font-semibold pointer-events-none select-none overflow-hidden">
                               <span className="truncate">{bar.duration}g</span>
                               {task.progress > 0 && <span>{task.progress}%</span>}
