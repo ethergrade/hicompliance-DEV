@@ -202,7 +202,6 @@ const Remediation: React.FC = () => {
 
   /* ─── DB mutation helpers ─── */
   const updateTask = useCallback(async (taskId: string, updates: Record<string, any>) => {
-    const orgId = await getOrgId();
     if (!orgId) return;
     const { error } = await supabase
       .from('remediation_tasks')
@@ -216,7 +215,7 @@ const Remediation: React.FC = () => {
     }
     // Optimistic update
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t));
-  }, [getOrgId]);
+  }, [orgId]);
 
   /* ─── Handlers ─── */
   const handleDateChange = useCallback(async (taskId: string, startDate: string, endDate: string) => {
@@ -293,12 +292,11 @@ const Remediation: React.FC = () => {
       return [...reordered, ...deleted];
     });
 
-    const orgId = await getOrgId();
     if (!orgId) return;
     for (let i = 0; i < currentOrder.length; i++) {
       await supabase.from('remediation_tasks').update({ display_order: i }).eq('id', currentOrder[i]).eq('organization_id', orgId);
     }
-  }, [activeTasks, getOrgId]);
+  }, [activeTasks, orgId]);
 
   /* ─── Create new task ─── */
   const calculateBudget = (days: number, complexity: string) => {
@@ -317,7 +315,6 @@ const Remediation: React.FC = () => {
   };
 
   const handleCreateRemediation = async () => {
-    const orgId = await getOrgId();
     if (!orgId) {
       toast({ title: 'Errore', description: 'Devi essere autenticato.', variant: 'destructive' });
       return;
