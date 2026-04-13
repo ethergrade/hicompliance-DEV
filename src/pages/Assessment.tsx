@@ -683,7 +683,7 @@ const Assessment: React.FC = () => {
               </div>
             </CardHeader>
             <CardContent className="pt-0">
-              {Object.values(responses).every(v => v === null || v === undefined) ? (
+              {Object.keys(responses).length === 0 || Object.values(responses).every(v => v === null || v === undefined) ? (
                 <div className="h-[320px] w-full flex flex-col items-center justify-center text-muted-foreground gap-3">
                   <AlertTriangle className="h-10 w-10 opacity-40" />
                   <p className="text-sm text-center max-w-[240px]">Rispondi alle domande dell'assessment per visualizzare i risultati nella radar</p>
