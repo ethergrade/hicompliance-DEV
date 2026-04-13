@@ -143,6 +143,9 @@ export const GanttChart: React.FC<GanttChartProps> = ({
   );
 
   const scroll = (dir: number) => scrollRef.current?.scrollBy({ left: dir * 300, behavior: 'smooth' });
+  const timelineMinWidth = ZOOM_LEVELS[zoomIndex];
+  const canZoomOut = zoomIndex > 0;
+  const canZoomIn = zoomIndex < ZOOM_LEVELS.length - 1;
 
   const todayOffset = useMemo(() => {
     const d = differenceInCalendarDays(new Date(), ganttStartDate);
