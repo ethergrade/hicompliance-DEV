@@ -708,30 +708,60 @@ const Assessment: React.FC = () => {
             </CardHeader>
             <CardContent className="pt-0">
               {!hasRadarResponses ? (
-                <div className="h-[320px] w-full flex flex-col items-center justify-center text-muted-foreground gap-3">
+                <div className="h-[350px] w-full flex flex-col items-center justify-center text-muted-foreground gap-3">
                   <AlertTriangle className="h-10 w-10 opacity-40" />
                   <p className="text-sm text-center max-w-[240px]">Rispondi alle domande dell'assessment per visualizzare i risultati nella radar</p>
                 </div>
               ) : (
-                <div className="h-[320px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="w-full" style={{ height: 380 }}>
+                  <ResponsiveContainer width="100%" height={380}>
                     <RadarChart
                       key={radarChartKey}
                       data={radarData}
                       cx="50%"
                       cy="50%"
-                      outerRadius="72%"
-                      margin={{ top: 10, right: 40, bottom: 10, left: 40 }}
+                      outerRadius={120}
+                      margin={{ top: 20, right: 50, bottom: 20, left: 50 }}
                     >
-                      <PolarGrid stroke="hsl(var(--border))" />
-                      <PolarAngleAxis dataKey="category" tick={{ fontSize: 8, fill: 'hsl(var(--muted-foreground))' }} />
-                      <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 8, fill: 'hsl(var(--muted-foreground))' }} tickCount={5} />
+                      <PolarGrid stroke="hsl(220, 27%, 20%)" strokeOpacity={0.6} />
+                      <PolarAngleAxis
+                        dataKey="category"
+                        tick={{ fontSize: 9, fill: 'hsl(217, 19%, 63%)' }}
+                      />
+                      <PolarRadiusAxis
+                        angle={90}
+                        domain={[0, 100]}
+                        tick={{ fontSize: 8, fill: 'hsl(217, 19%, 63%)' }}
+                        tickCount={5}
+                        axisLine={false}
+                      />
+                      <Radar
+                        name="compliance"
+                        dataKey="compliance"
+                        stroke="#7c6ef6"
+                        fill="#7c6ef6"
+                        fillOpacity={0.3}
+                        strokeWidth={2}
+                        isAnimationActive={false}
+                        dot={false}
+                      />
+                      <Radar
+                        name="target"
+                        dataKey="target"
+                        stroke="#34d399"
+                        fill="none"
+                        strokeWidth={2}
+                        strokeDasharray="5 5"
+                        isAnimationActive={false}
+                        dot={false}
+                      />
                       <Tooltip
                         contentStyle={{
-                          backgroundColor: 'hsl(var(--card))',
-                          border: '1px solid hsl(var(--border))',
+                          backgroundColor: 'hsl(220, 27%, 10%)',
+                          border: '1px solid hsl(220, 27%, 20%)',
                           borderRadius: '8px',
-                          color: 'hsl(var(--foreground))',
+                          color: 'hsl(210, 40%, 98%)',
+                          fontSize: '12px',
                         }}
                         formatter={(value: number, name: string) => [
                           `${value}/100`,
@@ -741,25 +771,7 @@ const Assessment: React.FC = () => {
                       />
                       <Legend
                         formatter={(value) => value === 'compliance' ? 'Conformità' : 'Target'}
-                        wrapperStyle={{ fontSize: '10px', color: 'hsl(var(--muted-foreground))' }}
-                      />
-                      <Radar
-                        name="compliance"
-                        dataKey="compliance"
-                        stroke="hsl(var(--primary))"
-                        fill="hsl(var(--primary))"
-                        fillOpacity={0.25}
-                        strokeWidth={2}
-                        isAnimationActive={false}
-                      />
-                      <Radar
-                        name="target"
-                        dataKey="target"
-                        stroke="hsl(var(--cyber-green))"
-                        fill="transparent"
-                        strokeWidth={2}
-                        strokeDasharray="5 5"
-                        isAnimationActive={false}
+                        wrapperStyle={{ fontSize: '11px', color: 'hsl(217, 19%, 63%)' }}
                       />
                     </RadarChart>
                   </ResponsiveContainer>
