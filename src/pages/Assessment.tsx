@@ -640,47 +640,141 @@ const Assessment: React.FC = () => {
             )}
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div className="space-y-3">
               {filteredAndSortedCategories.map((category, index) => {
-                // Find original index for animation values
                 const originalIndex = assessmentCategories.findIndex(c => c.name === category.name);
+                const isExpanded = expandedCategories.has(category.name);
+                const catData = ASSESSMENT_CATEGORIES.find(c => c.name === category.name);
+                const counts = category.counts;
+
                 return (
-                  <div key={category.name} className="flex items-center justify-between p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors">
-                    <div className="flex items-center space-x-4">
-                      <div className="p-2 rounded-lg bg-primary/10">
-                        <ClipboardCheck className="w-5 h-5 text-primary" />
+                  <div key={category.name} className="rounded-lg border border-border bg-card overflow-hidden">
+                    {/* Category header - clickable */}
+                    <div 
+                      className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors cursor-pointer"
+                      onClick={() => toggleCategory(category.name)}
+                    >
+                      <div className="flex items-center space-x-4">
+                        <div className="p-2 rounded-lg bg-primary/10">
+                          {isExpanded ? <ChevronDown className="w-5 h-5 text-primary" /> : <ChevronRight className="w-5 h-5 text-primary" />}
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-medium">{category.name}</h4>
+                          <p className="text-sm text-muted-foreground">
+                            {category.completed}/{category.questions} domande risposte
+                          </p>
+                          <div className="mt-2 flex items-center gap-4">
+                            <Progress 
+                              value={animatedCategoryProgress[originalIndex] || 0} 
+                              className="h-1.5 w-48" 
+                            />
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full bg-green-500" />
+                                {counts.completato}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full bg-yellow-500" />
+                                {counts.pianificato_in_corso}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full bg-gray-400" />
+                                {counts.non_iniziato}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full bg-muted-foreground/40" />
+                                {counts.non_applicabile}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex-1">
-                        <h4 className="font-medium">{category.name}</h4>
-                        <p className="text-sm text-muted-foreground">
-                          {category.completed}/{category.questions} domande completate
-                        </p>
-                        <div className="mt-2">
-                          <Progress 
-                            value={animatedCategoryProgress[originalIndex] || 0} 
-                            className="h-1.5 w-48" 
-                          />
+                      <div className="flex items-center space-x-4">
+                        <div className="text-right">
+                          <div className="text-sm font-medium">Punteggio: {animatedCategoryScores[originalIndex] || 0}/100</div>
+                          <div className={`text-xs font-medium ${getRiskLevel(category.score).color}`}>
+                            Rischio: {getRiskLevel(category.score).level}
+                          </div>
+                          <div className="flex items-center space-x-1 mt-1">
+                            {getStatusIcon(category.status)}
+                            <Badge variant={getStatusBadge(category.status) as any}>
+                              {getStatusText(category.status)}
+                            </Badge>
+                          </div>
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-4">
-                      <div className="text-right">
-                        <div className="text-sm font-medium">Punteggio: {animatedCategoryScores[originalIndex] || 0}/100</div>
-                        <div className={`text-xs font-medium ${getRiskLevel(category.score).color}`}>
-                          Rischio: {getRiskLevel(category.score).level}
+
+                    {/* Expanded questions */}
+                    {isExpanded && catData && (
+                      <div className="border-t border-border bg-muted/20">
+                        <div className="p-3 border-b border-border bg-muted/40">
+                          <div className="grid grid-cols-[auto_1fr_auto] gap-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2">
+                            <span className="w-8">#</span>
+                            <span>Domanda</span>
+                            <span className="w-[200px] text-center">Risposta</span>
+                          </div>
                         </div>
-                        <div className="flex items-center space-x-1 mt-1">
-                          {getStatusIcon(category.status)}
-                          <Badge variant={getStatusBadge(category.status) as any}>
-                            {getStatusText(category.status)}
-                          </Badge>
+                        <div className="divide-y divide-border">
+                          {catData.questions.map((q, qi) => {
+                            const currentResponse = responses[q.id] || null;
+                            return (
+                              <div key={q.id} className="grid grid-cols-[auto_1fr_auto] gap-3 items-center px-5 py-3 hover:bg-muted/30 transition-colors">
+                                <span className="w-8 text-xs text-muted-foreground font-mono">{qi + 1}</span>
+                                <div className="flex items-start gap-2">
+                                  <span className="text-sm text-foreground leading-relaxed">{q.question}</span>
+                                  {q.priority === 'ALTA' && (
+                                    <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 bg-red-500/10 text-red-500 border-red-500/20">ALTA</Badge>
+                                  )}
+                                  {q.priority === 'BASSA' && (
+                                    <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 bg-blue-500/10 text-blue-500 border-blue-500/20">BASSA</Badge>
+                                  )}
+                                </div>
+                                <div className="w-[200px]">
+                                  <Select 
+                                    value={currentResponse || 'no_answer'} 
+                                    onValueChange={(v) => setResponse(q.id, v === 'no_answer' ? null : v as AssessmentResponse)}
+                                  >
+                                    <SelectTrigger className={`h-8 text-xs ${currentResponse ? RESPONSE_COLORS[currentResponse] : 'text-muted-foreground'}`}>
+                                      <SelectValue placeholder="Seleziona..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="no_answer">
+                                        <span className="text-muted-foreground">— Seleziona —</span>
+                                      </SelectItem>
+                                      <SelectItem value="completato">
+                                        <span className="flex items-center gap-2">
+                                          <span className="w-2 h-2 rounded-full bg-green-500" />
+                                          Completato
+                                        </span>
+                                      </SelectItem>
+                                      <SelectItem value="pianificato_in_corso">
+                                        <span className="flex items-center gap-2">
+                                          <span className="w-2 h-2 rounded-full bg-yellow-500" />
+                                          Pianificato / in corso
+                                        </span>
+                                      </SelectItem>
+                                      <SelectItem value="non_iniziato">
+                                        <span className="flex items-center gap-2">
+                                          <span className="w-2 h-2 rounded-full bg-gray-400" />
+                                          Non iniziato
+                                        </span>
+                                      </SelectItem>
+                                      <SelectItem value="non_applicabile">
+                                        <span className="flex items-center gap-2">
+                                          <span className="w-2 h-2 rounded-full bg-muted-foreground/40" />
+                                          Non applicabile
+                                        </span>
+                                      </SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
-                      <Button variant="outline" size="sm">
-                        <FileText className="w-4 h-4 mr-1" />
-                        Modifica
-                      </Button>
-                    </div>
+                    )}
                   </div>
                 );
               })}
