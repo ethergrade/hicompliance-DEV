@@ -38,6 +38,7 @@ interface GanttChartProps {
 
 const MONTHS_IT = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
 const TIMELINE_MIN_WIDTH = 1100;
+const ZOOM_LEVELS = [800, 1100, 1600, 2400, 3600];
 const SIDEBAR_WIDTH_CLASS = 'w-72';
 
 const priorityBorder: Record<string, string> = {
