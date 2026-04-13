@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -27,11 +27,14 @@ import {
   Shield,
   AlertCircle,
   Filter,
-  ArrowUpDown
+  ArrowUpDown,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
 import { NIS2_LABELS } from '@/types/organization';
 import { useUserPreferences } from '@/hooks/useUserPreferences';
+import { ASSESSMENT_CATEGORIES, AssessmentResponse, RESPONSE_LABELS, RESPONSE_COLORS } from '@/data/assessmentQuestions';
 
 type RadarYearRange = '1y' | '2y' | '3y' | '4y';
 
