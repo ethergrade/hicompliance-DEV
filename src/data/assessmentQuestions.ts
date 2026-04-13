@@ -744,6 +744,65 @@ export const ASSESSMENT_CATEGORIES: AssessmentCategory[] = [
   },
 ];
 
+export const PRIORITY_WEIGHTS: Record<string, number> = {
+  ALTA: 1,
+  MEDIA: 0.5,
+  BASSA: 0.25,
+};
+
+export const FEEDBACK_SCORES: Record<string, number | null> = {
+  completato: 100,
+  pianificato_in_corso: 50,
+  non_iniziato: 0,
+  non_applicabile: null, // excluded from calculation
+};
+
+export type RiskLevel = 'altissimo' | 'alto' | 'moderato' | 'basso' | 'molto_basso';
+
+export const RISK_THRESHOLDS: { min: number; level: RiskLevel; label: string; multiplier: number; color: string }[] = [
+  { min: 0, level: 'altissimo', label: 'Altissimo', multiplier: 0.9, color: 'text-red-600' },
+  { min: 20, level: 'alto', label: 'Alto', multiplier: 0.8, color: 'text-red-500' },
+  { min: 40, level: 'moderato', label: 'Moderato', multiplier: 0.6, color: 'text-orange-500' },
+  { min: 60, level: 'basso', label: 'Basso', multiplier: 0.4, color: 'text-yellow-500' },
+  { min: 80, level: 'molto_basso', label: 'Molto basso', multiplier: 0.2, color: 'text-green-500' },
+];
+
+/**
+ * Calculate weighted score for a category.
+ * Score = sum(feedback * priority_weight) / sum(max_feedback * priority_weight) * 100
+ * Non applicabile questions are excluded.
+ */
+export function calculateCategoryScore(
+  questions: AssessmentQuestion[],
+  responses: Record<number, AssessmentResponse>
+): number {
+  let weightedSum = 0;
+  let maxWeightedSum = 0;
+
+  for (const q of questions) {
+    const response = responses[q.id];
+    if (!response || response === 'non_applicabile') continue;
+
+    const weight = PRIORITY_WEIGHTS[q.priority] ?? 0.5;
+    const feedbackScore = FEEDBACK_SCORES[response];
+    if (feedbackScore === null || feedbackScore === undefined) continue;
+
+    weightedSum += feedbackScore * weight;
+    maxWeightedSum += 100 * weight;
+  }
+
+  if (maxWeightedSum === 0) return 0;
+  return Math.round((weightedSum / maxWeightedSum) * 100);
+}
+
+export function getRiskFromScore(score: number): { level: RiskLevel; label: string; multiplier: number; color: string } {
+  // Higher score = lower risk
+  for (let i = RISK_THRESHOLDS.length - 1; i >= 0; i--) {
+    if (score >= RISK_THRESHOLDS[i].min) return RISK_THRESHOLDS[i];
+  }
+  return RISK_THRESHOLDS[0];
+}
+
 export const RESPONSE_LABELS: Record<string, string> = {
   completato: "Completato",
   pianificato_in_corso: "Pianificato / in corso",
@@ -754,6 +813,23 @@ export const RESPONSE_LABELS: Record<string, string> = {
 export const RESPONSE_COLORS: Record<string, string> = {
   completato: "bg-green-500/10 text-green-500 border-green-500/20",
   pianificato_in_corso: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
-  non_iniziato: "bg-gray-500/10 text-gray-400 border-gray-500/20",
+  non_iniziato: "bg-red-500/10 text-red-400 border-red-500/20",
   non_applicabile: "bg-muted text-muted-foreground border-border",
+};
+
+export const CATEGORY_DESCRIPTIONS: Record<string, string> = {
+  'Governance': 'Struttura di gestione della sicurezza, definizione delle responsabilità, strategie e politiche per garantire la conformità e la resilienza aziendale.',
+  'Gestione del rischio': 'Identificazione, valutazione e mitigazione dei rischi di cybersecurity per garantire la protezione degli asset critici e la continuità operativa.',
+  'Gestione degli incidenti': 'Procedure di rilevamento, risposta e ripristino da incidenti di sicurezza per minimizzare l\'impatto e prevenire future compromissioni.',
+  'Business Continuity, Disaster recovery, Backup': 'Strategie di continuità operativa, gestione della crisi, ripristino dei servizi IT e politiche di backup per garantire la resilienza aziendale.',
+  'HR e formazione': 'Formazione del personale sulla sicurezza informatica, policy di accesso e consapevolezza per ridurre il rischio umano nelle minacce cyber.',
+  'Gestione delle identità Gestione degli accessi': 'Controllo degli accessi, autenticazione, autorizzazione e protezione delle identità digitali per prevenire accessi non autorizzati ai sistemi.',
+  'Gestione delle risorse': 'Allocazione e protezione degli asset IT, incluse infrastrutture fisiche e virtuali, per garantire la sicurezza e l\'efficienza operativa.',
+  'Gestione fornitori e acquisti': 'Valutazione della sicurezza dei fornitori e gestione degli approvvigionamenti (Supply Chain) per ridurre i rischi derivanti da terze parti.',
+  'Manutenzione e miglioramento continuo': 'Aggiornamento e ottimizzazione costante delle misure di sicurezza per rispondere all\'evoluzione delle minacce cyber.',
+  'Sviluppo software': 'Adozione di pratiche sicure nello sviluppo applicativo, inclusi secure coding, testing e gestione delle vulnerabilità.',
+  'Igiene informatica': 'Adozione di best practices per la protezione di sistemi e dati, incluse patching, aggiornamenti e hardening delle configurazioni.',
+  'Crittografia': 'Implementazione di tecniche crittografiche per la protezione dei dati sensibili in transito e a riposo.',
+  'Network Security Best Practices & Operations': 'Protezione delle reti aziendali attraverso firewall, segmentazione, monitoraggio del traffico e gestione delle vulnerabilità.',
+  'Certificazioni': 'Adozione e mantenimento di certificazioni di sicurezza (ISO 27001) per dimostrare la conformità e la maturità dell\'azienda.',
 };
