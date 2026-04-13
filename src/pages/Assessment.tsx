@@ -720,9 +720,32 @@ const Assessment: React.FC = () => {
         {/* Assessment Categories */}
         <Card className="border-border">
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-3">
               <CardTitle>Categorie Assessment</CardTitle>
               <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => {
+                      const allNames = new Set(filteredAndSortedCategories.map(c => c.name));
+                      setExpandedCategories(allNames);
+                    }}
+                  >
+                    <ChevronDown className="w-3.5 h-3.5 mr-1" />
+                    Espandi tutto
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => setExpandedCategories(new Set())}
+                  >
+                    <ChevronRight className="w-3.5 h-3.5 mr-1" />
+                    Comprimi tutto
+                  </Button>
+                </div>
                 <div className="flex items-center gap-2">
                   <Filter className="w-4 h-4 text-muted-foreground" />
                   <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -752,6 +775,7 @@ const Assessment: React.FC = () => {
                   </Select>
                 </div>
               </div>
+            </div>
             </div>
             {statusFilter !== 'all' && (
               <p className="text-sm text-muted-foreground mt-2">
