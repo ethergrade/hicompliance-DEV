@@ -459,26 +459,26 @@ const Assessment: React.FC = () => {
               <div>
                 <div className="flex justify-between text-sm mb-2">
                   <span>Progresso Assessment</span>
-                  <span>{animatedProgress}%</span>
+                  <span>{overallProgress}%</span>
                 </div>
-                <Progress value={animatedProgress} className="h-2" />
+                <Progress value={overallProgress} className="h-2" />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-500">
-                    {animatedCompleted}
+                    {completedAreas}
                   </div>
                   <div className="text-sm text-muted-foreground">Aree Completate</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-yellow-500">
-                    {animatedInProgress}
+                    {assessmentCategories.filter(c => c.status === 'in_progress').length}
                   </div>
                   <div className="text-sm text-muted-foreground">In Corso</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-gray-500">
-                    {animatedNotStarted}
+                    {assessmentCategories.filter(c => c.status === 'not_started').length}
                   </div>
                   <div className="text-sm text-muted-foreground">Da Iniziare</div>
                 </div>
