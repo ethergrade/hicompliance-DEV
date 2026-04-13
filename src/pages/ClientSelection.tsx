@@ -30,14 +30,14 @@ const ClientSelection: React.FC = () => {
 
   // CRUD state
   const [crudOpen, setCrudOpen] = useState(false);
-  const [crudOrg, setCrudOrg] = useState<{ id: string; name: string; code: string } | null>(null);
+  const [crudOrg, setCrudOrg] = useState<{ id: string; name: string; ms_tenant_id: string | null } | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteOrg, setDeleteOrg] = useState<{ id: string; name: string } | null>(null);
 
   const filteredOrganizations = organizations.filter(org => {
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase();
-    return org.name.toLowerCase().includes(query) || org.code.toLowerCase().includes(query);
+    return org.name.toLowerCase().includes(query) || (org.ms_tenant_id || '').toLowerCase().includes(query);
   });
 
   const handleSelectClient = (org: typeof organizations[0]) => {
@@ -73,7 +73,7 @@ const ClientSelection: React.FC = () => {
 
   const openEdit = (e: React.MouseEvent, org: typeof organizations[0]) => {
     e.stopPropagation();
-    setCrudOrg({ id: org.id, name: org.name, code: org.code });
+    setCrudOrg({ id: org.id, name: org.name, ms_tenant_id: org.ms_tenant_id });
     setCrudOpen(true);
   };
 
@@ -200,7 +200,7 @@ const ClientSelection: React.FC = () => {
                   <CardTitle className="text-lg mt-3 group-hover:text-primary transition-colors">
                     {org.name}
                   </CardTitle>
-                  <CardDescription className="font-mono text-xs">{org.code}</CardDescription>
+                  <CardDescription className="font-mono text-xs">{org.ms_tenant_id || org.id}</CardDescription>
                 </CardHeader>
                 <CardContent className="pt-0">
                   <div className="flex items-center gap-2 text-xs text-muted-foreground mb-4">

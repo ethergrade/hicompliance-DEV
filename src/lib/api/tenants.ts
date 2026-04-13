@@ -12,6 +12,17 @@ export const tenantsApi = {
     return apiClient.get<PaginatedResponse<TenantResource>>("/tenants", page ? { page } : undefined);
   },
 
+  /** Fetch all tenants across all pages */
+  async listAll(): Promise<TenantResource[]> {
+    const first = await this.list(1);
+    const all = [...first.data];
+    for (let p = 2; p <= first.meta.last_page; p++) {
+      const page = await this.list(p);
+      all.push(...page.data);
+    }
+    return all;
+  },
+
   async get(id: string): Promise<TenantResource> {
     const res = await apiClient.get<ApiResponse<TenantResource>>(`/tenants/${id}`);
     return res.data;
