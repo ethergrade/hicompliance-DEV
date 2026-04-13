@@ -40,7 +40,20 @@ import { useUserPreferences } from '@/hooks/useUserPreferences';
 import { ASSESSMENT_CATEGORIES, AssessmentResponse, RESPONSE_LABELS, RESPONSE_COLORS, calculateCategoryScore, getRiskFromScore, CATEGORY_DESCRIPTIONS } from '@/data/assessmentQuestions';
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
-type RadarYearRange = '1y' | '2y' | '3y' | '4y';
+// Map UI response values to DB enum values and vice versa
+const UI_TO_DB_STATUS: Record<string, string> = {
+  completato: 'completed',
+  pianificato_in_corso: 'planned_in_progress',
+  non_iniziato: 'not_started',
+  non_applicabile: 'not_applicable',
+};
+const DB_TO_UI_STATUS: Record<string, AssessmentResponse> = {
+  completed: 'completato',
+  planned_in_progress: 'pianificato_in_corso',
+  not_started: 'non_iniziato',
+  not_applicable: 'non_applicabile',
+};
+
 
 // Historical radar data per year – aligned with ComplianceMetricCard percentages
 const RADAR_YEAR_DATA: Record<RadarYearRange, number[]> = {
