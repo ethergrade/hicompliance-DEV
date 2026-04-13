@@ -5,7 +5,7 @@ import { useGanttDrag } from '@/hooks/useGanttResize';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Calendar, ChevronLeft, ChevronRight, Settings, Trash2, GripVertical } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Settings, Trash2, GripVertical, ZoomIn, ZoomOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface GanttTask {
@@ -38,6 +38,7 @@ interface GanttChartProps {
 
 const MONTHS_IT = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
 const TIMELINE_MIN_WIDTH = 1100;
+const ZOOM_LEVELS = [800, 1100, 1600, 2400, 3600];
 const SIDEBAR_WIDTH_CLASS = 'w-72';
 
 const priorityBorder: Record<string, string> = {
@@ -62,6 +63,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 
   const [liveDates, setLiveDates] = useState<Record<string, { s: string; e: string }>>({});
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [zoomIndex, setZoomIndex] = useState(1);
 
   const getTimelineWidth = useCallback(() => timelineRef.current?.offsetWidth ?? 1, []);
 
@@ -141,6 +143,9 @@ export const GanttChart: React.FC<GanttChartProps> = ({
   );
 
   const scroll = (dir: number) => scrollRef.current?.scrollBy({ left: dir * 300, behavior: 'smooth' });
+  const timelineMinWidth = ZOOM_LEVELS[zoomIndex];
+  const canZoomOut = zoomIndex > 0;
+  const canZoomIn = zoomIndex < ZOOM_LEVELS.length - 1;
 
   const todayOffset = useMemo(() => {
     const d = differenceInCalendarDays(new Date(), ganttStartDate);
@@ -186,26 +191,33 @@ export const GanttChart: React.FC<GanttChartProps> = ({
             GANTT Operativo — Timeline {ganttStartDate.getFullYear()}
           </CardTitle>
           <div className="flex items-center gap-1">
-            <Button variant="outline" size="icon" onClick={() => scroll(-1)} className="h-7 w-7">
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" size="icon" onClick={() => scroll(1)} className="h-7 w-7">
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
+              <Button variant="outline" size="icon" onClick={() => setZoomIndex(i => Math.max(0, i - 1))} disabled={!canZoomOut} className="h-7 w-7" title="Zoom out">
+                <ZoomOut className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="icon" onClick={() => setZoomIndex(i => Math.min(ZOOM_LEVELS.length - 1, i + 1))} disabled={!canZoomIn} className="h-7 w-7" title="Zoom in">
+                <ZoomIn className="h-4 w-4" />
+              </Button>
+              <div className="w-px h-5 bg-border mx-1" />
+              <Button variant="outline" size="icon" onClick={() => scroll(-1)} className="h-7 w-7">
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="icon" onClick={() => scroll(1)} className="h-7 w-7">
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
         </div>
       </CardHeader>
       <CardContent className="p-0">
         <div className="overflow-x-auto select-none" ref={scrollRef} onPointerMove={onPointerMove} onPointerUp={handlePointerUp}>
-          <div className="min-w-[1100px]">
+          <div style={{ minWidth: `${timelineMinWidth}px` }}>
             <div className="grid grid-cols-[18rem_minmax(0,1fr)] border-b border-border bg-muted/50 sticky top-0 z-10">
               <div className={`${SIDEBAR_WIDTH_CLASS} shrink-0 px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider`}>
                 Attività
               </div>
               <div
-                className="grid min-w-[1100px] flex-1"
+                className="grid flex-1"
                 ref={timelineRef}
-                style={{ gridTemplateColumns: monthGridTemplate }}
+                style={{ minWidth: `${timelineMinWidth}px`, gridTemplateColumns: monthGridTemplate }}
               >
                 {months.map((m, i) => (
                   <div
@@ -250,7 +262,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                         </div>
                       </div>
 
-                      <div className="relative min-w-[1100px]">
+                      <div className="relative" style={{ minWidth: `${timelineMinWidth}px` }}>
                         <div
                           className="absolute inset-0 grid pointer-events-none"
                           style={{ gridTemplateColumns: monthGridTemplate }}
