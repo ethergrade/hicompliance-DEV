@@ -1161,8 +1161,9 @@ const Remediation: React.FC = () => {
   // Generiamo le settimane per l'header del Gantt
   const generateWeeks = () => {
     const weeks = [];
+    let currentDate = startDate;
     const startDate = new Date('2026-01-01');
-    const endDate = new Date('2026-05-01');
+    const endDate = new Date('2026-12-31');
     let currentDate = startDate;
     
     while (currentDate < endDate) {
