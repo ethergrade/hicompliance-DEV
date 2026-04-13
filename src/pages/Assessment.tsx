@@ -146,39 +146,25 @@ const Assessment: React.FC = () => {
     );
   };
 
-  const CATEGORY_SCORES: Record<string, number> = {
-    'Business Continuity, Disaster recovery, Backup': 72,
-    'Certificazioni': 85,
-    'Crittografia': 60,
-    'Gestione delle identità Gestione degli accessi': 25,
-    'Gestione degli incidenti': 78,
-    'Gestione del rischio': 65,
-    'Gestione delle risorse': 55,
-    'Gestione fornitori e acquisti': 30,
-    'Governance': 88,
-    'HR e formazione': 70,
-    'Igiene informatica': 62,
-    'Manutenzione e miglioramento continuo': 35,
-    'Network Security Best Practices & Operations': 82,
-    'Sviluppo software': 40,
-  };
-
   const assessmentCategories = useMemo(() => {
     return ASSESSMENT_CATEGORIES.map(cat => {
       const counts = getCategoryCounts(cat.name);
       const answered = counts.completato + counts.pianificato_in_corso + counts.non_iniziato + counts.non_applicabile;
       const total = cat.questions.length;
       const status = answered === 0 ? 'not_started' : answered === total ? 'completed' : 'in_progress';
+      const score = calculateCategoryScore(cat.questions, responses);
+      const risk = getRiskFromScore(score);
       return {
         name: cat.name,
         questions: total,
         completed: answered,
         status,
-        score: CATEGORY_SCORES[cat.name] || 50,
+        score,
+        risk,
         counts,
       };
     });
-  }, [getCategoryCounts]);
+  }, [getCategoryCounts, responses]);
 
   // Filter and sort categories based on preferences
   const filteredAndSortedCategories = assessmentCategories
