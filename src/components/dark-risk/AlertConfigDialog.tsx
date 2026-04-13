@@ -158,8 +158,8 @@ export const AlertConfigDialog: React.FC<AlertConfigDialogProps> = ({
                       </FormControl>
                       <SelectContent>
                         {users.map((user) => (
-                          <SelectItem key={user.auth_user_id} value={user.auth_user_id}>
-                            {user.full_name} ({user.email})
+                          <SelectItem key={user.id} value={String(user.id)}>
+                            {user.name} ({user.email})
                           </SelectItem>
                         ))}
                       </SelectContent>
