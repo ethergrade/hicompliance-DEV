@@ -776,7 +776,6 @@ const Assessment: React.FC = () => {
                 </div>
               </div>
             </div>
-            </div>
             {statusFilter !== 'all' && (
               <p className="text-sm text-muted-foreground mt-2">
                 Mostrando {filteredAndSortedCategories.length} di {assessmentCategories.length} categorie
