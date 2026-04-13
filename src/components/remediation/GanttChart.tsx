@@ -5,7 +5,7 @@ import { useGanttDrag } from '@/hooks/useGanttResize';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Calendar, ChevronLeft, ChevronRight, Settings, Trash2, GripVertical } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Settings, Trash2, GripVertical, ZoomIn, ZoomOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface GanttTask {
