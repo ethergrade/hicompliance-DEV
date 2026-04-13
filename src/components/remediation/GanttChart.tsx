@@ -191,13 +191,20 @@ export const GanttChart: React.FC<GanttChartProps> = ({
             GANTT Operativo — Timeline {ganttStartDate.getFullYear()}
           </CardTitle>
           <div className="flex items-center gap-1">
-            <Button variant="outline" size="icon" onClick={() => scroll(-1)} className="h-7 w-7">
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" size="icon" onClick={() => scroll(1)} className="h-7 w-7">
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
+              <Button variant="outline" size="icon" onClick={() => setZoomIndex(i => Math.max(0, i - 1))} disabled={!canZoomOut} className="h-7 w-7" title="Zoom out">
+                <ZoomOut className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="icon" onClick={() => setZoomIndex(i => Math.min(ZOOM_LEVELS.length - 1, i + 1))} disabled={!canZoomIn} className="h-7 w-7" title="Zoom in">
+                <ZoomIn className="h-4 w-4" />
+              </Button>
+              <div className="w-px h-5 bg-border mx-1" />
+              <Button variant="outline" size="icon" onClick={() => scroll(-1)} className="h-7 w-7">
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="icon" onClick={() => scroll(1)} className="h-7 w-7">
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
         </div>
       </CardHeader>
       <CardContent className="p-0">
