@@ -30,7 +30,7 @@
    const [organizations, setOrganizations] = useState<Organization[]>([]);
    const [isLoadingClients, setIsLoadingClients] = useState(true);
    const [userOrganizationId, setUserOrganizationId] = useState<string | null>(null);
-   const { user, userProfile } = useAuth();
+   const { user } = useAuth();
  const { isSuperAdmin, isSales, loading: rolesLoading } = useUserRoles();
    
    const canManageMultipleClients = isSuperAdmin || isSales;
@@ -42,13 +42,7 @@
      setIsLoadingClients(true);
      try {
        // First get user's own organization
-       const { data: userData } = await supabase
-         .from('users')
-         .select('organization_id')
-         .eq('auth_user_id', user.id)
-         .single();
-       
-       setUserOrganizationId(userData?.organization_id || null);
+       setUserOrganizationId(user.tenant_id || null);
  
        if (canManageMultipleClients) {
          // Sales/Admin: fetch all organizations
@@ -70,11 +64,11 @@
          }
        } else {
          // Normal client: use their organization
-         if (userData?.organization_id) {
+         if (user.tenant_id) {
            const { data: orgData } = await supabase
              .from('organizations')
              .select('id, name, code, created_at')
-             .eq('id', userData.organization_id)
+             .eq('id', user.tenant_id)
              .single();
            
            if (orgData) {

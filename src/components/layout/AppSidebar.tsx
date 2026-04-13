@@ -95,12 +95,12 @@ export const AppSidebar: React.FC = () => {
   const location = useLocation();
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
-  const { userProfile } = useAuth();
+  const { user } = useAuth();
   const { isSuperAdmin, isSales } = useUserRoles();
   const { isModuleEnabled } = useRolePermissions();
   const { selectedOrganization, canManageMultipleClients } = useClientContext();
   
-  const isAdmin = userProfile?.user_type === 'admin';
+  const isAdmin = isSuperAdmin;
   const platformName = isSuperAdmin ? 'HiConsole' : 'HiCompliance';
 
   const filteredNavigation = navigation.filter(item => {
@@ -338,11 +338,11 @@ export const AppSidebar: React.FC = () => {
         {!collapsed && (
           <div className="space-y-3">
             <div className="text-sm">
-              <p className="text-sidebar-foreground font-medium">{userProfile?.full_name}</p>
+              <p className="text-sidebar-foreground font-medium">{user?.name}</p>
               <p className="text-sidebar-foreground/60 text-xs">
               {canManageMultipleClients && selectedOrganization 
                 ? selectedOrganization.name 
-                : userProfile?.organizations?.name || 'Organizzazione'}
+                : 'Organizzazione'}
               </p>
               <p className="text-xs text-cyan-400">
                 {isSuperAdmin ? 'Super Admin' : isSales ? 'Sales' : isAdmin ? 'Amministratore' : 'Cliente'}

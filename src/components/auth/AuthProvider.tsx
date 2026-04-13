@@ -1,26 +1,21 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, Session } from '@supabase/supabase-js';
-import { supabase } from '@/integrations/supabase/client';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { authApi } from '@/lib/api/auth';
+import { getToken, clearToken } from '@/lib/api-client';
+import { ApiError } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
-import { useNavigate } from 'react-router-dom';
+import type { LoginUser } from '@/types/api';
 
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
-  userProfile: any | null;
+  user: LoginUser | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: any }>;
-  signUp: (email: string, password: string, fullName: string, organizationName: string) => Promise<{ error: any }>;
+  signIn: (email: string, password: string) => Promise<{ error: unknown }>;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
-  session: null,
-  userProfile: null,
   loading: true,
   signIn: async () => ({ error: null }),
-  signUp: async () => ({ error: null }),
   signOut: async () => {},
 });
 
@@ -33,325 +28,31 @@ export const useAuth = () => {
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [userProfile, setUserProfile] = useState<any | null>(null);
+  const [user, setUser] = useState<LoginUser | null>(null);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
+  // Restore session from stored token on mount
   useEffect(() => {
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
-          // Fetch user profile
-          setTimeout(async () => {
-            try {
-              const { data: profile } = await supabase
-                .from('users')
-                .select('*, organizations(*)')
-                .eq('auth_user_id', session.user.id)
-                .single();
-              
-              setUserProfile(profile);
-            } catch (error) {
-              console.error('Error fetching user profile:', error);
-            }
-          }, 0);
-        } else {
-          setUserProfile(null);
-        }
-        
-        setLoading(false);
-      }
-    );
-
-    // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    const token = getToken();
+    if (!token) {
       setLoading(false);
-    });
+      return;
+    }
 
-    return () => subscription.unsubscribe();
+    authApi.me()
+      .then((me) => setUser(me))
+      .catch(() => {
+        // Token expired or invalid — clean up
+        clearToken();
+      })
+      .finally(() => setLoading(false));
   }, []);
 
-  // Helper function to ensure user data integrity after login
-  const ensureUserDataIntegrity = async (authUserId: string, email: string) => {
+  const signIn = useCallback(async (email: string, password: string) => {
     try {
-      // Check if user record exists and has correct auth_user_id
-      const { data: existingUser } = await supabase
-        .from('users')
-        .select('id, auth_user_id, email')
-        .eq('email', email)
-        .single();
-
-      if (existingUser && !existingUser.auth_user_id) {
-        // Fix missing auth_user_id
-        console.log(`Fixing auth_user_id for ${email}...`);
-        await supabase
-          .from('users')
-          .update({ auth_user_id: authUserId })
-          .eq('email', email);
-      }
-
-      // If no user record exists at all, create one for known accounts
-      if (!existingUser) {
-        const knownAccounts: Record<string, { full_name: string; user_type: 'admin' | 'client'; orgCode: string }> = {
-          'superadmin@superadmin.com': { full_name: 'Super Administrator', user_type: 'admin', orgCode: 'admin' },
-          'admin@admin.com': { full_name: 'Administrator', user_type: 'admin', orgCode: 'admin' },
-          'sales@sales.com': { full_name: 'Sales User', user_type: 'client', orgCode: 'admin' },
-        };
-        const accountInfo = knownAccounts[email];
-        if (accountInfo) {
-          console.log(`Creating user record for ${email}...`);
-          const { data: org } = await supabase.from('organizations').select('id').eq('code', accountInfo.orgCode).single();
-          await supabase.from('users').insert({
-            auth_user_id: authUserId,
-            email,
-            full_name: accountInfo.full_name,
-            user_type: accountInfo.user_type,
-            organization_id: org?.id,
-          });
-        }
-      }
-
-      // Role assignments for known accounts
-      const roleMap: Record<string, 'super_admin' | 'sales'> = {
-        'superadmin@superadmin.com': 'super_admin',
-        'admin@admin.com': 'super_admin',
-        'sales@sales.com': 'sales',
-      };
-      const expectedRole = roleMap[email];
-      if (expectedRole) {
-        const { data: existingRole } = await supabase
-          .from('user_roles')
-          .select('*')
-          .eq('user_id', authUserId)
-          .eq('role', expectedRole)
-          .single();
-
-        if (!existingRole) {
-          console.log(`Assigning ${expectedRole} role to ${email}...`);
-          await supabase
-            .from('user_roles')
-            .upsert({
-              user_id: authUserId,
-              role: expectedRole
-            }, {
-              onConflict: 'user_id,role'
-            });
-        }
-      }
-    } catch (error) {
-      console.error('Error ensuring user data integrity:', error);
-    }
-  };
-
-  const signIn = async (email: string, password: string) => {
-    try {
-      // Handle special cases for admin and sales
-      let loginEmail = email;
-      let loginPassword = password;
-      
-      if (email === 'admin') {
-        loginEmail = 'admin@admin.com';
-        loginPassword = 'adminadmin';
-      } else if (email === 'sales') {
-        loginEmail = 'sales@sales.com';
-        loginPassword = 'salessales';
-      } else if (email === 'superadmin') {
-        loginEmail = 'superadmin@superadmin.com';
-        loginPassword = 'superadmin@2026';
-      }
-
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: loginEmail,
-        password: loginPassword,
-      });
-
-      // After successful login, ensure auth_user_id and roles are correctly set
-      if (data?.user && !error) {
-        await ensureUserDataIntegrity(data.user.id, loginEmail);
-      }
-
-      if (error) {
-        // If admin login fails, try to sign up the admin user first
-        if ((email === 'admin' || email === 'admin@admin.com') && error.message.includes('Invalid login credentials')) {
-          console.log('Tentativo di registrazione admin...');
-          
-          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            email: 'admin@admin.com',
-            password: 'adminadmin',
-            options: {
-              emailRedirectTo: `${window.location.origin}/dashboard`,
-              data: {
-                full_name: 'Administrator',
-                user_type: 'admin'
-              }
-            }
-          });
-
-          if (signUpError) {
-            console.error('Errore registrazione admin:', signUpError);
-            toast({
-              title: "Errore di registrazione admin",
-              description: signUpError.message,
-              variant: "destructive",
-            });
-            return { error: signUpError };
-          }
-
-          console.log('Admin registrato, tentativo di login...');
-
-          // Wait a moment for the signup to complete
-          await new Promise(resolve => setTimeout(resolve, 1000));
-
-          // Try to login again after signup
-          const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
-            email: 'admin@admin.com',
-            password: 'adminadmin',
-          });
-
-          if (loginError) {
-            console.error('Errore login dopo registrazione:', loginError);
-            toast({
-              title: "Admin registrato",
-              description: "Account admin creato. Riprova il login tra qualche secondo.",
-              variant: "default",
-            });
-            return { error: loginError };
-          }
-
-          // Update the user profile with admin details and sync auth_user_id
-          if (loginData.user) {
-            console.log('Aggiornamento profilo admin...');
-            
-            // Get admin organization
-            const { data: adminOrg } = await supabase
-              .from('organizations')
-              .select('id')
-              .eq('code', 'admin')
-              .single();
-
-            // Update the existing admin user record with auth_user_id
-            await supabase
-              .from('users')
-              .update({
-                auth_user_id: loginData.user.id,
-              })
-              .eq('email', 'admin@admin.com');
-
-            console.log('Profilo admin aggiornato');
-          }
-
-          toast({
-            title: "Accesso admin effettuato",
-            description: "Account admin creato e login completato",
-          });
-
-          return { error: null };
-        } else if ((email === 'sales' || email === 'sales@sales.com') && error.message.includes('Invalid login credentials')) {
-          // If sales login fails, try to sign up the sales user first
-          console.log('Tentativo di registrazione sales...');
-          
-          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            email: 'sales@sales.com',
-            password: 'salessales',
-            options: {
-              emailRedirectTo: `${window.location.origin}/dashboard`,
-              data: {
-                full_name: 'Sales User',
-                user_type: 'client'
-              }
-            }
-          });
-
-          if (signUpError) {
-            console.error('Errore registrazione sales:', signUpError);
-            toast({ title: "Errore di registrazione sales", description: signUpError.message, variant: "destructive" });
-            return { error: signUpError };
-          }
-
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({ email: 'sales@sales.com', password: 'salessales' });
-
-          if (loginError) {
-            toast({ title: "Sales registrato", description: "Account sales creato. Riprova il login tra qualche secondo.", variant: "default" });
-            return { error: loginError };
-          }
-
-          if (loginData.user) {
-            await supabase.from('users').update({ auth_user_id: loginData.user.id }).eq('email', 'sales@sales.com');
-            await supabase.from('user_roles').upsert({ user_id: loginData.user.id, role: 'sales' }, { onConflict: 'user_id,role' });
-          }
-
-          toast({ title: "Accesso sales effettuato", description: "Account sales creato e login completato" });
-          return { error: null };
-        } else if ((email === 'superadmin' || email === 'superadmin@superadmin.com') && error.message.includes('Invalid login credentials')) {
-          console.log('Tentativo di registrazione superadmin...');
-          
-          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            email: 'superadmin@superadmin.com',
-            password: 'superadmin@2026',
-            options: {
-              emailRedirectTo: `${window.location.origin}/dashboard`,
-              data: {
-                full_name: 'Super Administrator',
-                user_type: 'admin'
-              }
-            }
-          });
-
-          if (signUpError) {
-            toast({ title: "Errore registrazione superadmin", description: signUpError.message, variant: "destructive" });
-            return { error: signUpError };
-          }
-
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({ email: 'superadmin@superadmin.com', password: 'superadmin@2026' });
-
-          if (loginError) {
-            toast({ title: "SuperAdmin registrato", description: "Riprova il login tra qualche secondo.", variant: "default" });
-            return { error: loginError };
-          }
-
-          if (loginData.user) {
-            // Get or create admin organization
-            const { data: adminOrg } = await supabase.from('organizations').select('id').eq('code', 'admin').single();
-
-            await supabase.from('users').update({ auth_user_id: loginData.user.id }).eq('email', 'superadmin@superadmin.com');
-
-            // If no user record exists, create one
-            const { data: existingUser } = await supabase.from('users').select('id').eq('email', 'superadmin@superadmin.com').single();
-            if (!existingUser) {
-              await supabase.from('users').insert({
-                auth_user_id: loginData.user.id,
-                email: 'superadmin@superadmin.com',
-                full_name: 'Super Administrator',
-                user_type: 'admin',
-                organization_id: adminOrg?.id,
-              });
-            }
-
-            // Assign super_admin role
-            await supabase.from('user_roles').upsert({ user_id: loginData.user.id, role: 'super_admin' }, { onConflict: 'user_id,role' });
-          }
-
-          toast({ title: "Accesso superadmin effettuato", description: "Account super admin creato e login completato" });
-          return { error: null };
-        } else {
-          toast({
-            title: "Errore di accesso",
-            description: error.message,
-            variant: "destructive",
-          });
-          return { error };
-        }
-      }
+      const { user: loggedUser } = await authApi.login({ email, password });
+      setUser(loggedUser);
 
       toast({
         title: "Accesso effettuato",
@@ -359,100 +60,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       return { error: null };
-    } catch (error: any) {
-      console.error('Errore generale di accesso:', error);
+    } catch (error) {
+      const message = error instanceof ApiError
+        ? error.message
+        : "Si è verificato un errore durante l'accesso";
+
       toast({
         title: "Errore di accesso",
-        description: "Si è verificato un errore durante l'accesso",
+        description: message,
         variant: "destructive",
       });
+
       return { error };
     }
-  };
+  }, [toast]);
 
-  const signUp = async (email: string, password: string, fullName: string, organizationName: string) => {
+  const signOut = useCallback(async () => {
     try {
-      const redirectUrl = `${window.location.origin}/`;
-      
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: redirectUrl,
-        },
-      });
-
-      if (error) {
-        toast({
-          title: "Errore di registrazione",
-          description: error.message,
-          variant: "destructive",
-        });
-        return { error };
-      }
-
-      if (data.user) {
-        // Create organization
-        const { data: org, error: orgError } = await supabase
-          .from('organizations')
-          .insert({
-            name: organizationName,
-            code: organizationName.toLowerCase().replace(/\s+/g, '_'),
-          })
-          .select()
-          .single();
-
-        if (orgError) {
-          console.error('Error creating organization:', orgError);
-          return { error: orgError };
-        }
-
-        // Create user profile
-        const { error: userError } = await supabase
-          .from('users')
-          .insert({
-            auth_user_id: data.user.id,
-            email,
-            full_name: fullName,
-            user_type: 'client',
-            organization_id: org.id,
-          });
-
-        if (userError) {
-          console.error('Error creating user profile:', userError);
-          return { error: userError };
-        }
-      }
-
-      toast({
-        title: "Registrazione completata",
-        description: "Controlla la tua email per confermare l'account",
-      });
-
-      return { error: null };
-    } catch (error: any) {
-      return { error };
+      await authApi.logout();
+    } catch {
+      // Even if API call fails, clear local state
     }
-  };
-
-  const signOut = async () => {
-    await supabase.auth.signOut();
+    clearToken();
     setUser(null);
-    setSession(null);
-    setUserProfile(null);
     toast({
       title: "Disconnesso",
       description: "Sei stato disconnesso con successo",
     });
-  };
+  }, [toast]);
 
-  const value = {
+  const value: AuthContextType = {
     user,
-    session,
-    userProfile,
     loading,
     signIn,
-    signUp,
     signOut,
   };
 
