@@ -671,38 +671,60 @@ const Assessment: React.FC = () => {
               </div>
             </CardHeader>
             <CardContent className="pt-0">
-              <div className="space-y-1.5 max-h-[320px] overflow-y-auto pr-1">
+              <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
                 {assessmentCategories.map((cat) => {
                   const total = cat.questions;
                   const c = cat.counts;
                   const answered = c.completato + c.pianificato_in_corso + c.non_iniziato + c.non_applicabile;
+                  const pct = total > 0 ? Math.round((answered / total) * 100) : 0;
                   return (
-                    <div key={cat.name} className="group rounded-lg border border-border/50 hover:border-border bg-card/50 hover:bg-muted/30 transition-all px-3 py-2">
-                      <div className="flex items-center justify-between gap-3 mb-1.5">
-                        <span className="text-xs font-medium text-foreground truncate flex-1">{cat.name}</span>
-                        <span className="text-[10px] text-muted-foreground whitespace-nowrap">{answered}/{total}</span>
+                    <div key={cat.name} className="group rounded-lg border border-border/50 hover:border-border bg-card/50 hover:bg-muted/20 transition-all px-3 py-2.5">
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <span className="text-xs font-semibold text-foreground truncate flex-1">{cat.name}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-muted-foreground">{answered}/{total}</span>
+                          <Badge variant="outline" className={`text-[9px] px-1.5 py-0 h-4 ${
+                            pct === 100 ? 'border-green-500/40 text-green-500' :
+                            pct > 0 ? 'border-yellow-500/40 text-yellow-500' :
+                            'border-border text-muted-foreground'
+                          }`}>
+                            {pct}%
+                          </Badge>
+                        </div>
                       </div>
-                      {/* Stacked bar */}
-                      <div className="flex h-2 rounded-full overflow-hidden bg-muted/50 mb-1.5">
+                      {/* Stacked bar - thicker */}
+                      <div className="flex h-3 rounded-full overflow-hidden bg-muted/40 mb-2">
                         {c.completato > 0 && (
-                          <div className="bg-green-500 transition-all" style={{ width: `${(c.completato / total) * 100}%` }} />
+                          <div className="bg-green-500 transition-all duration-500" style={{ width: `${(c.completato / total) * 100}%` }} />
                         )}
                         {c.pianificato_in_corso > 0 && (
-                          <div className="bg-yellow-500 transition-all" style={{ width: `${(c.pianificato_in_corso / total) * 100}%` }} />
+                          <div className="bg-yellow-500 transition-all duration-500" style={{ width: `${(c.pianificato_in_corso / total) * 100}%` }} />
                         )}
                         {c.non_iniziato > 0 && (
-                          <div className="bg-red-500 transition-all" style={{ width: `${(c.non_iniziato / total) * 100}%` }} />
+                          <div className="bg-red-500 transition-all duration-500" style={{ width: `${(c.non_iniziato / total) * 100}%` }} />
                         )}
                         {c.non_applicabile > 0 && (
-                          <div className="bg-muted-foreground/40 transition-all" style={{ width: `${(c.non_applicabile / total) * 100}%` }} />
+                          <div className="bg-muted-foreground/40 transition-all duration-500" style={{ width: `${(c.non_applicabile / total) * 100}%` }} />
                         )}
                       </div>
-                      {/* Count pills */}
-                      <div className="flex items-center gap-2 text-[10px]">
-                        <span className="text-green-500 font-semibold">{c.completato}</span>
-                        <span className="text-yellow-500 font-semibold">{c.pianificato_in_corso}</span>
-                        <span className="text-red-500 font-semibold">{c.non_iniziato}</span>
-                        <span className="text-muted-foreground font-semibold">{c.non_applicabile}</span>
+                      {/* Count pills with mini bars */}
+                      <div className="flex items-center gap-3 text-[10px]">
+                        <div className="flex items-center gap-1">
+                          <div className="w-1.5 h-3 rounded-sm bg-green-500" />
+                          <span className="text-green-500 font-bold">{c.completato}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <div className="w-1.5 h-3 rounded-sm bg-yellow-500" />
+                          <span className="text-yellow-500 font-bold">{c.pianificato_in_corso}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <div className="w-1.5 h-3 rounded-sm bg-red-500" />
+                          <span className="text-red-500 font-bold">{c.non_iniziato}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <div className="w-1.5 h-3 rounded-sm bg-muted-foreground/40" />
+                          <span className="text-muted-foreground font-bold">{c.non_applicabile}</span>
+                        </div>
                       </div>
                     </div>
                   );
