@@ -58,14 +58,6 @@ const DB_TO_UI_STATUS: Record<string, AssessmentResponse> = {
 };
 
 
-type RadarYearRange = '1y' | '2y' | '3y' | '4y';
-const RADAR_YEAR_DATA: Record<RadarYearRange, number[]> = {
-  '1y': [72, 75, 68, 80, 65, 78, 73, 85, 62, 76, 71, 79, 83, 68],
-  '2y': [58, 62, 55, 68, 50, 65, 60, 72, 48, 63, 58, 66, 70, 55],
-  '3y': [45, 50, 42, 55, 38, 52, 48, 60, 35, 50, 45, 53, 57, 42],
-  '4y': [30, 35, 28, 40, 25, 38, 32, 45, 20, 35, 30, 38, 42, 28],
-};
-
 const RADAR_TARGET_OFFSET = 15; // target is always +15 above compliance
 
 const Assessment: React.FC = () => {
@@ -188,7 +180,7 @@ const Assessment: React.FC = () => {
     return counts;
   }, [responses]);
 
-  const [radarYear, setRadarYear] = useState<RadarYearRange>('1y');
+  
 
   // Organization profile for NIS2 classification
   const { formData: orgProfile, loading: profileLoading } = useOrganizationProfile();
@@ -457,20 +449,6 @@ const Assessment: React.FC = () => {
                  'Errore salvataggio'}
               </div>
             )}
-            <div className="flex items-center gap-2 bg-card border border-border rounded-lg px-3 py-2">
-              <Clock className="w-4 h-4 text-muted-foreground" />
-              <Select value={radarYear} onValueChange={(v) => setRadarYear(v as RadarYearRange)}>
-                <SelectTrigger className="w-[130px] border-0 bg-transparent h-8 text-sm font-medium">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1y">2025 (1y)</SelectItem>
-                  <SelectItem value="2y">2024 (2y)</SelectItem>
-                  <SelectItem value="3y">2023 (3y)</SelectItem>
-                  <SelectItem value="4y">2022 (4y)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
             <Button 
               className="bg-primary text-primary-foreground"
               onClick={() => generateAssessmentPDF({ responses, companyName: orgProfile.legal_name || undefined })}
@@ -618,37 +596,20 @@ const Assessment: React.FC = () => {
           {/* Radar Chart - Left */}
           <Card className="border-border lg:col-span-2">
             <CardHeader className="pb-2">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div>
-                  <CardTitle className="text-base">Allineamento NIS2 / NIST / ISO</CardTitle>
-                  <p className="text-xs text-muted-foreground mt-0.5">Conformità per categoria</p>
-                </div>
-                <div className="flex items-center gap-1">
-                  {(['1y', '2y', '3y', '4y'] as RadarYearRange[]).map((opt) => (
-                    <button
-                      key={opt}
-                      onClick={() => setRadarYear(opt)}
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all ${
-                        radarYear === opt
-                          ? 'bg-primary text-primary-foreground'
-                          : 'border border-border text-muted-foreground hover:bg-muted/50'
-                      }`}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
+              <div>
+                <CardTitle className="text-base">Allineamento NIS2 / NIST / ISO</CardTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">Punteggio reale da risposte assessment</p>
               </div>
             </CardHeader>
             <CardContent className="pt-0">
               <div className="h-[320px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <RadarChart
-                    data={assessmentCategories.map((cat, i) => ({
+                    data={assessmentCategories.map((cat) => ({
                       category: cat.name.length > 14 ? cat.name.substring(0, 12) + '…' : cat.name,
                       fullName: cat.name,
-                      compliance: RADAR_YEAR_DATA[radarYear][i] ?? 0,
-                      target: Math.min((RADAR_YEAR_DATA[radarYear][i] ?? 0) + RADAR_TARGET_OFFSET, 100),
+                      compliance: cat.score,
+                      target: Math.min(cat.score + RADAR_TARGET_OFFSET, 100),
                     }))}
                     margin={{ top: 10, right: 40, bottom: 10, left: 40 }}
                   >
