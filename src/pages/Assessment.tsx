@@ -55,7 +55,7 @@ const DB_TO_UI_STATUS: Record<string, AssessmentResponse> = {
 };
 
 
-// Historical radar data per year – aligned with ComplianceMetricCard percentages
+type RadarYearRange = '1y' | '2y' | '3y' | '4y';
 const RADAR_YEAR_DATA: Record<RadarYearRange, number[]> = {
   '1y': [72, 75, 68, 80, 65, 78, 73, 85, 62, 76, 71, 79, 83, 68],
   '2y': [58, 62, 55, 68, 50, 65, 60, 72, 48, 63, 58, 66, 70, 55],
