@@ -232,9 +232,15 @@ const Assessment: React.FC = () => {
      assessmentCategories.reduce((acc, cat) => acc + cat.questions, 0)) * 100
   );
 
-  const overallScore = Math.round(
-    assessmentCategories.reduce((acc, cat) => acc + cat.score, 0) / assessmentCategories.length
-  );
+  const overallScore = useMemo(() => {
+    const catsWithAnswers = assessmentCategories.filter(c => c.completed > 0);
+    if (catsWithAnswers.length === 0) return 0;
+    return Math.round(catsWithAnswers.reduce((acc, cat) => acc + cat.score, 0) / catsWithAnswers.length);
+  }, [assessmentCategories]);
+
+  const overallRisk = useMemo(() => getRiskFromScore(overallScore), [overallScore]);
+
+  const completedAreas = useMemo(() => assessmentCategories.filter(c => c.status === 'completed').length, [assessmentCategories]);
 
   // Animation function
   const animateValue = (
