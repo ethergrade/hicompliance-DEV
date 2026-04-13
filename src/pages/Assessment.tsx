@@ -36,6 +36,7 @@ import { NIS2_LABELS } from '@/types/organization';
 import { useUserPreferences } from '@/hooks/useUserPreferences';
 import { ASSESSMENT_CATEGORIES, AssessmentResponse, RESPONSE_LABELS, RESPONSE_COLORS, calculateCategoryScore, getRiskFromScore, CATEGORY_DESCRIPTIONS } from '@/data/assessmentQuestions';
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { generateAssessmentPDF } from '@/components/assessment/AssessmentReportGenerator';
 
 type RadarYearRange = '1y' | '2y' | '3y' | '4y';
 
@@ -348,9 +349,12 @@ const Assessment: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
-            <Button className="bg-primary text-primary-foreground">
+            <Button 
+              className="bg-primary text-primary-foreground"
+              onClick={() => generateAssessmentPDF({ responses, companyName: orgProfile.legal_name || undefined })}
+            >
               <FileText className="w-4 h-4 mr-2" />
-              Genera Report
+              Genera Report PDF
             </Button>
           </div>
         </div>
