@@ -78,9 +78,12 @@ const GANTT_END = new Date('2026-12-31');
 
 /* ─── Component ─── */
 const Remediation: React.FC = () => {
+  const { organizationId: orgId } = useClientOrganization();
+
+  const defaultPrefs = useMemo(() => ({ selectedTimeframe: '90days', defaultView: 'gantt' }), []);
   const { preferences, updatePreferences } = useUserPreferences({
     preferenceKey: 'remediation_filters',
-    defaultPreferences: { selectedTimeframe: '90days', defaultView: 'gantt' },
+    defaultPreferences: defaultPrefs,
   });
 
   const [selectedTimeframe, setSelectedTimeframeState] = useState('90days');
