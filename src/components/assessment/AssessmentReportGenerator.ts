@@ -198,8 +198,8 @@ export const generateAssessmentPDF = ({ responses, companyName }: AssessmentRepo
         non_iniziato: [220, 38, 38],
         non_applicabile: [148, 163, 184],
       };
-      const bc = response && badgeColors[response] ? badgeColors[response] : [148, 163, 184];
-      doc.setTextColor(...bc);
+    const bc: [number, number, number] = response && badgeColors[response] ? badgeColors[response] : [148, 163, 184];
+      doc.setTextColor(bc[0], bc[1], bc[2]);
       doc.setFont('helvetica', 'bold');
       doc.text(responseLabel, pageWidth - margin - 2, y + 5, { align: 'right' });
 
