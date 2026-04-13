@@ -128,6 +128,55 @@ const Assessment: React.FC = () => {
     });
   }, []);
 
+  // Auto-snapshot: debounced save after each response change
+  const snapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const responsesRef = useRef(responses);
+  responsesRef.current = responses;
+
+  const triggerAutoSnapshot = useCallback(() => {
+    if (!orgId || !user) return;
+    if (snapshotTimerRef.current) clearTimeout(snapshotTimerRef.current);
+    snapshotTimerRef.current = setTimeout(async () => {
+      const currentResponses = responsesRef.current;
+      // Check if at least 1 answer exists
+      const hasAnyAnswer = Object.values(currentResponses).some(v => v !== null);
+      if (!hasAnyAnswer) return;
+
+      const catData = ASSESSMENT_CATEGORIES.map(cat => {
+        const score = calculateCategoryScore(cat.questions, currentResponses);
+        let answered = 0;
+        cat.questions.forEach(q => {
+          if (currentResponses[q.id] && currentResponses[q.id] !== null) answered++;
+        });
+        return { name: cat.name, score, answered, total: cat.questions.length };
+      });
+
+      const totalAnswered = catData.reduce((a, c) => a + c.answered, 0);
+      const totalQuestions = catData.reduce((a, c) => a + c.total, 0);
+      const catsWithAnswers = catData.filter(c => c.answered > 0);
+      const overallScoreCalc = catsWithAnswers.length > 0
+        ? Math.round(catsWithAnswers.reduce((a, c) => a + c.score, 0) / catsWithAnswers.length)
+        : 0;
+
+      const currentYear = new Date().getFullYear();
+      try {
+        await supabase
+          .from('assessment_snapshots')
+          .upsert({
+            organization_id: orgId,
+            snapshot_year: currentYear,
+            category_scores: catData as any,
+            overall_score: overallScoreCalc,
+            total_answered: totalAnswered,
+            total_questions: totalQuestions,
+            created_by: user.id,
+          }, { onConflict: 'organization_id,snapshot_year' });
+      } catch (err) {
+        console.error('Auto-snapshot error:', err);
+      }
+    }, 3000); // 3s debounce
+  }, [orgId, user]);
+
   const setResponse = useCallback((questionId: number, value: AssessmentResponse) => {
     setResponses(prev => ({ ...prev, [questionId]: value }));
 
