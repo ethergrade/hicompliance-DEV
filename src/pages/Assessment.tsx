@@ -42,6 +42,7 @@ import { useUserPreferences } from '@/hooks/useUserPreferences';
 import { ASSESSMENT_CATEGORIES, AssessmentResponse, RESPONSE_LABELS, RESPONSE_COLORS, calculateCategoryScore, getRiskFromScore, CATEGORY_DESCRIPTIONS } from '@/data/assessmentQuestions';
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { generateAssessmentPDF } from '@/components/assessment/AssessmentReportGenerator';
+import GapAnalysisSection from '@/components/assessment/GapAnalysisSection';
 
 // Map UI response values to DB enum values and vice versa
 const UI_TO_DB_STATUS: Record<string, string> = {
