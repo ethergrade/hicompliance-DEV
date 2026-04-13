@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { format, addDays, differenceInDays, parseISO } from 'date-fns';
+import { format, addDays, differenceInCalendarDays, parseISO } from 'date-fns';
 
 interface UseGanttDragProps {
   onDateChange: (taskId: string, startDate: string, endDate: string) => void;
@@ -14,6 +14,8 @@ export const useGanttDrag = ({
   ganttEndDate,
   getTimelineWidth,
 }: UseGanttDragProps) => {
+  void onDateChange;
+
   const dragging = useRef<{
     id: string;
     side: 'left' | 'right' | 'middle';
@@ -23,7 +25,41 @@ export const useGanttDrag = ({
     onMove: (sd: string, ed: string) => void;
   } | null>(null);
 
-  const totalDays = differenceInDays(ganttEndDate, ganttStartDate);
+  const totalDays = Math.max(1, differenceInCalendarDays(ganttEndDate, ganttStartDate) + 1);
+
+  const applyDrag = useCallback((clientX: number) => {
+    const d = dragging.current;
+    if (!d) return;
+
+    const containerWidth = getTimelineWidth();
+    if (containerWidth <= 0) return;
+
+    const deltaX = clientX - d.startX;
+    const daysMoved = Math.round((deltaX / containerWidth) * totalDays);
+
+    const origS = parseISO(d.origStart);
+    const origE = parseISO(d.origEnd);
+    let ns = d.origStart;
+    let ne = d.origEnd;
+
+    if (d.side === 'left') {
+      const p = addDays(origS, daysMoved);
+      if (p < origE && p >= ganttStartDate) ns = format(p, 'yyyy-MM-dd');
+    } else if (d.side === 'right') {
+      const p = addDays(origE, daysMoved);
+      if (p > origS && p <= ganttEndDate) ne = format(p, 'yyyy-MM-dd');
+    } else {
+      const dur = differenceInCalendarDays(origE, origS);
+      const ps = addDays(origS, daysMoved);
+      const pe = addDays(ps, dur);
+      if (ps >= ganttStartDate && pe <= ganttEndDate) {
+        ns = format(ps, 'yyyy-MM-dd');
+        ne = format(pe, 'yyyy-MM-dd');
+      }
+    }
+
+    d.onMove(ns, ne);
+  }, [ganttEndDate, ganttStartDate, getTimelineWidth, totalDays]);
 
   const onPointerDown = useCallback(
     (
@@ -36,7 +72,7 @@ export const useGanttDrag = ({
     ) => {
       e.preventDefault();
       e.stopPropagation();
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
 
       dragging.current = {
         id: taskId,
@@ -51,40 +87,10 @@ export const useGanttDrag = ({
   );
 
   const onPointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      const d = dragging.current;
-      if (!d) return;
-
-      const containerWidth = getTimelineWidth();
-      if (containerWidth <= 0) return;
-
-      const deltaX = e.clientX - d.startX;
-      const daysMoved = Math.round((deltaX / containerWidth) * totalDays);
-
-      const origS = parseISO(d.origStart);
-      const origE = parseISO(d.origEnd);
-      let ns = d.origStart;
-      let ne = d.origEnd;
-
-      if (d.side === 'left') {
-        const p = addDays(origS, daysMoved);
-        if (p < origE && p >= ganttStartDate) ns = format(p, 'yyyy-MM-dd');
-      } else if (d.side === 'right') {
-        const p = addDays(origE, daysMoved);
-        if (p > origS && p <= ganttEndDate) ne = format(p, 'yyyy-MM-dd');
-      } else {
-        const dur = differenceInDays(origE, origS);
-        const ps = addDays(origS, daysMoved);
-        const pe = addDays(ps, dur);
-        if (ps >= ganttStartDate && pe <= ganttEndDate) {
-          ns = format(ps, 'yyyy-MM-dd');
-          ne = format(pe, 'yyyy-MM-dd');
-        }
-      }
-
-      d.onMove(ns, ne);
+    (e: Pick<PointerEvent, 'clientX'> | Pick<React.PointerEvent, 'clientX'>) => {
+      applyDrag(e.clientX);
     },
-    [ganttStartDate, ganttEndDate, totalDays, getTimelineWidth],
+    [applyDrag],
   );
 
   const onPointerUp = useCallback(
