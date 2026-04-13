@@ -29,10 +29,12 @@ import {
   Building2,
   Shield,
   AlertCircle,
-  Filter,
+  Save,
   ArrowUpDown,
   ChevronDown,
   ChevronRight,
+  Loader2,
+  Filter,
 } from 'lucide-react';
 import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
 import { NIS2_LABELS } from '@/types/organization';
@@ -74,6 +76,8 @@ const Assessment: React.FC = () => {
   // Question responses state: { [questionId]: response }
   const [responses, setResponses] = useState<Record<number, AssessmentResponse>>({});
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
   // Map question order_index to DB question UUID
   const questionUuidMap = useRef<Record<number, string>>({});
   const loadedOrgRef = useRef<string | null>(null);
@@ -139,26 +143,36 @@ const Assessment: React.FC = () => {
     const questionUuid = questionUuidMap.current[questionId];
     if (!questionUuid) return;
 
-    if (value === null) {
-      // Delete the response
-      supabase
-        .from('assessment_responses')
-        .delete()
-        .eq('question_id', questionUuid)
-        .eq('organization_id', orgId)
-        .then();
-    } else {
-      const dbStatus = UI_TO_DB_STATUS[value] as any;
-      supabase
-        .from('assessment_responses')
-        .upsert({
-          question_id: questionUuid,
-          organization_id: orgId,
-          status: dbStatus,
-          last_updated_by: user.id,
-        }, { onConflict: 'question_id,organization_id' })
-        .then();
-    }
+    setSaveStatus('saving');
+
+    const doSave = async () => {
+      try {
+        if (value === null) {
+          const { error } = await supabase
+            .from('assessment_responses')
+            .delete()
+            .eq('question_id', questionUuid)
+            .eq('organization_id', orgId);
+          if (error) throw error;
+        } else {
+          const dbStatus = UI_TO_DB_STATUS[value] as any;
+          const { error } = await supabase
+            .from('assessment_responses')
+            .upsert({
+              question_id: questionUuid,
+              organization_id: orgId,
+              status: dbStatus,
+              last_updated_by: user.id,
+            }, { onConflict: 'question_id,organization_id' });
+          if (error) throw error;
+        }
+        setSaveStatus('saved');
+        setLastSaved(new Date());
+      } catch {
+        setSaveStatus('error');
+      }
+    };
+    doSave();
   }, [orgId, user]);
 
   // Compute counts per category from responses
