@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -27,11 +27,14 @@ import {
   Shield,
   AlertCircle,
   Filter,
-  ArrowUpDown
+  ArrowUpDown,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
 import { NIS2_LABELS } from '@/types/organization';
 import { useUserPreferences } from '@/hooks/useUserPreferences';
+import { ASSESSMENT_CATEGORIES, AssessmentResponse, RESPONSE_LABELS, RESPONSE_COLORS } from '@/data/assessmentQuestions';
 
 type RadarYearRange = '1y' | '2y' | '3y' | '4y';
 
@@ -46,6 +49,36 @@ const RADAR_YEAR_DATA: Record<RadarYearRange, number[]> = {
 const RADAR_TARGET_OFFSET = 15; // target is always +15 above compliance
 
 const Assessment: React.FC = () => {
+  // Question responses state: { [questionId]: response }
+  const [responses, setResponses] = useState<Record<number, AssessmentResponse>>({});
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+
+  const toggleCategory = useCallback((name: string) => {
+    setExpandedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }, []);
+
+  const setResponse = useCallback((questionId: number, value: AssessmentResponse) => {
+    setResponses(prev => ({ ...prev, [questionId]: value }));
+  }, []);
+
+  // Compute counts per category from responses
+  const getCategoryCounts = useCallback((categoryName: string) => {
+    const cat = ASSESSMENT_CATEGORIES.find(c => c.name === categoryName);
+    if (!cat) return { completato: 0, pianificato_in_corso: 0, non_iniziato: 0, non_applicabile: 0, unanswered: 0 };
+    const counts = { completato: 0, pianificato_in_corso: 0, non_iniziato: 0, non_applicabile: 0, unanswered: 0 };
+    cat.questions.forEach(q => {
+      const r = responses[q.id];
+      if (r && r in counts) counts[r as keyof typeof counts]++;
+      else counts.unanswered++;
+    });
+    return counts;
+  }, [responses]);
+
   const [radarYear, setRadarYear] = useState<RadarYearRange>('1y');
 
   // Organization profile for NIS2 classification
@@ -112,106 +145,39 @@ const Assessment: React.FC = () => {
     );
   };
 
-  const assessmentCategories = [
-    { 
-      name: 'Business Continuity, Disaster recovery, Backup', 
-      questions: 11, 
-      completed: 8, 
-      status: 'in_progress',
-      score: 72 
-    },
-    { 
-      name: 'Certificazioni', 
-      questions: 3, 
-      completed: 3, 
-      status: 'completed',
-      score: 85 
-    },
-    { 
-      name: 'Crittografia', 
-      questions: 6, 
-      completed: 4, 
-      status: 'in_progress',
-      score: 60 
-    },
-    { 
-      name: 'Gestione delle identità e degli accessi', 
-      questions: 16, 
-      completed: 3, 
-      status: 'not_started',
-      score: 25 
-    },
-    { 
-      name: 'Gestione degli incidenti', 
-      questions: 24, 
-      completed: 24, 
-      status: 'completed',
-      score: 78 
-    },
-    { 
-      name: 'Gestione del rischio', 
-      questions: 8, 
-      completed: 4, 
-      status: 'in_progress',
-      score: 65 
-    },
-    { 
-      name: 'Gestione delle risorse', 
-      questions: 12, 
-      completed: 6, 
-      status: 'in_progress',
-      score: 55 
-    },
-    { 
-      name: 'Gestione fornitori e acquisti', 
-      questions: 11, 
-      completed: 1, 
-      status: 'in_progress',
-      score: 30
-    },
-    { 
-      name: 'Governance', 
-      questions: 9, 
-      completed: 9, 
-      status: 'completed',
-      score: 88 
-    },
-    { 
-      name: 'HR e formazione', 
-      questions: 10, 
-      completed: 7, 
-      status: 'in_progress',
-      score: 70 
-    },
-    { 
-      name: 'Igiene informatica', 
-      questions: 5, 
-      completed: 3, 
-      status: 'in_progress',
-      score: 62 
-    },
-    { 
-      name: 'Manutenzione e miglioramento continuo', 
-      questions: 11, 
-      completed: 1, 
-      status: 'in_progress',
-      score: 35 
-    },
-    { 
-      name: 'Network Security Best Practices & Operations', 
-      questions: 4, 
-      completed: 3, 
-      status: 'in_progress',
-      score: 82 
-    },
-    { 
-      name: 'Sviluppo software', 
-      questions: 2, 
-      completed: 1, 
-      status: 'in_progress',
-      score: 40 
-    },
-  ];
+  const CATEGORY_SCORES: Record<string, number> = {
+    'Business Continuity, Disaster recovery, Backup': 72,
+    'Certificazioni': 85,
+    'Crittografia': 60,
+    'Gestione delle identità Gestione degli accessi': 25,
+    'Gestione degli incidenti': 78,
+    'Gestione del rischio': 65,
+    'Gestione delle risorse': 55,
+    'Gestione fornitori e acquisti': 30,
+    'Governance': 88,
+    'HR e formazione': 70,
+    'Igiene informatica': 62,
+    'Manutenzione e miglioramento continuo': 35,
+    'Network Security Best Practices & Operations': 82,
+    'Sviluppo software': 40,
+  };
+
+  const assessmentCategories = useMemo(() => {
+    return ASSESSMENT_CATEGORIES.map(cat => {
+      const counts = getCategoryCounts(cat.name);
+      const answered = counts.completato + counts.pianificato_in_corso + counts.non_iniziato + counts.non_applicabile;
+      const total = cat.questions.length;
+      const status = answered === 0 ? 'not_started' : answered === total ? 'completed' : 'in_progress';
+      return {
+        name: cat.name,
+        questions: total,
+        completed: answered,
+        status,
+        score: CATEGORY_SCORES[cat.name] || 50,
+        counts,
+      };
+    });
+  }, [getCategoryCounts]);
 
   // Filter and sort categories based on preferences
   const filteredAndSortedCategories = assessmentCategories
@@ -674,47 +640,141 @@ const Assessment: React.FC = () => {
             )}
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div className="space-y-3">
               {filteredAndSortedCategories.map((category, index) => {
-                // Find original index for animation values
                 const originalIndex = assessmentCategories.findIndex(c => c.name === category.name);
+                const isExpanded = expandedCategories.has(category.name);
+                const catData = ASSESSMENT_CATEGORIES.find(c => c.name === category.name);
+                const counts = category.counts;
+
                 return (
-                  <div key={category.name} className="flex items-center justify-between p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors">
-                    <div className="flex items-center space-x-4">
-                      <div className="p-2 rounded-lg bg-primary/10">
-                        <ClipboardCheck className="w-5 h-5 text-primary" />
+                  <div key={category.name} className="rounded-lg border border-border bg-card overflow-hidden">
+                    {/* Category header - clickable */}
+                    <div 
+                      className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors cursor-pointer"
+                      onClick={() => toggleCategory(category.name)}
+                    >
+                      <div className="flex items-center space-x-4">
+                        <div className="p-2 rounded-lg bg-primary/10">
+                          {isExpanded ? <ChevronDown className="w-5 h-5 text-primary" /> : <ChevronRight className="w-5 h-5 text-primary" />}
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-medium">{category.name}</h4>
+                          <p className="text-sm text-muted-foreground">
+                            {category.completed}/{category.questions} domande risposte
+                          </p>
+                          <div className="mt-2 flex items-center gap-4">
+                            <Progress 
+                              value={animatedCategoryProgress[originalIndex] || 0} 
+                              className="h-1.5 w-48" 
+                            />
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full bg-green-500" />
+                                {counts.completato}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full bg-yellow-500" />
+                                {counts.pianificato_in_corso}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full bg-gray-400" />
+                                {counts.non_iniziato}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full bg-muted-foreground/40" />
+                                {counts.non_applicabile}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex-1">
-                        <h4 className="font-medium">{category.name}</h4>
-                        <p className="text-sm text-muted-foreground">
-                          {category.completed}/{category.questions} domande completate
-                        </p>
-                        <div className="mt-2">
-                          <Progress 
-                            value={animatedCategoryProgress[originalIndex] || 0} 
-                            className="h-1.5 w-48" 
-                          />
+                      <div className="flex items-center space-x-4">
+                        <div className="text-right">
+                          <div className="text-sm font-medium">Punteggio: {animatedCategoryScores[originalIndex] || 0}/100</div>
+                          <div className={`text-xs font-medium ${getRiskLevel(category.score).color}`}>
+                            Rischio: {getRiskLevel(category.score).level}
+                          </div>
+                          <div className="flex items-center space-x-1 mt-1">
+                            {getStatusIcon(category.status)}
+                            <Badge variant={getStatusBadge(category.status) as any}>
+                              {getStatusText(category.status)}
+                            </Badge>
+                          </div>
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-4">
-                      <div className="text-right">
-                        <div className="text-sm font-medium">Punteggio: {animatedCategoryScores[originalIndex] || 0}/100</div>
-                        <div className={`text-xs font-medium ${getRiskLevel(category.score).color}`}>
-                          Rischio: {getRiskLevel(category.score).level}
+
+                    {/* Expanded questions */}
+                    {isExpanded && catData && (
+                      <div className="border-t border-border bg-muted/20">
+                        <div className="p-3 border-b border-border bg-muted/40">
+                          <div className="grid grid-cols-[auto_1fr_auto] gap-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2">
+                            <span className="w-8">#</span>
+                            <span>Domanda</span>
+                            <span className="w-[200px] text-center">Risposta</span>
+                          </div>
                         </div>
-                        <div className="flex items-center space-x-1 mt-1">
-                          {getStatusIcon(category.status)}
-                          <Badge variant={getStatusBadge(category.status) as any}>
-                            {getStatusText(category.status)}
-                          </Badge>
+                        <div className="divide-y divide-border">
+                          {catData.questions.map((q, qi) => {
+                            const currentResponse = responses[q.id] || null;
+                            return (
+                              <div key={q.id} className="grid grid-cols-[auto_1fr_auto] gap-3 items-center px-5 py-3 hover:bg-muted/30 transition-colors">
+                                <span className="w-8 text-xs text-muted-foreground font-mono">{qi + 1}</span>
+                                <div className="flex items-start gap-2">
+                                  <span className="text-sm text-foreground leading-relaxed">{q.question}</span>
+                                  {q.priority === 'ALTA' && (
+                                    <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 bg-red-500/10 text-red-500 border-red-500/20">ALTA</Badge>
+                                  )}
+                                  {q.priority === 'BASSA' && (
+                                    <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 bg-blue-500/10 text-blue-500 border-blue-500/20">BASSA</Badge>
+                                  )}
+                                </div>
+                                <div className="w-[200px]">
+                                  <Select 
+                                    value={currentResponse || 'no_answer'} 
+                                    onValueChange={(v) => setResponse(q.id, v === 'no_answer' ? null : v as AssessmentResponse)}
+                                  >
+                                    <SelectTrigger className={`h-8 text-xs ${currentResponse ? RESPONSE_COLORS[currentResponse] : 'text-muted-foreground'}`}>
+                                      <SelectValue placeholder="Seleziona..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="no_answer">
+                                        <span className="text-muted-foreground">— Seleziona —</span>
+                                      </SelectItem>
+                                      <SelectItem value="completato">
+                                        <span className="flex items-center gap-2">
+                                          <span className="w-2 h-2 rounded-full bg-green-500" />
+                                          Completato
+                                        </span>
+                                      </SelectItem>
+                                      <SelectItem value="pianificato_in_corso">
+                                        <span className="flex items-center gap-2">
+                                          <span className="w-2 h-2 rounded-full bg-yellow-500" />
+                                          Pianificato / in corso
+                                        </span>
+                                      </SelectItem>
+                                      <SelectItem value="non_iniziato">
+                                        <span className="flex items-center gap-2">
+                                          <span className="w-2 h-2 rounded-full bg-gray-400" />
+                                          Non iniziato
+                                        </span>
+                                      </SelectItem>
+                                      <SelectItem value="non_applicabile">
+                                        <span className="flex items-center gap-2">
+                                          <span className="w-2 h-2 rounded-full bg-muted-foreground/40" />
+                                          Non applicabile
+                                        </span>
+                                      </SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
-                      <Button variant="outline" size="sm">
-                        <FileText className="w-4 h-4 mr-1" />
-                        Modifica
-                      </Button>
-                    </div>
+                    )}
                   </div>
                 );
               })}
