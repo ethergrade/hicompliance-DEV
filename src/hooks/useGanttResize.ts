@@ -1,100 +1,116 @@
-import { useState, useCallback, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import { format, addDays, differenceInDays, parseISO } from 'date-fns';
 
-interface UseGanttResizeProps {
+interface UseGanttDragProps {
   onDateChange: (taskId: number, startDate: string, endDate: string) => void;
   ganttStartDate: Date;
   ganttEndDate: Date;
+  getTimelineWidth: () => number;
 }
 
-interface ResizingTask {
-  id: number;
-  side: 'left' | 'right' | 'middle';
-  initialX: number;
-  initialStartDate: string;
-  initialEndDate: string;
-}
+/**
+ * Pointer-event based drag hook for Gantt bars.
+ * Supports move (middle), resize-left and resize-right.
+ * Returns helpers that attach to the bar's onPointerDown.
+ */
+export const useGanttDrag = ({
+  onDateChange,
+  ganttStartDate,
+  ganttEndDate,
+  getTimelineWidth,
+}: UseGanttDragProps) => {
+  const dragging = useRef<{
+    id: number;
+    side: 'left' | 'right' | 'middle';
+    startX: number;
+    origStart: string;
+    origEnd: string;
+    onMove: (sd: string, ed: string) => void;
+  } | null>(null);
 
-export const useGanttResize = ({ onDateChange, ganttStartDate, ganttEndDate }: UseGanttResizeProps) => {
-  const [resizingTask, setResizingTask] = useState<ResizingTask | null>(null);
+  const totalDays = differenceInDays(ganttEndDate, ganttStartDate);
 
-  const startResize = useCallback((
-    e: React.MouseEvent,
-    taskId: number,
-    side: 'left' | 'right' | 'middle',
-    startDate: string,
-    endDate: string
-  ) => {
-    console.log('🎯 startResize chiamato', { taskId, side, clientX: e.clientX, startDate, endDate });
-    e.preventDefault();
-    e.stopPropagation();
-    
-    setResizingTask({
-      id: taskId,
-      side,
-      initialX: e.clientX,
-      initialStartDate: startDate,
-      initialEndDate: endDate
-    });
-  }, []);
+  const onPointerDown = useCallback(
+    (
+      e: React.PointerEvent,
+      taskId: number,
+      side: 'left' | 'right' | 'middle',
+      startDate: string,
+      endDate: string,
+      onLiveMove: (sd: string, ed: string) => void,
+    ) => {
+      e.preventDefault();
+      e.stopPropagation();
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
 
-  const handleMouseMove = useCallback((e: MouseEvent, containerWidth: number) => {
-    if (!resizingTask) return null;
+      dragging.current = {
+        id: taskId,
+        side,
+        startX: e.clientX,
+        origStart: startDate,
+        origEnd: endDate,
+        onMove: onLiveMove,
+      };
+    },
+    [],
+  );
 
-    const deltaX = e.clientX - resizingTask.initialX;
-    const totalDays = differenceInDays(ganttEndDate, ganttStartDate);
-    const daysMoved = Math.round((deltaX / containerWidth) * totalDays);
+  const onPointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      const d = dragging.current;
+      if (!d) return;
 
-    console.log('📍 handleMouseMove', { 
-      deltaX, 
-      containerWidth, 
-      daysMoved, 
-      clientX: e.clientX,
-      initialX: resizingTask.initialX 
-    });
+      const containerWidth = getTimelineWidth();
+      if (containerWidth <= 0) return;
 
-    const currentStartDate = parseISO(resizingTask.initialStartDate);
-    const currentEndDate = parseISO(resizingTask.initialEndDate);
+      const deltaX = e.clientX - d.startX;
+      const daysMoved = Math.round((deltaX / containerWidth) * totalDays);
+      if (daysMoved === 0 && d.side !== 'middle') return;
 
-    let newStartDate = resizingTask.initialStartDate;
-    let newEndDate = resizingTask.initialEndDate;
+      const origS = parseISO(d.origStart);
+      const origE = parseISO(d.origEnd);
+      let ns = d.origStart;
+      let ne = d.origEnd;
 
-    if (resizingTask.side === 'left') {
-      const proposedStartDate = addDays(currentStartDate, daysMoved);
-      if (proposedStartDate < currentEndDate && proposedStartDate >= ganttStartDate) {
-        newStartDate = format(proposedStartDate, 'yyyy-MM-dd');
+      if (d.side === 'left') {
+        const p = addDays(origS, daysMoved);
+        if (p < origE && p >= ganttStartDate) ns = format(p, 'yyyy-MM-dd');
+      } else if (d.side === 'right') {
+        const p = addDays(origE, daysMoved);
+        if (p > origS && p <= ganttEndDate) ne = format(p, 'yyyy-MM-dd');
+      } else {
+        const dur = differenceInDays(origE, origS);
+        const ps = addDays(origS, daysMoved);
+        const pe = addDays(ps, dur);
+        if (ps >= ganttStartDate && pe <= ganttEndDate) {
+          ns = format(ps, 'yyyy-MM-dd');
+          ne = format(pe, 'yyyy-MM-dd');
+        }
       }
-    } else if (resizingTask.side === 'right') {
-      const proposedEndDate = addDays(currentEndDate, daysMoved);
-      if (proposedEndDate > currentStartDate && proposedEndDate <= ganttEndDate) {
-        newEndDate = format(proposedEndDate, 'yyyy-MM-dd');
-      }
-    } else if (resizingTask.side === 'middle') {
-      const taskDuration = differenceInDays(currentEndDate, currentStartDate);
-      const proposedStartDate = addDays(currentStartDate, daysMoved);
-      const proposedEndDate = addDays(proposedStartDate, taskDuration);
-      
-      if (proposedStartDate >= ganttStartDate && proposedEndDate <= ganttEndDate) {
-        newStartDate = format(proposedStartDate, 'yyyy-MM-dd');
-        newEndDate = format(proposedEndDate, 'yyyy-MM-dd');
-      }
-    }
 
-    console.log('📅 Date calcolate', { newStartDate, newEndDate, taskId: resizingTask.id });
-    return { taskId: resizingTask.id, startDate: newStartDate, endDate: newEndDate };
-  }, [resizingTask, ganttStartDate, ganttEndDate]);
+      d.onMove(ns, ne);
+    },
+    [ganttStartDate, ganttEndDate, totalDays, getTimelineWidth],
+  );
 
-  const stopResize = useCallback((finalDates: { startDate: string; endDate: string; taskId: number } | null) => {
-    if (resizingTask && finalDates) {
-      onDateChange(finalDates.taskId, finalDates.startDate, finalDates.endDate);
-    }
-    setResizingTask(null);
-  }, [resizingTask, onDateChange]);
+  const onPointerUp = useCallback(
+    (_e: React.PointerEvent) => {
+      const d = dragging.current;
+      if (!d) return;
+      // Final dates already applied live — commit to DB
+      // We read the latest dates from the live callback
+      dragging.current = null;
+    },
+    [],
+  );
 
-  return {
-    resizingTask,
-    startResize,
-    handleMouseMove,
-    stopResize
-  };
+  /** Call this from the bar after pointer up with the final dates */
+  const commit = useCallback(
+    (taskId: number, startDate: string, endDate: string) => {
+      onDateChange(taskId, startDate, endDate);
+    },
+    [onDateChange],
+  );
+
+  return { onPointerDown, onPointerMove, onPointerUp, commit, dragging };
 };
