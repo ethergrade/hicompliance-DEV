@@ -1,4 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { OrganizationProfileForm } from '@/components/irp/OrganizationProfileForm';
+import { Pencil } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -512,7 +515,7 @@ const Assessment: React.FC = () => {
         </div>
 
         {/* Organization Profile Banner */}
-        {!profileLoading && (orgProfile.legal_name || orgProfile.nis2_classification) && (
+        {!profileLoading && (
           <Card className="border-primary/20 bg-primary/5">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
@@ -530,21 +533,35 @@ const Assessment: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  {orgProfile.nis2_classification ? (
+                  {orgProfile.nis2_classification && (
                     <div className="flex items-center gap-2">
                       <Shield className="h-5 w-5 text-primary" />
-                      <span className="text-sm font-medium">Classificazione NIS2:</span>
+                      <span className="text-sm font-medium">NIS2:</span>
                       {getNIS2Badge()}
                     </div>
-                  ) : (
+                  )}
+                  {!orgProfile.nis2_classification && (
                     <div className="flex items-center gap-2 text-amber-500">
                       <AlertCircle className="h-5 w-5" />
-                      <span className="text-sm">Classificazione NIS2 non impostata</span>
-                      <Button variant="outline" size="sm" asChild>
-                        <a href="/incident-response">Configura</a>
-                      </Button>
+                      <span className="text-sm">NIS2 non impostata</span>
                     </div>
                   )}
+                  <Sheet>
+                    <SheetTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-1.5">
+                        <Pencil className="h-3.5 w-3.5" />
+                        Configura
+                      </Button>
+                    </SheetTrigger>
+                    <SheetContent className="w-[500px] sm:max-w-[500px] overflow-y-auto">
+                      <SheetHeader>
+                        <SheetTitle>Anagrafica Azienda</SheetTitle>
+                      </SheetHeader>
+                      <div className="mt-4">
+                        <OrganizationProfileForm />
+                      </div>
+                    </SheetContent>
+                  </Sheet>
                 </div>
               </div>
             </CardContent>
