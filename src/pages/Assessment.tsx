@@ -42,6 +42,7 @@ import { useUserPreferences } from '@/hooks/useUserPreferences';
 import { ASSESSMENT_CATEGORIES, AssessmentResponse, RESPONSE_LABELS, RESPONSE_COLORS, calculateCategoryScore, getRiskFromScore, CATEGORY_DESCRIPTIONS } from '@/data/assessmentQuestions';
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { generateAssessmentPDF } from '@/components/assessment/AssessmentReportGenerator';
+import GapAnalysisSection from '@/components/assessment/GapAnalysisSection';
 
 // Map UI response values to DB enum values and vice versa
 const UI_TO_DB_STATUS: Record<string, string> = {
@@ -590,6 +591,18 @@ const Assessment: React.FC = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* ── Historical Gap/Gain Analysis ── */}
+        <GapAnalysisSection
+          currentCategories={assessmentCategories.map(c => ({
+            name: c.name,
+            score: c.score,
+            completed: c.completed,
+            questions: c.questions,
+          }))}
+          overallScore={overallScore}
+          overallProgress={overallProgress}
+        />
 
         {/* ── RADAR Chart + Category Breakdown ── */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
