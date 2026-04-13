@@ -52,7 +52,7 @@ const Remediation: React.FC = () => {
 
   const [selectedTimeframe, setSelectedTimeframeState] = useState('90days');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [taskOrder, setTaskOrder] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
+  const [taskOrder, setTaskOrder] = useState<number[]>([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
   const [taskDates, setTaskDates] = useState<Record<number, { startDate: string, endDate: string }>>({});
   const [hiddenTasks, setHiddenTasks] = useState<Set<number>>(new Set());
   const [deletedTasks, setDeletedTasks] = useState<Set<number>>(new Set());
@@ -1048,7 +1048,7 @@ const Remediation: React.FC = () => {
 
   const getGanttData = () => {
     const startDate = new Date('2026-01-01');
-    const endDate = new Date('2026-05-01');
+    const endDate = new Date('2026-12-31');
     const totalDays = differenceInDays(endDate, startDate);
     
     // Filtra i task eliminati e ordina secondo l'ordine corrente
@@ -1765,7 +1765,7 @@ const Remediation: React.FC = () => {
             <GanttChart
               tasks={ganttData}
               ganttStartDate={new Date('2026-01-01')}
-              ganttEndDate={new Date('2026-05-01')}
+              ganttEndDate={new Date('2026-12-31')}
               onDateChange={(taskId, startDate, endDate) => saveTaskDates(taskId, startDate, endDate)}
               onEditTask={(task) => handleEditTask(task)}
               onToggleVisibility={(taskId) => handleToggleVisibility(taskId)}
