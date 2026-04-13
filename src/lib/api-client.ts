@@ -1,9 +1,10 @@
 import type { ApiErrorResponse } from "@/types/api";
 
-const API_BASE_URL = "https://hiapi.websoupcloud.it/api";
-const CSRF_URL = "https://hiapi.websoupcloud.it/sanctum/csrf-cookie";
+const BASE = import.meta.env.VITE_API_BASE_URL as string;
+const API_BASE_URL = `${BASE}/api`;
+const CSRF_URL = `${BASE}/sanctum/csrf-cookie`;
 
-const TOKEN_KEY = "hiconsole_auth_token";
+const TOKEN_KEY = import.meta.env.VITE_AUTH_TOKEN_KEY as string;
 
 // ─── Token management ───────────────────────────────────────────────────────
 
