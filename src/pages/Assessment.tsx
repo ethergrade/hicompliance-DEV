@@ -29,10 +29,12 @@ import {
   Building2,
   Shield,
   AlertCircle,
-  Filter,
+  Save,
   ArrowUpDown,
   ChevronDown,
   ChevronRight,
+  Loader2,
+  Filter,
 } from 'lucide-react';
 import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
 import { NIS2_LABELS } from '@/types/organization';
@@ -74,6 +76,8 @@ const Assessment: React.FC = () => {
   // Question responses state: { [questionId]: response }
   const [responses, setResponses] = useState<Record<number, AssessmentResponse>>({});
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
   // Map question order_index to DB question UUID
   const questionUuidMap = useRef<Record<number, string>>({});
   const loadedOrgRef = useRef<string | null>(null);
@@ -139,26 +143,36 @@ const Assessment: React.FC = () => {
     const questionUuid = questionUuidMap.current[questionId];
     if (!questionUuid) return;
 
-    if (value === null) {
-      // Delete the response
-      supabase
-        .from('assessment_responses')
-        .delete()
-        .eq('question_id', questionUuid)
-        .eq('organization_id', orgId)
-        .then();
-    } else {
-      const dbStatus = UI_TO_DB_STATUS[value] as any;
-      supabase
-        .from('assessment_responses')
-        .upsert({
-          question_id: questionUuid,
-          organization_id: orgId,
-          status: dbStatus,
-          last_updated_by: user.id,
-        }, { onConflict: 'question_id,organization_id' })
-        .then();
-    }
+    setSaveStatus('saving');
+
+    const doSave = async () => {
+      try {
+        if (value === null) {
+          const { error } = await supabase
+            .from('assessment_responses')
+            .delete()
+            .eq('question_id', questionUuid)
+            .eq('organization_id', orgId);
+          if (error) throw error;
+        } else {
+          const dbStatus = UI_TO_DB_STATUS[value] as any;
+          const { error } = await supabase
+            .from('assessment_responses')
+            .upsert({
+              question_id: questionUuid,
+              organization_id: orgId,
+              status: dbStatus,
+              last_updated_by: user.id,
+            }, { onConflict: 'question_id,organization_id' });
+          if (error) throw error;
+        }
+        setSaveStatus('saved');
+        setLastSaved(new Date());
+      } catch {
+        setSaveStatus('error');
+      }
+    };
+    doSave();
   }, [orgId, user]);
 
   // Compute counts per category from responses
@@ -428,6 +442,21 @@ const Assessment: React.FC = () => {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {/* Save status indicator */}
+            {saveStatus !== 'idle' && (
+              <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+                saveStatus === 'saving' ? 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20' :
+                saveStatus === 'saved' ? 'bg-green-500/10 text-green-600 border-green-500/20' :
+                'bg-red-500/10 text-red-500 border-red-500/20'
+              }`}>
+                {saveStatus === 'saving' && <Loader2 className="w-3 h-3 animate-spin" />}
+                {saveStatus === 'saved' && <Save className="w-3 h-3" />}
+                {saveStatus === 'error' && <AlertCircle className="w-3 h-3" />}
+                {saveStatus === 'saving' ? 'Salvataggio...' : 
+                 saveStatus === 'saved' ? `Salvato ${lastSaved ? lastSaved.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''}` :
+                 'Errore salvataggio'}
+              </div>
+            )}
             <div className="flex items-center gap-2 bg-card border border-border rounded-lg px-3 py-2">
               <Clock className="w-4 h-4 text-muted-foreground" />
               <Select value={radarYear} onValueChange={(v) => setRadarYear(v as RadarYearRange)}>
