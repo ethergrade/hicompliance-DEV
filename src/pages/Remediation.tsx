@@ -106,17 +106,8 @@ const Remediation: React.FC = () => {
     updatePreferences({ selectedTimeframe: value });
   };
 
-  /* ─── Get org ID helper ─── */
-  const getOrgId = useCallback(async (): Promise<string | null> => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
-    const { data } = await supabase.from('users').select('organization_id').eq('auth_user_id', user.id).single();
-    return data?.organization_id || null;
-  }, []);
-
   /* ─── Load tasks from DB ─── */
   const loadTasks = useCallback(async () => {
-    const orgId = await getOrgId();
     if (!orgId) { setLoading(false); return; }
 
     const { data, error } = await supabase
@@ -164,10 +155,12 @@ const Remediation: React.FC = () => {
       setTasks(data);
     }
     setLoading(false);
-  }, [getOrgId]);
+  }, [orgId]);
 
   useEffect(() => {
     loadTasks();
+
+    if (!orgId) return;
 
     const channel = supabase
       .channel('remediation-tasks-changes')
@@ -177,7 +170,7 @@ const Remediation: React.FC = () => {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [loadTasks]);
+  }, [loadTasks, orgId]);
 
   /* ─── Derived data ─── */
   const activeTasks = tasks.filter(t => !t.is_deleted);
