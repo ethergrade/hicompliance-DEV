@@ -592,6 +592,18 @@ const Assessment: React.FC = () => {
           </CardContent>
         </Card>
 
+        {/* ── Historical Gap/Gain Analysis ── */}
+        <GapAnalysisSection
+          currentCategories={assessmentCategories.map(c => ({
+            name: c.name,
+            score: c.score,
+            completed: c.completed,
+            questions: c.questions,
+          }))}
+          overallScore={overallScore}
+          overallProgress={overallProgress}
+        />
+
         {/* ── RADAR Chart + Category Breakdown ── */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
           {/* Radar Chart - Left */}
