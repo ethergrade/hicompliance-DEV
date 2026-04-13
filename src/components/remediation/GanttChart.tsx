@@ -216,9 +216,8 @@ export const GanttChart: React.FC<GanttChartProps> = ({
               </div>
               <div
                 className="grid flex-1"
-                style={{ minWidth: `${timelineMinWidth}px`, gridTemplateColumns: monthGridTemplate }}
                 ref={timelineRef}
-                style={{ gridTemplateColumns: monthGridTemplate }}
+                style={{ minWidth: `${timelineMinWidth}px`, gridTemplateColumns: monthGridTemplate }}
               >
                 {months.map((m, i) => (
                   <div
