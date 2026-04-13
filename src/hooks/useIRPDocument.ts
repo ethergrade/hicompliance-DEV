@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { tenantsApi } from '@/lib/api';
 import { IRPDocument, IRPDocumentData, EmergencyContact } from '@/types/irp';
 import { toast } from 'sonner';
  import { useClientOrganization } from '@/hooks/useClientOrganization';
@@ -56,11 +57,7 @@ export const useIRPDocument = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: orgData } = await supabase
-        .from('organizations')
-        .select('name')
-        .eq('id', clientOrgId)
-        .single();
+      const tenant = await tenantsApi.get(clientOrgId);
 
       // Try to load existing draft
       const { data: existingDoc } = await supabase
@@ -86,7 +83,7 @@ export const useIRPDocument = () => {
       } else {
         // Create default document structure
         const defaultDoc: IRPDocumentData = {
-          companyName: orgData?.name || 'Nome Azienda',
+          companyName: tenant?.name || 'Nome Azienda',
           companyAddress: 'Indirizzo Azienda',
           date: new Date().toLocaleDateString('it-IT'),
           version: '1.0',

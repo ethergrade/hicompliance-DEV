@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { tenantsApi } from '@/lib/api';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
@@ -39,13 +39,12 @@ export const ClientSelector: React.FC<ClientSelectorProps> = ({
 
   const loadOrganizations = async () => {
     try {
-      const { data, error } = await supabase
-        .from('organizations')
-        .select('id, name, code')
-        .order('name');
-
-      if (error) throw error;
-      setOrganizations(data || []);
+      const tenants = await tenantsApi.listAll();
+      setOrganizations(
+        tenants
+          .map(t => ({ id: String(t.id), name: t.name, code: t.ms_tenant_id || String(t.id) }))
+          .sort((a, b) => a.name.localeCompare(b.name))
+      );
     } catch (error) {
       console.error('Error loading organizations:', error);
       toast({
@@ -70,24 +69,19 @@ export const ClientSelector: React.FC<ClientSelectorProps> = ({
 
     setCreating(true);
     try {
-      const { data, error } = await supabase
-        .from('organizations')
-        .insert({
-          name: newOrgName.trim(),
-          code: newOrgCode.trim()
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
+      const created = await tenantsApi.create({
+        name: newOrgName.trim(),
+        ms_tenant_id: newOrgCode.trim(),
+      });
 
       toast({
         title: "Successo",
         description: "Cliente creato con successo"
       });
 
-      setOrganizations(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
-      onOrgChange(data.id);
+      const newOrg = { id: String(created.id), name: created.name, code: created.ms_tenant_id || String(created.id) };
+      setOrganizations(prev => [...prev, newOrg].sort((a, b) => a.name.localeCompare(b.name)));
+      onOrgChange(newOrg.id);
       setDialogOpen(false);
       setNewOrgName('');
       setNewOrgCode('');

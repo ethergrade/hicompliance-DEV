@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { supabase } from '@/integrations/supabase/client';
+import { tenantsApi } from '@/lib/api';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { Navigate } from 'react-router-dom';
 import {
@@ -82,12 +83,9 @@ const AdminReporting: React.FC = () => {
   const fetchAggregatedData = async () => {
     setLoading(true);
     try {
-      // Fetch organizations
-      const { data: orgs, error: orgsError } = await supabase
-        .from('organizations')
-        .select('id, name, code');
-
-      if (orgsError) throw orgsError;
+      // Fetch organizations from API
+      const tenants = await tenantsApi.listAll();
+      const orgs = tenants.map(t => ({ id: String(t.id), name: t.name, code: t.ms_tenant_id || String(t.id) }));
 
       // Fetch users count per organization
       const { data: users, error: usersError } = await supabase
