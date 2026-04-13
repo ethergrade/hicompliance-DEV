@@ -66,9 +66,60 @@ const RADAR_YEAR_DATA: Record<RadarYearRange, number[]> = {
 const RADAR_TARGET_OFFSET = 15; // target is always +15 above compliance
 
 const Assessment: React.FC = () => {
+  const { user } = useAuth();
+  const { selectedOrganization, userOrganizationId } = useClientContext();
+  const orgId = selectedOrganization?.id || userOrganizationId;
+
   // Question responses state: { [questionId]: response }
   const [responses, setResponses] = useState<Record<number, AssessmentResponse>>({});
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  // Map question order_index to DB question UUID
+  const questionUuidMap = useRef<Record<number, string>>({});
+  const loadedOrgRef = useRef<string | null>(null);
+
+  // Load questions UUIDs and existing responses from DB
+  useEffect(() => {
+    if (!orgId || !user) return;
+    if (loadedOrgRef.current === orgId) return;
+
+    const loadResponses = async () => {
+      // 1. Load all DB questions to build order_index -> uuid map
+      const { data: dbQuestions } = await supabase
+        .from('assessment_questions')
+        .select('id, order_index');
+      
+      if (dbQuestions) {
+        const map: Record<number, string> = {};
+        dbQuestions.forEach(q => { map[q.order_index] = q.id; });
+        questionUuidMap.current = map;
+      }
+
+      // 2. Load existing responses for this org
+      const { data: dbResponses } = await supabase
+        .from('assessment_responses')
+        .select('question_id, status')
+        .eq('organization_id', orgId);
+
+      if (dbResponses && dbQuestions) {
+        const uuidToOrder: Record<string, number> = {};
+        dbQuestions.forEach(q => { uuidToOrder[q.id] = q.order_index; });
+
+        const loaded: Record<number, AssessmentResponse> = {};
+        dbResponses.forEach(r => {
+          if (r.question_id) {
+            const orderIdx = uuidToOrder[r.question_id];
+            if (orderIdx !== undefined) {
+              loaded[orderIdx] = DB_TO_UI_STATUS[r.status] || null;
+            }
+          }
+        });
+        setResponses(loaded);
+      }
+      loadedOrgRef.current = orgId;
+    };
+
+    loadResponses();
+  }, [orgId, user]);
 
   const toggleCategory = useCallback((name: string) => {
     setExpandedCategories(prev => {
@@ -81,7 +132,33 @@ const Assessment: React.FC = () => {
 
   const setResponse = useCallback((questionId: number, value: AssessmentResponse) => {
     setResponses(prev => ({ ...prev, [questionId]: value }));
-  }, []);
+
+    // Persist to DB immediately
+    if (!orgId || !user) return;
+    const questionUuid = questionUuidMap.current[questionId];
+    if (!questionUuid) return;
+
+    if (value === null) {
+      // Delete the response
+      supabase
+        .from('assessment_responses')
+        .delete()
+        .eq('question_id', questionUuid)
+        .eq('organization_id', orgId)
+        .then();
+    } else {
+      const dbStatus = UI_TO_DB_STATUS[value] as any;
+      supabase
+        .from('assessment_responses')
+        .upsert({
+          question_id: questionUuid,
+          organization_id: orgId,
+          status: dbStatus,
+          last_updated_by: user.id,
+        }, { onConflict: 'question_id,organization_id' })
+        .then();
+    }
+  }, [orgId, user]);
 
   // Compute counts per category from responses
   const getCategoryCounts = useCallback((categoryName: string) => {
