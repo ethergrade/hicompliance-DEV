@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -53,14 +53,16 @@ export const useUserPreferences = ({ preferenceKey, defaultPreferences = {} }: U
     enabled: !!user?.id && !!organizationId,
   });
 
-  // Sync local state with database
+  // Sync local state with database — use a ref for defaultPreferences to avoid infinite loops
+  const defaultPrefsRef = useRef(defaultPreferences);
+
   useEffect(() => {
     if (dbPreferences) {
-      setLocalPreferences({ ...defaultPreferences, ...dbPreferences });
+      setLocalPreferences({ ...defaultPrefsRef.current, ...dbPreferences });
     } else {
-      setLocalPreferences(defaultPreferences);
+      setLocalPreferences(defaultPrefsRef.current);
     }
-  }, [dbPreferences, defaultPreferences]);
+  }, [dbPreferences]);
 
   // Save preferences mutation
   const saveMutation = useMutation({

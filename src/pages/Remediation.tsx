@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -77,9 +78,12 @@ const GANTT_END = new Date('2026-12-31');
 
 /* ─── Component ─── */
 const Remediation: React.FC = () => {
+  const { organizationId: orgId } = useClientOrganization();
+
+  const defaultPrefs = useMemo(() => ({ selectedTimeframe: '90days', defaultView: 'gantt' }), []);
   const { preferences, updatePreferences } = useUserPreferences({
     preferenceKey: 'remediation_filters',
-    defaultPreferences: { selectedTimeframe: '90days', defaultView: 'gantt' },
+    defaultPreferences: defaultPrefs,
   });
 
   const [selectedTimeframe, setSelectedTimeframeState] = useState('90days');
@@ -102,17 +106,8 @@ const Remediation: React.FC = () => {
     updatePreferences({ selectedTimeframe: value });
   };
 
-  /* ─── Get org ID helper ─── */
-  const getOrgId = useCallback(async (): Promise<string | null> => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
-    const { data } = await supabase.from('users').select('organization_id').eq('auth_user_id', user.id).single();
-    return data?.organization_id || null;
-  }, []);
-
   /* ─── Load tasks from DB ─── */
   const loadTasks = useCallback(async () => {
-    const orgId = await getOrgId();
     if (!orgId) { setLoading(false); return; }
 
     const { data, error } = await supabase
@@ -160,10 +155,12 @@ const Remediation: React.FC = () => {
       setTasks(data);
     }
     setLoading(false);
-  }, [getOrgId]);
+  }, [orgId]);
 
   useEffect(() => {
     loadTasks();
+
+    if (!orgId) return;
 
     const channel = supabase
       .channel('remediation-tasks-changes')
@@ -173,7 +170,7 @@ const Remediation: React.FC = () => {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [loadTasks]);
+  }, [loadTasks, orgId]);
 
   /* ─── Derived data ─── */
   const activeTasks = tasks.filter(t => !t.is_deleted);
@@ -205,7 +202,6 @@ const Remediation: React.FC = () => {
 
   /* ─── DB mutation helpers ─── */
   const updateTask = useCallback(async (taskId: string, updates: Record<string, any>) => {
-    const orgId = await getOrgId();
     if (!orgId) return;
     const { error } = await supabase
       .from('remediation_tasks')
@@ -219,7 +215,7 @@ const Remediation: React.FC = () => {
     }
     // Optimistic update
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t));
-  }, [getOrgId]);
+  }, [orgId]);
 
   /* ─── Handlers ─── */
   const handleDateChange = useCallback(async (taskId: string, startDate: string, endDate: string) => {
@@ -296,12 +292,11 @@ const Remediation: React.FC = () => {
       return [...reordered, ...deleted];
     });
 
-    const orgId = await getOrgId();
     if (!orgId) return;
     for (let i = 0; i < currentOrder.length; i++) {
       await supabase.from('remediation_tasks').update({ display_order: i }).eq('id', currentOrder[i]).eq('organization_id', orgId);
     }
-  }, [activeTasks, getOrgId]);
+  }, [activeTasks, orgId]);
 
   /* ─── Create new task ─── */
   const calculateBudget = (days: number, complexity: string) => {
@@ -320,7 +315,6 @@ const Remediation: React.FC = () => {
   };
 
   const handleCreateRemediation = async () => {
-    const orgId = await getOrgId();
     if (!orgId) {
       toast({ title: 'Errore', description: 'Devi essere autenticato.', variant: 'destructive' });
       return;
