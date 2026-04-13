@@ -158,6 +158,53 @@ export type Database = {
           },
         ]
       }
+      assessment_snapshots: {
+        Row: {
+          category_scores: Json
+          created_at: string
+          created_by: string | null
+          id: string
+          organization_id: string
+          overall_score: number
+          snapshot_year: number
+          total_answered: number
+          total_questions: number
+          updated_at: string
+        }
+        Insert: {
+          category_scores?: Json
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id: string
+          overall_score?: number
+          snapshot_year: number
+          total_answered?: number
+          total_questions?: number
+          updated_at?: string
+        }
+        Update: {
+          category_scores?: Json
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id?: string
+          overall_score?: number
+          snapshot_year?: number
+          total_answered?: number
+          total_questions?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assessment_snapshots_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       asset_inventory: {
         Row: {
           access_points_count: number | null
