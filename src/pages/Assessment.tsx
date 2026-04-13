@@ -402,7 +402,7 @@ const Assessment: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Progresso Globale</p>
-                  <p className="text-2xl font-bold text-foreground">{animatedProgress}%</p>
+                  <p className="text-2xl font-bold text-foreground">{overallProgress}%</p>
                 </div>
                 <TrendingUp className="w-8 h-8 text-primary" />
               </div>
@@ -414,10 +414,11 @@ const Assessment: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Punteggio Conformità</p>
-                  <p className="text-2xl font-bold text-yellow-500">{animatedScore}/100</p>
+                  <p className={`text-2xl font-bold ${overallRisk.color}`}>{overallScore}/100</p>
                 </div>
-                <Target className="w-8 h-8 text-yellow-500" />
+                <Target className={`w-8 h-8 ${overallRisk.color}`} />
               </div>
+              <p className={`text-xs mt-1 ${overallRisk.color}`}>Rischio: {overallRisk.label}</p>
             </CardContent>
           </Card>
           
@@ -427,7 +428,7 @@ const Assessment: React.FC = () => {
                 <div>
                   <p className="text-sm text-muted-foreground">Aree Completate</p>
                   <p className="text-2xl font-bold text-green-500">
-                    {animatedCompleted}
+                    {completedAreas}/{assessmentCategories.length}
                   </p>
                 </div>
                 <CheckCircle className="w-8 h-8 text-green-500" />
