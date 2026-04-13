@@ -1,5 +1,5 @@
-import React, { useRef, useState, useMemo, useCallback } from 'react';
-import { format, differenceInDays, parseISO, addMonths, startOfMonth } from 'date-fns';
+import React, { useRef, useState, useMemo, useCallback, useEffect } from 'react';
+import { format, differenceInCalendarDays, parseISO, addMonths, startOfMonth, endOfMonth } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { useGanttDrag } from '@/hooks/useGanttResize';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -37,6 +37,8 @@ interface GanttChartProps {
 }
 
 const MONTHS_IT = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+const TIMELINE_MIN_WIDTH = 1100;
+const SIDEBAR_WIDTH_CLASS = 'w-72';
 
 const priorityBorder: Record<string, string> = {
   Critica: 'border-l-red-500',
@@ -71,30 +73,38 @@ export const GanttChart: React.FC<GanttChartProps> = ({
   });
 
   const months = useMemo(() => {
-    const result: { label: string; weeks: number }[] = [];
+    const result: { label: string; days: number }[] = [];
     let cur = startOfMonth(ganttStartDate);
-    while (cur < ganttEndDate) {
+    while (cur <= ganttEndDate) {
       const next = addMonths(cur, 1);
-      const end = next > ganttEndDate ? ganttEndDate : next;
-      const days = differenceInDays(end, cur < ganttStartDate ? ganttStartDate : cur);
-      result.push({ label: MONTHS_IT[cur.getMonth()], weeks: Math.max(1, Math.round(days / 7)) });
+      const monthStart = cur < ganttStartDate ? ganttStartDate : cur;
+      const monthEnd = endOfMonth(cur) > ganttEndDate ? ganttEndDate : endOfMonth(cur);
+      const days = Math.max(1, differenceInCalendarDays(monthEnd, monthStart) + 1);
+      result.push({ label: MONTHS_IT[cur.getMonth()], days });
       cur = next;
     }
     return result;
   }, [ganttStartDate, ganttEndDate]);
 
-  const totalDays = differenceInDays(ganttEndDate, ganttStartDate);
+  const totalDays = Math.max(1, differenceInCalendarDays(ganttEndDate, ganttStartDate) + 1);
+  const visibleTasks = useMemo(() => tasks.filter((task) => !task.isHidden), [tasks]);
+  const monthGridTemplate = useMemo(() => months.map((month) => `${month.days}fr`).join(' '), [months]);
 
   const getBarStyle = useCallback(
     (task: GanttTask) => {
       const live = liveDates[task.id];
-      const sd = live ? live.s : task.startDate;
-      const ed = live ? live.e : task.endDate;
-      const daysFromStart = differenceInDays(parseISO(sd), ganttStartDate);
-      const duration = differenceInDays(parseISO(ed), parseISO(sd));
+      const rawStart = parseISO(live ? live.s : task.startDate);
+      const rawEnd = parseISO(live ? live.e : task.endDate);
+      const start = rawStart < ganttStartDate ? ganttStartDate : rawStart;
+      const normalizedEnd = rawEnd < rawStart ? rawStart : rawEnd;
+      const end = normalizedEnd > ganttEndDate ? ganttEndDate : normalizedEnd;
+      const daysFromStart = Math.max(0, differenceInCalendarDays(start, ganttStartDate));
+      const duration = Math.max(1, differenceInCalendarDays(normalizedEnd, rawStart) + 1);
+      const visibleDuration = Math.max(1, differenceInCalendarDays(end, start) + 1);
+
       return {
         left: `${(daysFromStart / totalDays) * 100}%`,
-        width: `${(duration / totalDays) * 100}%`,
+        width: `${(visibleDuration / totalDays) * 100}%`,
         duration,
       };
     },
@@ -133,13 +143,42 @@ export const GanttChart: React.FC<GanttChartProps> = ({
   const scroll = (dir: number) => scrollRef.current?.scrollBy({ left: dir * 300, behavior: 'smooth' });
 
   const todayOffset = useMemo(() => {
-    const d = differenceInDays(new Date(), ganttStartDate);
+    const d = differenceInCalendarDays(new Date(), ganttStartDate);
     if (d < 0 || d > totalDays) return null;
     return (d / totalDays) * 100;
   }, [ganttStartDate, totalDays]);
 
+  useEffect(() => {
+    if (!activeDragId) return;
+
+    const handleWindowPointerMove = (event: PointerEvent) => onPointerMove(event);
+    const handleWindowPointerUp = () => {
+      if (activeDragId !== null) {
+        const live = liveDates[activeDragId];
+        if (live) {
+          onDateChange(activeDragId, live.s, live.e);
+        }
+        setLiveDates((prev) => {
+          const next = { ...prev };
+          delete next[activeDragId];
+          return next;
+        });
+        setActiveDragId(null);
+      }
+      onPointerUp({} as React.PointerEvent);
+    };
+
+    window.addEventListener('pointermove', handleWindowPointerMove);
+    window.addEventListener('pointerup', handleWindowPointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handleWindowPointerMove);
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+    };
+  }, [activeDragId, liveDates, onDateChange, onPointerMove, onPointerUp]);
+
   return (
-    <Card>
+    <Card className="overflow-hidden">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -157,128 +196,139 @@ export const GanttChart: React.FC<GanttChartProps> = ({
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <div
-          className="overflow-x-auto select-none"
-          ref={scrollRef}
-          onPointerMove={onPointerMove}
-          onPointerUp={handlePointerUp}
-        >
-          <div className="flex border-b border-border bg-muted/50 sticky top-0 z-10">
-            <div className="w-64 shrink-0 px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Attività
-            </div>
-            <div className="flex flex-1 min-w-[900px]" ref={timelineRef}>
-              {months.map((m, i) => (
-                <div
-                  key={i}
-                  className="border-l border-border/40 text-center text-[11px] font-medium text-muted-foreground py-2"
-                  style={{ flex: m.weeks }}
-                >
-                  {m.label}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="relative">
-            {tasks.map((task) => {
-              const bar = getBarStyle(task);
-              const isDragging = activeDragId === task.id;
-
-              return (
-                <div
-                  key={task.id}
-                  className={cn(
-                    'flex items-center h-11 border-b border-border/30 group hover:bg-muted/20 transition-colors',
-                    isDragging && 'bg-muted/30',
-                  )}
-                >
-                  <div className={cn('w-64 shrink-0 px-3 flex items-center gap-2 border-l-2', priorityBorder[task.priority] || 'border-l-border')}>
-                    <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium truncate leading-tight">{task.task}</p>
-                      <p className="text-[10px] text-muted-foreground truncate">{task.assignee}</p>
-                    </div>
-                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button className="p-1 rounded hover:bg-muted" onClick={() => onEditTask(task)}>
-                        <Settings className="h-3 w-3 text-muted-foreground" />
-                      </button>
-                      <button className="p-1 rounded hover:bg-destructive/10" onClick={() => onDeleteTask(task.id)}>
-                        <Trash2 className="h-3 w-3 text-destructive/70" />
-                      </button>
-                    </div>
+        <div className="overflow-x-auto select-none" ref={scrollRef} onPointerMove={onPointerMove} onPointerUp={handlePointerUp}>
+          <div className="min-w-[1100px]">
+            <div className="grid grid-cols-[18rem_minmax(0,1fr)] border-b border-border bg-muted/50 sticky top-0 z-10">
+              <div className={`${SIDEBAR_WIDTH_CLASS} shrink-0 px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider`}>
+                Attività
+              </div>
+              <div
+                className="grid min-w-[1100px] flex-1"
+                ref={timelineRef}
+                style={{ gridTemplateColumns: monthGridTemplate }}
+              >
+                {months.map((m, i) => (
+                  <div
+                    key={`${m.label}-${i}`}
+                    className="border-l border-border/40 text-center text-[11px] font-medium text-muted-foreground py-3"
+                  >
+                    {m.label}
                   </div>
+                ))}
+              </div>
+            </div>
 
-                  <div className="flex-1 relative h-full min-w-[900px]">
-                    {todayOffset !== null && (
-                      <div
-                        className="absolute top-0 bottom-0 w-px bg-primary/40 z-10 pointer-events-none"
-                        style={{ left: `${todayOffset}%` }}
-                      />
-                    )}
+            {visibleTasks.length === 0 ? (
+              <div className="px-4 py-12 text-sm text-muted-foreground">Nessuna attività disponibile nella timeline corrente.</div>
+            ) : (
+              <div>
+                {visibleTasks.map((task) => {
+                  const bar = getBarStyle(task);
+                  const isDragging = activeDragId === task.id;
 
-                    <TooltipProvider delayDuration={200}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
+                  return (
+                    <div
+                      key={task.id}
+                      className={cn(
+                        'grid grid-cols-[18rem_minmax(0,1fr)] min-h-14 border-b border-border/30 group hover:bg-muted/20 transition-colors',
+                        isDragging && 'bg-muted/30',
+                      )}
+                    >
+                      <div className={cn(`${SIDEBAR_WIDTH_CLASS} shrink-0 px-4 py-3 flex items-center gap-2 border-l-2`, priorityBorder[task.priority] || 'border-l-border')}>
+                        <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate leading-tight">{task.task}</p>
+                          <p className="text-[10px] text-muted-foreground truncate mt-1">{task.assignee}</p>
+                        </div>
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button type="button" className="p-1 rounded hover:bg-muted" onClick={() => onEditTask(task)}>
+                            <Settings className="h-3 w-3 text-muted-foreground" />
+                          </button>
+                          <button type="button" className="p-1 rounded hover:bg-destructive/10" onClick={() => onDeleteTask(task.id)}>
+                            <Trash2 className="h-3 w-3 text-destructive/70" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="relative min-w-[1100px]">
+                        <div
+                          className="absolute inset-0 grid pointer-events-none"
+                          style={{ gridTemplateColumns: monthGridTemplate }}
+                        >
+                          {months.map((m, i) => (
+                            <div key={`grid-${m.label}-${i}`} className="border-l border-border/25" />
+                          ))}
+                        </div>
+
+                        {todayOffset !== null && (
                           <div
-                            className={cn(
-                              'absolute h-6 rounded-md cursor-grab active:cursor-grabbing touch-none',
-                              isDragging
-                                ? 'ring-2 ring-primary/50 shadow-lg z-20'
-                                : 'hover:brightness-110 hover:shadow-md transition-shadow',
-                            )}
-                            style={{
-                              left: bar.left,
-                              width: bar.width,
-                              backgroundColor: task.color || 'hsl(var(--primary))',
-                              top: '50%',
-                              transform: 'translateY(-50%)',
-                              minWidth: 24,
-                            }}
-                            onPointerDown={(e) => handleBarPointerDown(e, task, 'middle')}
-                          >
-                            {task.progress > 0 && (
+                            className="absolute top-0 bottom-0 w-px bg-primary/40 z-10 pointer-events-none"
+                            style={{ left: `${todayOffset}%` }}
+                          />
+                        )}
+
+                        <TooltipProvider delayDuration={200}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
                               <div
-                                className="absolute inset-y-0 left-0 bg-white/25 rounded-l-md pointer-events-none"
-                                style={{ width: `${task.progress}%` }}
-                              />
-                            )}
+                                className={cn(
+                                  'absolute top-1/2 -translate-y-1/2 h-7 rounded-full cursor-grab active:cursor-grabbing touch-none z-20',
+                                  isDragging
+                                    ? 'ring-2 ring-primary/50 shadow-lg'
+                                    : 'hover:brightness-110 hover:shadow-md transition-shadow',
+                                )}
+                                style={{
+                                  left: bar.left,
+                                  width: bar.width,
+                                  backgroundColor: task.color || 'hsl(var(--primary))',
+                                  minWidth: 28,
+                                }}
+                                onPointerDown={(e) => handleBarPointerDown(e, task, 'middle')}
+                              >
+                                {task.progress > 0 && (
+                                  <div
+                                    className="absolute inset-y-0 left-0 bg-white/20 rounded-full pointer-events-none"
+                                    style={{ width: `${task.progress}%` }}
+                                  />
+                                )}
 
-                            <div
-                              className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-l-md hover:bg-white/40 active:bg-white/50"
-                              onPointerDown={(e) => {
-                                e.stopPropagation();
-                                handleBarPointerDown(e, task, 'left');
-                              }}
-                            />
-                            <div
-                              className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-r-md hover:bg-white/40 active:bg-white/50"
-                              onPointerDown={(e) => {
-                                e.stopPropagation();
-                                handleBarPointerDown(e, task, 'right');
-                              }}
-                            />
+                                <div
+                                  className="absolute left-0 top-0 bottom-0 w-3 cursor-ew-resize rounded-l-full hover:bg-white/30 active:bg-white/40"
+                                  onPointerDown={(e) => {
+                                    e.stopPropagation();
+                                    handleBarPointerDown(e, task, 'left');
+                                  }}
+                                />
+                                <div
+                                  className="absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize rounded-r-full hover:bg-white/30 active:bg-white/40"
+                                  onPointerDown={(e) => {
+                                    e.stopPropagation();
+                                    handleBarPointerDown(e, task, 'right');
+                                  }}
+                                />
 
-                            <div className="absolute inset-0 flex items-center justify-between px-2 text-[10px] text-white font-semibold pointer-events-none select-none overflow-hidden">
-                              <span className="truncate">{bar.duration}g</span>
-                              {task.progress > 0 && <span>{task.progress}%</span>}
-                            </div>
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="text-xs max-w-[220px]">
-                          <p className="font-semibold">{task.task}</p>
-                          <p className="text-muted-foreground">
-                            {format(parseISO(liveDates[task.id]?.s || task.startDate), 'dd MMM', { locale: it })} →{' '}
-                            {format(parseISO(liveDates[task.id]?.e || task.endDate), 'dd MMM yyyy', { locale: it })}
-                          </p>
-                          <p>Progresso: {task.progress}% · {task.priority}</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
-                </div>
-              );
-            })}
+                                <div className="absolute inset-0 flex items-center justify-between px-2 text-[10px] text-white font-semibold pointer-events-none select-none overflow-hidden">
+                                  <span className="truncate">{bar.duration}g</span>
+                                  {task.progress > 0 && <span>{task.progress}%</span>}
+                                </div>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="text-xs max-w-[220px]">
+                              <p className="font-semibold">{task.task}</p>
+                              <p className="text-muted-foreground">
+                                {format(parseISO(liveDates[task.id]?.s || task.startDate), 'dd MMM', { locale: it })} →{' '}
+                                {format(parseISO(liveDates[task.id]?.e || task.endDate), 'dd MMM yyyy', { locale: it })}
+                              </p>
+                              <p>Progresso: {task.progress}% · {task.priority}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </CardContent>
