@@ -1656,7 +1656,11 @@ export type Database = {
     }
     Enums: {
       app_role: "super_admin" | "sales" | "client"
-      assessment_status: "not_applicable" | "planned_in_progress" | "completed"
+      assessment_status:
+        | "not_applicable"
+        | "planned_in_progress"
+        | "completed"
+        | "not_started"
       document_category:
         | "Piano Generale"
         | "Checklist / OPL / SOP"
@@ -1799,7 +1803,12 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["super_admin", "sales", "client"],
-      assessment_status: ["not_applicable", "planned_in_progress", "completed"],
+      assessment_status: [
+        "not_applicable",
+        "planned_in_progress",
+        "completed",
+        "not_started",
+      ],
       document_category: [
         "Piano Generale",
         "Checklist / OPL / SOP",
