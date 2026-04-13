@@ -34,7 +34,8 @@ import {
 import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
 import { NIS2_LABELS } from '@/types/organization';
 import { useUserPreferences } from '@/hooks/useUserPreferences';
-import { ASSESSMENT_CATEGORIES, AssessmentResponse, RESPONSE_LABELS, RESPONSE_COLORS } from '@/data/assessmentQuestions';
+import { ASSESSMENT_CATEGORIES, AssessmentResponse, RESPONSE_LABELS, RESPONSE_COLORS, calculateCategoryScore, getRiskFromScore, CATEGORY_DESCRIPTIONS } from '@/data/assessmentQuestions';
+import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 type RadarYearRange = '1y' | '2y' | '3y' | '4y';
 
@@ -145,39 +146,25 @@ const Assessment: React.FC = () => {
     );
   };
 
-  const CATEGORY_SCORES: Record<string, number> = {
-    'Business Continuity, Disaster recovery, Backup': 72,
-    'Certificazioni': 85,
-    'Crittografia': 60,
-    'Gestione delle identità Gestione degli accessi': 25,
-    'Gestione degli incidenti': 78,
-    'Gestione del rischio': 65,
-    'Gestione delle risorse': 55,
-    'Gestione fornitori e acquisti': 30,
-    'Governance': 88,
-    'HR e formazione': 70,
-    'Igiene informatica': 62,
-    'Manutenzione e miglioramento continuo': 35,
-    'Network Security Best Practices & Operations': 82,
-    'Sviluppo software': 40,
-  };
-
   const assessmentCategories = useMemo(() => {
     return ASSESSMENT_CATEGORIES.map(cat => {
       const counts = getCategoryCounts(cat.name);
       const answered = counts.completato + counts.pianificato_in_corso + counts.non_iniziato + counts.non_applicabile;
       const total = cat.questions.length;
       const status = answered === 0 ? 'not_started' : answered === total ? 'completed' : 'in_progress';
+      const score = calculateCategoryScore(cat.questions, responses);
+      const risk = getRiskFromScore(score);
       return {
         name: cat.name,
         questions: total,
         completed: answered,
         status,
-        score: CATEGORY_SCORES[cat.name] || 50,
+        score,
+        risk,
         counts,
       };
     });
-  }, [getCategoryCounts]);
+  }, [getCategoryCounts, responses]);
 
   // Filter and sort categories based on preferences
   const filteredAndSortedCategories = assessmentCategories
@@ -659,7 +646,21 @@ const Assessment: React.FC = () => {
                           {isExpanded ? <ChevronDown className="w-5 h-5 text-primary" /> : <ChevronRight className="w-5 h-5 text-primary" />}
                         </div>
                         <div className="flex-1">
-                          <h4 className="font-medium">{category.name}</h4>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-medium">{category.name}</h4>
+                            {CATEGORY_DESCRIPTIONS[category.name] && (
+                              <TooltipProvider>
+                                <UITooltip>
+                                  <TooltipTrigger asChild>
+                                    <AlertCircle className="w-3.5 h-3.5 text-muted-foreground/60 hover:text-muted-foreground cursor-help shrink-0" />
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className="max-w-xs text-xs">
+                                    {CATEGORY_DESCRIPTIONS[category.name]}
+                                  </TooltipContent>
+                                </UITooltip>
+                              </TooltipProvider>
+                            )}
+                          </div>
                           <p className="text-sm text-muted-foreground">
                             {category.completed}/{category.questions} domande risposte
                           </p>
@@ -691,9 +692,9 @@ const Assessment: React.FC = () => {
                       </div>
                       <div className="flex items-center space-x-4">
                         <div className="text-right">
-                          <div className="text-sm font-medium">Punteggio: {animatedCategoryScores[originalIndex] || 0}/100</div>
-                          <div className={`text-xs font-medium ${getRiskLevel(category.score).color}`}>
-                            Rischio: {getRiskLevel(category.score).level}
+                          <div className="text-sm font-medium">Punteggio: {category.score}/100</div>
+                          <div className={`text-xs font-medium ${category.risk.color}`}>
+                            Rischio: {category.risk.label}
                           </div>
                           <div className="flex items-center space-x-1 mt-1">
                             {getStatusIcon(category.status)}
