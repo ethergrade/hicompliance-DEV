@@ -115,98 +115,98 @@ const Assessment: React.FC = () => {
   const assessmentCategories = [
     { 
       name: 'Business Continuity, Disaster recovery, Backup', 
-      questions: 25, 
-      completed: 18, 
+      questions: 11, 
+      completed: 8, 
       status: 'in_progress',
       score: 72 
     },
     { 
       name: 'Certificazioni', 
-      questions: 20, 
-      completed: 20, 
+      questions: 3, 
+      completed: 3, 
       status: 'completed',
       score: 85 
     },
     { 
       name: 'Crittografia', 
-      questions: 22, 
-      completed: 12, 
+      questions: 6, 
+      completed: 4, 
       status: 'in_progress',
       score: 60 
     },
     { 
-      name: 'Gestione delle identità Gestione degli accessi', 
-      questions: 28, 
-      completed: 5, 
+      name: 'Gestione delle identità e degli accessi', 
+      questions: 16, 
+      completed: 3, 
       status: 'not_started',
       score: 25 
     },
     { 
       name: 'Gestione degli incidenti', 
-      questions: 18, 
-      completed: 18, 
+      questions: 24, 
+      completed: 24, 
       status: 'completed',
       score: 78 
     },
     { 
       name: 'Gestione del rischio', 
-      questions: 24, 
-      completed: 12, 
+      questions: 8, 
+      completed: 4, 
       status: 'in_progress',
       score: 65 
     },
     { 
       name: 'Gestione delle risorse', 
-      questions: 16, 
-      completed: 8, 
+      questions: 12, 
+      completed: 6, 
       status: 'in_progress',
       score: 55 
     },
     { 
       name: 'Gestione fornitori e acquisti', 
-      questions: 19, 
+      questions: 11, 
       completed: 1, 
       status: 'in_progress',
       score: 30
     },
     { 
       name: 'Governance', 
-      questions: 21, 
-      completed: 21, 
+      questions: 9, 
+      completed: 9, 
       status: 'completed',
       score: 88 
     },
     { 
       name: 'HR e formazione', 
-      questions: 15, 
-      completed: 10, 
+      questions: 10, 
+      completed: 7, 
       status: 'in_progress',
       score: 70 
     },
     { 
       name: 'Igiene informatica', 
-      questions: 26, 
-      completed: 15, 
+      questions: 5, 
+      completed: 3, 
       status: 'in_progress',
       score: 62 
     },
     { 
       name: 'Manutenzione e miglioramento continuo', 
-      questions: 17, 
+      questions: 11, 
       completed: 1, 
       status: 'in_progress',
       score: 35 
     },
     { 
       name: 'Network Security Best Practices & Operations', 
-      questions: 30, 
-      completed: 25, 
+      questions: 4, 
+      completed: 3, 
       status: 'in_progress',
       score: 82 
     },
     { 
       name: 'Sviluppo software', 
-      questions: 23, 
+      questions: 2, 
       completed: 1, 
       status: 'in_progress',
       score: 40 
