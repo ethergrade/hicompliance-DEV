@@ -122,8 +122,8 @@ const Remediation: React.FC = () => {
       return;
     }
 
-    // Check if we need to seed: no tasks, or all tasks have dates before 2026 (old mock data)
-    const needsSeed = !data || data.length === 0 || data.every(t => t.start_date < '2026-01-01');
+    // Check if we need to seed: no tasks, old pre-2026 data, or stale seed (all tasks end before June = old clustered seed)
+    const needsSeed = !data || data.length === 0 || data.every(t => t.start_date < '2026-01-01') || (data.length > 0 && data.every(t => t.end_date < '2026-06-01'));
 
     if (needsSeed) {
       // Delete old tasks if any
