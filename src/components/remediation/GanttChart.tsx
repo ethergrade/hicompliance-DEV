@@ -63,6 +63,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 
   const [liveDates, setLiveDates] = useState<Record<string, { s: string; e: string }>>({});
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [zoomIndex, setZoomIndex] = useState(1);
 
   const getTimelineWidth = useCallback(() => timelineRef.current?.offsetWidth ?? 1, []);
 
