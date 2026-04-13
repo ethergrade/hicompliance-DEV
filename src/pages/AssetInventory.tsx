@@ -68,7 +68,7 @@ const INITIAL_DATA: AssetInventoryData = {
 
 const AssetInventory: React.FC = () => {
   const { toast } = useToast();
-  const { userProfile } = useAuth();
+  const { user } = useAuth();
   const { isSuperAdmin, isSales } = useUserRoles();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -78,10 +78,10 @@ const AssetInventory: React.FC = () => {
   useEffect(() => {
     if (isSuperAdmin || isSales) {
       setLoading(false);
-    } else if (userProfile?.organization_id) {
-      setSelectedOrgId(userProfile.organization_id);
+    } else if (user?.tenant_id) {
+      setSelectedOrgId(user.tenant_id);
     }
-  }, [userProfile, isSuperAdmin, isSales]);
+  }, [user, isSuperAdmin, isSales]);
 
   useEffect(() => {
     if (selectedOrgId) {

@@ -15,12 +15,12 @@ interface ServiceIntegration {
 }
 
 export const useServiceIntegrations = () => {
-  const { userProfile } = useAuth();
+  const { user } = useAuth();
   const { selectedOrganization } = useClientContext();
   const queryClient = useQueryClient();
 
   // Use selected client org for sales/admin, fallback to user's own org
-  const organizationId = selectedOrganization?.id || userProfile?.organization_id;
+  const organizationId = selectedOrganization?.id || user?.tenant_id;
 
   const { data: integrations = [], isLoading } = useQuery({
     queryKey: ['service-integrations', organizationId],

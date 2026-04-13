@@ -36,10 +36,10 @@ const getServiceIcon = (code: string) => {
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { userProfile } = useAuth();
+  const { user } = useAuth();
   const { selectedOrganization } = useClientContext();
-  const activeOrgId = selectedOrganization?.id || userProfile?.organization_id;
-  const activeOrgName = selectedOrganization?.name || userProfile?.organizations?.name || 'Organizzazione';
+  const activeOrgId = selectedOrganization?.id || user?.tenant_id;
+  const activeOrgName = selectedOrganization?.name || 'Organizzazione';
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const { isServiceConnected, getIntegrationByCode, connectService, disconnectService, isConnecting, isDisconnecting } = useServiceIntegrations();

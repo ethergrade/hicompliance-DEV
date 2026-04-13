@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/select';
 import { AlertTypes } from '@/hooks/useDarkRiskAlerts';
 import { useOrganizationUsers } from '@/hooks/useOrganizationUsers';
-import { useAuth } from '@/components/auth/AuthProvider';
+import { useUserRoles } from '@/hooks/useUserRoles';
 
 const alertFormSchema = z.object({
   target_user_id: z.string().optional(),
@@ -75,9 +75,8 @@ export const AlertConfigDialog: React.FC<AlertConfigDialogProps> = ({
   defaultValues,
   mode = 'create',
 }) => {
-  const { userProfile } = useAuth();
   const { users, loading: usersLoading } = useOrganizationUsers();
-  const isAdmin = userProfile?.user_type === 'admin';
+  const { isSuperAdmin: isAdmin } = useUserRoles();
 
   const form = useForm<AlertFormValues>({
     resolver: zodResolver(alertFormSchema),

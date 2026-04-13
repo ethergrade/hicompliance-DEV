@@ -18,7 +18,7 @@ import { Bell, Pencil, Trash2, Plus, User } from 'lucide-react';
 import { useSurfaceScanAlerts, SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
 import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceScanAlertConfigDialog';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/components/auth/AuthProvider';
+import { useUserRoles } from '@/hooks/useUserRoles';
 
 const alertTypeLabels: Record<keyof SurfaceScanAlertTypes, string> = {
   vulnerabilita_critiche: 'Vulnerabilità Critiche',
@@ -29,8 +29,7 @@ const alertTypeLabels: Record<keyof SurfaceScanAlertTypes, string> = {
 };
 
 export default function SurfaceScanSettings() {
-  const { userProfile } = useAuth();
-  const isAdmin = userProfile?.user_type === 'admin';
+  const { isSuperAdmin: isAdmin } = useUserRoles();
   const { alerts, loading, createAlert, updateAlert, deleteAlert, toggleAlertStatus } =
     useSurfaceScanAlerts();
   const [dialogOpen, setDialogOpen] = useState(false);

@@ -20,7 +20,7 @@ import { useDarkRiskAlerts } from '@/hooks/useDarkRiskAlerts';
 import { AlertConfigDialog } from '@/components/dark-risk/AlertConfigDialog';
 import { AlertTypes } from '@/hooks/useDarkRiskAlerts';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/components/auth/AuthProvider';
+import { useUserRoles } from '@/hooks/useUserRoles';
 import { useResetAllPreferences } from '@/hooks/useUserPreferences';
 import { useClientContext } from '@/contexts/ClientContext';
 import { toast } from '@/hooks/use-toast';
@@ -34,9 +34,8 @@ const alertTypeLabels: Record<keyof AlertTypes, string> = {
 };
 
 const Settings: React.FC = () => {
-  const { userProfile } = useAuth();
   const { selectedOrganization } = useClientContext();
-  const isAdmin = userProfile?.user_type === 'admin';
+  const { isSuperAdmin: isAdmin } = useUserRoles();
   const { alerts, loading, createAlert, updateAlert, deleteAlert, toggleAlertStatus } = useDarkRiskAlerts();
   const { resetAllPreferences } = useResetAllPreferences();
   const [dialogOpen, setDialogOpen] = useState(false);
