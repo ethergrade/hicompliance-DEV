@@ -646,7 +646,21 @@ const Assessment: React.FC = () => {
                           {isExpanded ? <ChevronDown className="w-5 h-5 text-primary" /> : <ChevronRight className="w-5 h-5 text-primary" />}
                         </div>
                         <div className="flex-1">
-                          <h4 className="font-medium">{category.name}</h4>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-medium">{category.name}</h4>
+                            {CATEGORY_DESCRIPTIONS[category.name] && (
+                              <TooltipProvider>
+                                <UITooltip>
+                                  <TooltipTrigger asChild>
+                                    <AlertCircle className="w-3.5 h-3.5 text-muted-foreground/60 hover:text-muted-foreground cursor-help shrink-0" />
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className="max-w-xs text-xs">
+                                    {CATEGORY_DESCRIPTIONS[category.name]}
+                                  </TooltipContent>
+                                </UITooltip>
+                              </TooltipProvider>
+                            )}
+                          </div>
                           <p className="text-sm text-muted-foreground">
                             {category.completed}/{category.questions} domande risposte
                           </p>
@@ -678,9 +692,9 @@ const Assessment: React.FC = () => {
                       </div>
                       <div className="flex items-center space-x-4">
                         <div className="text-right">
-                          <div className="text-sm font-medium">Punteggio: {animatedCategoryScores[originalIndex] || 0}/100</div>
-                          <div className={`text-xs font-medium ${getRiskLevel(category.score).color}`}>
-                            Rischio: {getRiskLevel(category.score).level}
+                          <div className="text-sm font-medium">Punteggio: {category.score}/100</div>
+                          <div className={`text-xs font-medium ${category.risk.color}`}>
+                            Rischio: {category.risk.label}
                           </div>
                           <div className="flex items-center space-x-1 mt-1">
                             {getStatusIcon(category.status)}
