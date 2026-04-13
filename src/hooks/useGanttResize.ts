@@ -2,17 +2,12 @@ import { useCallback, useRef } from 'react';
 import { format, addDays, differenceInDays, parseISO } from 'date-fns';
 
 interface UseGanttDragProps {
-  onDateChange: (taskId: number, startDate: string, endDate: string) => void;
+  onDateChange: (taskId: string, startDate: string, endDate: string) => void;
   ganttStartDate: Date;
   ganttEndDate: Date;
   getTimelineWidth: () => number;
 }
 
-/**
- * Pointer-event based drag hook for Gantt bars.
- * Supports move (middle), resize-left and resize-right.
- * Returns helpers that attach to the bar's onPointerDown.
- */
 export const useGanttDrag = ({
   onDateChange,
   ganttStartDate,
@@ -20,7 +15,7 @@ export const useGanttDrag = ({
   getTimelineWidth,
 }: UseGanttDragProps) => {
   const dragging = useRef<{
-    id: number;
+    id: string;
     side: 'left' | 'right' | 'middle';
     startX: number;
     origStart: string;
@@ -33,7 +28,7 @@ export const useGanttDrag = ({
   const onPointerDown = useCallback(
     (
       e: React.PointerEvent,
-      taskId: number,
+      taskId: string,
       side: 'left' | 'right' | 'middle',
       startDate: string,
       endDate: string,
@@ -65,7 +60,6 @@ export const useGanttDrag = ({
 
       const deltaX = e.clientX - d.startX;
       const daysMoved = Math.round((deltaX / containerWidth) * totalDays);
-      if (daysMoved === 0 && d.side !== 'middle') return;
 
       const origS = parseISO(d.origStart);
       const origE = parseISO(d.origEnd);
@@ -95,22 +89,10 @@ export const useGanttDrag = ({
 
   const onPointerUp = useCallback(
     (_e: React.PointerEvent) => {
-      const d = dragging.current;
-      if (!d) return;
-      // Final dates already applied live — commit to DB
-      // We read the latest dates from the live callback
       dragging.current = null;
     },
     [],
   );
 
-  /** Call this from the bar after pointer up with the final dates */
-  const commit = useCallback(
-    (taskId: number, startDate: string, endDate: string) => {
-      onDateChange(taskId, startDate, endDate);
-    },
-    [onDateChange],
-  );
-
-  return { onPointerDown, onPointerMove, onPointerUp, commit, dragging };
+  return { onPointerDown, onPointerMove, onPointerUp, dragging };
 };
