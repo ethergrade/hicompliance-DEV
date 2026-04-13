@@ -321,6 +321,30 @@ const Assessment: React.FC = () => {
     });
   }, [getCategoryCounts, responses]);
 
+  const radarData = useMemo(() => {
+    return assessmentCategories.map((cat) => {
+      const compliance = Number.isFinite(cat.score) ? cat.score : 0;
+      const target = Math.min((compliance > 0 ? compliance : 0) + RADAR_TARGET_OFFSET, 100);
+
+      return {
+        category: cat.name.length > 14 ? `${cat.name.substring(0, 12)}…` : cat.name,
+        fullName: cat.name,
+        compliance,
+        target,
+      };
+    });
+  }, [assessmentCategories]);
+
+  const hasRadarResponses = useMemo(
+    () => assessmentCategories.some((cat) => cat.completed > 0),
+    [assessmentCategories]
+  );
+
+  const radarChartKey = useMemo(
+    () => radarData.map((item) => `${item.fullName}:${item.compliance}:${item.target}`).join('|'),
+    [radarData]
+  );
+
   // Filter and sort categories based on preferences
   const filteredAndSortedCategories = assessmentCategories
     .filter(cat => statusFilter === 'all' || cat.status === statusFilter)
@@ -683,7 +707,7 @@ const Assessment: React.FC = () => {
               </div>
             </CardHeader>
             <CardContent className="pt-0">
-              {Object.keys(responses).length === 0 || Object.values(responses).every(v => v === null || v === undefined) ? (
+              {!hasRadarResponses ? (
                 <div className="h-[320px] w-full flex flex-col items-center justify-center text-muted-foreground gap-3">
                   <AlertTriangle className="h-10 w-10 opacity-40" />
                   <p className="text-sm text-center max-w-[240px]">Rispondi alle domande dell'assessment per visualizzare i risultati nella radar</p>
@@ -692,12 +716,11 @@ const Assessment: React.FC = () => {
                 <div className="h-[320px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <RadarChart
-                      data={assessmentCategories.map((cat) => ({
-                        category: cat.name.length > 14 ? cat.name.substring(0, 12) + '…' : cat.name,
-                        fullName: cat.name,
-                        compliance: cat.score,
-                        target: Math.min(cat.score + RADAR_TARGET_OFFSET, 100),
-                      }))}
+                      key={radarChartKey}
+                      data={radarData}
+                      cx="50%"
+                      cy="50%"
+                      outerRadius="72%"
                       margin={{ top: 10, right: 40, bottom: 10, left: 40 }}
                     >
                       <PolarGrid stroke="hsl(var(--border))" />
@@ -720,8 +743,24 @@ const Assessment: React.FC = () => {
                         formatter={(value) => value === 'compliance' ? 'Conformità' : 'Target'}
                         wrapperStyle={{ fontSize: '10px', color: 'hsl(var(--muted-foreground))' }}
                       />
-                      <Radar name="compliance" dataKey="compliance" stroke="hsl(var(--primary))" fill="hsl(var(--primary))" fillOpacity={0.25} strokeWidth={2} isAnimationActive animationDuration={600} />
-                      <Radar name="target" dataKey="target" stroke="#22c55e" fill="transparent" strokeWidth={2} strokeDasharray="5 5" isAnimationActive animationDuration={600} />
+                      <Radar
+                        name="compliance"
+                        dataKey="compliance"
+                        stroke="hsl(var(--primary))"
+                        fill="hsl(var(--primary))"
+                        fillOpacity={0.25}
+                        strokeWidth={2}
+                        isAnimationActive={false}
+                      />
+                      <Radar
+                        name="target"
+                        dataKey="target"
+                        stroke="hsl(var(--cyber-green))"
+                        fill="transparent"
+                        strokeWidth={2}
+                        strokeDasharray="5 5"
+                        isAnimationActive={false}
+                      />
                     </RadarChart>
                   </ResponsiveContainer>
                 </div>
