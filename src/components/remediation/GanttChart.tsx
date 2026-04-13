@@ -209,13 +209,14 @@ export const GanttChart: React.FC<GanttChartProps> = ({
       </CardHeader>
       <CardContent className="p-0">
         <div className="overflow-x-auto select-none" ref={scrollRef} onPointerMove={onPointerMove} onPointerUp={handlePointerUp}>
-          <div className="min-w-[1100px]">
+          <div style={{ minWidth: `${timelineMinWidth}px` }}>
             <div className="grid grid-cols-[18rem_minmax(0,1fr)] border-b border-border bg-muted/50 sticky top-0 z-10">
               <div className={`${SIDEBAR_WIDTH_CLASS} shrink-0 px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider`}>
                 Attività
               </div>
               <div
-                className="grid min-w-[1100px] flex-1"
+                className="grid flex-1"
+                style={{ minWidth: `${timelineMinWidth}px`, gridTemplateColumns: monthGridTemplate }}
                 ref={timelineRef}
                 style={{ gridTemplateColumns: monthGridTemplate }}
               >
