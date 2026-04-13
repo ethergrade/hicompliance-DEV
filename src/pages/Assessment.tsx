@@ -161,6 +161,8 @@ const Assessment: React.FC = () => {
         }
         setSaveStatus('saved');
         setLastSaved(new Date());
+        // Trigger auto-snapshot
+        triggerAutoSnapshot();
       } catch {
         setSaveStatus('error');
       }
