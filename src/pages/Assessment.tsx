@@ -145,106 +145,39 @@ const Assessment: React.FC = () => {
     );
   };
 
-  const assessmentCategories = [
-    { 
-      name: 'Business Continuity, Disaster recovery, Backup', 
-      questions: 11, 
-      completed: 8, 
-      status: 'in_progress',
-      score: 72 
-    },
-    { 
-      name: 'Certificazioni', 
-      questions: 3, 
-      completed: 3, 
-      status: 'completed',
-      score: 85 
-    },
-    { 
-      name: 'Crittografia', 
-      questions: 6, 
-      completed: 4, 
-      status: 'in_progress',
-      score: 60 
-    },
-    { 
-      name: 'Gestione delle identità e degli accessi', 
-      questions: 16, 
-      completed: 3, 
-      status: 'not_started',
-      score: 25 
-    },
-    { 
-      name: 'Gestione degli incidenti', 
-      questions: 24, 
-      completed: 24, 
-      status: 'completed',
-      score: 78 
-    },
-    { 
-      name: 'Gestione del rischio', 
-      questions: 8, 
-      completed: 4, 
-      status: 'in_progress',
-      score: 65 
-    },
-    { 
-      name: 'Gestione delle risorse', 
-      questions: 12, 
-      completed: 6, 
-      status: 'in_progress',
-      score: 55 
-    },
-    { 
-      name: 'Gestione fornitori e acquisti', 
-      questions: 11, 
-      completed: 1, 
-      status: 'in_progress',
-      score: 30
-    },
-    { 
-      name: 'Governance', 
-      questions: 9, 
-      completed: 9, 
-      status: 'completed',
-      score: 88 
-    },
-    { 
-      name: 'HR e formazione', 
-      questions: 10, 
-      completed: 7, 
-      status: 'in_progress',
-      score: 70 
-    },
-    { 
-      name: 'Igiene informatica', 
-      questions: 5, 
-      completed: 3, 
-      status: 'in_progress',
-      score: 62 
-    },
-    { 
-      name: 'Manutenzione e miglioramento continuo', 
-      questions: 11, 
-      completed: 1, 
-      status: 'in_progress',
-      score: 35 
-    },
-    { 
-      name: 'Network Security Best Practices & Operations', 
-      questions: 4, 
-      completed: 3, 
-      status: 'in_progress',
-      score: 82 
-    },
-    { 
-      name: 'Sviluppo software', 
-      questions: 2, 
-      completed: 1, 
-      status: 'in_progress',
-      score: 40 
-    },
-  ];
+  const CATEGORY_SCORES: Record<string, number> = {
+    'Business Continuity, Disaster recovery, Backup': 72,
+    'Certificazioni': 85,
+    'Crittografia': 60,
+    'Gestione delle identità Gestione degli accessi': 25,
+    'Gestione degli incidenti': 78,
+    'Gestione del rischio': 65,
+    'Gestione delle risorse': 55,
+    'Gestione fornitori e acquisti': 30,
+    'Governance': 88,
+    'HR e formazione': 70,
+    'Igiene informatica': 62,
+    'Manutenzione e miglioramento continuo': 35,
+    'Network Security Best Practices & Operations': 82,
+    'Sviluppo software': 40,
+  };
+
+  const assessmentCategories = useMemo(() => {
+    return ASSESSMENT_CATEGORIES.map(cat => {
+      const counts = getCategoryCounts(cat.name);
+      const answered = counts.completato + counts.pianificato_in_corso + counts.non_iniziato + counts.non_applicabile;
+      const total = cat.questions.length;
+      const status = answered === 0 ? 'not_started' : answered === total ? 'completed' : 'in_progress';
+      return {
+        name: cat.name,
+        questions: total,
+        completed: answered,
+        status,
+        score: CATEGORY_SCORES[cat.name] || 50,
+        counts,
+      };
+    });
+  }, [getCategoryCounts]);
 
   // Filter and sort categories based on preferences
   const filteredAndSortedCategories = assessmentCategories
