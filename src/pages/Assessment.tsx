@@ -17,7 +17,7 @@ import {
   PolarGrid,
   PolarAngleAxis,
   PolarRadiusAxis,
-  ResponsiveContainer,
+  
   Tooltip,
   Legend,
 } from 'recharts';
@@ -340,10 +340,6 @@ const Assessment: React.FC = () => {
     [assessmentCategories]
   );
 
-  const radarChartKey = useMemo(
-    () => radarData.map((item) => `${item.fullName}:${item.compliance}:${item.target}`).join('|'),
-    [radarData]
-  );
 
   // Filter and sort categories based on preferences
   const filteredAndSortedCategories = assessmentCategories
