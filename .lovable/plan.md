@@ -1,34 +1,41 @@
 
 
-## Problem
+## Diagnosi: Radar Chart non visibile in Assessment
 
-The AI CISO chat output appears visually compressed -- paragraphs are too close together, bullet points lack spacing, and sections blend into each other. Two areas need fixing:
+### Problema identificato
 
-1. **CSS styling** in `ChatMessage.tsx` -- the prose spacing classes are too tight (`prose-ul:my-1`, `prose-li:my-0.5`)
-2. **System prompt** in the edge function -- needs stronger formatting instructions to ensure the model outputs proper markdown with clear separation
+La radar chart mostra la griglia (PolarGrid) e le etichette ma **i poligoni dei dati (Conformità/Target) non sono visibili**. I dati nel database sono corretti e il flusso di caricamento funziona (il punteggio 48/100 e il progresso 100% confermano che le risposte vengono lette).
 
-## Plan
+Il problema è probabilmente legato a un **bug di rendering di Recharts** causato dalla combinazione di:
+1. **`ResponsiveContainer` + `key` dinamico**: il `key={radarChartKey}` forza un unmount/remount del chart ogni volta che i dati cambiano, e `ResponsiveContainer` può non ricalcolare le dimensioni correttamente dopo il remount.
+2. **Timing di rendering**: il chart viene montato prima che il container abbia dimensioni definitive, e il remount via `key` non triggera un resize.
+3. **fillOpacity 0.3 su sfondo scuro**: i poligoni, anche se renderizzati, sono molto difficili da vedere.
 
-### 1. Improve ChatMessage.tsx prose styling
+### Piano di Fix
 
-Update the Tailwind prose classes to add more breathing room:
-- `prose-p:my-3` -- paragraph spacing
-- `prose-ul:my-3 prose-ol:my-3` -- list spacing  
-- `prose-li:my-1.5` -- item spacing
-- `prose-headings:mt-5 prose-headings:mb-3` -- header spacing
-- `prose-hr:my-4 prose-hr:border-slate-700/50` -- horizontal rule styling
-- Add a subtle left border accent on blockquotes for visual separation
+**File:** `src/pages/Assessment.tsx`
 
-### 2. Refine system prompt formatting instructions
+1. **Rimuovere il `key` dinamico dal `RadarChart`** — non è necessario con `isAnimationActive={false}` e causa solo problemi di remount. Recharts aggiorna automaticamente i path SVG quando i `data` cambiano.
 
-In `supabase/functions/ai-ciso-chat/index.ts`, update the `STILE DI RISPOSTA` section to explicitly instruct the model to:
-- Insert a blank line between every section and every bullet group
-- Use `---` horizontal rules between major sections
-- Start every response with a bold **TL;DR** line followed by a blank line
-- Use `###` sub-headers within sections for nested topics
-- Keep each bullet on its own line with a blank line after groups of related bullets
+2. **Aumentare la visibilità dei poligoni**:
+   - Compliance: `fillOpacity` da 0.3 a **0.45**, `strokeWidth` da 2 a **2.5**
+   - Target: `strokeWidth` da 2 a **2**, aggiungere `strokeOpacity={0.8}`
 
-### 3. Redeploy edge function
+3. **Sostituire `ResponsiveContainer` con un approccio a dimensioni fisse**: dato che il container ha già `height: 380`, usare `<RadarChart width={400} height={360}>` direttamente, avvolto in un `div` centrato. Questo elimina il problema di misurazione asincrona di `ResponsiveContainer`.
 
-Deploy the updated `ai-ciso-chat` function with the refined prompt.
+4. **Fallback con `useEffect` resize**: aggiungere un piccolo effetto che forza un re-render dopo il mount per garantire che il chart abbia dimensioni corrette, come safety net.
+
+### Dettagli tecnici
+
+```text
+Prima:
+  <ResponsiveContainer width="100%" height={380}>
+    <RadarChart key={radarChartKey} data={radarData} ...>
+
+Dopo:
+  <div className="w-full flex justify-center" style={{ height: 380 }}>
+    <RadarChart width={460} height={370} data={radarData} ...>
+```
+
+Nessuna modifica al flusso dati o al calcolo dei punteggi — il problema è puramente di rendering SVG.
 
