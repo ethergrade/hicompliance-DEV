@@ -17,7 +17,7 @@ import {
   PolarGrid,
   PolarAngleAxis,
   PolarRadiusAxis,
-  ResponsiveContainer,
+  
   Tooltip,
   Legend,
 } from 'recharts';
@@ -340,10 +340,6 @@ const Assessment: React.FC = () => {
     [assessmentCategories]
   );
 
-  const radarChartKey = useMemo(
-    () => radarData.map((item) => `${item.fullName}:${item.compliance}:${item.target}`).join('|'),
-    [radarData]
-  );
 
   // Filter and sort categories based on preferences
   const filteredAndSortedCategories = assessmentCategories
@@ -713,10 +709,10 @@ const Assessment: React.FC = () => {
                   <p className="text-sm text-center max-w-[240px]">Rispondi alle domande dell'assessment per visualizzare i risultati nella radar</p>
                 </div>
               ) : (
-                <div className="w-full" style={{ height: 380 }}>
-                  <ResponsiveContainer width="100%" height={380}>
+                <div className="w-full flex justify-center" style={{ height: 380 }}>
                     <RadarChart
-                      key={radarChartKey}
+                      width={460}
+                      height={370}
                       data={radarData}
                       cx="50%"
                       cy="50%"
@@ -740,8 +736,8 @@ const Assessment: React.FC = () => {
                         dataKey="compliance"
                         stroke="#7c6ef6"
                         fill="#7c6ef6"
-                        fillOpacity={0.3}
-                        strokeWidth={2}
+                        fillOpacity={0.45}
+                        strokeWidth={2.5}
                         isAnimationActive={false}
                         dot={false}
                       />
@@ -752,15 +748,16 @@ const Assessment: React.FC = () => {
                         fill="none"
                         strokeWidth={2}
                         strokeDasharray="5 5"
+                        strokeOpacity={0.8}
                         isAnimationActive={false}
                         dot={false}
                       />
                       <Tooltip
                         contentStyle={{
-                          backgroundColor: 'hsl(220, 27%, 10%)',
-                          border: '1px solid hsl(220, 27%, 20%)',
+                          backgroundColor: '#1a1f2e',
+                          border: '1px solid #2d3548',
                           borderRadius: '8px',
-                          color: 'hsl(210, 40%, 98%)',
+                          color: '#f1f5f9',
                           fontSize: '12px',
                         }}
                         formatter={(value: number, name: string) => [
@@ -771,10 +768,9 @@ const Assessment: React.FC = () => {
                       />
                       <Legend
                         formatter={(value) => value === 'compliance' ? 'Conformità' : 'Target'}
-                        wrapperStyle={{ fontSize: '11px', color: 'hsl(217, 19%, 63%)' }}
+                        wrapperStyle={{ fontSize: '11px', color: '#94a3b8' }}
                       />
                     </RadarChart>
-                  </ResponsiveContainer>
                 </div>
               )}
             </CardContent>
