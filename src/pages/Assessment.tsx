@@ -17,7 +17,7 @@ import {
   PolarGrid,
   PolarAngleAxis,
   PolarRadiusAxis,
-  
+  ResponsiveContainer,
   Tooltip,
   Legend,
 } from 'recharts';
@@ -709,15 +709,14 @@ const Assessment: React.FC = () => {
                   <p className="text-sm text-center max-w-[240px]">Rispondi alle domande dell'assessment per visualizzare i risultati nella radar</p>
                 </div>
               ) : (
-                <div className="w-full flex justify-center" style={{ height: 380 }}>
+              <div className="w-full" style={{ height: 400 }}>
+                <ResponsiveContainer width="100%" height={400}>
                     <RadarChart
-                      width={460}
-                      height={370}
                       data={radarData}
                       cx="50%"
                       cy="50%"
-                      outerRadius={120}
-                      margin={{ top: 20, right: 50, bottom: 20, left: 50 }}
+                      outerRadius="70%"
+                      margin={{ top: 20, right: 30, bottom: 20, left: 30 }}
                     >
                       <PolarGrid stroke="hsl(220, 27%, 20%)" strokeOpacity={0.6} />
                       <PolarAngleAxis
@@ -771,6 +770,7 @@ const Assessment: React.FC = () => {
                         wrapperStyle={{ fontSize: '11px', color: '#94a3b8' }}
                       />
                     </RadarChart>
+                </ResponsiveContainer>
                 </div>
               )}
             </CardContent>
