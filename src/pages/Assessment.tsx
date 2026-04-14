@@ -324,7 +324,7 @@ const Assessment: React.FC = () => {
   const radarData = useMemo(() => {
     return assessmentCategories.map((cat) => {
       const compliance = Number.isFinite(cat.score) ? cat.score : 0;
-      const target = Math.min((compliance > 0 ? compliance : 0) + RADAR_TARGET_OFFSET, 100);
+      const target = 90;
 
       return {
         category: cat.name.length > 14 ? `${cat.name.substring(0, 12)}…` : cat.name,
