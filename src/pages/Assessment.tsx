@@ -770,6 +770,7 @@ const Assessment: React.FC = () => {
                         wrapperStyle={{ fontSize: '11px', color: '#94a3b8' }}
                       />
                     </RadarChart>
+                </ResponsiveContainer>
                 </div>
               )}
             </CardContent>
