@@ -26,7 +26,7 @@ interface DocumentSearchBarProps {
 }
 
 const DocumentSearchBar: React.FC<DocumentSearchBarProps> = ({ filters, onFiltersChange }) => {
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(true);
 
   const update = (partial: Partial<DocumentFilters>) => {
     onFiltersChange({ ...filters, ...partial });
