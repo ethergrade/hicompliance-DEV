@@ -11,16 +11,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  RadarChart,
-  Radar,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  ResponsiveContainer,
-  Tooltip,
-  Legend,
-} from 'recharts';
 import { 
   ClipboardCheck, 
   AlertTriangle, 
@@ -46,6 +36,7 @@ import { ASSESSMENT_CATEGORIES, AssessmentResponse, RESPONSE_LABELS, RESPONSE_CO
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { generateAssessmentPDF } from '@/components/assessment/AssessmentReportGenerator';
 import GapAnalysisSection from '@/components/assessment/GapAnalysisSection';
+import { AssessmentRadarChart } from '@/components/assessment/AssessmentRadarChart';
 
 // Map UI response values to DB enum values and vice versa
 const UI_TO_DB_STATUS: Record<string, string> = {
@@ -61,8 +52,6 @@ const DB_TO_UI_STATUS: Record<string, AssessmentResponse> = {
   not_applicable: 'non_applicabile',
 };
 
-
-const RADAR_TARGET_OFFSET = 15; // target is always +15 above compliance
 
 const Assessment: React.FC = () => {
   const { user } = useAuth();
@@ -709,69 +698,7 @@ const Assessment: React.FC = () => {
                   <p className="text-sm text-center max-w-[240px]">Rispondi alle domande dell'assessment per visualizzare i risultati nella radar</p>
                 </div>
               ) : (
-              <div className="w-full" style={{ height: 400 }}>
-                <ResponsiveContainer width="100%" height={400}>
-                    <RadarChart
-                      data={radarData}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius="70%"
-                      margin={{ top: 20, right: 30, bottom: 20, left: 30 }}
-                    >
-                      <PolarGrid stroke="hsl(220, 27%, 20%)" strokeOpacity={0.6} />
-                      <PolarAngleAxis
-                        dataKey="category"
-                        tick={{ fontSize: 9, fill: 'hsl(217, 19%, 63%)' }}
-                      />
-                      <PolarRadiusAxis
-                        angle={90}
-                        domain={[0, 100]}
-                        tick={{ fontSize: 8, fill: 'hsl(217, 19%, 63%)' }}
-                        tickCount={5}
-                        axisLine={false}
-                      />
-                      <Radar
-                        name="compliance"
-                        dataKey="compliance"
-                        stroke="#7c6ef6"
-                        fill="#7c6ef6"
-                        fillOpacity={0.45}
-                        strokeWidth={2.5}
-                        isAnimationActive={false}
-                        dot={false}
-                      />
-                      <Radar
-                        name="target"
-                        dataKey="target"
-                        stroke="#34d399"
-                        fill="none"
-                        strokeWidth={2}
-                        strokeDasharray="5 5"
-                        strokeOpacity={0.8}
-                        isAnimationActive={false}
-                        dot={false}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#1a1f2e',
-                          border: '1px solid #2d3548',
-                          borderRadius: '8px',
-                          color: '#f1f5f9',
-                          fontSize: '12px',
-                        }}
-                        formatter={(value: number, name: string) => [
-                          `${value}/100`,
-                          name === 'compliance' ? 'Conformità' : 'Target',
-                        ]}
-                        labelFormatter={(_: any, payload: any) => payload?.[0]?.payload?.fullName ?? ''}
-                      />
-                      <Legend
-                        formatter={(value) => value === 'compliance' ? 'Conformità' : 'Target'}
-                        wrapperStyle={{ fontSize: '11px', color: '#94a3b8' }}
-                      />
-                    </RadarChart>
-                </ResponsiveContainer>
-                </div>
+                <AssessmentRadarChart data={radarData} />
               )}
             </CardContent>
           </Card>
