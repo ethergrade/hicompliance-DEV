@@ -830,39 +830,82 @@ export type Database = {
       }
       incident_documents: {
         Row: {
+          approved_by: string[] | null
           category: Database["public"]["Enums"]["document_category"]
+          confidentiality: string
+          description: string | null
+          document_code: string | null
+          drafted_by: string[] | null
           file_path: string
           file_size: number
           file_type: string
           id: string
           name: string
+          organization_id: string | null
+          prepared_by: string[] | null
+          reviewed_by: string[] | null
+          revision: number
+          revision_date: string | null
+          status: string
+          tags: string[] | null
           updated_at: string
           uploaded_at: string
           uploaded_by: string
         }
         Insert: {
+          approved_by?: string[] | null
           category?: Database["public"]["Enums"]["document_category"]
+          confidentiality?: string
+          description?: string | null
+          document_code?: string | null
+          drafted_by?: string[] | null
           file_path: string
           file_size: number
           file_type: string
           id?: string
           name: string
+          organization_id?: string | null
+          prepared_by?: string[] | null
+          reviewed_by?: string[] | null
+          revision?: number
+          revision_date?: string | null
+          status?: string
+          tags?: string[] | null
           updated_at?: string
           uploaded_at?: string
           uploaded_by: string
         }
         Update: {
+          approved_by?: string[] | null
           category?: Database["public"]["Enums"]["document_category"]
+          confidentiality?: string
+          description?: string | null
+          document_code?: string | null
+          drafted_by?: string[] | null
           file_path?: string
           file_size?: number
           file_type?: string
           id?: string
           name?: string
+          organization_id?: string | null
+          prepared_by?: string[] | null
+          reviewed_by?: string[] | null
+          revision?: number
+          revision_date?: string | null
+          status?: string
+          tags?: string[] | null
           updated_at?: string
           uploaded_at?: string
           uploaded_by?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "incident_documents_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "incident_documents_uploaded_by_fkey"
             columns: ["uploaded_by"]
