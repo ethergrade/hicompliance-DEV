@@ -17,7 +17,7 @@ import {
   PolarGrid,
   PolarAngleAxis,
   PolarRadiusAxis,
-  
+  ResponsiveContainer,
   Tooltip,
   Legend,
 } from 'recharts';
