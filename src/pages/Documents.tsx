@@ -1,46 +1,43 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import type { Database } from '@/integrations/supabase/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { useNavigate } from 'react-router-dom';
+import { useContactDirectory } from '@/hooks/useContactDirectory';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
+import DocumentSearchBar, { DocumentFilters } from '@/components/documents/DocumentSearchBar';
+import DocumentMetadataDialog, { DocumentMetadata } from '@/components/documents/DocumentMetadataDialog';
+import ContactPicker from '@/components/documents/ContactPicker';
 import {
-  Download,
-  FileText,
-  Upload,
-  Trash2,
-  File,
-  FolderOpen,
-  Edit2,
-  FolderInput,
-  Package
+  generateDocumentCode,
+  formatDocumentCodeWithRevision,
+  DOCUMENT_STATUSES,
+  CONFIDENTIALITY_LEVELS,
+  STATUS_COLORS,
+  CONFIDENTIALITY_COLORS,
+} from '@/components/documents/DocumentCodeGenerator';
+import {
+  Download, FileText, Upload, Trash2, File, FolderOpen,
+  Settings2, Package, X
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
-// Use the database enum type directly to stay in sync
 type DocumentCategory = Database['public']['Enums']['document_category'];
 
-// Define display categories (excluding deprecated "Audit" which is now "ISO & Audit")
 const DOCUMENT_CATEGORIES: DocumentCategory[] = [
-  'Piano Generale',
-  'Checklist / OPL / SOP',
-  'Template',
-  'Processo',
-  'Legal',
-  'ISO & Audit',
-  'NIS2',
-  'Tecnico',
-  'Varie'
+  'Piano Generale', 'Checklist / OPL / SOP', 'Template', 'Processo',
+  'Legal', 'ISO & Audit', 'NIS2', 'Tecnico', 'Varie'
 ];
 
-interface Document {
+interface ISODocument {
   id: string;
   name: string;
   file_path: string;
@@ -49,43 +46,66 @@ interface Document {
   category: DocumentCategory;
   uploaded_at: string;
   uploaded_by: string;
+  document_code: string | null;
+  revision: number;
+  revision_date: string | null;
+  status: string;
+  drafted_by: string[] | null;
+  prepared_by: string[] | null;
+  reviewed_by: string[] | null;
+  approved_by: string[] | null;
+  description: string | null;
+  tags: string[] | null;
+  confidentiality: string;
+  organization_id: string | null;
 }
 
 const Documents: React.FC = () => {
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [filteredDocuments, setFilteredDocuments] = useState<Document[]>([]);
+  const [documents, setDocuments] = useState<ISODocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [filters, setFilters] = useState<DocumentFilters>({
+    search: '', category: 'all', status: 'all', confidentiality: 'all'
+  });
+
+  // Upload form state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [documentName, setDocumentName] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<DocumentCategory>('Varie');
-  const [activeCategory, setActiveCategory] = useState<DocumentCategory | 'all'>('all');
-  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
-  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
-  const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
-  const [newDocumentName, setNewDocumentName] = useState('');
-  const [newCategory, setNewCategory] = useState<DocumentCategory>('Varie');
+  const [uploadForm, setUploadForm] = useState({
+    name: '',
+    category: 'Varie' as DocumentCategory,
+    status: 'Bozza',
+    confidentiality: 'Interno',
+    description: '',
+    tags: [] as string[],
+    drafted_by: [] as string[],
+    prepared_by: [] as string[],
+    reviewed_by: [] as string[],
+    approved_by: [] as string[],
+  });
+  const [tagInput, setTagInput] = useState('');
+  const [showUploadDetails, setShowUploadDetails] = useState(false);
+
+  // Metadata dialog
+  const [metadataDialogOpen, setMetadataDialogOpen] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState<ISODocument | null>(null);
+
   const { toast } = useToast();
   const { user } = useAuth();
   const navigate = useNavigate();
-  
+  const { contacts } = useContactDirectory();
+  const { organizationId } = useClientOrganization();
+
   const [userId, setUserId] = useState<string | null>(null);
 
-  // Fetch user ID from users table
   useEffect(() => {
     const fetchUserId = async () => {
       if (!user) return;
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('users')
         .select('id')
         .eq('auth_user_id', user.id)
         .single();
-      
-      if (error) {
-        console.error('Error fetching user ID:', error);
-        return;
-      }
-      setUserId(data?.id);
+      setUserId(data?.id ?? null);
     };
     fetchUserId();
   }, [user]);
@@ -96,36 +116,39 @@ const Documents: React.FC = () => {
       const { data, error } = await supabase
         .from('incident_documents')
         .select('*')
-        .eq('uploaded_by', userId)
         .order('uploaded_at', { ascending: false });
 
       if (error) throw error;
-      setDocuments(data || []);
+      setDocuments((data as unknown as ISODocument[]) || []);
     } catch (error) {
       console.error('Error fetching documents:', error);
-      toast({
-        title: "Errore",
-        description: "Errore nel caricamento dei documenti",
-        variant: "destructive"
-      });
+      toast({ title: "Errore", description: "Errore nel caricamento dei documenti", variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (userId) {
-      fetchDocuments();
-    }
+    if (userId) fetchDocuments();
   }, [userId]);
 
-  useEffect(() => {
-    if (activeCategory === 'all') {
-      setFilteredDocuments(documents);
-    } else {
-      setFilteredDocuments(documents.filter(doc => doc.category === activeCategory));
-    }
-  }, [documents, activeCategory]);
+  // Filter documents
+  const filteredDocuments = useMemo(() => {
+    return documents.filter(doc => {
+      if (filters.category !== 'all' && doc.category !== filters.category) return false;
+      if (filters.status !== 'all' && doc.status !== filters.status) return false;
+      if (filters.confidentiality !== 'all' && doc.confidentiality !== filters.confidentiality) return false;
+      if (filters.search.trim()) {
+        const q = filters.search.toLowerCase();
+        const matchName = doc.name.toLowerCase().includes(q);
+        const matchCode = doc.document_code?.toLowerCase().includes(q);
+        const matchDesc = doc.description?.toLowerCase().includes(q);
+        const matchTags = doc.tags?.some(t => t.toLowerCase().includes(q));
+        if (!matchName && !matchCode && !matchDesc && !matchTags) return false;
+      }
+      return true;
+    });
+  }, [documents, filters]);
 
   const getCategoryCount = (category: DocumentCategory | 'all') => {
     if (category === 'all') return documents.length;
@@ -136,202 +159,146 @@ const Documents: React.FC = () => {
     const file = event.target.files?.[0];
     if (file) {
       setSelectedFile(file);
-      setDocumentName(file.name);
+      setUploadForm(prev => ({ ...prev, name: file.name }));
     }
   };
 
   const handleUpload = async () => {
-    if (!selectedFile || !documentName || !user || !userId) {
-      toast({
-        title: "Errore",
-        description: "Seleziona un file, inserisci un nome e seleziona una categoria",
-        variant: "destructive"
-      });
+    if (!selectedFile || !uploadForm.name || !user || !userId) {
+      toast({ title: "Errore", description: "Compila tutti i campi obbligatori", variant: "destructive" });
       return;
     }
 
     setUploading(true);
     try {
+      // Generate document code
+      const categoryDocs = documents.filter(d => d.category === uploadForm.category);
+      const nextSeq = categoryDocs.length + 1;
+      const docCode = generateDocumentCode(uploadForm.category, nextSeq);
+
       const fileExt = selectedFile.name.split('.').pop();
-      const fileName = `${Date.now()}_${documentName.replace(/[^a-zA-Z0-9]/g, '_')}.${fileExt}`;
+      const fileName = `${Date.now()}_${uploadForm.name.replace(/[^a-zA-Z0-9]/g, '_')}.${fileExt}`;
       const filePath = `${user.id}/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('incident-documents')
         .upload(filePath, selectedFile);
-
       if (uploadError) throw uploadError;
 
       const { error: dbError } = await supabase
         .from('incident_documents')
         .insert({
-          name: documentName,
+          name: uploadForm.name,
           file_path: filePath,
           file_size: selectedFile.size,
           file_type: selectedFile.type,
-          category: selectedCategory,
-          uploaded_by: userId
-        });
+          category: uploadForm.category,
+          uploaded_by: userId,
+          document_code: docCode,
+          revision: 1,
+          revision_date: new Date().toISOString(),
+          status: uploadForm.status,
+          confidentiality: uploadForm.confidentiality,
+          description: uploadForm.description,
+          tags: uploadForm.tags,
+          drafted_by: uploadForm.drafted_by,
+          prepared_by: uploadForm.prepared_by,
+          reviewed_by: uploadForm.reviewed_by,
+          approved_by: uploadForm.approved_by,
+          organization_id: organizationId || null,
+        } as any);
 
       if (dbError) throw dbError;
 
-      toast({
-        title: "Successo",
-        description: "Documento caricato con successo"
-      });
-
+      toast({ title: "Successo", description: "Documento caricato con successo" });
       setSelectedFile(null);
-      setDocumentName('');
-      setSelectedCategory('Varie');
+      setUploadForm({
+        name: '', category: 'Varie', status: 'Bozza', confidentiality: 'Interno',
+        description: '', tags: [], drafted_by: [], prepared_by: [], reviewed_by: [], approved_by: [],
+      });
+      setShowUploadDetails(false);
       fetchDocuments();
     } catch (error) {
       console.error('Error uploading document:', error);
-      toast({
-        title: "Errore",
-        description: "Errore durante il caricamento del documento",
-        variant: "destructive"
-      });
+      toast({ title: "Errore", description: "Errore durante il caricamento", variant: "destructive" });
     } finally {
       setUploading(false);
     }
   };
 
-  const handleDownload = async (doc: Document) => {
+  const handleDownload = async (doc: ISODocument) => {
     try {
-      const { data, error } = await supabase.storage
-        .from('incident-documents')
-        .download(doc.file_path);
-
+      const { data, error } = await supabase.storage.from('incident-documents').download(doc.file_path);
       if (error) throw error;
-
-      // Create download link
       const url = URL.createObjectURL(data);
       const a = document.createElement('a');
       a.href = url;
-      a.download = doc.name;
+      a.download = doc.document_code
+        ? `${formatDocumentCodeWithRevision(doc.document_code, doc.revision)}_${doc.name}`
+        : doc.name;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (error) {
-      console.error('Error downloading document:', error);
-      toast({
-        title: "Errore",
-        description: "Errore durante il download del documento",
-        variant: "destructive"
-      });
+      toast({ title: "Errore", description: "Errore durante il download", variant: "destructive" });
     }
   };
 
   const handleDelete = async (docId: string, filePath: string) => {
     if (!confirm('Sei sicuro di voler eliminare questo documento?')) return;
-    
     try {
-      const { error: storageError } = await supabase.storage
-        .from('incident-documents')
-        .remove([filePath]);
-
-      if (storageError) throw storageError;
-
-      const { error: dbError } = await supabase
-        .from('incident_documents')
-        .delete()
-        .eq('id', docId);
-
-      if (dbError) throw dbError;
-
-      toast({
-        title: "Successo",
-        description: "Documento eliminato con successo"
-      });
-
-      fetchDocuments();
-    } catch (error) {
-      console.error('Error deleting document:', error);
-      toast({
-        title: "Errore",
-        description: "Errore durante l'eliminazione del documento",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleRename = async () => {
-    if (!selectedDocument || !newDocumentName.trim()) {
-      toast({
-        title: "Errore",
-        description: "Inserisci un nome valido",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from('incident_documents')
-        .update({ name: newDocumentName.trim() })
-        .eq('id', selectedDocument.id);
-
+      await supabase.storage.from('incident-documents').remove([filePath]);
+      const { error } = await supabase.from('incident_documents').delete().eq('id', docId);
       if (error) throw error;
-
-      toast({
-        title: "Successo",
-        description: "Documento rinominato con successo"
-      });
-
-      setRenameDialogOpen(false);
-      setSelectedDocument(null);
-      setNewDocumentName('');
+      toast({ title: "Successo", description: "Documento eliminato" });
       fetchDocuments();
     } catch (error) {
-      console.error('Error renaming document:', error);
-      toast({
-        title: "Errore",
-        description: "Errore durante la rinomina del documento",
-        variant: "destructive"
-      });
+      toast({ title: "Errore", description: "Errore durante l'eliminazione", variant: "destructive" });
     }
   };
 
-  const handleMove = async () => {
+  const openMetadataDialog = (doc: ISODocument) => {
+    setSelectedDocument(doc);
+    setMetadataDialogOpen(true);
+  };
+
+  const handleSaveMetadata = async (metadata: DocumentMetadata) => {
     if (!selectedDocument) return;
-
     try {
       const { error } = await supabase
         .from('incident_documents')
-        .update({ category: newCategory })
+        .update({
+          name: metadata.name,
+          document_code: metadata.document_code,
+          revision: metadata.revision,
+          revision_date: new Date().toISOString(),
+          status: metadata.status,
+          confidentiality: metadata.confidentiality,
+          category: metadata.category,
+          description: metadata.description,
+          tags: metadata.tags,
+          drafted_by: metadata.drafted_by,
+          prepared_by: metadata.prepared_by,
+          reviewed_by: metadata.reviewed_by,
+          approved_by: metadata.approved_by,
+        } as any)
         .eq('id', selectedDocument.id);
 
       if (error) throw error;
-
-      toast({
-        title: "Successo",
-        description: "Documento spostato con successo"
-      });
-
-      setMoveDialogOpen(false);
-      setSelectedDocument(null);
+      toast({ title: "Successo", description: "Metadata aggiornati" });
       fetchDocuments();
     } catch (error) {
-      console.error('Error moving document:', error);
-      toast({
-        title: "Errore",
-        description: "Errore durante lo spostamento del documento",
-        variant: "destructive"
-      });
+      toast({ title: "Errore", description: "Errore nell'aggiornamento", variant: "destructive" });
     }
   };
 
-  const openRenameDialog = (doc: Document) => {
-    setSelectedDocument(doc);
-    setNewDocumentName(doc.name);
-    setRenameDialogOpen(true);
-  };
-
-  const openMoveDialog = (doc: Document) => {
-    setSelectedDocument(doc);
-    setNewCategory(doc.category);
-    setMoveDialogOpen(true);
+  const getContactNames = (ids: string[] | null) => {
+    if (!ids || ids.length === 0) return null;
+    return ids.map(id => {
+      const c = contacts.find(ct => ct.id === id);
+      return c ? `${c.first_name} ${c.last_name}` : '?';
+    }).join(', ');
   };
 
   const formatFileSize = (bytes: number) => {
@@ -341,12 +308,15 @@ const Documents: React.FC = () => {
   };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('it-IT', { 
-      year: 'numeric', 
-      month: '2-digit', 
-      day: '2-digit' 
-    });
+    return new Date(dateString).toLocaleDateString('it-IT', { year: 'numeric', month: '2-digit', day: '2-digit' });
+  };
+
+  const addTag = () => {
+    const t = tagInput.trim();
+    if (t && !uploadForm.tags.includes(t)) {
+      setUploadForm(prev => ({ ...prev, tags: [...prev.tags, t] }));
+      setTagInput('');
+    }
   };
 
   return (
@@ -355,15 +325,9 @@ const Documents: React.FC = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Gestione Documenti</h1>
-            <p className="text-muted-foreground">
-              Organizza i tuoi documenti per categoria
-            </p>
+            <p className="text-muted-foreground">Sistema documentale conforme ISO 9001 / ISO 27001</p>
           </div>
-          <Button
-            onClick={() => navigate('/asset-inventory')}
-            variant="outline"
-            className="flex items-center gap-2"
-          >
+          <Button onClick={() => navigate('/asset-inventory')} variant="outline" className="flex items-center gap-2">
             <Package className="w-4 h-4" />
             Inventario Asset Tecnici
           </Button>
@@ -380,19 +344,19 @@ const Documents: React.FC = () => {
             </CardHeader>
             <CardContent className="space-y-1">
               <Button
-                variant={activeCategory === 'all' ? 'default' : 'ghost'}
+                variant={filters.category === 'all' ? 'default' : 'ghost'}
                 className="w-full justify-between"
-                onClick={() => setActiveCategory('all')}
+                onClick={() => setFilters(f => ({ ...f, category: 'all' }))}
               >
                 <span>Tutti i documenti</span>
                 <Badge variant="secondary">{getCategoryCount('all')}</Badge>
               </Button>
-              {DOCUMENT_CATEGORIES.map((category) => (
+              {DOCUMENT_CATEGORIES.map(category => (
                 <Button
                   key={category}
-                  variant={activeCategory === category ? 'default' : 'ghost'}
+                  variant={filters.category === category ? 'default' : 'ghost'}
                   className="w-full justify-between"
-                  onClick={() => setActiveCategory(category)}
+                  onClick={() => setFilters(f => ({ ...f, category }))}
                 >
                   <span className="truncate">{category}</span>
                   <Badge variant="secondary">{getCategoryCount(category)}</Badge>
@@ -411,143 +375,176 @@ const Documents: React.FC = () => {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="file">Seleziona File *</Label>
-                    <Input
-                      id="file"
-                      type="file"
-                      onChange={handleFileSelect}
-                      accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.ppt,.pptx"
-                      className="cursor-pointer"
-                    />
+                    <Label>Seleziona File *</Label>
+                    <Input type="file" onChange={handleFileSelect} accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.ppt,.pptx" className="cursor-pointer" />
                   </div>
-
                   <div className="space-y-2">
-                    <Label htmlFor="name">Nome Documento *</Label>
-                    <Input
-                      id="name"
-                      value={documentName}
-                      onChange={(e) => setDocumentName(e.target.value)}
-                      placeholder="Nome del documento"
-                    />
+                    <Label>Nome Documento *</Label>
+                    <Input value={uploadForm.name} onChange={e => setUploadForm(f => ({ ...f, name: e.target.value }))} placeholder="Nome del documento" />
                   </div>
-
                   <div className="space-y-2">
-                    <Label htmlFor="category">Categoria *</Label>
-                    <Select value={selectedCategory} onValueChange={(value) => setSelectedCategory(value as DocumentCategory)}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
+                    <Label>Categoria *</Label>
+                    <Select value={uploadForm.category} onValueChange={v => setUploadForm(f => ({ ...f, category: v as DocumentCategory }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {DOCUMENT_CATEGORIES.map((cat) => (
-                          <SelectItem key={cat} value={cat}>
-                            {cat}
-                          </SelectItem>
-                        ))}
+                        {DOCUMENT_CATEGORIES.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Stato</Label>
+                    <Select value={uploadForm.status} onValueChange={v => setUploadForm(f => ({ ...f, status: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {DOCUMENT_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Classificazione</Label>
+                    <Select value={uploadForm.confidentiality} onValueChange={v => setUploadForm(f => ({ ...f, confidentiality: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {CONFIDENTIALITY_LEVELS.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Tag</Label>
+                    <div className="flex gap-1">
+                      <Input
+                        value={tagInput}
+                        onChange={e => setTagInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
+                        placeholder="Aggiungi tag..."
+                        className="flex-1"
+                      />
+                      <Button variant="outline" size="sm" onClick={addTag}>+</Button>
+                    </div>
+                    {uploadForm.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {uploadForm.tags.map(tag => (
+                          <Badge key={tag} variant="secondary" className="text-xs">
+                            {tag}
+                            <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => setUploadForm(f => ({ ...f, tags: f.tags.filter(t => t !== tag) }))} />
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <Button variant="ghost" size="sm" onClick={() => setShowUploadDetails(!showUploadDetails)}>
+                  {showUploadDetails ? 'Nascondi' : 'Mostra'} campi avanzati (Responsabili, Descrizione)
+                </Button>
+
+                {showUploadDetails && (
+                  <div className="space-y-4 border-t border-border pt-4">
+                    <div className="space-y-2">
+                      <Label>Descrizione / Scopo</Label>
+                      <Textarea
+                        value={uploadForm.description}
+                        onChange={e => setUploadForm(f => ({ ...f, description: e.target.value }))}
+                        rows={2}
+                        placeholder="Descrizione del documento..."
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ContactPicker label="Redatto da" selectedIds={uploadForm.drafted_by} onChange={ids => setUploadForm(f => ({ ...f, drafted_by: ids }))} contacts={contacts} />
+                      <ContactPicker label="Elaborato da" selectedIds={uploadForm.prepared_by} onChange={ids => setUploadForm(f => ({ ...f, prepared_by: ids }))} contacts={contacts} />
+                      <ContactPicker label="Revisionato da" selectedIds={uploadForm.reviewed_by} onChange={ids => setUploadForm(f => ({ ...f, reviewed_by: ids }))} contacts={contacts} />
+                      <ContactPicker label="Approvato da" selectedIds={uploadForm.approved_by} onChange={ids => setUploadForm(f => ({ ...f, approved_by: ids }))} contacts={contacts} />
+                    </div>
+                  </div>
+                )}
+
                 {selectedFile && (
                   <div className="p-3 bg-muted rounded-lg">
                     <p className="text-sm text-muted-foreground">
-                      File selezionato: <span className="font-medium text-foreground">{selectedFile.name}</span>
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Dimensione: {formatFileSize(selectedFile.size)}
+                      File: <span className="font-medium text-foreground">{selectedFile.name}</span>
+                      {' '}({formatFileSize(selectedFile.size)})
                     </p>
                   </div>
                 )}
 
-                <Button
-                  onClick={handleUpload}
-                  disabled={!selectedFile || !documentName || uploading}
-                  className="w-full"
-                >
-                  {uploading ? (
-                    <>Caricamento in corso...</>
-                  ) : (
-                    <>
-                      <Upload className="w-4 h-4 mr-2" />
-                      Carica Documento
-                    </>
-                  )}
+                <Button onClick={handleUpload} disabled={!selectedFile || !uploadForm.name || uploading} className="w-full">
+                  {uploading ? 'Caricamento...' : <><Upload className="w-4 h-4 mr-2" />Carica Documento</>}
                 </Button>
               </CardContent>
             </Card>
+
+            {/* Search Bar */}
+            <DocumentSearchBar filters={filters} onFiltersChange={setFilters} />
 
             {/* Documents List */}
             <Card className="border-border bg-card">
               <CardHeader>
                 <CardTitle className="text-foreground">
-                  {activeCategory === 'all' ? 'Tutti i Documenti' : activeCategory}
-                  <span className="text-muted-foreground text-sm font-normal ml-2">
-                    ({filteredDocuments.length})
-                  </span>
+                  {filters.category === 'all' ? 'Tutti i Documenti' : filters.category}
+                  <span className="text-muted-foreground text-sm font-normal ml-2">({filteredDocuments.length})</span>
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {loading ? (
-                  <div className="text-center text-muted-foreground py-8">
-                    Caricamento documenti...
-                  </div>
+                  <div className="text-center text-muted-foreground py-8">Caricamento documenti...</div>
                 ) : filteredDocuments.length === 0 ? (
                   <div className="text-center text-muted-foreground py-8">
                     <File className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                    <p>Nessun documento in questa categoria</p>
+                    <p>Nessun documento trovato</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {filteredDocuments.map((doc) => (
-                      <div
-                        key={doc.id}
-                        className="flex items-center justify-between p-3 border border-border rounded-lg hover:bg-accent/50 transition-colors"
-                      >
-                        <div className="flex items-center space-x-3 flex-1 min-w-0">
-                          <FileText className="w-5 h-5 text-primary flex-shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium text-foreground truncate">
-                              {doc.name}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatFileSize(doc.file_size)} • {formatDate(doc.uploaded_at)}
-                            </p>
+                    {filteredDocuments.map(doc => (
+                      <div key={doc.id} className="flex items-start justify-between p-4 border border-border rounded-lg hover:bg-accent/50 transition-colors">
+                        <div className="flex items-start space-x-3 flex-1 min-w-0">
+                          <FileText className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {doc.document_code && (
+                                <span className="text-xs font-mono text-primary">
+                                  {formatDocumentCodeWithRevision(doc.document_code, doc.revision)}
+                                </span>
+                              )}
+                              <p className="text-sm font-medium text-foreground truncate">{doc.name}</p>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge variant="outline" className={`text-xs ${STATUS_COLORS[doc.status] || ''}`}>
+                                {doc.status}
+                              </Badge>
+                              <Badge variant="outline" className={`text-xs ${CONFIDENTIALITY_COLORS[doc.confidentiality] || ''}`}>
+                                {doc.confidentiality}
+                              </Badge>
+                              <Badge variant="secondary" className="text-xs">{doc.category}</Badge>
+                              {doc.tags && doc.tags.length > 0 && doc.tags.map(t => (
+                                <Badge key={t} variant="outline" className="text-xs">{t}</Badge>
+                              ))}
+                            </div>
+                            <div className="text-xs text-muted-foreground space-y-0.5">
+                              <span>{formatFileSize(doc.file_size)} • {formatDate(doc.uploaded_at)}</span>
+                              {doc.revision_date && <span> • Rev. {formatDate(doc.revision_date)}</span>}
+                              {getContactNames(doc.drafted_by) && (
+                                <div>Redatto: {getContactNames(doc.drafted_by)}</div>
+                              )}
+                              {getContactNames(doc.reviewed_by) && (
+                                <div>Revisionato: {getContactNames(doc.reviewed_by)}</div>
+                              )}
+                              {getContactNames(doc.approved_by) && (
+                                <div>Approvato: {getContactNames(doc.approved_by)}</div>
+                              )}
+                            </div>
                           </div>
                         </div>
-                        <div className="flex items-center space-x-2 flex-shrink-0">
-                          <Badge variant="secondary" className="text-xs">
-                            {doc.category}
-                          </Badge>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => openRenameDialog(doc)}
-                            title="Rinomina"
-                          >
-                            <Edit2 className="w-4 h-4" />
+                        <div className="flex items-center space-x-1 flex-shrink-0 ml-2">
+                          <Button size="sm" variant="ghost" onClick={() => openMetadataDialog(doc)} title="Modifica Metadata">
+                            <Settings2 className="w-4 h-4" />
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => openMoveDialog(doc)}
-                            title="Sposta in altra categoria"
-                          >
-                            <FolderInput className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleDownload(doc)}
-                            title="Download"
-                          >
+                          <Button size="sm" variant="ghost" onClick={() => handleDownload(doc)} title="Download">
                             <Download className="w-4 h-4" />
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleDelete(doc.id, doc.file_path)}
-                            title="Elimina"
-                          >
+                          <Button size="sm" variant="ghost" onClick={() => handleDelete(doc.id, doc.file_path)} title="Elimina">
                             <Trash2 className="w-4 h-4 text-destructive" />
                           </Button>
                         </div>
@@ -561,73 +558,27 @@ const Documents: React.FC = () => {
         </div>
       </div>
 
-      {/* Rename Dialog */}
-      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Rinomina Documento</DialogTitle>
-            <DialogDescription>
-              Inserisci il nuovo nome per il documento
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="rename">Nuovo Nome</Label>
-              <Input
-                id="rename"
-                value={newDocumentName}
-                onChange={(e) => setNewDocumentName(e.target.value)}
-                placeholder="Nome documento"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRenameDialogOpen(false)}>
-              Annulla
-            </Button>
-            <Button onClick={handleRename}>
-              Salva
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Move Dialog */}
-      <Dialog open={moveDialogOpen} onOpenChange={setMoveDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Sposta Documento</DialogTitle>
-            <DialogDescription>
-              Seleziona la nuova categoria per il documento
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="move-category">Categoria</Label>
-              <Select value={newCategory} onValueChange={(value) => setNewCategory(value as DocumentCategory)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DOCUMENT_CATEGORIES.map((cat) => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setMoveDialogOpen(false)}>
-              Annulla
-            </Button>
-            <Button onClick={handleMove}>
-              Sposta
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Metadata Dialog */}
+      <DocumentMetadataDialog
+        open={metadataDialogOpen}
+        onOpenChange={setMetadataDialogOpen}
+        metadata={selectedDocument ? {
+          name: selectedDocument.name,
+          document_code: selectedDocument.document_code || '',
+          revision: selectedDocument.revision,
+          status: selectedDocument.status,
+          confidentiality: selectedDocument.confidentiality,
+          category: selectedDocument.category,
+          description: selectedDocument.description || '',
+          tags: selectedDocument.tags || [],
+          drafted_by: selectedDocument.drafted_by || [],
+          prepared_by: selectedDocument.prepared_by || [],
+          reviewed_by: selectedDocument.reviewed_by || [],
+          approved_by: selectedDocument.approved_by || [],
+        } : null}
+        onSave={handleSaveMetadata}
+        contacts={contacts}
+      />
     </DashboardLayout>
   );
 };
