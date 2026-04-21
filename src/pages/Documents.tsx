@@ -26,8 +26,9 @@ import {
 } from '@/components/documents/DocumentCodeGenerator';
 import {
   Download, FileText, Upload, Trash2, File, FolderOpen,
-  Settings2, Package, X
+  Settings2, Package, X, Eye
 } from 'lucide-react';
+import DocumentPreviewDialog from '@/components/documents/DocumentPreviewDialog';
 import { useNavigate } from 'react-router-dom';
 
 type DocumentCategory = Database['public']['Enums']['document_category'];
@@ -88,6 +89,15 @@ const Documents: React.FC = () => {
   // Metadata dialog
   const [metadataDialogOpen, setMetadataDialogOpen] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<ISODocument | null>(null);
+
+  // Preview dialog
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<ISODocument | null>(null);
+
+  const openPreview = (doc: ISODocument) => {
+    setPreviewDoc(doc);
+    setPreviewOpen(true);
+  };
 
   const { toast } = useToast();
   const { user } = useAuth();
@@ -538,6 +548,9 @@ const Documents: React.FC = () => {
                           </div>
                         </div>
                         <div className="flex items-center space-x-1 flex-shrink-0 ml-2">
+                          <Button size="sm" variant="ghost" onClick={() => openPreview(doc)} title="Anteprima">
+                            <Eye className="w-4 h-4" />
+                          </Button>
                           <Button size="sm" variant="ghost" onClick={() => openMetadataDialog(doc)} title="Modifica Metadata">
                             <Settings2 className="w-4 h-4" />
                           </Button>
@@ -578,6 +591,14 @@ const Documents: React.FC = () => {
         } : null}
         onSave={handleSaveMetadata}
         contacts={contacts}
+      />
+
+      <DocumentPreviewDialog
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        filePath={previewDoc?.file_path ?? null}
+        fileName={previewDoc?.name ?? ''}
+        fileType={previewDoc?.file_type ?? ''}
       />
     </DashboardLayout>
   );
