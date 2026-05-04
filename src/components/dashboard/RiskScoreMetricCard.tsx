@@ -1,26 +1,19 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 
-type TimeRange = '1d' | '7d' | '1m' | '3m' | '6m' | '1y';
-
-const TIME_OPTIONS: TimeRange[] = ['1d', '7d', '1m', '3m', '6m', '1y'];
-
-const DATA: Record<TimeRange, { percentage: number; label: string; status: 'critical' | 'warning' | 'good'; sparkline: number[] }> = {
-  '1d': { percentage: 35, label: 'Basso', status: 'good',     sparkline: [48, 42, 38, 35] },
-  '7d': { percentage: 42, label: 'Medio', status: 'warning',  sparkline: [55, 50, 46, 44, 42] },
-  '1m': { percentage: 50, label: 'Medio', status: 'warning',  sparkline: [60, 55, 52, 50] },
-  '3m': { percentage: 55, label: 'Medio', status: 'warning',  sparkline: [65, 60, 57, 56, 55] },
-  '6m': { percentage: 65, label: 'Alto',  status: 'critical',  sparkline: [75, 70, 68, 66, 65] },
-  '1y': { percentage: 74, label: 'Alto',  status: 'critical', sparkline: [80, 78, 76, 75, 74] },
+const DATA = {
+  percentage: 35,
+  label: 'Basso',
+  status: 'good' as const,
+  sparkline: [48, 42, 38, 35],
 };
 
 const CIRCUMFERENCE = 2 * Math.PI * 28;
 
 export const RiskScoreMetricCard: React.FC = () => {
-  const [selected, setSelected] = useState<TimeRange>('1d');
-  const { percentage, label, status, sparkline } = DATA[selected];
+  const { percentage, label, status, sparkline } = DATA;
 
   const strokeColor =
     status === 'good'    ? 'hsl(var(--cyber-green))'  :
@@ -46,23 +39,6 @@ export const RiskScoreMetricCard: React.FC = () => {
         <CardTitle className="text-sm font-medium text-muted-foreground mb-3">
           True Risk Score
         </CardTitle>
-
-        {/* Pill selector */}
-        <div className="flex items-center justify-center gap-1 flex-wrap">
-          {TIME_OPTIONS.map((opt) => (
-            <button
-              key={opt}
-              onClick={() => setSelected(opt)}
-              className={`px-2.5 py-0.5 rounded-full text-xs font-semibold transition-all duration-200 ${
-                selected === opt
-                  ? 'bg-primary text-primary-foreground'
-                  : 'border border-border text-muted-foreground hover:bg-muted/50'
-              }`}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
       </CardHeader>
 
       <CardContent className="pb-4">
