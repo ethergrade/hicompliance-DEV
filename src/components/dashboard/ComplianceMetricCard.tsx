@@ -1,26 +1,12 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ExternalLink } from 'lucide-react';
 
-type YearRange = '1y' | '2y' | '3y' | '4y';
+const COMPLIANCE_DATA = { percentage: 78, label: 'Buono', status: 'good' as const };
 
-const YEAR_OPTIONS: YearRange[] = ['1y', '2y', '3y', '4y'];
-
-const COMPLIANCE_DATA: Record<YearRange, { percentage: number; label: string; status: 'critical' | 'warning' | 'good' }> = {
-  '1y': { percentage: 78, label: 'Buono',    status: 'good'     },
-  '2y': { percentage: 65, label: 'Moderato', status: 'warning'  },
-  '3y': { percentage: 52, label: 'Moderato', status: 'warning'  },
-  '4y': { percentage: 38, label: 'Basso',    status: 'critical' },
-};
-
-const RISK_DATA: Record<YearRange, { percentage: number; label: string; status: 'critical' | 'warning' | 'good' }> = {
-  '1y': { percentage: 28, label: 'Basso',    status: 'good'     },
-  '2y': { percentage: 45, label: 'Moderato', status: 'warning'  },
-  '3y': { percentage: 62, label: 'Alto',     status: 'warning'  },
-  '4y': { percentage: 81, label: 'Critico',  status: 'critical' },
-};
+const RISK_DATA = { percentage: 28, label: 'Basso', status: 'good' as const };
 
 const CIRCUMFERENCE = 2 * Math.PI * 28;
 
@@ -35,10 +21,9 @@ const getBadgeClass = (status: string) =>
                          'bg-cyber-red/20 text-cyber-red';
 
 export const ComplianceMetricCard: React.FC = () => {
-  const [selected, setSelected] = useState<YearRange>('1y');
-  const compliance = COMPLIANCE_DATA[selected];
   const navigate = useNavigate();
-  const risk = RISK_DATA[selected];
+  const compliance = COMPLIANCE_DATA;
+  const risk = RISK_DATA;
 
   const renderGauge = (percentage: number, status: string) => {
     const dashArray = `${(percentage / 100) * CIRCUMFERENCE} ${CIRCUMFERENCE}`;
@@ -68,21 +53,6 @@ export const ComplianceMetricCard: React.FC = () => {
         <CardTitle className="text-sm font-medium text-muted-foreground mb-3">
           Conformità & Rischio Assessment
         </CardTitle>
-        <div className="flex items-center justify-center gap-1">
-          {YEAR_OPTIONS.map((opt) => (
-            <button
-              key={opt}
-              onClick={() => setSelected(opt)}
-              className={`px-2.5 py-0.5 rounded-full text-xs font-semibold transition-all duration-200 ${
-                selected === opt
-                  ? 'bg-primary text-primary-foreground'
-                  : 'border border-border text-muted-foreground hover:bg-muted/50'
-              }`}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
       </CardHeader>
 
       <CardContent className="pb-5">

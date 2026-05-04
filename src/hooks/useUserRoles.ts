@@ -1,28 +1,33 @@
 import { useMemo } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 
-export type AppRole = 'super_admin' | 'sales' | 'client';
+export type AppRole = 'super_admin' | 'sales' | 'admin' | 'editor' | 'viewer';
 
 export const useUserRoles = () => {
-  const { user, loading } = useAuth();
+  const { user } = useAuth();
 
   const roles = useMemo<AppRole[]>(() => {
     if (!user?.roles) return [];
-    // roles comes as comma-separated string from API (e.g. "super_admin,sales")
-    return user.roles.split(',').map(r => r.trim()).filter(Boolean) as AppRole[];
+    
+    if (Array.isArray(user.roles)) {
+      return user.roles as AppRole[];
+    } else if (typeof user.roles === 'string') {
+      return (user.roles as string).split(',').map(r => r.trim()).filter(Boolean) as AppRole[];
+    }
+    
+    return [];
   }, [user?.roles]);
 
   const hasRole = (role: AppRole) => roles.includes(role);
   const isSuperAdmin = hasRole('super_admin');
   const isSales = hasRole('sales');
-  const isClient = hasRole('client');
+  const isAdmin = hasRole('admin') || isSuperAdmin; // super_admin has all admin rights
 
   return {
     roles,
-    loading,
-    hasRole,
     isSuperAdmin,
     isSales,
-    isClient,
+    isAdmin,
+    hasRole
   };
 };
