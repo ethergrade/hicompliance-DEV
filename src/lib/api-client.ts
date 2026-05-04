@@ -1,7 +1,7 @@
 import type { ApiErrorResponse } from "@/types/api";
 
 const BASE = import.meta.env.VITE_API_BASE_URL as string;
-const API_BASE_URL = `${BASE}/api`;
+const API_BASE_URL = BASE.includes('websoupcloud') ? BASE : `${BASE}/api`;
 const CSRF_URL = `${BASE}/sanctum/csrf-cookie`;
 
 const TOKEN_KEY = import.meta.env.VITE_AUTH_TOKEN_KEY as string;
