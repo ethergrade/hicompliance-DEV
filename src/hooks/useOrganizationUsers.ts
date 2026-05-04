@@ -6,10 +6,8 @@ export type OrganizationUser = UserResource;
 
 export const useOrganizationUsers = () => {
   const { data: users = [], isLoading: loading, refetch } = useQuery({
-    queryKey: ['organization-users'],
+    queryKey: ['users'],
     queryFn: () => usersApi.list(),
   });
-
   return { users, loading, refetch };
-};
 };
