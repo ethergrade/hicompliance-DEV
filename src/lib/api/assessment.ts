@@ -5,42 +5,54 @@ import type {
   AssessmentReportData,
   AssessmentMonthlyReportData,
   UpdateAssessmentRequest,
+  UpdateGanttRequest,
 } from "@/types/api";
 
 export const assessmentApi = {
-  /** Get assessment for the authenticated tenant */
-  async get(): Promise<AssessmentData> {
+  async list(): Promise<AssessmentData[]> {
+    const res = await apiClient.get<ApiResponse<AssessmentData[]>>("/assessments");
+    return res.data;
+  },
+
+  async create(payload: Partial<UpdateAssessmentRequest>): Promise<AssessmentData> {
+    const res = await apiClient.post<ApiResponse<AssessmentData>>("/assessments", payload);
+    return res.data;
+  },
+
+  async get(id: string | number): Promise<AssessmentData> {
+    const res = await apiClient.get<ApiResponse<AssessmentData>>(`/assessments/${id}`);
+    return res.data;
+  },
+
+  async update(id: string | number, payload: UpdateAssessmentRequest): Promise<AssessmentData> {
+    const res = await apiClient.patch<ApiResponse<AssessmentData>>(`/assessments/${id}`, payload);
+    return res.data;
+  },
+
+  async updateGantt(id: string | number, payload: UpdateGanttRequest): Promise<AssessmentData> {
+    const res = await apiClient.patch<ApiResponse<AssessmentData>>(`/assessments/${id}/gantt`, payload);
+    return res.data;
+  },
+
+  async report(id: string | number): Promise<AssessmentReportData> {
+    const res = await apiClient.get<ApiResponse<AssessmentReportData>>(`/assessments/${id}/report`);
+    return res.data;
+  },
+
+  async getLegacy(): Promise<AssessmentData> {
     const res = await apiClient.get<ApiResponse<AssessmentData>>("/assessment");
     return res.data;
   },
-
-  /** Update assessment (questions, status, etc.) */
-  async update(payload: UpdateAssessmentRequest): Promise<AssessmentData> {
+  async updateLegacy(payload: UpdateAssessmentRequest): Promise<AssessmentData> {
     const res = await apiClient.patch<ApiResponse<AssessmentData>>("/assessment", payload);
     return res.data;
   },
-
-  /** Full NIS2 report for the authenticated tenant */
-  async report(): Promise<AssessmentReportData> {
+  async reportLegacy(): Promise<AssessmentReportData> {
     const res = await apiClient.get<ApiResponse<AssessmentReportData>>("/assessment/report");
     return res.data;
   },
-
-  /** Monthly report with Shodan scans */
-  async reportMonthly(): Promise<AssessmentMonthlyReportData> {
+  async reportMonthlyLegacy(): Promise<AssessmentMonthlyReportData> {
     const res = await apiClient.get<ApiResponse<AssessmentMonthlyReportData>>("/assessment/report-monthly");
-    return res.data;
-  },
-
-  /** Full report for a specific assessment ID (admin) */
-  async reportById(assessmentId: number): Promise<AssessmentReportData> {
-    const res = await apiClient.get<ApiResponse<AssessmentReportData>>(`/assessments/${assessmentId}/report`);
-    return res.data;
-  },
-
-  /** Monthly report for a specific assessment ID (admin) */
-  async reportMonthlyById(assessmentId: number): Promise<AssessmentMonthlyReportData> {
-    const res = await apiClient.get<ApiResponse<AssessmentMonthlyReportData>>(`/assessments/${assessmentId}/report-monthly`);
     return res.data;
   },
 };
