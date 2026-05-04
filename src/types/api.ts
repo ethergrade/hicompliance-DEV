@@ -183,8 +183,13 @@ export interface UpdateAssessmentRequest {
   followup_reminder?: string | null;
   presentation_date?: string | null;
   hide_gantt?: boolean;
-  custom_gantt?: string[] | null;
-  questions?: number[];
+  custom_gantt?: GanttItem[] | null;
+  questions?: Record<string, number>;
+}
+
+export interface UpdateGanttRequest {
+  custom_gantt?: GanttItem[] | null;
+  hide_gantt?: boolean;
 }
 
 export interface AssessmentData {

@@ -3,7 +3,6 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { OrganizationProfileForm } from '@/components/irp/OrganizationProfileForm';
 import { Pencil } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useClientContext } from '@/contexts/ClientContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,10 +10,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { 
-  ClipboardCheck, 
-  AlertTriangle, 
-  CheckCircle, 
+import {
+  AlertTriangle,
+  CheckCircle,
   Clock,
   FileText,
   TrendingUp,
@@ -32,25 +30,81 @@ import {
 import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
 import { NIS2_LABELS } from '@/types/organization';
 import { useUserPreferences } from '@/hooks/useUserPreferences';
-import { ASSESSMENT_CATEGORIES, AssessmentResponse, RESPONSE_LABELS, RESPONSE_COLORS, calculateCategoryScore, getRiskFromScore, CATEGORY_DESCRIPTIONS } from '@/data/assessmentQuestions';
+import { ASSESSMENT_CATEGORIES, AssessmentResponse, calculateCategoryScore, getRiskFromScore, CATEGORY_DESCRIPTIONS } from '@/data/assessmentQuestions';
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { generateAssessmentPDF } from '@/components/assessment/AssessmentReportGenerator';
 import GapAnalysisSection from '@/components/assessment/GapAnalysisSection';
 import { AssessmentRadarChart } from '@/components/assessment/AssessmentRadarChart';
+import { assessmentApi } from '@/lib/api';
 
-// Map UI response values to DB enum values and vice versa
-const UI_TO_DB_STATUS: Record<string, string> = {
-  completato: 'completed',
-  pianificato_in_corso: 'planned_in_progress',
-  non_iniziato: 'not_started',
-  non_applicabile: 'not_applicable',
+// Map UI response values to API values and vice versa
+const UI_TO_API_QUESTION_STATUS: Record<Exclude<AssessmentResponse, null>, number> = {
+  non_iniziato: 0,
+  pianificato_in_corso: 1,
+  completato: 2,
+  non_applicabile: 3,
 };
-const DB_TO_UI_STATUS: Record<string, AssessmentResponse> = {
-  completed: 'completato',
-  planned_in_progress: 'pianificato_in_corso',
-  not_started: 'non_iniziato',
-  not_applicable: 'non_applicabile',
+const API_QUESTION_STATUS_TO_UI: Record<number, AssessmentResponse> = {
+  0: 'non_iniziato',
+  1: 'pianificato_in_corso',
+  2: 'completato',
+  3: 'non_applicabile',
 };
+
+const normalizeQuestionId = (key: string) => {
+  const match = key.match(/\d+/);
+  return match ? Number(match[0]) : null;
+};
+
+const parseAssessmentQuestions = (rawQuestions: unknown): Record<number, AssessmentResponse> => {
+  if (!rawQuestions) return {};
+
+  let parsed: unknown = rawQuestions;
+  if (typeof rawQuestions === 'string') {
+    try {
+      parsed = JSON.parse(rawQuestions);
+    } catch {
+      return {};
+    }
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+
+  const responses: Record<number, AssessmentResponse> = {};
+  Object.entries(parsed as Record<string, unknown>).forEach(([key, value]) => {
+    const questionId = normalizeQuestionId(key);
+    if (questionId === null) return;
+
+    if (typeof value === 'number') {
+      responses[questionId] = API_QUESTION_STATUS_TO_UI[value] ?? null;
+      return;
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value.toLowerCase();
+      const legacyMap: Record<string, AssessmentResponse> = {
+        completed: 'completato',
+        planned_in_progress: 'pianificato_in_corso',
+        not_started: 'non_iniziato',
+        not_applicable: 'non_applicabile',
+        completato: 'completato',
+        pianificato_in_corso: 'pianificato_in_corso',
+        non_iniziato: 'non_iniziato',
+        non_applicabile: 'non_applicabile',
+      };
+      responses[questionId] = legacyMap[normalized] ?? null;
+    }
+  });
+
+  return responses;
+};
+
+const serializeAssessmentQuestions = (responses: Record<number, AssessmentResponse>) =>
+  Object.entries(responses).reduce<Record<string, number>>((acc, [questionId, value]) => {
+    if (!value) return acc;
+    acc[`q${questionId}`] = UI_TO_API_QUESTION_STATUS[value];
+    return acc;
+  }, {});
 
 
 const Assessment: React.FC = () => {
@@ -63,48 +117,18 @@ const Assessment: React.FC = () => {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
-  // Map question order_index to DB question UUID
-  const questionUuidMap = useRef<Record<number, string>>({});
+  const assessmentIdRef = useRef<string | null>(null);
   const loadedOrgRef = useRef<string | null>(null);
 
-  // Load questions UUIDs and existing responses from DB
+  // Load existing assessment responses from the API
   useEffect(() => {
     if (!orgId || !user) return;
     if (loadedOrgRef.current === orgId) return;
 
     const loadResponses = async () => {
-      // 1. Load all DB questions to build order_index -> uuid map
-      const { data: dbQuestions } = await supabase
-        .from('assessment_questions')
-        .select('id, order_index');
-      
-      if (dbQuestions) {
-        const map: Record<number, string> = {};
-        dbQuestions.forEach(q => { map[q.order_index] = q.id; });
-        questionUuidMap.current = map;
-      }
-
-      // 2. Load existing responses for this org
-      const { data: dbResponses } = await supabase
-        .from('assessment_responses')
-        .select('question_id, status')
-        .eq('organization_id', orgId);
-
-      if (dbResponses && dbQuestions) {
-        const uuidToOrder: Record<string, number> = {};
-        dbQuestions.forEach(q => { uuidToOrder[q.id] = q.order_index; });
-
-        const loaded: Record<number, AssessmentResponse> = {};
-        dbResponses.forEach(r => {
-          if (r.question_id) {
-            const orderIdx = uuidToOrder[r.question_id];
-            if (orderIdx !== undefined) {
-              loaded[orderIdx] = DB_TO_UI_STATUS[r.status] || null;
-            }
-          }
-        });
-        setResponses(loaded);
-      }
+      const assessment = await assessmentApi.getLegacy();
+      assessmentIdRef.current = assessment.id;
+      setResponses(parseAssessmentQuestions(assessment.questions));
       loadedOrgRef.current = orgId;
     };
 
@@ -120,51 +144,26 @@ const Assessment: React.FC = () => {
     });
   }, []);
 
-  // Auto-snapshot: debounced save after each response change
+  // Auto-save: debounced save after each response change
   const snapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const responsesRef = useRef(responses);
   responsesRef.current = responses;
 
-  const triggerAutoSnapshot = useCallback(() => {
+  const triggerAutoSave = useCallback(() => {
     if (!orgId || !user) return;
+    if (!assessmentIdRef.current) return;
     if (snapshotTimerRef.current) clearTimeout(snapshotTimerRef.current);
     snapshotTimerRef.current = setTimeout(async () => {
       const currentResponses = responsesRef.current;
-      // Check if at least 1 answer exists
-      const hasAnyAnswer = Object.values(currentResponses).some(v => v !== null);
-      if (!hasAnyAnswer) return;
-
-      const catData = ASSESSMENT_CATEGORIES.map(cat => {
-        const score = calculateCategoryScore(cat.questions, currentResponses);
-        let answered = 0;
-        cat.questions.forEach(q => {
-          if (currentResponses[q.id] && currentResponses[q.id] !== null) answered++;
-        });
-        return { name: cat.name, score, answered, total: cat.questions.length };
-      });
-
-      const totalAnswered = catData.reduce((a, c) => a + c.answered, 0);
-      const totalQuestions = catData.reduce((a, c) => a + c.total, 0);
-      const catsWithAnswers = catData.filter(c => c.answered > 0);
-      const overallScoreCalc = catsWithAnswers.length > 0
-        ? Math.round(catsWithAnswers.reduce((a, c) => a + c.score, 0) / catsWithAnswers.length)
-        : 0;
-
-      const currentYear = new Date().getFullYear();
       try {
-        await supabase
-          .from('assessment_snapshots')
-          .upsert({
-            organization_id: orgId,
-            snapshot_year: currentYear,
-            category_scores: catData as any,
-            overall_score: overallScoreCalc,
-            total_answered: totalAnswered,
-            total_questions: totalQuestions,
-            created_by: user.id,
-          }, { onConflict: 'organization_id,snapshot_year' });
+        await assessmentApi.updateLegacy({
+          questions: serializeAssessmentQuestions(currentResponses),
+        });
+        setSaveStatus('saved');
+        setLastSaved(new Date());
       } catch (err) {
         console.error('Auto-snapshot error:', err);
+        setSaveStatus('error');
       }
     }, 3000); // 3s debounce
   }, [orgId, user]);
@@ -172,44 +171,12 @@ const Assessment: React.FC = () => {
   const setResponse = useCallback((questionId: number, value: AssessmentResponse) => {
     setResponses(prev => ({ ...prev, [questionId]: value }));
 
-    // Persist to DB immediately
+    // Persist to API with debounce
     if (!orgId || !user) return;
-    const questionUuid = questionUuidMap.current[questionId];
-    if (!questionUuid) return;
-
     setSaveStatus('saving');
 
-    const doSave = async () => {
-      try {
-        if (value === null) {
-          const { error } = await supabase
-            .from('assessment_responses')
-            .delete()
-            .eq('question_id', questionUuid)
-            .eq('organization_id', orgId);
-          if (error) throw error;
-        } else {
-          const dbStatus = UI_TO_DB_STATUS[value] as any;
-          const { error } = await supabase
-            .from('assessment_responses')
-            .upsert({
-              question_id: questionUuid,
-              organization_id: orgId,
-              status: dbStatus,
-              last_updated_by: user.id,
-            }, { onConflict: 'question_id,organization_id' });
-          if (error) throw error;
-        }
-        setSaveStatus('saved');
-        setLastSaved(new Date());
-        // Trigger auto-snapshot
-        triggerAutoSnapshot();
-      } catch {
-        setSaveStatus('error');
-      }
-    };
-    doSave();
-  }, [orgId, user]);
+    triggerAutoSave();
+  }, [orgId, user, triggerAutoSave]);
 
   // Compute counts per category from responses
   const getCategoryCounts = useCallback((categoryName: string) => {
@@ -263,16 +230,6 @@ const Assessment: React.FC = () => {
     setSortByState(value);
     updatePreferences({ sortBy: value });
   };
-
-  // Animated states
-  const [animatedProgress, setAnimatedProgress] = useState(0);
-  const [animatedScore, setAnimatedScore] = useState(0);
-  const [animatedCompleted, setAnimatedCompleted] = useState(0);
-  const [animatedInProgress, setAnimatedInProgress] = useState(0);
-  const [animatedNotStarted, setAnimatedNotStarted] = useState(0);
-  const [animatedCategoryProgress, setAnimatedCategoryProgress] = useState<number[]>([]);
-  const [animatedCategoryScores, setAnimatedCategoryScores] = useState<number[]>([]);
-  const [animationsStarted, setAnimationsStarted] = useState(false);
 
   const getNIS2Badge = () => {
     if (!orgProfile.nis2_classification) return null;
@@ -349,21 +306,6 @@ const Assessment: React.FC = () => {
       return 0;
     });
 
-  const getRiskLevel = (score: number) => {
-    if (score >= 71) return { level: 'Basso', color: 'text-green-500' };
-    if (score >= 41) return { level: 'Medio', color: 'text-yellow-500' };
-    return { level: 'Alto', color: 'text-red-500' };
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed': return 'text-green-500';
-      case 'in_progress': return 'text-yellow-500';
-      case 'not_started': return 'text-gray-500';
-      default: return 'text-gray-500';
-    }
-  };
-
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'completed': return 'default';
@@ -405,87 +347,6 @@ const Assessment: React.FC = () => {
   const overallRisk = useMemo(() => getRiskFromScore(overallScore), [overallScore]);
 
   const completedAreas = useMemo(() => assessmentCategories.filter(c => c.status === 'completed').length, [assessmentCategories]);
-
-  // Animation function
-  const animateValue = (
-    startValue: number,
-    endValue: number,
-    setter: React.Dispatch<React.SetStateAction<number>>,
-    duration: number = 2000
-  ) => {
-    const startTime = Date.now();
-    const animate = () => {
-      const currentTime = Date.now();
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      
-      // Easing function for smooth animation
-      const easeOutQuart = 1 - Math.pow(1 - progress, 4);
-      const currentValue = Math.round(startValue + (endValue - startValue) * easeOutQuart);
-      
-      setter(currentValue);
-      
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      }
-    };
-    requestAnimationFrame(animate);
-  };
-
-  // Animation for arrays
-  const animateArray = (
-    endValues: number[],
-    setter: React.Dispatch<React.SetStateAction<number[]>>,
-    duration: number = 2000
-  ) => {
-    const startTime = Date.now();
-    const startValues = new Array(endValues.length).fill(0);
-    
-    const animate = () => {
-      const currentTime = Date.now();
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      
-      const easeOutQuart = 1 - Math.pow(1 - progress, 4);
-      const currentValues = endValues.map((endValue, index) => 
-        Math.round(startValues[index] + (endValue - startValues[index]) * easeOutQuart)
-      );
-      
-      setter(currentValues);
-      
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      }
-    };
-    requestAnimationFrame(animate);
-  };
-
-  // Start animations on component mount - only once
-  useEffect(() => {
-    // Prevent animations from running multiple times
-    if (animationsStarted) return;
-
-    const timer = setTimeout(() => {
-      setAnimationsStarted(true);
-      
-      // Animate main metrics
-      animateValue(0, overallProgress, setAnimatedProgress, 2000);
-      animateValue(0, overallScore, setAnimatedScore, 2200);
-      animateValue(0, assessmentCategories.filter(c => c.status === 'completed').length, setAnimatedCompleted, 1800);
-      animateValue(0, assessmentCategories.filter(c => c.status === 'in_progress').length, setAnimatedInProgress, 2100);
-      animateValue(0, assessmentCategories.filter(c => c.status === 'not_started').length, setAnimatedNotStarted, 1900);
-      
-      // Animate category progress bars
-      const categoryProgressValues = assessmentCategories.map(cat => (cat.completed / cat.questions) * 100);
-      animateArray(categoryProgressValues, setAnimatedCategoryProgress, 2500);
-      
-      // Animate category scores
-      const categoryScoreValues = assessmentCategories.map(cat => cat.score);
-      animateArray(categoryScoreValues, setAnimatedCategoryScores, 2300);
-    }, 300); // Small delay before starting animations
-
-    return () => clearTimeout(timer);
-  }, []); // Empty dependency array ensures this runs only once
 
   return (
     <DashboardLayout>
@@ -850,8 +711,7 @@ const Assessment: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {filteredAndSortedCategories.map((category, index) => {
-                const originalIndex = assessmentCategories.findIndex(c => c.name === category.name);
+              {filteredAndSortedCategories.map((category) => {
                 const isExpanded = expandedCategories.has(category.name);
                 const catData = ASSESSMENT_CATEGORIES.find(c => c.name === category.name);
                 const counts = category.counts;
@@ -888,7 +748,7 @@ const Assessment: React.FC = () => {
                           </p>
                           <div className="mt-2 flex items-center gap-4">
                             <Progress 
-                              value={animatedCategoryProgress[originalIndex] || 0} 
+                              value={(category.completed / category.questions) * 100} 
                               className="h-1.5 w-48" 
                             />
                             <div className="flex items-center gap-2 text-xs">
