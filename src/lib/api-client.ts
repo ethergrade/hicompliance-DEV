@@ -23,10 +23,13 @@ export function clearToken(): void {
 // ─── CSRF ───────────────────────────────────────────────────────────────────
 
 export async function fetchCsrfCookie(): Promise<void> {
-  await fetch(CSRF_URL, {
-    method: "GET",
-    credentials: "include",
-  });
+  try {
+    await fetch(CSRF_URL, {
+      method: "GET",
+    });
+  } catch (e) {
+    console.warn("Failed to fetch CSRF cookie, proceeding without it.", e);
+  }
 }
 
 // ─── API Error ──────────────────────────────────────────────────────────────
@@ -87,10 +90,8 @@ async function request<T>(
     method,
     headers: reqHeaders,
     body: body !== undefined ? JSON.stringify(body) : undefined,
-    credentials: "include",
   });
 
-  // 204 No Content
   if (response.status === 204) {
     return undefined as T;
   }
