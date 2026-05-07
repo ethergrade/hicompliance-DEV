@@ -106,6 +106,37 @@ const serializeAssessmentQuestions = (responses: Record<number, AssessmentRespon
     return acc;
   }, {});
 
+const answerOptions = [
+  {
+    value: 'non_iniziato',
+    label: 'Non iniziato',
+    description: 'Attività non ancora avviata',
+    activeClass: 'bg-red-500 text-white border-red-600',
+    dotClass: 'bg-red-500',
+  },
+  {
+    value: 'pianificato_in_corso',
+    label: 'Pianificato/In corso',
+    description: 'Attività pianificata o in lavorazione',
+    activeClass: 'bg-yellow-500 text-white border-yellow-600',
+    dotClass: 'bg-yellow-500',
+  },
+  {
+    value: 'completato',
+    label: 'Completato',
+    description: 'Controllo implementato e operativo',
+    activeClass: 'bg-green-500 text-white border-green-600',
+    dotClass: 'bg-green-500',
+  },
+  {
+    value: 'non_applicabile',
+    label: 'Non applicabile',
+    description: 'Controllo non pertinente al contesto',
+    activeClass: 'bg-muted-foreground/60 text-white border-muted-foreground/60',
+    dotClass: 'bg-muted-foreground/60',
+  },
+] as const;
+
 
 const Assessment: React.FC = () => {
   const { user } = useAuth();
@@ -115,10 +146,12 @@ const Assessment: React.FC = () => {
   // Question responses state: { [questionId]: response }
   const [responses, setResponses] = useState<Record<number, AssessmentResponse>>({});
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [guidedCategoryIndex, setGuidedCategoryIndex] = useState(0);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const assessmentIdRef = useRef<string | null>(null);
   const loadedOrgRef = useRef<string | null>(null);
+  const guidedOrgRef = useRef<string | null>(null);
 
   // Load existing assessment responses from the API
   useEffect(() => {
@@ -134,15 +167,6 @@ const Assessment: React.FC = () => {
 
     loadResponses();
   }, [orgId, user]);
-
-  const toggleCategory = useCallback((name: string) => {
-    setExpandedCategories(prev => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  }, []);
 
   // Auto-save: debounced save after each response change
   const snapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -347,6 +371,82 @@ const Assessment: React.FC = () => {
   const overallRisk = useMemo(() => getRiskFromScore(overallScore), [overallScore]);
 
   const completedAreas = useMemo(() => assessmentCategories.filter(c => c.status === 'completed').length, [assessmentCategories]);
+
+  const firstIncompleteCategoryIndex = useMemo(() => {
+    const index = assessmentCategories.findIndex(category => category.completed < category.questions);
+    return index === -1 ? Math.max(assessmentCategories.length - 1, 0) : index;
+  }, [assessmentCategories]);
+
+  const activeGuidedCategory = assessmentCategories[guidedCategoryIndex] ?? assessmentCategories[firstIncompleteCategoryIndex];
+
+  const persistGuidedCategoryIndex = useCallback((index: number) => {
+    if (!orgId) return;
+    localStorage.setItem(`assessment_guided_category_${orgId}`, String(index));
+  }, [orgId]);
+
+  const selectGuidedCategory = useCallback((index: number) => {
+    const category = assessmentCategories[index];
+    if (!category) return;
+
+    setGuidedCategoryIndex(index);
+    persistGuidedCategoryIndex(index);
+    setExpandedCategories(new Set([category.name]));
+  }, [assessmentCategories, persistGuidedCategoryIndex]);
+
+  useEffect(() => {
+    if (!orgId || assessmentCategories.length === 0) return;
+    if (guidedOrgRef.current === orgId) return;
+
+    const storedIndex = Number(localStorage.getItem(`assessment_guided_category_${orgId}`));
+    const initialIndex = Number.isInteger(storedIndex) && storedIndex >= 0 && storedIndex < assessmentCategories.length
+      ? storedIndex
+      : firstIncompleteCategoryIndex;
+    const initialCategory = assessmentCategories[initialIndex];
+
+    if (!initialCategory) return;
+
+    guidedOrgRef.current = orgId;
+    setGuidedCategoryIndex(initialIndex);
+    setExpandedCategories(new Set([initialCategory.name]));
+  }, [orgId, assessmentCategories, firstIncompleteCategoryIndex]);
+
+  const toggleCategory = useCallback((name: string) => {
+    const index = assessmentCategories.findIndex(category => category.name === name);
+    if (index === -1) return;
+    selectGuidedCategory(index);
+  }, [assessmentCategories, selectGuidedCategory]);
+
+  const answeredQuestions = useMemo(
+    () => assessmentCategories.reduce((acc, cat) => acc + cat.completed, 0),
+    [assessmentCategories]
+  );
+
+  const totalQuestions = useMemo(
+    () => assessmentCategories.reduce((acc, cat) => acc + cat.questions, 0),
+    [assessmentCategories]
+  );
+
+  const resumeMessage = useMemo(() => {
+    if (answeredQuestions === 0) {
+      return 'Inizia rispondendo alle domande: il salvataggio automatico conserverà i progressi.';
+    }
+
+    const progressText = `${answeredQuestions}/${totalQuestions} risposte salvate`;
+    if (!lastSaved) return `${progressText}. Puoi continuare da dove hai lasciato.`;
+
+    return `${progressText}. Ultimo salvataggio ${lastSaved.toLocaleTimeString('it-IT', {
+      hour: '2-digit',
+      minute: '2-digit',
+    })}.`;
+  }, [answeredQuestions, totalQuestions, lastSaved]);
+
+  const continueToNextCategory = useCallback((categoryName: string) => {
+    const currentIndex = assessmentCategories.findIndex(category => category.name === categoryName);
+    const nextIndex = currentIndex + 1;
+    if (currentIndex === -1 || nextIndex >= assessmentCategories.length) return;
+
+    selectGuidedCategory(nextIndex);
+  }, [assessmentCategories, selectGuidedCategory]);
 
   return (
     <DashboardLayout>
@@ -648,29 +748,29 @@ const Assessment: React.FC = () => {
         <Card className="border-border">
           <CardHeader>
             <div className="flex items-center justify-between flex-wrap gap-3">
-              <CardTitle>Categorie Assessment</CardTitle>
+              <div>
+                <CardTitle>Categorie Assessment</CardTitle>
+                <p className="text-sm text-muted-foreground mt-1">{resumeMessage}</p>
+              </div>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1">
                   <Button
                     variant="outline"
                     size="sm"
                     className="h-8 text-xs"
-                    onClick={() => {
-                      const allNames = new Set(filteredAndSortedCategories.map(c => c.name));
-                      setExpandedCategories(allNames);
-                    }}
+                    onClick={() => selectGuidedCategory(guidedCategoryIndex)}
                   >
                     <ChevronDown className="w-3.5 h-3.5 mr-1" />
-                    Espandi tutto
+                    Riprendi
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
                     className="h-8 text-xs"
-                    onClick={() => setExpandedCategories(new Set())}
+                    onClick={() => selectGuidedCategory(firstIncompleteCategoryIndex)}
                   >
                     <ChevronRight className="w-3.5 h-3.5 mr-1" />
-                    Comprimi tutto
+                    Prima incompleta
                   </Button>
                 </div>
                 <div className="flex items-center gap-2">
@@ -710,14 +810,44 @@ const Assessment: React.FC = () => {
             )}
           </CardHeader>
           <CardContent>
+            <div className="mb-4 grid gap-3 lg:grid-cols-[1fr_auto]">
+              <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+                <p className="text-sm font-medium text-foreground">Come rispondere</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  {answerOptions.map(option => (
+                    <div key={option.value} className="flex items-start gap-2 text-xs text-muted-foreground">
+                      <span className={`mt-1 h-2.5 w-2.5 rounded-full ${option.dotClass}`} />
+                      <div>
+                        <span className="font-medium text-foreground">{option.label}</span>
+                        <p>{option.description}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm lg:max-w-xs">
+                <p className="font-medium text-foreground">Hai domande o dubbi sulla compilazione?</p>
+                <a href="mailto:support@hisolution.it?subject=Supporto%20Assessment%20HiCompliance" className="mt-1 inline-flex text-primary hover:underline">
+                  Clicca e sarai ricontattato!
+                </a>
+              </div>
+            </div>
             <div className="space-y-3">
               {filteredAndSortedCategories.map((category) => {
                 const isExpanded = expandedCategories.has(category.name);
                 const catData = ASSESSMENT_CATEGORIES.find(c => c.name === category.name);
                 const counts = category.counts;
+                const canonicalIndex = assessmentCategories.findIndex(item => item.name === category.name);
+                const isActiveGuidedCategory = activeGuidedCategory?.name === category.name;
+                const hasNextGuidedCategory = canonicalIndex >= 0 && canonicalIndex < assessmentCategories.length - 1;
 
                 return (
-                  <div key={category.name} className="rounded-lg border border-border bg-card overflow-hidden">
+                  <div
+                    key={category.name}
+                    className={`rounded-lg border bg-card overflow-hidden transition-colors ${
+                      isActiveGuidedCategory ? 'border-primary/60 ring-1 ring-primary/20' : 'border-border'
+                    }`}
+                  >
                     {/* Category header - clickable */}
                     <div 
                       className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors cursor-pointer"
@@ -730,6 +860,9 @@ const Assessment: React.FC = () => {
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
                             <h4 className="font-medium">{category.name}</h4>
+                            {isActiveGuidedCategory && (
+                              <Badge variant="secondary" className="text-[10px]">Categoria attiva</Badge>
+                            )}
                             {CATEGORY_DESCRIPTIONS[category.name] && (
                               <TooltipProvider>
                                 <UITooltip>
@@ -814,12 +947,7 @@ const Assessment: React.FC = () => {
                                   )}
                                 </div>
                                 <div className="flex items-center gap-1.5">
-                                  {([
-                                    { value: 'completato', label: 'Completato', activeClass: 'bg-green-500 text-white border-green-600' },
-                                    { value: 'pianificato_in_corso', label: 'Pianificato', activeClass: 'bg-yellow-500 text-white border-yellow-600' },
-                                    { value: 'non_iniziato', label: 'Non iniziato', activeClass: 'bg-red-500 text-white border-red-600' },
-                                    { value: 'non_applicabile', label: 'N/A', activeClass: 'bg-muted-foreground/60 text-white border-muted-foreground/60' },
-                                  ] as const).map(opt => {
+                                  {answerOptions.map(opt => {
                                     const isActive = currentResponse === opt.value;
                                     return (
                                       <button
@@ -839,6 +967,18 @@ const Assessment: React.FC = () => {
                               </div>
                             );
                           })}
+                        </div>
+                        <div className="flex items-center justify-between gap-3 border-t border-border bg-card px-5 py-3">
+                          <p className="text-xs text-muted-foreground">Le risposte vengono salvate automaticamente: puoi uscire e riprendere più tardi.</p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!hasNextGuidedCategory}
+                            onClick={() => continueToNextCategory(category.name)}
+                          >
+                            Continua
+                            <ChevronRight className="ml-1 h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
                     )}
