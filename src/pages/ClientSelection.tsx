@@ -8,12 +8,9 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, Building2, Calendar, ArrowRight, Users, FileText, Server, Plug, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Search, Building2, Calendar, ArrowRight, Users, Plus, Pencil, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
-import ClientProfileSheet from '@/components/clients/ClientProfileSheet';
-import ClientAssetSheet from '@/components/clients/ClientAssetSheet';
-import ClientServicesDialog from '@/components/clients/ClientServicesDialog';
 import ClientCrudDialog from '@/components/clients/ClientCrudDialog';
 import DeleteClientDialog from '@/components/clients/DeleteClientDialog';
 
@@ -22,11 +19,6 @@ const ClientSelection: React.FC = () => {
   const { organizations, setSelectedOrganization, isLoadingClients, selectedOrganization, fetchOrganizations } = useClientContext();
   const { isSuperAdmin } = useUserRoles();
   const [searchQuery, setSearchQuery] = useState('');
-  const [editingOrgId, setEditingOrgId] = useState<string | null>(null);
-  const [editingOrgName, setEditingOrgName] = useState<string>('');
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [assetOpen, setAssetOpen] = useState(false);
-  const [servicesOpen, setServicesOpen] = useState(false);
 
   // CRUD state
   const [crudOpen, setCrudOpen] = useState(false);
@@ -43,27 +35,6 @@ const ClientSelection: React.FC = () => {
   const handleSelectClient = (org: typeof organizations[0]) => {
     setSelectedOrganization(org);
     navigate('/dashboard');
-  };
-
-  const openProfile = (e: React.MouseEvent, org: typeof organizations[0]) => {
-    e.stopPropagation();
-    setEditingOrgId(org.id);
-    setEditingOrgName(org.name);
-    setProfileOpen(true);
-  };
-
-  const openAsset = (e: React.MouseEvent, org: typeof organizations[0]) => {
-    e.stopPropagation();
-    setEditingOrgId(org.id);
-    setEditingOrgName(org.name);
-    setAssetOpen(true);
-  };
-
-  const openServices = (e: React.MouseEvent, org: typeof organizations[0]) => {
-    e.stopPropagation();
-    setEditingOrgId(org.id);
-    setEditingOrgName(org.name);
-    setServicesOpen(true);
   };
 
   const openCreate = () => {
@@ -208,22 +179,6 @@ const ClientSelection: React.FC = () => {
                     <span>Creato il {format(new Date(org.created_at), 'd MMMM yyyy', { locale: it })}</span>
                   </div>
 
-                  {/* Quick edit buttons */}
-                  <div className="flex gap-2 mb-3">
-                    <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={(e) => openProfile(e, org)}>
-                      <FileText className="w-3.5 h-3.5 mr-1" />
-                      Anagrafica
-                    </Button>
-                    <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={(e) => openAsset(e, org)}>
-                      <Server className="w-3.5 h-3.5 mr-1" />
-                      Consistenze
-                    </Button>
-                    <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={(e) => openServices(e, org)}>
-                      <Plug className="w-3.5 h-3.5 mr-1" />
-                      Servizi
-                    </Button>
-                  </div>
-
                   <Button variant="ghost" className="w-full group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
                     <span>Gestisci</span>
                     <ArrowRight className="w-4 h-4 ml-2" />
@@ -234,13 +189,6 @@ const ClientSelection: React.FC = () => {
           </div>
         )}
       </div>
-
-      {/* Sheets */}
-      <ClientProfileSheet organizationId={editingOrgId} organizationName={editingOrgName} open={profileOpen} onOpenChange={setProfileOpen} />
-      <ClientAssetSheet organizationId={editingOrgId} organizationName={editingOrgName} open={assetOpen} onOpenChange={setAssetOpen} />
-      {editingOrgId && (
-        <ClientServicesDialog organizationId={editingOrgId} organizationName={editingOrgName} open={servicesOpen} onOpenChange={setServicesOpen} />
-      )}
 
       {/* CRUD Dialogs */}
       <ClientCrudDialog open={crudOpen} onOpenChange={setCrudOpen} organization={crudOrg} onSaved={fetchOrganizations} />

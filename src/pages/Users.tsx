@@ -1,122 +1,103 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { supabase } from "@/integrations/supabase/client";
-import { useForm } from "react-hook-form";
 import { useToast } from "@/hooks/use-toast";
+import { configApi, tenantsApi, usersApi } from "@/lib/api";
+import type { TenantResource, UserResource } from "@/types/api";
 import { User, Plus, Edit, Trash2, UserCheck, UserX } from "lucide-react";
-
-interface UserData {
-  id: string;
-  email: string;
-  full_name: string;
-  user_type: 'admin' | 'client';
-  organization_id: string | null;
-  created_at: string;
-  organizations?: {
-    name: string;
-    code: string;
-  };
-}
-
-interface Organization {
-  id: string;
-  name: string;
-  code: string;
-}
 
 interface UserFormData {
   email: string;
-  full_name: string;
-  user_type: 'admin' | 'client';
-  organization_id: string;
+  name: string;
+  role: string;
   password: string;
 }
 
+const fallbackRoles = ["admin", "editor", "viewer"];
+
+const getPrimaryRole = (user: UserResource) => user.roles?.[0] ?? "viewer";
+
+const getRoleLabel = (role: string) => {
+  const labels: Record<string, string> = {
+    superadmin: "Super Admin",
+    admin: "Amministratore",
+    manager: "Manager",
+    sales: "Sales",
+    editor: "Editor",
+    viewer: "Viewer",
+  };
+
+  return labels[role] ?? role;
+};
+
+const getRoleVariant = (role: string): "default" | "destructive" | "secondary" | "outline" => {
+  if (role === "superadmin" || role === "admin") return "destructive";
+  if (role === "manager" || role === "sales" || role === "editor") return "secondary";
+  return "default";
+};
+
+const getErrorMessage = (error: unknown) => {
+  if (error instanceof Error) return error.message;
+  return "Operazione non riuscita";
+};
+
 const Users = () => {
-  const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
+  const [selectedUser, setSelectedUser] = useState<UserResource | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [userToDelete, setUserToDelete] = useState<UserData | null>(null);
+  const [userToDelete, setUserToDelete] = useState<UserResource | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const form = useForm<UserFormData>({
     defaultValues: {
       email: "",
-      full_name: "",
-      user_type: "client",
-      organization_id: "none",
+      name: "",
+      role: "viewer",
       password: "",
     },
   });
 
-  // Fetch users
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["users"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("users")
-        .select(`
-          *,
-          organizations(name, code)
-        `)
-        .order("created_at", { ascending: false });
-      
-      if (error) throw error;
-      return data as UserData[];
-    },
+    queryFn: usersApi.list,
   });
 
-  // Fetch organizations
-  const { data: organizations = [] } = useQuery({
-    queryKey: ["organizations"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("organizations")
-        .select("*")
-        .order("name");
-      
-      if (error) throw error;
-      return data as Organization[];
-    },
+  const { data: tenants = [] } = useQuery({
+    queryKey: ["tenants"],
+    queryFn: tenantsApi.listAll,
   });
 
-  // Create user mutation
+  const { data: roles = [] } = useQuery({
+    queryKey: ["config", "roles"],
+    queryFn: configApi.roles,
+  });
+
+  const roleOptions = roles.length > 0 ? roles : fallbackRoles;
+
+  const getTenantName = (tenantId: string | null) => {
+    if (!tenantId) return "Nessuna";
+    const tenant = tenants.find((item: TenantResource) => item.id === tenantId);
+    return tenant?.name ?? tenantId;
+  };
+
   const createUserMutation = useMutation({
-    mutationFn: async (data: UserFormData) => {
-      // First create the auth user
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-        email: data.email,
-        password: data.password,
-        email_confirm: true,
-      });
-
-      if (authError) throw authError;
-
-      // Then create the user profile
-      const { error: profileError } = await supabase
-        .from("users")
-        .insert({
-          auth_user_id: authData.user.id,
-          email: data.email,
-          full_name: data.full_name,
-          user_type: data.user_type,
-           organization_id: data.organization_id === "none" ? null : data.organization_id,
-        });
-
-      if (profileError) throw profileError;
-    },
+    mutationFn: (data: UserFormData) => usersApi.create({
+      name: data.name,
+      email: data.email,
+      password: data.password,
+      role: data.role,
+    }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       setIsDialogOpen(false);
@@ -130,28 +111,21 @@ const Users = () => {
     onError: (error) => {
       toast({
         title: "Errore",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive",
       });
     },
   });
 
-  // Update user mutation
   const updateUserMutation = useMutation({
-    mutationFn: async (data: UserFormData) => {
+    mutationFn: (data: UserFormData) => {
       if (!selectedUser) throw new Error("Nessun utente selezionato");
 
-      const { error } = await supabase
-        .from("users")
-        .update({
-          email: data.email,
-          full_name: data.full_name,
-          user_type: data.user_type,
-          organization_id: data.organization_id === "none" ? null : data.organization_id,
-        })
-        .eq("id", selectedUser.id);
-
-      if (error) throw error;
+      return usersApi.update(selectedUser.id, {
+        name: data.name,
+        email: data.email,
+        role: data.role,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
@@ -166,22 +140,14 @@ const Users = () => {
     onError: (error) => {
       toast({
         title: "Errore",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive",
       });
     },
   });
 
-  // Delete user mutation
   const deleteUserMutation = useMutation({
-    mutationFn: async (userId: string) => {
-      const { error } = await supabase
-        .from("users")
-        .delete()
-        .eq("id", userId);
-
-      if (error) throw error;
-    },
+    mutationFn: (userId: number) => usersApi.delete(userId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       setIsDeleteDialogOpen(false);
@@ -194,36 +160,34 @@ const Users = () => {
     onError: (error) => {
       toast({
         title: "Errore",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive",
       });
     },
   });
 
-  const openDialog = (user?: UserData) => {
+  const openDialog = (user?: UserResource) => {
     if (user) {
       setSelectedUser(user);
       form.reset({
         email: user.email,
-        full_name: user.full_name,
-        user_type: user.user_type,
-        organization_id: user.organization_id || "none",
-        password: "", // Password not editable for existing users
+        name: user.name,
+        role: getPrimaryRole(user),
+        password: "",
       });
     } else {
       setSelectedUser(null);
       form.reset({
         email: "",
-        full_name: "",
-        user_type: "client",
-        organization_id: "none",
+        name: "",
+        role: roleOptions[0] ?? "viewer",
         password: "",
       });
     }
     setIsDialogOpen(true);
   };
 
-  const openDeleteDialog = (user: UserData) => {
+  const openDeleteDialog = (user: UserResource) => {
     setUserToDelete(user);
     setIsDeleteDialogOpen(true);
   };
@@ -234,10 +198,6 @@ const Users = () => {
     } else {
       createUserMutation.mutate(data);
     }
-  };
-
-  const getRoleVariant = (userType: string) => {
-    return userType === 'admin' ? 'destructive' : 'default';
   };
 
   return (
@@ -263,8 +223,8 @@ const Users = () => {
                   {selectedUser ? "Modifica Utente" : "Nuovo Utente"}
                 </DialogTitle>
                 <DialogDescription>
-                  {selectedUser 
-                    ? "Modifica i dettagli dell'utente e i suoi privilegi" 
+                  {selectedUser
+                    ? "Modifica i dettagli dell'utente e i suoi privilegi"
                     : "Crea un nuovo utente e assegna i suoi privilegi"
                   }
                 </DialogDescription>
@@ -273,7 +233,7 @@ const Users = () => {
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                   <FormField
                     control={form.control}
-                    name="full_name"
+                    name="name"
                     rules={{ required: "Nome completo è richiesto" }}
                     render={({ field }) => (
                       <FormItem>
@@ -288,7 +248,7 @@ const Users = () => {
                   <FormField
                     control={form.control}
                     name="email"
-                    rules={{ 
+                    rules={{
                       required: "Email è richiesta",
                       pattern: {
                         value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
@@ -309,7 +269,7 @@ const Users = () => {
                     <FormField
                       control={form.control}
                       name="password"
-                      rules={{ 
+                      rules={{
                         required: "Password è richiesta",
                         minLength: {
                           value: 6,
@@ -329,42 +289,20 @@ const Users = () => {
                   )}
                   <FormField
                     control={form.control}
-                    name="user_type"
+                    name="role"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Ruolo</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Seleziona un ruolo" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="client">Cliente</SelectItem>
-                            <SelectItem value="admin">Amministratore</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="organization_id"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Organizzazione</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Seleziona un'organizzazione" />
-                            </SelectTrigger>
-                          </FormControl>
-                           <SelectContent>
-                            <SelectItem value="none">Nessuna organizzazione</SelectItem>
-                            {organizations.map((org) => (
-                              <SelectItem key={org.id} value={org.id}>
-                                {org.name} ({org.code})
+                            {roleOptions.map((role) => (
+                              <SelectItem key={role} value={role}>
+                                {getRoleLabel(role)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -373,13 +311,16 @@ const Users = () => {
                       </FormItem>
                     )}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Il tenant dell'utente è gestito dal backend multitenant e viene mostrato nella tabella quando disponibile.
+                  </p>
                   <DialogFooter>
-                    <Button 
-                      type="submit" 
+                    <Button
+                      type="submit"
                       disabled={createUserMutation.isPending || updateUserMutation.isPending}
                     >
-                      {createUserMutation.isPending || updateUserMutation.isPending 
-                        ? "Salvando..." 
+                      {createUserMutation.isPending || updateUserMutation.isPending
+                        ? "Salvando..."
                         : selectedUser ? "Aggiorna" : "Crea"
                       }
                     </Button>
@@ -397,7 +338,7 @@ const Users = () => {
               Utenti del Sistema
             </CardTitle>
             <CardDescription>
-              Lista completa degli utenti con i loro ruoli e organizzazioni
+              Lista completa degli utenti con i loro ruoli e tenant
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -424,79 +365,81 @@ const Users = () => {
                     <TableHead>Nome</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Ruolo</TableHead>
-                    <TableHead>Organizzazione</TableHead>
+                    <TableHead>Tenant</TableHead>
                     <TableHead>Data Creazione</TableHead>
                     <TableHead className="text-right">Azioni</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users.map((user) => (
-                    <TableRow key={user.id}>
-                      <TableCell className="font-medium">{user.full_name}</TableCell>
-                      <TableCell>{user.email}</TableCell>
-                      <TableCell>
-                        <Badge variant={getRoleVariant(user.user_type)}>
-                          {user.user_type === 'admin' ? (
-                            <>
-                              <UserCheck className="w-3 h-3 mr-1" />
-                              Amministratore
-                            </>
-                          ) : (
-                            <>
-                              <UserX className="w-3 h-3 mr-1" />
-                              Cliente
-                            </>
-                          )}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {user.organizations?.name || 'Nessuna'}
-                      </TableCell>
-                      <TableCell>
-                        {new Date(user.created_at).toLocaleDateString('it-IT')}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openDialog(user)}
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => openDeleteDialog(user)}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Elimina Utente</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Sei sicuro di voler eliminare l'utente <strong>{userToDelete?.full_name}</strong>? 
-                                  Questa azione non può essere annullata.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Annulla</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => userToDelete && deleteUserMutation.mutate(userToDelete.id)}
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  {users.map((user) => {
+                    const role = getPrimaryRole(user);
+
+                    return (
+                      <TableRow key={user.id}>
+                        <TableCell className="font-medium">{user.name}</TableCell>
+                        <TableCell>{user.email}</TableCell>
+                        <TableCell>
+                          <Badge variant={getRoleVariant(role)}>
+                            {role === "superadmin" || role === "admin" ? (
+                              <>
+                                <UserCheck className="w-3 h-3 mr-1" />
+                                {getRoleLabel(role)}
+                              </>
+                            ) : (
+                              <>
+                                <UserX className="w-3 h-3 mr-1" />
+                                {getRoleLabel(role)}
+                              </>
+                            )}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{getTenantName(user.tenant_id)}</TableCell>
+                        <TableCell>
+                          {new Date(user.created_at).toLocaleDateString("it-IT")}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openDialog(user)}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => openDeleteDialog(user)}
                                 >
-                                  Elimina
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Elimina Utente</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Sei sicuro di voler eliminare l'utente <strong>{userToDelete?.name}</strong>?
+                                    Questa azione non può essere annullata.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Annulla</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => userToDelete && deleteUserMutation.mutate(userToDelete.id)}
+                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  >
+                                    Elimina
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}
