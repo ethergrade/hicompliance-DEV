@@ -18,21 +18,8 @@ const Reports: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState('all');
   const { data: correlationReports = [], isLoading: loadingCorr, deleteReport } = useCorrelationReports();
 
-  const assessmentReports = [
-    { id: 1, title: 'Assessment NIS2/NIST/ISO Completo 2025', description: 'Report completo di conformità e gap analysis', year: '2025', date: '2025-01-15', type: 'Assessment', format: 'PDF', size: '2.4 MB', status: 'completed' },
-    { id: 2, title: 'Assessment Parziale Q4 2024', description: 'Report trimestrale quarto trimestre 2024', year: '2024', date: '2024-12-31', type: 'Assessment', format: 'PDF', size: '1.8 MB', status: 'completed' },
-    { id: 3, title: 'Assessment Completo 2024', description: 'Report annuale completo di conformità 2024', year: '2024', date: '2024-12-15', type: 'Assessment', format: 'PDF', size: '3.1 MB', status: 'completed' },
-    { id: 4, title: 'Remediation Plan 2024', description: 'Piano di remediation per gap identificati 2024', year: '2024', date: '2024-11-20', type: 'Remediation', format: 'PDF', size: '1.5 MB', status: 'completed' },
-  ];
-
-  const platformReports = [
-    { id: 5, title: 'Report Minacce Identificate 2025', description: 'Analisi delle minacce rilevate dalla piattaforma', year: '2025', date: '2025-01-10', type: 'Threats', format: 'PDF', size: '1.2 MB', status: 'completed' },
-    { id: 6, title: 'SurfaceScan360 Report Annuale 2024', description: 'Report completo scansioni superficie attacco', year: '2024', date: '2024-12-28', type: 'SurfaceScan', format: 'PDF', size: '4.2 MB', status: 'completed' },
-    { id: 7, title: 'DarkRisk360 Intelligence Report 2024', description: 'Intelligence su attività dark web e mercati illegali', year: '2024', date: '2024-12-20', type: 'DarkRisk', format: 'PDF', size: '2.8 MB', status: 'completed' },
-    { id: 8, title: 'Analytics Dashboard Export Q4 2024', description: 'Export dati analytics e metriche prestazioni', year: '2024', date: '2024-12-31', type: 'Analytics', format: 'XLSX', size: '856 KB', status: 'completed' },
-    { id: 9, title: 'Incident Response Summary 2024', description: 'Riepilogo incidenti gestiti e risposte implementate', year: '2024', date: '2024-12-25', type: 'Incident', format: 'PDF', size: '1.7 MB', status: 'completed' },
-    { id: 10, title: 'Executive Summary 2024', description: 'Report esecutivo con KPI e metriche chiave', year: '2024', date: '2024-12-30', type: 'Executive', format: 'PDF', size: '982 KB', status: 'completed' },
-  ];
+  const assessmentReports: any[] = [];
+  const platformReports: any[] = [];
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -236,9 +223,13 @@ const Reports: React.FC = () => {
             <Card className="border-border">
               <CardHeader><CardTitle className="flex items-center"><FileText className="w-5 h-5 mr-2 text-primary" />Report Assessment e Conformità</CardTitle></CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {filterReports(assessmentReports).map(report => renderReportRow(report, () => console.log('download', report.title)))}
-                </div>
+                {assessmentReports.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">Nessun report disponibile</p>
+                ) : (
+                  <div className="space-y-3">
+                    {filterReports(assessmentReports).map(report => renderReportRow(report, () => console.log('download', report.title)))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -247,9 +238,13 @@ const Reports: React.FC = () => {
             <Card className="border-border">
               <CardHeader><CardTitle className="flex items-center"><Archive className="w-5 h-5 mr-2 text-primary" />Report Piattaforma e Intelligence</CardTitle></CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {filterReports(platformReports).map(report => renderReportRow(report, () => console.log('download', report.title)))}
-                </div>
+                {platformReports.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">Nessun report disponibile</p>
+                ) : (
+                  <div className="space-y-3">
+                    {filterReports(platformReports).map(report => renderReportRow(report, () => console.log('download', report.title)))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

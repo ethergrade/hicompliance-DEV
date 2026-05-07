@@ -37,84 +37,7 @@ const ThreatManagement: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterSeverity, setFilterSeverity] = useState('all');
 
-  // Dati delle minacce
-  const threats = [
-    {
-      id: 'THR-001',
-      title: 'Tentativo di accesso non autorizzato',
-      description: 'Rilevati multipli tentativi di login da IP sospetto 192.168.1.100',
-      severity: 'Alta',
-      status: 'In corso',
-      source: 'HiFirewall',
-      category: 'Accesso non autorizzato',
-      assignedTo: 'Marco Rossi',
-      createdAt: '2024-01-20 14:30',
-      lastUpdate: '2024-01-20 16:45',
-      affectedAssets: ['Server Web', 'Database'],
-      indicators: ['192.168.1.100', 'multiple_failed_logins'],
-      priority: 'P1'
-    },
-    {
-      id: 'THR-002',
-      title: 'Malware rilevato su endpoint',
-      description: 'Trojan.Win32.Agent identificato su workstation utente',
-      severity: 'Critica',
-      status: 'Risolto',
-      source: 'HiEndpoint',
-      category: 'Malware',
-      assignedTo: 'Sara Bianchi',
-      createdAt: '2024-01-19 09:15',
-      lastUpdate: '2024-01-19 18:30',
-      affectedAssets: ['WS-USER-042'],
-      indicators: ['Trojan.Win32.Agent', 'suspicious_process'],
-      priority: 'P1'
-    },
-    {
-      id: 'THR-003',
-      title: 'Email phishing rilevata',
-      description: 'Campagna phishing targeting credenziali utente',
-      severity: 'Media',
-      status: 'In analisi',
-      source: 'HiMail',
-      category: 'Phishing',
-      assignedTo: 'Luca Verdi',
-      createdAt: '2024-01-18 11:20',
-      lastUpdate: '2024-01-20 08:15',
-      affectedAssets: ['Mail Server', 'Utenti'],
-      indicators: ['suspicious_email', 'credential_harvesting'],
-      priority: 'P2'
-    },
-    {
-      id: 'THR-004',
-      title: 'Vulnerabilità critica identificata',
-      description: 'CVE-2024-0001 rilevata su server applicativo',
-      severity: 'Critica',
-      status: 'Aperto',
-      source: 'SurfaceScan',
-      category: 'Vulnerabilità',
-      assignedTo: 'Anna Neri',
-      createdAt: '2024-01-20 07:45',
-      lastUpdate: '2024-01-20 10:30',
-      affectedAssets: ['APP-SERVER-01'],
-      indicators: ['CVE-2024-0001', 'remote_code_execution'],
-      priority: 'P1'
-    },
-    {
-      id: 'THR-005',
-      title: 'Attività sospetta nel dark web',
-      description: 'Credenziali aziendali in vendita su marketplace illegale',
-      severity: 'Alta',
-      status: 'In corso',
-      source: 'DarkRisk',
-      category: 'Credential Leak',
-      assignedTo: 'Paolo Gialli',
-      createdAt: '2024-01-17 16:20',
-      lastUpdate: '2024-01-20 14:00',
-      affectedAssets: ['Credenziali utente'],
-      indicators: ['credential_sale', 'dark_web_marketplace'],
-      priority: 'P1'
-    }
-  ];
+  const threats: any[] = [];
 
   // Statistiche delle minacce
   const threatStats = {
@@ -310,7 +233,12 @@ const ThreatManagement: React.FC = () => {
 
             {/* Lista Minacce */}
             <div className="space-y-4">
-              {filteredThreats.map((threat) => {
+              {filteredThreats.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  Nessun dato disponibile
+                </div>
+              ) : (
+                filteredThreats.map((threat) => {
                 const StatusIcon = getStatusIcon(threat.status);
                 return (
                   <Card key={threat.id} className="border-border bg-card hover:bg-card/80 transition-colors">
@@ -393,38 +321,9 @@ const ThreatManagement: React.FC = () => {
                   <CardTitle className="text-white">Feed Intelligence</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="space-y-3">
-                    <div className="p-3 border border-border rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <Badge variant="secondary" className="bg-red-600">Critico</Badge>
-                        <span className="text-xs text-gray-400">2 ore fa</span>
-                      </div>
-                      <p className="text-sm text-white mb-1">Nuova campagna ransomware LockBit targeting settore sanitario</p>
-                      <p className="text-xs text-gray-400">Fonte: CISA Alert AA24-016A</p>
-                    </div>
-                    
-                    <div className="p-3 border border-border rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <Badge variant="secondary" className="bg-orange-600">Alto</Badge>
-                        <span className="text-xs text-gray-400">5 ore fa</span>
-                      </div>
-                      <p className="text-sm text-white mb-1">Vulnerabilità zero-day in Apache Struts (CVE-2024-0002)</p>
-                      <p className="text-xs text-gray-400">Fonte: MITRE CVE Database</p>
-                    </div>
-                    
-                    <div className="p-3 border border-border rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <Badge variant="secondary" className="bg-yellow-600">Medio</Badge>
-                        <span className="text-xs text-gray-400">1 giorno fa</span>
-                      </div>
-                      <p className="text-sm text-white mb-1">Aumento attività phishing con tema fatturazione elettronica</p>
-                      <p className="text-xs text-gray-400">Fonte: CERT-AGID</p>
-                    </div>
+                  <div className="text-center py-12 text-muted-foreground">
+                    Nessun dato disponibile
                   </div>
-                  
-                  <Button variant="outline" className="w-full">
-                    Visualizza tutti i feed
-                  </Button>
                 </CardContent>
               </Card>
 
@@ -433,38 +332,9 @@ const ThreatManagement: React.FC = () => {
                   <CardTitle className="text-white">Indicatori di Compromissione</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="space-y-3">
-                    <div className="p-3 border border-border rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <Badge variant="outline">IP Address</Badge>
-                        <span className="text-xs text-gray-400">Confermato</span>
-                      </div>
-                      <p className="text-sm font-mono text-white">192.168.1.100</p>
-                      <p className="text-xs text-gray-400">Associato a botnet Emotet</p>
-                    </div>
-                    
-                    <div className="p-3 border border-border rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <Badge variant="outline">Hash</Badge>
-                        <span className="text-xs text-gray-400">Sospetto</span>
-                      </div>
-                      <p className="text-sm font-mono text-white">a1b2c3d4...</p>
-                      <p className="text-xs text-gray-400">Variante Trojan.Agent</p>
-                    </div>
-                    
-                    <div className="p-3 border border-border rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <Badge variant="outline">Domain</Badge>
-                        <span className="text-xs text-gray-400">Bloccato</span>
-                      </div>
-                      <p className="text-sm font-mono text-white">evil-domain.com</p>
-                      <p className="text-xs text-gray-400">Command & Control server</p>
-                    </div>
+                  <div className="text-center py-12 text-muted-foreground">
+                    Nessun dato disponibile
                   </div>
-                  
-                  <Button variant="outline" className="w-full">
-                    Gestisci IOC
-                  </Button>
                 </CardContent>
               </Card>
             </div>
@@ -477,46 +347,8 @@ const ThreatManagement: React.FC = () => {
                   <CardTitle className="text-white">Trend Minacce per Categoria</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-400">Malware</span>
-                      <div className="flex items-center space-x-2">
-                        <div className="w-24 bg-gray-700 rounded-full h-2">
-                          <div className="bg-red-500 h-2 rounded-full" style={{ width: '75%' }}></div>
-                        </div>
-                        <span className="text-sm text-white">15</span>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-400">Phishing</span>
-                      <div className="flex items-center space-x-2">
-                        <div className="w-24 bg-gray-700 rounded-full h-2">
-                          <div className="bg-orange-500 h-2 rounded-full" style={{ width: '60%' }}></div>
-                        </div>
-                        <span className="text-sm text-white">12</span>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-400">Vulnerabilità</span>
-                      <div className="flex items-center space-x-2">
-                        <div className="w-24 bg-gray-700 rounded-full h-2">
-                          <div className="bg-yellow-500 h-2 rounded-full" style={{ width: '45%' }}></div>
-                        </div>
-                        <span className="text-sm text-white">9</span>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-400">Accesso non autorizzato</span>
-                      <div className="flex items-center space-x-2">
-                        <div className="w-24 bg-gray-700 rounded-full h-2">
-                          <div className="bg-blue-500 h-2 rounded-full" style={{ width: '30%' }}></div>
-                        </div>
-                        <span className="text-sm text-white">6</span>
-                      </div>
-                    </div>
+                  <div className="text-center py-12 text-muted-foreground">
+                    Nessun dato disponibile
                   </div>
                 </CardContent>
               </Card>
@@ -526,26 +358,8 @@ const ThreatManagement: React.FC = () => {
                   <CardTitle className="text-white">Tempo di Risoluzione</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-400">MTTR Critico</span>
-                      <span className="text-sm text-white">2.5 ore</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-400">MTTR Alto</span>
-                      <span className="text-sm text-white">8.2 ore</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-400">MTTR Medio</span>
-                      <span className="text-sm text-white">24.1 ore</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-400">SLA Rispettato</span>
-                      <div className="flex items-center space-x-2">
-                        <CheckCircle2 className="w-4 h-4 text-green-500" />
-                        <span className="text-sm text-green-500">94%</span>
-                      </div>
-                    </div>
+                  <div className="text-center py-12 text-muted-foreground">
+                    Nessun dato disponibile
                   </div>
                 </CardContent>
               </Card>
