@@ -15,7 +15,6 @@ import {
   Globe,
   RefreshCw,
   Filter,
-  Activity,
   Smartphone,
   Database
 } from 'lucide-react';
@@ -36,7 +35,6 @@ const overviewStats = {
   onlineDevices: 72,
   offlineDevices: 3,
   warningDevices: 3,
-  activeAlerts: 5,
   resolvedToday: 12,
   avgUptime: 99.2,
   lastUpdate: 'less than 1 minute ago',
@@ -111,69 +109,43 @@ export const HiTrackDashboard: React.FC = () => {
     <div className="space-y-8">
       {/* Overview Section */}
       <section className="space-y-4">
-        <h2 className="text-2xl font-bold">Monitoring Overview</h2>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="border-border">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Dispositivi Monitorati</p>
-                  <p className="text-3xl font-bold text-primary">{overviewStats.totalDevices}</p>
-                </div>
-                <div className="p-3 rounded-full bg-primary/10">
-                  <Monitor className="w-6 h-6 text-primary" />
-                </div>
+        <h2 className="text-2xl font-bold text-center">Monitoring Overview</h2>
+
+        <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <Card className="h-full border-border">
+            <CardContent className="flex min-h-[160px] flex-col items-center justify-center gap-3 p-6 text-center">
+              <div className="rounded-full bg-primary/10 p-3">
+                <Monitor className="h-6 w-6 text-primary" />
               </div>
+              <p className="text-sm text-muted-foreground">Dispositivi Monitorati</p>
+              <p className="text-3xl font-bold leading-none text-primary">{overviewStats.totalDevices}</p>
             </CardContent>
           </Card>
 
-          <Card className="border-border">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Online</p>
-                  <p className="text-3xl font-bold text-green-500">{overviewStats.onlineDevices}</p>
-                </div>
-                <div className="p-3 rounded-full bg-green-500/10">
-                  <CheckCircle className="w-6 h-6 text-green-500" />
-                </div>
+          <Card className="h-full border-border">
+            <CardContent className="flex min-h-[160px] flex-col items-center justify-center gap-3 p-6 text-center">
+              <div className="rounded-full bg-green-500/10 p-3">
+                <CheckCircle className="h-6 w-6 text-green-500" />
               </div>
+              <p className="text-sm text-muted-foreground">Online</p>
+              <p className="text-3xl font-bold leading-none text-green-500">{overviewStats.onlineDevices}</p>
             </CardContent>
           </Card>
 
-          <Card className="border-border">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Offline / Warning</p>
-                  <p className="text-3xl font-bold text-orange-500">{overviewStats.offlineDevices + overviewStats.warningDevices}</p>
-                </div>
-                <div className="p-3 rounded-full bg-orange-500/10">
-                  <AlertTriangle className="w-6 h-6 text-orange-500" />
-                </div>
+          <Card className="h-full border-border">
+            <CardContent className="flex min-h-[160px] flex-col items-center justify-center gap-3 p-6 text-center">
+              <div className="rounded-full bg-orange-500/10 p-3">
+                <AlertTriangle className="h-6 w-6 text-orange-500" />
               </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Allarmi Attivi</p>
-                  <p className="text-3xl font-bold text-red-500">{overviewStats.activeAlerts}</p>
-                </div>
-                <div className="p-3 rounded-full bg-red-500/10">
-                  <Activity className="w-6 h-6 text-red-500" />
-                </div>
-              </div>
+              <p className="text-sm text-muted-foreground">Offline</p>
+              <p className="text-3xl font-bold leading-none text-orange-500">{overviewStats.offlineDevices + overviewStats.warningDevices}</p>
             </CardContent>
           </Card>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <RiskScoreCard 
-            title="Uptime Medio"
+            title="Uptime Medio Collector"
             level="Ottimo"
             levelColor="green"
             score={99}
