@@ -34,7 +34,7 @@ export const tenantsApi = {
   },
 
   async update(id: string, payload: UpdateTenantRequest): Promise<TenantResource> {
-    const res = await apiClient.patch<ApiResponse<TenantResource>>(`/tenants/${id}`, payload);
+    const res = await apiClient.put<ApiResponse<TenantResource>>(`/tenants/${id}`, payload);
     return res.data;
   },
 
@@ -50,7 +50,7 @@ export const tenantsApi = {
 
   /** Update the authenticated user's own tenant */
   async updateOwn(payload: UpdateTenantRequest): Promise<TenantResource> {
-    const res = await apiClient.patch<ApiResponse<TenantResource>>("/tenant", payload);
+    const res = await apiClient.put<ApiResponse<TenantResource>>("/tenant", payload);
     return res.data;
   },
 };
