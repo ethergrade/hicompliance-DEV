@@ -213,7 +213,13 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            I moduli <span className="font-medium text-foreground">Conformità &amp; Rischio Assessment</span> e{" "}
+            <span className="font-medium text-foreground">True Risk Score</span> sono disponibili perché questo cliente include anche{" "}
+            <span className="font-medium text-primary">HiCompliance</span>.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <ComplianceMetricCard />
           <RiskScoreMetricCard />
           {/* Merged card: Servizi Monitorati + Issues Totali */}
@@ -237,6 +243,7 @@ const Dashboard: React.FC = () => {
               </div>
             </CardContent>
           </Card>
+          </div>
         </div>
 
         <Card className="border-border">
