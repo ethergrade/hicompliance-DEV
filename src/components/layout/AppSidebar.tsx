@@ -101,7 +101,8 @@ export const AppSidebar: React.FC = () => {
   const { selectedOrganization, canManageMultipleClients } = useClientContext();
   
   const isAdmin = userProfile?.user_type === 'admin';
-  const platformName = isSuperAdmin ? 'HiConsole' : 'HiCompliance';
+  const isConsoleUser = isSuperAdmin || isSales;
+  const platformName = isConsoleUser ? 'HiConsole' : 'HiCompliance';
 
   const filteredNavigation = navigation.filter(item => {
     if ((item as any).superAdminOnly && !isSuperAdmin) return false;
@@ -149,7 +150,7 @@ export const AppSidebar: React.FC = () => {
           {!collapsed && (
             <div>
               <h2 className="text-lg font-semibold text-sidebar-foreground">{platformName}</h2>
-              <p className="text-xs text-sidebar-foreground/60">{isSuperAdmin ? 'Admin Console' : 'Cyber Risk Platform'}</p>
+              <p className="text-xs text-sidebar-foreground/60">{isConsoleUser ? 'Admin Console' : 'Cyber Risk Platform'}</p>
             </div>
           )}
         </div>
