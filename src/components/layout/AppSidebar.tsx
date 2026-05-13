@@ -79,11 +79,11 @@ const adminNavigation = [
     href: "/admin/clients",
     icon: Building2,
   },
-  {
-    title: "Gestione Ruoli",
-    href: "/admin/role-settings",
-    icon: Settings,
-  },
+  // {
+  //   title: "Gestione Ruoli",
+  //   href: "/admin/role-settings",
+  //   icon: Settings,
+  // },
 ];
 
 export const AppSidebar: React.FC = () => {
