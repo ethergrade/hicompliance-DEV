@@ -3,17 +3,27 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 
-const DATA = {
-  percentage: 35,
-  label: 'Basso',
-  status: 'good' as const,
-  sparkline: [48, 42, 38, 35],
-};
-
 const CIRCUMFERENCE = 2 * Math.PI * 28;
 
-export const RiskScoreMetricCard: React.FC = () => {
-  const { percentage, label, status, sparkline } = DATA;
+const scoreToStatus = (score: number): 'good' | 'warning' | 'danger' =>
+  score <= 30 ? 'good' : score <= 60 ? 'warning' : 'danger';
+
+const scoreToLabel = (score: number): string =>
+  score <= 20 ? 'Molto Basso' : score <= 40 ? 'Basso' : score <= 60 ? 'Medio' : score <= 80 ? 'Alto' : 'Critico';
+
+interface RiskScoreMetricCardProps {
+  score?: number;
+  sparkline?: number[];
+}
+
+export const RiskScoreMetricCard: React.FC<RiskScoreMetricCardProps> = ({
+  score,
+  sparkline,
+}) => {
+  const percentage = score ?? 35;
+  const status = score !== undefined ? scoreToStatus(score) : 'good';
+  const label = score !== undefined ? scoreToLabel(score) : 'Basso';
+  const chartSparkline = sparkline ?? [48, 42, 38, 35];
 
   const strokeColor =
     status === 'good'    ? 'hsl(var(--cyber-green))'  :
@@ -31,7 +41,7 @@ export const RiskScoreMetricCard: React.FC = () => {
                            '#ef4444';
 
   const dashArray = `${(percentage / 100) * CIRCUMFERENCE} ${CIRCUMFERENCE}`;
-  const chartData = sparkline.map((v, i) => ({ i, v }));
+  const chartData = chartSparkline.map((v, i) => ({ i, v }));
 
   return (
     <Card className="relative overflow-hidden border-border shadow-cyber hover:shadow-glow transition-cyber animate-fade-in">

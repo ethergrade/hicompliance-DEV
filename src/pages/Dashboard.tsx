@@ -16,7 +16,8 @@ import { useServiceIntegrations } from '@/hooks/useServiceIntegrations';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { moduleVisibility } from '@/config/moduleVisibility';
 import { tenantsApi } from '@/lib/api/tenants';
-import type { TenantDashboardExtra } from '@/types/api';
+import { assessmentApi } from '@/lib/api/assessment';
+import type { TenantDashboardExtra, AssessmentSummary } from '@/types/api';
 import { 
   Shield, Monitor, Mail, FileText, Download, 
   BarChart3, Laptop, Link2, Unlink, Smartphone, Settings,
@@ -52,6 +53,8 @@ const Dashboard: React.FC = () => {
   const [selectedService, setSelectedService] = useState<{ name: string; code: string; id: string } | null>(null);
   const [dashboardExtra, setDashboardExtra] = useState<TenantDashboardExtra | null>(null);
   const [extraLoading, setExtraLoading] = useState(true);
+  const [assessmentSummary, setAssessmentSummary] = useState<AssessmentSummary | null>(null);
+  const [reportLoading, setReportLoading] = useState(true);
 
   // Fetch tenant dashboard data from API
   useEffect(() => {
@@ -70,6 +73,27 @@ const Dashboard: React.FC = () => {
       }
     }
     fetchDashboardData();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchAssessmentReport() {
+      try {
+        setReportLoading(true);
+        const assessments = await assessmentApi.list();
+        if (cancelled || !assessments.length) return;
+        const report = await assessmentApi.report(assessments[0].id);
+        if (!cancelled && report?.summary) {
+          setAssessmentSummary(report.summary);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch assessment report:', err);
+      } finally {
+        if (!cancelled) setReportLoading(false);
+      }
+    }
+    fetchAssessmentReport();
     return () => { cancelled = true; };
   }, []);
 
@@ -222,8 +246,13 @@ const Dashboard: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <ComplianceMetricCard />
-          <RiskScoreMetricCard />
+          <ComplianceMetricCard
+            completionScore={assessmentSummary?.completion_score}
+            riskScore={assessmentSummary?.risk_score}
+          />
+          <RiskScoreMetricCard
+            score={assessmentSummary?.risk_score}
+          />
           <Card className="relative overflow-hidden border-border shadow-cyber hover:shadow-glow transition-cyber animate-fade-in">
             <CardContent className="p-0 h-full">
               <div className="grid grid-cols-2 divide-x divide-border h-full">
