@@ -4,10 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ExternalLink } from 'lucide-react';
 
-const COMPLIANCE_DATA = { percentage: 78, label: 'Buono', status: 'good' as const };
-
-const RISK_DATA = { percentage: 28, label: 'Basso', status: 'good' as const };
-
 const CIRCUMFERENCE = 2 * Math.PI * 28;
 
 const getColor = (status: string) =>
@@ -20,10 +16,36 @@ const getBadgeClass = (status: string) =>
   status === 'warning' ? 'bg-cyber-orange/20 text-cyber-orange' :
                          'bg-cyber-red/20 text-cyber-red';
 
-export const ComplianceMetricCard: React.FC = () => {
+const percentToStatus = (pct: number): 'good' | 'warning' | 'danger' =>
+  pct >= 60 ? 'good' : pct >= 30 ? 'warning' : 'danger';
+
+const percentToLabel = (pct: number): string =>
+  pct >= 80 ? 'Ottimo' : pct >= 60 ? 'Buono' : pct >= 40 ? 'Medio' : pct >= 20 ? 'Basso' : 'Critico';
+
+const scoreToRiskStatus = (score: number): 'good' | 'warning' | 'danger' =>
+  score <= 30 ? 'good' : score <= 60 ? 'warning' : 'danger';
+
+const scoreToRiskLabel = (score: number): string =>
+  score <= 20 ? 'Molto Basso' : score <= 40 ? 'Basso' : score <= 60 ? 'Medio' : score <= 80 ? 'Alto' : 'Critico';
+
+interface ComplianceMetricCardProps {
+  completionScore?: number;
+  riskScore?: number;
+}
+
+export const ComplianceMetricCard: React.FC<ComplianceMetricCardProps> = ({
+  completionScore,
+  riskScore,
+}) => {
   const navigate = useNavigate();
-  const compliance = COMPLIANCE_DATA;
-  const risk = RISK_DATA;
+
+  const compliance = completionScore !== undefined
+    ? { percentage: completionScore, label: percentToLabel(completionScore), status: percentToStatus(completionScore) }
+    : { percentage: 78, label: 'Buono' as const, status: 'good' as const };
+
+  const risk = riskScore !== undefined
+    ? { percentage: riskScore, label: scoreToRiskLabel(riskScore), status: scoreToRiskStatus(riskScore) }
+    : { percentage: 28, label: 'Basso' as const, status: 'good' as const };
 
   const renderGauge = (percentage: number, status: string) => {
     const dashArray = `${(percentage / 100) * CIRCUMFERENCE} ${CIRCUMFERENCE}`;
