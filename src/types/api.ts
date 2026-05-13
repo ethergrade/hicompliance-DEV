@@ -126,7 +126,7 @@ export interface TenantResource {
   ips_list?: IpRange[] | null;
   domains_list?: DomainEntry[] | null;
   is_multiple?: boolean;
-  extra?: string[] | null;
+  extra?: TenantDashboardExtra | null;
   created_at?: string | null;
   // Anagrafica / Organization Profile fields
   legal_name?: string | null;
@@ -147,6 +147,31 @@ export interface IpRange {
 
 export interface DomainEntry {
   domain: string;
+}
+
+// ─── Tenant Dashboard Extra ──────────────────────────────────────────────────
+
+export interface TenantDashboardExtra {
+  note?: string;
+  server?: number;
+  utenti?: number;
+  endpoint?: number;
+  firewall?: number;
+  ip_totali?: number;
+  subnet_21?: number;
+  subnet_22?: number;
+  subnet_23?: number;
+  subnet_24?: number;
+  subnet_25?: number;
+  hypervisor?: number;
+  ip_puntuali?: number;
+  switch_core?: number;
+  access_point?: number;
+  sedi_cliente?: number;
+  switch_access?: number;
+  virtual_machine?: number;
+  dispositivi_rete_varie?: number;
+  dispositivi_rete_totali?: number;
 }
 
 export interface StoreTenantRequest {
@@ -183,7 +208,7 @@ export interface UpdateTenantRequest {
   contract_duration?: number;
   last_scan_at?: string | null;
   is_multiple?: boolean;
-  extra?: string[] | null;
+  extra?: TenantDashboardExtra | null;
   ips_list?: IpRange[] | null;
   domains_list?: DomainEntry[] | null;
   // Anagrafica / Organization Profile fields

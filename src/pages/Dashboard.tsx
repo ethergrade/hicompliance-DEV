@@ -7,7 +7,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useClientContext } from '@/contexts/ClientContext';
-import { supabase } from '@/integrations/supabase/client';
 import { SecurityFeedsSection } from '@/components/dashboard/SecurityFeedsSection';
 import { EPSSWidget } from '@/components/dashboard/EPSSWidget';
 import { ServiceQuickConnect } from '@/components/dashboard/ServiceQuickConnect';
@@ -16,9 +15,12 @@ import { RiskScoreMetricCard } from '@/components/dashboard/RiskScoreMetricCard'
 import { useServiceIntegrations } from '@/hooks/useServiceIntegrations';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { moduleVisibility } from '@/config/moduleVisibility';
+import { tenantsApi } from '@/lib/api/tenants';
+import type { TenantDashboardExtra } from '@/types/api';
 import { 
   Shield, Monitor, Mail, FileText, Download, 
-  BarChart3, Laptop, Link2, Unlink, Smartphone, Settings
+  BarChart3, Laptop, Link2, Unlink, Smartphone, Settings,
+  Server, Users, Globe, Router, HardDrive
 } from 'lucide-react';
 
 const getServiceIcon = (code: string) => {
@@ -39,7 +41,6 @@ const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { selectedOrganization } = useClientContext();
-  const activeOrgId = selectedOrganization?.id || user?.tenant_id;
   const activeOrgName = selectedOrganization?.name || 'Organizzazione';
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +50,28 @@ const Dashboard: React.FC = () => {
 
   const [quickConnectOpen, setQuickConnectOpen] = useState(false);
   const [selectedService, setSelectedService] = useState<{ name: string; code: string; id: string } | null>(null);
+  const [dashboardExtra, setDashboardExtra] = useState<TenantDashboardExtra | null>(null);
+  const [extraLoading, setExtraLoading] = useState(true);
+
+  // Fetch tenant dashboard data from API
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchDashboardData() {
+      try {
+        setExtraLoading(true);
+        const tenant = await tenantsApi.getOwn();
+        if (!cancelled && tenant?.extra) {
+          setDashboardExtra(tenant.extra);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch tenant dashboard data:', err);
+      } finally {
+        if (!cancelled) setExtraLoading(false);
+      }
+    }
+    fetchDashboardData();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     setServices([
@@ -62,8 +85,6 @@ const Dashboard: React.FC = () => {
   );
 
   const servicesWithCriticalHealth = hiSolutionServices.filter(s => (s.health_score || 0) < 50);
-  const servicesWithWarningHealth = hiSolutionServices.filter(s => (s.health_score || 0) >= 50 && (s.health_score || 0) < 80);
-  const servicesWithGoodHealth = hiSolutionServices.filter(s => (s.health_score || 0) >= 80);
 
   const totalIssues = hiSolutionServices.reduce((acc, service) => {
     const healthScore = service.health_score || 0;
@@ -79,6 +100,17 @@ const Dashboard: React.FC = () => {
     totalAssets: services.length || 8,
     activeThreats: totalIssues || fallbackData.totalIssues
   };
+
+  // Derived infrastructure metrics from tenant extra data
+  const infraTotalAssets = dashboardExtra
+    ? (dashboardExtra.server || 0) + (dashboardExtra.endpoint || 0) + (dashboardExtra.firewall || 0)
+      + (dashboardExtra.switch_core || 0) + (dashboardExtra.switch_access || 0)
+      + (dashboardExtra.access_point || 0) + (dashboardExtra.virtual_machine || 0)
+      + (dashboardExtra.hypervisor || 0) + (dashboardExtra.dispositivi_rete_totali || 0)
+    : null;
+  const infraTotalIPs = dashboardExtra
+    ? (dashboardExtra.ip_totali || 0) + (dashboardExtra.ip_puntuali || 0)
+    : null;
 
   const handleServiceClick = (service: any, _connected: boolean) => {
     navigate(`/dashboard/service/${service.code}`);
@@ -192,18 +224,15 @@ const Dashboard: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <ComplianceMetricCard />
           <RiskScoreMetricCard />
-          {/* Merged card: Servizi Monitorati + Issues Totali */}
           <Card className="relative overflow-hidden border-border shadow-cyber hover:shadow-glow transition-cyber animate-fade-in">
             <CardContent className="p-0 h-full">
               <div className="grid grid-cols-2 divide-x divide-border h-full">
-                {/* Servizi Monitorati */}
                 <div className="flex flex-col items-center justify-center p-5 text-center space-y-3">
                   <p className="text-sm font-medium text-muted-foreground">Servizi Monitorati</p>
                   <Badge variant="secondary" className="bg-cyber-green/20 text-cyber-green w-full justify-center">Buono</Badge>
                   <div className="text-4xl font-bold text-foreground">{hiSolutionServices.length}</div>
                   <p className="text-sm text-muted-foreground">Servizi attivi</p>
                 </div>
-                {/* Issues Totali */}
                 <div className="flex flex-col items-center justify-center p-5 text-center space-y-3">
                   <p className="text-sm font-medium text-muted-foreground">Issues Totali</p>
                   <Badge variant="secondary" className="bg-cyber-red/20 text-cyber-red w-full justify-center">Critico</Badge>
@@ -253,26 +282,67 @@ const Dashboard: React.FC = () => {
             </div>
 
             <div className="border-t border-border pt-6">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="text-center p-4">
-                  <div className="text-2xl font-bold text-primary mb-1">8</div>
-                  <div className="text-sm text-muted-foreground">Servizi Connessi</div>
+              <h3 className="text-sm font-semibold text-muted-foreground mb-4">Infrastruttura</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                <div className="text-center p-3 rounded-lg bg-muted/30">
+                  <Server className="w-5 h-5 mx-auto mb-1 text-primary" />
+                  <div className="text-xl font-bold text-foreground">{dashboardExtra?.server ?? '—'}</div>
+                  <div className="text-xs text-muted-foreground">Server</div>
                 </div>
-                <div className="text-center p-4">
-                  <div className="text-2xl font-bold text-red-500 mb-1">6</div>
-                  <div className="text-sm text-muted-foreground">Servizi in Allerta</div>
+                <div className="text-center p-3 rounded-lg bg-muted/30">
+                  <Laptop className="w-5 h-5 mx-auto mb-1 text-blue-500" />
+                  <div className="text-xl font-bold text-foreground">{dashboardExtra?.endpoint ?? '—'}</div>
+                  <div className="text-xs text-muted-foreground">Endpoint</div>
                 </div>
-                <div className="text-center p-4">
-                  <div className="text-2xl font-bold text-green-500 mb-1">8</div>
-                  <div className="text-sm text-muted-foreground">Servizi Operativi</div>
+                <div className="text-center p-3 rounded-lg bg-muted/30">
+                  <Shield className="w-5 h-5 mx-auto mb-1 text-red-500" />
+                  <div className="text-xl font-bold text-foreground">{dashboardExtra?.firewall ?? '—'}</div>
+                  <div className="text-xs text-muted-foreground">Firewall</div>
                 </div>
-                <div className="text-center p-4">
-                  <div className="text-2xl font-bold text-blue-500 mb-1">
-                    {hiSolutionServices.length > 0 ? hiSolutionServices.reduce((acc) => acc + Math.floor(50 + Math.random() * 100), 0) : 642}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Totale Risolte</div>
+                <div className="text-center p-3 rounded-lg bg-muted/30">
+                  <Users className="w-5 h-5 mx-auto mb-1 text-green-500" />
+                  <div className="text-xl font-bold text-foreground">{dashboardExtra?.utenti ?? '—'}</div>
+                  <div className="text-xs text-muted-foreground">Utenti</div>
+                </div>
+                <div className="text-center p-3 rounded-lg bg-muted/30">
+                  <HardDrive className="w-5 h-5 mx-auto mb-1 text-purple-500" />
+                  <div className="text-xl font-bold text-foreground">{dashboardExtra?.virtual_machine ?? '—'}</div>
+                  <div className="text-xs text-muted-foreground">VM</div>
+                </div>
+                <div className="text-center p-3 rounded-lg bg-muted/30">
+                  <Globe className="w-5 h-5 mx-auto mb-1 text-amber-500" />
+                  <div className="text-xl font-bold text-foreground">{dashboardExtra?.sedi_cliente ?? '—'}</div>
+                  <div className="text-xs text-muted-foreground">Sedi</div>
                 </div>
               </div>
+              {dashboardExtra && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                  <div className="text-center p-3 rounded-lg bg-muted/30">
+                    <Router className="w-5 h-5 mx-auto mb-1 text-cyan-500" />
+                    <div className="text-xl font-bold text-foreground">
+                      {(dashboardExtra.switch_core || 0) + (dashboardExtra.switch_access || 0)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">Switch</div>
+                  </div>
+                  <div className="text-center p-3 rounded-lg bg-muted/30">
+                    <div className="text-xl font-bold text-foreground">{dashboardExtra.access_point ?? '—'}</div>
+                    <div className="text-xs text-muted-foreground">Access Point</div>
+                  </div>
+                  <div className="text-center p-3 rounded-lg bg-muted/30">
+                    <div className="text-xl font-bold text-foreground">{infraTotalIPs}</div>
+                    <div className="text-xs text-muted-foreground">IP Totali</div>
+                  </div>
+                  <div className="text-center p-3 rounded-lg bg-muted/30">
+                    <div className="text-xl font-bold text-foreground">{infraTotalAssets}</div>
+                    <div className="text-xs text-muted-foreground">Dispositivi Totali</div>
+                  </div>
+                </div>
+              )}
+              {!dashboardExtra && !extraLoading && (
+                <p className="text-center text-xs text-muted-foreground mt-4">
+                  Dati infrastruttura non disponibili
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
