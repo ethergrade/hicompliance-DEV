@@ -219,7 +219,7 @@ const Dashboard: React.FC = () => {
           <CardHeader className="pb-6">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-xl mb-2">Servizi HiSolution</CardTitle>
+                <CardTitle className="text-xl mb-2">Servizi HiConsole</CardTitle>
                 <p className="text-sm text-muted-foreground">Stato dei servizi in tempo reale</p>
               </div>
               <div className="flex items-center gap-4">

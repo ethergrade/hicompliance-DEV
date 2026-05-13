@@ -310,7 +310,7 @@ const ThreatManagement: React.FC = () => {
                     </CardContent>
                   </Card>
                 );
-              })}
+              }))}
             </div>
           </TabsContent>
 

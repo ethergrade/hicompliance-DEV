@@ -392,7 +392,7 @@ export const generatePlaybookDocx = async (playbook: Playbook): Promise<void> =>
     new Paragraph({
       children: [
         new TextRun({
-          text: 'Documento generato automaticamente da HiCompliance',
+          text: 'Documento generato automaticamente da HiConsole',
           size: 18,
           color: '9ca3af',
           italics: true,

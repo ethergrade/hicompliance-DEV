@@ -32,7 +32,7 @@ export const LoginPage: React.FC = () => {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold bg-gradient-cyber bg-clip-text text-transparent">
-            HiCompliance
+            HiConsole
           </h1>
           <p className="text-muted-foreground mt-2">
             Piattaforma di gestione cyber risk

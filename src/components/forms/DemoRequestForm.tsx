@@ -122,7 +122,7 @@ const DemoRequestForm = () => {
             Richiedi una Demo Personalizzata
           </h2>
           <p className="text-xl text-muted-foreground mb-8">
-            Scopri come HiCompliance può trasformare la gestione del cyber risk della tua organizzazione. 
+            Scopri come HiConsole può trasformare la gestione del cyber risk della tua organizzazione. 
             Richiedi una demo gratuita e personalizzata.
           </p>
 

@@ -827,7 +827,7 @@ const Assessment: React.FC = () => {
               </div>
               <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm lg:max-w-xs">
                 <p className="font-medium text-foreground">Hai domande o dubbi sulla compilazione?</p>
-                <a href="mailto:support@hisolution.it?subject=Supporto%20Assessment%20HiCompliance" className="mt-1 inline-flex text-primary hover:underline">
+                <a href="mailto:support@hisolution.it?subject=Supporto%20Assessment%20HiConsole" className="mt-1 inline-flex text-primary hover:underline">
                   Clicca e sarai ricontattato!
                 </a>
               </div>
