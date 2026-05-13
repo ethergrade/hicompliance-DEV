@@ -164,7 +164,7 @@ export function useOrganizationProfile() {
       if (error?.status === 403 || error?.status === 401) {
         toast({
           title: "Permessi insufficienti",
-          description: "Non sei autorizzato a modificare i dati dell'azienda (403 Forbidden). Il backend deve essere aggiornato per permettere questa operazione.",
+          description: "Non sei autorizzato a modificare i dati dell'azienda con il profilo corrente.",
           variant: "destructive"
         });
       } else {
