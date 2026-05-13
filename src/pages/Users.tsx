@@ -24,17 +24,20 @@ interface UserFormData {
   password: string;
 }
 
-const fallbackRoles = ["admin", "editor", "viewer"];
+const fallbackRoles = ["admin", "viewer", "sales", "customer"];
 
 const getPrimaryRole = (user: UserResource) => user.roles?.[0] ?? "viewer";
 
 const getRoleLabel = (role: string) => {
   const labels: Record<string, string> = {
+    "super-admin": "Super Admin",
+    master: "Master",
     super_admin: "Super Admin",
     superadmin: "Super Admin",
     admin: "Amministratore",
     manager: "Manager",
     sales: "Sales",
+    customer: "Cliente",
     client: "Cliente",
     editor: "Editor",
     viewer: "Viewer",
@@ -44,7 +47,7 @@ const getRoleLabel = (role: string) => {
 };
 
 const getRoleVariant = (role: string): "default" | "destructive" | "secondary" | "outline" => {
-  if (role === "super_admin" || role === "superadmin" || role === "admin") return "destructive";
+  if (role === "super-admin" || role === "super_admin" || role === "superadmin" || role === "master" || role === "admin") return "destructive";
   if (role === "manager" || role === "sales" || role === "editor") return "secondary";
   return "default";
 };
@@ -152,7 +155,7 @@ const Users = () => {
   });
 
   const deleteUserMutation = useMutation({
-    mutationFn: (userId: number) => usersApi.delete(userId),
+    mutationFn: (userId: string | number) => usersApi.delete(userId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       setIsDeleteDialogOpen(false);
@@ -387,7 +390,7 @@ const Users = () => {
                         <TableCell>{user.email}</TableCell>
                         <TableCell>
                           <Badge variant={getRoleVariant(role)}>
-                            {role === "superadmin" || role === "admin" ? (
+                            {role === "super-admin" || role === "superadmin" || role === "super_admin" || role === "master" || role === "admin" ? (
                               <>
                                 <UserCheck className="w-3 h-3 mr-1" />
                                 {getRoleLabel(role)}
