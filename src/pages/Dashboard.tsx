@@ -56,9 +56,8 @@ const Dashboard: React.FC = () => {
     setLoading(false);
   }, []);
 
-  const excludedServices = ['hi_mfa', 'hi_cloud_optix', 'hi_phish_threat', 'hi_ztna'];
   const hiSolutionServices = services.filter(s => 
-    s.services?.code?.startsWith('hi_') && !excludedServices.includes(s.services?.code)
+    s.services?.code === 'hi_patch'
   );
 
   const servicesWithCriticalHealth = hiSolutionServices.filter(s => (s.health_score || 0) < 50);

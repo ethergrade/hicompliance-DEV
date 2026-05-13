@@ -138,8 +138,11 @@ const answerOptions = [
 ] as const;
 
 
+import { useNavigate } from 'react-router-dom';
+
 const Assessment: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { selectedOrganization, userOrganizationId } = useClientContext();
   const orgId = selectedOrganization?.id || userOrganizationId;
 
@@ -259,9 +262,9 @@ const Assessment: React.FC = () => {
     if (!orgProfile.nis2_classification) return null;
     
     const badgeColors: Record<string, string> = {
-      essential: 'bg-red-500/10 text-red-500 border-red-500/20',
-      important: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
-      none: 'bg-muted text-muted-foreground border-border'
+      soggetto_essenziale: 'bg-red-500/10 text-red-500 border-red-500/20',
+      soggetto_importante: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
+      nessuna: 'bg-muted text-muted-foreground border-border'
     };
 
     return (
@@ -474,6 +477,14 @@ const Assessment: React.FC = () => {
                  'Errore salvataggio'}
               </div>
             )}
+            <Button 
+              variant="outline"
+              className="gap-2"
+              onClick={() => navigate('/consistenze')}
+            >
+              <FileText className="w-4 h-4" />
+              Gestisci Consistenze
+            </Button>
             <Button 
               className="bg-primary text-primary-foreground"
               onClick={() => generateAssessmentPDF({ responses, companyName: orgProfile.legal_name || undefined })}

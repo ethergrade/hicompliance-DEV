@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { OrganizationProfile, NIS2Classification } from '@/types/organization';
- import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { tenantsApi } from '@/lib/api/tenants';
 
 interface ProfileFormData {
   legal_name: string;
@@ -41,11 +41,16 @@ export function useOrganizationProfile() {
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const { toast } = useToast();
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const { organizationId: clientOrgId, isLoading: clientLoading } = useClientOrganization();
+  const { organizationId: clientOrgId, isLoading: clientLoading, canManageMultipleClients } = useClientOrganization();
 
   // Fetch profile
   const fetchProfile = useCallback(async () => {
-    if (clientLoading || !clientOrgId) {
+    if (clientLoading) {
+      return;
+    }
+    
+    // Non-admin base users use getOwn. If they are admin but haven't selected a client, wait.
+    if (canManageMultipleClients && !clientOrgId) {
       setLoading(false);
       return;
     }
@@ -54,16 +59,30 @@ export function useOrganizationProfile() {
     try {
       setOrganizationId(clientOrgId);
 
-      const { data, error } = await supabase
-        .from('organization_profiles')
-        .select('*')
-        .eq('organization_id', clientOrgId)
-        .maybeSingle();
+      const tenant = canManageMultipleClients && clientOrgId 
+        ? await tenantsApi.get(clientOrgId) 
+        : await tenantsApi.getOwn();
 
-      if (error) throw error;
-
-      if (data) {
-        const profileData = data as unknown as OrganizationProfile;
+      if (tenant) {
+        // Map TenantResource to OrganizationProfile
+        const profileData: OrganizationProfile = {
+          id: tenant.id,
+          organization_id: tenant.id,
+          legal_name: tenant.legal_name || tenant.name || null,
+          vat_number: tenant.vat_number || null,
+          fiscal_code: tenant.fiscal_code || null,
+          legal_address: tenant.legal_address || null,
+          operational_address: tenant.operational_address || null,
+          pec: tenant.pec || null,
+          phone: tenant.phone || null,
+          email: tenant.email || null,
+          business_sector: tenant.business_sector || tenant.industry || null,
+          nis2_classification: tenant.nis2_classification || null,
+          ciso_substitute: tenant.ciso_substitute || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
         setProfile(profileData);
         setFormData({
           legal_name: profileData.legal_name || '',
@@ -89,16 +108,17 @@ export function useOrganizationProfile() {
     } finally {
       setLoading(false);
     }
-  }, [clientOrgId, clientLoading, toast]);
+  }, [clientOrgId, clientLoading, canManageMultipleClients, toast]);
 
   // Save profile with debounce
   const saveProfile = useCallback(async (data: ProfileFormData) => {
-    if (!organizationId) return;
+    // If it's an admin, we need an org ID. For base users, we can just updateOwn.
+    if (canManageMultipleClients && !organizationId) return;
 
     setSaving(true);
     try {
       const payload = {
-        organization_id: organizationId,
+        name: data.legal_name || undefined,
         legal_name: data.legal_name || null,
         vat_number: data.vat_number || null,
         fiscal_code: data.fiscal_code || null,
@@ -108,28 +128,33 @@ export function useOrganizationProfile() {
         phone: data.phone || null,
         email: data.email || null,
         business_sector: data.business_sector || null,
+        industry: data.business_sector || null,
         nis2_classification: data.nis2_classification,
         ciso_substitute: data.ciso_substitute || null
       };
 
-      if (profile) {
-        // Update existing
-        const { error } = await supabase
-          .from('organization_profiles')
-          .update(payload)
-          .eq('id', profile.id);
-
-        if (error) throw error;
+      let newTenant;
+      if (canManageMultipleClients && organizationId) {
+        newTenant = await tenantsApi.update(organizationId, payload);
       } else {
-        // Insert new
-        const { data: newProfile, error } = await supabase
-          .from('organization_profiles')
-          .insert(payload)
-          .select()
-          .single();
+        newTenant = await tenantsApi.updateOwn(payload);
+      }
 
-        if (error) throw error;
-        setProfile(newProfile as unknown as OrganizationProfile);
+      if (newTenant && profile) {
+        setProfile({
+          ...profile,
+          legal_name: newTenant.legal_name || newTenant.name || null,
+          vat_number: newTenant.vat_number || null,
+          fiscal_code: newTenant.fiscal_code || null,
+          legal_address: newTenant.legal_address || null,
+          operational_address: newTenant.operational_address || null,
+          pec: newTenant.pec || null,
+          phone: newTenant.phone || null,
+          email: newTenant.email || null,
+          business_sector: newTenant.business_sector || newTenant.industry || null,
+          nis2_classification: newTenant.nis2_classification || null,
+          ciso_substitute: newTenant.ciso_substitute || null,
+        });
       }
 
       setLastSaved(new Date());
@@ -143,7 +168,7 @@ export function useOrganizationProfile() {
     } finally {
       setSaving(false);
     }
-  }, [organizationId, profile, toast]);
+  }, [organizationId, canManageMultipleClients, profile, toast]);
 
   // Update form field with auto-save
   const updateField = useCallback((field: keyof ProfileFormData, value: string | NIS2Classification | null) => {

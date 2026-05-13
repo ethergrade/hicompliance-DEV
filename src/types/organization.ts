@@ -1,4 +1,4 @@
-export type NIS2Classification = 'essential' | 'important' | 'none';
+export type NIS2Classification = 'soggetto_essenziale' | 'soggetto_importante' | 'nessuna';
 
 export interface OrganizationProfile {
   id: string;
@@ -19,15 +19,15 @@ export interface OrganizationProfile {
 }
 
 export const NIS2_LABELS: Record<NIS2Classification, string> = {
-  essential: 'Soggetto Essenziale',
-  important: 'Soggetto Importante',
-  none: 'Nessuna delle due'
+  soggetto_essenziale: 'Soggetto Essenziale',
+  soggetto_importante: 'Soggetto Importante',
+  nessuna: 'Nessuna delle due'
 };
 
 export const NIS2_DESCRIPTIONS: Record<NIS2Classification, string> = {
-  essential: 'Operatori di servizi essenziali (energia, trasporti, sanità, banche, infrastrutture digitali, acqua potabile, acque reflue, spazio, pubblica amministrazione)',
-  important: 'Fornitori di servizi digitali, produttori, gestori rifiuti, settore alimentare, servizi postali, fabbricazione dispositivi medici, chimica, ricerca',
-  none: "L'azienda non rientra nelle categorie NIS2"
+  soggetto_essenziale: 'Operatori di servizi essenziali (energia, trasporti, sanità, banche, infrastrutture digitali, acqua potabile, acque reflue, spazio, pubblica amministrazione)',
+  soggetto_importante: 'Fornitori di servizi digitali, produttori, gestori rifiuti, settore alimentare, servizi postali, fabbricazione dispositivi medici, chimica, ricerca',
+  nessuna: "L'azienda non rientra nelle categorie NIS2"
 };
 
 export const BUSINESS_SECTORS = [
