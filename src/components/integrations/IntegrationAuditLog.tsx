@@ -115,8 +115,8 @@ const exportToCSV = (logs: AuditLog[], filename: string) => {
 
 export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organizationId }) => {
   const { toast } = useToast();
-  const { isSuperAdmin, isSales, loading: rolesLoading } = useUserRoles();
-  const canManage = isSuperAdmin || isSales;
+  const { isAdmin, isSales, loading: rolesLoading } = useUserRoles();
+  const canManage = isAdmin || isSales;
 
   // User preferences hook for persisting filters
   const { preferences, updatePreferences, isSaving } = useUserPreferences({

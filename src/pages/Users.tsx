@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { configApi, tenantsApi, usersApi } from "@/lib/api";
+import { useClientContext } from "@/contexts/ClientContext";
 import type { TenantResource, UserResource } from "@/types/api";
 import { User, Plus, Edit, Trash2, UserCheck, UserX } from "lucide-react";
 
@@ -60,6 +61,7 @@ const Users = () => {
   const [userToDelete, setUserToDelete] = useState<UserResource | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { selectedOrganization, canManageMultipleClients } = useClientContext();
 
   const form = useForm<UserFormData>({
     defaultValues: {
@@ -99,6 +101,7 @@ const Users = () => {
       email: data.email,
       password: data.password,
       role: data.role,
+      tenant_id: canManageMultipleClients ? selectedOrganization?.id ?? null : undefined,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
@@ -274,8 +277,8 @@ const Users = () => {
                       rules={{
                         required: "Password è richiesta",
                         minLength: {
-                          value: 6,
-                          message: "Password deve essere di almeno 6 caratteri"
+                          value: 8,
+                          message: "Password deve essere di almeno 8 caratteri"
                         }
                       }}
                       render={({ field }) => (
@@ -314,7 +317,9 @@ const Users = () => {
                     )}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Il tenant dell'utente è gestito dal backend multitenant e viene mostrato nella tabella quando disponibile.
+                    {canManageMultipleClients
+                      ? `L'utente verrà creato nel tenant selezionato: ${selectedOrganization?.name || 'nessun cliente selezionato'}.`
+                      : "L'utente verrà creato nel tenant dell'account autenticato."}
                   </p>
                   <DialogFooter>
                     <Button

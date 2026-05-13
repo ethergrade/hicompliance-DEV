@@ -52,11 +52,11 @@ export interface LoginRequest {
 }
 
 export interface LoginUser {
-  id: string;
+  id: string | number;
   name: string;
   email: string;
-  tenant_id: string;
-  roles: string;
+  tenant_id: string | null;
+  roles: string | string[];
 }
 
 export interface LoginData {
@@ -86,12 +86,14 @@ export interface StoreUserRequest {
   email: string;
   password: string;
   role?: string;
+  tenant_id?: string | null;
 }
 
 export interface UpdateUserRequest {
   name?: string;
   email?: string;
   role?: string;
+  tenant_id?: string | null;
 }
 
 // ─── Tenant ─────────────────────────────────────────────────────────────────
@@ -118,6 +120,14 @@ export interface TenantResource {
   endpoints_count: number;
   servers_count: number;
   vms_count: number;
+  contract_start?: string | null;
+  contract_duration?: number | null;
+  last_scan_at?: string | null;
+  ips_list?: IpRange[] | null;
+  domains_list?: DomainEntry[] | null;
+  is_multiple?: boolean;
+  extra?: string[] | null;
+  created_at?: string | null;
   // Anagrafica / Organization Profile fields
   legal_name?: string | null;
   fiscal_code?: string | null;
@@ -145,6 +155,7 @@ export interface StoreTenantRequest {
   contract_start?: string | null;
   contract_duration?: number | null;
   is_multiple?: boolean | null;
+  nis2_classification?: 'soggetto_essenziale' | 'soggetto_importante' | 'nessuna' | null;
 }
 
 export interface UpdateTenantRequest {
@@ -168,6 +179,13 @@ export interface UpdateTenantRequest {
   endpoints_count?: number;
   servers_count?: number;
   vms_count?: number;
+  contract_start?: string | null;
+  contract_duration?: number;
+  last_scan_at?: string | null;
+  is_multiple?: boolean;
+  extra?: string[] | null;
+  ips_list?: IpRange[] | null;
+  domains_list?: DomainEntry[] | null;
   // Anagrafica / Organization Profile fields
   legal_name?: string | null;
   fiscal_code?: string | null;
@@ -182,6 +200,14 @@ export interface UpdateTenantRequest {
 
 // ─── Assessment ─────────────────────────────────────────────────────────────
 
+export type AssessmentQuestionValue = string | number | null;
+export type AssessmentQuestions =
+  | Record<string, AssessmentQuestionValue>
+  | AssessmentQuestionValue[]
+  | string
+  | null;
+export type AssessmentId = string | number;
+
 export interface UpdateAssessmentRequest {
   status?: number;
   follow_up?: string | null;
@@ -189,7 +215,7 @@ export interface UpdateAssessmentRequest {
   presentation_date?: string | null;
   hide_gantt?: boolean;
   custom_gantt?: GanttItem[] | null;
-  questions?: Record<string, number>;
+  questions?: Record<string, AssessmentQuestionValue> | AssessmentQuestionValue[];
 }
 
 export interface UpdateGanttRequest {
@@ -198,14 +224,19 @@ export interface UpdateGanttRequest {
 }
 
 export interface AssessmentData {
-  id: string;
-  status: string;
-  questions: string;
-  follow_up: string;
-  presentation_date: string;
-  hide_gantt: string;
-  custom_gantt: string;
-  generated_at: string;
+  id: AssessmentId;
+  tenant_id?: string | null;
+  status: number;
+  questions: AssessmentQuestions;
+  follow_up: string | null;
+  followup_reminder?: string | null;
+  presentation_date: string | null;
+  hide_gantt: boolean;
+  custom_gantt: GanttItem[] | Record<string, unknown>[] | null;
+  generated_at: string | null;
+  updated_by?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface AssessmentSummary {

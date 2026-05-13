@@ -28,6 +28,7 @@ import {
   Filter,
 } from 'lucide-react';
 import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
+import { useUserRoles } from '@/hooks/useUserRoles';
 import { NIS2_LABELS } from '@/types/organization';
 import { useUserPreferences } from '@/hooks/useUserPreferences';
 import { ASSESSMENT_CATEGORIES, AssessmentResponse, calculateCategoryScore, getRiskFromScore, CATEGORY_DESCRIPTIONS } from '@/data/assessmentQuestions';
@@ -36,6 +37,7 @@ import { generateAssessmentPDF } from '@/components/assessment/AssessmentReportG
 import GapAnalysisSection from '@/components/assessment/GapAnalysisSection';
 import { AssessmentRadarChart } from '@/components/assessment/AssessmentRadarChart';
 import { assessmentApi } from '@/lib/api';
+import { moduleVisibility } from '@/config/moduleVisibility';
 
 // Map UI response values to API values and vice versa
 const UI_TO_API_QUESTION_STATUS: Record<Exclude<AssessmentResponse, null>, number> = {
@@ -68,7 +70,24 @@ const parseAssessmentQuestions = (rawQuestions: unknown): Record<number, Assessm
     }
   }
 
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+  if (Array.isArray(parsed)) {
+    return parsed.reduce<Record<number, AssessmentResponse>>((acc, value, index) => {
+      const questionId = index + 1;
+
+      if (typeof value === 'number') {
+        acc[questionId] = API_QUESTION_STATUS_TO_UI[value] ?? null;
+      } else if (typeof value === 'string') {
+        const numericValue = Number(value);
+        if (!Number.isNaN(numericValue)) {
+          acc[questionId] = API_QUESTION_STATUS_TO_UI[numericValue] ?? null;
+        }
+      }
+
+      return acc;
+    }, {});
+  }
+
+  if (!parsed || typeof parsed !== 'object') return {};
 
   const responses: Record<number, AssessmentResponse> = {};
   Object.entries(parsed as Record<string, unknown>).forEach(([key, value]) => {
@@ -100,9 +119,9 @@ const parseAssessmentQuestions = (rawQuestions: unknown): Record<number, Assessm
 };
 
 const serializeAssessmentQuestions = (responses: Record<number, AssessmentResponse>) =>
-  Object.entries(responses).reduce<Record<string, number>>((acc, [questionId, value]) => {
+  Object.entries(responses).reduce<Record<string, string>>((acc, [questionId, value]) => {
     if (!value) return acc;
-    acc[`q${questionId}`] = UI_TO_API_QUESTION_STATUS[value];
+    acc[`q${questionId}`] = String(UI_TO_API_QUESTION_STATUS[value]);
     return acc;
   }, {});
 
@@ -143,8 +162,10 @@ import { useNavigate } from 'react-router-dom';
 const Assessment: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { selectedOrganization, userOrganizationId } = useClientContext();
+  const { selectedOrganization, userOrganizationId, canManageMultipleClients } = useClientContext();
+  const { isAdmin, isSales } = useUserRoles();
   const orgId = selectedOrganization?.id || userOrganizationId;
+  const isReadOnlyView = canManageMultipleClients && (isAdmin || isSales);
 
   // Question responses state: { [questionId]: response }
   const [responses, setResponses] = useState<Record<number, AssessmentResponse>>({});
@@ -152,7 +173,7 @@ const Assessment: React.FC = () => {
   const [guidedCategoryIndex, setGuidedCategoryIndex] = useState(0);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
-  const assessmentIdRef = useRef<string | null>(null);
+  const assessmentIdRef = useRef<string | number | null>(null);
   const loadedOrgRef = useRef<string | null>(null);
   const guidedOrgRef = useRef<string | null>(null);
 
@@ -162,12 +183,23 @@ const Assessment: React.FC = () => {
     if (loadedOrgRef.current === orgId) return;
 
     const loadResponses = async () => {
-      const assessments = await assessmentApi.list();
-      const assessment = assessments.length > 0 ? assessments[0] : null;
-      if (!assessment) return;
-      assessmentIdRef.current = assessment.id;
-      setResponses(parseAssessmentQuestions(assessment.questions));
-      loadedOrgRef.current = orgId;
+      try {
+        const assessments = await assessmentApi.list();
+        const assessment = assessments.length > 0 ? assessments[0] : null;
+        if (!assessment) {
+          setResponses({});
+          assessmentIdRef.current = null;
+          loadedOrgRef.current = orgId;
+          return;
+        }
+        assessmentIdRef.current = assessment.id;
+        setResponses(parseAssessmentQuestions(assessment.questions));
+        loadedOrgRef.current = orgId;
+      } catch (error) {
+        console.error('Assessment load error:', error);
+        setResponses({});
+        assessmentIdRef.current = null;
+      }
     };
 
     loadResponses();
@@ -180,14 +212,21 @@ const Assessment: React.FC = () => {
 
   const triggerAutoSave = useCallback(() => {
     if (!orgId || !user) return;
-    if (!assessmentIdRef.current) return;
     if (snapshotTimerRef.current) clearTimeout(snapshotTimerRef.current);
     snapshotTimerRef.current = setTimeout(async () => {
       const currentResponses = responsesRef.current;
+      const serializedQuestions = serializeAssessmentQuestions(currentResponses);
       try {
-        await assessmentApi.update(assessmentIdRef.current, {
-          questions: serializeAssessmentQuestions(currentResponses),
-        });
+        if (!assessmentIdRef.current) {
+          const createdAssessment = await assessmentApi.create({
+            questions: serializedQuestions,
+          });
+          assessmentIdRef.current = createdAssessment.id;
+        } else {
+          await assessmentApi.update(assessmentIdRef.current, {
+            questions: serializedQuestions,
+          });
+        }
         setSaveStatus('saved');
         setLastSaved(new Date());
       } catch (err) {
@@ -198,6 +237,8 @@ const Assessment: React.FC = () => {
   }, [orgId, user]);
 
   const setResponse = useCallback((questionId: number, value: AssessmentResponse) => {
+    if (isReadOnlyView) return;
+
     setResponses(prev => ({ ...prev, [questionId]: value }));
 
     // Persist to API with debounce
@@ -205,7 +246,7 @@ const Assessment: React.FC = () => {
     setSaveStatus('saving');
 
     triggerAutoSave();
-  }, [orgId, user, triggerAutoSave]);
+  }, [isReadOnlyView, orgId, user, triggerAutoSave]);
 
   // Compute counts per category from responses
   const getCategoryCounts = useCallback((categoryName: string) => {
@@ -430,8 +471,17 @@ const Assessment: React.FC = () => {
     () => assessmentCategories.reduce((acc, cat) => acc + cat.questions, 0),
     [assessmentCategories]
   );
+  const shouldShowEmptyReviewState = isReadOnlyView && answeredQuestions === 0;
 
   const resumeMessage = useMemo(() => {
+    if (isReadOnlyView && answeredQuestions === 0) {
+      return 'Il cliente selezionato non ha ancora inviato risposte da revisionare.';
+    }
+
+    if (isReadOnlyView) {
+      return `${answeredQuestions}/${totalQuestions} risposte disponibili in sola lettura per ${selectedOrganization?.name || 'il cliente selezionato'}.`;
+    }
+
     if (answeredQuestions === 0) {
       return 'Inizia rispondendo alle domande: il salvataggio automatico conserverà i progressi.';
     }
@@ -443,7 +493,7 @@ const Assessment: React.FC = () => {
       hour: '2-digit',
       minute: '2-digit',
     })}.`;
-  }, [answeredQuestions, totalQuestions, lastSaved]);
+  }, [answeredQuestions, totalQuestions, isReadOnlyView, lastSaved, selectedOrganization?.name]);
 
   const continueToNextCategory = useCallback((categoryName: string) => {
     const currentIndex = assessmentCategories.findIndex(category => category.name === categoryName);
@@ -465,7 +515,7 @@ const Assessment: React.FC = () => {
           </div>
           <div className="flex items-center gap-3">
             {/* Save status indicator */}
-            {saveStatus !== 'idle' && (
+            {!isReadOnlyView && saveStatus !== 'idle' && (
               <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
                 saveStatus === 'saving' ? 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20' :
                 saveStatus === 'saved' ? 'bg-green-500/10 text-green-600 border-green-500/20' :
@@ -479,14 +529,16 @@ const Assessment: React.FC = () => {
                  'Errore salvataggio'}
               </div>
             )}
-            <Button 
-              variant="outline"
-              className="gap-2"
-              onClick={() => navigate('/consistenze')}
-            >
-              <FileText className="w-4 h-4" />
-              Gestisci Consistenze
-            </Button>
+            {moduleVisibility.consistenze && (
+              <Button 
+                variant="outline"
+                className="gap-2"
+                onClick={() => navigate('/consistenze')}
+              >
+                <FileText className="w-4 h-4" />
+                Gestisci Consistenze
+              </Button>
+            )}
             <Button 
               className="bg-primary text-primary-foreground"
               onClick={() => generateAssessmentPDF({ responses, companyName: orgProfile.legal_name || undefined })}
@@ -551,6 +603,34 @@ const Assessment: React.FC = () => {
           </Card>
         )}
 
+        {isReadOnlyView && (
+          <Card className="border-border bg-muted/20">
+            <CardContent className="flex items-center gap-3 p-4">
+              <AlertCircle className="h-5 w-5 text-primary" />
+              <div>
+                <p className="font-medium text-foreground">Vista cliente in sola lettura</p>
+                <p className="text-sm text-muted-foreground">
+                  {selectedOrganization?.name || 'Il cliente selezionato'} compila l&apos;assessment. I ruoli admin e sales possono solo consultare lo stato corrente.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {shouldShowEmptyReviewState ? (
+          <Card className="border-dashed border-border">
+            <CardContent className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+              <AlertTriangle className="h-10 w-10 text-muted-foreground/60" />
+              <div className="space-y-1">
+                <h2 className="text-lg font-semibold text-foreground">Nessuna risposta disponibile</h2>
+                <p className="max-w-2xl text-sm text-muted-foreground">
+                  {selectedOrganization?.name || 'Il cliente selezionato'} non ha ancora inviato risposte. Le sezioni Assessment resteranno vuote finché il cliente non inizierà la compilazione.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+        <>
         {/* Assessment Overview */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card className="border-border">
@@ -825,7 +905,9 @@ const Assessment: React.FC = () => {
           <CardContent>
             <div className="mb-4 grid gap-3 lg:grid-cols-[1fr_auto]">
               <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
-                <p className="text-sm font-medium text-foreground">Come rispondere</p>
+                <p className="text-sm font-medium text-foreground">
+                  {isReadOnlyView ? 'Legenda risposte' : 'Come rispondere'}
+                </p>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                   {answerOptions.map(option => (
                     <div key={option.value} className="flex items-start gap-2 text-xs text-muted-foreground">
@@ -839,10 +921,18 @@ const Assessment: React.FC = () => {
                 </div>
               </div>
               <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm lg:max-w-xs">
-                <p className="font-medium text-foreground">Hai domande o dubbi sulla compilazione?</p>
-                <a href="mailto:support@hisolution.it?subject=Supporto%20Assessment%20HiConsole" className="mt-1 inline-flex text-primary hover:underline">
-                  Clicca e sarai ricontattato!
-                </a>
+                <p className="font-medium text-foreground">
+                  {isReadOnlyView ? 'Modalità revisione cliente' : 'Hai domande o dubbi sulla compilazione?'}
+                </p>
+                {isReadOnlyView ? (
+                  <p className="mt-1 text-muted-foreground">
+                    Questa sezione mostra solo le risposte del cliente selezionato.
+                  </p>
+                ) : (
+                  <a href="mailto:support@hisolution.it?subject=Supporto%20Assessment%20HiConsole" className="mt-1 inline-flex text-primary hover:underline">
+                    Clicca e sarai ricontattato!
+                  </a>
+                )}
               </div>
             </div>
             <div className="space-y-3">
@@ -965,12 +1055,14 @@ const Assessment: React.FC = () => {
                                     return (
                                       <button
                                         key={opt.value}
+                                        type="button"
                                         onClick={() => setResponse(q.id, isActive ? null : opt.value as AssessmentResponse)}
+                                        disabled={isReadOnlyView}
                                         className={`px-2.5 py-1 rounded text-[11px] font-medium border transition-all duration-150 ${
                                           isActive 
                                             ? opt.activeClass 
                                             : 'border-border text-muted-foreground hover:bg-muted/60'
-                                        }`}
+                                        } ${isReadOnlyView ? 'cursor-default opacity-80' : ''}`}
                                       >
                                         {opt.label}
                                       </button>
@@ -982,7 +1074,11 @@ const Assessment: React.FC = () => {
                           })}
                         </div>
                         <div className="flex items-center justify-between gap-3 border-t border-border bg-card px-5 py-3">
-                          <p className="text-xs text-muted-foreground">Le risposte vengono salvate automaticamente: puoi uscire e riprendere più tardi.</p>
+                          <p className="text-xs text-muted-foreground">
+                            {isReadOnlyView
+                              ? 'Le risposte mostrate appartengono al cliente selezionato e non sono modificabili da questa vista.'
+                              : 'Le risposte vengono salvate automaticamente: puoi uscire e riprendere più tardi.'}
+                          </p>
                           <Button
                             variant="outline"
                             size="sm"
@@ -1001,6 +1097,8 @@ const Assessment: React.FC = () => {
             </div>
           </CardContent>
         </Card>
+        </>
+        )}
       </div>
     </DashboardLayout>
   );

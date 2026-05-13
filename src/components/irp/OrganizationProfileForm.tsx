@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Building2, CheckCircle2, Loader2, AlertCircle, AlertTriangle } from 'lucide-react';
 import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
+import { useUserRoles } from '@/hooks/useUserRoles';
 import { 
   NIS2Classification, 
   NIS2_LABELS, 
@@ -36,6 +37,8 @@ const isValidFiscalCode = (fc: string): boolean => {
 
 export const OrganizationProfileForm: React.FC = () => {
   const { formData, loading, saving, lastSaved, updateField } = useOrganizationProfile();
+  const { isAdmin, isSales } = useUserRoles();
+  const isReadOnly = !isAdmin && !isSales;
 
   // Validation states
   const vatValidation = useMemo(() => {
@@ -119,6 +122,7 @@ export const OrganizationProfileForm: React.FC = () => {
                 id="legal_name"
                 placeholder="Es. Acme S.p.A."
                 value={formData.legal_name}
+                disabled={isReadOnly}
                 onChange={(e) => updateField('legal_name', e.target.value)}
               />
             </div>
@@ -129,6 +133,7 @@ export const OrganizationProfileForm: React.FC = () => {
                 placeholder="Es. 12345678901"
                 maxLength={11}
                 value={formData.vat_number}
+                disabled={isReadOnly}
                 onChange={(e) => {
                   const value = e.target.value.replace(/\D/g, '').slice(0, 11);
                   updateField('vat_number', value);
@@ -154,6 +159,7 @@ export const OrganizationProfileForm: React.FC = () => {
                 id="fiscal_code"
                 placeholder="Es. 12345678901 o RSSMRA80A01H501U"
                 value={formData.fiscal_code}
+                disabled={isReadOnly}
                 onChange={(e) => {
                   const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 16);
                   updateField('fiscal_code', value);
@@ -178,6 +184,7 @@ export const OrganizationProfileForm: React.FC = () => {
               <Label htmlFor="business_sector">Settore di Attività</Label>
               <Select
                 value={formData.business_sector}
+                disabled={isReadOnly}
                 onValueChange={(value) => updateField('business_sector', value)}
               >
                 <SelectTrigger>
@@ -201,6 +208,7 @@ export const OrganizationProfileForm: React.FC = () => {
                 id="legal_address"
                 placeholder="Indirizzo completo"
                 value={formData.legal_address}
+                disabled={isReadOnly}
                 onChange={(e) => updateField('legal_address', e.target.value)}
               />
             </div>
@@ -210,6 +218,7 @@ export const OrganizationProfileForm: React.FC = () => {
                 id="operational_address"
                 placeholder="Indirizzo completo"
                 value={formData.operational_address}
+                disabled={isReadOnly}
                 onChange={(e) => updateField('operational_address', e.target.value)}
               />
             </div>
@@ -223,6 +232,7 @@ export const OrganizationProfileForm: React.FC = () => {
                 type="email"
                 placeholder="azienda@pec.it"
                 value={formData.pec}
+                disabled={isReadOnly}
                 onChange={(e) => updateField('pec', e.target.value)}
                 className={!pecValidation.isValid ? 'border-destructive focus-visible:ring-destructive' : ''}
               />
@@ -246,6 +256,7 @@ export const OrganizationProfileForm: React.FC = () => {
                 type="tel"
                 placeholder="+39 02 1234567"
                 value={formData.phone}
+                disabled={isReadOnly}
                 onChange={(e) => updateField('phone', e.target.value)}
               />
             </div>
@@ -256,10 +267,17 @@ export const OrganizationProfileForm: React.FC = () => {
                 type="email"
                 placeholder="info@azienda.it"
                 value={formData.email}
+                disabled={isReadOnly}
                 onChange={(e) => updateField('email', e.target.value)}
               />
             </div>
           </div>
+
+          {isReadOnly && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+              Non hai i permessi per modificare l'anagrafica aziendale con il tuo ruolo corrente.
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -284,7 +302,11 @@ export const OrganizationProfileForm: React.FC = () => {
         <CardContent>
           <RadioGroup
             value={formData.nis2_classification || ''}
-            onValueChange={(value) => updateField('nis2_classification', value as NIS2Classification)}
+            onValueChange={(value) => {
+              if (!isReadOnly) {
+                updateField('nis2_classification', value as NIS2Classification);
+              }
+            }}
             className="space-y-4"
           >
             {(['soggetto_essenziale', 'soggetto_importante', 'nessuna'] as NIS2Classification[]).map((classification) => (
@@ -293,11 +315,17 @@ export const OrganizationProfileForm: React.FC = () => {
                 className={`flex items-start space-x-3 p-4 rounded-lg border transition-colors cursor-pointer ${
                   formData.nis2_classification === classification
                     ? 'border-primary bg-primary/5'
-                    : 'border-border hover:border-primary/50'
+                    : isReadOnly
+                      ? 'border-border'
+                      : 'border-border hover:border-primary/50'
                 }`}
-                onClick={() => updateField('nis2_classification', classification)}
+                onClick={() => {
+                  if (!isReadOnly) {
+                    updateField('nis2_classification', classification);
+                  }
+                }}
               >
-                <RadioGroupItem value={classification} id={classification} className="mt-1" />
+                <RadioGroupItem value={classification} id={classification} className="mt-1" disabled={isReadOnly} />
                 <div className="space-y-1 flex-1">
                   <Label htmlFor={classification} className="font-medium cursor-pointer">
                     {NIS2_LABELS[classification]}

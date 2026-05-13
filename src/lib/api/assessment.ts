@@ -2,6 +2,7 @@ import { apiClient } from "@/lib/api-client";
 import type {
   ApiResponse,
   AssessmentData,
+  AssessmentId,
   AssessmentReportData,
   AssessmentMonthlyReportData,
   UpdateAssessmentRequest,
@@ -19,23 +20,28 @@ export const assessmentApi = {
     return res.data;
   },
 
-  async get(id: string | number): Promise<AssessmentData> {
+  async get(id: AssessmentId): Promise<AssessmentData> {
     const res = await apiClient.get<ApiResponse<AssessmentData>>(`/assessments/${id}`);
     return res.data;
   },
 
-  async update(id: string | number, payload: UpdateAssessmentRequest): Promise<AssessmentData> {
+  async update(id: AssessmentId, payload: UpdateAssessmentRequest): Promise<AssessmentData> {
     const res = await apiClient.patch<ApiResponse<AssessmentData>>(`/assessments/${id}`, payload);
     return res.data;
   },
 
-  async updateGantt(id: string | number, payload: UpdateGanttRequest): Promise<AssessmentData> {
+  async updateGantt(id: AssessmentId, payload: UpdateGanttRequest): Promise<AssessmentData> {
     const res = await apiClient.patch<ApiResponse<AssessmentData>>(`/assessments/${id}/gantt`, payload);
     return res.data;
   },
 
-  async report(id: string | number): Promise<AssessmentReportData> {
+  async report(id: AssessmentId): Promise<AssessmentReportData> {
     const res = await apiClient.get<ApiResponse<AssessmentReportData>>(`/assessments/${id}/report`);
+    return res.data;
+  },
+
+  async reportMonthly(id: AssessmentId): Promise<AssessmentMonthlyReportData> {
+    const res = await apiClient.get<ApiResponse<AssessmentMonthlyReportData>>(`/assessments/${id}/report-monthly`);
     return res.data;
   },
 

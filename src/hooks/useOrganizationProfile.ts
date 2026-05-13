@@ -158,13 +158,22 @@ export function useOrganizationProfile() {
       }
 
       setLastSaved(new Date());
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving organization profile:', error);
-      toast({
-        title: "Errore",
-        description: "Errore nel salvataggio del profilo aziendale",
-        variant: "destructive"
-      });
+      
+      if (error?.status === 403 || error?.status === 401) {
+        toast({
+          title: "Permessi insufficienti",
+          description: "Non sei autorizzato a modificare i dati dell'azienda (403 Forbidden). Il backend deve essere aggiornato per permettere questa operazione.",
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "Errore",
+          description: "Errore nel salvataggio del profilo aziendale",
+          variant: "destructive"
+        });
+      }
     } finally {
       setSaving(false);
     }

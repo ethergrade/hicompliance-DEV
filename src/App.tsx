@@ -34,6 +34,7 @@ import AdminReporting from "./pages/AdminReporting";
 import Consistenze from "./pages/Consistenze";
 import AICiso from "./pages/AICiso";
 import NotFound from "./pages/NotFound";
+import { moduleVisibility } from "@/config/moduleVisibility";
 
 const queryClient = new QueryClient();
 
@@ -51,27 +52,51 @@ const App = () => (
             <Route path="/auth" element={<LoginPage />} />
             <Route path="/admin/clients" element={<ClientSelection />} />
             <Route path="/dashboard" element={<ClientSelectionGuard><Dashboard /></ClientSelectionGuard>} />
-            <Route path="/cyber-news" element={<ClientSelectionGuard><CyberNews /></ClientSelectionGuard>} />
+            <Route
+              path="/cyber-news"
+              element={moduleVisibility.cyberNews ? <ClientSelectionGuard><CyberNews /></ClientSelectionGuard> : <Navigate to="/dashboard" replace />}
+            />
             <Route path="/dashboard/service/:serviceCode" element={<ClientSelectionGuard><ServiceDashboard /></ClientSelectionGuard>} />
             <Route path="/surface-scan" element={<ClientSelectionGuard><SurfaceScan360 /></ClientSelectionGuard>} />
             <Route path="/dark-risk" element={<ClientSelectionGuard><DarkRisk360 /></ClientSelectionGuard>} />
             <Route path="/assessment" element={<ClientSelectionGuard><Assessment /></ClientSelectionGuard>} />
             <Route path="/remediation" element={<ClientSelectionGuard><Remediation /></ClientSelectionGuard>} />
             <Route path="/analytics" element={<ClientSelectionGuard><Analytics /></ClientSelectionGuard>} />
-            <Route path="/threats" element={<ClientSelectionGuard><Threats /></ClientSelectionGuard>} />
+            <Route
+              path="/threats"
+              element={moduleVisibility.threats ? <ClientSelectionGuard><Threats /></ClientSelectionGuard> : <Navigate to={moduleVisibility.threatManagement ? "/threat-management" : "/dashboard"} replace />}
+            />
             <Route path="/reports" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/documents" element={<ClientSelectionGuard><Documents /></ClientSelectionGuard>} />
+            <Route
+              path="/documents"
+              element={moduleVisibility.documents ? <ClientSelectionGuard><Documents /></ClientSelectionGuard> : <Navigate to="/dashboard" replace />}
+            />
             <Route path="/asset-inventory" element={<ClientSelectionGuard><AssetInventory /></ClientSelectionGuard>} />
             <Route path="/incident-response" element={<Navigate to="/dashboard" replace />} />
             <Route path="/compliance-events" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/threat-management" element={<Navigate to="/dashboard" replace />} />
+            <Route
+              path="/threat-management"
+              element={moduleVisibility.threatManagement ? <ClientSelectionGuard><ThreatManagement /></ClientSelectionGuard> : <Navigate to="/dashboard" replace />}
+            />
             <Route path="/settings/users" element={<ClientSelectionGuard><Users /></ClientSelectionGuard>} />
-            <Route path="/settings/integrations" element={<ClientSelectionGuard><Integrations /></ClientSelectionGuard>} />
-            <Route path="/settings/alerts" element={<ClientSelectionGuard><Settings /></ClientSelectionGuard>} />
-            <Route path="/settings/surface-scan-alerts" element={<ClientSelectionGuard><SurfaceScanSettings /></ClientSelectionGuard>} />
+            <Route
+              path="/settings/integrations"
+              element={moduleVisibility.integrations ? <ClientSelectionGuard><Integrations /></ClientSelectionGuard> : <Navigate to="/dashboard" replace />}
+            />
+            <Route
+              path="/settings/alerts"
+              element={moduleVisibility.darkRiskAlerts ? <ClientSelectionGuard><Settings /></ClientSelectionGuard> : <Navigate to="/dashboard" replace />}
+            />
+            <Route
+              path="/settings/surface-scan-alerts"
+              element={moduleVisibility.darkRiskAlerts ? <ClientSelectionGuard><SurfaceScanSettings /></ClientSelectionGuard> : <Navigate to="/dashboard" replace />}
+            />
             <Route path="/admin/role-settings" element={<ClientSelectionGuard><RoleSettings /></ClientSelectionGuard>} />
             <Route path="/admin/reporting" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/consistenze" element={<ClientSelectionGuard><Consistenze /></ClientSelectionGuard>} />
+            <Route
+              path="/consistenze"
+              element={moduleVisibility.consistenze ? <ClientSelectionGuard><Consistenze /></ClientSelectionGuard> : <Navigate to="/dashboard" replace />}
+            />
             <Route path="/ai-ciso" element={<AICiso />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

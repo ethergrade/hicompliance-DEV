@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 export interface BaseAlert<TTypes extends Record<string, boolean>> {
   id: string;
@@ -23,13 +24,22 @@ export function useAlerts<TTypes extends Record<string, boolean>>(config: UseAle
   const [alerts, setAlerts] = useState<BaseAlert<TTypes>[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+  const { organizationId, isLoading: clientLoading } = useClientOrganization();
 
   const fetchAlerts = useCallback(async () => {
+    if (clientLoading) return;
+    if (!organizationId) {
+      setAlerts([]);
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       const { data, error } = await supabase
         .from(table as any)
         .select('*')
+        .eq('organization_id', organizationId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -43,7 +53,7 @@ export function useAlerts<TTypes extends Record<string, boolean>>(config: UseAle
     } finally {
       setLoading(false);
     }
-  }, [table, toast]);
+  }, [clientLoading, organizationId, table, toast]);
 
   const createAlert = async (data: {
     alert_email: string;
@@ -53,12 +63,7 @@ export function useAlerts<TTypes extends Record<string, boolean>>(config: UseAle
     try {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) throw new Error('User not authenticated');
-
-      const { data: userRecord } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('auth_user_id', userData.user.id)
-        .single();
+      if (!organizationId) throw new Error('Nessun cliente selezionato');
 
       const targetUserId = data.target_user_id || userData.user.id;
 
@@ -66,7 +71,7 @@ export function useAlerts<TTypes extends Record<string, boolean>>(config: UseAle
         .from(table as any)
         .insert({
           user_id: targetUserId,
-          organization_id: userRecord?.organization_id || null,
+          organization_id: organizationId,
           alert_email: data.alert_email,
           alert_types: data.alert_types as any,
         });

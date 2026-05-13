@@ -26,10 +26,10 @@
    const [userOrganizationId, setUserOrganizationId] = useState<string | null>(null);
    const { user } = useAuth();
  const { isSuperAdmin, isSales, loading: rolesLoading } = useUserRoles();
-   
+  
    const canManageMultipleClients = isSuperAdmin || isSales;
 
-   // Fetch organizations for sales/admin users
+   // Fetch organizations for super-admin/sales users
    const fetchOrganizations = useCallback(async () => {
      if (!user || rolesLoading) return;
      
@@ -38,7 +38,7 @@
        setUserOrganizationId(user.tenant_id || null);
 
        if (canManageMultipleClients) {
-         // Sales/Admin: fetch all tenants
+         // Super-admin/Sales: fetch all tenants
          const tenants = await tenantsApi.listAll();
          setOrganizations(tenants);
 
