@@ -29,10 +29,12 @@ const getPrimaryRole = (user: UserResource) => user.roles?.[0] ?? "viewer";
 
 const getRoleLabel = (role: string) => {
   const labels: Record<string, string> = {
+    super_admin: "Super Admin",
     superadmin: "Super Admin",
     admin: "Amministratore",
     manager: "Manager",
     sales: "Sales",
+    client: "Cliente",
     editor: "Editor",
     viewer: "Viewer",
   };
@@ -41,7 +43,7 @@ const getRoleLabel = (role: string) => {
 };
 
 const getRoleVariant = (role: string): "default" | "destructive" | "secondary" | "outline" => {
-  if (role === "superadmin" || role === "admin") return "destructive";
+  if (role === "super_admin" || role === "superadmin" || role === "admin") return "destructive";
   if (role === "manager" || role === "sales" || role === "editor") return "secondary";
   return "default";
 };
