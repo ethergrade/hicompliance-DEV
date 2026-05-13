@@ -56,7 +56,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       toast({
         title: "Accesso effettuato",
-        description: "Benvenuto in HiCompliance",
+        description: "Benvenuto in HiConsole",
       });
 
       return { error: null };

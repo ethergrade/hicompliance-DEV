@@ -165,7 +165,7 @@ const Threats: React.FC = () => {
           <div>
             <h1 className="text-3xl font-bold text-foreground">Gestione Minacce</h1>
             <p className="text-muted-foreground">
-              Analisi completa delle minacce rilevate da tutti i servizi HiCompliance
+              Analisi completa delle minacce rilevate da tutti i servizi HiConsole
             </p>
           </div>
           <Button onClick={exportThreats} className="bg-primary text-primary-foreground">

@@ -63,7 +63,7 @@ const Integrations = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { organizationId, needsClientSelection, canManageMultipleClients, selectedOrganization } = useClientOrganization();
-  const { isSuperAdmin, isSales, loading: rolesLoading } = useUserRoles();
+  const { isSuperAdmin, isSales } = useUserRoles();
 
   const form = useForm<IntegrationFormData>({
     defaultValues: {
@@ -85,7 +85,7 @@ const Integrations = () => {
         .order("name");
       
       if (error) throw error;
-      return data as HiSolutionService[];
+      return (data as HiSolutionService[]).filter(s => s.code === 'hi_patch');
     },
   });
 
@@ -105,7 +105,7 @@ const Integrations = () => {
         .order("created_at", { ascending: false });
       
       if (error) throw error;
-      return data as OrganizationIntegration[];
+      return (data as OrganizationIntegration[]).filter((i: any) => i.hisolution_services?.code === 'hi_patch');
     },
     enabled: !!organizationId,
   });
@@ -220,7 +220,7 @@ const Integrations = () => {
   );
 
   // Only Super Admin and Sales can access this page
-  if (!rolesLoading && !isSuperAdmin && !isSales) {
+  if (!isSuperAdmin && !isSales) {
     return (
       <DashboardLayout>
         <Card>
@@ -252,12 +252,9 @@ const Integrations = () => {
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Integrazioni HiSolution</h1>
-            <p className="text-muted-foreground">
-              Configura le integrazioni con i servizi HiSolution
-              {canManageMultipleClients && selectedOrganization && (
-                <span className="font-medium text-primary"> per {selectedOrganization.name}</span>
-              )}
+            <h1 className="text-3xl font-bold tracking-tight">Integrazioni HiConsole</h1>
+            <p className="text-muted-foreground mt-2">
+              Configura le integrazioni con i servizi HiConsole
             </p>
           </div>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -273,7 +270,7 @@ const Integrations = () => {
                   {selectedIntegration ? "Modifica Integrazione" : "Nuova Integrazione"}
                 </DialogTitle>
                 <DialogDescription>
-                  Configura i dettagli per l'integrazione con il servizio HiSolution
+                  Configura i dettagli per l'integrazione con il servizio HiConsole
                 </DialogDescription>
               </DialogHeader>
               <Form {...form}>
@@ -469,7 +466,7 @@ const Integrations = () => {
               <Settings className="w-12 h-12 text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold mb-2">Nessuna integrazione configurata</h3>
               <p className="text-muted-foreground text-center mb-4">
-                Inizia configurando la tua prima integrazione con i servizi HiSolution
+                Inizia configurando la tua prima integrazione con i servizi HiConsole
               </p>
               <Button onClick={() => openDialog()}>
                 <Plus className="w-4 h-4 mr-2" />

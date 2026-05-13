@@ -217,7 +217,7 @@ export const generateAssessmentPDF = ({ responses, companyName }: AssessmentRepo
     doc.rect(0, 282, pageWidth, 15, 'F');
     doc.setFontSize(7);
     doc.setTextColor(100, 150, 180);
-    doc.text('Assessment NIS2/NIST/ISO — HiCompliance', margin, 289);
+    doc.text('Assessment NIS2/NIST/ISO — HiConsole', margin, 289);
     doc.text(`Pagina ${i}/${totalPages}`, pageWidth - margin - 20, 289);
   }
 
