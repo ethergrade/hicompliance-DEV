@@ -163,9 +163,9 @@ const Assessment: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { selectedOrganization, userOrganizationId, canManageMultipleClients } = useClientContext();
-  const { isAdmin, isSales } = useUserRoles();
+  const { isSales } = useUserRoles();
   const orgId = selectedOrganization?.id || userOrganizationId;
-  const isReadOnlyView = canManageMultipleClients && (isAdmin || isSales);
+  const isReadOnlyView = canManageMultipleClients && isSales;
 
   // Question responses state: { [questionId]: response }
   const [responses, setResponses] = useState<Record<number, AssessmentResponse>>({});
@@ -610,7 +610,7 @@ const Assessment: React.FC = () => {
               <div>
                 <p className="font-medium text-foreground">Vista cliente in sola lettura</p>
                 <p className="text-sm text-muted-foreground">
-                  {selectedOrganization?.name || 'Il cliente selezionato'} compila l&apos;assessment. I ruoli admin e sales possono solo consultare lo stato corrente.
+                  {selectedOrganization?.name || 'Il cliente selezionato'} compila l&apos;assessment. I profili sales possono solo consultare lo stato corrente.
                 </p>
               </div>
             </CardContent>

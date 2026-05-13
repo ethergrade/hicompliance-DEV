@@ -9,7 +9,7 @@ export interface ApiResponse<T> {
 }
 
 export interface ApiErrorResponse {
-  success: boolean;
+  success?: boolean;
   message: string;
   errors: Record<string, string[]> | null;
 }
@@ -56,7 +56,7 @@ export interface LoginUser {
   name: string;
   email: string;
   tenant_id: string | null;
-  roles: string | string[];
+  roles: string[];
 }
 
 export interface LoginData {
@@ -73,7 +73,7 @@ export interface ChangePasswordRequest {
 // ─── User ───────────────────────────────────────────────────────────────────
 
 export interface UserResource {
-  id: number;
+  id: string | number;
   name: string;
   email: string;
   tenant_id: string | null;
@@ -116,10 +116,10 @@ export interface TenantResource {
   customer_sectors: string[] | null;
   implemented_technologies: string[] | null;
   status: number;
-  firewalls_count: number;
-  endpoints_count: number;
-  servers_count: number;
-  vms_count: number;
+  firewalls_count: number | null;
+  endpoints_count: number | null;
+  servers_count: number | null;
+  vms_count: number | null;
   contract_start?: string | null;
   contract_duration?: number | null;
   last_scan_at?: string | null;
@@ -203,8 +203,6 @@ export interface UpdateTenantRequest {
 export type AssessmentQuestionValue = string | number | null;
 export type AssessmentQuestions =
   | Record<string, AssessmentQuestionValue>
-  | AssessmentQuestionValue[]
-  | string
   | null;
 export type AssessmentId = string | number;
 
@@ -255,12 +253,16 @@ export interface RadarCategory {
 }
 
 export interface GanttItem {
-  name: string;
+  id?: string | number;
+  name?: string;
+  task?: string;
   start: string;
   end: string;
-  duration: string | number;
-  progress: boolean;
-  hidden: boolean;
+  duration?: string | number;
+  progress?: boolean;
+  hidden?: boolean;
+  withprev?: string | number | boolean;
+  [key: string]: unknown;
 }
 
 export interface OpenAIAnalysis {

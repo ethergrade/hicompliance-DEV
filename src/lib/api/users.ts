@@ -12,7 +12,7 @@ export const usersApi = {
     return res.data;
   },
 
-  async get(id: number): Promise<UserResource> {
+  async get(id: string | number): Promise<UserResource> {
     const res = await apiClient.get<ApiResponse<UserResource>>(`/users/${id}`);
     return res.data;
   },
@@ -22,12 +22,12 @@ export const usersApi = {
     return res.data;
   },
 
-  async update(id: number, payload: UpdateUserRequest): Promise<UserResource> {
+  async update(id: string | number, payload: UpdateUserRequest): Promise<UserResource> {
     const res = await apiClient.put<ApiResponse<UserResource>>(`/users/${id}`, payload);
     return res.data;
   },
 
-  async delete(id: number): Promise<void> {
+  async delete(id: string | number): Promise<void> {
     await apiClient.delete(`/users/${id}`);
   },
 };

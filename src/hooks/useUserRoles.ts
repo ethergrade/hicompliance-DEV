@@ -1,7 +1,29 @@
 import { useMemo } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 
-export type AppRole = 'super_admin' | 'sales' | 'admin' | 'editor' | 'viewer';
+export type AppRole =
+  | 'super-admin'
+  | 'master'
+  | 'sales'
+  | 'admin'
+  | 'manager'
+  | 'viewer'
+  | 'customer'
+  | 'editor';
+
+const ROLE_ALIASES: Record<string, AppRole> = {
+  'super-admin': 'super-admin',
+  super_admin: 'super-admin',
+  superadmin: 'super-admin',
+  master: 'master',
+  sales: 'sales',
+  admin: 'admin',
+  manager: 'manager',
+  viewer: 'viewer',
+  customer: 'customer',
+  client: 'customer',
+  editor: 'editor',
+};
 
 export const useUserRoles = () => {
   const { user, loading } = useAuth();
@@ -9,20 +31,26 @@ export const useUserRoles = () => {
   const roles = useMemo<AppRole[]>(() => {
     const userRoles = user?.roles || (user as any)?.role;
     if (!userRoles) return [];
-    
-    if (Array.isArray(userRoles)) {
-      return userRoles as AppRole[];
-    } else if (typeof userRoles === 'string') {
-      return (userRoles as string).split(',').map(r => r.trim()).filter(Boolean) as AppRole[];
-    }
-    
-    return [];
+
+    const rawRoles = Array.isArray(userRoles)
+      ? userRoles
+      : typeof userRoles === 'string'
+        ? userRoles.split(',')
+        : [];
+
+    return rawRoles
+      .map((role) => ROLE_ALIASES[String(role).trim().toLowerCase()])
+      .filter((role): role is AppRole => Boolean(role));
   }, [user]);
 
-  const hasRole = (role: AppRole) => roles.includes(role);
-  const isSuperAdmin = hasRole('super_admin');
+  const hasRole = (role: AppRole) => {
+    const normalizedRole = ROLE_ALIASES[role] ?? role;
+    return roles.includes(normalizedRole);
+  };
+
+  const isSuperAdmin = hasRole('super-admin') || hasRole('master');
   const isSales = hasRole('sales');
-  const isAdmin = hasRole('admin') || isSuperAdmin; // super_admin has all admin rights
+  const isAdmin = hasRole('admin') || hasRole('manager') || isSuperAdmin;
 
   return {
     roles,

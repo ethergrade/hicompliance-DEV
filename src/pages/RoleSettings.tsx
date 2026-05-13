@@ -1,160 +1,112 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
-import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
-import { Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Loader2, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { configApi } from '@/lib/api';
+import { useUserRoles } from '@/hooks/useUserRoles';
 
-interface ModulePermission {
-  id: string;
-  role: string;
-  module_path: string;
-  module_name: string;
-  is_enabled: boolean;
-}
+const roleDescriptions: Record<string, string> = {
+  'super-admin': 'Accesso di piattaforma completo.',
+  master: 'Ruolo globale di piattaforma restituito dalla configurazione API.',
+  admin: 'Gestione completa delle risorse del tenant.',
+  manager: 'Accesso operativo esteso sul tenant.',
+  sales: 'Gestione commerciale e selezione tenant.',
+  customer: 'Utente cliente associato al tenant.',
+  viewer: 'Sola lettura.',
+};
+
+const formatRole = (role: string) => {
+  const labels: Record<string, string> = {
+    'super-admin': 'Super Admin',
+    master: 'Master',
+    admin: 'Admin',
+    manager: 'Manager',
+    sales: 'Sales',
+    customer: 'Customer',
+    viewer: 'Viewer',
+  };
+
+  return labels[role] ?? role;
+};
 
 export default function RoleSettings() {
-  const [permissions, setPermissions] = useState<ModulePermission[]>([]);
-  const [loading, setLoading] = useState(true);
-  const { toast } = useToast();
-
-  useEffect(() => {
-    fetchPermissions();
-
-    // Subscribe to realtime updates
-    const channel = supabase
-      .channel('role-permissions-admin')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'role_module_permissions',
-        },
-        () => {
-          fetchPermissions();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  const fetchPermissions = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('role_module_permissions')
-        .select('*')
-        .eq('role', 'sales')
-        .order('module_name');
-
-      if (error) throw error;
-      setPermissions(data || []);
-    } catch (error) {
-      console.error('Error fetching permissions:', error);
-      toast({
-        title: 'Errore',
-        description: 'Impossibile caricare le impostazioni',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const togglePermission = async (permissionId: string, currentState: boolean) => {
-    try {
-      const { error } = await supabase
-        .from('role_module_permissions')
-        .update({ is_enabled: !currentState, updated_at: new Date().toISOString() })
-        .eq('id', permissionId);
-
-      if (error) throw error;
-
-      toast({
-        title: 'Aggiornato',
-        description: 'Permesso aggiornato con successo',
-      });
-    } catch (error) {
-      console.error('Error updating permission:', error);
-      toast({
-        title: 'Errore',
-        description: 'Impossibile aggiornare il permesso',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  if (loading) {
-    return (
-      <DashboardLayout>
-        <div className="flex items-center justify-center h-96">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
-      </DashboardLayout>
-    );
-  }
+  const { roles: currentUserRoles } = useUserRoles();
+  const { data: roles = [], isLoading, error } = useQuery({
+    queryKey: ['config', 'roles'],
+    queryFn: configApi.roles,
+  });
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold">Gestione Ruoli e Permessi</h1>
-          <p className="text-muted-foreground mt-2">
-            Configura quali moduli sono visibili per il ruolo Sales. Le modifiche sono applicate in tempo reale.
+          <h1 className="text-3xl font-bold">Ruoli</h1>
+          <p className="mt-2 text-muted-foreground">
+            La piattaforma legge i ruoli dall&apos;API. I permessi fini per modulo non sono ancora esposti da endpoint dedicati.
           </p>
         </div>
 
+        <Alert>
+          <ShieldAlert className="h-4 w-4" />
+          <AlertTitle>RBAC fine-grained non disponibile via API</AlertTitle>
+          <AlertDescription>
+            Questa schermata non modifica piu `role_module_permissions` su Supabase. Al momento il backend espone solo i ruoli assegnabili e quelli dell&apos;utente autenticato.
+          </AlertDescription>
+        </Alert>
+
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-3">
-              Permessi Ruolo Sales
-              <Badge variant="outline" className="font-normal">
-                Real-time RBAC
-              </Badge>
-            </CardTitle>
-            <CardDescription>
-              Attiva o disattiva l'accesso ai moduli per gli utenti con ruolo Sales
-            </CardDescription>
+            <CardTitle>Ruoli utente corrente</CardTitle>
+            <CardDescription>Ruoli ricevuti da `GET /auth/me` o dal login.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {permissions.map((permission) => (
-                <div
-                  key={permission.id}
-                  className="flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
-                >
-                  <div className="space-y-1">
-                    <Label htmlFor={permission.id} className="text-base font-medium cursor-pointer">
-                      {permission.module_name}
-                    </Label>
-                    <p className="text-sm text-muted-foreground">{permission.module_path}</p>
-                  </div>
-                  <Switch
-                    id={permission.id}
-                    checked={permission.is_enabled}
-                    onCheckedChange={() => togglePermission(permission.id, permission.is_enabled)}
-                  />
-                </div>
-              ))}
+            <div className="flex flex-wrap gap-2">
+              {currentUserRoles.length > 0 ? (
+                currentUserRoles.map((role) => (
+                  <Badge key={role} variant="destructive">
+                    {formatRole(role)}
+                  </Badge>
+                ))
+              ) : (
+                <span className="text-sm text-muted-foreground">Nessun ruolo disponibile per l&apos;utente corrente.</span>
+              )}
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-primary/20 bg-primary/5">
+        <Card>
           <CardHeader>
-            <CardTitle className="text-lg">ℹ️ Come funziona</CardTitle>
+            <CardTitle>Ruoli assegnabili</CardTitle>
+            <CardDescription>Lista restituita da `GET /config/roles`.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <p>• I Super Admin vedono sempre tutti i moduli</p>
-            <p>• Le modifiche ai permessi Sales sono visibili immediatamente</p>
-            <p>• Gli utenti Sales vedranno solo i moduli abilitati nella sidebar</p>
-            <p>• Le modifiche vengono sincronizzate in tempo reale via Supabase Realtime</p>
+          <CardContent>
+            {isLoading ? (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Caricamento ruoli...
+              </div>
+            ) : error ? (
+              <div className="text-sm text-destructive">
+                Impossibile caricare i ruoli dall&apos;API.
+              </div>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2">
+                {roles.map((role) => (
+                  <div key={role} className="rounded-lg border p-4">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-primary" />
+                      <span className="font-medium">{formatRole(role)}</span>
+                    </div>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {roleDescriptions[role] ?? 'Ruolo disponibile esposto dal backend.'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
