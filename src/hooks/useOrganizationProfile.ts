@@ -134,7 +134,7 @@ export function useOrganizationProfile() {
       };
 
       let newTenant;
-      if (canManageMultipleClients && organizationId) {
+      if (organizationId) {
         newTenant = await tenantsApi.update(organizationId, payload);
       } else {
         newTenant = await tenantsApi.updateOwn(payload);
