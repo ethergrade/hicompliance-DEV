@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import React, { useState } from "react";
+import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
   Shield,
@@ -20,7 +20,7 @@ import {
   ShieldCheck,
   Bot,
   Activity,
-} from 'lucide-react';
+} from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -33,13 +33,17 @@ import {
   SidebarHeader,
   SidebarFooter,
   useSidebar,
-} from '@/components/ui/sidebar';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { LogoutButton } from '@/components/auth/LogoutButton';
-import { useUserRoles } from '@/hooks/useUserRoles';
-import { useRolePermissions } from '@/hooks/useRolePermissions';
- import { useClientContext } from '@/contexts/ClientContext';
+} from "@/components/ui/sidebar";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { LogoutButton } from "@/components/auth/LogoutButton";
+import { useUserRoles } from "@/hooks/useUserRoles";
+import { useRolePermissions } from "@/hooks/useRolePermissions";
+import { useClientContext } from "@/contexts/ClientContext";
 
 interface NavItem {
   title: string;
@@ -49,31 +53,35 @@ interface NavItem {
 }
 
 const navigation: NavItem[] = [
-  { title: 'Home', href: '/', icon: Home },
-  { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { title: 'AI CISO', href: '/ai-ciso', icon: Bot, superAdminOnly: true },
-  { title: 'CyberNews', href: '/cyber-news', icon: Newspaper },
-  { title: 'Inventario Asset', href: '/asset-inventory', icon: Package },
+  { title: "Home", href: "/", icon: Home },
+  { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  // { title: "AI CISO", href: "/ai-ciso", icon: Bot, superAdminOnly: true },
+  { title: "CyberNews", href: "/cyber-news", icon: Newspaper },
+  { title: "Inventario Asset", href: "/asset-inventory", icon: Package },
 ];
 
 const hiComplianceModules = [
-  { title: 'Assessment', href: '/assessment', icon: ClipboardCheck },
-  { title: 'SurfaceScan360', href: '/surface-scan', icon: Globe },
-  { title: 'DarkRisk360', href: '/dark-risk', icon: Eye },
-  { title: 'Analisi', href: '/analytics', icon: BarChart3 },
-  { title: 'Remediation', href: '/remediation', icon: Wrench },
+  { title: "Assessment", href: "/assessment", icon: ClipboardCheck },
+  { title: "SurfaceScan360", href: "/surface-scan", icon: Globe },
+  { title: "DarkRisk360", href: "/dark-risk", icon: Eye },
+  { title: "Analisi", href: "/analytics", icon: BarChart3 },
+  // { title: 'Remediation', href: '/remediation', icon: Wrench },
 ];
-const threatManagementItem: NavItem = { title: 'Threat Management', href: '/threat-management', icon: Activity };
+const threatManagementItem: NavItem = {
+  title: "Threat Management",
+  href: "/threat-management",
+  icon: Activity,
+};
 
 const adminNavigation = [
   {
-    title: 'Clienti',
-    href: '/admin/clients',
+    title: "Clienti",
+    href: "/admin/clients",
     icon: Building2,
   },
   {
-    title: 'Gestione Ruoli',
-    href: '/admin/role-settings',
+    title: "Gestione Ruoli",
+    href: "/admin/role-settings",
     icon: Settings,
   },
 ];
@@ -81,36 +89,40 @@ const adminNavigation = [
 export const AppSidebar: React.FC = () => {
   const location = useLocation();
   const { state } = useSidebar();
-  const collapsed = state === 'collapsed';
+  const collapsed = state === "collapsed";
   const { user } = useAuth();
   const { isSuperAdmin, isSales, isAdmin } = useUserRoles();
   const { isModuleEnabled } = useRolePermissions();
   const { selectedOrganization, canManageMultipleClients } = useClientContext();
-  
-  const platformName = 'HiConsole';
 
-  const filteredNavigation = navigation.filter(item => {
+  const platformName = "HiConsole";
+
+  const filteredNavigation = navigation.filter((item) => {
     if (item.superAdminOnly && !isSuperAdmin) return false;
     return isModuleEnabled(item.href);
   });
 
   const hiComplianceActive = hiComplianceModules.some(
-    item => location.pathname === item.href
+    (item) => location.pathname === item.href,
   );
 
   const [hiComplianceOpen, setHiComplianceOpen] = React.useState<boolean>(true);
 
-  const renderNavItem = (item: { title: string; href: string; icon: React.ElementType }, indent = false) => {
+  const renderNavItem = (
+    item: { title: string; href: string; icon: React.ElementType },
+    indent = false,
+  ) => {
     const isActive = location.pathname === item.href;
     return (
       <SidebarMenuItem key={item.href}>
         <SidebarMenuButton
           asChild
           className={`
-            ${indent ? 'ml-4 mr-2' : 'mx-2'} rounded-lg transition-all duration-200
-            ${isActive
-              ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-cyber'
-              : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground'
+            ${indent ? "ml-4 mr-2" : "mx-2"} rounded-lg transition-all duration-200
+            ${
+              isActive
+                ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-cyber"
+                : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
             }
           `}
         >
@@ -128,12 +140,20 @@ export const AppSidebar: React.FC = () => {
       <SidebarHeader className="p-4 border-b border-sidebar-border">
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 rounded-lg overflow-hidden">
-            <img src="/lovable-uploads/ebc3b9f3-fce3-4df9-a7f9-b0b576887830.png" alt={`${platformName} Logo`} className="w-full h-full object-cover" />
+            <img
+              src="/lovable-uploads/ebc3b9f3-fce3-4df9-a7f9-b0b576887830.png"
+              alt={`${platformName} Logo`}
+              className="w-full h-full object-cover"
+            />
           </div>
           {!collapsed && (
             <div>
-              <h2 className="text-lg font-semibold text-sidebar-foreground">{platformName}</h2>
-              <p className="text-xs text-sidebar-foreground/60">{isSuperAdmin ? 'Admin Console' : 'Cyber Risk Platform'}</p>
+              <h2 className="text-lg font-semibold text-sidebar-foreground">
+                {platformName}
+              </h2>
+              <p className="text-xs text-sidebar-foreground/60">
+                {isSuperAdmin ? "Admin Console" : "Cyber Risk Platform"}
+              </p>
             </div>
           )}
         </div>
@@ -154,22 +174,27 @@ export const AppSidebar: React.FC = () => {
 
         {/* HiCompliance collapsible group */}
         <SidebarGroup>
-          <Collapsible open={hiComplianceOpen} onOpenChange={setHiComplianceOpen}>
+          <Collapsible
+            open={hiComplianceOpen}
+            onOpenChange={setHiComplianceOpen}
+          >
             <CollapsibleTrigger className="flex w-full items-center justify-between px-4 py-2 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-3.5 h-3.5" />
                 <span>HiConsole</span>
               </div>
               {!collapsed && (
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${hiComplianceOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform duration-200 ${hiComplianceOpen ? "rotate-180" : ""}`}
+                />
               )}
             </CollapsibleTrigger>
             <CollapsibleContent>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {hiComplianceModules
-                    .filter(item => isModuleEnabled(item.href))
-                    .map(item => renderNavItem(item))}
+                    .filter((item) => isModuleEnabled(item.href))
+                    .map((item) => renderNavItem(item))}
                 </SidebarMenu>
               </SidebarGroupContent>
             </CollapsibleContent>
@@ -182,23 +207,22 @@ export const AppSidebar: React.FC = () => {
               Security Operations
             </SidebarGroupLabel>
             <SidebarGroupContent>
-              <SidebarMenu>
-                {renderNavItem(threatManagementItem)}
-              </SidebarMenu>
+              <SidebarMenu>{renderNavItem(threatManagementItem)}</SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
         )}
 
-        {(isModuleEnabled('/settings/users') || isModuleEnabled('/settings/surface-scan-alerts')) && (
+        {(isModuleEnabled("/settings/users") ||
+          isModuleEnabled("/settings/surface-scan-alerts")) && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
               Impostazioni
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {isModuleEnabled('/settings/users') && (
+                {isModuleEnabled("/settings/users") && (
                   <SidebarMenuItem>
-                    <SidebarMenuButton 
+                    <SidebarMenuButton
                       asChild
                       className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                     >
@@ -210,9 +234,9 @@ export const AppSidebar: React.FC = () => {
                   </SidebarMenuItem>
                 )}
                 {/* Integrazioni & Alert DarkRisk360 hidden for now */}
-                {isModuleEnabled('/settings/surface-scan-alerts') && (
+                {isModuleEnabled("/settings/surface-scan-alerts") && (
                   <SidebarMenuItem>
-                    <SidebarMenuButton 
+                    <SidebarMenuButton
                       asChild
                       className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                     >
@@ -231,40 +255,52 @@ export const AppSidebar: React.FC = () => {
         {(isAdmin || isSales) && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
-              {canManageMultipleClients ? 'Gestione Multi-Cliente' : 'Amministrazione'}
+              {canManageMultipleClients
+                ? "Gestione Multi-Cliente"
+                : "Amministrazione"}
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-              {adminNavigation.filter(item => {
-                  // Show "Selezione Clienti" only for sales/admin who can manage multiple clients
-                  if (item.href === '/admin/clients') return canManageMultipleClients;
-                  // Show "Reportistica Aggregata" for admin/sales who can manage multiple clients
-                  if (item.href === '/admin/reporting') return canManageMultipleClients;
-                  // Show other admin items only for admin/superadmin
-                  return isAdmin || isSuperAdmin;
-                }).map((item) => {
-                  const isActive = location.pathname === item.href;
-                  return (
-                    <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton 
-                        asChild
-                        className={`
+                {adminNavigation
+                  .filter((item) => {
+                    // Show "Selezione Clienti" only for sales/admin who can manage multiple clients
+                    if (item.href === "/admin/clients")
+                      return canManageMultipleClients;
+                    // Show "Reportistica Aggregata" for admin/sales who can manage multiple clients
+                    if (item.href === "/admin/reporting")
+                      return canManageMultipleClients;
+                    // Show other admin items only for admin/superadmin
+                    return isAdmin || isSuperAdmin;
+                  })
+                  .map((item) => {
+                    const isActive = location.pathname === item.href;
+                    return (
+                      <SidebarMenuItem key={item.href}>
+                        <SidebarMenuButton
+                          asChild
+                          className={`
                           mx-2 rounded-lg transition-all duration-200
-                          ${isActive 
-                            ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-cyber' 
-                            : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground'
+                          ${
+                            isActive
+                              ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-cyber"
+                              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                           }
                         `}
-                      >
-                        <NavLink to={item.href}>
-                          <item.icon className="w-4 h-4" />
-                          {!collapsed && <span>{item.title}</span>}
-                        </NavLink>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-                {isSuperAdmin && renderNavItem({ title: 'AI CISO Assistant', href: '/ai-ciso', icon: Bot })}
+                        >
+                          <NavLink to={item.href}>
+                            <item.icon className="w-4 h-4" />
+                            {!collapsed && <span>{item.title}</span>}
+                          </NavLink>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
+                {isSuperAdmin &&
+                  renderNavItem({
+                    title: "AI CISO Assistant",
+                    href: "/ai-ciso",
+                    icon: Bot,
+                  })}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -275,28 +311,36 @@ export const AppSidebar: React.FC = () => {
         {!collapsed && (
           <div className="space-y-3">
             <div className="text-sm">
-              <p className="text-sidebar-foreground font-medium">{user?.name}</p>
+              <p className="text-sidebar-foreground font-medium">
+                {user?.name}
+              </p>
               <p className="text-sidebar-foreground/60 text-xs">
-              {canManageMultipleClients && selectedOrganization 
-                ? selectedOrganization.name 
-                : 'Organizzazione'}
+                {canManageMultipleClients && selectedOrganization
+                  ? selectedOrganization.name
+                  : "Organizzazione"}
               </p>
               <p className="text-xs text-cyan-400">
-                {isSuperAdmin ? 'Super Admin' : isSales ? 'Sales' : isAdmin ? 'Amministratore' : 'Cliente'}
+                {isSuperAdmin
+                  ? "Super Admin"
+                  : isSales
+                    ? "Sales"
+                    : isAdmin
+                      ? "Amministratore"
+                      : "Cliente"}
               </p>
             </div>
-            <LogoutButton 
-              variant="outline" 
-              size="sm" 
+            <LogoutButton
+              variant="outline"
+              size="sm"
               className="w-full text-sidebar-foreground/80 border-sidebar-border hover:bg-sidebar-accent hover:text-sidebar-foreground"
               showText={true}
             />
           </div>
         )}
         {collapsed && (
-          <LogoutButton 
-            variant="outline" 
-            size="sm" 
+          <LogoutButton
+            variant="outline"
+            size="sm"
             className="w-full text-sidebar-foreground/80 border-sidebar-border hover:bg-sidebar-accent hover:text-sidebar-foreground"
             showText={false}
           />
