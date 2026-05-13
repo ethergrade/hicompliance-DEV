@@ -37,8 +37,9 @@ const isValidFiscalCode = (fc: string): boolean => {
 
 export const OrganizationProfileForm: React.FC = () => {
   const { formData, loading, saving, lastSaved, updateField } = useOrganizationProfile();
-  const { isAdmin, isSales } = useUserRoles();
-  const isReadOnly = !isAdmin && !isSales;
+  const { isAdmin, isSales, hasRole } = useUserRoles();
+  const canEditProfile = isAdmin || isSales || hasRole('customer');
+  const isReadOnly = !canEditProfile;
 
   // Validation states
   const vatValidation = useMemo(() => {
