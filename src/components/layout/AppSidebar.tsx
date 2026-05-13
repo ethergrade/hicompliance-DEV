@@ -47,13 +47,18 @@ import { useUserRoles } from '@/hooks/useUserRoles';
 import { useRolePermissions } from '@/hooks/useRolePermissions';
  import { useClientContext } from '@/contexts/ClientContext';
 
-const navigation = [
+interface NavItem {
+  title: string;
+  href: string;
+  icon: React.ElementType;
+  superAdminOnly?: boolean;
+}
+
+const navigation: NavItem[] = [
   { title: 'Home', href: '/', icon: Home },
   { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { title: 'AI CISO', href: '/ai-ciso', icon: Bot, superAdminOnly: true },
   { title: 'CyberNews', href: '/cyber-news', icon: Newspaper },
-  { title: 'Minacce', href: '/threats', icon: AlertTriangle },
-  { title: 'Report', href: '/reports', icon: FileText },
   { title: 'Inventario Asset', href: '/asset-inventory', icon: Package },
 ];
 
@@ -65,7 +70,7 @@ const hiComplianceModules = [
   { title: 'Remediation', href: '/remediation', icon: Wrench },
 ];
 
-const incidentSubItems: any[] = [
+const incidentSubItems: NavItem[] = [
   // { title: 'Incident Response', href: '/incident-response', icon: AlertTriangle },
   // { title: 'Eventi Compliance', href: '/compliance-events', icon: FileCheck },
 ];
@@ -75,11 +80,6 @@ const adminNavigation = [
     title: 'Clienti',
     href: '/admin/clients',
     icon: Building2,
-  },
-  {
-    title: 'Reportistica Aggregata',
-    href: '/admin/reporting',
-    icon: PieChart,
   },
   {
     title: 'Gestione Ruoli',
@@ -98,10 +98,10 @@ export const AppSidebar: React.FC = () => {
   const { selectedOrganization, canManageMultipleClients } = useClientContext();
   
   const isAdmin = isSuperAdmin;
-  const platformName = isSuperAdmin ? 'HiConsole' : 'HiCompliance';
+  const platformName = 'HiConsole';
 
   const filteredNavigation = navigation.filter(item => {
-    if ((item as any).superAdminOnly && !isSuperAdmin) return false;
+    if (item.superAdminOnly && !isSuperAdmin) return false;
     return isModuleEnabled(item.href);
   });
 
@@ -171,7 +171,7 @@ export const AppSidebar: React.FC = () => {
             <CollapsibleTrigger className="flex w-full items-center justify-between px-4 py-2 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>HiCompliance</span>
+                <span>HiConsole</span>
               </div>
               {!collapsed && (
                 <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${hiComplianceOpen ? 'rotate-180' : ''}`} />
@@ -184,45 +184,14 @@ export const AppSidebar: React.FC = () => {
                     .filter(item => isModuleEnabled(item.href))
                     .map(item => renderNavItem(item))}
 
-                  {/* INCIDENT sub-collapsible */}
-                  {(isModuleEnabled('/incident-response') || isModuleEnabled('/compliance-events')) && (
-                    <li>
-                      <Collapsible open={incidentOpen} onOpenChange={setIncidentOpen}>
-                        <CollapsibleTrigger className="flex w-full items-center justify-between mx-2 px-3 py-2 text-sm rounded-lg text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors">
-                          <div className="flex items-center gap-2">
-                            <Shield className="w-4 h-4" />
-                            {!collapsed && <span>Incident</span>}
-                          </div>
-                          {!collapsed && (
-                            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${incidentOpen ? 'rotate-180' : ''}`} />
-                          )}
-                        </CollapsibleTrigger>
-                        <CollapsibleContent>
-                          <SidebarMenu>
-                            {incidentSubItems
-                              .filter(item => isModuleEnabled(item.href))
-                              .map(item => renderNavItem(item, true))}
-                          </SidebarMenu>
-                        </CollapsibleContent>
-                      </Collapsible>
-                    </li>
-                  )}
+                  {/* INCIDENT sub-collapsible hidden for demo */}
                 </SidebarMenu>
               </SidebarGroupContent>
             </CollapsibleContent>
           </Collapsible>
         </SidebarGroup>
 
-        {/* Threat Management */}
-        {isModuleEnabled('/threat-management') && (
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {renderNavItem({ title: 'Threat Management', href: '/threat-management', icon: Shield })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
+        {/* Threat Management hidden for demo */}
 
         {(isModuleEnabled('/settings/users') || isModuleEnabled('/settings/surface-scan-alerts')) && (
           <SidebarGroup>
