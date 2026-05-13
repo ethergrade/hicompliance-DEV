@@ -58,7 +58,7 @@ interface OrganizationStats {
 }
 
 const AdminReporting: React.FC = () => {
-  const { isSuperAdmin, isSales, loading: rolesLoading } = useUserRoles();
+  const { isAdmin, isSales, loading: rolesLoading } = useUserRoles();
   const [timeRange, setTimeRange] = useState('30d');
   const [organizations, setOrganizations] = useState<OrganizationStats[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,10 +75,10 @@ const AdminReporting: React.FC = () => {
   });
 
   useEffect(() => {
-    if (!rolesLoading && (isSuperAdmin || isSales)) {
+    if (!rolesLoading && (isAdmin || isSales)) {
       fetchAggregatedData();
     }
-  }, [rolesLoading, isSuperAdmin, isSales, timeRange]);
+  }, [rolesLoading, isAdmin, isSales, timeRange]);
 
   const fetchAggregatedData = async () => {
     setLoading(true);
@@ -187,7 +187,7 @@ const AdminReporting: React.FC = () => {
   };
 
   // Redirect non-admin/sales users
-  if (!rolesLoading && !isSuperAdmin && !isSales) {
+  if (!rolesLoading && !isAdmin && !isSales) {
     return <Navigate to="/dashboard" replace />;
   }
 

@@ -1,228 +1,199 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { 
-  Shield, 
-  AlertTriangle, 
-  Eye, 
-  UserX,
-  CreditCard,
+import {
+  AlertTriangle,
+  Bell,
+  Eye,
   Mail,
-  Lock,
-  TrendingDown
+  Shield,
+  UserX,
 } from 'lucide-react';
 import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
 import { AlertConfigDialog } from '@/components/dark-risk/AlertConfigDialog';
 import { useDarkRiskAlerts } from '@/hooks/useDarkRiskAlerts';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
+
+const alertTypeLabels: Record<string, string> = {
+  credenziali_compromesse: 'Credenziali compromesse',
+  dati_carte_credito: 'Dati carte di credito',
+  database_leak: 'Database leak',
+  email_compromesse: 'Email compromesse',
+  dati_sensibili: 'Dati sensibili',
+};
 
 const DarkRisk360: React.FC = () => {
-  const { alerts, createAlert } = useDarkRiskAlerts();
+  const { alerts, loading, createAlert } = useDarkRiskAlerts();
+  const { canManageMultipleClients, selectedOrganization } = useClientOrganization();
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
-  
-  const activeAlertsCount = alerts.filter(a => a.is_active).length;
-  
-  const darkWebThreats = [
-    { 
-      type: 'Credenziali Compromesse', 
-      severity: 'Critico', 
-      count: 24, 
-      description: 'Email e password trovate sul dark web',
-      icon: UserX
-    },
-    { 
-      type: 'Dati Carte di Credito', 
-      severity: 'Alto', 
-      count: 8, 
-      description: 'Informazioni di pagamento in vendita',
-      icon: CreditCard
-    },
-    { 
-      type: 'Database Leak', 
-      severity: 'Critico', 
-      count: 3, 
-      description: 'Database aziendali compromessi',
-      icon: Shield
-    },
-    { 
-      type: 'Email Compromise', 
-      severity: 'Medio', 
-      count: 12, 
-      description: 'Account email compromessi',
-      icon: Mail
-    },
-  ];
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'Critico': return 'text-red-500';
-      case 'Alto': return 'text-orange-500';
-      case 'Medio': return 'text-yellow-500';
-      case 'Basso': return 'text-green-500';
-      default: return 'text-gray-500';
-    }
-  };
+  const activeAlertsCount = alerts.filter((alert) => alert.is_active).length;
+  const uniqueEmails = new Set(alerts.map((alert) => alert.alert_email)).size;
+  const monitoredTypes = useMemo(() => {
+    const types = new Set<string>();
+    alerts.forEach((alert) => {
+      Object.entries(alert.alert_types || {}).forEach(([key, enabled]) => {
+        if (enabled) types.add(key);
+      });
+    });
+    return Array.from(types);
+  }, [alerts]);
 
-  const getSeverityBadge = (severity: string) => {
-    switch (severity) {
-      case 'Critico': return 'destructive';
-      case 'Alto': return 'destructive';
-      case 'Medio': return 'secondary';
-      case 'Basso': return 'default';
-      default: return 'outline';
-    }
-  };
+  const hasConfiguredAlerts = alerts.length > 0;
+  const isReadOnlyView = canManageMultipleClients;
+  const emptyStateText = isReadOnlyView
+    ? `${selectedOrganization?.name || 'Il cliente selezionato'} non ha ancora configurato monitoraggi DarkRisk.`
+    : 'Configura il primo alert per iniziare a monitorare esposizioni e ricevere notifiche.';
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-foreground">DarkRisk360</h1>
             <p className="text-muted-foreground">
-              Monitoraggio minacce nel dark web e mercati illegali
+              Vista DarkRisk del cliente attualmente selezionato
             </p>
           </div>
-          <Button className="bg-primary text-primary-foreground">
-            <Eye className="w-4 h-4 mr-2" />
-            Scansione Deep Web
-          </Button>
+          {!isReadOnlyView && (
+            <Button className="bg-primary text-primary-foreground" onClick={() => setAlertDialogOpen(true)}>
+              <Eye className="w-4 h-4 mr-2" />
+              Configura monitoraggio
+            </Button>
+          )}
         </div>
 
-        {/* Threat Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
           <Card className="border-border">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm text-muted-foreground">Minacce Attive</p>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">Alert attivi</p>
                     <AlertBellButton
                       alertCount={activeAlertsCount}
-                      onClick={() => setAlertDialogOpen(true)}
+                      onClick={() => !isReadOnlyView && setAlertDialogOpen(true)}
                     />
                   </div>
-                  <p className="text-2xl font-bold text-red-500">47</p>
+                  <p className="text-2xl font-bold text-foreground">{activeAlertsCount}</p>
                 </div>
-                <AlertTriangle className="w-8 h-8 text-red-500" />
+                <Bell className="w-8 h-8 text-primary" />
               </div>
             </CardContent>
           </Card>
-          
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm text-muted-foreground">Credenziali Leak</p>
-                    <AlertBellButton
-                      alertCount={activeAlertsCount}
-                      onClick={() => setAlertDialogOpen(true)}
-                    />
-                  </div>
-                  <p className="text-2xl font-bold text-orange-500">24</p>
-                </div>
-                <UserX className="w-8 h-8 text-orange-500" />
-              </div>
-            </CardContent>
-          </Card>
-          
+
           <Card className="border-border">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Domini Monitorati</p>
-                  <p className="text-2xl font-bold text-primary">156</p>
+                  <p className="text-sm text-muted-foreground">Monitoraggi configurati</p>
+                  <p className="text-2xl font-bold text-foreground">{alerts.length}</p>
                 </div>
                 <Shield className="w-8 h-8 text-primary" />
               </div>
             </CardContent>
           </Card>
-          
+
           <Card className="border-border">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Punteggio Rischio</p>
-                  <p className="text-2xl font-bold text-red-500">85</p>
+                  <p className="text-sm text-muted-foreground">Destinatari</p>
+                  <p className="text-2xl font-bold text-foreground">{uniqueEmails}</p>
                 </div>
-                <TrendingDown className="w-8 h-8 text-red-500" />
+                <Mail className="w-8 h-8 text-primary" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Tipologie monitorate</p>
+                  <p className="text-2xl font-bold text-foreground">{monitoredTypes.length}</p>
+                </div>
+                <UserX className="w-8 h-8 text-primary" />
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Active Threats */}
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle>Minacce Rilevate</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {darkWebThreats.map((threat, index) => {
-                const IconComponent = threat.icon;
-                return (
-                  <div key={index} className="flex items-center justify-between p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors">
-                    <div className="flex items-center space-x-4">
-                      <div className="p-2 rounded-lg bg-red-500/10">
-                        <IconComponent className="w-5 h-5 text-red-500" />
-                      </div>
-                      <div>
-                        <h4 className="font-medium">{threat.type}</h4>
+        {!loading && !hasConfiguredAlerts ? (
+          <Card className="border-dashed border-border">
+            <CardContent className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+              <AlertTriangle className="h-10 w-10 text-muted-foreground/60" />
+              <div className="space-y-1">
+                <h2 className="text-lg font-semibold text-foreground">Nessun dato disponibile</h2>
+                <p className="max-w-xl text-sm text-muted-foreground">{emptyStateText}</p>
+              </div>
+              {!isReadOnlyView && (
+                <Button onClick={() => setAlertDialogOpen(true)}>
+                  Configura il primo alert
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle>Monitoraggi configurati</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {alerts.map((alert) => {
+                  const enabledTypes = Object.entries(alert.alert_types || {})
+                    .filter(([, enabled]) => enabled)
+                    .map(([type]) => alertTypeLabels[type] || type);
+
+                  return (
+                    <div
+                      key={alert.id}
+                      className="rounded-lg border border-border bg-card p-4 transition-colors hover:bg-muted/30"
+                    >
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Mail className="h-4 w-4 text-primary" />
+                            <span className="font-medium text-foreground">{alert.alert_email}</span>
+                            <Badge variant={alert.is_active ? 'default' : 'outline'}>
+                              {alert.is_active ? 'Attivo' : 'Disattivato'}
+                            </Badge>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {enabledTypes.length > 0 ? (
+                              enabledTypes.map((type) => (
+                                <Badge key={type} variant="secondary">
+                                  {type}
+                                </Badge>
+                              ))
+                            ) : (
+                              <span className="text-sm text-muted-foreground">Nessuna tipologia attiva</span>
+                            )}
+                          </div>
+                        </div>
                         <p className="text-sm text-muted-foreground">
-                          {threat.description}
+                          Aggiornato il {new Date(alert.updated_at).toLocaleDateString('it-IT')}
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-3">
-                      <div className="text-2xl font-bold">
-                        <span className={getSeverityColor(threat.severity)}>
-                          {threat.count}
-                        </span>
-                      </div>
-                      <Badge variant={getSeverityBadge(threat.severity) as any}>
-                        {threat.severity}
-                      </Badge>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-        {/* Recent Alerts */}
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle>Alert Recenti</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {[
-                'Nuove credenziali trovate per dominio cliente1.com',
-                'Database leak rilevato su forum underground',
-                'Aumento attività di phishing verso il brand aziendale',
-                'Credenziali admin vendute su marketplace dark web'
-              ].map((alert, index) => (
-                <div key={index} className="flex items-center space-x-3 p-3 rounded-lg bg-muted/30">
-                  <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                  <span className="text-sm">{alert}</span>
-                  <span className="text-xs text-muted-foreground ml-auto">
-                    {index + 1}h fa
-                  </span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <AlertConfigDialog
-          open={alertDialogOpen}
-          onOpenChange={setAlertDialogOpen}
-          onSubmit={createAlert}
-          mode="create"
-        />
+        {!isReadOnlyView && (
+          <AlertConfigDialog
+            open={alertDialogOpen}
+            onOpenChange={setAlertDialogOpen}
+            onSubmit={createAlert}
+            mode="create"
+          />
+        )}
       </div>
     </DashboardLayout>
   );

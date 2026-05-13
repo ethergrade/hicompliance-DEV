@@ -1,9 +1,12 @@
 import { useUserRoles } from './useUserRoles';
+import { isModuleVisible } from '@/config/moduleVisibility';
 
 export const useRolePermissions = () => {
   const { roles, isSuperAdmin, isAdmin } = useUserRoles();
 
   const isModuleEnabled = (modulePath: string): boolean => {
+    if (!isModuleVisible(modulePath)) return false;
+
     // Super admins see everything
     if (isSuperAdmin) return true;
     

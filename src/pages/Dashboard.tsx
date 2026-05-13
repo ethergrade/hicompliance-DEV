@@ -15,6 +15,7 @@ import { ComplianceMetricCard } from '@/components/dashboard/ComplianceMetricCar
 import { RiskScoreMetricCard } from '@/components/dashboard/RiskScoreMetricCard';
 import { useServiceIntegrations } from '@/hooks/useServiceIntegrations';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { moduleVisibility } from '@/config/moduleVisibility';
 import { 
   Shield, Monitor, Mail, FileText, Download, 
   BarChart3, Laptop, Link2, Unlink, Smartphone, Settings
@@ -43,8 +44,8 @@ const Dashboard: React.FC = () => {
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const { isServiceConnected, getIntegrationByCode, connectService, disconnectService, isConnecting, isDisconnecting } = useServiceIntegrations();
-  const { isSuperAdmin, isSales } = useUserRoles();
-  const canManage = isSuperAdmin || isSales;
+  const { isAdmin, isSales } = useUserRoles();
+  const canManage = (isAdmin || isSales) && moduleVisibility.integrations;
 
   const [quickConnectOpen, setQuickConnectOpen] = useState(false);
   const [selectedService, setSelectedService] = useState<{ name: string; code: string; id: string } | null>(null);

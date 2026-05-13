@@ -7,11 +7,6 @@ import {
   Settings,
   BarChart3,
   AlertTriangle,
-  FileText,
-  Lock,
-  Cloud,
-  Network,
-  LogOut,
   Globe,
   Eye,
   ClipboardCheck,
@@ -19,13 +14,12 @@ import {
   Wrench,
   Bell,
   Package,
-  FileCheck,
   Building2,
   Newspaper,
-  PieChart,
   ChevronDown,
   ShieldCheck,
   Bot,
+  Activity,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -69,11 +63,7 @@ const hiComplianceModules = [
   { title: 'Analisi', href: '/analytics', icon: BarChart3 },
   { title: 'Remediation', href: '/remediation', icon: Wrench },
 ];
-
-const incidentSubItems: NavItem[] = [
-  // { title: 'Incident Response', href: '/incident-response', icon: AlertTriangle },
-  // { title: 'Eventi Compliance', href: '/compliance-events', icon: FileCheck },
-];
+const threatManagementItem: NavItem = { title: 'Threat Management', href: '/threat-management', icon: Activity };
 
 const adminNavigation = [
   {
@@ -93,11 +83,10 @@ export const AppSidebar: React.FC = () => {
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
   const { user } = useAuth();
-  const { isSuperAdmin, isSales } = useUserRoles();
+  const { isSuperAdmin, isSales, isAdmin } = useUserRoles();
   const { isModuleEnabled } = useRolePermissions();
   const { selectedOrganization, canManageMultipleClients } = useClientContext();
   
-  const isAdmin = isSuperAdmin;
   const platformName = 'HiConsole';
 
   const filteredNavigation = navigation.filter(item => {
@@ -105,13 +94,11 @@ export const AppSidebar: React.FC = () => {
     return isModuleEnabled(item.href);
   });
 
-  const hiComplianceActive = [...hiComplianceModules, ...incidentSubItems].some(
+  const hiComplianceActive = hiComplianceModules.some(
     item => location.pathname === item.href
   );
-  const incidentActive = incidentSubItems.some(item => location.pathname === item.href);
 
   const [hiComplianceOpen, setHiComplianceOpen] = React.useState<boolean>(true);
-  const [incidentOpen, setIncidentOpen] = React.useState(incidentActive);
 
   const renderNavItem = (item: { title: string; href: string; icon: React.ElementType }, indent = false) => {
     const isActive = location.pathname === item.href;
@@ -183,15 +170,24 @@ export const AppSidebar: React.FC = () => {
                   {hiComplianceModules
                     .filter(item => isModuleEnabled(item.href))
                     .map(item => renderNavItem(item))}
-
-                  {/* INCIDENT sub-collapsible hidden for demo */}
                 </SidebarMenu>
               </SidebarGroupContent>
             </CollapsibleContent>
           </Collapsible>
         </SidebarGroup>
 
-        {/* Threat Management hidden for demo */}
+        {isModuleEnabled(threatManagementItem.href) && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
+              Security Operations
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {renderNavItem(threatManagementItem)}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         {(isModuleEnabled('/settings/users') || isModuleEnabled('/settings/surface-scan-alerts')) && (
           <SidebarGroup>
@@ -232,7 +228,7 @@ export const AppSidebar: React.FC = () => {
           </SidebarGroup>
         )}
 
-        {(isAdmin || isSuperAdmin || isSales) && (
+        {(isAdmin || isSales) && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
               {canManageMultipleClients ? 'Gestione Multi-Cliente' : 'Amministrazione'}

@@ -4,7 +4,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 export type AppRole = 'super_admin' | 'sales' | 'admin' | 'editor' | 'viewer';
 
 export const useUserRoles = () => {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
 
   const roles = useMemo<AppRole[]>(() => {
     const userRoles = user?.roles || (user as any)?.role;
@@ -29,6 +29,7 @@ export const useUserRoles = () => {
     isSuperAdmin,
     isSales,
     isAdmin,
+    loading,
     hasRole
   };
 };

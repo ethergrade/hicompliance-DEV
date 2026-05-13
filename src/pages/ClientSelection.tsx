@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useClientContext } from '@/contexts/ClientContext';
 import { useUserRoles } from '@/hooks/useUserRoles';
@@ -16,9 +16,13 @@ import DeleteClientDialog from '@/components/clients/DeleteClientDialog';
 
 const ClientSelection: React.FC = () => {
   const navigate = useNavigate();
-  const { organizations, setSelectedOrganization, isLoadingClients, selectedOrganization, fetchOrganizations } = useClientContext();
+  const { organizations, setSelectedOrganization, isLoadingClients, selectedOrganization, fetchOrganizations, canManageMultipleClients } = useClientContext();
   const { isSuperAdmin } = useUserRoles();
   const [searchQuery, setSearchQuery] = useState('');
+
+  if (!canManageMultipleClients) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   // CRUD state
   const [crudOpen, setCrudOpen] = useState(false);

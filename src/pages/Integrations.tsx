@@ -63,7 +63,7 @@ const Integrations = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { organizationId, needsClientSelection, canManageMultipleClients, selectedOrganization } = useClientOrganization();
-  const { isSuperAdmin, isSales } = useUserRoles();
+  const { isAdmin, isSales } = useUserRoles();
 
   const form = useForm<IntegrationFormData>({
     defaultValues: {
@@ -220,7 +220,7 @@ const Integrations = () => {
   );
 
   // Only Super Admin and Sales can access this page
-  if (!isSuperAdmin && !isSales) {
+  if (!isAdmin && !isSales) {
     return (
       <DashboardLayout>
         <Card>
@@ -228,7 +228,7 @@ const Integrations = () => {
             <AlertTriangle className="w-12 h-12 text-destructive mb-4" />
             <h3 className="text-lg font-semibold mb-2">Accesso non autorizzato</h3>
             <p className="text-muted-foreground text-center">
-              Solo gli utenti Super Admin e Sales possono accedere alla configurazione delle integrazioni API.
+              Solo gli utenti Admin e Sales possono accedere alla configurazione delle integrazioni API.
             </p>
           </CardContent>
         </Card>
