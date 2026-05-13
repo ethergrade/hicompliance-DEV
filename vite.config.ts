@@ -6,8 +6,7 @@ import { componentTagger } from "lovable-tagger";
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const targetUrl = env.VITE_API_BASE_URL || 'https://hiapi.websoupcloud.it';
-  const isWebsoup = targetUrl.includes('websoupcloud');
+  const targetUrl = env.VITE_API_BASE_URL;
   
   return {
     server: {
@@ -18,7 +17,6 @@ export default defineConfig(({ mode }) => {
           target: targetUrl,
           changeOrigin: true,
           secure: false,
-          rewrite: (path) => isWebsoup ? path.replace(/^\/api/, '') : path
         },
         '/sanctum': {
           target: targetUrl,
