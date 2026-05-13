@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/components/auth/AuthProvider";
  import { ClientProvider } from "@/contexts/ClientContext";
  import { ClientSelectionGuard } from "@/components/guards/ClientSelectionGuard";
@@ -59,18 +59,18 @@ const App = () => (
             <Route path="/remediation" element={<ClientSelectionGuard><Remediation /></ClientSelectionGuard>} />
             <Route path="/analytics" element={<ClientSelectionGuard><Analytics /></ClientSelectionGuard>} />
             <Route path="/threats" element={<ClientSelectionGuard><Threats /></ClientSelectionGuard>} />
-            <Route path="/reports" element={<ClientSelectionGuard><Reports /></ClientSelectionGuard>} />
+            <Route path="/reports" element={<Navigate to="/dashboard" replace />} />
             <Route path="/documents" element={<ClientSelectionGuard><Documents /></ClientSelectionGuard>} />
             <Route path="/asset-inventory" element={<ClientSelectionGuard><AssetInventory /></ClientSelectionGuard>} />
-            <Route path="/incident-response" element={<ClientSelectionGuard><IncidentResponse /></ClientSelectionGuard>} />
-            <Route path="/compliance-events" element={<ClientSelectionGuard><ComplianceEvents /></ClientSelectionGuard>} />
-            <Route path="/threat-management" element={<ClientSelectionGuard><ThreatManagement /></ClientSelectionGuard>} />
+            <Route path="/incident-response" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/compliance-events" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/threat-management" element={<Navigate to="/dashboard" replace />} />
             <Route path="/settings/users" element={<ClientSelectionGuard><Users /></ClientSelectionGuard>} />
             <Route path="/settings/integrations" element={<ClientSelectionGuard><Integrations /></ClientSelectionGuard>} />
             <Route path="/settings/alerts" element={<ClientSelectionGuard><Settings /></ClientSelectionGuard>} />
             <Route path="/settings/surface-scan-alerts" element={<ClientSelectionGuard><SurfaceScanSettings /></ClientSelectionGuard>} />
             <Route path="/admin/role-settings" element={<ClientSelectionGuard><RoleSettings /></ClientSelectionGuard>} />
-            <Route path="/admin/reporting" element={<AdminReporting />} />
+            <Route path="/admin/reporting" element={<Navigate to="/dashboard" replace />} />
             <Route path="/consistenze" element={<ClientSelectionGuard><Consistenze /></ClientSelectionGuard>} />
             <Route path="/ai-ciso" element={<AICiso />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
