@@ -162,7 +162,9 @@ const Assessment: React.FC = () => {
     if (loadedOrgRef.current === orgId) return;
 
     const loadResponses = async () => {
-      const assessment = await assessmentApi.getLegacy();
+      const assessments = await assessmentApi.list();
+      const assessment = assessments.length > 0 ? assessments[0] : null;
+      if (!assessment) return;
       assessmentIdRef.current = assessment.id;
       setResponses(parseAssessmentQuestions(assessment.questions));
       loadedOrgRef.current = orgId;
@@ -183,7 +185,7 @@ const Assessment: React.FC = () => {
     snapshotTimerRef.current = setTimeout(async () => {
       const currentResponses = responsesRef.current;
       try {
-        await assessmentApi.updateLegacy({
+        await assessmentApi.update(assessmentIdRef.current, {
           questions: serializeAssessmentQuestions(currentResponses),
         });
         setSaveStatus('saved');
