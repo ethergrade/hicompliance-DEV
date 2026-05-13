@@ -24,7 +24,7 @@ interface ServiceStatusCardProps {
 
 export const ServiceStatusCard: React.FC<ServiceStatusCardProps> = ({ services }) => {
   const connectedServices = services.filter(s => s.status === 'active');
-  const hiSolutionServices = services.filter(s => s.services?.code?.startsWith('hi_'));
+  const hiSolutionServices = services.filter(s => s.services?.code === 'hi_patch');
   
   return (
     <div className="space-y-6">

@@ -287,7 +287,7 @@ export const OrganizationProfileForm: React.FC = () => {
             onValueChange={(value) => updateField('nis2_classification', value as NIS2Classification)}
             className="space-y-4"
           >
-            {(['essential', 'important', 'none'] as NIS2Classification[]).map((classification) => (
+            {(['soggetto_essenziale', 'soggetto_importante', 'nessuna'] as NIS2Classification[]).map((classification) => (
               <div
                 key={classification}
                 className={`flex items-start space-x-3 p-4 rounded-lg border transition-colors cursor-pointer ${

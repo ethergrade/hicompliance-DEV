@@ -118,14 +118,16 @@ export interface TenantResource {
   endpoints_count: number;
   servers_count: number;
   vms_count: number;
-  contract_start: string;
-  contract_duration: number;
-  last_scan_at: string;
-  ips_list: IpRange[] | null;
-  domains_list: DomainEntry[] | null;
-  is_multiple: boolean;
-  extra: string[] | null;
-  created_at: string;
+  // Anagrafica / Organization Profile fields
+  legal_name?: string | null;
+  fiscal_code?: string | null;
+  legal_address?: string | null;
+  operational_address?: string | null;
+  pec?: string | null;
+  email?: string | null;
+  business_sector?: string | null;
+  nis2_classification?: 'soggetto_essenziale' | 'soggetto_importante' | 'nessuna' | null;
+  ciso_substitute?: string | null;
 }
 
 export interface IpRange {
@@ -166,13 +168,16 @@ export interface UpdateTenantRequest {
   endpoints_count?: number;
   servers_count?: number;
   vms_count?: number;
-  contract_start?: string | null;
-  contract_duration?: number;
-  last_scan_at?: string | null;
-  is_multiple?: boolean;
-  extra?: string[] | null;
-  ips_list?: IpRange[] | null;
-  domains_list?: DomainEntry[] | null;
+  // Anagrafica / Organization Profile fields
+  legal_name?: string | null;
+  fiscal_code?: string | null;
+  legal_address?: string | null;
+  operational_address?: string | null;
+  pec?: string | null;
+  email?: string | null;
+  business_sector?: string | null;
+  nis2_classification?: 'soggetto_essenziale' | 'soggetto_importante' | 'nessuna' | null;
+  ciso_substitute?: string | null;
 }
 
 // ─── Assessment ─────────────────────────────────────────────────────────────
