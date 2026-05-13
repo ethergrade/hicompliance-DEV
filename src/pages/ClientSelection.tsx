@@ -218,10 +218,12 @@ const ClientSelection: React.FC = () => {
                       <Server className="w-3.5 h-3.5 mr-1" />
                       Consistenze
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={(e) => openServices(e, org)}>
-                      <Plug className="w-3.5 h-3.5 mr-1" />
-                      Servizi
-                    </Button>
+                    {isSuperAdmin && (
+                      <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={(e) => openServices(e, org)}>
+                        <Plug className="w-3.5 h-3.5 mr-1" />
+                        Servizi
+                      </Button>
+                    )}
                   </div>
 
                   <Button variant="ghost" className="w-full group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
@@ -238,7 +240,7 @@ const ClientSelection: React.FC = () => {
       {/* Sheets */}
       <ClientProfileSheet organizationId={editingOrgId} organizationName={editingOrgName} open={profileOpen} onOpenChange={setProfileOpen} />
       <ClientAssetSheet organizationId={editingOrgId} organizationName={editingOrgName} open={assetOpen} onOpenChange={setAssetOpen} />
-      {editingOrgId && (
+      {isSuperAdmin && editingOrgId && (
         <ClientServicesDialog organizationId={editingOrgId} organizationName={editingOrgName} open={servicesOpen} onOpenChange={setServicesOpen} />
       )}
 
