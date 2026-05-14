@@ -181,7 +181,7 @@ export const AppSidebar: React.FC = () => {
             <CollapsibleTrigger className="flex w-full items-center justify-between px-4 py-2 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>HiConsole</span>
+                <span>HICOMPLIANCE</span>
               </div>
               {!collapsed && (
                 <ChevronDown
@@ -295,12 +295,12 @@ export const AppSidebar: React.FC = () => {
                       </SidebarMenuItem>
                     );
                   })}
-                {isSuperAdmin &&
+                {/* {isSuperAdmin &&
                   renderNavItem({
                     title: "AI CISO Assistant",
                     href: "/ai-ciso",
                     icon: Bot,
-                  })}
+                  })} */}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
