@@ -14,6 +14,8 @@ interface ServiceIntegration {
   service_name?: string;
 }
 
+const normalizeServiceCode = (code: string) => code.toLowerCase().replace(/[_-]/g, '');
+
 export const useServiceIntegrations = () => {
   const { user } = useAuth();
   const { selectedOrganization } = useClientContext();
@@ -29,8 +31,7 @@ export const useServiceIntegrations = () => {
       const { data, error } = await supabase
         .from('organization_integrations')
         .select('id, service_id, api_url, is_active, organization_id, hisolution_services(code, name)')
-        .eq('organization_id', organizationId)
-        .eq('is_active', true);
+        .eq('organization_id', organizationId);
       
       if (error) throw error;
       return (data || []).map((item: any) => ({
@@ -47,11 +48,13 @@ export const useServiceIntegrations = () => {
   });
 
   const isServiceConnected = (serviceCode: string): boolean => {
-    return integrations.some(i => i.service_code === serviceCode && i.is_active);
+    const normalizedTargetCode = normalizeServiceCode(serviceCode);
+    return integrations.some(i => i.service_code && normalizeServiceCode(i.service_code) === normalizedTargetCode && i.is_active);
   };
 
   const getIntegrationByCode = (serviceCode: string): ServiceIntegration | undefined => {
-    return integrations.find(i => i.service_code === serviceCode && i.is_active);
+    const normalizedTargetCode = normalizeServiceCode(serviceCode);
+    return integrations.find(i => i.service_code && normalizeServiceCode(i.service_code) === normalizedTargetCode && i.is_active);
   };
 
   const connectMutation = useMutation({
@@ -113,6 +116,7 @@ export const useServiceIntegrations = () => {
 
   return {
     integrations,
+    hasAnyIntegrationsConfigured: integrations.length > 0,
     isLoading,
     organizationId,
     isServiceConnected,

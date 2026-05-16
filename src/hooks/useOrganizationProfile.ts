@@ -32,59 +32,62 @@ const INITIAL_FORM_DATA: ProfileFormData = {
   ciso_substitute: ''
 };
 
+interface OrganizationProfileUpdatedEventDetail {
+  organizationId: string;
+  sourceId: string;
+}
+
+export interface UseOrganizationProfileReturn {
+  profile: OrganizationProfile | null;
+  formData: ProfileFormData;
+  loading: boolean;
+  saving: boolean;
+  lastSaved: Date | null;
+  updateField: (field: keyof ProfileFormData, value: string | NIS2Classification | null) => void;
+  flushPendingSave: () => Promise<void>;
+  refetch: () => Promise<void>;
+}
+
 export function useOrganizationProfile() {
   const [profile, setProfile] = useState<OrganizationProfile | null>(null);
   const [formData, setFormData] = useState<ProfileFormData>(INITIAL_FORM_DATA);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
-  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const { toast } = useToast();
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const { organizationId: clientOrgId, isLoading: clientLoading, canManageMultipleClients } = useClientOrganization();
+  const latestFormDataRef = useRef<ProfileFormData>(INITIAL_FORM_DATA);
+  const lastPersistedHashRef = useRef<string>(JSON.stringify(INITIAL_FORM_DATA));
+  const organizationIdRef = useRef<string | null>(null);
+  const saveProfileRef = useRef<(data: ProfileFormData) => Promise<void>>(async () => {});
+  const sourceIdRef = useRef<string>(`org-profile-${Math.random().toString(36).slice(2, 11)}`);
+  const { organizationId: clientOrgId, isLoading: clientLoading } = useClientOrganization();
+  const organizationId = clientOrgId ?? null;
 
   // Fetch profile
   const fetchProfile = useCallback(async () => {
-    if (clientLoading) {
-      return;
-    }
-    
-    // Non-admin base users use getOwn. If they are admin but haven't selected a client, wait.
-    if (canManageMultipleClients && !clientOrgId) {
+    if (clientLoading || !organizationId) {
+      setProfile(null);
+      setFormData(INITIAL_FORM_DATA);
+      latestFormDataRef.current = INITIAL_FORM_DATA;
+      lastPersistedHashRef.current = JSON.stringify(INITIAL_FORM_DATA);
       setLoading(false);
       return;
     }
     
     setLoading(true);
     try {
-      setOrganizationId(clientOrgId);
+      const { data, error } = await supabase
+        .from('organization_profiles')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .maybeSingle();
 
-      const tenant = canManageMultipleClients && clientOrgId 
-        ? await tenantsApi.get(clientOrgId) 
-        : await tenantsApi.getOwn();
+      if (error) throw error;
 
-      if (tenant) {
-        // Map TenantResource to OrganizationProfile
-        const profileData: OrganizationProfile = {
-          id: tenant.id,
-          organization_id: tenant.id,
-          legal_name: tenant.legal_name || tenant.name || null,
-          vat_number: tenant.vat_number || null,
-          fiscal_code: tenant.fiscal_code || null,
-          legal_address: tenant.legal_address || null,
-          operational_address: tenant.operational_address || null,
-          pec: tenant.pec || null,
-          phone: tenant.phone || null,
-          email: tenant.email || null,
-          business_sector: tenant.business_sector || tenant.industry || null,
-          nis2_classification: tenant.nis2_classification || null,
-          ciso_substitute: tenant.ciso_substitute || null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-        
-        setProfile(profileData);
-        setFormData({
+      if (data) {
+        const profileData = data as unknown as OrganizationProfile;
+        const nextFormData: ProfileFormData = {
           legal_name: profileData.legal_name || '',
           vat_number: profileData.vat_number || '',
           fiscal_code: profileData.fiscal_code || '',
@@ -96,7 +99,17 @@ export function useOrganizationProfile() {
           business_sector: profileData.business_sector || '',
           nis2_classification: profileData.nis2_classification,
           ciso_substitute: profileData.ciso_substitute || ''
-        });
+        };
+
+        setProfile(profileData);
+        setFormData(nextFormData);
+        latestFormDataRef.current = nextFormData;
+        lastPersistedHashRef.current = JSON.stringify(nextFormData);
+      } else {
+        setProfile(null);
+        setFormData(INITIAL_FORM_DATA);
+        latestFormDataRef.current = INITIAL_FORM_DATA;
+        lastPersistedHashRef.current = JSON.stringify(INITIAL_FORM_DATA);
       }
     } catch (error) {
       console.error('Error fetching organization profile:', error);
@@ -108,7 +121,7 @@ export function useOrganizationProfile() {
     } finally {
       setLoading(false);
     }
-  }, [clientOrgId, clientLoading, canManageMultipleClients, toast]);
+  }, [organizationId, clientLoading, toast]);
 
   // Save profile with debounce
   const saveProfile = useCallback(async (data: ProfileFormData) => {
@@ -133,9 +146,17 @@ export function useOrganizationProfile() {
         ciso_substitute: data.ciso_substitute || null
       };
 
-      let newTenant;
-      if (canManageMultipleClients && organizationId) {
-        newTenant = await tenantsApi.update(organizationId, payload);
+      if (profile?.id) {
+        // Update existing
+        const { data: updatedProfile, error } = await supabase
+          .from('organization_profiles')
+          .update(payload)
+          .eq('id', profile.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        setProfile(updatedProfile as unknown as OrganizationProfile);
       } else {
         newTenant = await tenantsApi.updateOwn(payload);
       }
@@ -157,8 +178,18 @@ export function useOrganizationProfile() {
         });
       }
 
+      lastPersistedHashRef.current = JSON.stringify(data);
       setLastSaved(new Date());
-    } catch (error: any) {
+
+      window.dispatchEvent(
+        new CustomEvent<OrganizationProfileUpdatedEventDetail>('organization-profile-updated', {
+          detail: {
+            organizationId,
+            sourceId: sourceIdRef.current,
+          },
+        })
+      );
+    } catch (error) {
       console.error('Error saving organization profile:', error);
       
       if (error?.status === 403 || error?.status === 401) {
@@ -177,12 +208,28 @@ export function useOrganizationProfile() {
     } finally {
       setSaving(false);
     }
-  }, [organizationId, canManageMultipleClients, profile, toast]);
+  }, [organizationId, profile?.id, toast]);
+
+  const flushPendingSave = useCallback(async () => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+
+    if (!organizationId) return;
+
+    const currentData = latestFormDataRef.current;
+    const currentHash = JSON.stringify(currentData);
+    if (currentHash === lastPersistedHashRef.current) return;
+
+    await saveProfile(currentData);
+  }, [organizationId, saveProfile]);
 
   // Update form field with auto-save
   const updateField = useCallback((field: keyof ProfileFormData, value: string | NIS2Classification | null) => {
     setFormData(prev => {
       const newData = { ...prev, [field]: value };
+      latestFormDataRef.current = newData;
       
       // Clear existing timeout
       if (saveTimeoutRef.current) {
@@ -191,24 +238,63 @@ export function useOrganizationProfile() {
 
       // Set new debounced save (1.5 seconds)
       saveTimeoutRef.current = setTimeout(() => {
-        saveProfile(newData);
+        void saveProfile(newData);
       }, 1500);
 
       return newData;
     });
   }, [saveProfile]);
 
+  useEffect(() => {
+    organizationIdRef.current = organizationId;
+  }, [organizationId]);
+
+  useEffect(() => {
+    saveProfileRef.current = saveProfile;
+  }, [saveProfile]);
+
+  useEffect(() => {
+    const handleProfileUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<OrganizationProfileUpdatedEventDetail>;
+      const detail = customEvent.detail;
+
+      if (!detail?.organizationId || !organizationId) return;
+      if (detail.organizationId !== organizationId) return;
+      if (detail.sourceId === sourceIdRef.current) return;
+
+      void fetchProfile();
+    };
+
+    window.addEventListener('organization-profile-updated', handleProfileUpdated);
+    return () => {
+      window.removeEventListener('organization-profile-updated', handleProfileUpdated);
+    };
+  }, [organizationId, fetchProfile]);
+
   // Initial fetch
   useEffect(() => {
     if (!clientLoading) {
-      fetchProfile();
+      void fetchProfile();
     }
+  }, [fetchProfile, clientLoading, clientOrgId]);
+
+  useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
       }
+
+      const orgId = organizationIdRef.current;
+      if (!orgId) return;
+
+      const currentData = latestFormDataRef.current;
+      const currentHash = JSON.stringify(currentData);
+      if (currentHash === lastPersistedHashRef.current) return;
+
+      void saveProfileRef.current(currentData);
     };
-  }, [fetchProfile, clientLoading, clientOrgId]);
+  }, []);
 
   return {
     profile,
@@ -217,6 +303,7 @@ export function useOrganizationProfile() {
     saving,
     lastSaved,
     updateField,
+    flushPendingSave,
     refetch: fetchProfile
-  };
+  } satisfies UseOrganizationProfileReturn;
 }

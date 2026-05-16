@@ -94,6 +94,10 @@ export const AppSidebar: React.FC = () => {
   const { isSuperAdmin, isSales, isAdmin } = useUserRoles();
   const { isModuleEnabled } = useRolePermissions();
   const { selectedOrganization, canManageMultipleClients } = useClientContext();
+  
+  const isAdmin = userProfile?.user_type === 'admin';
+  const isConsoleUser = isSuperAdmin || isSales;
+  const platformName = isConsoleUser ? 'HiConsole' : 'HiCompliance';
 
   const platformName = "HiConsole";
 
@@ -148,12 +152,8 @@ export const AppSidebar: React.FC = () => {
           </div>
           {!collapsed && (
             <div>
-              <h2 className="text-lg font-semibold text-sidebar-foreground">
-                {platformName}
-              </h2>
-              <p className="text-xs text-sidebar-foreground/60">
-                {isSuperAdmin ? "Admin Console" : "Cyber Risk Platform"}
-              </p>
+              <h2 className="text-lg font-semibold text-sidebar-foreground">{platformName}</h2>
+              <p className="text-xs text-sidebar-foreground/60">{isConsoleUser ? 'Admin Console' : 'Cyber Risk Platform'}</p>
             </div>
           )}
         </div>
