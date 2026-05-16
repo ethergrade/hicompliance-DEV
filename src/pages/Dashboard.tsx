@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 
@@ -9,15 +9,11 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { useClientContext } from '@/contexts/ClientContext';
 import { SecurityFeedsSection } from '@/components/dashboard/SecurityFeedsSection';
 import { EPSSWidget } from '@/components/dashboard/EPSSWidget';
-import { ServiceQuickConnect } from '@/components/dashboard/ServiceQuickConnect';
 import { ComplianceMetricCard } from '@/components/dashboard/ComplianceMetricCard';
 import { RiskScoreMetricCard } from '@/components/dashboard/RiskScoreMetricCard';
 import { useServiceIntegrations } from '@/hooks/useServiceIntegrations';
 import { useUserRoles } from '@/hooks/useUserRoles';
-import { moduleVisibility } from '@/config/moduleVisibility';
-import { tenantsApi } from '@/lib/api/tenants';
-import { assessmentApi } from '@/lib/api/assessment';
-import type { TenantDashboardExtra, AssessmentSummary } from '@/types/api';
+import ClientServicesDialog from '@/components/clients/ClientServicesDialog';
 import { 
   Shield, Monitor, Mail, FileText, Download, 
   BarChart3, Laptop, Link2, Unlink, Smartphone, Settings,
@@ -42,67 +38,23 @@ const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { selectedOrganization } = useClientContext();
-  const activeOrgName = selectedOrganization?.name || 'Organizzazione';
-  const [services, setServices] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const { isServiceConnected, getIntegrationByCode, connectService, disconnectService, isConnecting, isDisconnecting } = useServiceIntegrations();
-  const { isAdmin, isSales } = useUserRoles();
-  const canManage = (isAdmin || isSales) && moduleVisibility.integrations;
+  const activeOrgId = selectedOrganization?.id || userProfile?.organization_id;
+  const activeOrgName = selectedOrganization?.name || userProfile?.organizations?.name || 'Organizzazione';
+  const { isServiceConnected, hasAnyIntegrationsConfigured } = useServiceIntegrations();
+  const { isSuperAdmin, isSales } = useUserRoles();
+  const canManageIntegrationSettings = isSuperAdmin || isSales;
+  const [modulesDialogOpen, setModulesDialogOpen] = useState(false);
 
-  const [quickConnectOpen, setQuickConnectOpen] = useState(false);
-  const [selectedService, setSelectedService] = useState<{ name: string; code: string; id: string } | null>(null);
-  const [dashboardExtra, setDashboardExtra] = useState<TenantDashboardExtra | null>(null);
-  const [extraLoading, setExtraLoading] = useState(true);
-  const [assessmentSummary, setAssessmentSummary] = useState<AssessmentSummary | null>(null);
-  const [reportLoading, setReportLoading] = useState(true);
-
-  // Fetch tenant dashboard data from API
-  useEffect(() => {
-    let cancelled = false;
-    async function fetchDashboardData() {
-      try {
-        setExtraLoading(true);
-        const tenant = await tenantsApi.getOwn();
-        if (!cancelled && tenant?.extra) {
-          setDashboardExtra(tenant.extra);
-        }
-      } catch (err) {
-        console.warn('Failed to fetch tenant dashboard data:', err);
-      } finally {
-        if (!cancelled) setExtraLoading(false);
-      }
-    }
-    fetchDashboardData();
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function fetchAssessmentReport() {
-      try {
-        setReportLoading(true);
-        const assessments = await assessmentApi.list();
-        if (cancelled || !assessments.length) return;
-        const report = await assessmentApi.report(assessments[0].id);
-        if (!cancelled && report?.summary) {
-          setAssessmentSummary(report.summary);
-        }
-      } catch (err) {
-        console.warn('Failed to fetch assessment report:', err);
-      } finally {
-        if (!cancelled) setReportLoading(false);
-      }
-    }
-    fetchAssessmentReport();
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => {
-    setServices([
-      { id: '5', status: 'maintenance', health_score: 65, services: { name: 'HiPatch', code: 'hi_patch', id: 's5' } },
-    ]);
-    setLoading(false);
-  }, []);
+  const services = useMemo(() => ([
+    { id: '1', status: 'alert', health_score: 15, services: { name: 'HiFirewall', code: 'hi_firewall', id: 's1' } },
+    { id: '2', status: 'alert', health_score: 70, services: { name: 'HiEndpoint', code: 'hi_endpoint', id: 's2' } },
+    { id: '3', status: 'maintenance', health_score: 75, services: { name: 'HiMail', code: 'hi_mail', id: 's3' } },
+    { id: '4', status: 'alert', health_score: 10, services: { name: 'HiLog', code: 'hi_log', id: 's4' } },
+    { id: '5', status: 'maintenance', health_score: 65, services: { name: 'HiPatch', code: 'hi_patch', id: 's5' } },
+    { id: '6', status: 'active', health_score: 90, services: { name: 'HiTrack', code: 'hi_track', id: 's6' } },
+    { id: '7', status: 'active', health_score: 92, services: { name: 'HiDetect', code: 'hi_detect', id: 's7' } },
+    { id: '8', status: 'alert', health_score: 24, services: { name: 'HiMobile', code: 'hi_mobile', id: 's8' } },
+  ]), []);
 
   const hiSolutionServices = services.filter(s => 
     s.services?.code === 'hi_patch'
@@ -125,33 +77,28 @@ const Dashboard: React.FC = () => {
     activeThreats: totalIssues || fallbackData.totalIssues
   };
 
-  // Derived infrastructure metrics from tenant extra data
-  const infraTotalAssets = dashboardExtra
-    ? (dashboardExtra.server || 0) + (dashboardExtra.endpoint || 0) + (dashboardExtra.firewall || 0)
-      + (dashboardExtra.switch_core || 0) + (dashboardExtra.switch_access || 0)
-      + (dashboardExtra.access_point || 0) + (dashboardExtra.virtual_machine || 0)
-      + (dashboardExtra.hypervisor || 0) + (dashboardExtra.dispositivi_rete_totali || 0)
-    : null;
-  const infraTotalIPs = dashboardExtra
-    ? (dashboardExtra.ip_totali || 0) + (dashboardExtra.ip_puntuali || 0)
-    : null;
+  const isModuleEnabledForDashboard = (serviceCode: string) => {
+    if (!hasAnyIntegrationsConfigured) return true;
+    return isServiceConnected(serviceCode);
+  };
 
-  const handleServiceClick = (service: any, _connected: boolean) => {
+  const connectedServicesCount = hiSolutionServices.filter((service) => isModuleEnabledForDashboard(service.services.code)).length;
+  const alertServicesCount = hiSolutionServices.filter(
+    (service) => isModuleEnabledForDashboard(service.services.code) && (service.health_score || 0) < 80
+  ).length;
+  const operativeServicesCount = hiSolutionServices.filter(
+    (service) => isModuleEnabledForDashboard(service.services.code) && (service.health_score || 0) >= 80
+  ).length;
+  const totalResolvedCount = hiSolutionServices
+    .filter((service) => isModuleEnabledForDashboard(service.services.code))
+    .reduce((acc, service) => acc + Math.max(0, Math.round((service.health_score || 0) * 1.2)), 0);
+
+  const handleServiceClick = (service: { code: string }) => {
     navigate(`/dashboard/service/${service.code}`);
   };
 
-  const handleManageClick = (e: React.MouseEvent, service: any) => {
-    e.stopPropagation();
-    if (!canManage) return;
-    setSelectedService({ name: service.name, code: service.code, id: service.id });
-    setQuickConnectOpen(true);
-  };
-
-  const selectedConnected = selectedService ? isServiceConnected(selectedService.code) : false;
-  const selectedIntegration = selectedService ? getIntegrationByCode(selectedService.code) : undefined;
-
   const renderServiceCard = (service: { name: string; code: string; id?: string }, healthScore: number, status: string, resolved: number, index: number) => {
-    const connected = isServiceConnected(service.code);
+    const moduleEnabled = isModuleEnabledForDashboard(service.code);
     const isGood = healthScore >= 80;
     const issues = isGood ? 0 : Math.ceil((100 - healthScore) / 20);
     const criticalityScore = status === 'alert' 
@@ -161,8 +108,12 @@ const Dashboard: React.FC = () => {
     return (
       <div
         key={index}
-        className="flex flex-col p-4 rounded-xl border border-border bg-card hover:bg-muted/30 transition-all duration-200 hover:shadow-lg cursor-pointer"
-        onClick={() => handleServiceClick(service, connected)}
+        className={`flex flex-col p-4 rounded-xl border border-border bg-card transition-all duration-200 ${
+          moduleEnabled
+            ? 'hover:bg-muted/30 hover:shadow-lg cursor-pointer'
+            : 'opacity-70 cursor-not-allowed'
+        }`}
+        onClick={() => moduleEnabled && handleServiceClick(service)}
       >
         <div className="flex items-center justify-between mb-3">
           <div className={`p-2 rounded-lg flex items-center justify-center ${
@@ -173,13 +124,13 @@ const Dashboard: React.FC = () => {
             }`} />
           </div>
           <div className="flex items-center gap-2">
-            {connected ? (
+            {moduleEnabled ? (
               <Badge className="bg-green-500/15 text-green-500 border-green-500/30 text-[10px] px-1.5 py-0">
                 <Link2 className="w-3 h-3 mr-1" />API
               </Badge>
             ) : (
               <Badge variant="outline" className="text-muted-foreground text-[10px] px-1.5 py-0">
-                <Unlink className="w-3 h-3 mr-1" />N/C
+                <Unlink className="w-3 h-3 mr-1" />Spento
               </Badge>
             )}
             {!isGood && (
@@ -214,13 +165,24 @@ const Dashboard: React.FC = () => {
 
           <p className="text-sm text-muted-foreground">{resolved} risolte negli ultimi 90 giorni</p>
 
-          {canManage && (
-            <button
-              className="mt-3 w-full text-xs py-1.5 rounded-md border border-border hover:bg-muted/50 transition-colors text-muted-foreground"
-              onClick={(e) => handleManageClick(e, service)}
+          {!moduleEnabled && (
+            <p className="text-xs text-muted-foreground mt-3">
+              Modulo non abilitato per questo cliente.
+            </p>
+          )}
+
+          {isSuperAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3 w-full text-xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                setModulesDialogOpen(true);
+              }}
             >
-              {connected ? 'Gestisci connessione' : 'Collega API'}
-            </button>
+              Gestisci modulo
+            </Button>
           )}
         </div>
       </div>
@@ -245,14 +207,16 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <ComplianceMetricCard
-            completionScore={assessmentSummary?.completion_score}
-            riskScore={assessmentSummary?.risk_score}
-          />
-          <RiskScoreMetricCard
-            score={assessmentSummary?.risk_score}
-          />
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            I moduli <span className="font-medium text-foreground">Conformità &amp; Rischio Assessment</span> e{" "}
+            <span className="font-medium text-foreground">True Risk Score</span> sono disponibili perché questo ambiente demo include{" "}
+            <span className="font-medium text-primary">HiCompliance</span>.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <ComplianceMetricCard />
+          <RiskScoreMetricCard />
+          {/* Merged card: Servizi Monitorati + Issues Totali */}
           <Card className="relative overflow-hidden border-border shadow-cyber hover:shadow-glow transition-cyber animate-fade-in">
             <CardContent className="p-0 h-full">
               <div className="grid grid-cols-2 divide-x divide-border h-full">
@@ -271,6 +235,7 @@ const Dashboard: React.FC = () => {
               </div>
             </CardContent>
           </Card>
+          </div>
         </div>
 
         <Card className="border-border">
@@ -281,7 +246,13 @@ const Dashboard: React.FC = () => {
                 <p className="text-sm text-muted-foreground">Stato dei servizi in tempo reale</p>
               </div>
               <div className="flex items-center gap-4">
-                {canManage && (
+                {isSuperAdmin && activeOrgId && (
+                  <Button variant="outline" size="sm" onClick={() => setModulesDialogOpen(true)}>
+                    <Settings className="w-4 h-4 mr-1" />
+                    Gestione Moduli Cliente
+                  </Button>
+                )}
+                {canManageIntegrationSettings && (
                     <Button variant="outline" size="sm" onClick={() => navigate('/settings/integrations')}>
                       <Settings className="w-4 h-4 mr-1" />
                       Impostazioni
@@ -311,37 +282,24 @@ const Dashboard: React.FC = () => {
             </div>
 
             <div className="border-t border-border pt-6">
-              <h3 className="text-sm font-semibold text-muted-foreground mb-4">Infrastruttura</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                <div className="text-center p-3 rounded-lg bg-muted/30">
-                  <Server className="w-5 h-5 mx-auto mb-1 text-primary" />
-                  <div className="text-xl font-bold text-foreground">{dashboardExtra?.server ?? '—'}</div>
-                  <div className="text-xs text-muted-foreground">Server</div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="text-center p-4">
+                  <div className="text-2xl font-bold text-primary mb-1">{connectedServicesCount}</div>
+                  <div className="text-sm text-muted-foreground">Servizi Connessi</div>
                 </div>
-                <div className="text-center p-3 rounded-lg bg-muted/30">
-                  <Laptop className="w-5 h-5 mx-auto mb-1 text-blue-500" />
-                  <div className="text-xl font-bold text-foreground">{dashboardExtra?.endpoint ?? '—'}</div>
-                  <div className="text-xs text-muted-foreground">Endpoint</div>
+                <div className="text-center p-4">
+                  <div className="text-2xl font-bold text-red-500 mb-1">{alertServicesCount}</div>
+                  <div className="text-sm text-muted-foreground">Servizi in Allerta</div>
                 </div>
-                <div className="text-center p-3 rounded-lg bg-muted/30">
-                  <Shield className="w-5 h-5 mx-auto mb-1 text-red-500" />
-                  <div className="text-xl font-bold text-foreground">{dashboardExtra?.firewall ?? '—'}</div>
-                  <div className="text-xs text-muted-foreground">Firewall</div>
+                <div className="text-center p-4">
+                  <div className="text-2xl font-bold text-green-500 mb-1">{operativeServicesCount}</div>
+                  <div className="text-sm text-muted-foreground">Servizi Operativi</div>
                 </div>
-                <div className="text-center p-3 rounded-lg bg-muted/30">
-                  <Users className="w-5 h-5 mx-auto mb-1 text-green-500" />
-                  <div className="text-xl font-bold text-foreground">{dashboardExtra?.utenti ?? '—'}</div>
-                  <div className="text-xs text-muted-foreground">Utenti</div>
-                </div>
-                <div className="text-center p-3 rounded-lg bg-muted/30">
-                  <HardDrive className="w-5 h-5 mx-auto mb-1 text-purple-500" />
-                  <div className="text-xl font-bold text-foreground">{dashboardExtra?.virtual_machine ?? '—'}</div>
-                  <div className="text-xs text-muted-foreground">VM</div>
-                </div>
-                <div className="text-center p-3 rounded-lg bg-muted/30">
-                  <Globe className="w-5 h-5 mx-auto mb-1 text-amber-500" />
-                  <div className="text-xl font-bold text-foreground">{dashboardExtra?.sedi_cliente ?? '—'}</div>
-                  <div className="text-xs text-muted-foreground">Sedi</div>
+                <div className="text-center p-4">
+                  <div className="text-2xl font-bold text-blue-500 mb-1">
+                    {totalResolvedCount}
+                  </div>
+                  <div className="text-sm text-muted-foreground">Totale Risolte</div>
                 </div>
               </div>
               {dashboardExtra && (
@@ -382,18 +340,12 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {selectedService && (
-        <ServiceQuickConnect
-          open={quickConnectOpen}
-          onOpenChange={setQuickConnectOpen}
-          serviceName={selectedService.name}
-          serviceId={selectedService.id}
-          isConnected={selectedConnected}
-          integrationId={selectedIntegration?.id}
-          onConnect={connectService}
-          onDisconnect={disconnectService}
-          isConnecting={isConnecting}
-          isDisconnecting={isDisconnecting}
+      {isSuperAdmin && activeOrgId && (
+        <ClientServicesDialog
+          open={modulesDialogOpen}
+          onOpenChange={setModulesDialogOpen}
+          organizationId={activeOrgId}
+          organizationName={activeOrgName}
         />
       )}
     </DashboardLayout>
