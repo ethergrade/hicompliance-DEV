@@ -18,6 +18,11 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
+// TODO: Wire to operational firewall API when available.
+// Current assessment API provides Shodan scan data (hosts, ports, CVEs)
+// but does not provide firewall-specific metrics (rules, threats, connections).
+// The firewall appliance data should come from a dedicated integration endpoint.
+
 // Mock data for firewall
 const firewallStats = {
   activeRules: 247,
