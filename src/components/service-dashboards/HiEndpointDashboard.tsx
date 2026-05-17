@@ -31,6 +31,11 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
+// TODO: Wire to endpoint protection API when available.
+// The assessment API provides TenantResource endpoint counts (endpoints_count)
+// but does not provide individual endpoint status/protection/threat data.
+// Endpoint data should come from a dedicated EDR/XDR integration endpoint.
+
 // Mock data for endpoint
 const endpointStats = {
   totalEndpoints: 156,

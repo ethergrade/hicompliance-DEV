@@ -1,27 +1,48 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Info } from 'lucide-react';
+import { Info, AlertTriangle } from 'lucide-react';
 import { RiskScoreCard } from './RiskScoreCard';
 import { VulnerabilitiesTable } from './VulnerabilitiesTable';
 import { OsPatchesTable } from './OsPatchesTable';
 import { SoftwarePatchesTable } from './SoftwarePatchesTable';
+import { useAssessmentReport } from '@/hooks/useAssessmentReport';
+import type { Vulnerability as ApiVulnerability } from '@/types/api';
 
-// Mock data
-const vulnerabilities = [
-  { id: 'CVE-2024-56433', remediation: '-', score: 0.05, severity: 'Low' as const },
-  { id: 'CVE-2025-8194', remediation: '-', score: 0.00, severity: 'High' as const },
-  { id: 'CVE-2025-59375', remediation: '-', score: 0.00, severity: 'High' as const },
-  { id: 'CVE-2025-8677', remediation: '-', score: 0.00, severity: 'High' as const },
-  { id: 'CVE-2025-9230', remediation: '-', score: 0.00, severity: 'High' as const },
-  { id: 'CVE-2025-9714', remediation: '-', score: 0.00, severity: 'Medium' as const },
-  { id: 'CVE-2025-40780', remediation: '-', score: 0.00, severity: 'High' as const },
-  { id: 'CVE-2023-4693', remediation: '-', score: 0.00, severity: 'Medium' as const },
-  { id: 'CVE-2023-4692', remediation: '-', score: 0.00, severity: 'High' as const },
-  { id: 'CVE-2025-40778', remediation: '-', score: 0.00, severity: 'High' as const },
-  { id: 'http-cookie-flags', remediation: '-', score: 0.00, severity: 'High' as const },
-  { id: 'Strict_Transport_Security', remediation: '-', score: 0.00, severity: 'Medium' as const },
-];
+// ─── Helpers ───────────────────────────────────────────────────────────────
+
+const SEVERITY_ORDER: Record<string, number> = {
+  critical: 4, high: 3, medium: 2, low: 1,
+};
+
+const normalizeSeverity = (s: string): 'Low' | 'Medium' | 'High' | 'Critical' => {
+  const lower = s.toLowerCase();
+  if (lower === 'critical') return 'Critical';
+  if (lower === 'high') return 'High';
+  if (lower === 'medium') return 'Medium';
+  return 'Low';
+};
+
+const RISK_LEVEL_COLOR: Record<string, 'green' | 'yellow' | 'orange' | 'red'> = {
+  altissimo: 'red',
+  alto: 'orange',
+  moderato: 'yellow',
+  basso: 'green',
+};
+
+const mapVulnerabilities = (apiVulns: ApiVulnerability[]) =>
+  apiVulns
+    .map((v) => ({
+      id: v.cve,
+      remediation: v.affected_ips?.length ? `${v.affected_ips.length} IP(s) affetti` : '-',
+      score: (v.epss_score ?? 0) * 100,
+      severity: normalizeSeverity(v.severity),
+    }))
+    .sort((a, b) => (SEVERITY_ORDER[b.severity.toLowerCase()] ?? 0) - (SEVERITY_ORDER[a.severity.toLowerCase()] ?? 0));
+
+// TODO: Replace mock OS/software patches with HiPatch API endpoint when available
+// The assessment API does not provide OS/software patch data (only CVE vulnerabilities).
+// Patch data should come from the HiPatch tool via a dedicated integration endpoint.
 
 const osPatchesPending = [
   { systemName: 'SRV2025-HYPERV', patch: 'Definition updates', description: 'Update for Windows Security platform - KB5007651 (Version 10.0.27840.1000)', kbNumber: 'KB5007651', severity: 'Important' as const },
@@ -54,36 +75,90 @@ const softwarePatchesInstalled = [
 ];
 
 export const HiPatchDashboard: React.FC = () => {
+  const { vulnerabilities: apiVulns, summary, loading, error } = useAssessmentReport();
+
+  const mappedVulns = useMemo(() => mapVulnerabilities(apiVulns), [apiVulns]);
+
+  const avgScore = useMemo(() => {
+    if (mappedVulns.length === 0) return 0;
+    const total = mappedVulns.reduce((sum, v) => sum + v.score, 0);
+    return Math.round(total / mappedVulns.length);
+  }, [mappedVulns]);
+
+  const maxScore = useMemo(() => {
+    if (mappedVulns.length === 0) return 0;
+    return Math.round(Math.max(...mappedVulns.map((v) => v.score)));
+  }, [mappedVulns]);
+
+  const riskLabel = summary?.risk_label ?? 'N/D';
+  const riskScore = summary?.risk_score ?? 0;
+  const riskLevelColor: 'green' | 'yellow' | 'orange' | 'red' =
+    RISK_LEVEL_COLOR[riskLabel.toLowerCase()] ?? 'yellow';
+  const ringColor =
+    riskLevelColor === 'red' ? '#ef4444' :
+    riskLevelColor === 'orange' ? '#f59e0b' :
+    riskLevelColor === 'yellow' ? '#eab308' : '#10b981';
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
+        <AlertTriangle className="w-5 h-5" />
+        <span>Dati assessment non disponibili</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       {/* Vulnerabilities Section */}
       <section className="space-y-4">
         <h2 className="text-2xl font-bold">Vulnerabilities</h2>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <RiskScoreCard 
-            title="Average Risk Score"
-            level="Moderato"
-            levelColor="yellow"
-            score={48}
+            title="Rischio Assessment"
+            level={riskLabel}
+            levelColor={riskLevelColor}
+            score={riskScore}
+            ringColor={ringColor}
+          />
+          <RiskScoreCard 
+            title="Avg EPSS Score"
+            level={avgScore > 50 ? 'Alto' : avgScore > 10 ? 'Moderato' : 'Basso'}
+            levelColor={avgScore > 50 ? 'red' : avgScore > 10 ? 'yellow' : 'green'}
+            score={avgScore}
             ringColor="hsl(var(--muted-foreground))"
           />
           <RiskScoreCard 
-            title="Max Risk Score"
-            level="Alto"
-            levelColor="orange"
-            score={80}
+            title="Max EPSS Score"
+            level={maxScore > 50 ? 'Critico' : maxScore > 10 ? 'Alto' : 'Moderato'}
+            levelColor={maxScore > 50 ? 'red' : maxScore > 10 ? 'orange' : 'yellow'}
+            score={maxScore}
             ringColor="#f59e0b"
           />
         </div>
 
         <Card className="border-border">
           <CardHeader>
-            <CardTitle className="text-lg">Last vulnerabilities</CardTitle>
-            <p className="text-sm text-muted-foreground">ordered by date and score</p>
+            <CardTitle className="text-lg">
+              Ultime vulnerabilità
+              {loading && <span className="ml-2 text-sm text-muted-foreground animate-pulse">caricamento...</span>}
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              {mappedVulns.length > 0
+                ? `${mappedVulns.length} CVE rilevate — ordinate per severità`
+                : 'Nessuna vulnerabilità rilevata nell\'ultimo scan'}
+            </p>
           </CardHeader>
           <CardContent>
-            <VulnerabilitiesTable vulnerabilities={vulnerabilities} />
+            {mappedVulns.length > 0 ? (
+              <VulnerabilitiesTable vulnerabilities={mappedVulns} />
+            ) : (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                <Info className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                Dati vulnerabilità non ancora disponibili. Esegui uno scan per popolare questa sezione.
+              </div>
+            )}
           </CardContent>
         </Card>
       </section>
