@@ -18,9 +18,17 @@
  const ClientContext = createContext<ClientContextType | undefined>(undefined);
  
  const STORAGE_KEY = 'hicompliance_selected_org';
+
+ function getStoredOrganization(): TenantResource | null {
+   try {
+     const raw = localStorage.getItem(STORAGE_KEY);
+     if (raw) return JSON.parse(raw) as TenantResource;
+   } catch { /* ignore corrupt data */ }
+   return null;
+ }
  
  export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-   const [selectedOrganization, setSelectedOrganizationState] = useState<TenantResource | null>(null);
+   const [selectedOrganization, setSelectedOrganizationState] = useState<TenantResource | null>(getStoredOrganization);
    const [organizations, setOrganizations] = useState<TenantResource[]>([]);
    const [isLoadingClients, setIsLoadingClients] = useState(true);
    const [userOrganizationId, setUserOrganizationId] = useState<string | null>(null);
@@ -42,13 +50,12 @@
          const tenants = await tenantsApi.listAll();
          setOrganizations(tenants);
 
-         // Try to restore from localStorage
-         const storedOrgId = localStorage.getItem(STORAGE_KEY);
-         if (storedOrgId) {
-           const storedOrg = tenants.find(t => t.id === storedOrgId);
-           if (storedOrg) {
-             setSelectedOrganizationState(storedOrg);
-           }
+         // Restore from localStorage (already handled in useState init, but
+         // refresh with fresh API data here to ensure name/code are current)
+         const stored = getStoredOrganization();
+         if (stored && !selectedOrganization) {
+           const fresh = tenants.find(t => t.id === stored.id);
+           if (fresh) setSelectedOrganizationState(fresh);
          }
        } else {
          // Normal client: use their own tenant
@@ -68,7 +75,7 @@
    // Set selected organization with persistence
    const setSelectedOrganization = useCallback((org: TenantResource) => {
      setSelectedOrganizationState(org);
-     localStorage.setItem(STORAGE_KEY, org.id);
+     localStorage.setItem(STORAGE_KEY, JSON.stringify(org));
    }, []);
  
    // Clear selection (for switching clients)
