@@ -32,7 +32,7 @@
    const [organizations, setOrganizations] = useState<TenantResource[]>([]);
    const [isLoadingClients, setIsLoadingClients] = useState(true);
    const [userOrganizationId, setUserOrganizationId] = useState<string | null>(null);
-   const { user } = useAuth();
+   const { user, loading: authLoading } = useAuth();
  const { isSuperAdmin, isSales, loading: rolesLoading } = useUserRoles();
   
    const canManageMultipleClients = isSuperAdmin || isSales;
@@ -85,16 +85,19 @@
    }, []);
  
    // Fetch organizations on auth change
+   // IMPORTANT: authLoading guard prevents clearing stored org during initial page load
    useEffect(() => {
+     if (authLoading) return; // Wait for auth to resolve
      if (user && !rolesLoading) {
        fetchOrganizations();
      } else if (!user) {
+       // User explicitly logged out — clear everything
        setOrganizations([]);
        setSelectedOrganizationState(null);
        setUserOrganizationId(null);
        localStorage.removeItem(STORAGE_KEY);
      }
-   }, [user, rolesLoading, fetchOrganizations]);
+   }, [user, rolesLoading, fetchOrganizations, authLoading]);
  
    return (
      <ClientContext.Provider
