@@ -360,3 +360,147 @@ export interface AssessmentMonthlyReportData {
   trend: unknown[];
   delta: MonthlyReportDelta;
 }
+// ─── Tenant Service ──────────────────────────────────────────────────────────
+
+export interface TenantServiceResource {
+  id: string;
+  tenant_id: string;
+  site_id: string | null;
+  service_type: string;
+  status: string;
+  settings: unknown[] | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StoreTenantServiceRequest {
+  site_id?: string | null;
+  service_type: string;
+  status?: "active" | "inactive" | null;
+  settings?: string[] | null;
+}
+
+export interface UpdateTenantServiceRequest {
+  site_id?: string | null;
+  service_type?: string;
+  status?: "active" | "inactive";
+  settings?: string[] | null;
+}
+// ─── Asset Inventory ────────────────────────────────────────────────────────
+
+export interface AssetInventoryResource {
+  id: string;
+  organization_id: string;
+  users_count: number;
+  locations_count: number;
+  endpoints_count: number;
+  servers_count: number;
+  hypervisors_count: number;
+  virtual_machines_count: number;
+  firewalls_count: number;
+  core_switches_count: number;
+  access_switches_count: number;
+  access_points_count: number;
+  miscellaneous_network_devices_count: number;
+  total_network_devices_count: number;
+  va_ip_punctual_count: number;
+  va_subnet_25_count: number;
+  va_subnet_24_count: number;
+  va_subnet_23_count: number;
+  va_subnet_22_count: number;
+  va_subnet_21_count: number;
+  va_total_ips_count: number;
+  notes: string;
+  hilog_syslog_count: number;
+  hilog_iis_count: number;
+  hilog_apache_count: number;
+  hilog_sql_count: number;
+  hilog_custom_path_count: number;
+  hilog_endpoint_count: number;
+  hilog_server_count: number;
+  hilog_dlp_linux_count: number;
+  hilog_dlp_windows_count: number;
+  hilog_sharepoint_dlp_enabled: boolean;
+  hilog_sharepoint_dlp_count: number;
+  hilog_entra_id_enabled: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface StoreAssetInventoryRequest {
+  organization_id: string;
+  users_count?: number;
+  locations_count?: number;
+  endpoints_count?: number;
+  servers_count?: number;
+  hypervisors_count?: number;
+  virtual_machines_count?: number;
+  firewalls_count?: number;
+  core_switches_count?: number;
+  access_switches_count?: number;
+  access_points_count?: number;
+  miscellaneous_network_devices_count?: number;
+  total_network_devices_count?: number;
+  va_ip_punctual_count?: number;
+  va_subnet_25_count?: number;
+  va_subnet_24_count?: number;
+  va_subnet_23_count?: number;
+  va_subnet_22_count?: number;
+  va_subnet_21_count?: number;
+  va_total_ips_count?: number;
+  notes?: string;
+  hilog_syslog_count?: number;
+  hilog_iis_count?: number;
+  hilog_apache_count?: number;
+  hilog_sql_count?: number;
+  hilog_custom_path_count?: number;
+  hilog_endpoint_count?: number;
+  hilog_server_count?: number;
+  hilog_dlp_linux_count?: number;
+  hilog_dlp_windows_count?: number;
+  hilog_sharepoint_dlp_enabled?: boolean;
+  hilog_sharepoint_dlp_count?: number;
+  hilog_entra_id_enabled?: boolean;
+}
+
+export interface UpdateAssetInventoryRequest extends Partial<StoreAssetInventoryRequest> {}
+
+// ─── Integrations ───────────────────────────────────────────────────────────
+
+export interface IntegrationResource {
+  id: string;
+  organization_id: string;
+  service_id: string;
+  service_code: string;
+  service_name: string;
+  api_url: string;
+  is_active: boolean;
+  api_methods?: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ServiceCatalogItem {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  is_active?: boolean;
+}
+
+export interface StoreIntegrationRequest {
+  organization_id: string;
+  service_id: string;
+  api_url: string;
+  api_key?: string;
+  api_methods?: Record<string, unknown>;
+}
+
+export interface UpdateIntegrationRequest {
+  api_url?: string;
+  api_key?: string;
+  is_active?: boolean;
+  api_methods?: Record<string, unknown>;
+}

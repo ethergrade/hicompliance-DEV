@@ -8,7 +8,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Loader2, Link2, Unlink, Plug, Shield, Mail, Monitor, Smartphone, Activity, Search as SearchIcon, Server } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { integrationsApi } from '@/lib/api';
+import type { ServiceCatalogItem, IntegrationResource } from '@/types/api';
 import { toast } from 'sonner';
 
 interface ClientServicesDialogProps {
@@ -16,15 +17,6 @@ interface ClientServicesDialogProps {
   onOpenChange: (open: boolean) => void;
   organizationId: string;
   organizationName: string;
-}
-
-interface Integration {
-  id: string;
-  service_id: string;
-  api_url: string;
-  is_active: boolean;
-  service_code?: string;
-  service_name?: string;
 }
 
 const SERVICE_ICONS: Record<string, React.ReactNode> = {
@@ -42,61 +34,41 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   open, onOpenChange, organizationId, organizationName,
 }) => {
   const queryClient = useQueryClient();
-  const [connectingService, setConnectingService] = useState<{ id: string; name: string } | null>(null);
+  const [connectingService, setConnectingService] = useState<ServiceCatalogItem | null>(null);
   const [apiUrl, setApiUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
 
-  const { data: services = [] } = useQuery({
-    queryKey: ['hisolution-services'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('hisolution_services').select('*');
-      if (error) throw error;
-      return data || [];
-    },
+  const { data: services = [], isLoading: servicesLoading } = useQuery({
+    queryKey: ['service-catalog'],
+    queryFn: () => integrationsApi.catalog(),
     enabled: open,
+    staleTime: 5 * 60_000,
   });
 
-  const { data: integrations = [], isLoading } = useQuery({
+  const { data: integrations = [], isLoading: integrationsLoading } = useQuery({
     queryKey: ['client-integrations', organizationId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('organization_integrations')
-        .select('id, service_id, api_url, is_active, hisolution_services(code, name)')
-        .eq('organization_id', organizationId)
-        .eq('is_active', true);
-      if (error) throw error;
-      return (data || []).map((item: any) => ({
-        id: item.id,
-        service_id: item.service_id,
-        api_url: item.api_url,
-        is_active: item.is_active,
-        service_code: item.hisolution_services?.code,
-        service_name: item.hisolution_services?.name,
-      })) as Integration[];
-    },
+    queryFn: () => integrationsApi.listByOrganization(organizationId),
     enabled: open && !!organizationId,
+    staleTime: 30_000,
   });
 
   const connectMutation = useMutation({
-    mutationFn: async ({ serviceId, apiUrl, apiKey }: { serviceId: string; apiUrl: string; apiKey: string }) => {
-      const { data: existing } = await supabase
-        .from('organization_integrations')
-        .select('id')
-        .eq('organization_id', organizationId)
-        .eq('service_id', serviceId)
-        .maybeSingle();
+    mutationFn: async ({ service, apiUrl, apiKey }: { service: ServiceCatalogItem; apiUrl: string; apiKey: string }) => {
+      const existing = integrations.find(i => i.service_id === service.id);
 
       if (existing) {
-        const { error } = await supabase
-          .from('organization_integrations')
-          .update({ api_url: apiUrl, api_key: apiKey, is_active: true, api_methods: {} })
-          .eq('id', existing.id);
-        if (error) throw error;
+        await integrationsApi.update(existing.id, {
+          api_url: apiUrl,
+          api_key: apiKey,
+          is_active: true,
+        });
       } else {
-        const { error } = await supabase
-          .from('organization_integrations')
-          .insert({ organization_id: organizationId, service_id: serviceId, api_url: apiUrl, api_key: apiKey, is_active: true, api_methods: {} });
-        if (error) throw error;
+        await integrationsApi.create({
+          organization_id: organizationId,
+          service_id: service.id,
+          api_url: apiUrl,
+          api_key: apiKey,
+        });
       }
     },
     onSuccess: () => {
@@ -111,11 +83,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 
   const disconnectMutation = useMutation({
     mutationFn: async (integrationId: string) => {
-      const { error } = await supabase
-        .from('organization_integrations')
-        .update({ is_active: false })
-        .eq('id', integrationId);
-      if (error) throw error;
+      await integrationsApi.deactivate(integrationId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['client-integrations', organizationId] });
@@ -128,8 +96,10 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 
   const handleConnect = () => {
     if (!connectingService || !apiUrl.trim() || !apiKey.trim()) return;
-    connectMutation.mutate({ serviceId: connectingService.id, apiUrl: apiUrl.trim(), apiKey: apiKey.trim() });
+    connectMutation.mutate({ service: connectingService, apiUrl: apiUrl.trim(), apiKey: apiKey.trim() });
   };
+
+  const isLoading = servicesLoading || integrationsLoading;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -196,7 +166,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                               </Button>
                             </>
                           ) : (
-                            <Button variant="outline" size="sm" className="text-xs" onClick={() => setConnectingService({ id: svc.id, name: svc.name })}>
+                            <Button variant="outline" size="sm" className="text-xs" onClick={() => setConnectingService(svc)}>
                               <Link2 className="w-3.5 h-3.5 mr-1" /> Collega
                             </Button>
                           )}
