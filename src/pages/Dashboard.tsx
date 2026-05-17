@@ -38,8 +38,8 @@ const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { selectedOrganization } = useClientContext();
-  const activeOrgId = selectedOrganization?.id || userProfile?.organization_id;
-  const activeOrgName = selectedOrganization?.name || userProfile?.organizations?.name || 'Organizzazione';
+  const activeOrgId = selectedOrganization?.id || user?.tenant_id;
+  const activeOrgName = selectedOrganization?.name || user?.name || 'Organizzazione';
   const { isServiceConnected, hasAnyIntegrationsConfigured } = useServiceIntegrations();
   const { isSuperAdmin, isSales } = useUserRoles();
   const canManageIntegrationSettings = isSuperAdmin || isSales;
@@ -302,34 +302,7 @@ const Dashboard: React.FC = () => {
                   <div className="text-sm text-muted-foreground">Totale Risolte</div>
                 </div>
               </div>
-              {dashboardExtra && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-                  <div className="text-center p-3 rounded-lg bg-muted/30">
-                    <Router className="w-5 h-5 mx-auto mb-1 text-cyan-500" />
-                    <div className="text-xl font-bold text-foreground">
-                      {(dashboardExtra.switch_core || 0) + (dashboardExtra.switch_access || 0)}
-                    </div>
-                    <div className="text-xs text-muted-foreground">Switch</div>
-                  </div>
-                  <div className="text-center p-3 rounded-lg bg-muted/30">
-                    <div className="text-xl font-bold text-foreground">{dashboardExtra.access_point ?? '—'}</div>
-                    <div className="text-xs text-muted-foreground">Access Point</div>
-                  </div>
-                  <div className="text-center p-3 rounded-lg bg-muted/30">
-                    <div className="text-xl font-bold text-foreground">{infraTotalIPs}</div>
-                    <div className="text-xs text-muted-foreground">IP Totali</div>
-                  </div>
-                  <div className="text-center p-3 rounded-lg bg-muted/30">
-                    <div className="text-xl font-bold text-foreground">{infraTotalAssets}</div>
-                    <div className="text-xs text-muted-foreground">Dispositivi Totali</div>
-                  </div>
-                </div>
-              )}
-              {!dashboardExtra && !extraLoading && (
-                <p className="text-center text-xs text-muted-foreground mt-4">
-                  Dati infrastruttura non disponibili
-                </p>
-              )}
+
             </div>
           </CardContent>
         </Card>

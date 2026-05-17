@@ -2,6 +2,8 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { RiskScoreCard } from './RiskScoreCard';
+import { DemoDataBadge } from './DemoDataBadge';
+import { useDetectDashboard } from '@/hooks/useDetect';
 import {
   Table,
   TableBody,
@@ -43,211 +45,7 @@ import {
   Area,
 } from 'recharts';
 
-// Mock data for overview
-const overviewData = {
-  totalEndpoints: 245,
-  monitoredEndpoints: 238,
-  threatsDetected: 127,
-  alertsToday: 23,
-  avgResponseTime: '< 15 min',
-  coverageHours: '24/7',
-};
-
-// Threat severity distribution
-const threatSeverityData = [
-  { name: 'Critico', value: 8, color: '#ef4444' },
-  { name: 'Alto', value: 24, color: '#f97316' },
-  { name: 'Medio', value: 45, color: '#eab308' },
-  { name: 'Basso', value: 50, color: '#22c55e' },
-];
-
-// Weekly threat trend
-const weeklyThreatTrend = [
-  { day: 'Lun', rilevati: 18, bloccati: 18, investigati: 15 },
-  { day: 'Mar', rilevati: 24, bloccati: 24, investigati: 22 },
-  { day: 'Mer', rilevati: 15, bloccati: 15, investigati: 14 },
-  { day: 'Gio', rilevati: 32, bloccati: 31, investigati: 28 },
-  { day: 'Ven', rilevati: 22, bloccati: 22, investigati: 20 },
-  { day: 'Sab', rilevati: 8, bloccati: 8, investigati: 8 },
-  { day: 'Dom', rilevati: 6, bloccati: 6, investigati: 6 },
-];
-
-// Detection categories
-const detectionCategoriesData = [
-  { category: 'Malware', count: 34 },
-  { category: 'Phishing', count: 28 },
-  { category: 'Suspicious Behavior', count: 22 },
-  { category: 'Network Anomaly', count: 18 },
-  { category: 'Credential Theft', count: 12 },
-  { category: 'Ransomware', count: 8 },
-  { category: 'Data Exfiltration', count: 5 },
-];
-
-// Real-time alerts
-const realtimeAlerts = [
-  {
-    id: 'ALR-001',
-    timestamp: '10:45:32',
-    severity: 'Critico',
-    type: 'Ransomware Detection',
-    endpoint: 'WS-PC042',
-    status: 'In Analisi',
-    analyst: 'SOC Team',
-  },
-  {
-    id: 'ALR-002',
-    timestamp: '10:32:15',
-    severity: 'Alto',
-    type: 'Credential Dumping',
-    endpoint: 'SRV-DC01',
-    status: 'Mitigato',
-    analyst: 'SOC Team',
-  },
-  {
-    id: 'ALR-003',
-    timestamp: '10:18:44',
-    severity: 'Medio',
-    type: 'Suspicious PowerShell',
-    endpoint: 'WS-PC087',
-    status: 'Risolto',
-    analyst: 'SOC Team',
-  },
-  {
-    id: 'ALR-004',
-    timestamp: '09:55:22',
-    severity: 'Alto',
-    type: 'Lateral Movement',
-    endpoint: 'SRV-FILE02',
-    status: 'In Analisi',
-    analyst: 'SOC Team',
-  },
-  {
-    id: 'ALR-005',
-    timestamp: '09:42:11',
-    severity: 'Basso',
-    type: 'Policy Violation',
-    endpoint: 'WS-PC156',
-    status: 'Risolto',
-    analyst: 'SOC Team',
-  },
-];
-
-// Endpoint protection status
-const endpointStatusData = [
-  {
-    hostname: 'WS-PC001',
-    ip: '192.168.10.101',
-    os: 'Windows 11 Pro',
-    status: 'Protetto',
-    lastSeen: '2 min fa',
-    threats: 0,
-  },
-  {
-    hostname: 'WS-PC002',
-    ip: '192.168.10.102',
-    os: 'Windows 10 Enterprise',
-    status: 'Protetto',
-    lastSeen: '5 min fa',
-    threats: 1,
-  },
-  {
-    hostname: 'SRV-DC01',
-    ip: '192.168.1.10',
-    os: 'Windows Server 2022',
-    status: 'Attenzione',
-    lastSeen: '1 min fa',
-    threats: 2,
-  },
-  {
-    hostname: 'SRV-FILE02',
-    ip: '192.168.1.20',
-    os: 'Windows Server 2019',
-    status: 'Protetto',
-    lastSeen: '3 min fa',
-    threats: 0,
-  },
-  {
-    hostname: 'WS-MAC001',
-    ip: '192.168.10.201',
-    os: 'macOS Sonoma',
-    status: 'Protetto',
-    lastSeen: '8 min fa',
-    threats: 0,
-  },
-  {
-    hostname: 'WS-PC045',
-    ip: '192.168.10.145',
-    os: 'Windows 11 Pro',
-    status: 'Offline',
-    lastSeen: '2 ore fa',
-    threats: 0,
-  },
-];
-
-// SOC Activity log
-const socActivityLog = [
-  {
-    time: '10:45',
-    action: 'Analisi minaccia avviata',
-    details: 'Ransomware detection su WS-PC042',
-    analyst: 'SOC L2',
-  },
-  {
-    time: '10:32',
-    action: 'Threat contenuta',
-    details: 'Credential dumping bloccato su SRV-DC01',
-    analyst: 'SOC L2',
-  },
-  {
-    time: '10:18',
-    action: 'Alert chiuso',
-    details: 'False positive - PowerShell legittimo',
-    analyst: 'SOC L1',
-  },
-  {
-    time: '10:05',
-    action: 'Escalation a L2',
-    details: 'Lateral movement rilevato',
-    analyst: 'SOC L1',
-  },
-  {
-    time: '09:55',
-    action: 'Investigation avviata',
-    details: 'Anomalia network su segmento DMZ',
-    analyst: 'SOC L2',
-  },
-  {
-    time: '09:42',
-    action: 'Policy enforcement',
-    details: 'USB non autorizzato bloccato',
-    analyst: 'SOC L1',
-  },
-];
-
-// Detection rules status
-const detectionRulesData = [
-  { category: 'Malware Detection', active: 156, updated: '2 ore fa' },
-  { category: 'Behavioral Analysis', active: 89, updated: '1 ora fa' },
-  { category: 'Network Monitoring', active: 67, updated: '30 min fa' },
-  { category: 'Identity Protection', active: 45, updated: '4 ore fa' },
-  { category: 'Data Protection', active: 34, updated: '1 giorno fa' },
-];
-
-// Hourly detection activity
-const hourlyActivityData = [
-  { hour: '00:00', detections: 2 },
-  { hour: '02:00', detections: 1 },
-  { hour: '04:00', detections: 0 },
-  { hour: '06:00', detections: 3 },
-  { hour: '08:00', detections: 8 },
-  { hour: '10:00', detections: 12 },
-  { hour: '12:00', detections: 6 },
-  { hour: '14:00', detections: 9 },
-  { hour: '16:00', detections: 15 },
-  { hour: '18:00', detections: 7 },
-  { hour: '20:00', detections: 4 },
-  { hour: '22:00', detections: 2 },
-];
+// Data provided by useDetectDashboard hook with mock fallback
 
 const getSeverityBadge = (severity: string) => {
   switch (severity) {
@@ -295,6 +93,7 @@ export const HiDetectDashboard: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <DemoDataBadge show={isMock} />
           <Badge className="bg-green-500/20 text-green-500 border-green-500/30">
             <Activity className="w-3 h-3 mr-1" />
             SOC Attivo

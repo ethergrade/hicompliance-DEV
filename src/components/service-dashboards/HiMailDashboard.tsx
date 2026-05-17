@@ -15,6 +15,8 @@ import {
   Ban
 } from 'lucide-react';
 import { RiskScoreCard } from './RiskScoreCard';
+import { DemoDataBadge } from './DemoDataBadge';
+import { useMailDashboard } from '@/hooks/useMail';
 import {
   Table,
   TableBody,
@@ -30,49 +32,7 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
-// Mock data for email security
-const emailStats = {
-  totalProcessed: 45892,
-  delivered: 42156,
-  spamBlocked: 2847,
-  phishingBlocked: 156,
-  malwareBlocked: 48,
-  quarantined: 685,
-};
-
-const recentThreats = [
-  { id: 'EM-001', from: 'support@paypa1-security.com', to: 'finance@company.it', subject: 'Urgent: Verify your account', type: 'Phishing' as const, detectedAt: '2025-01-28 09:45:00', status: 'Blocked' as const, severity: 'Critical' as const },
-  { id: 'EM-002', from: 'invoice@supplier-fake.com', to: 'accounting@company.it', subject: 'Invoice #INV-2025-001.exe', type: 'Malware' as const, detectedAt: '2025-01-28 09:30:00', status: 'Quarantined' as const, severity: 'Critical' as const },
-  { id: 'EM-003', from: 'noreply@amazn-deals.net', to: 'sales@company.it', subject: 'You won a $1000 gift card!', type: 'Spam' as const, detectedAt: '2025-01-28 09:15:00', status: 'Blocked' as const, severity: 'Low' as const },
-  { id: 'EM-004', from: 'ceo@company-spoofed.com', to: 'hr@company.it', subject: 'Wire transfer needed urgently', type: 'BEC' as const, detectedAt: '2025-01-28 08:55:00', status: 'Blocked' as const, severity: 'Critical' as const },
-  { id: 'EM-005', from: 'marketing@bulk-sender.com', to: 'info@company.it', subject: 'Special offer just for you!', type: 'Spam' as const, detectedAt: '2025-01-28 08:40:00', status: 'Blocked' as const, severity: 'Low' as const },
-  { id: 'EM-006', from: 'admin@m1crosoft-support.com', to: 'it@company.it', subject: 'Password expiring - action required', type: 'Phishing' as const, detectedAt: '2025-01-28 08:25:00', status: 'Blocked' as const, severity: 'High' as const },
-  { id: 'EM-007', from: 'unknown@suspicious.ru', to: 'ceo@company.it', subject: 'Document.pdf.exe', type: 'Malware' as const, detectedAt: '2025-01-28 08:10:00', status: 'Quarantined' as const, severity: 'Critical' as const },
-  { id: 'EM-008', from: 'newsletter@legit-but-spam.com', to: 'all@company.it', subject: 'Weekly digest you never subscribed to', type: 'Spam' as const, detectedAt: '2025-01-28 07:55:00', status: 'Blocked' as const, severity: 'Low' as const },
-];
-
-const quarantinedEmails = [
-  { id: 'QE-001', from: 'invoice@supplier-fake.com', to: 'accounting@company.it', subject: 'Invoice #INV-2025-001.exe', reason: 'Malware attachment', quarantinedAt: '2025-01-28 09:30:00', expiresIn: '13 giorni', actions: ['Release', 'Delete'] },
-  { id: 'QE-002', from: 'unknown@suspicious.ru', to: 'ceo@company.it', subject: 'Document.pdf.exe', reason: 'Suspicious executable', quarantinedAt: '2025-01-28 08:10:00', expiresIn: '13 giorni', actions: ['Release', 'Delete'] },
-  { id: 'QE-003', from: 'external@partner.com', to: 'sales@company.it', subject: 'Contract draft v2', reason: 'Password-protected archive', quarantinedAt: '2025-01-28 07:30:00', expiresIn: '13 giorni', actions: ['Release', 'Delete'] },
-  { id: 'QE-004', from: 'recruiting@agency.com', to: 'hr@company.it', subject: 'CV - Mario Rossi.docm', reason: 'Macro-enabled document', quarantinedAt: '2025-01-27 16:45:00', expiresIn: '12 giorni', actions: ['Release', 'Delete'] },
-];
-
-const topSenders = [
-  { domain: 'gmail.com', emails: 8542, blocked: 12, blockRate: 0.14 },
-  { domain: 'outlook.com', emails: 6234, blocked: 8, blockRate: 0.13 },
-  { domain: 'company-partner.it', emails: 4521, blocked: 0, blockRate: 0 },
-  { domain: 'supplier.com', emails: 3892, blocked: 2, blockRate: 0.05 },
-  { domain: 'newsletter.marketing.com', emails: 2156, blocked: 1845, blockRate: 85.6 },
-];
-
-const policyViolations = [
-  { policy: 'DLP - Credit Card Numbers', violations: 12, lastViolation: '2025-01-28 09:12:00', action: 'Blocked' as const },
-  { policy: 'DLP - SSN/Codice Fiscale', violations: 5, lastViolation: '2025-01-27 14:30:00', action: 'Warned' as const },
-  { policy: 'Attachment Size > 25MB', violations: 28, lastViolation: '2025-01-28 08:45:00', action: 'Blocked' as const },
-  { policy: 'External Recipients > 50', violations: 3, lastViolation: '2025-01-26 11:20:00', action: 'Warned' as const },
-  { policy: 'Executable Attachments', violations: 156, lastViolation: '2025-01-28 09:30:00', action: 'Blocked' as const },
-];
+// Data provided by useMailDashboard hook with mock fallback
 
 const typeColors = {
   Phishing: 'bg-red-500/20 text-red-500',
@@ -96,11 +56,17 @@ const severityColors = {
 };
 
 export const HiMailDashboard: React.FC = () => {
+  const { data, loading, isMock } = useMailDashboard();
+  const { stats: emailStats, recentThreats, quarantinedEmails, topSenders, policyViolations } = data;
+
   return (
     <div className="space-y-8">
       {/* Overview Section */}
       <section className="space-y-4">
-        <h2 className="text-2xl font-bold">Email Security Overview</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold">Email Security Overview</h2>
+          <DemoDataBadge show={isMock} />
+        </div>
         
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <Card className="border-border">

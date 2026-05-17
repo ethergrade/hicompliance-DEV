@@ -49,6 +49,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .finally(() => setLoading(false));
   }, []);
 
+  // Listen for unauthorized events from api-client (401 responses)
+  // This replaces the old hard redirect with graceful React state change
+  useEffect(() => {
+    const handleAuthUnauthorized = () => {
+      setUser(null);
+      toast({
+        title: "Sessione scaduta",
+        description: "Effettua nuovamente l'accesso",
+        variant: "destructive",
+      });
+    };
+
+    window.addEventListener('auth:unauthorized', handleAuthUnauthorized);
+    return () => window.removeEventListener('auth:unauthorized', handleAuthUnauthorized);
+  }, [toast]);
+
   const signIn = useCallback(async (email: string, password: string) => {
     try {
       const { user: loggedUser } = await authApi.login({ email, password });
