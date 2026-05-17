@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { useClientContext } from '@/contexts/ClientContext';
+import { tenantServicesApi } from '@/lib/api';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { toast } from 'sonner';
+import type { TenantServiceResource } from '@/types/api';
 
 interface ServiceIntegration {
   id: string;
@@ -16,76 +16,65 @@ interface ServiceIntegration {
 
 const normalizeServiceCode = (code: string) => code.toLowerCase().replace(/[_-]/g, '');
 
-export const useServiceIntegrations = () => {
-  const { user } = useAuth();
-  const { selectedOrganization } = useClientContext();
-  const queryClient = useQueryClient();
+/** Map TenantServiceResource to the legacy ServiceIntegration shape */
+function toServiceIntegration(s: TenantServiceResource): ServiceIntegration {
+  return {
+    id: s.id,
+    service_id: s.service_type,
+    api_url: '',                    // new API has no api_url — stored in settings if needed
+    is_active: s.status === 'active',
+    organization_id: s.tenant_id,
+    service_code: s.service_type,
+    service_name: s.service_type,   // new API uses service_type as identifier
+  };
+}
 
-  // Use selected client org for sales/admin, fallback to user's own org
-  const organizationId = selectedOrganization?.id || user?.tenant_id;
+export const useServiceIntegrations = () => {
+  const { organizationId } = useClientOrganization();
+  const queryClient = useQueryClient();
 
   const { data: integrations = [], isLoading } = useQuery({
     queryKey: ['service-integrations', organizationId],
     queryFn: async () => {
       if (!organizationId) return [];
-      const { data, error } = await supabase
-        .from('organization_integrations')
-        .select('id, service_id, api_url, is_active, organization_id, hisolution_services(code, name)')
-        .eq('organization_id', organizationId);
-      
-      if (error) throw error;
-      return (data || []).map((item: any) => ({
-        id: item.id,
-        service_id: item.service_id,
-        api_url: item.api_url,
-        is_active: item.is_active,
-        organization_id: item.organization_id,
-        service_code: item.hisolution_services?.code,
-        service_name: item.hisolution_services?.name,
-      })) as ServiceIntegration[];
+      const list = await tenantServicesApi.list();
+      return list.map(toServiceIntegration);
     },
     enabled: !!organizationId,
   });
 
   const isServiceConnected = (serviceCode: string): boolean => {
     const normalizedTargetCode = normalizeServiceCode(serviceCode);
-    return integrations.some(i => i.service_code && normalizeServiceCode(i.service_code) === normalizedTargetCode && i.is_active);
+    return integrations.some(i =>
+      i.service_code &&
+      normalizeServiceCode(i.service_code) === normalizedTargetCode &&
+      i.is_active
+    );
   };
 
   const getIntegrationByCode = (serviceCode: string): ServiceIntegration | undefined => {
     const normalizedTargetCode = normalizeServiceCode(serviceCode);
-    return integrations.find(i => i.service_code && normalizeServiceCode(i.service_code) === normalizedTargetCode && i.is_active);
+    return integrations.find(i =>
+      i.service_code &&
+      normalizeServiceCode(i.service_code) === normalizedTargetCode &&
+      i.is_active
+    );
   };
 
   const connectMutation = useMutation({
     mutationFn: async ({ serviceId, apiUrl, apiKey }: { serviceId: string; apiUrl: string; apiKey: string }) => {
-      if (!organizationId) throw new Error('Nessuna organizzazione selezionata');
-      
-      const { data: existing } = await supabase
-        .from('organization_integrations')
-        .select('id')
-        .eq('organization_id', organizationId)
-        .eq('service_id', serviceId)
-        .maybeSingle();
+      // Check if already exists
+      const existing = integrations.find(i => i.service_id === serviceId);
 
       if (existing) {
-        const { error } = await supabase
-          .from('organization_integrations')
-          .update({ api_url: apiUrl, api_key: apiKey, is_active: true, api_methods: {} })
-          .eq('id', existing.id);
-        if (error) throw error;
+        // Re-activate if inactive
+        await tenantServicesApi.update(existing.id, { status: 'active' });
       } else {
-        const { error } = await supabase
-          .from('organization_integrations')
-          .insert({
-            organization_id: organizationId,
-            service_id: serviceId,
-            api_url: apiUrl,
-            api_key: apiKey,
-            is_active: true,
-            api_methods: {},
-          });
-        if (error) throw error;
+        await tenantServicesApi.create({
+          service_type: serviceId,
+          status: 'active',
+          settings: apiUrl ? [apiUrl] : null,
+        });
       }
     },
     onSuccess: () => {
@@ -99,11 +88,7 @@ export const useServiceIntegrations = () => {
 
   const disconnectMutation = useMutation({
     mutationFn: async (integrationId: string) => {
-      const { error } = await supabase
-        .from('organization_integrations')
-        .update({ is_active: false })
-        .eq('id', integrationId);
-      if (error) throw error;
+      await tenantServicesApi.update(integrationId, { status: 'inactive' });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['service-integrations'] });

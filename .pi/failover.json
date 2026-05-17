@@ -1,0 +1,13 @@
+{
+  "models": [
+    { "provider": "fireworks", "model": "accounts/fireworks/models/deepseek-v4-pro", "priority": 1, "label": "DeepSeek V4 Pro (primary)" },
+    { "provider": "fireworks", "model": "accounts/fireworks/models/kimi-k2p6",        "priority": 2, "label": "Kimi K2.6" },
+    { "provider": "fireworks", "model": "accounts/fireworks/models/glm-5p1",          "priority": 3, "label": "GLM-5.1" },
+    { "provider": "fireworks", "model": "accounts/fireworks/models/qwen3p6-plus",     "priority": 4, "label": "Qwen3.6 Plus" },
+    { "provider": "fireworks", "model": "accounts/fireworks/models/minimax-m2p7",     "priority": 5, "label": "MiniMax M2.7" }
+  ],
+  "defaultCooldownMinutes": 15,
+  "autoRequeue": true,
+  "autoReturnToPreferred": true,
+  "maxRequeueAttempts": 3
+}

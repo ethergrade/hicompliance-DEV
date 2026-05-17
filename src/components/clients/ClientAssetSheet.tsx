@@ -7,7 +7,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Loader2, Check, CloudOff } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { assetInventoryApi } from '@/lib/api';
+import type { AssetInventoryResource } from '@/types/api';
 
 interface ClientAssetSheetProps {
   organizationId: string | null;
@@ -66,6 +67,39 @@ const INITIAL: AssetData = {
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
+const resourceToForm = (data: AssetInventoryResource): AssetData => ({
+  users_count: data.users_count ?? 0,
+  locations_count: data.locations_count ?? 0,
+  endpoints_count: data.endpoints_count ?? 0,
+  servers_count: data.servers_count ?? 0,
+  hypervisors_count: data.hypervisors_count ?? 0,
+  virtual_machines_count: data.virtual_machines_count ?? 0,
+  firewalls_count: data.firewalls_count ?? 0,
+  core_switches_count: data.core_switches_count ?? 0,
+  access_switches_count: data.access_switches_count ?? 0,
+  access_points_count: data.access_points_count ?? 0,
+  miscellaneous_network_devices_count: data.miscellaneous_network_devices_count ?? 0,
+  va_ip_punctual_count: data.va_ip_punctual_count ?? 0,
+  va_subnet_25_count: data.va_subnet_25_count ?? 0,
+  va_subnet_24_count: data.va_subnet_24_count ?? 0,
+  va_subnet_23_count: data.va_subnet_23_count ?? 0,
+  va_subnet_22_count: data.va_subnet_22_count ?? 0,
+  va_subnet_21_count: data.va_subnet_21_count ?? 0,
+  notes: data.notes ?? '',
+  hilog_syslog_count: data.hilog_syslog_count ?? 0,
+  hilog_iis_count: data.hilog_iis_count ?? 0,
+  hilog_apache_count: data.hilog_apache_count ?? 0,
+  hilog_sql_count: data.hilog_sql_count ?? 0,
+  hilog_custom_path_count: data.hilog_custom_path_count ?? 0,
+  hilog_endpoint_count: data.hilog_endpoint_count ?? 0,
+  hilog_server_count: data.hilog_server_count ?? 0,
+  hilog_dlp_linux_count: data.hilog_dlp_linux_count ?? 0,
+  hilog_dlp_windows_count: data.hilog_dlp_windows_count ?? 0,
+  hilog_sharepoint_dlp_enabled: data.hilog_sharepoint_dlp_enabled ?? false,
+  hilog_sharepoint_dlp_count: data.hilog_sharepoint_dlp_count ?? 0,
+  hilog_entra_id_enabled: data.hilog_entra_id_enabled ?? false,
+});
+
 const ClientAssetSheet: React.FC<ClientAssetSheetProps> = ({
   organizationId, organizationName, open, onOpenChange,
 }) => {
@@ -89,18 +123,10 @@ const ClientAssetSheet: React.FC<ClientAssetSheetProps> = ({
     if (!organizationId) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('asset_inventory').select('*').eq('organization_id', organizationId).maybeSingle();
-      if (error) throw error;
+      const data = await assetInventoryApi.getByOrganization(organizationId);
       if (data) {
         setRecordId(data.id);
-        setForm({
-          ...INITIAL,
-          ...data,
-          notes: data.notes ?? '',
-          hilog_sharepoint_dlp_enabled: data.hilog_sharepoint_dlp_enabled ?? false,
-          hilog_entra_id_enabled: data.hilog_entra_id_enabled ?? false,
-        });
+        setForm(resourceToForm(data));
       }
     } catch { /* ignore */ }
     finally { setLoading(false); }
@@ -129,15 +155,12 @@ const ClientAssetSheet: React.FC<ClientAssetSheetProps> = ({
       const ti = f.va_ip_punctual_count + f.va_subnet_25_count * 128 + f.va_subnet_24_count * 256 + f.va_subnet_23_count * 512 + f.va_subnet_22_count * 1024 + f.va_subnet_21_count * 2048;
       const payload = { organization_id: organizationId, ...f, total_network_devices_count: tn, va_total_ips_count: ti };
 
-      let error;
       if (recordIdRef.current) {
-        ({ error } = await supabase.from('asset_inventory').update(payload).eq('id', recordIdRef.current));
+        await assetInventoryApi.update(recordIdRef.current, payload);
       } else {
-        const res = await supabase.from('asset_inventory').insert(payload).select('id').single();
-        error = res.error;
-        if (res.data) setRecordId(res.data.id);
+        const created = await assetInventoryApi.create(payload);
+        if (created.id) setRecordId(created.id);
       }
-      if (error) throw error;
       setSaveStatus('saved');
     } catch {
       setSaveStatus('error');
