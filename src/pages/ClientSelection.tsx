@@ -8,11 +8,14 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, Building2, Calendar, ArrowRight, Users, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Search, Building2, Calendar, ArrowRight, Users, Plus, Pencil, Trash2, FileText, Server, Plug } from 'lucide-react';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
 import ClientCrudDialog from '@/components/clients/ClientCrudDialog';
 import DeleteClientDialog from '@/components/clients/DeleteClientDialog';
+import ClientProfileSheet from '@/components/clients/ClientProfileSheet';
+import ClientAssetSheet from '@/components/clients/ClientAssetSheet';
+import ClientServicesDialog from '@/components/clients/ClientServicesDialog';
 
 const ClientSelection: React.FC = () => {
   const navigate = useNavigate();
@@ -30,6 +33,13 @@ const ClientSelection: React.FC = () => {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteOrg, setDeleteOrg] = useState<{ id: string; name: string } | null>(null);
 
+  // Sheet state
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [assetOpen, setAssetOpen] = useState(false);
+  const [servicesOpen, setServicesOpen] = useState(false);
+  const [editingOrgId, setEditingOrgId] = useState<string | null>(null);
+  const [editingOrgName, setEditingOrgName] = useState<string>('');
+
   const filteredOrganizations = organizations.filter(org => {
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase();
@@ -39,6 +49,27 @@ const ClientSelection: React.FC = () => {
   const handleSelectClient = (org: typeof organizations[0]) => {
     setSelectedOrganization(org);
     navigate('/dashboard');
+  };
+
+  const openProfile = (e: React.MouseEvent, org: typeof organizations[0]) => {
+    e.stopPropagation();
+    setEditingOrgId(org.id);
+    setEditingOrgName(org.name);
+    setProfileOpen(true);
+  };
+
+  const openAsset = (e: React.MouseEvent, org: typeof organizations[0]) => {
+    e.stopPropagation();
+    setEditingOrgId(org.id);
+    setEditingOrgName(org.name);
+    setAssetOpen(true);
+  };
+
+  const openServices = (e: React.MouseEvent, org: typeof organizations[0]) => {
+    e.stopPropagation();
+    setEditingOrgId(org.id);
+    setEditingOrgName(org.name);
+    setServicesOpen(true);
   };
 
   const openCreate = () => {
