@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { authApi } from '@/lib/api/auth';
-import { getToken, clearToken } from '@/lib/api-client';
-import { ApiError } from '@/lib/api-client';
+import { getToken, clearToken, handleUnauthorized, ApiError } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
 import type { LoginUser } from '@/types/api';
 
@@ -43,8 +42,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     authApi.me()
       .then((me) => setUser(me))
       .catch(() => {
-        // Token expired or invalid — clean up
-        clearToken();
+        // Token expired or invalid — force logout via handleUnauthorized
+        // This dispatches 'auth:unauthorized' event for graceful redirect
+        handleUnauthorized();
       })
       .finally(() => setLoading(false));
   }, []);

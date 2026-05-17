@@ -33,6 +33,9 @@ function handleUnauthorized(): void {
   window.dispatchEvent(new CustomEvent('auth:unauthorized'));
 }
 
+/** Force logout from external code (e.g. AuthProvider on me() failure) */
+export { handleUnauthorized };
+
 // ─── CSRF ───────────────────────────────────────────────────────────────────
 
 export async function fetchCsrfCookie(): Promise<void> {
@@ -115,9 +118,9 @@ async function request<T>(
     : { success: false, message: await response.text() };
 
   if (!response.ok) {
-    if (response.status === 401) {
-      handleUnauthorized();
-    }
+    // Note: 401 on API data endpoints does NOT auto-logout.
+    // Only authApi.me() and authApi.login() call handleUnauthorized() explicitly.
+    // This prevents a single expired API call from destroying the entire session.
     throw new ApiError(response.status, json as ApiErrorResponse);
   }
 
