@@ -233,41 +233,84 @@ def main():
     check("4.4 POST /assessments for other tenant BLOCKED", _is_blocked(_msg(r)),
           "blocked", _msg(r))
 
+    # =========================================================================
+    # 5. ROLE-BASED ACCESS MATRIX
+    # =========================================================================
+    print()
+    print("─── 5. ROLE-BASED ACCESS MATRIX ────────────────────────────────────")
+
+    # Login as different role users
+    role_users = [
+        ("admin@demo.it", "admin", "27cce7e2-ccc0-40e7-960e-14e4e7c499ee"),
+        ("viewer@demo.it", "viewer", "27cce7e2-ccc0-40e7-960e-14e4e7c499ee"),
+        ("admin2@acme.it", "admin", "37fd751e-639b-4f68-8762-7d3e8b5ea8c8"),
+    ]
+    role_tokens = {}
+    for email, role_desc, tid in role_users:
+        tok, _, _ = login(email, "password")
+        if tok:
+            role_tokens[email] = tok
+
+    matrix_endpoints = ["/tenants", "/tenant", "/users", "/assessments", "/tenant-services"]
+
+    for ep in matrix_endpoints:
+        for email, role_desc, _ in role_users:
+            if email not in role_tokens:
+                continue
+            r = api_call("GET", token=role_tokens[email], path=ep)
+            msg = _msg(r)
+            blocked = _is_blocked(msg)
+            ok = _is_ok(msg)
+
+            if ep == "/tenants":
+                # Non-superadmin should NOT list all tenants
+                check(f"5.x {email} → {ep} blocked", blocked, "blocked", msg)
+            elif ep == "/tenant":
+                # Non-superadmin should see own tenant
+                check(f"5.x {email} → {ep} own tenant", ok, "own tenant", msg)
+            elif ep == "/users":
+                # Should be scoped
+                check(f"5.x {email} → {ep} scoped", ok, "scoped", msg)
+            elif ep == "/assessments":
+                check(f"5.x {email} → {ep} scoped", ok, "scoped", msg)
+            elif ep == "/tenant-services":
+                check(f"5.x {email} → {ep} scoped", ok, "scoped", msg)
+
     print()
     # =========================================================================
-    # 5. ENDPOINT INVENTORY (informational — not scored)
+    # 6. ENDPOINT INVENTORY (informational — not scored)
     # =========================================================================
-    print("─── 5. ENDPOINT INVENTORY (informational) ──────────────────────────")
+    print("─── 6. ENDPOINT INVENTORY (informational) ──────────────────────────")
 
     r = api_call("GET", token=super_token, path=f"/integrations/organization/{cust_tenant_id}")
     exists = "Endpoint non trovato" not in _msg(r)
     tag = f"{GREEN}EXISTS{NC}" if exists else f"{YELLOW}MISSING{NC}"
-    print(f"  {tag} 5.1 GET /integrations/organization/{{id}} → {_msg(r)}")
+    print(f"  {tag} 6.1 GET /integrations/organization/{{id}} → {_msg(r)}")
 
     r = api_call("GET", token=super_token, path=f"/organizations/{cust_tenant_id}/integrations")
     exists = "Endpoint non trovato" not in _msg(r)
     tag = f"{GREEN}EXISTS{NC}" if exists else f"{YELLOW}MISSING{NC}"
-    print(f"  {tag} 5.2 GET /organizations/{{id}}/integrations → {_msg(r)}")
+    print(f"  {tag} 6.2 GET /organizations/{{id}}/integrations → {_msg(r)}")
 
     r = api_call("GET", token=super_token, path="/api/integrations")
     exists = "Endpoint non trovato" not in _msg(r)
     tag = f"{GREEN}EXISTS{NC}" if exists else f"{YELLOW}MISSING{NC}"
-    print(f"  {tag} 5.3 GET /api/integrations → {_msg(r)}")
+    print(f"  {tag} 6.3 GET /api/integrations → {_msg(r)}")
 
     r = api_call("GET", token=super_token, path="/patches")
     exists = "Endpoint non trovato" not in _msg(r)
     tag = f"{GREEN}EXISTS{NC}" if exists else f"{YELLOW}MISSING{NC}"
-    print(f"  {tag} 5.4 GET /patches → {_msg(r)}")
+    print(f"  {tag} 6.4 GET /patches → {_msg(r)}")
 
     r = api_call("GET", token=super_token, path="/firewall/rules")
     exists = "Endpoint non trovato" not in _msg(r)
     tag = f"{GREEN}EXISTS{NC}" if exists else f"{YELLOW}MISSING{NC}"
-    print(f"  {tag} 5.5 GET /firewall/rules → {_msg(r)}")
+    print(f"  {tag} 6.5 GET /firewall/rules → {_msg(r)}")
 
     r = api_call("GET", token=super_token, path="/endpoints")
     exists = "Endpoint non trovato" not in _msg(r)
     tag = f"{GREEN}EXISTS{NC}" if exists else f"{YELLOW}MISSING{NC}"
-    print(f"  {tag} 5.6 GET /endpoints → {_msg(r)}")
+    print(f"  {tag} 6.6 GET /endpoints → {_msg(r)}")
 
     print()
     # =========================================================================
