@@ -16,6 +16,8 @@ import {
   Cpu
 } from 'lucide-react';
 import { RiskScoreCard } from './RiskScoreCard';
+import { DemoDataBadge } from './DemoDataBadge';
+import { useEndpointDashboard } from '@/hooks/useEndpoints';
 import {
   Table,
   TableBody,
@@ -31,46 +33,8 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
-// TODO: Wire to endpoint protection API when available.
-// The assessment API provides TenantResource endpoint counts (endpoints_count)
-// but does not provide individual endpoint status/protection/threat data.
-// Endpoint data should come from a dedicated EDR/XDR integration endpoint.
-
-// Mock data for endpoint
-const endpointStats = {
-  totalEndpoints: 156,
-  protectedEndpoints: 142,
-  atRiskEndpoints: 14,
-  onlineEndpoints: 134,
-  offlineEndpoints: 22,
-  pendingUpdates: 28,
-};
-
-const endpoints = [
-  { id: 'EP-001', name: 'WS-ADMIN-01', type: 'Workstation' as const, os: 'Windows 11 Pro', lastSeen: '2025-01-28 09:52:00', status: 'Online' as const, protection: 'Protected' as const, threats: 0, compliance: 98 },
-  { id: 'EP-002', name: 'SRV-DC-01', type: 'Server' as const, os: 'Windows Server 2022', lastSeen: '2025-01-28 09:51:45', status: 'Online' as const, protection: 'Protected' as const, threats: 0, compliance: 100 },
-  { id: 'EP-003', name: 'NB-SALES-05', type: 'Laptop' as const, os: 'Windows 11 Pro', lastSeen: '2025-01-28 09:45:00', status: 'Online' as const, protection: 'At Risk' as const, threats: 2, compliance: 72 },
-  { id: 'EP-004', name: 'WS-DEV-03', type: 'Workstation' as const, os: 'macOS Sonoma', lastSeen: '2025-01-28 09:50:30', status: 'Online' as const, protection: 'Protected' as const, threats: 0, compliance: 95 },
-  { id: 'EP-005', name: 'MB-CEO', type: 'Mobile' as const, os: 'iOS 17.2', lastSeen: '2025-01-28 08:30:00', status: 'Offline' as const, protection: 'Unknown' as const, threats: 0, compliance: 85 },
-  { id: 'EP-006', name: 'SRV-FILE-01', type: 'Server' as const, os: 'Windows Server 2019', lastSeen: '2025-01-28 09:52:10', status: 'Online' as const, protection: 'At Risk' as const, threats: 1, compliance: 68 },
-  { id: 'EP-007', name: 'NB-HR-02', type: 'Laptop' as const, os: 'Windows 10 Pro', lastSeen: '2025-01-27 18:00:00', status: 'Offline' as const, protection: 'Outdated' as const, threats: 0, compliance: 45 },
-  { id: 'EP-008', name: 'WS-FINANCE-01', type: 'Workstation' as const, os: 'Windows 11 Pro', lastSeen: '2025-01-28 09:48:00', status: 'Online' as const, protection: 'Protected' as const, threats: 0, compliance: 100 },
-];
-
-const detectedThreats = [
-  { id: 'TH-001', endpoint: 'NB-SALES-05', threatName: 'Trojan.GenericKD.46584', type: 'Malware', detectedAt: '2025-01-28 09:15:00', status: 'Quarantined' as const, severity: 'High' as const },
-  { id: 'TH-002', endpoint: 'NB-SALES-05', threatName: 'Adware.BrowserModifier', type: 'PUP', detectedAt: '2025-01-28 08:45:00', status: 'Removed' as const, severity: 'Low' as const },
-  { id: 'TH-003', endpoint: 'SRV-FILE-01', threatName: 'Ransom.WannaCry.Gen', type: 'Ransomware', detectedAt: '2025-01-28 07:30:00', status: 'Blocked' as const, severity: 'Critical' as const },
-  { id: 'TH-004', endpoint: 'WS-DEV-03', threatName: 'Exploit.CVE-2024-1234', type: 'Exploit', detectedAt: '2025-01-27 16:20:00', status: 'Patched' as const, severity: 'Medium' as const },
-  { id: 'TH-005', endpoint: 'NB-HR-02', threatName: 'Spyware.Keylogger', type: 'Spyware', detectedAt: '2025-01-27 14:00:00', status: 'Pending' as const, severity: 'High' as const },
-];
-
-const pendingUpdates = [
-  { endpoint: 'NB-HR-02', currentVersion: '4.18.2311', latestVersion: '4.18.2501', component: 'Antivirus Definitions', daysOutdated: 45, priority: 'Critical' as const },
-  { endpoint: 'SRV-FILE-01', currentVersion: '4.18.2412', latestVersion: '4.18.2501', component: 'Antivirus Definitions', daysOutdated: 15, priority: 'High' as const },
-  { endpoint: 'WS-DEV-03', currentVersion: '2.1.5', latestVersion: '2.2.0', component: 'Agent Software', daysOutdated: 7, priority: 'Medium' as const },
-  { endpoint: 'NB-SALES-05', currentVersion: '4.18.2489', latestVersion: '4.18.2501', component: 'Antivirus Definitions', daysOutdated: 3, priority: 'Low' as const },
-];
+// Data provided by useEndpointDashboard hook with mock fallback
+// When the endpoint protection API becomes available, it will be used automatically.
 
 const typeIcons = {
   Workstation: Monitor,
@@ -108,11 +72,17 @@ const priorityColors = {
 };
 
 export const HiEndpointDashboard: React.FC = () => {
+  const { data, loading, isMock } = useEndpointDashboard();
+  const { stats: endpointStats, endpoints, detectedThreats, pendingUpdates } = data;
+
   return (
     <div className="space-y-8">
       {/* Overview Section */}
       <section className="space-y-4">
-        <h2 className="text-2xl font-bold">Endpoint Overview</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold">Endpoint Overview</h2>
+          <DemoDataBadge show={isMock} />
+        </div>
         
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <Card className="border-border">

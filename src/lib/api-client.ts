@@ -28,7 +28,9 @@ function handleUnauthorized(): void {
   if (typeof window === "undefined") return;
   if (window.location.pathname === "/auth") return;
 
-  window.location.assign("/auth");
+  // Dispatch custom event so AuthProvider can handle logout gracefully
+  // via React state instead of a hard page redirect
+  window.dispatchEvent(new CustomEvent('auth:unauthorized'));
 }
 
 // ─── CSRF ───────────────────────────────────────────────────────────────────

@@ -3,10 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Info, AlertTriangle } from 'lucide-react';
 import { RiskScoreCard } from './RiskScoreCard';
+import { DemoDataBadge } from './DemoDataBadge';
 import { VulnerabilitiesTable } from './VulnerabilitiesTable';
 import { OsPatchesTable } from './OsPatchesTable';
 import { SoftwarePatchesTable } from './SoftwarePatchesTable';
 import { useAssessmentReport } from '@/hooks/useAssessmentReport';
+import { usePatchDashboard } from '@/hooks/usePatches';
 import type { Vulnerability as ApiVulnerability } from '@/types/api';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -40,42 +42,13 @@ const mapVulnerabilities = (apiVulns: ApiVulnerability[]) =>
     }))
     .sort((a, b) => (SEVERITY_ORDER[b.severity.toLowerCase()] ?? 0) - (SEVERITY_ORDER[a.severity.toLowerCase()] ?? 0));
 
-// TODO: Replace mock OS/software patches with HiPatch API endpoint when available
-// The assessment API does not provide OS/software patch data (only CVE vulnerabilities).
-// Patch data should come from the HiPatch tool via a dedicated integration endpoint.
-
-const osPatchesPending = [
-  { systemName: 'SRV2025-HYPERV', patch: 'Definition updates', description: 'Update for Windows Security platform - KB5007651 (Version 10.0.27840.1000)', kbNumber: 'KB5007651', severity: 'Important' as const },
-  { systemName: 'SRV2025-HYPERV', patch: 'Security updates', description: '2025-07 Cumulative Update for Microsoft server operating system version 24H2 for x64-based Systems (KB5062553)', kbNumber: 'KB5062553', severity: 'Important' as const },
-  { systemName: 'SRV2022DOMOTZ', patch: 'Security updates', description: '2025-07 Cumulative Update for Microsoft server operating system version 21H2 for x64-based Systems (KB5062572)', kbNumber: 'KB5062572', severity: 'Important' as const },
-];
-
-const osPatchesInstalled = [
-  { systemName: 'SRV2025-HYPERV', patch: 'Security updates', description: '2025-07 Cumulative Update for Microsoft server operating system version 24H2 for x64-based Systems (KB5062553)', kbNumber: 'KB5062553', status: 'Failed' as const },
-  { systemName: 'SRV2025-HYPERV', patch: 'Definition updates', description: 'Update for Windows Security platform - KB5007651 (Version 10.0.27840.1000)', kbNumber: 'KB5007651', status: 'Failed' as const },
-  { systemName: 'NB-PUCCINELLI', patch: 'Aggiornamento dell\'intelligence sulla sicurezza per Microsoft Defender Antivirus', description: '-2267602 KB (versione 1.441.307.0) - Canale corrente (Generico)', kbNumber: 'KB', status: 'Installed' as const },
-  { systemName: 'NB-PUCCINELLI', patch: 'Aggiornamento per Microsoft Defender Antivirus piattaforma antimalware', description: '- 4052623 KB (versione 4.18.25100.9008) - Canale corrente (Generico)', kbNumber: 'KB', status: 'Installed' as const },
-];
-
-const softwarePatchesAvailable = [
-  { systemName: 'SRV2022-VIRT-HV', patch: 'Installer', description: 'Open Office', impact: 'Critical' as const, status: 'Rejected' as const },
-  { systemName: 'SRV2022-VIRT-HV', patch: 'Installer', description: 'Google Chrome', impact: 'Critical' as const, status: 'Rejected' as const },
-  { systemName: 'SRV2022-VIRT-HV', patch: 'Installer', description: 'Thunderbird x64', impact: 'Critical' as const, status: 'Rejected' as const },
-  { systemName: 'SRV2022-VIRT-HV', patch: 'Installer', description: 'Mozilla Firefox x64', impact: 'Critical' as const, status: 'Rejected' as const },
-  { systemName: 'SRV2022DOMOTZ', patch: 'Installer', description: 'Open Office', impact: 'Critical' as const, status: 'Rejected' as const },
-  { systemName: 'NB-PUCCINELLI', patch: 'Installer', description: 'WinRAR x64', impact: 'Critical' as const, status: 'Rejected' as const },
-];
-
-const softwarePatchesInstalled = [
-  { systemName: 'NB-PUCCINELLI', product: 'OBS Studio', type: 'PATCH', status: 'Failed' as const },
-  { systemName: 'NB-PUCCINELLI', product: 'Microsoft Visual C++ 2015-2022 Redistributable (x86)', type: 'PATCH', status: 'Installed' as const },
-  { systemName: 'NB-PUCCINELLI', product: 'Dev Home (Preview)', type: 'PATCH', status: 'Installed' as const },
-  { systemName: 'SRV2022DOMOTZ', product: 'Microsoft Edge', type: 'PATCH', status: 'Installed' as const },
-  { systemName: 'SRV2022DOMOTZ', product: 'Beats winlogbeat', type: 'PATCH', status: 'Installed' as const },
-];
+// Patch data provided by usePatchDashboard hook with mock fallback
+// Vulnerabilities come from the assessment API (useAssessmentReport)
 
 export const HiPatchDashboard: React.FC = () => {
   const { vulnerabilities: apiVulns, summary, loading, error } = useAssessmentReport();
+  const { data: patchData, isMock: patchIsMock } = usePatchDashboard();
+  const { osPatchesPending, osPatchesInstalled, softwarePatchesAvailable, softwarePatchesInstalled } = patchData;
 
   const mappedVulns = useMemo(() => mapVulnerabilities(apiVulns), [apiVulns]);
 
@@ -165,7 +138,10 @@ export const HiPatchDashboard: React.FC = () => {
 
       {/* Patches Section */}
       <section className="space-y-4">
-        <h2 className="text-2xl font-bold">Patches</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold">Patches</h2>
+          <DemoDataBadge show={patchIsMock} />
+        </div>
         
         <RiskScoreCard 
           title="HiPatch Risk Score"

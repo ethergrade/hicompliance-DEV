@@ -1,3 +1,4 @@
+export { apiClient } from "@/lib/api-client";
 export { authApi } from "./auth";
 export { tenantsApi } from "./tenants";
 export { usersApi } from "./users";
@@ -6,3 +7,11 @@ export { configApi } from "./config";
 export { tenantServicesApi } from "./tenant-services";
 export { assetInventoryApi } from "./asset-inventory";
 export { integrationsApi } from "./integrations";
+export { patchesApi } from "./patches";
+export { firewallApi } from "./firewall";
+export { endpointsApi } from "./endpoints";
+export { logsApi } from "./logs";
+export { mailApi } from "./mail";
+export { detectApi } from "./detect";
+export { trackApi } from "./track";
+export { mobileApi } from "./mobile";

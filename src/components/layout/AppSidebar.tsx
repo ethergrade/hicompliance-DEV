@@ -94,12 +94,9 @@ export const AppSidebar: React.FC = () => {
   const { isSuperAdmin, isSales, isAdmin } = useUserRoles();
   const { isModuleEnabled } = useRolePermissions();
   const { selectedOrganization, canManageMultipleClients } = useClientContext();
-  
-  const isAdmin = userProfile?.user_type === 'admin';
+
   const isConsoleUser = isSuperAdmin || isSales;
   const platformName = isConsoleUser ? 'HiConsole' : 'HiCompliance';
-
-  const platformName = "HiConsole";
 
   const filteredNavigation = navigation.filter((item) => {
     if (item.superAdminOnly && !isSuperAdmin) return false;

@@ -24,6 +24,8 @@ import {
   firewallLogsTableData, hostsTableData, usersADData, usersLocalData, usersEntraData,
   actionColors, severityColors,
 } from './hilog/mockData';
+import { useLogDashboard } from '@/hooks/useLogs';
+import { DemoDataBadge } from './DemoDataBadge';
 import { GlobalFilters, type HiLogFilters } from './hilog/GlobalFilters';
 import { PaginatedTable } from './hilog/PaginatedTable';
 import { CorrelationSection } from './hilog/CorrelationSection';
@@ -63,6 +65,7 @@ const matchesSearch = (obj: Record<string, any>, search: string): boolean => {
 };
 
 export const HiLogDashboard: React.FC = () => {
+  const { isMock } = useLogDashboard();
   const persisted = useMemo(() => loadPersistedState(), []);
   
   const [filters, setFilters] = useState<HiLogFilters>(
@@ -136,7 +139,10 @@ export const HiLogDashboard: React.FC = () => {
 
       {/* Overview Section */}
       <section className="space-y-4">
-        <h2 className="text-2xl font-bold">Overview</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold">Overview</h2>
+          <DemoDataBadge show={isMock} />
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Card className="border-border">
             <CardContent className="pt-6">
