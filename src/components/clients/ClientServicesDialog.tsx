@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { Loader2, Link2, Unlink, Plug, Shield, Mail, Monitor, Smartphone, Activity, Search as SearchIcon, Server, Cloud, Laptop } from 'lucide-react';
+import { Loader2, Link2, Unlink, Plug, Shield, Mail, Monitor, Smartphone, Activity, Search as SearchIcon, Server, Pencil } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tenantServicesApi } from '@/lib/api/tenant-services';
 import { configApi } from '@/lib/api/config';
@@ -27,14 +29,16 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
   hilog: <Server className="w-4 h-4" />,
   hidetect: <SearchIcon className="w-4 h-4" />,
   himobile: <Smartphone className="w-4 h-4" />,
-  hicompliance: <Cloud className="w-4 h-4" />,
 };
 
 const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   open, onOpenChange, organizationId, organizationName,
 }) => {
   const queryClient = useQueryClient();
-  const [confirmToggle, setConfirmToggle] = useState<{ service: any; currentStatus: string } | null>(null);
+  const [selectedService, setSelectedService] = useState<any | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [apiUrl, setApiUrl] = useState('');
+  const [apiKey, setApiKey] = useState('');
 
   // Service catalog from /config/tenant-services
   const { data: catalog = {}, isLoading: catalogLoading } = useQuery({
@@ -70,39 +74,81 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     });
   }, [catalog, tenantServices]);
 
-  const toggleServiceMutation = useMutation({
-    mutationFn: async ({ serviceId, status, tenantServiceId }: { serviceId: string; status: string; tenantServiceId: string | null }) => {
-      if (tenantServiceId) {
-        await tenantServicesApi.update(tenantServiceId, { status: status as 'active' | 'inactive' });
-      } else if (status === 'active') {
+  const openEditForm = (svc: any) => {
+    const existing = tenantServices.find((ts: TenantServiceResource) => ts.service_type === svc.id);
+    const settings = (existing?.settings as Record<string, string> | undefined) || {};
+    setSelectedService(svc);
+    setIsEditMode(!!existing && svc.status === 'active');
+    setApiUrl(settings.api_url || '');
+    setApiKey(settings.api_key || '');
+  };
+
+  const closeForm = () => {
+    setSelectedService(null);
+    setIsEditMode(false);
+    setApiUrl('');
+    setApiKey('');
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedService) return;
+
+      const existing = tenantServices.find((ts: TenantServiceResource) => ts.service_type === selectedService.id);
+
+      const payload = {
+        status: 'active' as const,
+        settings: {
+          ...((existing?.settings as Record<string, unknown>) || {}),
+          api_url: apiUrl.trim(),
+          api_key: apiKey.trim(),
+        },
+      };
+
+      if (existing?.id) {
+        await tenantServicesApi.update(existing.id, payload);
+      } else {
         await tenantServicesApi.create({
           tenant_id: organizationId,
-          service_type: serviceId,
+          service_type: selectedService.id,
           status: 'active',
+          settings: payload.settings,
         });
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tenant-services', organizationId] });
-      toast.success(confirmToggle?.currentStatus === 'active' ? 'Servizio disattivato' : 'Servizio attivato');
-      setConfirmToggle(null);
+      toast.success(isEditMode ? 'Configurazione aggiornata' : 'Servizio collegato con successo');
+      closeForm();
     },
     onError: (err: Error) => {
       toast.error(`Errore: ${err.message}`);
-      setConfirmToggle(null);
     },
   });
 
-  const handleToggle = (service: any) => {
-    if (service.status === 'active') {
-      setConfirmToggle({ service, currentStatus: 'active' });
-    } else {
-      toggleServiceMutation.mutate({
-        serviceId: service.id,
-        status: 'active',
-        tenantServiceId: service.tenantServiceId,
-      });
+  const disconnectMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedService) return;
+      const existing = tenantServices.find((ts: TenantServiceResource) => ts.service_type === selectedService.id);
+      if (existing?.id) {
+        await tenantServicesApi.update(existing.id, { status: 'inactive' });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tenant-services', organizationId] });
+      toast.success('Servizio scollegato');
+      closeForm();
+    },
+    onError: (err: Error) => toast.error(`Errore: ${err.message}`),
+  });
+
+  const handleSave = () => {
+    if (!selectedService) return;
+    if (!apiUrl.trim() || !apiKey.trim()) {
+      toast.error('URL e Chiave API sono obbligatori');
+      return;
     }
+    saveMutation.mutate();
   };
 
   const isLoading = catalogLoading || servicesLoading;
@@ -113,29 +159,54 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plug className="w-5 h-5" />
-            Servizi HiConsole — {organizationName}
+            {selectedService ? `Configura ${selectedService.name}` : `Servizi API — ${organizationName}`}
           </DialogTitle>
-          <DialogDescription>Attiva o disattiva i servizi per questo cliente</DialogDescription>
+          <DialogDescription>
+            {selectedService ? 'Modifica le credenziali API del servizio' : 'Collega o scollega i servizi per questo cliente'}
+          </DialogDescription>
         </DialogHeader>
 
-        {confirmToggle ? (
+        {selectedService ? (
           <div className="space-y-4 py-2">
-            <p className="text-sm">
-              Sei sicuro di voler <strong>disattivare</strong> {confirmToggle.service.name}?
-            </p>
+            <div className="space-y-2">
+              <Label htmlFor="client-api-url">URL API</Label>
+              <Input
+                id="client-api-url"
+                placeholder="https://api.example.com/v1"
+                value={apiUrl}
+                onChange={e => setApiUrl(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="client-api-key">Chiave API</Label>
+              <Input
+                id="client-api-key"
+                type="password"
+                placeholder="sk-..."
+                value={apiKey}
+                onChange={e => setApiKey(e.target.value)}
+              />
+            </div>
             <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setConfirmToggle(null)}>Annulla</Button>
+              <Button variant="outline" onClick={closeForm}>
+                Annulla
+              </Button>
+              {isEditMode && (
+                <Button
+                  variant="destructive"
+                  onClick={() => disconnectMutation.mutate()}
+                  disabled={disconnectMutation.isPending}
+                >
+                  {disconnectMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Scollega
+                </Button>
+              )}
               <Button
-                variant="destructive"
-                onClick={() => toggleServiceMutation.mutate({
-                  serviceId: confirmToggle.service.id,
-                  status: 'inactive',
-                  tenantServiceId: confirmToggle.service.tenantServiceId,
-                })}
-                disabled={toggleServiceMutation.isPending}
+                onClick={handleSave}
+                disabled={saveMutation.isPending || !apiUrl.trim() || !apiKey.trim()}
               >
-                {toggleServiceMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Disattiva
+                {saveMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                {isEditMode ? 'Salva' : 'Collega'}
               </Button>
             </div>
           </div>
@@ -149,6 +220,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
               <div className="space-y-1">
                 {serviceList.map((svc, idx) => {
                   const isActive = svc.status === 'active';
+                  const settings = svc.settings as Record<string, string> | undefined;
                   return (
                     <React.Fragment key={svc.id}>
                       {idx > 0 && <Separator />}
@@ -159,7 +231,9 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                           </div>
                           <div>
                             <p className="text-sm font-medium">{svc.name}</p>
-                            <p className="text-xs text-muted-foreground">{svc.description}</p>
+                            {isActive && settings?.api_url && (
+                              <p className="text-xs text-muted-foreground truncate max-w-[180px]">{settings.api_url}</p>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -167,20 +241,23 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                             <>
                               <Badge variant="outline" className="text-xs border-green-500/30 text-green-500">Attivo</Badge>
                               <Button
-                                variant="ghost" size="sm"
-                                onClick={() => handleToggle(svc)}
-                                disabled={toggleServiceMutation.isPending}
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openEditForm(svc)}
+                                disabled={saveMutation.isPending || disconnectMutation.isPending}
                               >
-                                <Unlink className="w-3.5 h-3.5" />
+                                <Pencil className="w-3.5 h-3.5" />
                               </Button>
                             </>
                           ) : (
                             <Button
-                              variant="outline" size="sm" className="text-xs"
-                              onClick={() => handleToggle(svc)}
-                              disabled={toggleServiceMutation.isPending}
+                              variant="outline"
+                              size="sm"
+                              className="text-xs"
+                              onClick={() => openEditForm(svc)}
+                              disabled={saveMutation.isPending}
                             >
-                              <Link2 className="w-3.5 h-3.5 mr-1" /> Attiva
+                              <Link2 className="w-3.5 h-3.5 mr-1" /> Collega
                             </Button>
                           )}
                         </div>
