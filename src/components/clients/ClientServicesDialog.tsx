@@ -1,15 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { Loader2, Link2, Unlink, Plug, Shield, Mail, Monitor, Smartphone, Activity, Search as SearchIcon, Server } from 'lucide-react';
+import { Loader2, Link2, Unlink, Plug, Shield, Mail, Monitor, Smartphone, Activity, Search as SearchIcon, Server, Cloud, Laptop } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { integrationsApi } from '@/lib/api';
-import type { ServiceCatalogItem, IntegrationResource } from '@/types/api';
+import { tenantServicesApi } from '@/lib/api/tenant-services';
+import { configApi } from '@/lib/api/config';
+import type { TenantServiceResource } from '@/types/api';
 import { toast } from 'sonner';
 
 interface ClientServicesDialogProps {
@@ -28,78 +27,85 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
   hilog: <Server className="w-4 h-4" />,
   hidetect: <SearchIcon className="w-4 h-4" />,
   himobile: <Smartphone className="w-4 h-4" />,
+  hicompliance: <Cloud className="w-4 h-4" />,
 };
 
 const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   open, onOpenChange, organizationId, organizationName,
 }) => {
   const queryClient = useQueryClient();
-  const [connectingService, setConnectingService] = useState<ServiceCatalogItem | null>(null);
-  const [apiUrl, setApiUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
+  const [confirmToggle, setConfirmToggle] = useState<{ service: any; currentStatus: string } | null>(null);
 
-  const { data: services = [], isLoading: servicesLoading } = useQuery({
-    queryKey: ['service-catalog'],
-    queryFn: () => integrationsApi.catalog(),
+  // Service catalog from /config/tenant-services
+  const { data: catalog = {}, isLoading: catalogLoading } = useQuery({
+    queryKey: ['config-tenant-services'],
+    queryFn: () => configApi.tenantServices(),
     enabled: open,
     staleTime: 5 * 60_000,
   });
 
-  const { data: integrations = [], isLoading: integrationsLoading } = useQuery({
-    queryKey: ['client-integrations', organizationId],
-    queryFn: () => integrationsApi.listByOrganization(organizationId),
+  // Tenant services from /tenant-services?tenant_id=X
+  const { data: tenantServices = [], isLoading: servicesLoading } = useQuery({
+    queryKey: ['tenant-services', organizationId],
+    queryFn: () => tenantServicesApi.listByOrganization(organizationId),
     enabled: open && !!organizationId,
     staleTime: 30_000,
   });
 
-  const connectMutation = useMutation({
-    mutationFn: async ({ service, apiUrl, apiKey }: { service: ServiceCatalogItem; apiUrl: string; apiKey: string }) => {
-      const existing = integrations.find(i => i.service_id === service.id);
+  // Build service list from catalog + tenant services
+  const serviceList = useMemo(() => {
+    return Object.entries(catalog).map(([key, value]) => {
+      const svc = value as any;
+      const tenantSvc = tenantServices.find((ts: TenantServiceResource) => ts.service_type === key);
+      return {
+        id: key,
+        code: key,
+        name: svc.label || key,
+        description: svc.description || '',
+        icon: svc.icon || '',
+        status: tenantSvc?.status || 'inactive',
+        tenantServiceId: tenantSvc?.id || null,
+        settings: tenantSvc?.settings || null,
+      };
+    });
+  }, [catalog, tenantServices]);
 
-      if (existing) {
-        await integrationsApi.update(existing.id, {
-          api_url: apiUrl,
-          api_key: apiKey,
-          is_active: true,
-        });
-      } else {
-        await integrationsApi.create({
-          organization_id: organizationId,
-          service_id: service.id,
-          api_url: apiUrl,
-          api_key: apiKey,
+  const toggleServiceMutation = useMutation({
+    mutationFn: async ({ serviceId, status, tenantServiceId }: { serviceId: string; status: string; tenantServiceId: string | null }) => {
+      if (tenantServiceId) {
+        await tenantServicesApi.update(tenantServiceId, { status: status as 'active' | 'inactive' });
+      } else if (status === 'active') {
+        await tenantServicesApi.create({
+          tenant_id: organizationId,
+          service_type: serviceId,
+          status: 'active',
         });
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['client-integrations', organizationId] });
-      toast.success('Servizio collegato con successo');
-      setConnectingService(null);
-      setApiUrl('');
-      setApiKey('');
+      queryClient.invalidateQueries({ queryKey: ['tenant-services', organizationId] });
+      toast.success(confirmToggle?.currentStatus === 'active' ? 'Servizio disattivato' : 'Servizio attivato');
+      setConfirmToggle(null);
     },
-    onError: (err: Error) => toast.error(`Errore: ${err.message}`),
+    onError: (err: Error) => {
+      toast.error(`Errore: ${err.message}`);
+      setConfirmToggle(null);
+    },
   });
 
-  const disconnectMutation = useMutation({
-    mutationFn: async (integrationId: string) => {
-      await integrationsApi.deactivate(integrationId);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['client-integrations', organizationId] });
-      toast.success('Servizio scollegato');
-    },
-    onError: (err: Error) => toast.error(`Errore: ${err.message}`),
-  });
-
-  const getIntegration = (serviceId: string) => integrations.find(i => i.service_id === serviceId);
-
-  const handleConnect = () => {
-    if (!connectingService || !apiUrl.trim() || !apiKey.trim()) return;
-    connectMutation.mutate({ service: connectingService, apiUrl: apiUrl.trim(), apiKey: apiKey.trim() });
+  const handleToggle = (service: any) => {
+    if (service.status === 'active') {
+      setConfirmToggle({ service, currentStatus: 'active' });
+    } else {
+      toggleServiceMutation.mutate({
+        serviceId: service.id,
+        status: 'active',
+        tenantServiceId: service.tenantServiceId,
+      });
+    }
   };
 
-  const isLoading = servicesLoading || integrationsLoading;
+  const isLoading = catalogLoading || servicesLoading;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -107,27 +113,29 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plug className="w-5 h-5" />
-            Servizi API — {organizationName}
+            Servizi HiConsole — {organizationName}
           </DialogTitle>
-          <DialogDescription>Collega o scollega i servizi HiSolution per questo cliente</DialogDescription>
+          <DialogDescription>Attiva o disattiva i servizi per questo cliente</DialogDescription>
         </DialogHeader>
 
-        {connectingService ? (
+        {confirmToggle ? (
           <div className="space-y-4 py-2">
-            <p className="text-sm font-medium">Collega {connectingService.name}</p>
-            <div className="space-y-2">
-              <Label htmlFor="client-api-url">URL API</Label>
-              <Input id="client-api-url" placeholder="https://api.example.com/v1" value={apiUrl} onChange={e => setApiUrl(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="client-api-key">Chiave API</Label>
-              <Input id="client-api-key" type="password" placeholder="sk-..." value={apiKey} onChange={e => setApiKey(e.target.value)} />
-            </div>
+            <p className="text-sm">
+              Sei sicuro di voler <strong>disattivare</strong> {confirmToggle.service.name}?
+            </p>
             <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => { setConnectingService(null); setApiUrl(''); setApiKey(''); }}>Annulla</Button>
-              <Button onClick={handleConnect} disabled={connectMutation.isPending || !apiUrl.trim() || !apiKey.trim()}>
-                {connectMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Collega
+              <Button variant="outline" onClick={() => setConfirmToggle(null)}>Annulla</Button>
+              <Button
+                variant="destructive"
+                onClick={() => toggleServiceMutation.mutate({
+                  serviceId: confirmToggle.service.id,
+                  status: 'inactive',
+                  tenantServiceId: confirmToggle.service.tenantServiceId,
+                })}
+                disabled={toggleServiceMutation.isPending}
+              >
+                {toggleServiceMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Disattiva
               </Button>
             </div>
           </div>
@@ -135,39 +143,44 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
           <ScrollArea className="max-h-[400px]">
             {isLoading ? (
               <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+            ) : serviceList.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">Nessun servizio disponibile nel catalogo</div>
             ) : (
               <div className="space-y-1">
-                {services.map((svc, idx) => {
-                  const integration = getIntegration(svc.id);
-                  const connected = !!integration;
+                {serviceList.map((svc, idx) => {
+                  const isActive = svc.status === 'active';
                   return (
                     <React.Fragment key={svc.id}>
                       {idx > 0 && <Separator />}
                       <div className="flex items-center justify-between py-2.5 px-1">
                         <div className="flex items-center gap-3">
-                          <div className={`p-1.5 rounded-md ${connected ? 'bg-green-500/10 text-green-500' : 'bg-muted text-muted-foreground'}`}>
+                          <div className={`p-1.5 rounded-md ${isActive ? 'bg-green-500/10 text-green-500' : 'bg-muted text-muted-foreground'}`}>
                             {SERVICE_ICONS[svc.code?.toLowerCase()] || <Plug className="w-4 h-4" />}
                           </div>
                           <div>
                             <p className="text-sm font-medium">{svc.name}</p>
-                            {connected && <p className="text-xs text-muted-foreground truncate max-w-[180px]">{integration.api_url}</p>}
+                            <p className="text-xs text-muted-foreground">{svc.description}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          {connected ? (
+                          {isActive ? (
                             <>
                               <Badge variant="outline" className="text-xs border-green-500/30 text-green-500">Attivo</Badge>
                               <Button
                                 variant="ghost" size="sm"
-                                onClick={() => disconnectMutation.mutate(integration.id)}
-                                disabled={disconnectMutation.isPending}
+                                onClick={() => handleToggle(svc)}
+                                disabled={toggleServiceMutation.isPending}
                               >
-                                {disconnectMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Unlink className="w-3.5 h-3.5" />}
+                                <Unlink className="w-3.5 h-3.5" />
                               </Button>
                             </>
                           ) : (
-                            <Button variant="outline" size="sm" className="text-xs" onClick={() => setConnectingService(svc)}>
-                              <Link2 className="w-3.5 h-3.5 mr-1" /> Collega
+                            <Button
+                              variant="outline" size="sm" className="text-xs"
+                              onClick={() => handleToggle(svc)}
+                              disabled={toggleServiceMutation.isPending}
+                            >
+                              <Link2 className="w-3.5 h-3.5 mr-1" /> Attiva
                             </Button>
                           )}
                         </div>
