@@ -100,6 +100,13 @@ const parseAssessmentQuestions = (rawQuestions: unknown): Record<number, Assessm
     }
 
     if (typeof value === 'string') {
+      // First try numeric string mapping (backend returns "0", "1", "2", "3")
+      const numericValue = Number(value);
+      if (!Number.isNaN(numericValue)) {
+        responses[questionId] = API_QUESTION_STATUS_TO_UI[numericValue] ?? null;
+        return;
+      }
+      // Then try legacy string mapping
       const normalized = value.toLowerCase();
       const legacyMap: Record<string, AssessmentResponse> = {
         completed: 'completato',
