@@ -33,6 +33,14 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
   himobile: <Smartphone className="w-4 h-4" />,
 };
 
+/** Prettify a service key for display: 'hipatch' → 'HiPatch', 'hifirewall' → 'HiFirewall' */
+const prettifyServiceKey = (key: string) => {
+  if (key.toLowerCase().startsWith('hi')) {
+    return `Hi${key.slice(2).charAt(0).toUpperCase()}${key.slice(3)}`;
+  }
+  return key.charAt(0).toUpperCase() + key.slice(1);
+};
+
 const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   open, onOpenChange, organizationId, organizationName,
 }) => {
@@ -183,7 +191,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plug className="w-5 h-5" />
-            {selectedService ? `Configura ${selectedService.name}` : `Servizi API — ${organizationName}`}
+            {selectedService ? `Configura ${prettifyServiceKey(selectedService.id)} - ${selectedService.name}` : `Servizi API - ${organizationName}`}
           </DialogTitle>
           <DialogDescription>
             {selectedService ? 'Modifica le credenziali API del servizio' : 'Collega o scollega i servizi per questo cliente'}
@@ -281,7 +289,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                             {SERVICE_ICONS[svc.code?.toLowerCase()] || <Plug className="w-4 h-4" />}
                           </div>
                           <div>
-                            <p className="text-sm font-medium">{svc.name}</p>
+                            <p className="text-sm font-medium">{prettifyServiceKey(svc.id)} - {svc.name}</p>
                             {isActive && svc.settings && Object.keys(svc.settings || {}).length > 0 && (
                               <p className="text-xs text-muted-foreground truncate max-w-[180px]">Configurato</p>
                             )}
