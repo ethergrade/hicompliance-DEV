@@ -44,6 +44,9 @@ import { LogoutButton } from "@/components/auth/LogoutButton";
 import { useUserRoles } from "@/hooks/useUserRoles";
 import { useRolePermissions } from "@/hooks/useRolePermissions";
 import { useClientContext } from "@/contexts/ClientContext";
+import { tenantServicesApi } from "@/lib/api/tenant-services";
+import { useQuery } from "@tanstack/react-query";
+import type { TenantServiceResource } from "@/types/api";
 
 interface NavItem {
   title: string;
@@ -60,18 +63,12 @@ const navigation: NavItem[] = [
   { title: "Inventario Asset", href: "/asset-inventory", icon: Package },
 ];
 
-const hiComplianceModules = [
+const hiComplianceModules: { title: string; href: string; icon: React.ElementType; code?: string }[] = [
   { title: "Assessment", href: "/assessment", icon: ClipboardCheck },
-  { title: "SurfaceScan360", href: "/surface-scan", icon: Globe },
-  { title: "DarkRisk360", href: "/dark-risk", icon: Eye },
+  { title: "SurfaceScan360", href: "/surface-scan", icon: Globe, code: "HiTrack" },
+  { title: "DarkRisk360", href: "/dark-risk", icon: Eye, code: "HiDetect" },
   { title: "Analisi", href: "/analytics", icon: BarChart3 },
-  // { title: 'Remediation', href: '/remediation', icon: Wrench },
 ];
-const threatManagementItem: NavItem = {
-  title: "Threat Management",
-  href: "/threat-management",
-  icon: Activity,
-};
 
 const adminNavigation = [
   {
@@ -103,11 +100,39 @@ export const AppSidebar: React.FC = () => {
     return isModuleEnabled(item.href);
   });
 
-  const hiComplianceActive = hiComplianceModules.some(
+  const hiComplianceActive = [...modulesInsideHiCompliance, ...modulesOutsideHiCompliance].some(
     (item) => location.pathname === item.href,
   );
 
   const [hiComplianceOpen, setHiComplianceOpen] = React.useState<boolean>(true);
+
+  // Fetch tenant services for selected org to determine active service modules
+  const { data: tenantServices = [] } = useQuery({
+    queryKey: ["tenant-services-sidebar", selectedOrganization?.id],
+    queryFn: () => selectedOrganization?.id ? tenantServicesApi.listByOrganization(selectedOrganization.id) : Promise.resolve([]),
+    enabled: !!selectedOrganization?.id,
+    staleTime: 30_000,
+  });
+
+  const isServiceActive = (code: string) =>
+    (tenantServices as TenantServiceResource[]).some(
+      (ts) => ts.service_type === code && ts.status === "active"
+    );
+
+  const surfaceScanActive = isServiceActive("HiTrack");
+  const darkRiskActive = isServiceActive("HiDetect");
+  const oneActive = (surfaceScanActive || darkRiskActive) && !(surfaceScanActive && darkRiskActive);
+
+  // Split modules: if exactly one of the two services is active, move it outside HiCompliance
+  const modulesInsideHiCompliance = hiComplianceModules.filter((m) => {
+    if (!m.code) return true;
+    if (oneActive && isServiceActive(m.code)) return false;
+    return true;
+  });
+  const modulesOutsideHiCompliance = hiComplianceModules.filter((m) => {
+    if (!m.code) return false;
+    return oneActive && isServiceActive(m.code);
+  });
 
   const renderNavItem = (
     item: { title: string; href: string; icon: React.ElementType },
@@ -169,6 +194,19 @@ export const AppSidebar: React.FC = () => {
           </SidebarGroupContent>
         </SidebarGroup>
 
+        {/* Service modules moved outside HiCompliance when exactly one active */}
+        {modulesOutsideHiCompliance.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {modulesOutsideHiCompliance
+                  .filter((item) => isModuleEnabled(item.href))
+                  .map((item) => renderNavItem(item))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
         {/* HiCompliance collapsible group */}
         <SidebarGroup>
           <Collapsible
@@ -189,7 +227,7 @@ export const AppSidebar: React.FC = () => {
             <CollapsibleContent>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {hiComplianceModules
+                  {modulesInsideHiCompliance
                     .filter((item) => isModuleEnabled(item.href))
                     .map((item) => renderNavItem(item))}
                 </SidebarMenu>
@@ -197,17 +235,6 @@ export const AppSidebar: React.FC = () => {
             </CollapsibleContent>
           </Collapsible>
         </SidebarGroup>
-
-        {isModuleEnabled(threatManagementItem.href) && (
-          <SidebarGroup>
-            <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
-              Security Operations
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>{renderNavItem(threatManagementItem)}</SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
 
         {(isModuleEnabled("/settings/users") ||
           isModuleEnabled("/settings/surface-scan-alerts")) && (
