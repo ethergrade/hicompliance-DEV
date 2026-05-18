@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 
@@ -13,6 +13,9 @@ import { ComplianceMetricCard } from '@/components/dashboard/ComplianceMetricCar
 import { RiskScoreMetricCard } from '@/components/dashboard/RiskScoreMetricCard';
 import { useServiceIntegrations } from '@/hooks/useServiceIntegrations';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { configApi } from '@/lib/api/config';
+import { tenantServicesApi } from '@/lib/api/tenant-services';
+import type { ServiceCatalogItem, TenantServiceResource } from '@/types/api';
 import ClientServicesDialog from '@/components/clients/ClientServicesDialog';
 import { 
   Shield, Monitor, Mail, FileText, Download, 
@@ -45,53 +48,92 @@ const Dashboard: React.FC = () => {
   const canManageIntegrationSettings = isSuperAdmin || isSales;
   const [modulesDialogOpen, setModulesDialogOpen] = useState(false);
 
-  const services = useMemo(() => ([
-    { id: '1', status: 'alert', health_score: 15, services: { name: 'HiFirewall', code: 'hi_firewall', id: 's1' } },
-    { id: '2', status: 'alert', health_score: 70, services: { name: 'HiEndpoint', code: 'hi_endpoint', id: 's2' } },
-    { id: '3', status: 'maintenance', health_score: 75, services: { name: 'HiMail', code: 'hi_mail', id: 's3' } },
-    { id: '4', status: 'alert', health_score: 10, services: { name: 'HiLog', code: 'hi_log', id: 's4' } },
-    { id: '5', status: 'maintenance', health_score: 65, services: { name: 'HiPatch', code: 'hi_patch', id: 's5' } },
-    { id: '6', status: 'active', health_score: 90, services: { name: 'HiTrack', code: 'hi_track', id: 's6' } },
-    { id: '7', status: 'active', health_score: 92, services: { name: 'HiDetect', code: 'hi_detect', id: 's7' } },
-    { id: '8', status: 'alert', health_score: 24, services: { name: 'HiMobile', code: 'hi_mobile', id: 's8' } },
-  ]), []);
+  // Real API data: service catalog and tenant services
+  const [serviceCatalog, setServiceCatalog] = useState<ServiceCatalogItem[]>([]);
+  const [tenantServices, setTenantServices] = useState<TenantServiceResource[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [servicesLoading, setServicesLoading] = useState(true);
 
-  const hiSolutionServices = services.filter(s => 
-    s.services?.code === 'hi_patch'
-  );
+  useEffect(() => {
+    let cancelled = false;
+    setCatalogLoading(true);
+    configApi.tenantServices().then(catalog => {
+      if (!cancelled) {
+        // Convert catalog object to ServiceCatalogItem[]
+        const items: ServiceCatalogItem[] = Object.entries(catalog).map(([key, value]) => {
+          const svc = value as any;
+          return { id: key, code: key, name: svc.label || key, description: svc.description || '', icon: svc.icon || '', is_active: true };
+        });
+        setServiceCatalog(items);
+      }
+    }).catch(() => {
+      if (!cancelled) setServiceCatalog([]);
+    }).finally(() => {
+      if (!cancelled) setCatalogLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
-  const servicesWithCriticalHealth = hiSolutionServices.filter(s => (s.health_score || 0) < 50);
+  useEffect(() => {
+    if (!activeOrgId) return;
+    let cancelled = false;
+    setServicesLoading(true);
+    tenantServicesApi.listByOrganization(activeOrgId).then(services => {
+      if (!cancelled) setTenantServices(services);
+    }).catch(() => {
+      if (!cancelled) setTenantServices([]);
+    }).finally(() => {
+      if (!cancelled) setServicesLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [activeOrgId]);
 
-  const totalIssues = hiSolutionServices.reduce((acc, service) => {
-    const healthScore = service.health_score || 0;
-    if (healthScore < 80) return acc + Math.ceil((100 - healthScore) / 20);
-    return acc;
-  }, 0);
+  // Derive service status from real API data
+  // Since backend service dashboard endpoints don't exist yet (404),
+  // we build service cards from the catalog + tenant services status
+  const hiSolutionServices = useMemo(() => {
+    return serviceCatalog.map(cat => {
+      const tenantSvc = tenantServices.find(ts => ts.service_type === cat.code || ts.service_type === cat.id);
+      const status = tenantSvc?.status || 'inactive';
+      // Health score: active=100, maintenance=70, alert=30, inactive=0
+      const health_score = status === 'active' ? 100 : status === 'maintenance' ? 70 : status === 'alert' ? 30 : 0;
+      return {
+        id: cat.id,
+        status,
+        health_score,
+        services: {
+          name: cat.name,
+          code: cat.code,
+          id: cat.id,
+          description: cat.description || '',
+          icon: cat.icon || '',
+        },
+      };
+    });
+  }, [serviceCatalog, tenantServices]);
 
-  const fallbackData = { alertCount: 4, activeCount: 2, warningCount: 2, avgScore: 47, totalIssues: 22 };
-
-  const mockData = {
-    nis2Compliance: servicesWithCriticalHealth.length > 3 ? 35 : 65,
-    riskIndicator: 51,
-    totalAssets: services.length || 8,
-    activeThreats: totalIssues || fallbackData.totalIssues
+  // Use tenant extra fields for dashboard metrics if available
+  const tenantExtra = selectedOrganization?.extra || null;
+  const tenantCounts = {
+    firewalls: selectedOrganization?.firewalls_count || 0,
+    endpoints: selectedOrganization?.endpoints_count || 0,
+    servers: selectedOrganization?.servers_count || 0,
+    vms: selectedOrganization?.vms_count || 0,
+    totalDevices: (tenantExtra?.dispositivi_rete_totali || 0) + (tenantExtra?.server || 0) + (tenantExtra?.endpoint || 0),
+    totalIPs: tenantExtra?.ip_totali || 0,
+    users: tenantExtra?.utenti || 0,
   };
+
+  const totalAssets = tenantCounts.totalDevices || hiSolutionServices.length || 8;
+  const connectedServicesCount = hiSolutionServices.filter(s => s.status === 'active').length;
+  const alertServicesCount = hiSolutionServices.filter(s => s.status === 'alert').length;
+  const operativeServicesCount = hiSolutionServices.filter(s => s.status === 'active' || s.status === 'maintenance').length;
+  const totalResolvedCount = hiSolutionServices.reduce((acc, s) => acc + s.health_score, 0);
 
   const isModuleEnabledForDashboard = (serviceCode: string) => {
     if (!hasAnyIntegrationsConfigured) return true;
     return isServiceConnected(serviceCode);
   };
-
-  const connectedServicesCount = hiSolutionServices.filter((service) => isModuleEnabledForDashboard(service.services.code)).length;
-  const alertServicesCount = hiSolutionServices.filter(
-    (service) => isModuleEnabledForDashboard(service.services.code) && (service.health_score || 0) < 80
-  ).length;
-  const operativeServicesCount = hiSolutionServices.filter(
-    (service) => isModuleEnabledForDashboard(service.services.code) && (service.health_score || 0) >= 80
-  ).length;
-  const totalResolvedCount = hiSolutionServices
-    .filter((service) => isModuleEnabledForDashboard(service.services.code))
-    .reduce((acc, service) => acc + Math.max(0, Math.round((service.health_score || 0) * 1.2)), 0);
 
   const handleServiceClick = (service: { code: string }) => {
     navigate(`/dashboard/service/${service.code}`);
@@ -202,7 +244,7 @@ const Dashboard: React.FC = () => {
             <p className="text-muted-foreground">{activeOrgName}</p>
           </div>
           <div className="text-right">
-            <div className="text-4xl font-bold text-red-500 mb-1">{totalIssues || fallbackData.totalIssues}</div>
+            <div className="text-4xl font-bold text-red-500 mb-1">{alertServicesCount}</div>
             <p className="text-sm text-muted-foreground">Issues Attive</p>
           </div>
         </div>
@@ -229,7 +271,7 @@ const Dashboard: React.FC = () => {
                 <div className="flex flex-col items-center justify-center p-5 text-center space-y-3">
                   <p className="text-sm font-medium text-muted-foreground">Issues Totali</p>
                   <Badge variant="secondary" className="bg-cyber-red/20 text-cyber-red w-full justify-center">Critico</Badge>
-                  <div className="text-4xl font-bold text-foreground">{mockData.activeThreats}</div>
+                  <div className="text-4xl font-bold text-foreground">{alertServicesCount}</div>
                   <p className="text-sm text-muted-foreground">Da risolvere</p>
                 </div>
               </div>
@@ -267,17 +309,15 @@ const Dashboard: React.FC = () => {
           </CardHeader>
           <CardContent className="space-y-8">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {hiSolutionServices.length > 0
-                ? hiSolutionServices.map((orgService, index) => {
+              {catalogLoading || servicesLoading
+                ? <p className="col-span-full text-center text-muted-foreground py-8">Caricamento servizi...</p>
+                : hiSolutionServices.map((orgService, index) => {
                     const service = orgService.services;
                     return renderServiceCard(
                       service, orgService.health_score || 0, orgService.status,
-                      Math.floor(50 + Math.random() * 100), index
+                      orgService.health_score || 0, index
                     );
                   })
-                : fallbackServices.map((s, i) =>
-                    renderServiceCard({ name: s.name, code: s.code, id: s.id }, s.healthScore, 'alert', s.resolved, i)
-                  )
               }
             </div>
 

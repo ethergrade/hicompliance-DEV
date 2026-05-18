@@ -1,0 +1,801 @@
+# Frontend Components API Wireup Audit
+
+## Summary
+
+| Component | Status | Data Source | API Endpoint Available |
+|-----------|--------|-------------|----------------------|
+| Dashboard.tsx | ❌ 100% Mock | Hardcoded | tenantServicesApi, assessmentApi |
+| SurfaceScan360.tsx | ❌ 100% Mock | Hardcoded | None exists |
+| Assessment.tsx | ⚠️ Partial | API + local state | assessmentApi (wired) |
+| DarkRisk360.tsx | ✅ Wired | useDarkRiskAlerts (Supabase) | Supabase table |
+| Service Dashboards | ❌ 100% Mock | useApiWithFallback | All exist but mock used |
+| SecurityFindings.tsx | ❌ 100% Mock | Hardcoded | None exists |
+| ClientServicesDialog.tsx | ✅ Wired | integrationsApi | integrationsApi |
+| Dashboard Child Components | ❌ Mixed | Hardcoded | Various |
+
+---
+
+## 1. src/pages/Dashboard.tsx
+
+### API Endpoints That Should Be Called
+- `GET /tenant-services` via `tenantServicesApi.list()` — **NOT CALLED**
+- `GET /assessments` via `assessmentApi.list()` — **NOT CALLED**
+- `GET /assessment/report` via `assessmentApi.reportLegacy()` — **NOT CALLED**
+- `GET /config/services` via `integrationsApi.catalog()` — **NOT CALLED**
+- `useServiceIntegrations()` — **CALLED** but not used to populate services list
+
+### Data Fields Currently Displayed (ALL HARDCODED)
+Lines 43-51:
+```typescript
+const services = useMemo(() => ([
+  { id: '1', status: 'alert', health_score: 15, ... },
+  { id: '2', status: 'alert', health_score: 70, ... },
+  // ... 8 total hardcoded entries
+]), []);
+```
+
+Line 63: `const fallbackData = { alertCount: 4, activeCount: 2, warningCount: 2, avgScore: 47, totalIssues: 22 };`
+
+Lines 65-70:
+```typescript
+const mockData = {
+  nis2Compliance: servicesWithCriticalHealth.length > 3 ? 35 : 65,
+  riskIndicator: 51,
+  totalAssets: services.length || 8,
+  activeThreats: totalIssues || fallbackData.totalIssues
+};
+```
+
+Line 195: `const fallbackServices = [{ name: 'HiPatch', code: 'hi_patch', id: '', healthScore: 23, resolved: 78 }];`
+
+### Fields from API Response NOT Being Used
+
+**From TenantServiceResource:**
+- `id` — NOT used
+- `tenant_id` — NOT used
+- `site_id` — NOT used
+- `service_type` — NOT used
+- `status` — NOT used
+- `settings` — NOT used
+- `updated_by` — NOT used
+- `created_at` — NOT used
+- `updated_at` — NOT used
+
+**From TenantResource:**
+- `extra` (TenantDashboardExtra) — ENTIRE OBJECT NOT USED:
+  - `note` — NOT used
+  - `server` — NOT used
+  - `utenti` — NOT used
+  - `endpoint` — NOT used
+  - `firewall` — NOT used
+  - `ip_totali` — NOT used
+  - `subnet_21` through `subnet_25` — NOT used
+  - `hypervisor` — NOT used
+  - `ip_puntuali` — NOT used
+  - `switch_core` — NOT used
+  - `access_point` — NOT used
+  - `sedi_cliente` — NOT used
+  - `switch_access` — NOT used
+  - `virtual_machine` — NOT used
+  - `dispositivi_rete_varie` — NOT used
+  - `dispositivi_rete_totali` — NOT used
+- `nis2_classification` — NOT used (only used in Assessment page)
+- `is_multiple` — NOT used
+- `customer_sectors` — NOT used
+- `implemented_technologies` — NOT used
+- `firewalls_count` — NOT used
+- `endpoints_count` — NOT used
+- `servers_count` — NOT used
+- `vms_count` — NOT used
+- `revenue` — NOT used
+- `employees_count` — NOT used
+- `industry` — NOT used
+- `contract_start` — NOT used
+- `contract_duration` — NOT used
+- `last_scan_at` — NOT used
+- `primary_domain` — NOT used
+- `secondary_domain` — NOT used
+- `primary_subnet` — NOT used
+- `secondary_subnet` — NOT used
+- `vat_number` — NOT used
+- `phone` — NOT used
+- `contact_first_name` — NOT used
+- `contact_last_name` — NOT used
+- `legal_name` — NOT used
+- `fiscal_code` — NOT used
+- `legal_address` — NOT used
+- `operational_address` — NOT used
+- `pec` — NOT used
+- `email` — NOT used
+- `business_sector` — NOT used
+- `ciso_substitute` — NOT used
+- `ips_list` — NOT used
+- `domains_list` — NOT used
+
+**From ServiceCatalogItem:**
+- `id` — NOT used (should populate services list)
+- `name` — NOT used (hardcoded instead)
+- `code` — NOT used (hardcoded instead)
+- `description` — NOT used
+- `icon` — NOT used
+
+**From AssessmentSummary:**
+- `completion_score` — NOT used (mocked as 78)
+- `risk_score` — NOT used (mocked as 28/51)
+- `completion_color` — NOT used
+- `risk_color` — NOT used
+- `risk_label` — NOT used
+- `totals_by_answer` — NOT used
+- `answer_labels` — NOT used
+
+---
+
+## 2. src/pages/SurfaceScan360.tsx
+
+### API Endpoints That Should Be Called
+- **NO API ENDPOINT EXISTS** — backend needs to be created
+- Should call: `GET /surface-scan/dashboard` or similar
+
+### Data Fields Currently Displayed (ALL HARDCODED)
+
+Lines 73-83: `allPublicAssets` array (10 items) with:
+- `ip` — hardcoded
+- `hostname` — hardcoded
+- `score` — hardcoded
+- `risk` — hardcoded (Basso/Medio/Alto)
+- `status` — hardcoded (Sicuro/Attenzione/Critico)
+- `ports` — hardcoded array
+- `services` — hardcoded array
+
+Lines 158-194: `scanResults` array (4 items) with:
+- `domain` — hardcoded
+- `status` — hardcoded
+- `issues` — hardcoded count
+- `score` — hardcoded
+- `cves` — hardcoded array
+
+Lines 196-209: `monthlyData` array (12 items) with:
+- `mese` — hardcoded
+- `porte_aperte` — hardcoded
+- `porte_chiuse` — hardcoded
+- `cve_critiche` — hardcoded
+- `cve_risolte` — hardcoded
+- `epss_score` — hardcoded
+
+Lines 211-218: `exposedServicesData` (6 items) — hardcoded
+
+Lines 220-234: `riskTrendData` (12 items) — hardcoded
+
+### Fields from API Response NOT Being Used
+No API exists yet, so all fields need wireup when backend is ready.
+
+---
+
+## 3. src/pages/Assessment.tsx
+
+### API Endpoints Called
+- ✅ `GET /assessment` via `assessmentApi.getLegacy()` — **CALLED** in useEffect
+- ✅ `PATCH /assessment` via `assessmentApi.updateLegacy()` — **CALLED** on save
+- ✅ `useOrganizationProfile()` — **CALLED**
+
+### Data Fields Currently Displayed
+- `orgProfile.legal_name` — displayed (line 558)
+- `orgProfile.business_sector` — displayed (line 561)
+- `orgProfile.nis2_classification` — displayed via badge (lines 565-571)
+- Assessment responses from `assessmentApi.getLegacy()` — displayed and editable
+- Category scores calculated locally — displayed
+- Overall progress, score, risk — calculated and displayed
+- `assessmentCategories` — calculated from responses, displayed
+
+### Fields from API Response NOT Being Used
+
+**From AssessmentData:**
+- `follow_up` — NOT used (exists in DB but not displayed)
+- `followup_reminder` — NOT used
+- `presentation_date` — NOT used
+- `hide_gantt` — NOT used
+- `custom_gantt` — NOT used
+- `generated_at` — NOT used
+- `status` — partially used (for filtering categories)
+- `tenant_id` — NOT used
+- `updated_by` — NOT used
+- `updated_at` — NOT used
+
+**From TenantResource (via org profile):**
+- All fields listed under Dashboard section that aren't displayed
+
+**From AssessmentReportData (not fetched at all):**
+- `assessment` — NOT fetched
+- `tenant` — NOT fetched
+- `summary` — NOT fetched
+- `categories` — NOT fetched (string, not used)
+- `gantt` — NOT fetched
+- `openai` — NOT fetched (AI analysis)
+- `shodan` — NOT fetched (scan data)
+- `intelx` — NOT fetched (leak data)
+
+**From AssessmentMonthlyReportData (not fetched at all):**
+- `tenant` — NOT fetched
+- `assessment` — NOT fetched
+- `scans` — NOT fetched
+- `vulnerabilities` — NOT fetched
+- `radar_categories` — NOT fetched
+- `trend` — NOT fetched
+- `delta` — NOT fetched
+
+---
+
+## 4. src/pages/DarkRisk360.tsx
+
+### API Endpoints Called
+- ✅ `useDarkRiskAlerts()` — uses Supabase `dark_risk_alerts` table (REAL API)
+
+### Data Fields Currently Displayed
+- `alerts.length` — count displayed
+- `alerts.filter(a => a.is_active).length` — active count displayed
+- `alert.alert_email` — displayed
+- `alert.alert_types` — displayed as badges
+- `alert.is_active` — displayed as badge
+- `alert.updated_at` — displayed as date
+
+### Fields from API Response NOT Being Used
+
+**From BaseAlert:**
+- `id` — used internally for key, not displayed
+- `user_id` — NOT used
+- `organization_id` — NOT used
+- `created_at` — NOT used
+
+**From AlertTypes:**
+- `credenziali_compromesse` — used
+- `dati_carte_credito` — used
+- `database_leak` — used
+- `email_compromesse` — used
+- `dati_sensibili` — used
+
+**Verdict:** Most fields are used. Minor: `created_at` could be displayed alongside `updated_at`.
+
+---
+
+## 5. src/components/dashboard/ (All Files)
+
+### 5.1 ComplianceMetricCard.tsx
+
+**API Endpoint That Should Be Called:**
+- None directly — receives props from parent
+- Parent (Dashboard) should call `assessmentApi.reportLegacy()` and pass `summary.completion_score`, `summary.risk_score`
+
+**Data Fields Currently Displayed:**
+- `completionScore` (default: **78** hardcoded, line 37)
+- `riskScore` (default: **28** hardcoded, line 38)
+- Gauge visualization with percentage
+- Labels: "Conformità NIS2/NIST/ISO" and "Rischio da Assessment"
+
+**Fields NOT Being Used:**
+- `completion_color` from AssessmentSummary — NOT used (computed locally)
+- `risk_color` from AssessmentSummary — NOT used (computed locally)
+- `totals_by_answer` from AssessmentSummary — NOT used
+- `answer_labels` from AssessmentSummary — NOT used
+
+### 5.2 RiskScoreMetricCard.tsx
+
+**API Endpoint That Should Be Called:**
+- None directly — receives props from parent
+- Parent should pass real risk score from assessment API
+
+**Data Fields Currently Displayed:**
+- `score` (default: **35** hardcoded, line 24)
+- `sparkline` (default: **[48, 42, 38, 35]** hardcoded, line 25)
+- Circular gauge
+- Risk label and trend chart
+
+**Fields NOT Being Used:**
+- All fields passed as props are used, but defaults are hardcoded
+
+### 5.3 EPSSWidget.tsx
+
+**Status:** ✅ Properly wired — uses `useACNFeeds()` hook
+
+### 5.4 SecurityFeedsSection.tsx
+
+**Status:** ✅ Properly wired — uses `useACNFeeds()` hook
+
+### 5.5 HiSolutionStatusGrid.tsx
+
+**Data Fields Currently Displayed:**
+- Service name, status, health_score from props
+
+**Hardcoded Values:**
+- Line 60-69: `getResolvedCount()` returns hardcoded values:
+  ```typescript
+  const resolvedMap: Record<string, number> = {
+    hi_firewall: 124,
+    hi_endpoint: 54,
+    hi_mail: 98,
+    hi_log: 54,
+    hi_patch: 78,
+    hi_track: 89,
+    hi_detect: 127,
+  };
+  ```
+- Line 49: `excludedServices` hardcoded array
+- Component has `hidden` class (line 103) — NOT RENDERED
+
+**Fields from Service NOT Being Used:**
+- `services.description` — NOT used
+- `services.icon` — NOT used
+- `last_updated` — NOT used
+
+### 5.6 ServiceStatsCard.tsx
+
+**Hardcoded Values:**
+- Line 41: `98` for "Utenti Protetti" — HARDCODED
+
+**Fields from Service NOT Being Used:**
+- Same as HiSolutionStatusGrid
+- `services.description` — NOT used
+- `services.icon` — NOT used
+- `last_updated` — NOT used
+
+### 5.7 ConnectedServiceItem.tsx
+
+**Hardcoded Values:**
+- Always shows "Connesso" text regardless of actual status
+- Always shows green check icon
+
+**Fields from Service NOT Being Used:**
+- `status` — NOT used (should show actual status)
+- `health_score` — NOT used
+- `services.description` — NOT used
+- `services.icon` — NOT used
+- `last_updated` — NOT used
+
+### 5.8 SecurityCategoryItem.tsx
+
+**Hardcoded Values:**
+- Lines 60-64: `resolvedCount` hardcoded per service:
+  ```typescript
+  const resolvedCount = service.services.code === 'cloud_security' ? 124 : 
+                      service.services.code === 'endpoint_security' ? 54 :
+                      service.services.code === 'email_security' ? 98 :
+                      service.services.code === 'user_data_governance' ? 54 : 0;
+  ```
+
+**Fields from Service NOT Being Used:**
+- `status` — partially used for icon
+- `health_score` — used for issue count only
+- `services.description` — NOT used
+- `services.icon` — NOT used
+- `last_updated` — NOT used
+
+### 5.9 ThreatIndicatorsList.tsx
+
+**ALL DATA HARDCODED:**
+- Lines 5-11: `threats` array hardcoded:
+  ```typescript
+  const threats = [
+    { name: 'Malware', color: 'text-red-500' },
+    { name: 'Abnormal Admin Activity', color: 'text-red-500' },
+    { name: 'Suspected Bot Attacks', color: 'text-red-500' },
+    { name: 'Access Permissions Violation', color: 'text-red-500' },
+    { name: 'Mass Download', color: 'text-red-500' },
+  ];
+  ```
+- No API endpoint exists for threat indicators
+
+### 5.10 EPSSPredictionCard.tsx
+
+**Status:** ✅ Properly wired — receives data from `useACNFeeds()`
+
+### 5.11 MetricCard.tsx
+
+**Status:** Generic reusable component — no hardcoded data
+
+### 5.12 SecurityFeedCard.tsx
+
+**Status:** ✅ Properly wired — receives data from `useACNFeeds()`
+
+### 5.13 ServiceQuickConnect.tsx
+
+**Status:** Dialog component — receives props, no hardcoded data
+
+### 5.14 ServiceStatusCard.tsx
+
+**Data Fields Currently Displayed:**
+- Services from props
+- Filtered by `status === 'active'` and `services?.code === 'hi_patch'`
+
+**Fields from Service NOT Being Used:**
+- `services.description` — NOT used
+- `services.icon` — NOT used
+- `last_updated` — NOT used
+
+---
+
+## 6. src/components/service-dashboards/ (All Files)
+
+### 6.1 HiPatchDashboard.tsx
+
+**API Endpoints:**
+- ✅ `useAssessmentReport()` — uses assessmentApi (wired)
+- ⚠️ `usePatchDashboard()` — uses `useApiWithFallback` with **FULL MOCK DATA** (see hook analysis)
+
+**Hardcoded Values:**
+- Line 62: `HiPatch Risk Score` hardcoded to 30
+- Vulnerability mapping uses API data but fallback is mock
+
+**Fields from Vulnerability NOT Being Used:**
+- `cve` — used as id
+- `count` — NOT used
+- `affected_ips` — used for remediation text only
+- `epss_score` — used as score
+- `severity` — used
+
+### 6.2 HiEndpointDashboard.tsx
+
+**API Endpoints:**
+- ⚠️ `useEndpointDashboard()` — uses `useApiWithFallback` with **FULL MOCK DATA**
+
+**Hardcoded Values:**
+- All data comes from mock in `useEndpoints.ts` hook
+
+**Fields from EndpointDevice NOT Being Used:**
+- `id` — used as key
+- `name` — used
+- `type` — used
+- `os` — used
+- `lastSeen` — used
+- `status` — used
+- `protection` — used
+- `threats` — used
+- `compliance` — NOT prominently displayed
+
+### 6.3 HiFirewallDashboard.tsx
+
+**API Endpoints:**
+- ⚠️ `useFirewallDashboard()` — uses `useApiWithFallback` with **FULL MOCK DATA**
+
+**Hardcoded Values:**
+- All data comes from mock in `useFirewall.ts` hook
+
+### 6.4 HiMailDashboard.tsx
+
+**API Endpoints:**
+- ⚠️ `useMailDashboard()` — uses `useApiWithFallback` with **FULL MOCK DATA**
+
+**Hardcoded Values:**
+- All data comes from mock in `useMail.ts` hook
+
+**Fields from QuarantinedEmail NOT Being Used:**
+- `actions` array — NOT used
+
+### 6.5 HiDetectDashboard.tsx
+
+**API Endpoints:**
+- ⚠️ `useDetectDashboard()` — uses `useApiWithFallback` with **FULL MOCK DATA**
+
+**Hardcoded Values:**
+- All data comes from mock in `useDetect.ts` hook
+
+**Fields from DetectDashboardData NOT Being Used:**
+- `detectionRules` — NOT displayed
+- `hourlyActivity` — NOT displayed
+- `topology` — NOT displayed
+
+### 6.6 HiMobileDashboard.tsx
+
+**API Endpoints:**
+- ⚠️ `useMobileDashboard()` — uses `useApiWithFallback` with **FULL MOCK DATA**
+
+**Hardcoded Values:**
+- All data comes from mock in `useMobile.ts` hook
+
+**Fields from MobileDevice NOT Being Used:**
+- `serialNumber` — NOT displayed
+- `policies` count — NOT prominently displayed
+- `apps` count — NOT prominently displayed
+
+### 6.7 HiLogDashboard.tsx
+
+**API Endpoints:**
+- ⚠️ `useLogDashboard()` — uses `useApiWithFallback` with **FULL MOCK DATA**
+- Imports `mockData.ts` for ALL chart data
+
+**Hardcoded Values:**
+- Lines 18-24: All data imported from `./hilog/mockData`:
+  - `overviewData` — fully hardcoded
+  - `usbDrivesData` — fully hardcoded
+  - `securityEventsData` — fully hardcoded
+  - `windowsLogsData` — fully hardcoded
+  - `windowsLogsTableData` — fully hardcoded
+  - `entraIdLogsData` — fully hardcoded
+  - `entraIdTableData` — fully hardcoded
+  - `sharePointLogsData` — fully hardcoded
+  - `securityEventsTableData` — fully hardcoded
+  - `startupShutdownData` — fully hardcoded
+  - `startupShutdownTableData` — fully hardcoded
+  - `firewallLogsTableData` — fully hardcoded
+  - `hostsTableData` — fully hardcoded
+  - `usersADData` — fully hardcoded
+  - `usersLocalData` — fully hardcoded
+  - `usersEntraData` — fully hardcoded
+
+**Fields from LogDashboardData NOT Being Used:**
+- `recentLogs` — NOT used (table uses mockData)
+- `topSources` — NOT used
+- `errorTrend` — NOT used
+
+### 6.8 RiskScoreCard.tsx
+
+**Status:** Generic reusable component — no hardcoded data, receives props
+
+### 6.9 DemoDataBadge.tsx
+
+**Status:** Generic utility component — shows "Demo Data" when isMock=true
+
+### 6.10 VulnerabilitiesTable.tsx
+
+**Status:** Generic table component — receives props, no hardcoded data
+
+---
+
+## 7. src/components/dialogs/ClientServicesDialog.tsx
+
+### API Endpoints Called
+- ✅ `GET /config/services` via `integrationsApi.catalog()` — **CALLED**
+- ✅ `GET /integrations/organization/{id}` via `integrationsApi.listByOrganization()` — **CALLED**
+- ✅ `POST /integrations` via `integrationsApi.create()` — **CALLED**
+- ✅ `PATCH /integrations/{id}/deactivate` via `integrationsApi.deactivate()` — **CALLED**
+
+### Data Fields Currently Displayed
+- `svc.name` — displayed
+- `svc.code` — used for icon mapping
+- `integration.api_url` — displayed when connected
+- `integration.is_active` — displayed as "Attivo" badge
+
+### Fields from API Response NOT Being Used
+
+**From ServiceCatalogItem:**
+- `id` — used internally
+- `name` — used
+- `code` — used for icon
+- `description` — NOT used
+- `icon` — NOT used
+
+**From IntegrationResource:**
+- `id` — used for mutation
+- `organization_id` — NOT displayed
+- `service_id` — used for matching
+- `api_key` — NOT displayed (correctly hidden for security)
+- `created_at` — NOT displayed
+- `updated_at` — NOT displayed
+- `settings` — NOT used
+
+---
+
+## 8. src/components/surface-scan/SecurityFindings.tsx
+
+### API Endpoints That Should Be Called
+- **NO API ENDPOINT EXISTS** — backend needs to be created
+- Should call: `GET /surface-scan/findings` or similar
+
+### Data Fields Currently Displayed (ALL HARDCODED)
+
+Lines 72-147: `mockFindings` array (3 items) with full vulnerability data:
+- `id`, `ip`, `mac`, `hostname`, `assetType`, `operatingSystem`, `lastUpdated` — all hardcoded
+- `highestSeverity`, `totalCves`, `epssScore` — all hardcoded
+- `vulnerabilities[]` — all nested data hardcoded
+
+### Fields from SecurityFinding/Vulnerability Types NOT Being Used
+
+All mock fields ARE displayed in UI, but since data is hardcoded, nothing is wired to real API.
+
+When API exists, fields to wire:
+- `ip` — should come from asset inventory API
+- `mac` — should come from asset inventory API
+- `hostname` — should come from surface scan API
+- `assetType` — should come from surface scan API
+- `operatingSystem` — should come from surface scan API
+- `lastUpdated` — should come from scan timestamp
+- `highestSeverity` — should come from vulnerability scan
+- `totalCves` — should come from CVE database API
+- `epssScore` — should come from EPSS API (useACNFeeds)
+- `vulnerabilities[]` — should come from vulnerability scan API
+
+---
+
+## Hook Mock Data Analysis
+
+### useApiWithFallback Pattern (src/hooks/useApiWithFallback.ts)
+
+This hook tries the real API first, but falls back to mock data on ANY error. This means:
+1. If the API endpoint returns 404, 500, or any error → mock data is used
+2. If the API endpoint doesn't exist yet → mock data is used
+3. The `isMock` flag is set but components don't always check it
+
+### Affected Hooks with Full Mock Data:
+
+| Hook | Mock Data Lines | Fallback Behavior |
+|------|-----------------|-------------------|
+| `usePatchDashboard` | ~30 lines | Full mock if API fails |
+| `useEndpointDashboard` | ~30 lines | Full mock if API fails |
+| `useFirewallDashboard` | ~25 lines | Full mock if API fails |
+| `useMailDashboard` | ~35 lines | Full mock if API fails |
+| `useDetectDashboard` | ~40 lines | Full mock if API fails |
+| `useMobileDashboard` | ~30 lines | Full mock if API fails |
+| `useLogDashboard` | 16+ imports from mockData.ts | Full mock if API fails |
+| `useTrackDashboard` | ~45 lines | Full mock if API fails |
+
+### Hooks Properly Wired (No Mock):
+- `useACNFeeds` — uses Supabase functions with cache fallback (not hardcoded mock)
+- `useDarkRiskAlerts` — uses Supabase table directly
+- `useSurfaceScanAlerts` — uses Supabase table directly
+- `useServiceIntegrations` — uses tenantServicesApi with proper error handling
+- `useAssessmentReport` — uses assessmentApi with error handling
+- `useOrganizationProfile` — uses organization API
+
+---
+
+## Complete Field Inventory: API Fields NOT Used in UI
+
+### TenantResource Fields NOT Displayed:
+1. `extra.note`
+2. `extra.server`
+3. `extra.utenti`
+4. `extra.endpoint`
+5. `extra.firewall`
+6. `extra.ip_totali`
+7. `extra.subnet_21`
+8. `extra.subnet_22`
+9. `extra.subnet_23`
+10. `extra.subnet_24`
+11. `extra.subnet_25`
+12. `extra.hypervisor`
+13. `extra.ip_puntuali`
+14. `extra.switch_core`
+15. `extra.access_point`
+16. `extra.sedi_cliente`
+17. `extra.switch_access`
+18. `extra.virtual_machine`
+19. `extra.dispositivi_rete_varie`
+20. `extra.dispositivi_rete_totali`
+21. `nis2_classification`
+22. `is_multiple`
+23. `customer_sectors`
+24. `implemented_technologies`
+25. `firewalls_count`
+26. `endpoints_count`
+27. `servers_count`
+28. `vms_count`
+29. `revenue`
+30. `employees_count`
+31. `industry`
+32. `contract_start`
+33. `contract_duration`
+34. `last_scan_at`
+35. `primary_domain`
+36. `secondary_domain`
+37. `primary_subnet`
+38. `secondary_subnet`
+39. `vat_number`
+40. `phone`
+41. `contact_first_name`
+42. `contact_last_name`
+43. `legal_name` (used in Assessment, not Dashboard)
+44. `fiscal_code`
+45. `legal_address`
+46. `operational_address`
+47. `pec`
+48. `email`
+49. `business_sector` (used in Assessment, not Dashboard)
+50. `ciso_substitute`
+51. `ips_list`
+52. `domains_list`
+53. `ms_tenant_id`
+
+### AssessmentData Fields NOT Used:
+54. `follow_up`
+55. `followup_reminder`
+56. `presentation_date`
+57. `hide_gantt`
+58. `custom_gantt`
+59. `generated_at`
+60. `tenant_id`
+61. `updated_by`
+62. `updated_at`
+63. `status`
+
+### AssessmentReportData Fields NOT Fetched/Used:
+64. `summary` (full object not used in Assessment page)
+65. `categories` (string data not used)
+66. `gantt` (not displayed)
+67. `openai` (AI analysis not displayed)
+68. `shodan` (scan data not displayed)
+69. `intelx` (leak intelligence not displayed)
+
+### AssessmentMonthlyReportData Fields NOT Fetched/Used:
+70. `scans`
+71. `vulnerabilities`
+72. `radar_categories`
+73. `trend`
+74. `delta`
+
+### ServiceCatalogItem Fields NOT Used:
+75. `description`
+76. `icon`
+
+### IntegrationResource Fields NOT Used:
+77. `organization_id`
+78. `api_key` (correctly hidden)
+79. `created_at`
+80. `updated_at`
+81. `settings`
+
+### MobileDevice Fields NOT Used:
+82. `serialNumber`
+83. `policies` (count not prominently displayed)
+84. `apps` (count not prominently displayed)
+
+### QuarantinedEmail Fields NOT Used:
+85. `actions`
+
+### TenantServiceResource Fields NOT Used:
+86. `site_id`
+87. `settings`
+88. `updated_by`
+
+### DetectDashboardData Fields NOT Used:
+89. `detectionRules`
+90. `hourlyActivity`
+91. `topology`
+
+### LogDashboardData Fields NOT Used:
+92. `recentLogs` (uses mockData instead)
+93. `topSources` (uses mockData instead)
+94. `errorTrend` (uses mockData instead)
+
+---
+
+## Priority Action Items
+
+### CRITICAL (Must Fix Immediately):
+1. **Dashboard.tsx** — Replace all hardcoded services/mockData with real API calls
+   - Call `tenantServicesApi.list()` for service status
+   - Call `assessmentApi.reportLegacy()` for compliance/risk scores
+   - Display `TenantResource.extra` fields
+   - Display `nis2_classification` badge
+   - Remove `fallbackData`, `mockData`, `fallbackServices` constants
+
+2. **SecurityFindings.tsx** — Backend API needed, then wire all mock fields
+
+3. **SurfaceScan360.tsx** — Backend API needed, then wire all mock fields
+
+### HIGH (Important):
+4. **All Service Dashboard hooks** — Remove mock data, add loading states
+   - `usePatchDashboard` → remove mockPatchData
+   - `useEndpointDashboard` → remove mockEndpointData
+   - `useFirewallDashboard` → remove mockFirewallData
+   - `useMailDashboard` → remove mockMailData
+   - `useDetectDashboard` → remove mockDetectData
+   - `useMobileDashboard` → remove mockMobileData
+   - `useLogDashboard` → remove mockLogData imports
+   - `useTrackDashboard` → remove mockTrackData
+
+5. **ComplianceMetricCard.tsx** — Dashboard must pass real scores as props
+
+6. **RiskScoreMetricCard.tsx** — Dashboard must pass real score as props
+
+7. **ThreatIndicatorsList.tsx** — Create API endpoint or remove component
+
+### MEDIUM (Should Fix):
+8. **HiSolutionStatusGrid.tsx** — Remove hardcoded resolvedCount map
+9. **ServiceStatsCard.tsx** — Remove hardcoded "98" user count
+10. **SecurityCategoryItem.tsx** — Remove hardcoded resolvedCount map
+11. **ConnectedServiceItem.tsx** — Use actual service status, not hardcoded "Connesso"
+
+### LOW (Nice to Have):
+12. **Assessment.tsx** — Fetch and display `openai`, `shodan`, `intelx` analysis data
+13. **Assessment.tsx** — Display `follow_up`, `presentation_date`, `gantt`
+14. **DarkRisk360.tsx** — Display `created_at` alongside `updated_at`
+15. **ServiceCatalogItem** — Display `description` and use `icon` field
+16. **IntegrationResource** — Display `created_at`/`updated_at` timestamps
