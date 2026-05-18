@@ -14,6 +14,12 @@ export const tenantServicesApi = {
     return res.data;
   },
 
+  /** List tenant services by organization/tenant ID */
+  async listByOrganization(organizationId: string): Promise<TenantServiceResource[]> {
+    const res = await apiClient.get<ApiResponse<TenantServiceResource[]>>(`/tenant-services`, { tenant_id: organizationId });
+    return res.data;
+  },
+
   async get(id: string): Promise<TenantServiceResource> {
     const res = await apiClient.get<ApiResponse<TenantServiceResource>>(`/tenant-services/${id}`);
     return res.data;
