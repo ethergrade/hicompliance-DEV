@@ -77,6 +77,7 @@ export interface UserResource {
   name: string;
   email: string;
   tenant_id: string | null;
+  tenant_name: string | null;
   roles: string[];
   created_at: string;
 }

@@ -92,10 +92,11 @@ const Users = () => {
 
   const roleOptions = roles.length > 0 ? roles : fallbackRoles;
 
-  const getTenantName = (tenantId: string | null) => {
-    if (!tenantId) return "Nessuna";
-    const tenant = tenants.find((item: TenantResource) => item.id === tenantId);
-    return tenant?.name ?? tenantId;
+  const getTenantName = (user: UserResource) => {
+    if (user.tenant_name) return user.tenant_name;
+    if (!user.tenant_id) return "Nessuna";
+    const tenant = tenants.find((item: TenantResource) => item.id === user.tenant_id);
+    return tenant?.name ?? user.tenant_id;
   };
 
   const createUserMutation = useMutation({
@@ -403,7 +404,7 @@ const Users = () => {
                             )}
                           </Badge>
                         </TableCell>
-                        <TableCell>{getTenantName(user.tenant_id)}</TableCell>
+                        <TableCell>{getTenantName(user)}</TableCell>
                         <TableCell>
                           {new Date(user.created_at).toLocaleDateString("it-IT")}
                         </TableCell>

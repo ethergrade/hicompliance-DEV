@@ -73,8 +73,8 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
             <Input value={name} onChange={e => setName(e.target.value)} placeholder="es. Azienda SRL" />
           </div>
           <div className="space-y-2">
-            <Label>MS Tenant ID</Label>
-            <Input value={msTenantId} onChange={e => setMsTenantId(e.target.value)} placeholder="es. xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+            <Label>Customer Code</Label>
+            <Input value={msTenantId} onChange={e => setMsTenantId(e.target.value)} placeholder="es. HC-001" />
           </div>
         </div>
         <DialogFooter>
