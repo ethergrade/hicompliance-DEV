@@ -8,6 +8,7 @@ import type {
   ShodanScan,
   RadarCategory,
   AssessmentSummary,
+  GanttItem,
 } from '@/types/api';
 
 interface UseAssessmentReportReturn {
@@ -25,6 +26,10 @@ interface UseAssessmentReportReturn {
   radarCategories: RadarCategory[];
   /** Risk/completion summary */
   summary: AssessmentSummary | null;
+  /** Gantt tasks from report */
+  gantt: GanttItem[];
+  /** Current assessment ID */
+  assessmentId: string | number | null;
   loading: boolean;
   error: string | null;
   refresh: () => void;
@@ -93,6 +98,8 @@ export function useAssessmentReport(): UseAssessmentReportReturn {
     scans: monthly?.scans ?? [],
     radarCategories: monthly?.radar_categories ?? [],
     summary: report?.summary ?? null,
+    gantt: report?.gantt ?? [],
+    assessmentId: assessment?.id ?? null,
     loading,
     error,
     refresh: fetchData,

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { assessmentApi } from '@/lib/api';
+import type { GanttItem } from '@/types/api';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -96,6 +97,7 @@ const Remediation: React.FC = () => {
     category: '', priority: '', description: '', estimatedDays: '',
     estimatedBudget: '', assignedTeam: '', complexity: 'medium', startDate: ''
   });
+  const assessmentIdRef = React.useRef<string | number | null>(null);
 
   useEffect(() => {
     if (preferences.selectedTimeframe) setSelectedTimeframeState(preferences.selectedTimeframe as string);
@@ -106,71 +108,104 @@ const Remediation: React.FC = () => {
     updatePreferences({ selectedTimeframe: value });
   };
 
-  /* ─── Load tasks from DB ─── */
+  /* ─── Load tasks from API ─── */
+  const apiGanttToDbTask = useCallback((item: GanttItem, index: number): DbTask => ({
+    id: String(item.id || `task-${index}`),
+    task: (item as any).task || item.name || 'Task',
+    category: (item as any).category || 'Generale',
+    start_date: item.start,
+    end_date: item.end,
+    progress: typeof item.progress === 'number' ? item.progress : (item.progress ? 100 : 0),
+    assignee: (item as any).assignee || null,
+    priority: (item as any).priority || 'medium',
+    color: (item as any).color || '#EAB308',
+    budget: (item as any).budget || null,
+    display_order: (item as any).display_order ?? index,
+    is_hidden: item.hidden || false,
+    is_deleted: (item as any).is_deleted || false,
+    dependencies: (item as any).dependencies || null,
+    organization_id: orgId,
+  }), [orgId]);
+
+  const dbTaskToApiGantt = useCallback((task: DbTask): GanttItem => ({
+    id: task.id,
+    name: task.task,
+    task: task.task,
+    category: task.category,
+    start: task.start_date,
+    end: task.end_date,
+    duration: differenceInDays(parseISO(task.end_date), parseISO(task.start_date)),
+    progress: task.progress,
+    hidden: task.is_hidden,
+    priority: task.priority,
+    color: task.color,
+    assignee: task.assignee,
+    budget: task.budget,
+    dependencies: task.dependencies,
+    is_deleted: task.is_deleted,
+    display_order: task.display_order,
+  }), []);
+
+  const saveAllTasks = useCallback(async (newTasks: DbTask[]) => {
+    if (!assessmentIdRef.current) return;
+    try {
+      await assessmentApi.updateGantt(assessmentIdRef.current, {
+        custom_gantt: newTasks.map(dbTaskToApiGantt),
+      });
+    } catch (err: any) {
+      console.error('Error saving gantt:', err);
+      toast({ title: 'Errore', description: 'Impossibile salvare le modifiche.', variant: 'destructive' });
+      throw err;
+    }
+  }, [dbTaskToApiGantt]);
+
   const loadTasks = useCallback(async () => {
     if (!orgId) { setLoading(false); return; }
 
-    const { data, error } = await supabase
-      .from('remediation_tasks')
-      .select('*')
-      .eq('organization_id', orgId)
-      .order('display_order', { ascending: true });
+    try {
+      const assessments = await assessmentApi.list();
+      const assessment = assessments.length > 0 ? assessments[0] : null;
 
-    if (error) {
-      console.error('Error loading tasks:', error);
-      setLoading(false);
-      return;
-    }
-
-    // Check if we need to seed: no tasks, old pre-2026 data, or stale seed (all tasks end before June = old clustered seed)
-    const needsSeed = !data || data.length === 0 || data.every(t => t.start_date < '2026-01-01') || (data.length > 0 && data.every(t => t.end_date < '2026-06-01'));
-
-    if (needsSeed) {
-      // Delete old tasks if any
-      if (data && data.length > 0) {
-        await supabase.from('remediation_tasks').delete().eq('organization_id', orgId);
+      if (!assessment) {
+        setTasks([]);
+        assessmentIdRef.current = null;
+        setLoading(false);
+        return;
       }
-      // Seed demo tasks
-      const seedRows = DEMO_TASKS.map((t, i) => ({
-        ...t,
-        organization_id: orgId,
-        display_order: i,
-        is_hidden: false,
-        is_deleted: false,
-        dependencies: [],
-      }));
 
-      const { data: inserted, error: insertError } = await supabase
-        .from('remediation_tasks')
-        .insert(seedRows)
-        .select();
+      assessmentIdRef.current = assessment.id;
+      const gantt = (assessment.custom_gantt as GanttItem[] | null) || [];
 
-      if (insertError) {
-        console.error('Error seeding tasks:', insertError);
-        toast({ title: 'Errore', description: 'Impossibile creare i task demo.', variant: 'destructive' });
+      const needsSeed = gantt.length === 0;
+
+      if (needsSeed) {
+        const seedRows = DEMO_TASKS.map((t, i) => ({
+          ...t,
+          organization_id: orgId,
+          display_order: i,
+          is_hidden: false,
+          is_deleted: false,
+          dependencies: [],
+        }));
+        await assessmentApi.updateGantt(assessment.id, {
+          custom_gantt: seedRows.map(dbTaskToApiGantt),
+        });
+        setTasks(seedRows);
       } else {
-        setTasks(inserted || []);
+        setTasks(gantt.map((item, idx) => apiGanttToDbTask(item, idx)));
       }
-    } else {
-      setTasks(data);
+    } catch (error) {
+      console.error('Error loading tasks:', error);
+      toast({ title: 'Errore', description: 'Impossibile caricare i task.', variant: 'destructive' });
+      setTasks([]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, [orgId]);
+  }, [orgId, apiGanttToDbTask, dbTaskToApiGantt]);
 
   useEffect(() => {
     loadTasks();
-
-    if (!orgId) return;
-
-    const channel = supabase
-      .channel('remediation-tasks-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'remediation_tasks' }, () => {
-        loadTasks();
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [loadTasks, orgId]);
+  }, [loadTasks]);
 
   /* ─── Derived data ─── */
   const activeTasks = tasks.filter(t => !t.is_deleted);
@@ -202,20 +237,17 @@ const Remediation: React.FC = () => {
 
   /* ─── DB mutation helpers ─── */
   const updateTask = useCallback(async (taskId: string, updates: Record<string, any>) => {
-    if (!orgId) return;
-    const { error } = await supabase
-      .from('remediation_tasks')
-      .update(updates)
-      .eq('id', taskId)
-      .eq('organization_id', orgId);
-    if (error) {
-      console.error('Error updating task:', error);
+    if (!assessmentIdRef.current) return;
+    const updatedTasks = tasks.map(t => t.id === taskId ? { ...t, ...updates } : t);
+    setTasks(updatedTasks);
+    try {
+      await saveAllTasks(updatedTasks);
+    } catch (err: any) {
+      console.error('Error updating task:', err);
       toast({ title: 'Errore', description: 'Impossibile salvare le modifiche.', variant: 'destructive' });
-      throw error;
+      throw err;
     }
-    // Optimistic update
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t));
-  }, [orgId]);
+  }, [tasks, saveAllTasks]);
 
   /* ─── Handlers ─── */
   const handleDateChange = useCallback(async (taskId: string, startDate: string, endDate: string) => {
@@ -282,21 +314,20 @@ const Remediation: React.FC = () => {
     currentOrder.splice(newIndex, 0, taskId);
 
     // Optimistic reorder
-    setTasks(prev => {
-      const taskMap = new Map(prev.map(t => [t.id, t]));
-      const reordered = currentOrder.map((id, idx) => {
-        const t = taskMap.get(id)!;
-        return { ...t, display_order: idx };
-      });
-      const deleted = prev.filter(t => t.is_deleted);
-      return [...reordered, ...deleted];
+    const reordered = currentOrder.map((id, idx) => {
+      const t = tasks.find(task => task.id === id)!;
+      return { ...t, display_order: idx };
     });
+    const deleted = tasks.filter(t => t.is_deleted);
+    const newTasks = [...reordered, ...deleted];
+    setTasks(newTasks);
 
-    if (!orgId) return;
-    for (let i = 0; i < currentOrder.length; i++) {
-      await supabase.from('remediation_tasks').update({ display_order: i }).eq('id', currentOrder[i]).eq('organization_id', orgId);
+    try {
+      await saveAllTasks(newTasks);
+    } catch {
+      // error already toasted in saveAllTasks
     }
-  }, [activeTasks, orgId]);
+  }, [activeTasks, tasks, saveAllTasks]);
 
   /* ─── Create new task ─── */
   const calculateBudget = (days: number, complexity: string) => {
@@ -327,7 +358,8 @@ const Remediation: React.FC = () => {
 
     const priorityColors: Record<string, string> = { critica: '#DC2626', alta: '#EA580C', media: '#EAB308', bassa: '#22C55E' };
 
-    const newTask = {
+    const newTask: DbTask = {
+      id: `task-${Date.now()}`,
       organization_id: orgId,
       task: newRemediation.description,
       category: newRemediation.category,
@@ -344,16 +376,18 @@ const Remediation: React.FC = () => {
       budget: estimatedBudget,
     };
 
-    const { error } = await supabase.from('remediation_tasks').insert(newTask).select();
-    if (error) {
-      toast({ title: 'Errore', description: 'Impossibile creare la remediation.', variant: 'destructive' });
+    const updatedTasks = [...tasks, newTask];
+    setTasks(updatedTasks);
+    try {
+      await saveAllTasks(updatedTasks);
+      toast({ title: 'Remediation creata', description: 'Il task è stato salvato.' });
+    } catch {
+      // error already toasted in saveAllTasks
       return;
     }
 
-    toast({ title: 'Remediation creata', description: 'Il task è stato salvato nel database.' });
     setNewRemediation({ category: '', priority: '', description: '', estimatedDays: '', estimatedBudget: '', assignedTeam: '', complexity: 'medium', startDate: '' });
     setIsCreateModalOpen(false);
-    await loadTasks();
   };
 
   /* ─── Static data ─── */
