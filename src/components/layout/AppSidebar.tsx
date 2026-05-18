@@ -100,10 +100,6 @@ export const AppSidebar: React.FC = () => {
     return isModuleEnabled(item.href);
   });
 
-  const hiComplianceActive = [...modulesInsideHiCompliance, ...modulesOutsideHiCompliance].some(
-    (item) => location.pathname === item.href,
-  );
-
   const [hiComplianceOpen, setHiComplianceOpen] = React.useState<boolean>(true);
 
   // Fetch tenant services for selected org to determine active service modules
@@ -133,6 +129,10 @@ export const AppSidebar: React.FC = () => {
     if (!m.code) return false;
     return oneActive && isServiceActive(m.code);
   });
+
+  const hiComplianceActive = [...modulesInsideHiCompliance, ...modulesOutsideHiCompliance].some(
+    (item) => location.pathname === item.href,
+  );
 
   const renderNavItem = (
     item: { title: string; href: string; icon: React.ElementType },
