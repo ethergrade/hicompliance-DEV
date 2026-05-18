@@ -48,7 +48,7 @@ export const useUserPreferences = ({ preferenceKey, defaultPreferences = {} }: U
         .maybeSingle();
 
       if (error) throw error;
-      return data?.preference_value as UserPreferences | null;
+      return (data?.preference_value ?? null) as UserPreferences | null;
     },
     enabled: !!user?.id && !!organizationId,
   });
