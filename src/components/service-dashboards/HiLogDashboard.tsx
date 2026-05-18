@@ -30,6 +30,57 @@ import { CorrelationSection } from './hilog/CorrelationSection';
 import { AdvancedFilter, createEmptyFilter, evalAdvancedFilter } from './hilog/filterEngine';
 
 const STORAGE_KEY = 'hilog_query_builder_state';
+const DEFAULT_HILOG_FILTERS: HiLogFilters = {
+  globalSearch: '',
+  severity: 'all',
+  hostname: '',
+  username: '',
+  ip: '',
+  period: 'all',
+};
+
+const parseDateTime = (value: unknown): Date | null => {
+  if (typeof value !== 'string') return null;
+  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}):(\d{2}))?$/);
+  if (!match) return null;
+
+  const [, dd, mm, yyyy, hh = '00', min = '00', ss = '00'] = match;
+  const parsed = new Date(
+    Number(yyyy),
+    Number(mm) - 1,
+    Number(dd),
+    Number(hh),
+    Number(min),
+    Number(ss)
+  );
+
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+};
+
+const getPeriodThreshold = (anchor: Date, period: HiLogFilters['period']): Date | null => {
+  if (period === 'all') return null;
+  const threshold = new Date(anchor);
+
+  if (period === '7d') {
+    threshold.setDate(threshold.getDate() - 7);
+    return threshold;
+  }
+  if (period === '1m') {
+    threshold.setMonth(threshold.getMonth() - 1);
+    return threshold;
+  }
+  if (period === '3m') {
+    threshold.setMonth(threshold.getMonth() - 3);
+    return threshold;
+  }
+  if (period === '6m') {
+    threshold.setMonth(threshold.getMonth() - 6);
+    return threshold;
+  }
+
+  return null;
+};
 
 const loadPersistedState = () => {
   try {
@@ -37,7 +88,7 @@ const loadPersistedState = () => {
     if (stored) {
       const parsed = JSON.parse(stored);
       return {
-        filters: parsed.filters || { globalSearch: '', severity: 'all', hostname: '', username: '', ip: '' },
+        filters: { ...DEFAULT_HILOG_FILTERS, ...(parsed.filters || {}) },
         advancedFilter: parsed.advancedFilter || createEmptyFilter(),
         advancedMode: parsed.advancedMode || false,
       };
@@ -66,7 +117,7 @@ export const HiLogDashboard: React.FC = () => {
   const persisted = useMemo(() => loadPersistedState(), []);
   
   const [filters, setFilters] = useState<HiLogFilters>(
-    persisted?.filters || { globalSearch: '', severity: 'all', hostname: '', username: '', ip: '' }
+    persisted?.filters || DEFAULT_HILOG_FILTERS
   );
   const [advancedFilter, setAdvancedFilter] = useState<AdvancedFilter>(
     persisted?.advancedFilter || createEmptyFilter()
@@ -80,10 +131,32 @@ export const HiLogDashboard: React.FC = () => {
 
   // Combined filter: basic + advanced
   const applyAllFilters = useCallback(<T extends Record<string, any>>(data: T[], extraFields?: { hostnameKey?: string; usernameKey?: string; ipKey?: string; severityKey?: string }): T[] => {
-    if (advancedMode) {
-      return evalAdvancedFilter(data, advancedFilter);
+    let periodScopedData: T[] = data;
+
+    if (filters.period !== 'all') {
+      const datedItems = data
+        .map((item) => ({ item, date: parseDateTime(item.datetime) }))
+        .filter((entry): entry is { item: T; date: Date } => !!entry.date);
+
+      if (datedItems.length > 0) {
+        const anchorDate = datedItems.reduce((latest, entry) => (
+          entry.date.getTime() > latest.getTime() ? entry.date : latest
+        ), datedItems[0].date);
+
+        const thresholdDate = getPeriodThreshold(anchorDate, filters.period);
+        if (thresholdDate) {
+          const thresholdTs = thresholdDate.getTime();
+          periodScopedData = datedItems
+            .filter((entry) => entry.date.getTime() >= thresholdTs)
+            .map((entry) => entry.item);
+        }
+      }
     }
-    return data.filter(item => {
+
+    if (advancedMode) {
+      return evalAdvancedFilter(periodScopedData, advancedFilter);
+    }
+    return periodScopedData.filter(item => {
       if (!matchesSearch(item, filters.globalSearch)) return false;
       const hk = extraFields?.hostnameKey || 'hostname';
       const uk = extraFields?.usernameKey || 'username';
@@ -111,6 +184,32 @@ export const HiLogDashboard: React.FC = () => {
   const filteredUsersAD = useMemo(() => applyAllFilters(usersADData, { usernameKey: 'name', hostnameKey: 'domain' }), [applyAllFilters]);
   const filteredUsersLocal = useMemo(() => applyAllFilters(usersLocalData, { usernameKey: 'name', hostnameKey: 'domain' }), [applyAllFilters]);
   const filteredUsersEntra = useMemo(() => applyAllFilters(usersEntraData, { usernameKey: 'name', hostnameKey: 'domain' }), [applyAllFilters]);
+
+  const securityPrioritySummary = useMemo(() => {
+    const severityTotals = securityEventsData.reduce(
+      (acc, item) => {
+        const key = item.name.toLowerCase();
+        if (key in acc) acc[key as keyof typeof acc] += item.value;
+        return acc;
+      },
+      { critical: 0, high: 0, medium: 0, low: 0 }
+    );
+
+    const categoryTotals = filteredSecurityEvents.reduce((acc: Record<string, number>, event) => {
+      const category = event.category || 'Other';
+      acc[category] = (acc[category] || 0) + 1;
+      return acc;
+    }, {});
+
+    const topCategory = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1])[0];
+    const topCategoryLabel = topCategory ? `${topCategory[0]} (${topCategory[1]} eventi)` : 'Login';
+    const urgentCount = severityTotals.critical + severityTotals.high;
+
+    return {
+      urgentCount,
+      topCategoryLabel,
+    };
+  }, [filteredSecurityEvents]);
 
   const exportDataSets = useMemo(() => ({
     windowsLogs: filteredWindowsLogs,
@@ -269,6 +368,35 @@ export const HiLogDashboard: React.FC = () => {
                 ))}
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Sintesi consulenziale prioritaria</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Azioni consigliate in ordine di priorita operativa per ridurre il rischio nelle prossime 24-48 ore.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <ol className="space-y-3 text-sm">
+              <li>
+                <span className="font-semibold">1. Gestire subito gli eventi critici e high:</span>{' '}
+                sono presenti {securityPrioritySummary.urgentCount} eventi ad alta urgenza (Critical/High) nelle ultime 24h. Si consiglia triage immediato, validazione IOC e chiusura degli alert con owner e scadenza.
+              </li>
+              <li>
+                <span className="font-semibold">2. Mettere sotto controllo l&apos;area piu esposta:</span>{' '}
+                la categoria con maggiore ricorrenza e {securityPrioritySummary.topCategoryLabel}. E opportuno verificare pattern anomali, utenti coinvolti e host ripetuti.
+              </li>
+              <li>
+                <span className="font-semibold">3. Rafforzare il perimetro identita e accessi:</span>{' '}
+                dare priorita a MFA, Conditional Access e blocco tentativi ripetuti su login remoti/RDP, con revisione degli account privilegiati.
+              </li>
+              <li>
+                <span className="font-semibold">4. Consolidare le misure preventive:</span>{' '}
+                pianificare hardening su endpoint critici (PowerShell, lateral movement, escalation) e verifica delle policy DLP per contenere rischio di esfiltrazione.
+              </li>
+            </ol>
           </CardContent>
         </Card>
       </section>
