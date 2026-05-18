@@ -12,6 +12,7 @@ import {
   AdvancedFilter, createEmptyFilter,
 } from './filterEngine';
 import { HiLogExcelExport } from './HiLogExcelExport';
+import { HiLogPdfExport } from './HiLogPdfExport';
 
 export interface HiLogFilters {
   globalSearch: string;
@@ -133,7 +134,12 @@ export const GlobalFilters: React.FC<Props> = ({
                   Reset
                 </Button>
               )}
-              {dataSets && <HiLogExcelExport dataSets={dataSets} />}
+              {dataSets && (
+                <>
+                  <HiLogPdfExport dataSets={dataSets} />
+                  <HiLogExcelExport dataSets={dataSets} />
+                </>
+              )}
             </div>
           </div>
         </CardContent>
