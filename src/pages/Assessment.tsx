@@ -180,6 +180,7 @@ const Assessment: React.FC = () => {
   const [guidedCategoryIndex, setGuidedCategoryIndex] = useState(0);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [hasAssessment, setHasAssessment] = useState<boolean | null>(null);
   const assessmentIdRef = useRef<string | number | null>(null);
   const loadedOrgRef = useRef<string | null>(null);
   const guidedOrgRef = useRef<string | null>(null);
@@ -191,21 +192,25 @@ const Assessment: React.FC = () => {
 
     const loadResponses = async () => {
       try {
+        setHasAssessment(null);
         const assessments = await assessmentApi.list();
-        const assessment = assessments.length > 0 ? assessments[0] : null;
+        const assessment = assessments.find(a => a.tenant_id === orgId) || null;
         if (!assessment) {
           setResponses({});
           assessmentIdRef.current = null;
+          setHasAssessment(false);
           loadedOrgRef.current = orgId;
           return;
         }
         assessmentIdRef.current = assessment.id;
         setResponses(parseAssessmentQuestions(assessment.questions));
+        setHasAssessment(true);
         loadedOrgRef.current = orgId;
       } catch (error) {
         console.error('Assessment load error:', error);
         setResponses({});
         assessmentIdRef.current = null;
+        setHasAssessment(false);
       }
     };
 
@@ -218,7 +223,7 @@ const Assessment: React.FC = () => {
   responsesRef.current = responses;
 
   const triggerAutoSave = useCallback(() => {
-    if (!orgId || !user) return;
+    if (!orgId || !user || !hasAssessment) return;
     if (snapshotTimerRef.current) clearTimeout(snapshotTimerRef.current);
     snapshotTimerRef.current = setTimeout(async () => {
       const currentResponses = responsesRef.current;
@@ -509,6 +514,28 @@ const Assessment: React.FC = () => {
 
     selectGuidedCategory(nextIndex);
   }, [assessmentCategories, selectGuidedCategory]);
+
+  if (hasAssessment === null) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (hasAssessment === false) {
+    return (
+      <DashboardLayout>
+        <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
+          <AlertCircle className="w-12 h-12 text-muted-foreground" />
+          <h2 className="text-xl font-semibold">Assessment non disponibile</h2>
+          <p className="text-muted-foreground">Nessun assessment per il cliente selezionato.</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
