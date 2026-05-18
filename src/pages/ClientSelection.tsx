@@ -215,18 +215,18 @@ const ClientSelection: React.FC = () => {
                   </div>
 
                   {/* Quick edit buttons */}
-                  <div className="flex gap-2 mb-3">
-                    <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={(e) => openProfile(e, org)}>
-                      <FileText className="w-3.5 h-3.5 mr-1" />
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    <Button variant="outline" size="sm" className="flex-1 min-w-0 text-xs px-2" onClick={(e) => openProfile(e, org)}>
+                      <FileText className="w-3 h-3 mr-1 flex-shrink-0" />
                       Anagrafica
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={(e) => openAsset(e, org)}>
-                      <Server className="w-3.5 h-3.5 mr-1" />
+                    <Button variant="outline" size="sm" className="flex-1 min-w-0 text-xs px-2" onClick={(e) => openAsset(e, org)}>
+                      <Server className="w-3 h-3 mr-1 flex-shrink-0" />
                       Consistenze
                     </Button>
                     {isSuperAdmin && (
-                      <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={(e) => openServices(e, org)}>
-                        <Plug className="w-3.5 h-3.5 mr-1" />
+                      <Button variant="outline" size="sm" className="flex-1 min-w-0 text-xs px-2" onClick={(e) => openServices(e, org)}>
+                        <Plug className="w-3 h-3 mr-1 flex-shrink-0" />
                         Servizi
                       </Button>
                     )}
