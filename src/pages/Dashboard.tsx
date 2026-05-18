@@ -231,10 +231,6 @@ const Dashboard: React.FC = () => {
     );
   };
 
-  const fallbackServices = [
-    { name: 'HiPatch', code: 'hi_patch', id: '', healthScore: 23, resolved: 78 },
-  ];
-
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -301,7 +297,7 @@ const Dashboard: React.FC = () => {
                     </Button>
                 )}
                 <div className="text-right">
-                  <div className="text-2xl font-bold text-primary mb-1">{totalIssues || 23}</div>
+                  <div className="text-2xl font-bold text-primary mb-1">{alertServicesCount}</div>
                   <p className="text-xs text-muted-foreground">Issues Attive</p>
                 </div>
               </div>
