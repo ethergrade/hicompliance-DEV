@@ -368,7 +368,7 @@ export interface TenantServiceResource {
   site_id: string | null;
   service_type: string;
   status: string;
-  settings: unknown[] | null;
+  settings: Record<string, unknown> | null;
   updated_by: string | null;
   created_at: string;
   updated_at: string;
@@ -378,14 +378,14 @@ export interface StoreTenantServiceRequest {
   site_id?: string | null;
   service_type: string;
   status?: "active" | "inactive" | null;
-  settings?: string[] | null;
+  settings?: Record<string, unknown> | null;
 }
 
 export interface UpdateTenantServiceRequest {
   site_id?: string | null;
   service_type?: string;
   status?: "active" | "inactive";
-  settings?: string[] | null;
+  settings?: Record<string, unknown> | null;
 }
 // ─── Asset Inventory ────────────────────────────────────────────────────────
 

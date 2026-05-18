@@ -6,6 +6,8 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Link2, Unlink, Plug, Shield, Mail, Monitor, Smartphone, Activity, Search as SearchIcon, Server, Pencil } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tenantServicesApi } from '@/lib/api/tenant-services';
@@ -37,8 +39,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   const queryClient = useQueryClient();
   const [selectedService, setSelectedService] = useState<any | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
-  const [apiUrl, setApiUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
+  const [formValues, setFormValues] = useState<Record<string, string | boolean>>({});
 
   // Service catalog from /config/tenant-services
   const { data: catalog = {}, isLoading: catalogLoading } = useQuery({
@@ -67,6 +68,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
         name: svc.label || key,
         description: svc.description || '',
         icon: svc.icon || '',
+        fields: svc.fields || {},
         status: tenantSvc?.status || 'inactive',
         tenantServiceId: tenantSvc?.id || null,
         settings: tenantSvc?.settings || null,
@@ -77,17 +79,27 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   const openEditForm = (svc: any) => {
     const existing = tenantServices.find((ts: TenantServiceResource) => ts.service_type === svc.id);
     const settings = (existing?.settings as Record<string, string> | undefined) || {};
+    const fields = svc.fields || {};
+
+    const initialValues: Record<string, string | boolean> = {};
+    Object.entries(fields).forEach(([key, fieldDef]: [string, any]) => {
+      const val = settings[key];
+      if (fieldDef.type === 'checkbox') {
+        initialValues[key] = val === true || val === '1' || val === 'true' || val === 1;
+      } else {
+        initialValues[key] = val !== undefined && val !== null ? String(val) : '';
+      }
+    });
+
     setSelectedService(svc);
     setIsEditMode(!!existing && svc.status === 'active');
-    setApiUrl(settings.api_url || '');
-    setApiKey(settings.api_key || '');
+    setFormValues(initialValues);
   };
 
   const closeForm = () => {
     setSelectedService(null);
     setIsEditMode(false);
-    setApiUrl('');
-    setApiKey('');
+    setFormValues({});
   };
 
   const saveMutation = useMutation({
@@ -96,13 +108,21 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 
       const existing = tenantServices.find((ts: TenantServiceResource) => ts.service_type === selectedService.id);
 
+      const fields = (selectedService.fields || {}) as Record<string, any>;
+
+      const settings: Record<string, unknown> = {};
+      Object.entries(fields).forEach(([key, def]) => {
+        const val = formValues[key];
+        if (def.type === 'checkbox') {
+          settings[key] = val === true || val === 'true' || val === '1';
+        } else {
+          settings[key] = val !== undefined && val !== null ? String(val) : '';
+        }
+      });
+
       const payload = {
         status: 'active' as const,
-        settings: {
-          ...((existing?.settings as Record<string, unknown>) || {}),
-          api_url: apiUrl.trim(),
-          api_key: apiKey.trim(),
-        },
+        settings,
       };
 
       if (existing?.id) {
@@ -144,8 +164,12 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 
   const handleSave = () => {
     if (!selectedService) return;
-    if (!apiUrl.trim() || !apiKey.trim()) {
-      toast.error('URL e Chiave API sono obbligatori');
+    const fields = (selectedService.fields || {}) as Record<string, any>;
+
+    const missing = Object.entries(fields).filter(([key, def]) => def.required && !(formValues[key] ?? '').toString().trim());
+    if (missing.length > 0) {
+      const labels = missing.map(([_, def]) => def.label);
+      toast.error(`Campi obbligatori mancanti: ${labels.join(', ')}`);
       return;
     }
     saveMutation.mutate();
@@ -168,25 +192,52 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 
         {selectedService ? (
           <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="client-api-url">URL API</Label>
-              <Input
-                id="client-api-url"
-                placeholder="https://api.example.com/v1"
-                value={apiUrl}
-                onChange={e => setApiUrl(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="client-api-key">Chiave API</Label>
-              <Input
-                id="client-api-key"
-                type="password"
-                placeholder="sk-..."
-                value={apiKey}
-                onChange={e => setApiKey(e.target.value)}
-              />
-            </div>
+            {Object.entries(selectedService.fields || {}).map(([key, fieldDef]: [string, any]) => (
+              <div key={key} className="space-y-2">
+                {fieldDef.type === 'checkbox' ? (
+                  <div className="flex items-center gap-3">
+                    <Switch
+                      id={`field-${key}`}
+                      checked={!!formValues[key]}
+                      onCheckedChange={(checked: boolean) =>
+                        setFormValues(prev => ({ ...prev, [key]: checked }))
+                      }
+                    />
+                    <Label htmlFor={`field-${key}`}>{fieldDef.label}</Label>
+                  </div>
+                ) : fieldDef.type === 'select' ? (
+                  <>
+                    <Label htmlFor={`field-${key}`}>{fieldDef.label}</Label>
+                    <Select
+                      value={String(formValues[key] ?? '')}
+                      onValueChange={value => setFormValues(prev => ({ ...prev, [key]: value }))}
+                    >
+                      <SelectTrigger id={`field-${key}`}>
+                        <SelectValue placeholder="Seleziona..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(fieldDef.options || {}).map(([optKey, optLabel]) => (
+                          <SelectItem key={optKey} value={String(optKey)}>
+                            {String(optLabel)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </>
+                ) : (
+                  <>
+                    <Label htmlFor={`field-${key}`}>{fieldDef.label}</Label>
+                    <Input
+                      id={`field-${key}`}
+                      type={fieldDef.is_secret ? 'password' : 'text'}
+                      placeholder={fieldDef.placeholder || ''}
+                      value={String(formValues[key] ?? '')}
+                      onChange={e => setFormValues(prev => ({ ...prev, [key]: e.target.value }))}
+                    />
+                  </>
+                )}
+              </div>
+            ))}
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={closeForm}>
                 Annulla
@@ -203,7 +254,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
               )}
               <Button
                 onClick={handleSave}
-                disabled={saveMutation.isPending || !apiUrl.trim() || !apiKey.trim()}
+                disabled={saveMutation.isPending}
               >
                 {saveMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 {isEditMode ? 'Salva' : 'Collega'}
@@ -231,8 +282,8 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                           </div>
                           <div>
                             <p className="text-sm font-medium">{svc.name}</p>
-                            {isActive && settings?.api_url && (
-                              <p className="text-xs text-muted-foreground truncate max-w-[180px]">{settings.api_url}</p>
+                            {isActive && svc.settings && Object.keys(svc.settings || {}).length > 0 && (
+                              <p className="text-xs text-muted-foreground truncate max-w-[180px]">Configurato</p>
                             )}
                           </div>
                         </div>
