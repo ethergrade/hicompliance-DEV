@@ -164,7 +164,7 @@ const Remediation: React.FC = () => {
 
     try {
       const assessments = await assessmentApi.list();
-      const assessment = assessments.length > 0 ? assessments[0] : null;
+      const assessment = assessments.find(a => a.tenant_id === orgId) || null;
 
       if (!assessment) {
         setTasks([]);
