@@ -25,6 +25,21 @@ export interface DirectoryContact {
   updated_at?: string;
 }
 
+export interface SupplierDirectoryEntry {
+  id: string;
+  organization_id: string;
+  supplier_name: string;
+  service_type?: string;
+  contact_name?: string;
+  email?: string;
+  phone?: string;
+  linked_asset_id?: string | null;
+  linked_asset_label?: string | null;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface SeverityLevel {
   level: string;
   description: string;
