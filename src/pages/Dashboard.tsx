@@ -88,21 +88,14 @@ const Dashboard: React.FC = () => {
   const operativeServicesCount = hiSolutionServices.filter(
     (service) => isModuleEnabledForDashboard(service.services.code) && (service.health_score || 0) >= 80
   ).length;
-  const totalResolvedCount = hiSolutionServices
-    .filter((service) => isModuleEnabledForDashboard(service.services.code))
-    .reduce((acc, service) => acc + Math.max(0, Math.round((service.health_score || 0) * 1.2)), 0);
-
   const handleServiceClick = (service: { code: string }) => {
     navigate(`/dashboard/service/${service.code}`);
   };
 
-  const renderServiceCard = (service: { name: string; code: string; id?: string }, healthScore: number, status: string, resolved: number, index: number) => {
+  const renderServiceCard = (service: { name: string; code: string; id?: string }, healthScore: number, index: number) => {
     const moduleEnabled = isModuleEnabledForDashboard(service.code);
     const isGood = healthScore >= 80;
     const issues = isGood ? 0 : Math.ceil((100 - healthScore) / 20);
-    const criticalityScore = status === 'alert' 
-      ? Math.min(100, 100 - healthScore + issues * 5)
-      : status === 'maintenance' ? Math.min(80, 100 - healthScore) : Math.max(10, 100 - healthScore);
 
     return (
       <div
@@ -154,15 +147,7 @@ const Dashboard: React.FC = () => {
                 {healthScore}%
               </span>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-muted-foreground">Criticità:</span>
-              <span className={`text-sm font-semibold ${criticalityScore >= 70 ? 'text-red-500' : criticalityScore >= 40 ? 'text-yellow-500' : 'text-green-500'}`}>
-                {criticalityScore}/100
-              </span>
-            </div>
           </div>
-
-          <p className="text-sm text-muted-foreground">{resolved} risolte negli ultimi 90 giorni</p>
 
           {!moduleEnabled && (
             <p className="text-xs text-muted-foreground mt-3">
@@ -189,14 +174,14 @@ const Dashboard: React.FC = () => {
   };
 
   const fallbackServices = [
-    { name: 'HiFirewall', code: 'hi_firewall', id: '', healthScore: 56, resolved: 124 },
-    { name: 'HiEndpoint', code: 'hi_endpoint', id: '', healthScore: 26, resolved: 54 },
-    { name: 'HiMail', code: 'hi_mail', id: '', healthScore: 13, resolved: 98 },
-    { name: 'HiLog', code: 'hi_log', id: '', healthScore: 55, resolved: 54 },
-    { name: 'HiPatch', code: 'hi_patch', id: '', healthScore: 23, resolved: 78 },
-    { name: 'HiTrack', code: 'hi_track', id: '', healthScore: 88, resolved: 89 },
-    { name: 'HiDetect', code: 'hi_detect', id: '', healthScore: 89, resolved: 127 },
-    { name: 'HiMobile', code: 'hi_mobile', id: '', healthScore: 24, resolved: 89 },
+    { name: 'HiFirewall', code: 'hi_firewall', id: '', healthScore: 56 },
+    { name: 'HiEndpoint', code: 'hi_endpoint', id: '', healthScore: 26 },
+    { name: 'HiMail', code: 'hi_mail', id: '', healthScore: 13 },
+    { name: 'HiLog', code: 'hi_log', id: '', healthScore: 55 },
+    { name: 'HiPatch', code: 'hi_patch', id: '', healthScore: 23 },
+    { name: 'HiTrack', code: 'hi_track', id: '', healthScore: 88 },
+    { name: 'HiDetect', code: 'hi_detect', id: '', healthScore: 89 },
+    { name: 'HiMobile', code: 'hi_mobile', id: '', healthScore: 24 },
   ];
 
   return (
@@ -279,18 +264,19 @@ const Dashboard: React.FC = () => {
                 ? hiSolutionServices.map((orgService, index) => {
                     const service = orgService.services;
                     return renderServiceCard(
-                      service, orgService.health_score || 0, orgService.status,
-                      Math.floor(50 + Math.random() * 100), index
+                      service,
+                      orgService.health_score || 0,
+                      index
                     );
                   })
                 : fallbackServices.map((s, i) =>
-                    renderServiceCard({ name: s.name, code: s.code, id: s.id }, s.healthScore, 'alert', s.resolved, i)
+                    renderServiceCard({ name: s.name, code: s.code, id: s.id }, s.healthScore, i)
                   )
               }
             </div>
 
             <div className="border-t border-border pt-6">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="text-center p-4">
                   <div className="text-2xl font-bold text-primary mb-1">{connectedServicesCount}</div>
                   <div className="text-sm text-muted-foreground">Servizi Connessi</div>
@@ -302,12 +288,6 @@ const Dashboard: React.FC = () => {
                 <div className="text-center p-4">
                   <div className="text-2xl font-bold text-green-500 mb-1">{operativeServicesCount}</div>
                   <div className="text-sm text-muted-foreground">Servizi Operativi</div>
-                </div>
-                <div className="text-center p-4">
-                  <div className="text-2xl font-bold text-blue-500 mb-1">
-                    {totalResolvedCount}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Totale Risolte</div>
                 </div>
               </div>
             </div>
