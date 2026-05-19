@@ -37,7 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Building2, Link2, Mail, Pencil, Phone, Plus, Search, Trash2 } from 'lucide-react';
+import { AlertTriangle, Building2, Link2, Mail, Pencil, Phone, Plus, Search, Trash2 } from 'lucide-react';
 import { useSupplierDirectory } from '@/hooks/useSupplierDirectory';
 import { SupplierDirectoryEntry } from '@/types/irp';
 import { useToast } from '@/hooks/use-toast';
@@ -70,6 +70,8 @@ export const SupplierDirectoryManager: React.FC = () => {
     searchQuery,
     setSearchQuery,
     assetOptions,
+    schemaReady,
+    schemaMessage,
     addSupplier,
     updateSupplier,
     deleteSupplier,
@@ -176,7 +178,7 @@ export const SupplierDirectoryManager: React.FC = () => {
                 </CardDescription>
               </div>
             </div>
-            <Button onClick={openCreateDialog}>
+            <Button onClick={openCreateDialog} disabled={!schemaReady}>
               <Plus className="w-4 h-4 mr-2" />
               Nuovo Fornitore
             </Button>
@@ -184,6 +186,20 @@ export const SupplierDirectoryManager: React.FC = () => {
         </CardHeader>
 
         <CardContent className="space-y-4">
+          {!schemaReady && (
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 mt-0.5 text-amber-500" />
+                <div>
+                  <p className="font-medium text-amber-400">Rubrica fornitori in attivazione</p>
+                  <p className="text-amber-200/90">
+                    {schemaMessage || 'Il database del modulo fornitori non e ancora disponibile su questo ambiente.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
@@ -191,11 +207,17 @@ export const SupplierDirectoryManager: React.FC = () => {
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               className="pl-10"
+              disabled={!schemaReady}
             />
           </div>
 
           {loading ? (
             <div className="text-center py-8 text-muted-foreground">Caricamento fornitori...</div>
+          ) : !schemaReady ? (
+            <div className="text-center py-8">
+              <Building2 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground">Attendi l&apos;allineamento database per iniziare a usare la rubrica fornitori.</p>
+            </div>
           ) : filteredSuppliers.length === 0 ? (
             <div className="text-center py-8">
               <Building2 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
