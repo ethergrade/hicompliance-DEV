@@ -20,8 +20,6 @@ interface UseSupplierDirectoryReturn {
   suppliers: SupplierDirectoryEntry[];
   filteredSuppliers: SupplierDirectoryEntry[];
   assetOptions: SupplierAssetOption[];
-  schemaReady: boolean;
-  schemaMessage: string | null;
   loading: boolean;
   saving: boolean;
   searchQuery: string;
@@ -35,33 +33,12 @@ interface UseSupplierDirectoryReturn {
 export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
   const [suppliers, setSuppliers] = useState<SupplierDirectoryEntry[]>([]);
   const [assetOptions, setAssetOptions] = useState<SupplierAssetOption[]>([]);
-  const [schemaReady, setSchemaReady] = useState(true);
-  const [schemaMessage, setSchemaMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   const { toast } = useToast();
   const { organizationId: clientOrgId, isLoading: clientLoading } = useClientOrganization();
-
-  const normalizeErrorText = (error: unknown): string => {
-    const e = error as { message?: string; details?: string; hint?: string };
-    return `${e?.message || ''} ${e?.details || ''} ${e?.hint || ''}`.toLowerCase();
-  };
-
-  const isSupplierDirectoryUnavailable = (error: unknown): boolean => {
-    const e = error as { code?: string; message?: string; details?: string; hint?: string };
-    const code = String(e?.code || '').toUpperCase();
-    const text = normalizeErrorText(error);
-
-    if (code === '42P01') return true;
-    if (code === '42501' && text.includes('supplier_directory')) return true;
-    if (text.includes('supplier_directory') && (text.includes('does not exist') || text.includes('not found'))) return true;
-    if (text.includes('permission denied') && text.includes('supplier_directory')) return true;
-    if (text.includes('row-level security') && text.includes('supplier_directory')) return true;
-
-    return false;
-  };
 
   const fetchSuppliers = useCallback(async () => {
     if (clientLoading || !clientOrgId) return;
@@ -99,18 +76,7 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
         .eq('organization_id', clientOrgId)
         .order('supplier_name', { ascending: true });
 
-      if (suppliersRes.error) {
-        if (isSupplierDirectoryUnavailable(suppliersRes.error)) {
-          setAssetOptions(options);
-          setSuppliers([]);
-          setSchemaReady(false);
-          setSchemaMessage(
-            'Rubrica fornitori in attivazione: il database del modulo non risulta ancora disponibile su questo ambiente.'
-          );
-          return;
-        }
-        throw suppliersRes.error;
-      }
+      if (suppliersRes.error) throw suppliersRes.error;
 
       const normalizedSuppliers: SupplierDirectoryEntry[] = ((suppliersRes.data || []) as any[]).map((supplier) => ({
         ...supplier,
@@ -119,8 +85,6 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
           : null,
       }));
 
-      setSchemaReady(true);
-      setSchemaMessage(null);
       setAssetOptions(options);
       setSuppliers(normalizedSuppliers);
     } catch (error) {
@@ -164,15 +128,6 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
       return null;
     }
 
-    if (!schemaReady) {
-      toast({
-        title: 'Funzionalita non disponibile',
-        description: schemaMessage || 'Rubrica fornitori non ancora disponibile in questo ambiente.',
-        variant: 'destructive',
-      });
-      return null;
-    }
-
     setSaving(true);
     try {
       const payload = {
@@ -187,21 +142,7 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
         .select('*')
         .single();
 
-      if (error) {
-        if (isSupplierDirectoryUnavailable(error)) {
-          setSchemaReady(false);
-          setSchemaMessage(
-            'Rubrica fornitori in attivazione: il database del modulo non risulta ancora disponibile su questo ambiente.'
-          );
-          toast({
-            title: 'Funzionalita non disponibile',
-            description: 'Rubrica fornitori non ancora attiva in questo ambiente.',
-            variant: 'destructive',
-          });
-          return null;
-        }
-        throw error;
-      }
+      if (error) throw error;
 
       toast({
         title: 'Successo',
@@ -224,15 +165,6 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
   };
 
   const updateSupplier = async (id: string, supplierData: Partial<SupplierInput>): Promise<boolean> => {
-    if (!schemaReady) {
-      toast({
-        title: 'Funzionalita non disponibile',
-        description: schemaMessage || 'Rubrica fornitori non ancora disponibile in questo ambiente.',
-        variant: 'destructive',
-      });
-      return false;
-    }
-
     setSaving(true);
     try {
       const payload = {
@@ -245,21 +177,7 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
         .update(payload)
         .eq('id', id);
 
-      if (error) {
-        if (isSupplierDirectoryUnavailable(error)) {
-          setSchemaReady(false);
-          setSchemaMessage(
-            'Rubrica fornitori in attivazione: il database del modulo non risulta ancora disponibile su questo ambiente.'
-          );
-          toast({
-            title: 'Funzionalita non disponibile',
-            description: 'Rubrica fornitori non ancora attiva in questo ambiente.',
-            variant: 'destructive',
-          });
-          return false;
-        }
-        throw error;
-      }
+      if (error) throw error;
 
       toast({
         title: 'Successo',
@@ -282,15 +200,6 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
   };
 
   const deleteSupplier = async (id: string): Promise<boolean> => {
-    if (!schemaReady) {
-      toast({
-        title: 'Funzionalita non disponibile',
-        description: schemaMessage || 'Rubrica fornitori non ancora disponibile in questo ambiente.',
-        variant: 'destructive',
-      });
-      return false;
-    }
-
     setSaving(true);
     try {
       const { error } = await supabase
@@ -298,21 +207,7 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
         .delete()
         .eq('id', id);
 
-      if (error) {
-        if (isSupplierDirectoryUnavailable(error)) {
-          setSchemaReady(false);
-          setSchemaMessage(
-            'Rubrica fornitori in attivazione: il database del modulo non risulta ancora disponibile su questo ambiente.'
-          );
-          toast({
-            title: 'Funzionalita non disponibile',
-            description: 'Rubrica fornitori non ancora attiva in questo ambiente.',
-            variant: 'destructive',
-          });
-          return false;
-        }
-        throw error;
-      }
+      if (error) throw error;
 
       toast({
         title: 'Successo',
@@ -338,8 +233,6 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
     suppliers,
     filteredSuppliers,
     assetOptions,
-    schemaReady,
-    schemaMessage,
     loading,
     saving,
     searchQuery,
