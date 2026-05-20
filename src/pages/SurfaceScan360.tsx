@@ -35,7 +35,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { 
+import {
   Globe, 
   Shield, 
   AlertTriangle, 
@@ -51,7 +51,9 @@ import {
   TrendingDown,
   ChevronDown,
   ChevronUp,
-  Download
+  Download,
+  Plus,
+  Trash2
 } from 'lucide-react';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Tooltip as RechartsTooltip } from 'recharts';
@@ -59,6 +61,8 @@ import SecurityFindings from '@/components/surface-scan/SecurityFindings';
 import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
 import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceScanAlertConfigDialog';
 import { useSurfaceScanAlerts, SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
+import { useSurfaceScanMonitoredIps } from '@/hooks/useSurfaceScanMonitoredIps';
+import { isIpInRange } from '@/lib/ipRange';
 
 const SurfaceScan360: React.FC = () => {
   const exportContainerRef = useRef<HTMLDivElement>(null);
@@ -70,6 +74,7 @@ const SurfaceScan360: React.FC = () => {
   const [monthlyMonitoring, setMonthlyMonitoring] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
+  const [newMonitoredIpInput, setNewMonitoredIpInput] = useState('');
   
   // Collapsible states for legends
   const [cveCollegendOpen, setCveLegendOpen] = useState(false);
@@ -79,6 +84,15 @@ const SurfaceScan360: React.FC = () => {
   // Alert management
   const { alerts, createAlert } = useSurfaceScanAlerts();
   const activeAlertsCount = alerts.filter(a => a.is_active).length;
+  const {
+    rules: monitoredIpRules,
+    loading: monitoredIpRulesLoading,
+    saving: monitoredIpRulesSaving,
+    isAdmin: isAdminUser,
+    hasRules: hasMonitoredRules,
+    addRule: addMonitoredIpRule,
+    removeRule: removeMonitoredIpRule,
+  } = useSurfaceScanMonitoredIps();
 
   const handleCreateAlert = async (data: { alert_email: string; alert_types: SurfaceScanAlertTypes }) => {
     return await createAlert(data);
@@ -99,7 +113,14 @@ const SurfaceScan360: React.FC = () => {
     { ip: '203.0.113.186', hostname: 'monitor.cliente1.com', score: 77, risk: 'Medio', status: 'Attenzione', ports: [443, 9090], services: ['HTTPS', 'Prometheus'] },
   ];
 
-  const filteredAssets = allPublicAssets.filter(asset => {
+  const monitoredAssets = allPublicAssets.filter((asset) => {
+    if (!hasMonitoredRules) return true;
+    return monitoredIpRules.some((rule) =>
+      isIpInRange(asset.ip, rule.ip_start, rule.ip_end)
+    );
+  });
+
+  const filteredAssets = monitoredAssets.filter(asset => {
     const matchesSearch = searchTerm === '' || 
       asset.ip.toLowerCase().includes(searchTerm.toLowerCase()) ||
       asset.hostname.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -118,7 +139,7 @@ const SurfaceScan360: React.FC = () => {
 
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, statusFilter, riskFilter]);
+  }, [searchTerm, statusFilter, riskFilter, monitoredIpRules.length]);
 
   const scanResults = [
     { 
@@ -397,6 +418,17 @@ const SurfaceScan360: React.FC = () => {
     }
   };
 
+  const handleAddMonitoredIpRule = async () => {
+    const success = await addMonitoredIpRule(newMonitoredIpInput);
+    if (success) {
+      setNewMonitoredIpInput('');
+    }
+  };
+
+  const handleRemoveMonitoredIpRule = async (ruleId: string) => {
+    await removeMonitoredIpRule(ruleId);
+  };
+
   return (
     <TooltipProvider>
       <DashboardLayout>
@@ -427,6 +459,70 @@ const SurfaceScan360: React.FC = () => {
               </Button>
             </div>
           </div>
+
+          {isAdminUser && (
+            <Card className="border-primary/30 bg-primary/5">
+              <CardHeader>
+                <CardTitle>Gestione IP Monitorati (Solo Admin)</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Aggiungi IP singoli, range o reti CIDR per controllare quali asset pubblici rientrano nel monitoraggio.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-col md:flex-row gap-2">
+                  <Input
+                    placeholder="Es. 203.0.113.10 | 203.0.113.10-203.0.113.20 | 203.0.113.0/24"
+                    value={newMonitoredIpInput}
+                    onChange={(event) => setNewMonitoredIpInput(event.target.value)}
+                    disabled={monitoredIpRulesSaving}
+                  />
+                  <Button
+                    onClick={handleAddMonitoredIpRule}
+                    disabled={monitoredIpRulesSaving || !newMonitoredIpInput.trim()}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Aggiungi
+                  </Button>
+                </div>
+
+                <div className="rounded-lg border border-border">
+                  <div className="px-3 py-2 border-b border-border bg-muted/30 text-xs text-muted-foreground">
+                    Regole attive: {monitoredIpRules.length}
+                  </div>
+
+                  {monitoredIpRulesLoading ? (
+                    <div className="p-4 text-sm text-muted-foreground">Caricamento regole in corso...</div>
+                  ) : monitoredIpRules.length === 0 ? (
+                    <div className="p-4 text-sm text-muted-foreground">
+                      Nessuna regola configurata: vengono mostrati tutti gli asset disponibili.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-border">
+                      {monitoredIpRules.map((rule) => (
+                        <div key={rule.id} className="flex items-center justify-between px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="uppercase">
+                              {rule.entry_type}
+                            </Badge>
+                            <span className="text-sm font-medium">{rule.input_value}</span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveMonitoredIpRule(rule.id)}
+                            disabled={monitoredIpRulesSaving}
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Rimuovi
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Stats Overview */}
           <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
@@ -477,7 +573,7 @@ const SurfaceScan360: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Asset Monitorati</p>
-                    <p className="text-2xl font-bold text-foreground">34</p>
+                    <p className="text-2xl font-bold text-foreground">{monitoredAssets.length}</p>
                   </div>
                   <Shield className="w-8 h-8 text-primary" />
                 </div>
@@ -1041,9 +1137,19 @@ const SurfaceScan360: React.FC = () => {
           <Card className="border-border">
             <CardHeader>
               <CardTitle>Asset IP Pubblici Monitorati ({filteredAssets.length} trovati)</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                {hasMonitoredRules
+                  ? `Filtrati da ${monitoredIpRules.length} regole IP attive`
+                  : 'Nessuna regola IP configurata: visualizzazione completa'}
+              </p>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
+                {currentAssets.length === 0 && (
+                  <div className="p-4 rounded-lg border border-dashed border-border text-sm text-muted-foreground">
+                    Nessun asset corrisponde ai filtri correnti.
+                  </div>
+                )}
                 {currentAssets.map((asset, index) => (
                   <div key={index} className="flex items-center justify-between p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors">
                     <div className="flex items-center space-x-4">
