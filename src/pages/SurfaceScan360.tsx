@@ -578,13 +578,19 @@ const SurfaceScan360: React.FC = () => {
                     </div>
                   ) : (
                     <div className="divide-y divide-border">
-                      {monitoredIpRules.map((rule) => (
+                      {monitoredIpRules.map((rule: any) => (
                         <div key={rule.id} className="flex items-center justify-between px-3 py-2">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <Badge variant="outline" className="uppercase">
                               {rule.entry_type}
                             </Badge>
                             <span className="text-sm font-medium">{rule.input_value}</span>
+                            {rule.discovered_via === 'subdomain_dump' && (
+                              <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary border-primary/30">
+                                <Globe className="w-3 h-3 mr-1" />
+                                Subdomain Dump{rule.discovered_from ? ` · ${rule.discovered_from}` : ''}
+                              </Badge>
+                            )}
                           </div>
                           <Button
                             variant="ghost"
@@ -1306,14 +1312,28 @@ const SurfaceScan360: React.FC = () => {
                     Nessun asset corrisponde ai filtri correnti.
                   </div>
                 )}
-                {currentAssets.map((asset, index) => (
-                  <div key={index} className="flex items-center justify-between p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors">
+                {currentAssets.map((asset, index) => {
+                  const hostNorm = String(asset.hostname || '').trim().toLowerCase().replace(/^www\./, '');
+                  const discoveredRule = (monitoredIpRules as any[]).find(
+                    (r) => r.discovered_via === 'subdomain_dump'
+                      && hostNorm === String(r.input_value || '').trim().toLowerCase().replace(/^www\./, '')
+                  );
+                  return (
+                  <div key={index} className={`flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-muted/50 transition-colors ${discoveredRule ? 'border-primary/40 bg-primary/5' : 'border-border'}`}>
                     <div className="flex items-center space-x-4">
                       <div className="p-2 rounded-lg bg-primary/10">
                         <Shield className="w-5 h-5 text-primary" />
                       </div>
                       <div>
-                        <h4 className="font-medium">{asset.ip}</h4>
+                        <h4 className="font-medium flex items-center gap-2 flex-wrap">
+                          {asset.ip}
+                          {discoveredRule && (
+                            <Badge variant="secondary" className="text-[10px] bg-primary/15 text-primary border-primary/30">
+                              <Globe className="w-3 h-3 mr-1" />
+                              Subdomain Dump{discoveredRule.discovered_from ? ` · ${discoveredRule.discovered_from}` : ''}
+                            </Badge>
+                          )}
+                        </h4>
                         <p className="text-sm text-muted-foreground">{asset.hostname}</p>
                         <div className="flex items-center space-x-2 mt-1">
                           <span className="text-xs text-muted-foreground">Porte:</span>
@@ -1349,7 +1369,8 @@ const SurfaceScan360: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
               
               {totalPages > 1 && (
