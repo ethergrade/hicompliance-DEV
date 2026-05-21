@@ -112,7 +112,7 @@ const SurfaceScan360: React.FC = () => {
   const scanRules = React.useMemo(
     () => monitoredIpRules.map((r) => ({
       id: r.id,
-      entry_type: r.entry_type as 'single' | 'range' | 'cidr',
+      entry_type: r.entry_type as 'single' | 'range' | 'cidr' | 'domain',
       input_value: r.input_value,
       ip_start: r.ip_start,
       ip_end: r.ip_end,
@@ -688,8 +688,13 @@ const SurfaceScan360: React.FC = () => {
             })()}
           </div>
 
-          {/* Security Findings Section - solo se ci sono regole di monitoraggio */}
-          {hasMonitoredRules && <SecurityFindings />}
+          {/* Security Findings Section - solo dati reali dai motori di scansione */}
+          {hasMonitoredRules && (
+            <SecurityFindings
+              shodanAssets={shodanAssets}
+              scanRunning={shodanLoading || startSurfaceScan.isPending}
+            />
+          )}
 
           {/* Monthly Monitoring Section */}
           {monthlyMonitoring && (
