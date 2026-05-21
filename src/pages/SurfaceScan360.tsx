@@ -1007,15 +1007,18 @@ const SurfaceScan360: React.FC = () => {
                       </Collapsible>
                     </div>
 
-                    {/* Current Status */}
-                    <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-                      <div className="flex items-center gap-2 text-sm">
-                        <CheckCircle className="w-4 h-4 text-primary" />
-                        <span className="font-medium">Stato Attuale:</span>
-                        <span className="text-primary">20 CVE risolte a Dicembre</span>
-                        <span className="text-destructive">vs 5 critiche attive</span>
+                    {/* Current Status - dati reali */}
+                    {scanHistory.latest && (
+                      <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          <CheckCircle className="w-4 h-4 text-primary" />
+                          <span className="font-medium">Stato Attuale:</span>
+                          <span className="text-primary">{scanHistory.cveResolvedLast} CVE risolte vs ultima scansione</span>
+                          <span className="text-destructive">{scanHistory.latest.high_cves} critiche attive</span>
+                          <span className="text-muted-foreground">· {new Date(scanHistory.latest.scanned_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </CardContent>
                 </Card>
 
