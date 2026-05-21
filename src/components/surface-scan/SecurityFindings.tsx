@@ -464,10 +464,11 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
 
   const loading = surfaceFindingsLoading || externalFindingsLoading;
   const summary = {
-    critical: realFindings.filter(f => f.highestSeverity === 'critical').length,
-    high: realFindings.filter(f => f.highestSeverity === 'high').length,
-    medium: realFindings.filter(f => f.highestSeverity === 'medium').length,
-    low: realFindings.filter(f => f.highestSeverity === 'low' || f.highestSeverity === 'info').length,
+    critical: enrichedFindings.filter(f => f.highestSeverity === 'critical').length,
+    high: enrichedFindings.filter(f => f.highestSeverity === 'high').length,
+    medium: enrichedFindings.filter(f => f.highestSeverity === 'medium').length,
+    low: enrichedFindings.filter(f => f.highestSeverity === 'low' || f.highestSeverity === 'info').length,
+    kev: enrichedFindings.filter(f => (f as any).kev).length,
   };
 
   return (
@@ -556,7 +557,33 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
               <SelectItem value="false_positive">Falsi Positivi</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={owaspFilter} onValueChange={setOwaspFilter}>
+            <SelectTrigger className="w-56">
+              <SelectValue placeholder="OWASP Top 10" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tutti gli OWASP</SelectItem>
+              {Object.entries(OWASP_TOP_10).map(([code, label]) => (
+                <SelectItem key={code} value={code}>{code} — {label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="flex items-center gap-2 px-2">
+            <Switch id="kev-only" checked={kevOnly} onCheckedChange={setKevOnly} />
+            <Label htmlFor="kev-only" className="text-xs">Solo CISA KEV</Label>
+          </div>
+          <div className="flex items-center gap-2 px-2">
+            <Switch id="cve-only" checked={onlyCve} onCheckedChange={setOnlyCve} />
+            <Label htmlFor="cve-only" className="text-xs">Solo con CVE</Label>
+          </div>
         </div>
+
+        {kevOnly === false && summary.kev > 0 && (
+          <div className="mb-4 p-3 rounded-lg border border-red-300/40 bg-red-50/30 text-sm text-red-700 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" />
+            <strong>{summary.kev}</strong> asset hanno CVE nel catalogo CISA KEV (sfruttate attivamente)
+          </div>
+        )}
 
         {loading && realFindings.length === 0 ? (
           <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border p-8 text-sm text-muted-foreground">
