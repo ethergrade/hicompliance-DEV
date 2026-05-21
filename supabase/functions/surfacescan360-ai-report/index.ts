@@ -205,6 +205,26 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       aiError = (e as Error).message;
     }
 
+    // ---- Auto-genera azioni di remediation per CVE KEV (se non esistono già) ----
+    const kevGen = await generateKevRemediations(supabase, organization_id, findings).catch((e) => {
+      console.warn('generateKevRemediations error', (e as Error).message);
+      return { created: 0, total_kev: 0, existing: 0 };
+    });
+
+    // ---- Carica tutte le remediation_tasks attive dell'organizzazione ----
+    const { data: remediationRows } = await supabase
+      .from('remediation_tasks')
+      .select('id, task, category, start_date, end_date, progress, priority, assignee, color, source, source_ref, budget')
+      .eq('organization_id', organization_id)
+      .eq('is_deleted', false)
+      .order('priority', { ascending: true })
+      .order('start_date', { ascending: true })
+      .limit(500);
+    const remediation_tasks = (remediationRows ?? []).map((t: any) => ({
+      ...t,
+      status: (t.progress ?? 0) >= 100 ? 'completato' : 'pianificato',
+    }));
+
     const reportPayload = {
       generated_at: new Date().toISOString(),
       organization: {
@@ -237,6 +257,8 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       findings_by_severity: sevCount,
       intel,
       observations,
+      remediation_tasks,
+      kev_generation: kevGen,
       ai: aiReport,
       ai_error: aiError,
     };
