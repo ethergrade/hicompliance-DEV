@@ -125,9 +125,10 @@ const SurfaceScan360: React.FC = () => {
 
   // Nessun dato mock: se non ci sono regole monitorate, l'elenco è vuoto
   const allPublicAssets = hasMonitoredRules
-    ? shodanAssets.map((a) => ({
+    ? shodanAssets.map((a: any) => ({
         ip: a.ip,
         hostname: a.hostname,
+        hostnames: Array.isArray(a.hostnames) ? a.hostnames : [a.hostname].filter(Boolean),
         score: a.score,
         risk: a.risk,
         status: a.status,
@@ -143,7 +144,8 @@ const SurfaceScan360: React.FC = () => {
     return monitoredIpRules.some((rule) => {
       if (rule.entry_type === 'domain') {
         const dom = rule.input_value.toLowerCase();
-        return asset.hostname?.toLowerCase().includes(dom);
+        const hostList = (asset.hostnames && asset.hostnames.length ? asset.hostnames : [asset.hostname]).filter(Boolean);
+        return hostList.some((h: string) => h.toLowerCase().includes(dom));
       }
       return isIpInRange(asset.ip, rule.ip_start, rule.ip_end);
     });
