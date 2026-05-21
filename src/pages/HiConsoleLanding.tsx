@@ -9,6 +9,7 @@ import {
   CheckCircle2, Network, Zap, LineChart, Users, BookOpen, Siren,
   Wrench, Wallet, Gauge, Target, TrendingUp, CalendarClock
 } from 'lucide-react';
+import logoHi from '@/assets/logo-hi.png';
 
 const modules = [
   {
@@ -63,14 +64,9 @@ const HiConsoleLanding: React.FC = () => {
       {/* Top bar */}
       <header className="border-b border-border/40 backdrop-blur-sm sticky top-0 z-50 bg-background/80">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
-              <Shield className="w-5 h-5 text-primary-foreground" />
-            </div>
-            <div className="leading-tight">
-              <div className="font-bold text-base">HiSolution Console</div>
-              <div className="text-xs text-muted-foreground">by HiCompliance</div>
-            </div>
+          <Link to="/" className="flex items-center gap-3">
+            <img src={logoHi} alt="HiSolution" className="w-10 h-10 rounded-full" />
+            <div className="font-bold text-base tracking-wide">HISOLUTION CONSOLE</div>
           </Link>
           <div className="flex items-center gap-2">
             <Link to="/auth">
