@@ -170,51 +170,15 @@ const SurfaceScan360: React.FC = () => {
     setCurrentPage(1);
   }, [searchTerm, statusFilter, riskFilter, monitoredIpRules.length]);
 
-  const scanResults = hasMonitoredRules ? [
-    { 
-      domain: 'cliente1.com', 
-      status: 'Sicuro', 
-      issues: 0, 
-      score: 95,
-      cves: [
-        { id: 'CVE-2024-0001', severity: 'low', description: 'Minor configuration issue' },
-        { id: 'CVE-2024-0002', severity: 'low', description: 'SSL certificate warning' }
-      ]
-    },
-    { 
-      domain: 'mail.cliente1.com', 
-      status: 'Attenzione', 
-      issues: 3, 
-      score: 78,
-      cves: [
-        { id: 'CVE-2024-0003', severity: 'medium', description: 'Outdated mail server version' },
-        { id: 'CVE-2024-0004', severity: 'medium', description: 'Weak encryption protocol' },
-        { id: 'CVE-2024-0005', severity: 'low', description: 'Missing security header' }
-      ]
-    },
-    { 
-      domain: 'vpn.cliente1.com', 
-      status: 'Critico', 
-      issues: 8, 
-      score: 45,
-      cves: [
-        { id: 'CVE-2024-0006', severity: 'high', description: 'Remote code execution vulnerability' },
-        { id: 'CVE-2024-0007', severity: 'high', description: 'Authentication bypass' },
-        { id: 'CVE-2024-0008', severity: 'medium', description: 'Information disclosure' },
-        { id: 'CVE-2024-0009', severity: 'medium', description: 'Privilege escalation' },
-        { id: 'CVE-2024-0010', severity: 'low', description: 'Cross-site scripting' }
-      ]
-    },
-    { 
-      domain: 'api.cliente1.com', 
-      status: 'Sicuro', 
-      issues: 1, 
-      score: 88,
-      cves: [
-        { id: 'CVE-2024-0011', severity: 'low', description: 'Rate limiting not configured' }
-      ]
-    },
-  ] : [];
+  const scanResults = hasMonitoredRules
+    ? shodanAssets.map((asset) => ({
+        domain: asset.hostname || asset.ip,
+        status: asset.status,
+        issues: asset.cves.length,
+        score: asset.score,
+        cves: asset.cves,
+      }))
+    : [];
 
 
   const getRiskColor = (risk: string) => {
