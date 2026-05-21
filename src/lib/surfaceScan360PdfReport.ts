@@ -23,6 +23,7 @@ export interface SurfaceScan360Report {
   intel: any[];
   observations?: any[];
   monitored_scope?: any[];
+  subdomain_dumps?: any[];
   remediation_tasks?: RemediationTask[];
   kev_generation?: { created: number; total_kev: number; existing: number };
   ai: {
