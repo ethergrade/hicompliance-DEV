@@ -82,22 +82,26 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
     }
   }, [isClientLoading, organizationId, fetchRules]);
 
-  const addRule = async (input: string): Promise<boolean> => {
+  const addRule = async (input: string, opts: AddRuleOptions = {}): Promise<boolean> => {
     if (!organizationId) {
-      toast({
-        title: 'Errore',
-        description: 'Seleziona prima un cliente',
-        variant: 'destructive',
-      });
+      if (!opts.silent) {
+        toast({
+          title: 'Errore',
+          description: 'Seleziona prima un cliente',
+          variant: 'destructive',
+        });
+      }
       return false;
     }
 
     if (!isAdmin) {
-      toast({
-        title: 'Operazione non consentita',
-        description: 'Solo gli admin possono gestire gli IP monitorati',
-        variant: 'destructive',
-      });
+      if (!opts.silent) {
+        toast({
+          title: 'Operazione non consentita',
+          description: 'Solo gli admin possono gestire gli IP monitorati',
+          variant: 'destructive',
+        });
+      }
       return false;
     }
 
@@ -105,23 +109,27 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
     try {
       parsed = parseMonitoredIpInput(input);
     } catch (error: any) {
-      toast({
-        title: 'Formato non valido',
-        description: error?.message || 'Inserisci un formato IP valido',
-        variant: 'destructive',
-      });
+      if (!opts.silent) {
+        toast({
+          title: 'Formato non valido',
+          description: error?.message || 'Inserisci un formato IP valido',
+          variant: 'destructive',
+        });
+      }
       return false;
     }
 
     setSaving(true);
     try {
-      const payload = {
+      const payload: any = {
         organization_id: organizationId,
         input_value: parsed.inputValue,
         entry_type: parsed.entryType,
         ip_start: parsed.ipStart,
         ip_end: parsed.ipEnd,
         created_by: user?.id || null,
+        discovered_via: opts.discovered_via ?? 'manual',
+        discovered_from: opts.discovered_from ?? null,
       };
 
       const { error } = await supabase
@@ -130,30 +138,36 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
 
       if (error) {
         if (error.code === '23505') {
-          toast({
-            title: 'Regola duplicata',
-            description: 'Questa regola di monitoraggio è già presente',
-            variant: 'destructive',
-          });
+          if (!opts.silent) {
+            toast({
+              title: 'Regola duplicata',
+              description: 'Questa regola di monitoraggio è già presente',
+              variant: 'destructive',
+            });
+          }
           return false;
         }
         throw error;
       }
 
-      toast({
-        title: 'Regola aggiunta',
-        description: 'IP monitorato salvato con successo',
-      });
+      if (!opts.silent) {
+        toast({
+          title: 'Regola aggiunta',
+          description: 'IP monitorato salvato con successo',
+        });
+      }
 
       await fetchRules();
       return true;
     } catch (error) {
       console.error('Error adding monitored IP rule:', error);
-      toast({
-        title: 'Errore',
-        description: 'Impossibile aggiungere la regola IP',
-        variant: 'destructive',
-      });
+      if (!opts.silent) {
+        toast({
+          title: 'Errore',
+          description: 'Impossibile aggiungere la regola IP',
+          variant: 'destructive',
+        });
+      }
       return false;
     } finally {
       setSaving(false);
