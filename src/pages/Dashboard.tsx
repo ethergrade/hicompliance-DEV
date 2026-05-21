@@ -73,7 +73,8 @@ const Dashboard: React.FC = () => {
 
   const totalIssues = 0;
 
-  const isModuleEnabledForDashboard = (serviceCode: string) => isServiceConnected(serviceCode);
+  // Tutte le tile sono cliccabili: in assenza di integration mostriamo dashboard mock funzionante
+  const isModuleEnabledForDashboard = (_serviceCode: string) => true;
 
   const connectedServicesCount = hiSolutionServices.length;
   const alertServicesCount = 0;
