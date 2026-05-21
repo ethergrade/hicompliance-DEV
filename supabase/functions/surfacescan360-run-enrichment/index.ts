@@ -43,7 +43,7 @@ Deno.serve(async (req) => {
       },
     };
 
-    const results = await Promise.allSettled(SAFE_RECON_MODULES.map((fn) => fn(ctx)));
+    const results = await Promise.allSettled(ALL_RECON.map((fn) => fn(ctx)));
     const observations: any[] = [];
     const findings: any[] = [];
     const assets: any[] = [];
