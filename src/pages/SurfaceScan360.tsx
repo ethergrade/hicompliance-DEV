@@ -498,7 +498,7 @@ const SurfaceScan360: React.FC = () => {
               <CardHeader>
                 <CardTitle>Gestione Asset Monitorati (Solo Admin)</CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Aggiungi <strong>domini</strong>, IP singoli, range o reti CIDR. Le scansioni vengono lanciate sui motori Shodan, Web Check e Pentest-Tools.
+                  Aggiungi <strong>domini</strong>, IP singoli, range o reti CIDR. Ogni asset viene analizzato dai nostri motori proprietari di Attack Surface Intelligence, OSINT e validazione attiva delle vulnerabilità.
                 </p>
               </CardHeader>
               <CardContent className="space-y-4">
