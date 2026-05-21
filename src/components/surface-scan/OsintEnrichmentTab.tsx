@@ -62,10 +62,18 @@ export const OsintEnrichmentTab = () => {
     }
   };
 
-  const observationsByModule = observations.reduce<Record<string, typeof observations>>((acc, o) => {
-    (acc[o.module] = acc[o.module] || []).push(o);
-    return acc;
-  }, {});
+  // Nascondi sempre il modulo tech_stack: non esponiamo le nostre tecnologie nei risultati job
+  const HIDDEN_OBS_MODULES = new Set(['tech_stack', 'tech-stack', 'techstack', 'technologies']);
+  const observationsByModule = observations
+    .filter((o) => !HIDDEN_OBS_MODULES.has(String(o.module || '').toLowerCase()))
+    .reduce<Record<string, typeof observations>>((acc, o) => {
+      (acc[o.module] = acc[o.module] || []).push(o);
+      return acc;
+    }, {});
+  const visibleObservationsCount = observations.filter(
+    (o) => !HIDDEN_OBS_MODULES.has(String(o.module || '').toLowerCase())
+  ).length;
+
 
   return (
     <div className="space-y-4">
