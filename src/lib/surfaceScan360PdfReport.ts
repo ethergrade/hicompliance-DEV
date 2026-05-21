@@ -336,6 +336,21 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   // ===== 3 SOTTODOMINI CON PROFONDITÀ =====
   sectionTitle(3, 'Sottodomini rilevati');
   const allHostnames = new Set<string>();
+  const dumpSubdomains: Array<{ host: string; ip?: string | null; root: string; depth: number; evidence: string }> = [];
+  (report.subdomain_dumps || []).forEach((dump: any) => {
+    ((dump.results || []) as any[]).forEach((r: any) => {
+      const host = normalizeHost(r.subdomain);
+      if (!host) return;
+      allHostnames.add(host);
+      dumpSubdomains.push({
+        host,
+        ip: r.ip,
+        root: dump.root_domain,
+        depth: depthFromRoot(host, dump.root_domain),
+        evidence: [r.ip, r.country, r.asn_name].filter(Boolean).join(' · ') || `rilevato ${dump.created_at ? new Date(dump.created_at).toLocaleString('it-IT') : ''}`,
+      });
+    });
+  });
   (report.assets_in_scope || []).forEach((a: any) => {
     if (a.hostname) allHostnames.add(a.hostname.toLowerCase());
     if (a.asset_type === 'domain' || a.asset_type === 'subdomain') allHostnames.add(String(a.asset_value).toLowerCase());
@@ -363,6 +378,9 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   const hasSubs = Object.values(subdomainGroups).some((arr) => arr.some((x) => x.depth > 0));
   if (!hasSubs) {
     text('Nessun sottodominio rilevato in questo snapshot. Esegui un dump sottodomini per arricchire lo scope.', { color: [MUTED.r, MUTED.g, MUTED.b], size: 9 });
+  } else if (dumpSubdomains.length > 0) {
+    text(`Evidenze dirette da discovery sottodomini (${dumpSubdomains.length})`, { bold: true, size: 10, color: [BRAND.r, BRAND.g, BRAND.b] });
+    drawTable(['Profondità', 'Sottodominio', 'Root', 'Evidenza'], dumpSubdomains.map((x) => [`L${x.depth}`, x.host, x.root, x.evidence]), [65, 190, 110, 150]);
   } else {
     Object.entries(subdomainGroups).forEach(([root, list]) => {
       list.sort((a, b) => a.depth - b.depth || a.host.localeCompare(b.host));
