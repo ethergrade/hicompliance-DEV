@@ -592,71 +592,83 @@ const SurfaceScan360: React.FC = () => {
 
           {/* Stats Overview */}
           <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-            <Card className="border-border">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Domini Monitorati</p>
-                    <p className="text-2xl font-bold text-foreground">12</p>
-                  </div>
-                  <Globe className="w-8 h-8 text-primary" />
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card className="border-border">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="text-sm text-muted-foreground">Vulnerabilità Critiche</p>
-                      <AlertBellButton
-                        alertCount={activeAlertsCount}
-                        onClick={() => setAlertDialogOpen(true)}
-                      />
-                    </div>
-                    <p className="text-2xl font-bold text-red-500">8</p>
-                  </div>
-                  <AlertTriangle className="w-8 h-8 text-red-500" />
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card className="border-border">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Score Medio</p>
-                    <p className="text-2xl font-bold text-yellow-500">76</p>
-                  </div>
-                  <TrendingUp className="w-8 h-8 text-yellow-500" />
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card className="border-border">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Asset Monitorati</p>
-                    <p className="text-2xl font-bold text-foreground">{monitoredAssets.length}</p>
-                  </div>
-                  <Shield className="w-8 h-8 text-primary" />
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card className="border-border">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Ultima Scansione</p>
-                    <p className="text-sm font-medium text-foreground">2 ore fa</p>
-                  </div>
-                  <Eye className="w-8 h-8 text-primary" />
-                </div>
-              </CardContent>
-            </Card>
+            {(() => {
+              const domains = hasMonitoredRules ? new Set(shodanAssets.map(a => a.hostname || a.ip)).size : 0;
+              const criticalVulns = hasMonitoredRules ? shodanAssets.reduce((acc, a) => acc + a.cves.filter(c => c.severity === 'high').length, 0) : 0;
+              const avgScore = hasMonitoredRules && shodanAssets.length > 0
+                ? Math.round(shodanAssets.reduce((s, a) => s + (a.score || 0), 0) / shodanAssets.length)
+                : 0;
+              const lastScan = hasMonitoredRules && shodanAssets.length > 0 ? 'Adesso' : '—';
+              return (
+                <>
+                  <Card className="border-border">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-muted-foreground">Domini Monitorati</p>
+                          <p className="text-2xl font-bold text-foreground">{domains}</p>
+                        </div>
+                        <Globe className="w-8 h-8 text-primary" />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-border">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="text-sm text-muted-foreground">Vulnerabilità Critiche</p>
+                            <AlertBellButton
+                              alertCount={activeAlertsCount}
+                              onClick={() => setAlertDialogOpen(true)}
+                            />
+                          </div>
+                          <p className="text-2xl font-bold text-red-500">{criticalVulns}</p>
+                        </div>
+                        <AlertTriangle className="w-8 h-8 text-red-500" />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-border">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-muted-foreground">Score Medio</p>
+                          <p className="text-2xl font-bold text-yellow-500">{avgScore || '—'}</p>
+                        </div>
+                        <TrendingUp className="w-8 h-8 text-yellow-500" />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-border">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-muted-foreground">Asset Monitorati</p>
+                          <p className="text-2xl font-bold text-foreground">{monitoredAssets.length}</p>
+                        </div>
+                        <Shield className="w-8 h-8 text-primary" />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-border">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-muted-foreground">Ultima Scansione</p>
+                          <p className="text-sm font-medium text-foreground">{lastScan}</p>
+                        </div>
+                        <Eye className="w-8 h-8 text-primary" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </>
+              );
+            })()}
           </div>
 
           {/* Security Findings Section - NEW */}
