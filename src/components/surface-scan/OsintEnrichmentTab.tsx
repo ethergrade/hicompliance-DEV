@@ -6,7 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Loader2, PlayCircle, Eye, AlertTriangle } from 'lucide-react';
+import { Loader2, PlayCircle, Eye, AlertTriangle, Server, Users, Shield } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import {
   useStartSurfaceScan,
@@ -205,20 +206,81 @@ export const OsintEnrichmentTab = () => {
                   ) : (
                     <ScrollArea className="h-[380px]">
                       <div className="space-y-3 pr-2">
-                        {intel.map((i) => (
-                          <div key={i.id} className="border rounded-md p-3">
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="font-medium text-sm capitalize">{i.provider.replace(/_/g, ' ')} — {i.target}</div>
-                              <div className="flex gap-2">
-                                <Badge variant={i.found ? 'default' : 'secondary'}>{i.found ? 'found' : 'not found'}</Badge>
-                                <Badge variant="outline">conf. {i.confidence}</Badge>
+                        {intel
+                          .filter((i) => i.provider === 'hosting_context')
+                          .map((i) => {
+                            const s: any = i.summary || {};
+                            const icon = s.type === 'shared_hosting' ? <Users className="w-4 h-4" /> : s.type === 'cdn_proxy' ? <Shield className="w-4 h-4" /> : <Server className="w-4 h-4" />;
+                            const tone = s.type === 'shared_hosting' ? 'border-amber-500/60 bg-amber-500/5' : s.type === 'cdn_proxy' ? 'border-blue-500/60 bg-blue-500/5' : 'border-border';
+                            return (
+                              <div key={i.id} className={`border rounded-md p-3 ${tone}`}>
+                                <div className="flex items-center justify-between mb-2 min-w-0">
+                                  <div className="flex items-center gap-2 font-medium text-sm">
+                                    {icon}
+                                    <span>Hosting detector — {i.target}</span>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <Badge variant={s.multi_tenant ? 'default' : 'outline'}>{s.type || 'unknown'}</Badge>
+                                    <Badge variant="outline">conf. {i.confidence}</Badge>
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3 mb-2">
+                                  <div>
+                                    <div className="text-[11px] text-muted-foreground mb-1">Score multi-tenant</div>
+                                    <Progress value={s.shared_score ?? 0} className="h-2" />
+                                    <div className="text-[11px] mt-0.5">{s.shared_score ?? 0}/100</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-[11px] text-muted-foreground mb-1">Score CDN/proxy</div>
+                                    <Progress value={s.cdn_score ?? 0} className="h-2" />
+                                    <div className="text-[11px] mt-0.5">{s.cdn_score ?? 0}/100</div>
+                                  </div>
+                                </div>
+                                {s.label && <div className="text-xs mb-2"><span className="text-muted-foreground">Verdetto: </span>{s.label}</div>}
+                                {s.co_hosted_count > 0 && (
+                                  <div className="mb-2">
+                                    <div className="text-xs font-medium mb-1">Hostname co-locati ({s.co_hosted_count})</div>
+                                    <div className="flex flex-wrap gap-1">
+                                      {(s.co_hosted_sample ?? []).slice(0, 12).map((h: string) => (
+                                        <Badge key={h} variant="secondary" className="text-[10px] font-mono">{h}</Badge>
+                                      ))}
+                                      {s.co_hosted_count > 12 && <span className="text-[10px] text-muted-foreground">+{s.co_hosted_count - 12} altri</span>}
+                                    </div>
+                                  </div>
+                                )}
+                                {Array.isArray(s.signals) && s.signals.length > 0 && (
+                                  <div>
+                                    <div className="text-xs font-medium mb-1">Segnali (evidenza)</div>
+                                    <div className="space-y-1">
+                                      {s.signals.slice(0, 8).map((sig: any, idx: number) => (
+                                        <div key={idx} className="text-[11px] flex items-start gap-2">
+                                          <Badge variant="outline" className="shrink-0 text-[10px]">+{sig.weight}</Badge>
+                                          <span className="text-muted-foreground shrink-0">{sig.source}:</span>
+                                          <span className="break-all">{sig.value}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
+                            );
+                          })}
+                        {intel
+                          .filter((i) => i.provider !== 'hosting_context')
+                          .map((i) => (
+                            <div key={i.id} className="border rounded-md p-3">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="font-medium text-sm capitalize">{i.provider.replace(/_/g, ' ')} — {i.target}</div>
+                                <div className="flex gap-2">
+                                  <Badge variant={i.found ? 'default' : 'secondary'}>{i.found ? 'found' : 'not found'}</Badge>
+                                  <Badge variant="outline">conf. {i.confidence}</Badge>
+                                </div>
+                              </div>
+                              <pre className="text-[11px] bg-muted/40 p-2 rounded overflow-auto max-h-48">
+                                {JSON.stringify(i.summary, null, 2)}
+                              </pre>
                             </div>
-                            <pre className="text-[11px] bg-muted/40 p-2 rounded overflow-auto max-h-48">
-                              {JSON.stringify(i.summary, null, 2)}
-                            </pre>
-                          </div>
-                        ))}
+                          ))}
                       </div>
                     </ScrollArea>
                   )}

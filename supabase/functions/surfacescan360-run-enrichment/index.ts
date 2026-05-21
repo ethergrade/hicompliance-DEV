@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
       }
 
       // Hosting context dipende da shodan + http
-      const hcRes = await hostingContextModule(ctx, sho.intel, httpObs.map((o) => ({ module: o.module, observation_type: o.observation_type, value: o.value })) as any);
+      const hcRes = await hostingContextModule(ctx, sho.intel, httpObs.map((o) => ({ module: o.module, observation_type: o.observation_type, value: o.value })) as any, resolvedIps);
       intelRows.push(...hcRes.intel);
       observations.push(...hcRes.observations.map((o: any) => ({ organization_id: job.organization_id, scan_job_id: job_id, module: o.module, observation_type: o.observation_type, title: o.title ?? null, value: o.value, severity: o.severity ?? 'info', confidence: o.confidence ?? 'medium' })));
       findings.push(...hcRes.findings.map((f: any) => mapFinding(f, 'internal')));
