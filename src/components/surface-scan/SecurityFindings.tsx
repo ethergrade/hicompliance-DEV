@@ -52,7 +52,7 @@ import { useExternalCveFindings, type ExternalCveFinding } from '@/hooks/usePent
 import type { ShodanAsset } from '@/hooks/useShodanScan';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { getFindingTaxonomy, OWASP_TOP_10, cweLink, CVE_REGEX } from '@/lib/findingTaxonomy';
+import { getFindingTaxonomy, OWASP_TOP_10, cweLink, CVE_REGEX, cweDescription, owaspDescription, findingSummary } from '@/lib/findingTaxonomy';
 import { useCveIntelBatch } from '@/hooks/useCveIntel';
 import { CveDetailDialog } from './CveDetailDialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
