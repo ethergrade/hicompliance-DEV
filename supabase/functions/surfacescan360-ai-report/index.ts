@@ -131,10 +131,14 @@ Deno.serve(async (req) => {
     if (!userData?.user) return json({ error: 'Token non valido' }, 401);
 
     if (!organization_id) {
-      const { data: u } = await supabase.from('users').select('organization_id').eq('auth_user_id', userData.user.id).single();
-      organization_id = u?.organization_id;
+      const { data: u } = await supabase.from('users').select('organization_id').eq('auth_user_id', userData.user.id).maybeSingle();
+      organization_id = u?.organization_id ?? undefined;
     }
-    if (!organization_id) return json({ error: 'organization_id mancante' }, 400);
+    if (!organization_id) {
+      const { data: cd } = await supabase.from('contact_directory').select('organization_id').eq('auth_user_id', userData.user.id).limit(1).maybeSingle();
+      organization_id = cd?.organization_id ?? undefined;
+    }
+    if (!organization_id) return json({ error: 'organization_id mancante: passa organization_id nel body o associa l\'utente a un\'organizzazione' }, 400);
 
     // Job: ultimo completato se non passato
     let job: any = null;
