@@ -472,6 +472,7 @@ const SurfaceScan360: React.FC = () => {
   };
 
   const startSurfaceScan = useStartSurfaceScan();
+  const subdomainDump = useSubdomainDump();
 
   const handleAddMonitoredIpRule = async () => {
     const input = newMonitoredIpInput.trim();
@@ -479,12 +480,20 @@ const SurfaceScan360: React.FC = () => {
     if (success) {
       setNewMonitoredIpInput('');
       // Se è un dominio, avvia anche il motore Web Check + Pentest-Tools (enrichment OSINT/CVE)
-      if (input && !/^\d{1,3}(\.\d{1,3}){3}/.test(input) && !input.includes('/') && !input.includes('-')) {
+      const isDomain = input && !/^\d{1,3}(\.\d{1,3}){3}/.test(input) && !input.includes('/') && !input.includes('-');
+      if (isDomain) {
         try {
           await startSurfaceScan.mutateAsync({ target: input });
           toast.success(`Scansione avviata su ${input}: Attack Surface + OSINT + validazione CVE attiva`);
         } catch (e: any) {
           console.warn('start surface scan failed', e);
+        }
+        // Auto-discovery sottodomini (fire-and-forget) usando la profondità configurata sull'organizzazione
+        if (subdomainDump.enabledSetting !== false) {
+          subdomainDump.runDump(input).then((res) => {
+            const count = (res as any)?.total_returned ?? 0;
+            if (count > 0) toast.success(`Discovery sottodomini su ${input}: ${count} host individuati`);
+          }).catch((e) => console.warn('subdomain dump failed', e));
         }
       }
     }
