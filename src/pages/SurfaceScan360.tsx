@@ -65,6 +65,7 @@ import { useSurfaceScanMonitoredIps } from '@/hooks/useSurfaceScanMonitoredIps';
 import { isIpInRange } from '@/lib/ipRange';
 import { useProgressiveShodanScan } from '@/hooks/useProgressiveShodanScan';
 import { useStartSurfaceScan } from '@/hooks/useSurfaceScanEngine';
+import { useSurfaceScanHistory, triggerManualSurfaceScan } from '@/hooks/useSurfaceScanHistory';
 import { Progress } from '@/components/ui/progress';
 import { SurfaceScanTrendline } from '@/components/surface-scan/SurfaceScanTrendline';
 import { ValidatedCveTab } from '@/components/surface-scan/ValidatedCveTab';
@@ -79,7 +80,7 @@ const SurfaceScan360: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [riskFilter, setRiskFilter] = useState('all');
-  const [monthlyMonitoring, setMonthlyMonitoring] = useState(false);
+  const [triggeringScan, setTriggeringScan] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
   const [newMonitoredIpInput, setNewMonitoredIpInput] = useState('');
@@ -122,6 +123,9 @@ const SurfaceScan360: React.FC = () => {
 
   const shodanScan = useProgressiveShodanScan(scanRules, hasMonitoredRules);
   const { assets: shodanAssets, isLoading: shodanLoading, error: shodanError, progress: scanProgress, completed: scanCompleted, total: scanTotal, truncatedRules } = shodanScan;
+
+  // Storico settimanale REALE (cron + DB)
+  const scanHistory = useSurfaceScanHistory(12);
 
   // Nessun dato mock: se non ci sono regole monitorate, l'elenco è vuoto
   const allPublicAssets = hasMonitoredRules
@@ -219,44 +223,39 @@ const SurfaceScan360: React.FC = () => {
     }
   };
 
-  const monthlyData = hasMonitoredRules ? [
-    { mese: 'Gen', porte_aperte: 45, porte_chiuse: 23, cve_critiche: 12, cve_risolte: 8, epss_score: 6.2 },
-    { mese: 'Feb', porte_aperte: 52, porte_chiuse: 18, cve_critiche: 15, cve_risolte: 11, epss_score: 6.8 },
-    { mese: 'Mar', porte_aperte: 48, porte_chiuse: 25, cve_critiche: 9, cve_risolte: 14, epss_score: 5.9 },
-    { mese: 'Apr', porte_aperte: 41, porte_chiuse: 32, cve_critiche: 7, cve_risolte: 18, epss_score: 5.1 },
-    { mese: 'Mag', porte_aperte: 39, porte_chiuse: 34, cve_critiche: 8, cve_risolte: 16, epss_score: 5.4 },
-    { mese: 'Giu', porte_aperte: 43, porte_chiuse: 30, cve_critiche: 11, cve_risolte: 13, epss_score: 5.8 },
-    { mese: 'Lug', porte_aperte: 46, porte_chiuse: 27, cve_critiche: 13, cve_risolte: 10, epss_score: 6.1 },
-    { mese: 'Ago', porte_aperte: 44, porte_chiuse: 29, cve_critiche: 10, cve_risolte: 15, epss_score: 5.7 },
-    { mese: 'Set', porte_aperte: 38, porte_chiuse: 35, cve_critiche: 6, cve_risolte: 19, epss_score: 4.9 },
-    { mese: 'Ott', porte_aperte: 42, porte_chiuse: 31, cve_critiche: 9, cve_risolte: 16, epss_score: 5.5 },
-    { mese: 'Nov', porte_aperte: 40, porte_chiuse: 33, cve_critiche: 8, cve_risolte: 17, epss_score: 5.2 },
-    { mese: 'Dic', porte_aperte: 37, porte_chiuse: 36, cve_critiche: 5, cve_risolte: 20, epss_score: 4.6 }
-  ] : [];
+  // Dati REALI derivati dal cron settimanale (surface_scan_history)
+  const monthlyData = scanHistory.weekly.map(w => ({
+    mese: w.label,
+    porte_aperte: w.porte_aperte,
+    porte_chiuse: w.porte_chiuse,
+    cve_critiche: w.cve_critiche,
+    cve_risolte: w.cve_risolte,
+    epss_score: w.epss_score,
+  }));
 
-  const exposedServicesData = hasMonitoredRules ? [
-    { name: 'HTTP/HTTPS', value: 35, color: '#3b82f6' },
-    { name: 'SSH', value: 25, color: '#10b981' },
-    { name: 'FTP', value: 15, color: '#f59e0b' },
-    { name: 'SMTP', value: 12, color: '#ef4444' },
-    { name: 'DNS', value: 8, color: '#8b5cf6' },
-    { name: 'Altro', value: 5, color: '#6b7280' }
-  ] : [];
+  const exposedServicesData = hasMonitoredRules ? (() => {
+    // Aggregato servizi dalla snapshot Shodan live (best-effort)
+    const counts = new Map<string, number>();
+    for (const a of shodanAssets) {
+      for (const s of (a.services ?? [])) {
+        const key = String(s).split('/')[0].toUpperCase().slice(0, 12) || 'ALTRO';
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+    const palette = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#6b7280'];
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([name, value], i) => ({ name, value, color: palette[i % palette.length] }));
+  })() : [];
 
-  const riskTrendData = hasMonitoredRules ? [
-    { mese: 'Gen', rischio_alto: 15, rischio_medio: 28, rischio_basso: 57 },
-    { mese: 'Feb', rischio_alto: 18, rischio_medio: 32, rischio_basso: 50 },
-    { mese: 'Mar', rischio_alto: 12, rischio_medio: 35, rischio_basso: 53 },
-    { mese: 'Apr', rischio_alto: 9, rischio_medio: 31, rischio_basso: 60 },
-    { mese: 'Mag', rischio_alto: 11, rischio_medio: 29, rischio_basso: 60 },
-    { mese: 'Giu', rischio_alto: 14, rischio_medio: 33, rischio_basso: 53 },
-    { mese: 'Lug', rischio_alto: 16, rischio_medio: 36, rischio_basso: 48 },
-    { mese: 'Ago', rischio_alto: 13, rischio_medio: 34, rischio_basso: 53 },
-    { mese: 'Set', rischio_alto: 8, rischio_medio: 27, rischio_basso: 65 },
-    { mese: 'Ott', rischio_alto: 10, rischio_medio: 30, rischio_basso: 60 },
-    { mese: 'Nov', rischio_alto: 9, rischio_medio: 28, rischio_basso: 63 },
-    { mese: 'Dic', rischio_alto: 6, rischio_medio: 25, rischio_basso: 69 }
-  ] : [];
+  const riskTrendData = scanHistory.weekly.map(w => ({
+    mese: w.label,
+    rischio_alto: w.rischio_alto,
+    rischio_medio: w.rischio_medio,
+    rischio_basso: w.rischio_basso,
+  }));
+
 
 
   const chartConfig = {
@@ -449,25 +448,50 @@ const SurfaceScan360: React.FC = () => {
                 Scansione completa della superficie di attacco esterna
               </p>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center space-x-2">
-                <Calendar className="w-4 h-4 text-primary" />
-                <span className="text-sm text-muted-foreground">Monitoraggio Mensile</span>
-                <Switch
-                  checked={monthlyMonitoring}
-                  onCheckedChange={setMonthlyMonitoring}
-                />
-              </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <Badge variant="outline" className="border-primary/40 text-primary bg-primary/5 gap-1.5 py-1.5">
+                <Calendar className="w-3.5 h-3.5" />
+                Scansione automatica settimanale
+                {scanHistory.latest && (
+                  <span className="text-muted-foreground font-normal ml-1">
+                    · Ultima: {new Date(scanHistory.latest.scanned_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+                {!scanHistory.latest && !scanHistory.isLoading && (
+                  <span className="text-muted-foreground font-normal ml-1">· In attesa primo snapshot</span>
+                )}
+              </Badge>
               <Button variant="outline" onClick={handleExportPdf} disabled={exportingPdf}>
                 <Download className="w-4 h-4 mr-2" />
                 {exportingPdf ? 'Esportazione...' : 'Esporta PDF'}
               </Button>
-              <Button className="bg-primary text-primary-foreground">
+              <Button
+                className="bg-primary text-primary-foreground"
+                disabled={triggeringScan || !hasMonitoredRules}
+                onClick={async () => {
+                  if (!hasMonitoredRules) {
+                    toast.error('Nessuna regola monitorata', { description: 'Aggiungi almeno un IP/dominio prima di lanciare la scansione.' });
+                    return;
+                  }
+                  setTriggeringScan(true);
+                  try {
+                    const res = await triggerManualSurfaceScan(monitoredIpRules[0].organization_id);
+                    const total = res?.results?.[0]?.total_assets ?? 0;
+                    toast.success('Scansione completata', { description: `${total} asset analizzati e salvati su DB.` });
+                    await scanHistory.refetch();
+                  } catch (e: any) {
+                    toast.error('Errore scansione', { description: e?.message ?? 'Riprova più tardi' });
+                  } finally {
+                    setTriggeringScan(false);
+                  }
+                }}
+              >
                 <Search className="w-4 h-4 mr-2" />
-                Nuova Scansione
+                {triggeringScan ? 'Scansione in corso...' : 'Esegui Scansione'}
               </Button>
             </div>
           </div>
+
 
           {isAdminUser && (
             <Card className="border-primary/30 bg-primary/5">
@@ -663,57 +687,73 @@ const SurfaceScan360: React.FC = () => {
             />
           )}
 
-          {/* Monthly Monitoring Section */}
-          {monthlyMonitoring && (
+          {/* Weekly Monitoring Section — dati REALI dal cron settimanale (surface_scan_history) */}
+          {hasMonitoredRules && scanHistory.hasHistory && (
             <>
-              {/* Monthly KPI Cards */}
+              {/* Weekly KPI Cards — dati REALI */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <Card className="border-border">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-muted-foreground">Nuove Porte Aperte</p>
-                        <p className="text-2xl font-bold text-destructive">+12</p>
-                        <p className="text-xs text-muted-foreground">Questo mese</p>
+                        <p className="text-sm text-muted-foreground">Nuovi Asset Esposti</p>
+                        <p className={`text-2xl font-bold ${scanHistory.newOpenLast > 0 ? 'text-destructive' : 'text-primary'}`}>
+                          {scanHistory.newOpenLast > 0 ? `+${scanHistory.newOpenLast}` : '0'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">vs settimana precedente</p>
                       </div>
-                      <Network className="w-8 h-8 text-destructive" />
+                      <Network className={`w-8 h-8 ${scanHistory.newOpenLast > 0 ? 'text-destructive' : 'text-primary'}`} />
                     </div>
                   </CardContent>
                 </Card>
-                
+
                 <Card className="border-border">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm text-muted-foreground">CVE Risolte</p>
-                        <p className="text-2xl font-bold text-primary">20</p>
-                        <p className="text-xs text-muted-foreground">Dicembre 2024</p>
+                        <p className="text-2xl font-bold text-primary">{scanHistory.cveResolvedLast}</p>
+                        <p className="text-xs text-muted-foreground">vs settimana precedente</p>
                       </div>
                       <CheckCircle className="w-8 h-8 text-primary" />
                     </div>
                   </CardContent>
                 </Card>
-                
+
                 <Card className="border-border">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm text-muted-foreground">EPSS Score Medio</p>
-                        <p className="text-2xl font-bold text-chart-3">4.6</p>
-                        <p className="text-xs text-green-500">-0.6 vs ultimo mese</p>
+                        <p className="text-2xl font-bold text-chart-3">
+                          {scanHistory.latest ? (Math.round(((100 - Number(scanHistory.latest.avg_score)) / 10) * 10) / 10).toFixed(1) : '—'}
+                        </p>
+                        <p className={`text-xs ${scanHistory.epssDelta < 0 ? 'text-green-500' : scanHistory.epssDelta > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
+                          {scanHistory.epssDelta === 0 ? '= invariato' : `${scanHistory.epssDelta > 0 ? '+' : ''}${scanHistory.epssDelta} vs settimana precedente`}
+                        </p>
                       </div>
                       <BarChart3 className="w-8 h-8 text-chart-3" />
                     </div>
                   </CardContent>
                 </Card>
-                
+
                 <Card className="border-border">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-muted-foreground">Trend Rischio</p>
-                        <p className="text-2xl font-bold text-green-500">↓ 69%</p>
-                        <p className="text-xs text-muted-foreground">Rischio basso</p>
+                        {(() => {
+                          const total = scanHistory.latest ? scanHistory.latest.total_assets : 0;
+                          const safePct = scanHistory.latest && total > 0
+                            ? Math.round((scanHistory.latest.safe_count / total) * 100)
+                            : 0;
+                          return (
+                            <>
+                              <p className="text-sm text-muted-foreground">Asset Sicuri</p>
+                              <p className="text-2xl font-bold text-green-500">{safePct}%</p>
+                              <p className="text-xs text-muted-foreground">{scanHistory.latest?.safe_count ?? 0} / {total}</p>
+                            </>
+                          );
+                        })()}
                       </div>
                       <Activity className="w-8 h-8 text-green-500" />
                     </div>
@@ -721,12 +761,12 @@ const SurfaceScan360: React.FC = () => {
                 </Card>
               </div>
 
-              {/* Monthly Charts */}
+              {/* Weekly Charts */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Ports Timeline */}
                 <Card className="border-border">
                   <CardHeader>
-                    <CardTitle>Trend Porte Aperte/Chiuse</CardTitle>
+                    <CardTitle>Trend Asset Esposti / Sicuri</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <ChartContainer config={chartConfig} className="h-[300px]">
@@ -734,6 +774,7 @@ const SurfaceScan360: React.FC = () => {
                         <LineChart data={monthlyData}>
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                           <XAxis dataKey="mese" className="text-muted-foreground" />
+
                           <YAxis className="text-muted-foreground" />
                           <ChartTooltip content={<ChartTooltipContent />} />
                           <Line 
@@ -838,7 +879,7 @@ const SurfaceScan360: React.FC = () => {
                             <div className="flex items-start gap-2">
                               <BarChart3 className="w-4 h-4 text-orange-600 mt-0.5 flex-shrink-0" />
                               <div>
-                                <p className="text-sm font-medium text-orange-800 mb-1">💡 Confronto Mensile</p>
+                                <p className="text-sm font-medium text-orange-800 mb-1">💡 Confronto Settimanale</p>
                                 <p className="text-xs text-orange-700">
                                   Il rapporto ideale mostra CVE critiche in diminuzione e CVE risolte stabili o in aumento, 
                                   indicando un miglioramento continuo della postura di sicurezza.
@@ -867,7 +908,7 @@ const SurfaceScan360: React.FC = () => {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <TrendingUp className="w-5 h-5 text-chart-3" />
-                      EPSS Score Mensile
+                      EPSS Score Settimanale
                     </CardTitle>
                     <p className="text-sm text-muted-foreground">
                       Exploit Prediction Scoring System - predice la probabilità di sfruttamento delle vulnerabilità
@@ -1028,7 +1069,7 @@ const SurfaceScan360: React.FC = () => {
               {/* Risk Trend Analysis with Collapsible Legend */}
               <Card className="border-border">
                 <CardHeader>
-                  <CardTitle>Analisi Trend Rischio Mensile</CardTitle>
+                  <CardTitle>Analisi Trend Rischio Settimanale</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ChartContainer config={chartConfig} className="h-[350px]">
