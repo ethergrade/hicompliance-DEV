@@ -485,7 +485,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
               Findings reali da Shodan, Web Check/OSINT e Pentest-Tools per gli asset monitorati
             </p>
           </div>
-          <Button variant="outline" className="flex items-center gap-2" disabled={realFindings.length === 0}>
+          <Button variant="outline" className="flex items-center gap-2" disabled={enrichedFindings.length === 0}>
             <Download className="w-4 h-4" />
             Esporta Report
           </Button>
@@ -515,7 +515,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
             <Input
-              placeholder="Cerca per target, IP, CVE, fonte o descrizione..."
+              placeholder="Cerca per target, IP, CVE, CWE, OWASP, fonte o descrizione..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
@@ -585,7 +585,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
           </div>
         )}
 
-        {loading && realFindings.length === 0 ? (
+        {loading && enrichedFindings.length === 0 ? (
           <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border p-8 text-sm text-muted-foreground">
             <Loader2 className="w-4 h-4 animate-spin" />
             Caricamento findings reali...
@@ -681,10 +681,33 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
                                 <div key={vuln.id} className="border border-border rounded-lg p-4 bg-background">
                                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                     <div>
-                                      <div className="flex flex-wrap items-center gap-3 mb-2">
-                                        <Badge className={getSeverityColor(vuln.severity)}>
-                                          {vuln.cveId}
-                                        </Badge>
+                                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                                        {(vuln.cveList && vuln.cveList.length > 0) ? (
+                                          vuln.cveList.map((c) => (
+                                            <button
+                                              key={c}
+                                              type="button"
+                                              onClick={() => setModalCve(c.toUpperCase())}
+                                              className="inline-flex"
+                                            >
+                                              <Badge className={`${getSeverityColor(vuln.severity)} cursor-pointer hover:opacity-80`}>
+                                                {c}
+                                              </Badge>
+                                            </button>
+                                          ))
+                                        ) : (
+                                          <Badge className={getSeverityColor(vuln.severity)}>{vuln.cveId}</Badge>
+                                        )}
+                                        {vuln.cwe && (
+                                          <a href={cweLink(vuln.cwe)} target="_blank" rel="noopener noreferrer">
+                                            <Badge variant="secondary" className="cursor-pointer hover:opacity-80">{vuln.cwe}</Badge>
+                                          </a>
+                                        )}
+                                        {vuln.owasp && (
+                                          <Badge variant="outline" className="border-primary/30 text-primary">
+                                            {vuln.owasp}
+                                          </Badge>
+                                        )}
                                         <Badge className={getStatusColor(vuln.remediationStatus)} variant="outline">
                                           <div className="flex items-center gap-1">
                                             {getStatusIcon(vuln.remediationStatus)}
@@ -700,6 +723,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
                                         <div><strong>Rilevato:</strong> {formatDate(vuln.discoveredDate)}</div>
                                       </div>
                                     </div>
+
 
                                     <div className="space-y-3">
                                       <div className="flex items-center justify-between p-3 bg-muted/20 rounded-lg">
