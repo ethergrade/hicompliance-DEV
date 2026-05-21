@@ -747,12 +747,30 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
                                       </div>
 
                                       <div className="flex flex-wrap gap-2">
-                                        {vuln.patchAvailable && (
-                                          <Badge variant="outline" className="text-green-700 border-green-300">
-                                            <CheckCircle className="w-3 h-3 mr-1" />
-                                            Remediation Disponibile
-                                          </Badge>
-                                        )}
+                                        {vuln.patchAvailable && (() => {
+                                          const isPatch = vuln.cveList && vuln.cveList.length > 0;
+                                          const label = isPatch ? 'Patch CVE Disponibile' : 'Mitigazione Suggerita';
+                                          const Icon = isPatch ? CheckCircle : Lightbulb;
+                                          const cls = isPatch
+                                            ? 'text-green-700 border-green-400 bg-green-50/40'
+                                            : 'text-green-700/80 border-green-300/60';
+                                          const badge = (
+                                            <Badge variant="outline" className={`${cls} cursor-help`}>
+                                              <Icon className="w-3 h-3 mr-1" />
+                                              {label}
+                                            </Badge>
+                                          );
+                                          return vuln.remediationText ? (
+                                            <TooltipProvider delayDuration={150}>
+                                              <Tooltip>
+                                                <TooltipTrigger asChild>{badge}</TooltipTrigger>
+                                                <TooltipContent className="max-w-sm text-xs leading-relaxed">
+                                                  {vuln.remediationText}
+                                                </TooltipContent>
+                                              </Tooltip>
+                                            </TooltipProvider>
+                                          ) : badge;
+                                        })()}
                                         {vuln.exploitAvailable && (
                                           <Badge variant="outline" className="text-red-700 border-red-300">
                                             <AlertTriangle className="w-3 h-3 mr-1" />
