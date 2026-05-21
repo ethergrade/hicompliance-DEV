@@ -13,6 +13,7 @@ import {
   useSurfaceEngineJobs,
   useSurfaceObservations,
   useSurfaceEngineFindings,
+  useSurfaceExternalIntel,
   type SurfaceFinding,
 } from '@/hooks/useSurfaceScanEngine';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -43,6 +44,7 @@ export const OsintEnrichmentTab = () => {
   const { data: jobs = [], isLoading: jobsLoading } = useSurfaceEngineJobs();
   const { data: observations = [] } = useSurfaceObservations(selectedJobId ?? undefined);
   const { data: findings = [] } = useSurfaceEngineFindings(selectedJobId ?? undefined);
+  const { data: intel = [] } = useSurfaceExternalIntel(selectedJobId ?? undefined);
 
   const handleStart = async () => {
     if (!target.trim()) {
@@ -143,6 +145,7 @@ export const OsintEnrichmentTab = () => {
                 <TabsList>
                   <TabsTrigger value="findings">Findings ({findings.length})</TabsTrigger>
                   <TabsTrigger value="observations">Observations ({observations.length})</TabsTrigger>
+                  <TabsTrigger value="intel">Intel ({intel.length})</TabsTrigger>
                 </TabsList>
                 <TabsContent value="findings" className="mt-3">
                   {findings.length === 0 ? (
@@ -190,6 +193,30 @@ export const OsintEnrichmentTab = () => {
                                 {JSON.stringify(o.value, null, 2)}
                               </pre>
                             ))}
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  )}
+                </TabsContent>
+                <TabsContent value="intel" className="mt-3">
+                  {intel.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nessuna intel esterna disponibile.</p>
+                  ) : (
+                    <ScrollArea className="h-[380px]">
+                      <div className="space-y-3 pr-2">
+                        {intel.map((i) => (
+                          <div key={i.id} className="border rounded-md p-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="font-medium text-sm capitalize">{i.provider.replace(/_/g, ' ')} — {i.target}</div>
+                              <div className="flex gap-2">
+                                <Badge variant={i.found ? 'default' : 'secondary'}>{i.found ? 'found' : 'not found'}</Badge>
+                                <Badge variant="outline">conf. {i.confidence}</Badge>
+                              </div>
+                            </div>
+                            <pre className="text-[11px] bg-muted/40 p-2 rounded overflow-auto max-h-48">
+                              {JSON.stringify(i.summary, null, 2)}
+                            </pre>
                           </div>
                         ))}
                       </div>
