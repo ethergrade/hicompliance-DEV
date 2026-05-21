@@ -7,6 +7,20 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import jsPDF from 'jspdf';
 
+interface RemediationTask {
+  id: string;
+  task: string;
+  category: string;
+  start_date: string;
+  end_date: string;
+  progress: number;
+  priority: string;
+  assignee?: string | null;
+  source?: string | null;
+  source_ref?: string | null;
+  status?: 'pianificato' | 'completato';
+}
+
 interface AiReport {
   generated_at: string;
   organization: any;
@@ -15,6 +29,8 @@ interface AiReport {
   findings: any[];
   findings_by_severity: Record<string, number>;
   intel: any[];
+  remediation_tasks?: RemediationTask[];
+  kev_generation?: { created: number; total_kev: number; existing: number };
   ai: {
     executive_summary?: string;
     risk_score?: number;
