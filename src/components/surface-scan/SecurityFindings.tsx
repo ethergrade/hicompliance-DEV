@@ -787,6 +787,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
                                 <div key={vuln.id} className="border border-border rounded-lg p-4 bg-background">
                                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                     <div>
+                                      <TooltipProvider delayDuration={150}>
                                       <div className="flex flex-wrap items-center gap-2 mb-2">
                                         {(vuln.cveList && vuln.cveList.length > 0) ? (
                                           vuln.cveList.map((c) => (
@@ -801,19 +802,50 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
                                               </Badge>
                                             </button>
                                           ))
-                                        ) : (
-                                          <Badge className={getSeverityColor(vuln.severity)}>{vuln.cveId}</Badge>
-                                        )}
-                                        {vuln.cwe && (
-                                          <a href={cweLink(vuln.cwe)} target="_blank" rel="noopener noreferrer">
-                                            <Badge variant="secondary" className="cursor-pointer hover:opacity-80">{vuln.cwe}</Badge>
-                                          </a>
-                                        )}
-                                        {vuln.owasp && (
-                                          <Badge variant="outline" className="border-primary/30 text-primary">
-                                            {vuln.owasp}
-                                          </Badge>
-                                        )}
+                                        ) : (() => {
+                                          const summary = findingSummary(vuln.cveId);
+                                          const badge = (
+                                            <Badge className={`${getSeverityColor(vuln.severity)} ${summary ? 'cursor-help' : ''}`}>
+                                              {vuln.cveId}
+                                            </Badge>
+                                          );
+                                          return summary ? (
+                                            <Tooltip>
+                                              <TooltipTrigger asChild><span>{badge}</span></TooltipTrigger>
+                                              <TooltipContent className="max-w-sm text-xs leading-relaxed">{summary}</TooltipContent>
+                                            </Tooltip>
+                                          ) : badge;
+                                        })()}
+                                        {vuln.cwe && (() => {
+                                          const desc = cweDescription(vuln.cwe);
+                                          const badge = (
+                                            <a href={cweLink(vuln.cwe)} target="_blank" rel="noopener noreferrer">
+                                              <Badge variant="secondary" className="cursor-pointer hover:opacity-80">{vuln.cwe}</Badge>
+                                            </a>
+                                          );
+                                          return desc ? (
+                                            <Tooltip>
+                                              <TooltipTrigger asChild><span>{badge}</span></TooltipTrigger>
+                                              <TooltipContent className="max-w-sm text-xs leading-relaxed">
+                                                <div className="font-semibold mb-1">{vuln.cwe}</div>{desc}
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          ) : badge;
+                                        })()}
+                                        {vuln.owasp && (() => {
+                                          const desc = owaspDescription(vuln.owasp);
+                                          const badge = (
+                                            <Badge variant="outline" className="border-primary/30 text-primary cursor-help">
+                                              {vuln.owasp}
+                                            </Badge>
+                                          );
+                                          return desc ? (
+                                            <Tooltip>
+                                              <TooltipTrigger asChild><span>{badge}</span></TooltipTrigger>
+                                              <TooltipContent className="max-w-sm text-xs leading-relaxed">{desc}</TooltipContent>
+                                            </Tooltip>
+                                          ) : badge;
+                                        })()}
                                         <Badge className={getStatusColor(vuln.remediationStatus)} variant="outline">
                                           <div className="flex items-center gap-1">
                                             {getStatusIcon(vuln.remediationStatus)}
@@ -822,6 +854,13 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
                                         </Badge>
                                         <Badge variant="secondary">{vuln.source}</Badge>
                                       </div>
+                                      </TooltipProvider>
+                                      {(() => {
+                                        const summary = findingSummary(vuln.cveId) || [cweDescription(vuln.cwe), owaspDescription(vuln.owasp)].filter(Boolean).join(' ');
+                                        return summary ? (
+                                          <p className="text-xs text-muted-foreground italic mb-2 leading-relaxed">{summary}</p>
+                                        ) : null;
+                                      })()}
                                       <p className="text-sm mb-3">{vuln.description}</p>
                                       <div className="space-y-1 text-xs text-muted-foreground">
                                         <div><strong>Servizio:</strong> {vuln.affectedService}</div>
