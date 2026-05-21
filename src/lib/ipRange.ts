@@ -1,4 +1,8 @@
-export type MonitoredIpEntryType = 'single' | 'range' | 'cidr';
+export type MonitoredIpEntryType = 'single' | 'range' | 'cidr' | 'domain';
+
+const DOMAIN_REGEX = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
+
+export const isValidDomain = (value: string): boolean => DOMAIN_REGEX.test(value.trim());
 
 export interface ParsedMonitoredIpInput {
   entryType: MonitoredIpEntryType;
