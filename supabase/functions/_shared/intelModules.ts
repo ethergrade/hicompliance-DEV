@@ -283,68 +283,194 @@ export async function urlscanModule(ctx: ScanContext): Promise<IntelResult> {
 }
 
 // --- Shared hosting / CDN detector -----------------------------------------
+
+// ASN/org noti per shared hosting o cloud multi-tenant (heuristics)
+const SHARED_ASN_KEYWORDS = [
+  /aruba/i, /ovh/i, /hetzner/i, /hostinger/i, /godaddy/i, /siteground/i,
+  /bluehost/i, /dreamhost/i, /ionos/i, /1&1/i, /namecheap/i, /register\.it/i,
+  /serverplan/i, /keliweb/i, /netsons/i, /tophost/i, /vhosting/i,
+];
+const CLOUD_ASN_KEYWORDS = [
+  /amazon|aws/i, /google|gcp/i, /microsoft|azure/i, /digitalocean/i,
+  /linode/i, /vultr/i, /oracle cloud/i,
+];
+
+// Reverse DNS lookup via DoH per arricchire la lista di co-hosted hostnames
+async function reverseDns(ip: string): Promise<string[]> {
+  try {
+    const parts = ip.split('.');
+    if (parts.length !== 4) return [];
+    const arpa = `${parts.reverse().join('.')}.in-addr.arpa`;
+    const r = await timedFetch(`https://dns.google/resolve?name=${arpa}&type=PTR`, {
+      headers: { accept: 'application/dns-json' },
+    });
+    if (!r.ok) return [];
+    const j = await r.json();
+    return (j.Answer ?? []).map((a: any) => String(a.data).replace(/\.$/, '')).filter(Boolean);
+  } catch { return []; }
+}
+
 export async function hostingContextModule(
   ctx: ScanContext,
   shodanIntel: IntelRow[],
   httpObs: Observation[],
+  resolvedIps: string[] = [],
 ): Promise<IntelResult> {
   const out: IntelResult = { intel: [], observations: [], findings: [] };
   const target = ctx.parsed.hostname ?? ctx.parsed.normalized_target;
 
-  // Aggrega segnali: server header, shodan org/isp, hostnames sull'IP
-  const signals: string[] = [];
+  // Raccolta segnali tipizzati con peso
+  type Signal = { source: string; value: string; weight: number; verdict: HostingType };
+  const collected: Signal[] = [];
+
+  // 1) HTTP server header
   for (const o of httpObs) {
     const v: any = o.value;
-    if (v?.headers?.server) signals.push(String(v.headers.server));
-    if (v?.server) signals.push(String(v.server));
+    const sv = v?.headers?.server || v?.server;
+    if (sv) {
+      const d = detectHostingFromText(String(sv));
+      collected.push({ source: 'http_server_header', value: String(sv), weight: d.type === 'unknown' ? 5 : 25, verdict: d.type });
+    }
+    // Header tipici di shared hosting (cPanel, Plesk)
+    const hdrs = v?.headers ?? {};
+    for (const [k, val] of Object.entries(hdrs)) {
+      const blob = `${k}: ${val}`;
+      if (/x-(powered-by|cpanel|plesk|served-by|host)/i.test(k) || /cpanel|plesk/i.test(String(val))) {
+        const d = detectHostingFromText(blob);
+        collected.push({ source: `http_header:${k}`, value: blob, weight: /cpanel|plesk/i.test(blob) ? 30 : 10, verdict: d.type === 'unknown' && /cpanel|plesk/i.test(blob) ? 'shared_hosting' : d.type });
+      }
+    }
   }
-  let coHostedCount = 0;
+
+  // 2) Shodan: org/isp/asn + hostnames co-locati sull'IP
+  const coHostedSet = new Set<string>();
+  let asnText = '';
   for (const s of shodanIntel) {
     if (s.provider !== 'shodan') continue;
     const sum: any = s.summary;
-    if (sum?.org) signals.push(String(sum.org));
-    if (sum?.isp) signals.push(String(sum.isp));
-    if (Array.isArray(sum?.hostnames)) coHostedCount = Math.max(coHostedCount, sum.hostnames.length);
+    const fp = sum?.fingerprint ?? {};
+    const orgIsp = [fp.org, fp.isp, sum?.org, sum?.isp].filter(Boolean).join(' / ');
+    if (orgIsp) {
+      asnText += ' ' + orgIsp;
+      const d = detectHostingFromText(orgIsp);
+      let verdict: HostingType = d.type;
+      if (verdict === 'unknown') {
+        if (SHARED_ASN_KEYWORDS.some((re) => re.test(orgIsp))) verdict = 'shared_hosting';
+        else if (CLOUD_ASN_KEYWORDS.some((re) => re.test(orgIsp))) verdict = 'cdn_proxy';
+      }
+      collected.push({ source: 'shodan_org_isp', value: orgIsp, weight: verdict === 'unknown' ? 5 : 20, verdict });
+    }
+    if (Array.isArray(sum?.hostnames)) for (const h of sum.hostnames) coHostedSet.add(String(h));
   }
 
-  let detected: { type: HostingType; label?: string } = { type: 'unknown' };
-  for (const s of signals) {
-    const d = detectHostingFromText(s);
-    if (d.type !== 'unknown') { detected = d; break; }
-  }
-  // Soglia co-hosting: molti hostname sullo stesso IP → probabile shared
-  if (detected.type === 'unknown' && coHostedCount >= 5) {
-    detected = { type: 'shared_hosting', label: `${coHostedCount} hostname sull'IP` };
+  // 3) Reverse DNS PTR sui resolvedIps (max 3)
+  for (const ip of resolvedIps.slice(0, 3)) {
+    const ptrs = await reverseDns(ip);
+    for (const p of ptrs) coHostedSet.add(p);
   }
 
-  const confidence: 'high' | 'medium' | 'low' = detected.type === 'unknown' ? 'low' : signals.length >= 2 ? 'high' : 'medium';
+  const targetLower = target.toLowerCase();
+  const coHosted = Array.from(coHostedSet).filter((h) => h && !h.toLowerCase().includes(targetLower));
+  const coHostedCount = coHosted.length;
+
+  if (coHostedCount > 0) {
+    let weight = 10;
+    if (coHostedCount >= 50) weight = 60;
+    else if (coHostedCount >= 10) weight = 40;
+    else if (coHostedCount >= 3) weight = 25;
+    collected.push({
+      source: 'co_hosted_hostnames',
+      value: `${coHostedCount} hostname distinti co-locati`,
+      weight,
+      verdict: coHostedCount >= 3 ? 'shared_hosting' : 'unknown',
+    });
+  }
+
+  // Scoring multi-tenant 0-100
+  let sharedScore = 0;
+  let cdnScore = 0;
+  let dedicatedSignals = 0;
+  for (const c of collected) {
+    if (c.verdict === 'shared_hosting') sharedScore += c.weight;
+    else if (c.verdict === 'cdn_proxy') cdnScore += c.weight;
+    else if (c.verdict === 'dedicated') dedicatedSignals += c.weight;
+  }
+  sharedScore = Math.min(100, sharedScore);
+  cdnScore = Math.min(100, cdnScore);
+
+  let detected: { type: HostingType; label?: string };
+  if (sharedScore >= 40 && sharedScore >= cdnScore) {
+    detected = { type: 'shared_hosting', label: coHostedCount >= 3 ? `${coHostedCount} domini co-locati` : (collected.find((c) => c.verdict === 'shared_hosting')?.value ?? 'segnali multi-tenant') };
+  } else if (cdnScore >= 25) {
+    detected = { type: 'cdn_proxy', label: collected.find((c) => c.verdict === 'cdn_proxy')?.value ?? 'CDN/proxy rilevato' };
+  } else if (sharedScore >= 20) {
+    detected = { type: 'shared_hosting', label: 'segnali deboli di multi-tenancy' };
+  } else if (dedicatedSignals > 0 || (resolvedIps.length === 1 && coHostedCount === 0)) {
+    detected = { type: 'dedicated' };
+  } else {
+    detected = { type: 'unknown' };
+  }
+
+  const confidence: 'high' | 'medium' | 'low' =
+    sharedScore >= 60 || cdnScore >= 50 ? 'high'
+    : sharedScore >= 25 || cdnScore >= 25 ? 'medium'
+    : 'low';
+
+  const summary = {
+    type: detected.type,
+    label: detected.label,
+    shared_score: sharedScore,
+    cdn_score: cdnScore,
+    multi_tenant: detected.type === 'shared_hosting',
+    co_hosted_count: coHostedCount,
+    co_hosted_sample: coHosted.slice(0, 15),
+    signals: collected.map((c) => ({ source: c.source, value: c.value.slice(0, 200), weight: c.weight, verdict: c.verdict })),
+    resolved_ips: resolvedIps,
+  };
 
   out.intel.push({
     provider: 'hosting_context', target,
     found: detected.type !== 'unknown',
-    summary: { type: detected.type, label: detected.label, signals: signals.slice(0, 5), coHostedCount },
-    raw_response: { signals, coHostedCount },
+    summary,
+    raw_response: { collected, coHosted, asnText: asnText.trim() },
     confidence,
   });
   out.observations.push({
     module: 'hosting_context', observation_type: 'attribution',
     title: detected.type === 'unknown'
       ? `Contesto hosting non determinato per ${target}`
-      : `Contesto rilevato: ${detected.type}${detected.label ? ` (${detected.label})` : ''}`,
-    value: { type: detected.type, label: detected.label, signals, coHostedCount },
-    severity: detected.type === 'shared_hosting' || detected.type === 'cdn_proxy' ? 'low' : 'info',
+      : `Hosting: ${detected.type}${detected.label ? ` (${detected.label})` : ''} · shared=${sharedScore} cdn=${cdnScore}`,
+    value: summary,
+    severity: detected.type === 'shared_hosting' ? 'low' : 'info',
     confidence,
   });
-  if (detected.type === 'shared_hosting' || detected.type === 'cdn_proxy') {
+  if (detected.type === 'shared_hosting') {
     out.findings.push({
-      module: 'hosting_context', finding_type: 'attribution_warning',
-      title: `Attribution attenuata: ${detected.type}`,
-      description: `Le CVE rilevate a livello IP non sono necessariamente attribuibili a ${target} perché il target è dietro ${detected.label ?? detected.type}.`,
+      module: 'hosting_context', finding_type: 'shared_hosting_detected',
+      title: `Infrastruttura multi-tenant rilevata (score ${sharedScore}/100)`,
+      description: `${target} sembra ospitato su infrastruttura condivisa${coHostedCount ? ` con almeno ${coHostedCount} altri hostname sullo stesso IP` : ''}. Le CVE/banner a livello IP NON sono direttamente attribuibili al target.`,
       severity: 'low',
       affected_asset: target,
       attribution_confidence: 'low',
-      remediation: 'Per validare le CVE a livello applicativo usa scan attivi mirati al dominio (recon_safe / cve_web).',
-      evidence: { type: detected.type, label: detected.label, signals: signals.slice(0, 5) },
+      remediation: 'Valida le CVE con scan attivi a livello applicativo (recon_safe / cve_web). Considera hosting dedicato per ridurre rischio side-channel e abuso reputazionale.',
+      evidence: {
+        shared_score: sharedScore,
+        co_hosted_count: coHostedCount,
+        co_hosted_sample: coHosted.slice(0, 20),
+        top_signals: collected.filter((c) => c.verdict === 'shared_hosting').slice(0, 5),
+        resolved_ips: resolvedIps,
+      },
+    });
+  } else if (detected.type === 'cdn_proxy') {
+    out.findings.push({
+      module: 'hosting_context', finding_type: 'cdn_proxy_detected',
+      title: `Target dietro CDN/proxy: ${detected.label ?? 'unknown'}`,
+      description: `L'IP risolto appartiene a un CDN/proxy. I banner Shodan riflettono il provider, non il backend reale.`,
+      severity: 'info',
+      affected_asset: target,
+      attribution_confidence: 'low',
+      remediation: 'Per analisi del backend reale usa scan attivi sul dominio o ricerca origin IP (passive DNS storico).',
+      evidence: { cdn_score: cdnScore, top_signals: collected.filter((c) => c.verdict === 'cdn_proxy').slice(0, 5) },
     });
   }
   return out;
