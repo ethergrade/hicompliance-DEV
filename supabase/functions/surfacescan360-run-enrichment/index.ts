@@ -57,7 +57,11 @@ Deno.serve(async (req) => {
       remediation: f.remediation ?? null, evidence: f.evidence ?? null,
       attribution_confidence: f.attribution_confidence ?? 'medium',
       port: f.port ?? null, protocol: f.protocol ?? null,
-      cve: f.cve ?? null, cvss: f.cvss ?? null, cisa_kev: f.cisa_kev ?? null,
+      cve: Array.isArray(f.cve) ? f.cve : [],
+      cwe: Array.isArray(f.cwe) ? f.cwe : [],
+      cvss: f.cvss ?? null,
+      epss: f.epss ?? null,
+      cisa_kev: Boolean(f.cisa_kev),
     });
 
     for (const r of results) {
