@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, FileText, Download, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 import jsPDF from 'jspdf';
 
 interface RemediationTask {
