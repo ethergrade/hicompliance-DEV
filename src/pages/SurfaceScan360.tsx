@@ -575,6 +575,9 @@ const SurfaceScan360: React.FC = () => {
             </Card>
           )}
 
+          {/* Subdomain Discovery — DNSDumpster-like */}
+          <SubdomainDumpPanel isAdmin={isAdminUser} />
+
           {/* Trendline storico settimanale */}
           <SurfaceScanTrendline />
 
