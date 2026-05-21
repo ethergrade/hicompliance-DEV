@@ -184,7 +184,32 @@ const SurfaceScan360: React.FC = () => {
     });
   });
 
-  const filteredAssets = monitoredAssets.filter(asset => {
+  // Aggiunge i sottodomini scoperti via Subdomain Dump come asset "virtuali"
+  // se non già coperti da un risultato Shodan reale
+  const normHost = (v: string) => String(v || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+  const existingHosts = new Set<string>(
+    monitoredAssets.flatMap((a: any) =>
+      (a.hostnames && a.hostnames.length ? a.hostnames : [a.hostname]).filter(Boolean).map((h: string) => normHost(h))
+    )
+  );
+  const dumpedVirtualAssets = (monitoredIpRules as any[])
+    .filter((r) => r.discovered_via === 'subdomain_dump')
+    .map((r) => ({ host: normHost(r.input_value), from: r.discovered_from || null }))
+    .filter((r) => r.host && !existingHosts.has(r.host))
+    .filter((r, i, arr) => arr.findIndex((x) => x.host === r.host) === i)
+    .map((r) => ({
+      ip: '—',
+      hostname: r.host,
+      hostnames: [r.host],
+      score: 0,
+      risk: 'Basso',
+      status: 'unknown',
+      ports: [] as number[],
+      services: [] as string[],
+      __dumpedFrom: r.from,
+    }));
+  const monitoredAssetsAll = [...monitoredAssets, ...dumpedVirtualAssets];
+
     const matchesSearch = searchTerm === '' || 
       asset.ip.toLowerCase().includes(searchTerm.toLowerCase()) ||
       asset.hostname.toLowerCase().includes(searchTerm.toLowerCase()) ||
