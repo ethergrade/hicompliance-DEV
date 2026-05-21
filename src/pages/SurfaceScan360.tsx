@@ -462,7 +462,6 @@ const SurfaceScan360: React.FC = () => {
 
 
   const startSurfaceScan = useStartSurfaceScan();
-  const subdomainDump = useSubdomainDump();
   const triggerPentestScan = useTriggerPentestScan();
 
   const handleAddMonitoredIpRule = async () => {
