@@ -79,7 +79,7 @@ const SurfaceScan360: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [riskFilter, setRiskFilter] = useState('all');
-  const [monthlyMonitoring, setMonthlyMonitoring] = useState(false);
+  const [triggeringScan, setTriggeringScan] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
   const [newMonitoredIpInput, setNewMonitoredIpInput] = useState('');
