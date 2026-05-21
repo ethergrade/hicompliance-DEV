@@ -52,7 +52,50 @@ function detectHostingFromText(s: string | undefined | null): { type: HostingTyp
   return { type: 'unknown' };
 }
 
-// --- Shodan host lookup ----------------------------------------------------
+// --- Shodan host lookup (enricher: CVE+CVSS, services, fingerprinting) ----
+const SENSITIVE_PORTS: Record<number, string> = {
+  21: 'FTP', 23: 'Telnet', 25: 'SMTP', 110: 'POP3', 135: 'RPC', 139: 'NetBIOS',
+  445: 'SMB', 1433: 'MSSQL', 1521: 'Oracle', 2049: 'NFS', 3306: 'MySQL',
+  3389: 'RDP', 5432: 'PostgreSQL', 5900: 'VNC', 6379: 'Redis',
+  9200: 'Elasticsearch', 11211: 'Memcached', 27017: 'MongoDB',
+};
+
+const sevFromCvss = (c?: number): 'info' | 'low' | 'medium' | 'high' | 'critical' => {
+  if (c == null) return 'medium';
+  if (c >= 9.0) return 'critical';
+  if (c >= 7.0) return 'high';
+  if (c >= 4.0) return 'medium';
+  if (c > 0)    return 'low';
+  return 'info';
+};
+
+interface ShodanService {
+  port: number;
+  transport?: string;
+  product?: string;
+  version?: string;
+  module?: string;
+  cpe?: string[];
+  ssl?: { cert?: { subject?: any; issuer?: any; expires?: string }; versions?: string[]; cipher?: any };
+  hostnames?: string[];
+  banner_preview?: string;
+}
+
+function extractServices(data: any[]): ShodanService[] {
+  if (!Array.isArray(data)) return [];
+  return data.map((d) => ({
+    port: d.port,
+    transport: d.transport,
+    product: d.product,
+    version: d.version,
+    module: d._shodan?.module,
+    cpe: d.cpe23 || d.cpe,
+    ssl: d.ssl ? { versions: d.ssl.versions, cipher: d.ssl.cipher, cert: d.ssl.cert ? { subject: d.ssl.cert.subject, issuer: d.ssl.cert.issuer, expires: d.ssl.cert.expires } : undefined } : undefined,
+    hostnames: d.hostnames,
+    banner_preview: typeof d.data === 'string' ? d.data.slice(0, 200) : undefined,
+  })).filter((s) => s.port != null);
+}
+
 export async function shodanHostModule(ctx: ScanContext, ips: string[]): Promise<IntelResult> {
   const key = Deno.env.get('SHODAN_API_KEY');
   const out: IntelResult = { intel: [], observations: [], findings: [] };
@@ -82,27 +125,118 @@ export async function shodanHostModule(ctx: ScanContext, ips: string[]): Promise
       const j = await r.json();
       const ports: number[] = Array.isArray(j.ports) ? j.ports : [];
       const hostnames: string[] = Array.isArray(j.hostnames) ? j.hostnames : [];
-      const vulns: string[] = j.vulns ? (Array.isArray(j.vulns) ? j.vulns : Object.keys(j.vulns)) : [];
-      const summary = { ports, hostnames, vulns, org: j.org, asn: j.asn, isp: j.isp, last_update: j.last_update };
+      const services = extractServices(j.data);
+
+      // vulns: può essere array di CVE o oggetto { CVE: { cvss, ... } }
+      const vulnEntries: Array<{ cve: string; cvss?: number; summary?: string }> = [];
+      if (j.vulns) {
+        if (Array.isArray(j.vulns)) {
+          for (const cve of j.vulns) vulnEntries.push({ cve: String(cve) });
+        } else {
+          for (const [cve, info] of Object.entries(j.vulns as Record<string, any>)) {
+            vulnEntries.push({ cve, cvss: typeof info?.cvss === 'number' ? info.cvss : undefined, summary: info?.summary });
+          }
+        }
+      }
+      // Ordina per CVSS desc per la top-list
+      vulnEntries.sort((a, b) => (b.cvss ?? 0) - (a.cvss ?? 0));
+
+      // Fingerprint riassuntivo
+      const fingerprint = {
+        os: j.os || null,
+        org: j.org || null,
+        isp: j.isp || null,
+        asn: j.asn || null,
+        country: j.country_name || null,
+        tags: Array.isArray(j.tags) ? j.tags : [],
+        products: Array.from(new Set(services.map((s) => s.product).filter(Boolean))),
+        cpes: Array.from(new Set(services.flatMap((s) => s.cpe || []).filter(Boolean))).slice(0, 30),
+      };
+
+      const summary = {
+        ports, hostnames,
+        services: services.map((s) => ({ port: s.port, transport: s.transport, product: s.product, version: s.version, module: s.module, ssl: !!s.ssl })),
+        fingerprint,
+        vulns_count: vulnEntries.length,
+        vulns_top: vulnEntries.slice(0, 10),
+        last_update: j.last_update,
+      };
 
       out.intel.push({ provider: 'shodan', target: ip, found: true, summary, raw_response: j, confidence: 'high' });
       out.observations.push({
         module: 'shodan', observation_type: 'host_banner',
-        title: `Shodan ${ip}: ${ports.length} porte, ${vulns.length} CVE note`,
-        value: summary, severity: vulns.length ? 'medium' : 'info', confidence: 'high',
+        title: `Shodan ${ip}: ${ports.length} porte, ${services.length} servizi, ${vulnEntries.length} CVE`,
+        value: summary, severity: vulnEntries.some((v) => (v.cvss ?? 0) >= 7) ? 'high' : (vulnEntries.length ? 'medium' : 'info'),
+        confidence: 'high',
       });
 
-      // Findings per CVE già conosciute (basso attribution_confidence se contesto è cdn/shared)
-      for (const cve of vulns.slice(0, 20)) {
+      // Observation dettagliata per ogni servizio (fingerprinting)
+      for (const s of services) {
+        out.observations.push({
+          module: 'shodan', observation_type: 'service_fingerprint',
+          title: `Servizio ${s.product || s.module || s.transport || 'unknown'} su ${ip}:${s.port}`,
+          value: { ip, ...s }, severity: 'info', confidence: 'high',
+        });
+      }
+
+      // Finding: porte sensibili esposte
+      for (const p of ports) {
+        const name = SENSITIVE_PORTS[p];
+        if (!name) continue;
+        const svc = services.find((s) => s.port === p);
+        out.findings.push({
+          module: 'shodan', finding_type: 'sensitive_port_exposed',
+          title: `Porta sensibile esposta ${p}/${name}`,
+          description: `Servizio ${name} accessibile pubblicamente su ${ip}:${p}${svc?.product ? ` (${svc.product}${svc.version ? ' ' + svc.version : ''})` : ''}.`,
+          severity: [3389, 23, 445, 6379, 27017, 9200, 11211].includes(p) ? 'high' : 'medium',
+          affected_asset: ip,
+          port: p, protocol: svc?.transport || 'tcp',
+          attribution_confidence: 'high',
+          remediation: 'Limitare l\'accesso via firewall/VPN, disabilitare il servizio se non necessario, abilitare autenticazione forte.',
+          evidence: { ip, port: p, product: svc?.product, version: svc?.version, banner: svc?.banner_preview },
+        });
+      }
+
+      // Findings per CVE con severità da CVSS
+      for (const v of vulnEntries.slice(0, 25)) {
+        const svc = services.find((s) => (s.cpe || []).some((c) => /./.test(c))); // associazione best-effort
         out.findings.push({
           module: 'shodan', finding_type: 'known_cve',
-          title: `${cve} segnalata su ${ip}`,
-          description: `Shodan ha rilevato la vulnerabilità ${cve} sull'IP ${ip}. Da validare con scan attivo.`,
-          severity: 'medium',
+          title: `${v.cve}${v.cvss != null ? ` (CVSS ${v.cvss.toFixed(1)})` : ''} su ${ip}`,
+          description: v.summary || `Shodan ha rilevato ${v.cve} su ${ip}. Da validare con scan attivo.`,
+          severity: sevFromCvss(v.cvss),
           affected_asset: ip,
+          port: svc?.port, protocol: svc?.transport,
+          cve: [v.cve],
+          cvss: v.cvss,
           attribution_confidence: 'medium',
-          evidence: { cve, ip, org: j.org, ports },
+          evidence: { cve: v.cve, cvss: v.cvss, ip, org: j.org, ports, products: fingerprint.products },
         });
+      }
+
+      // Finding: certificato SSL scaduto/in scadenza dai servizi
+      const now = Date.now();
+      for (const s of services) {
+        const expStr = s.ssl?.cert?.expires;
+        if (!expStr) continue;
+        const exp = Date.parse(expStr);
+        if (isNaN(exp)) continue;
+        const days = Math.floor((exp - now) / 86_400_000);
+        if (days < 0) {
+          out.findings.push({
+            module: 'shodan', finding_type: 'tls_cert_expired',
+            title: `Certificato TLS scaduto su ${ip}:${s.port}`,
+            severity: 'high', affected_asset: ip, port: s.port,
+            attribution_confidence: 'high', evidence: { expires: expStr, product: s.product },
+          });
+        } else if (days < 30) {
+          out.findings.push({
+            module: 'shodan', finding_type: 'tls_cert_expiring',
+            title: `Certificato TLS in scadenza tra ${days}g su ${ip}:${s.port}`,
+            severity: 'medium', affected_asset: ip, port: s.port,
+            attribution_confidence: 'high', evidence: { expires: expStr },
+          });
+        }
       }
     } catch (e) {
       out.observations.push({
