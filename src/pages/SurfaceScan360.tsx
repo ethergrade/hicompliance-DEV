@@ -632,7 +632,7 @@ const SurfaceScan360: React.FC = () => {
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-sm text-muted-foreground">Asset Monitorati</p>
-                          <p className="text-2xl font-bold text-foreground">{monitoredAssets.length}</p>
+                          <p className="text-2xl font-bold text-foreground">{totalMonitored}</p>
                         </div>
                         <Shield className="w-8 h-8 text-primary" />
                       </div>
