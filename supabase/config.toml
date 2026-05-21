@@ -17,3 +17,5 @@ verify_jwt = false
 
  [functions.surfacescan360-run-enrichment]
  verify_jwt = false
+ [functions.surfacescan360-ai-report]
+ verify_jwt = false
