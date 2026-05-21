@@ -14,3 +14,6 @@ verify_jwt = false
 
  [functions.pentest-tools-webhook]
  verify_jwt = false
+
+ [functions.surfacescan360-run-enrichment]
+ verify_jwt = false
