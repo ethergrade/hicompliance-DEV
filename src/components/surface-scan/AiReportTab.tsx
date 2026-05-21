@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, FileText, Download, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 import jsPDF from 'jspdf';
 
 interface RemediationTask {
@@ -55,11 +56,18 @@ const sevColor = (s?: string) => {
 export const AiReportTab: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<AiReport | null>(null);
+  const { organizationId } = useClientOrganization();
 
   const generate = async () => {
+    if (!organizationId) {
+      toast.error('Seleziona prima un cliente');
+      return;
+    }
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('surfacescan360-ai-report', { body: {} });
+      const { data, error } = await supabase.functions.invoke('surfacescan360-ai-report', {
+        body: { organization_id: organizationId },
+      });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
       setReport((data as any).report as AiReport);
