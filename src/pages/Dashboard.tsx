@@ -161,16 +161,8 @@ const Dashboard: React.FC = () => {
     );
   };
 
-  const fallbackServices = [
-    { name: 'HiFirewall', code: 'hi_firewall', id: '', healthScore: 56 },
-    { name: 'HiEndpoint', code: 'hi_endpoint', id: '', healthScore: 26 },
-    { name: 'HiMail', code: 'hi_mail', id: '', healthScore: 13 },
-    { name: 'HiLog', code: 'hi_log', id: '', healthScore: 55 },
-    { name: 'HiPatch', code: 'hi_patch', id: '', healthScore: 23 },
-    { name: 'HiTrack', code: 'hi_track', id: '', healthScore: 88 },
-    { name: 'HiDetect', code: 'hi_detect', id: '', healthScore: 89 },
-    { name: 'HiMobile', code: 'hi_mobile', id: '', healthScore: 24 },
-  ];
+  // Nessun servizio di fallback: si mostrano solo gli integration reali del cliente
+
 
   return (
     <DashboardLayout>
