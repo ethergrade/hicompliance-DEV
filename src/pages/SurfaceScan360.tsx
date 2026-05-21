@@ -577,11 +577,39 @@ const SurfaceScan360: React.FC = () => {
                   />
                   <Button
                     onClick={handleAddMonitoredIpRule}
-                    disabled={monitoredIpRulesSaving || !newMonitoredIpInput.trim()}
+                    disabled={monitoredIpRulesSaving || !newMonitoredIpInput.trim() || subdomainDump.running}
                   >
                     <Plus className="w-4 h-4 mr-2" />
-                    Aggiungi
+                    {subdomainDump.running ? 'Discovery in corso...' : 'Aggiungi'}
                   </Button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground rounded-md border border-border bg-muted/20 px-3 py-2">
+                  <span className="font-medium text-foreground">Auto-discovery sottodomini</span>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={subdomainDump.enabledSetting}
+                      onChange={(e) => subdomainDump.updateSettings(subdomainDump.depthSetting, e.target.checked)}
+                      className="h-3.5 w-3.5"
+                    />
+                    Attivo all'inserimento di un dominio
+                  </label>
+                  <label className="flex items-center gap-2">
+                    Profondità
+                    <Input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={subdomainDump.depthSetting}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
+                        if (!isNaN(v)) subdomainDump.updateSettings(v, subdomainDump.enabledSetting);
+                      }}
+                      className="h-7 w-20"
+                    />
+                  </label>
+                  <span className="text-muted-foreground">(default 10)</span>
                 </div>
 
                 <div className="rounded-lg border border-border">
