@@ -163,6 +163,8 @@ const getCvssVector = (evidence: unknown) => {
 
 const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], scanRunning = false, dumpedHosts = [] }) => {
   const { organizationId } = useClientOrganization();
+  const queryClient = useQueryClient();
+  const [rescanning, setRescanning] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [severityFilter, setSeverityFilter] = useState('all');
   const [epssRangeFilter, setEpssRangeFilter] = useState('all');
@@ -174,6 +176,28 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+
+  const handleRescan = async () => {
+    if (!organizationId) {
+      toast.error('Nessuna organizzazione selezionata');
+      return;
+    }
+    setRescanning(true);
+    try {
+      const res = await triggerManualSurfaceScan(organizationId);
+      const total = res?.results?.[0]?.total_assets ?? 0;
+      toast.success('Scansione completata', { description: `${total} asset analizzati e salvati su DB.` });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['surface-security-findings', organizationId] }),
+        queryClient.invalidateQueries({ queryKey: ['external-cve-findings'] }),
+        queryClient.invalidateQueries({ queryKey: ['shodan-scan'] }),
+      ]);
+    } catch (e: any) {
+      toast.error('Errore scansione', { description: e?.message ?? 'Riprova più tardi' });
+    } finally {
+      setRescanning(false);
+    }
+  };
 
   const normHost = (v: string) => String(v || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
   const dumpedMap = useMemo(() => {
