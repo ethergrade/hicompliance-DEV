@@ -20,6 +20,7 @@ import DeleteClientDialog from '@/components/clients/DeleteClientDialog';
 
 const ClientSelection: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { organizations, setSelectedOrganization, isLoadingClients, selectedOrganization, fetchOrganizations } = useClientContext();
   const { isSuperAdmin } = useUserRoles();
   const [searchQuery, setSearchQuery] = useState('');
