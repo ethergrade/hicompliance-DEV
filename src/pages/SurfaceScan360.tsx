@@ -136,6 +136,7 @@ const SurfaceScan360: React.FC = () => {
     addRule: addMonitoredIpRule,
     removeRule: removeMonitoredIpRule,
   } = useSurfaceScanMonitoredIps();
+  const subdomainDump = useSubdomainDump();
 
   const handleCreateAlert = async (data: { alert_email: string; alert_types: SurfaceScanAlertTypes }) => {
     return await createAlert(data);
@@ -197,13 +198,20 @@ const SurfaceScan360: React.FC = () => {
       (a.hostnames && a.hostnames.length ? a.hostnames : [a.hostname]).filter(Boolean).map((h: string) => normHost(h))
     )
   );
-  const dumpedVirtualAssets = (monitoredIpRules as any[])
-    .filter((r) => r.discovered_via === 'subdomain_dump')
-    .map((r) => ({ host: normHost(r.input_value), from: r.discovered_from || null }))
+  const dumpedSubdomainHosts = subdomainDump.history
+    .flatMap((dump) => (dump.results ?? []).map((result) => ({
+      host: normHost(result.subdomain),
+      from: dump.root_domain,
+      ip: result.ip || '—',
+      meta: [result.country, result.asn_name].filter(Boolean).join(' · '),
+    })))
+    .filter((r) => r.host)
+    .filter((r, i, arr) => arr.findIndex((x) => x.host === r.host) === i);
+
+  const dumpedVirtualAssets = dumpedSubdomainHosts
     .filter((r) => r.host && !existingHosts.has(r.host))
-    .filter((r, i, arr) => arr.findIndex((x) => x.host === r.host) === i)
     .map((r) => ({
-      ip: '—',
+      ip: r.ip,
       hostname: r.host,
       hostnames: [r.host],
       score: 0,
@@ -212,6 +220,7 @@ const SurfaceScan360: React.FC = () => {
       ports: [] as number[],
       services: [] as string[],
       __dumpedFrom: r.from,
+      __dumpedMeta: r.meta,
     }));
   const monitoredAssetsAll = [...monitoredAssets, ...dumpedVirtualAssets];
 
@@ -453,7 +462,6 @@ const SurfaceScan360: React.FC = () => {
 
 
   const startSurfaceScan = useStartSurfaceScan();
-  const subdomainDump = useSubdomainDump();
   const triggerPentestScan = useTriggerPentestScan();
 
   const handleAddMonitoredIpRule = async () => {
@@ -802,10 +810,7 @@ const SurfaceScan360: React.FC = () => {
             <SecurityFindings
               shodanAssets={shodanAssets}
               scanRunning={shodanLoading || startSurfaceScan.isPending}
-              dumpedHosts={(monitoredIpRules as any[])
-                .filter((r) => r.discovered_via === 'subdomain_dump')
-                .map((r) => ({ host: normHost(r.input_value), from: r.discovered_from || null }))
-                .filter((r) => r.host)}
+              dumpedHosts={dumpedSubdomainHosts.map((r) => ({ host: r.host, from: r.from, ip: r.ip, meta: r.meta }))}
             />
           )}
 
