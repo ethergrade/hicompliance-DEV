@@ -184,7 +184,35 @@ const SurfaceScan360: React.FC = () => {
     });
   });
 
-  const filteredAssets = monitoredAssets.filter(asset => {
+  // Aggiunge i sottodomini scoperti via Subdomain Dump come asset "virtuali"
+  // se non già coperti da un risultato Shodan reale
+  const normHost = (v: string) => String(v || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+  const existingHosts = new Set<string>(
+    monitoredAssets.flatMap((a: any) =>
+      (a.hostnames && a.hostnames.length ? a.hostnames : [a.hostname]).filter(Boolean).map((h: string) => normHost(h))
+    )
+  );
+  const dumpedVirtualAssets = (monitoredIpRules as any[])
+    .filter((r) => r.discovered_via === 'subdomain_dump')
+    .map((r) => ({ host: normHost(r.input_value), from: r.discovered_from || null }))
+    .filter((r) => r.host && !existingHosts.has(r.host))
+    .filter((r, i, arr) => arr.findIndex((x) => x.host === r.host) === i)
+    .map((r) => ({
+      ip: '—',
+      hostname: r.host,
+      hostnames: [r.host],
+      score: 0,
+      risk: 'Basso',
+      status: 'unknown',
+      ports: [] as number[],
+      services: [] as string[],
+      __dumpedFrom: r.from,
+    }));
+  const monitoredAssetsAll = [...monitoredAssets, ...dumpedVirtualAssets];
+
+  const filteredAssets = monitoredAssetsAll.filter(asset => {
+
+
     const matchesSearch = searchTerm === '' || 
       asset.ip.toLowerCase().includes(searchTerm.toLowerCase()) ||
       asset.hostname.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1312,14 +1340,16 @@ const SurfaceScan360: React.FC = () => {
                     Nessun asset corrisponde ai filtri correnti.
                   </div>
                 )}
-                {currentAssets.map((asset, index) => {
+                {currentAssets.map((asset: any, index) => {
                   const hostNorm = String(asset.hostname || '').trim().toLowerCase().replace(/^www\./, '');
                   const discoveredRule = (monitoredIpRules as any[]).find(
                     (r) => r.discovered_via === 'subdomain_dump'
                       && hostNorm === String(r.input_value || '').trim().toLowerCase().replace(/^www\./, '')
                   );
+                  const dumpedFrom = asset.__dumpedFrom || discoveredRule?.discovered_from;
+                  const isDumped = Boolean(discoveredRule) || Boolean(asset.__dumpedFrom);
                   return (
-                  <div key={index} className={`flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-muted/50 transition-colors ${discoveredRule ? 'border-primary/40 bg-primary/5' : 'border-border'}`}>
+                  <div key={index} className={`flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-muted/50 transition-colors ${isDumped ? 'border-primary/40 bg-primary/5' : 'border-border'}`}>
                     <div className="flex items-center space-x-4">
                       <div className="p-2 rounded-lg bg-primary/10">
                         <Shield className="w-5 h-5 text-primary" />
@@ -1327,10 +1357,10 @@ const SurfaceScan360: React.FC = () => {
                       <div>
                         <h4 className="font-medium flex items-center gap-2 flex-wrap">
                           {asset.ip}
-                          {discoveredRule && (
+                          {isDumped && (
                             <Badge variant="secondary" className="text-[10px] bg-primary/15 text-primary border-primary/30">
                               <Globe className="w-3 h-3 mr-1" />
-                              Subdomain Dump{discoveredRule.discovered_from ? ` · ${discoveredRule.discovered_from}` : ''}
+                              Reverse Dump{dumpedFrom ? ` · ${dumpedFrom}` : ''}
                             </Badge>
                           )}
                         </h4>
