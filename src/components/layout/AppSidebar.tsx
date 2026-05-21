@@ -45,6 +45,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { LogoutButton } from '@/components/auth/LogoutButton';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useRolePermissions } from '@/hooks/useRolePermissions';
+import { usePermissions } from '@/hooks/usePermissions';
 import { useClientContext } from '@/contexts/ClientContext';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -124,6 +125,7 @@ export const AppSidebar: React.FC = () => {
   const hicomplianceOn = !!orgFlags?.hicompliance_enabled;
   const surfaceScanOn = !!orgFlags?.surface_scan360_enabled;
   const darkRiskOn = !!orgFlags?.dark_risk360_enabled;
+  const { canViewRoute } = usePermissions();
 
   const isFeatureAllowed = (href: string) => {
     // SuperAdmin/Sales without a selected org see everything (console view)
@@ -137,16 +139,18 @@ export const AppSidebar: React.FC = () => {
     return true;
   };
 
+  const isUserAllowed = (href: string) => canViewRoute(href);
+
   const filteredNavigation = navigation.filter(item => {
     if ((item as any).superAdminOnly && !isSuperAdmin) return false;
-    return isModuleEnabled(item.href);
+    return isModuleEnabled(item.href) && isUserAllowed(item.href);
   });
 
   const visibleHiCompliance = hiComplianceModules.filter(
-    item => isModuleEnabled(item.href) && isFeatureAllowed(item.href)
+    item => isModuleEnabled(item.href) && isFeatureAllowed(item.href) && isUserAllowed(item.href)
   );
   const visibleIncident = incidentSubItems.filter(
-    item => isModuleEnabled(item.href) && isFeatureAllowed(item.href)
+    item => isModuleEnabled(item.href) && isFeatureAllowed(item.href) && isUserAllowed(item.href)
   );
   const hiComplianceGroupVisible = visibleHiCompliance.length > 0 || visibleIncident.length > 0;
 

@@ -510,36 +510,48 @@ export type Database = {
       }
       contact_directory: {
         Row: {
+          account_disabled: boolean
+          auth_user_id: string | null
           created_at: string | null
           email: string | null
           first_name: string
           id: string
+          is_platform_user: boolean
           job_title: string | null
           last_name: string
+          module_permissions: Json
           notes: string | null
           organization_id: string | null
           phone: string | null
           updated_at: string | null
         }
         Insert: {
+          account_disabled?: boolean
+          auth_user_id?: string | null
           created_at?: string | null
           email?: string | null
           first_name: string
           id?: string
+          is_platform_user?: boolean
           job_title?: string | null
           last_name: string
+          module_permissions?: Json
           notes?: string | null
           organization_id?: string | null
           phone?: string | null
           updated_at?: string | null
         }
         Update: {
+          account_disabled?: boolean
+          auth_user_id?: string | null
           created_at?: string | null
           email?: string | null
           first_name?: string
           id?: string
+          is_platform_user?: boolean
           job_title?: string | null
           last_name?: string
+          module_permissions?: Json
           notes?: string | null
           organization_id?: string | null
           phone?: string | null
@@ -2613,9 +2625,19 @@ export type Database = {
         Returns: boolean
       }
       get_current_user_type: { Args: never; Returns: string }
+      get_my_module_permissions: { Args: never; Returns: Json }
       get_user_roles: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"][]
+      }
+      has_module_permission: {
+        Args: {
+          _action: string
+          _module: string
+          _subsection: string
+          _user_id: string
+        }
+        Returns: boolean
       }
       has_role: {
         Args: {

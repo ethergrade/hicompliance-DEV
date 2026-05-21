@@ -8,13 +8,14 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, Building2, Calendar, ArrowRight, Users, FileText, Server, Plug, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Search, Building2, Calendar, ArrowRight, Users, FileText, Server, Plug, Plus, Pencil, Trash2, ShieldCheck } from 'lucide-react';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
 import ClientProfileSheet from '@/components/clients/ClientProfileSheet';
 import ClientAssetSheet from '@/components/clients/ClientAssetSheet';
 import ClientServicesDialog from '@/components/clients/ClientServicesDialog';
 import ClientCrudDialog from '@/components/clients/ClientCrudDialog';
+import ClientContactsDialog from '@/components/clients/ClientContactsDialog';
 import DeleteClientDialog from '@/components/clients/DeleteClientDialog';
 
 const ClientSelection: React.FC = () => {
@@ -27,6 +28,7 @@ const ClientSelection: React.FC = () => {
   const [profileOpen, setProfileOpen] = useState(false);
   const [assetOpen, setAssetOpen] = useState(false);
   const [servicesOpen, setServicesOpen] = useState(false);
+  const [contactsOpen, setContactsOpen] = useState(false);
 
   // CRUD state
   const [crudOpen, setCrudOpen] = useState(false);
@@ -64,6 +66,13 @@ const ClientSelection: React.FC = () => {
     setEditingOrgId(org.id);
     setEditingOrgName(org.name);
     setServicesOpen(true);
+  };
+
+  const openContacts = (e: React.MouseEvent, org: typeof organizations[0]) => {
+    e.stopPropagation();
+    setEditingOrgId(org.id);
+    setEditingOrgName(org.name);
+    setContactsOpen(true);
   };
 
   const openCreate = () => {
@@ -209,17 +218,21 @@ const ClientSelection: React.FC = () => {
                   </div>
 
                   {/* Quick edit buttons */}
-                  <div className="flex gap-2 mb-3">
-                    <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={(e) => openProfile(e, org)}>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    <Button variant="outline" size="sm" className="flex-1 text-xs min-w-[110px]" onClick={(e) => openProfile(e, org)}>
                       <FileText className="w-3.5 h-3.5 mr-1" />
                       Anagrafica
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={(e) => openAsset(e, org)}>
+                    <Button variant="outline" size="sm" className="flex-1 text-xs min-w-[110px]" onClick={(e) => openAsset(e, org)}>
                       <Server className="w-3.5 h-3.5 mr-1" />
                       Consistenze
                     </Button>
+                    <Button variant="outline" size="sm" className="flex-1 text-xs min-w-[110px]" onClick={(e) => openContacts(e, org)}>
+                      <ShieldCheck className="w-3.5 h-3.5 mr-1" />
+                      Rubrica & Permessi
+                    </Button>
                     {isSuperAdmin && (
-                      <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={(e) => openServices(e, org)}>
+                      <Button variant="outline" size="sm" className="flex-1 text-xs min-w-[110px]" onClick={(e) => openServices(e, org)}>
                         <Plug className="w-3.5 h-3.5 mr-1" />
                         Servizi
                       </Button>
@@ -242,6 +255,9 @@ const ClientSelection: React.FC = () => {
       <ClientAssetSheet organizationId={editingOrgId} organizationName={editingOrgName} open={assetOpen} onOpenChange={setAssetOpen} />
       {isSuperAdmin && editingOrgId && (
         <ClientServicesDialog organizationId={editingOrgId} organizationName={editingOrgName} open={servicesOpen} onOpenChange={setServicesOpen} />
+      )}
+      {editingOrgId && (
+        <ClientContactsDialog organizationId={editingOrgId} organizationName={editingOrgName} open={contactsOpen} onOpenChange={setContactsOpen} />
       )}
 
       {/* CRUD Dialogs */}
