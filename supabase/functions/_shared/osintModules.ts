@@ -29,6 +29,11 @@ export interface Finding {
   remediation?: string;
   evidence?: Record<string, unknown>;
   attribution_confidence?: string;
+  port?: number;
+  protocol?: string;
+  cve?: string[];
+  cvss?: number;
+  cisa_kev?: boolean;
 }
 
 export interface AssetRow {
