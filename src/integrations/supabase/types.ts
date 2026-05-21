@@ -1617,34 +1617,40 @@ export type Database = {
         Row: {
           code: string
           created_at: string
+          dark_risk360_enabled: boolean
           hicompliance_enabled: boolean
           id: string
           irp_extended: boolean
           name: string
           pentest_tools_auto_validation: boolean
           surface_scan_extended: boolean
+          surface_scan360_enabled: boolean
           updated_at: string
         }
         Insert: {
           code: string
           created_at?: string
+          dark_risk360_enabled?: boolean
           hicompliance_enabled?: boolean
           id?: string
           irp_extended?: boolean
           name: string
           pentest_tools_auto_validation?: boolean
           surface_scan_extended?: boolean
+          surface_scan360_enabled?: boolean
           updated_at?: string
         }
         Update: {
           code?: string
           created_at?: string
+          dark_risk360_enabled?: boolean
           hicompliance_enabled?: boolean
           id?: string
           irp_extended?: boolean
           name?: string
           pentest_tools_auto_validation?: boolean
           surface_scan_extended?: boolean
+          surface_scan360_enabled?: boolean
           updated_at?: string
         }
         Relationships: []
