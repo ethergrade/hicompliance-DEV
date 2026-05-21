@@ -165,7 +165,7 @@ const SurfaceScan360: React.FC = () => {
     setCurrentPage(1);
   }, [searchTerm, statusFilter, riskFilter, monitoredIpRules.length]);
 
-  const scanResults = [
+  const scanResults = hasMonitoredRules ? [
     { 
       domain: 'cliente1.com', 
       status: 'Sicuro', 
@@ -209,7 +209,8 @@ const SurfaceScan360: React.FC = () => {
         { id: 'CVE-2024-0011', severity: 'low', description: 'Rate limiting not configured' }
       ]
     },
-  ];
+  ] : [];
+
 
   const getRiskColor = (risk: string) => {
     switch (risk) {
