@@ -51,6 +51,7 @@ import { Label } from '@/components/ui/label';
 import { getFindingTaxonomy, OWASP_TOP_10, cweLink, CVE_REGEX } from '@/lib/findingTaxonomy';
 import { useCveIntelBatch } from '@/hooks/useCveIntel';
 import { CveDetailDialog } from './CveDetailDialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface SecurityFindingsProps {
   shodanAssets?: ShodanAsset[];
