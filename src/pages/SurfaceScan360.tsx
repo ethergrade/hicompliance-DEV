@@ -692,8 +692,8 @@ const SurfaceScan360: React.FC = () => {
             />
           )}
 
-          {/* Monthly Monitoring Section */}
-          {monthlyMonitoring && (
+          {/* Weekly Monitoring Section — dati REALI dal cron settimanale (surface_scan_history) */}
+          {hasMonitoredRules && scanHistory.hasHistory && (
             <>
               {/* Monthly KPI Cards */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
