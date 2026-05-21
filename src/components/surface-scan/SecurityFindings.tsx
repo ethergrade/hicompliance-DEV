@@ -683,7 +683,13 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
                           <div className="p-4 bg-muted/10 rounded-lg">
                             <h4 className="font-semibold mb-3">Dettagli Findings</h4>
                             <div className="space-y-4">
-                              {finding.vulnerabilities.map((vuln) => (
+                              {[...finding.vulnerabilities]
+                                .sort((a, b) => {
+                                  const sevDiff = (severityRank[normalizeSeverity(b.severity)] ?? 0) - (severityRank[normalizeSeverity(a.severity)] ?? 0);
+                                  if (sevDiff !== 0) return sevDiff;
+                                  return (b.cvssScore ?? -1) - (a.cvssScore ?? -1);
+                                })
+                                .map((vuln) => (
                                 <div key={vuln.id} className="border border-border rounded-lg p-4 bg-background">
                                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                     <div>
