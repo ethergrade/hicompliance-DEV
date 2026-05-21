@@ -173,7 +173,7 @@ const Dashboard: React.FC = () => {
             <p className="text-muted-foreground">{activeOrgName}</p>
           </div>
           <div className="text-right">
-            <div className="text-4xl font-bold text-red-500 mb-1">{totalIssues || fallbackData.totalIssues}</div>
+            <div className="text-4xl font-bold text-red-500 mb-1">{totalIssues}</div>
             <p className="text-sm text-muted-foreground">Issues Attive</p>
           </div>
         </div>
