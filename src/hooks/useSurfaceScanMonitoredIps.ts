@@ -18,6 +18,14 @@ export interface SurfaceScanMonitoredIpRule {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  discovered_via?: 'manual' | 'subdomain_dump' | string;
+  discovered_from?: string | null;
+}
+
+export interface AddRuleOptions {
+  discovered_via?: 'manual' | 'subdomain_dump';
+  discovered_from?: string | null;
+  silent?: boolean;
 }
 
 interface UseSurfaceScanMonitoredIpsReturn {
@@ -26,7 +34,7 @@ interface UseSurfaceScanMonitoredIpsReturn {
   saving: boolean;
   isAdmin: boolean;
   hasRules: boolean;
-  addRule: (input: string) => Promise<boolean>;
+  addRule: (input: string, opts?: AddRuleOptions) => Promise<boolean>;
   removeRule: (id: string) => Promise<boolean>;
   refetch: () => Promise<void>;
 }
