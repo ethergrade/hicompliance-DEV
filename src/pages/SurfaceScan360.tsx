@@ -638,8 +638,7 @@ const SurfaceScan360: React.FC = () => {
             </Card>
           )}
 
-          {/* Subdomain Discovery — DNSDumpster-like */}
-          <SubdomainDumpPanel isAdmin={isAdminUser} />
+          {/* Subdomain discovery is performed automatically when a domain is added (depth configured per organization). */}
 
           {/* Trendline storico settimanale */}
           <SurfaceScanTrendline />
