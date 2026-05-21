@@ -652,11 +652,28 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
                         </Button>
                       </TableCell>
                       <TableCell>
-                        <div>
-                          <div className="font-medium break-all">{finding.hostname}</div>
-                          <div className="text-sm text-muted-foreground">{finding.assetType}</div>
-                          <div className="text-xs text-muted-foreground">{finding.operatingSystem}</div>
-                        </div>
+                        {(() => {
+                          const d = getDumpedFrom(finding.hostname);
+                          return (
+                            <div>
+                              <div className="font-medium break-all flex items-center gap-2 flex-wrap">
+                                <span>{finding.hostname}</span>
+                                {d.isDumped && (
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-purple-500/10 text-purple-600 border-purple-500/30 text-[10px] px-1.5 py-0 h-5 inline-flex items-center gap-1"
+                                    title={d.from ? `Sottodominio scoperto da ${d.from}` : 'Sottodominio scoperto via Subdomain Dump'}
+                                  >
+                                    <GitBranch className="w-3 h-3" />
+                                    Sottodominio{d.from ? ` · ${d.from}` : ''}
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="text-sm text-muted-foreground">{finding.assetType}</div>
+                              <div className="text-xs text-muted-foreground">{finding.operatingSystem}</div>
+                            </div>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell>
                         <code className="px-2 py-1 bg-muted rounded text-sm">{finding.ip}</code>
