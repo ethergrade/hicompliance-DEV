@@ -400,11 +400,11 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
 
       return matchesSearch && matchesSeverity && matchesEpss && matchesStatus && matchesOwasp && matchesKev && matchesOnlyCve;
     });
-  }, [realFindings, searchTerm, severityFilter, epssRangeFilter, statusFilter]);
+  }, [enrichedFindings, searchTerm, severityFilter, epssRangeFilter, statusFilter, owaspFilter, kevOnly, onlyCve]);
 
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, severityFilter, epssRangeFilter, statusFilter, realFindings.length]);
+  }, [searchTerm, severityFilter, epssRangeFilter, statusFilter, owaspFilter, kevOnly, onlyCve, enrichedFindings.length]);
 
   const totalPages = Math.ceil(filteredFindings.length / itemsPerPage);
   const paginatedFindings = filteredFindings.slice(
