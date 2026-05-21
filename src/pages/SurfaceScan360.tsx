@@ -210,6 +210,9 @@ const SurfaceScan360: React.FC = () => {
     }));
   const monitoredAssetsAll = [...monitoredAssets, ...dumpedVirtualAssets];
 
+  const filteredAssets = monitoredAssetsAll.filter(asset => {
+
+
     const matchesSearch = searchTerm === '' || 
       asset.ip.toLowerCase().includes(searchTerm.toLowerCase()) ||
       asset.hostname.toLowerCase().includes(searchTerm.toLowerCase()) ||
