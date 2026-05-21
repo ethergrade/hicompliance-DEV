@@ -6,7 +6,7 @@ import { Loader2, FileText, Download, Sparkles, ChevronLeft, ChevronRight } from
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
-import jsPDF from 'jspdf';
+import { generateSurfaceScan360Pdf } from '@/lib/surfaceScan360PdfReport';
 
 interface AiReport {
   generated_at: string;
@@ -17,6 +17,7 @@ interface AiReport {
   findings_by_severity: Record<string, number>;
   intel: any[];
   observations?: any[];
+  subdomain_dumps?: any[];
   ai: {
     executive_summary?: string;
     risk_score?: number;
@@ -43,6 +44,14 @@ const sevColor = (s?: string) => {
 };
 
 const PAGE_SIZE = 20;
+
+const normalizeHost = (value?: string) => String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+const getSubdomainDepth = (host: string, root: string) => {
+  const h = normalizeHost(host);
+  const r = normalizeHost(root);
+  if (!h || !r || h === r || !h.endsWith(`.${r}`)) return 0;
+  return h.slice(0, -(r.length + 1)).split('.').filter(Boolean).length;
+};
 
 function Paginator({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (p: number) => void }) {
   if (totalPages <= 1) return null;
