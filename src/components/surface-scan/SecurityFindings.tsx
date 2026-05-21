@@ -488,7 +488,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
               {scanRunning && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Findings reali da Shodan, Web Check/OSINT e Pentest-Tools per gli asset monitorati
+              Findings reali rilevati dai nostri motori di Attack Surface Intelligence, OSINT e validazione attiva delle vulnerabilità sugli asset monitorati
             </p>
           </div>
           <Button variant="outline" className="flex items-center gap-2" disabled={enrichedFindings.length === 0}>
