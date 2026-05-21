@@ -45,7 +45,9 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { LogoutButton } from '@/components/auth/LogoutButton';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useRolePermissions } from '@/hooks/useRolePermissions';
- import { useClientContext } from '@/contexts/ClientContext';
+import { useClientContext } from '@/contexts/ClientContext';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
 const navigation = [
   { title: 'Home', href: '/', icon: Home },
@@ -99,15 +101,54 @@ export const AppSidebar: React.FC = () => {
   const { isSuperAdmin, isSales } = useUserRoles();
   const { isModuleEnabled } = useRolePermissions();
   const { selectedOrganization, canManageMultipleClients } = useClientContext();
-  
+
   const isAdmin = userProfile?.user_type === 'admin';
   const isConsoleUser = isSuperAdmin || isSales;
   const platformName = isConsoleUser ? 'HiConsole' : 'HiCompliance';
+
+  // Fetch feature flags of selected/active organization to gate sidebar modules
+  const { data: orgFlags } = useQuery({
+    queryKey: ['sidebar-org-flags', selectedOrganization?.id],
+    queryFn: async () => {
+      if (!selectedOrganization?.id) return null;
+      const { data } = await supabase
+        .from('organizations')
+        .select('hicompliance_enabled, surface_scan360_enabled, dark_risk360_enabled' as any)
+        .eq('id', selectedOrganization.id)
+        .maybeSingle();
+      return data as any;
+    },
+    enabled: !!selectedOrganization?.id,
+  });
+
+  const hicomplianceOn = !!orgFlags?.hicompliance_enabled;
+  const surfaceScanOn = !!orgFlags?.surface_scan360_enabled;
+  const darkRiskOn = !!orgFlags?.dark_risk360_enabled;
+
+  const isFeatureAllowed = (href: string) => {
+    // SuperAdmin/Sales without a selected org see everything (console view)
+    if (isConsoleUser && !selectedOrganization) return true;
+    if (href === '/surface-scan') return surfaceScanOn;
+    if (href === '/dark-risk') return darkRiskOn;
+    // HiCompliance core modules
+    if (['/assessment', '/analytics', '/remediation', '/incident-response', '/compliance-events'].includes(href)) {
+      return hicomplianceOn;
+    }
+    return true;
+  };
 
   const filteredNavigation = navigation.filter(item => {
     if ((item as any).superAdminOnly && !isSuperAdmin) return false;
     return isModuleEnabled(item.href);
   });
+
+  const visibleHiCompliance = hiComplianceModules.filter(
+    item => isModuleEnabled(item.href) && isFeatureAllowed(item.href)
+  );
+  const visibleIncident = incidentSubItems.filter(
+    item => isModuleEnabled(item.href) && isFeatureAllowed(item.href)
+  );
+  const hiComplianceGroupVisible = visibleHiCompliance.length > 0 || visibleIncident.length > 0;
 
   const hiComplianceActive = [...hiComplianceModules, ...incidentSubItems].some(
     item => location.pathname === item.href
@@ -170,52 +211,51 @@ export const AppSidebar: React.FC = () => {
         </SidebarGroup>
 
         {/* HiCompliance collapsible group */}
-        <SidebarGroup>
-          <Collapsible open={hiComplianceOpen} onOpenChange={setHiComplianceOpen}>
-            <CollapsibleTrigger className="flex w-full items-center justify-between px-4 py-2 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>HiCompliance</span>
-              </div>
-              {!collapsed && (
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${hiComplianceOpen ? 'rotate-180' : ''}`} />
-              )}
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {hiComplianceModules
-                    .filter(item => isModuleEnabled(item.href))
-                    .map(item => renderNavItem(item))}
+        {hiComplianceGroupVisible && (
+          <SidebarGroup>
+            <Collapsible open={hiComplianceOpen} onOpenChange={setHiComplianceOpen}>
+              <CollapsibleTrigger className="flex w-full items-center justify-between px-4 py-2 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>HiCompliance</span>
+                </div>
+                {!collapsed && (
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${hiComplianceOpen ? 'rotate-180' : ''}`} />
+                )}
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {visibleHiCompliance.map(item => renderNavItem(item))}
 
-                  {/* INCIDENT sub-collapsible */}
-                  {(isModuleEnabled('/incident-response') || isModuleEnabled('/compliance-events')) && (
-                    <li>
-                      <Collapsible open={incidentOpen} onOpenChange={setIncidentOpen}>
-                        <CollapsibleTrigger className="flex w-full items-center justify-between mx-2 px-3 py-2 text-sm rounded-lg text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors">
-                          <div className="flex items-center gap-2">
-                            <Shield className="w-4 h-4" />
-                            {!collapsed && <span>Incident</span>}
-                          </div>
-                          {!collapsed && (
-                            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${incidentOpen ? 'rotate-180' : ''}`} />
-                          )}
-                        </CollapsibleTrigger>
-                        <CollapsibleContent>
-                          <SidebarMenu>
-                            {incidentSubItems
-                              .filter(item => isModuleEnabled(item.href))
-                              .map(item => renderNavItem(item, true))}
-                          </SidebarMenu>
-                        </CollapsibleContent>
-                      </Collapsible>
-                    </li>
-                  )}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </CollapsibleContent>
-          </Collapsible>
-        </SidebarGroup>
+                    {/* INCIDENT sub-collapsible */}
+                    {visibleIncident.length > 0 && (
+                      <li>
+                        <Collapsible open={incidentOpen} onOpenChange={setIncidentOpen}>
+                          <CollapsibleTrigger className="flex w-full items-center justify-between mx-2 px-3 py-2 text-sm rounded-lg text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors">
+                            <div className="flex items-center gap-2">
+                              <Shield className="w-4 h-4" />
+                              {!collapsed && <span>Incident</span>}
+                            </div>
+                            {!collapsed && (
+                              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${incidentOpen ? 'rotate-180' : ''}`} />
+                            )}
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <SidebarMenu>
+                              {visibleIncident.map(item => renderNavItem(item, true))}
+                            </SidebarMenu>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      </li>
+                    )}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </Collapsible>
+          </SidebarGroup>
+        )}
+
 
         {/* Threat Management */}
         {isModuleEnabled('/threat-management') && (

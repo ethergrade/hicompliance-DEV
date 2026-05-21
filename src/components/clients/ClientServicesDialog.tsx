@@ -52,18 +52,18 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     queryFn: async () => {
       const { data, error } = await supabase
         .from('organizations')
-        .select('hicompliance_enabled, irp_extended, surface_scan_extended, pentest_tools_auto_validation')
+        .select('hicompliance_enabled, irp_extended, surface_scan_extended, pentest_tools_auto_validation, surface_scan360_enabled, dark_risk360_enabled' as any)
         .eq('id', organizationId)
         .maybeSingle();
       if (error) throw error;
-      return data || { hicompliance_enabled: false, irp_extended: false, surface_scan_extended: false, pentest_tools_auto_validation: false };
+      return (data as any) || { hicompliance_enabled: false, irp_extended: false, surface_scan_extended: false, pentest_tools_auto_validation: false, surface_scan360_enabled: false, dark_risk360_enabled: false };
     },
     enabled: open && !!organizationId,
   });
 
   const updateFlagsMutation = useMutation({
-    mutationFn: async (patch: Partial<{ hicompliance_enabled: boolean; irp_extended: boolean; surface_scan_extended: boolean; pentest_tools_auto_validation: boolean }>) => {
-      const { error } = await supabase.from('organizations').update(patch).eq('id', organizationId);
+    mutationFn: async (patch: Record<string, boolean>) => {
+      const { error } = await supabase.from('organizations').update(patch as any).eq('id', organizationId);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -190,8 +190,9 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
           </div>
         ) : (
           <ScrollArea className="max-h-[500px] pr-2">
-            {/* HiCompliance feature flags */}
+            {/* Top-level feature flags */}
             <div className="space-y-3 mb-4">
+              {/* HiCompliance */}
               <div className="flex items-center justify-between rounded-md border p-3">
                 <div className="flex items-center gap-3">
                   <div className={`p-1.5 rounded-md ${orgFlags?.hicompliance_enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
@@ -199,7 +200,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                   </div>
                   <div>
                     <p className="text-sm font-medium">HiCompliance</p>
-                    <p className="text-xs text-muted-foreground">Include Assessment, SurfaceScan360 e Dark Risk</p>
+                    <p className="text-xs text-muted-foreground">Assessment, Analisi, Remediation, Incident</p>
                   </div>
                 </div>
                 <Switch
@@ -207,7 +208,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                   disabled={updateFlagsMutation.isPending}
                   onCheckedChange={(v) => {
                     const patch: any = { hicompliance_enabled: v };
-                    if (!v) { patch.irp_extended = false; patch.surface_scan_extended = false; }
+                    if (!v) { patch.irp_extended = false; }
                     updateFlagsMutation.mutate(patch);
                   }}
                 />
@@ -229,7 +230,33 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                       onCheckedChange={(v) => updateFlagsMutation.mutate({ irp_extended: v })}
                     />
                   </div>
+                </div>
+              )}
 
+              {/* SurfaceScan360 — independent */}
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <div className="flex items-center gap-3">
+                  <div className={`p-1.5 rounded-md ${orgFlags?.surface_scan360_enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                    <Radar className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">SurfaceScan360</p>
+                    <p className="text-xs text-muted-foreground">Scansione attack surface esterna</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={!!orgFlags?.surface_scan360_enabled}
+                  disabled={updateFlagsMutation.isPending}
+                  onCheckedChange={(v) => {
+                    const patch: any = { surface_scan360_enabled: v };
+                    if (!v) { patch.surface_scan_extended = false; patch.pentest_tools_auto_validation = false; }
+                    updateFlagsMutation.mutate(patch);
+                  }}
+                />
+              </div>
+
+              {orgFlags?.surface_scan360_enabled && (
+                <div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
                   <div className="flex items-center justify-between rounded-md border p-2.5">
                     <div className="flex items-center gap-3">
                       <Radar className="w-4 h-4 text-muted-foreground" />
@@ -245,12 +272,12 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                     />
                   </div>
 
-                  <div className="flex items-center justify-between gap-2 py-2">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between rounded-md border p-2.5">
+                    <div className="flex items-center gap-3">
                       <ShieldCheck className="w-4 h-4 text-muted-foreground" />
                       <div>
                         <p className="text-sm font-medium">Validazione attiva CVE (Pentest-Tools)</p>
-                        <p className="text-xs text-muted-foreground">Auto-scan attivo quando Shodan è cieco o l'IP è shared hosting</p>
+                        <p className="text-xs text-muted-foreground">Auto-scan quando Shodan è cieco o IP è shared hosting</p>
                       </div>
                     </div>
                     <Switch
@@ -261,7 +288,26 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                   </div>
                 </div>
               )}
+
+              {/* DarkRisk360 — independent */}
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <div className="flex items-center gap-3">
+                  <div className={`p-1.5 rounded-md ${orgFlags?.dark_risk360_enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                    <Eye className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">DarkRisk360</p>
+                    <p className="text-xs text-muted-foreground">Monitoraggio dark web e leak</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={!!orgFlags?.dark_risk360_enabled}
+                  disabled={updateFlagsMutation.isPending}
+                  onCheckedChange={(v) => updateFlagsMutation.mutate({ dark_risk360_enabled: v })}
+                />
+              </div>
             </div>
+
 
             <Separator className="my-3" />
             <p className="text-xs font-medium text-muted-foreground mb-2 px-1">Servizi HiSolution (API)</p>
