@@ -28,6 +28,22 @@ const severityClass: Record<string, string> = {
   info: 'bg-muted text-muted-foreground',
 };
 
+// Label vendor-neutral per i tipi di scansione e l'origine
+const SCAN_PROFILE_LABELS: Record<string, string> = {
+  safe_recon: 'Ricognizione passiva',
+  recon_safe: 'Ricognizione passiva',
+  cve_web: 'Validazione CVE Web',
+  cve_network: 'Validazione CVE Network',
+};
+const TRIGGERED_BY_LABELS: Record<string, string> = {
+  manual: 'Avvio manuale',
+  cron: 'Schedulazione automatica',
+  auto_from_shodan: 'Validazione automatica da OSINT',
+};
+const scanProfileLabel = (v?: string | null) => (v && SCAN_PROFILE_LABELS[v]) || v || '—';
+const triggeredByLabel = (v?: string | null) => (v && TRIGGERED_BY_LABELS[v]) || v || '—';
+
+
 const confidenceLabel: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }> = {
   validated: { label: 'Validato', variant: 'default' },
   active_scan_validated: { label: 'Scan attivo confermato', variant: 'default' },
