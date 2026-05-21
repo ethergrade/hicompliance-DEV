@@ -1298,22 +1298,31 @@ export type Database = {
         Row: {
           code: string
           created_at: string
+          hicompliance_enabled: boolean
           id: string
+          irp_extended: boolean
           name: string
+          surface_scan_extended: boolean
           updated_at: string
         }
         Insert: {
           code: string
           created_at?: string
+          hicompliance_enabled?: boolean
           id?: string
+          irp_extended?: boolean
           name: string
+          surface_scan_extended?: boolean
           updated_at?: string
         }
         Update: {
           code?: string
           created_at?: string
+          hicompliance_enabled?: boolean
           id?: string
+          irp_extended?: boolean
           name?: string
+          surface_scan_extended?: boolean
           updated_at?: string
         }
         Relationships: []
