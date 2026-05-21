@@ -64,6 +64,7 @@ import { useSurfaceScanAlerts, SurfaceScanAlertTypes } from '@/hooks/useSurfaceS
 import { useSurfaceScanMonitoredIps } from '@/hooks/useSurfaceScanMonitoredIps';
 import { isIpInRange } from '@/lib/ipRange';
 import { useProgressiveShodanScan } from '@/hooks/useProgressiveShodanScan';
+import { useStartSurfaceScan } from '@/hooks/useSurfaceScanEngine';
 import { Progress } from '@/components/ui/progress';
 import { SurfaceScanTrendline } from '@/components/surface-scan/SurfaceScanTrendline';
 import { ValidatedCveTab } from '@/components/surface-scan/ValidatedCveTab';
@@ -139,9 +140,13 @@ const SurfaceScan360: React.FC = () => {
 
   const monitoredAssets = allPublicAssets.filter((asset) => {
     if (!hasMonitoredRules) return true;
-    return monitoredIpRules.some((rule) =>
-      isIpInRange(asset.ip, rule.ip_start, rule.ip_end)
-    );
+    return monitoredIpRules.some((rule) => {
+      if (rule.entry_type === 'domain') {
+        const dom = rule.input_value.toLowerCase();
+        return asset.hostname?.toLowerCase().includes(dom);
+      }
+      return isIpInRange(asset.ip, rule.ip_start, rule.ip_end);
+    });
   });
 
   const filteredAssets = monitoredAssets.filter(asset => {
@@ -444,10 +449,22 @@ const SurfaceScan360: React.FC = () => {
     }
   };
 
+  const startSurfaceScan = useStartSurfaceScan();
+
   const handleAddMonitoredIpRule = async () => {
-    const success = await addMonitoredIpRule(newMonitoredIpInput);
+    const input = newMonitoredIpInput.trim();
+    const success = await addMonitoredIpRule(input);
     if (success) {
       setNewMonitoredIpInput('');
+      // Se è un dominio, avvia anche il motore Web Check + Pentest-Tools (enrichment OSINT/CVE)
+      if (input && !/^\d{1,3}(\.\d{1,3}){3}/.test(input) && !input.includes('/') && !input.includes('-')) {
+        try {
+          await startSurfaceScan.mutateAsync({ target: input });
+          toast.success(`Scansione avviata: Shodan + Web Check + Pentest-Tools su ${input}`);
+        } catch (e: any) {
+          console.warn('start surface scan failed', e);
+        }
+      }
     }
   };
 
@@ -489,15 +506,15 @@ const SurfaceScan360: React.FC = () => {
           {isAdminUser && (
             <Card className="border-primary/30 bg-primary/5">
               <CardHeader>
-                <CardTitle>Gestione IP Monitorati (Solo Admin)</CardTitle>
+                <CardTitle>Gestione Asset Monitorati (Solo Admin)</CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Aggiungi IP singoli, range o reti CIDR per controllare quali asset pubblici rientrano nel monitoraggio.
+                  Aggiungi <strong>domini</strong>, IP singoli, range o reti CIDR. Le scansioni vengono lanciate sui motori Shodan, Web Check e Pentest-Tools.
                 </p>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex flex-col md:flex-row gap-2">
                   <Input
-                    placeholder="Es. 203.0.113.10 | 203.0.113.10-203.0.113.20 | 203.0.113.0/24"
+                    placeholder="Es. cliente.com | 203.0.113.10 | 203.0.113.10-203.0.113.20 | 203.0.113.0/24"
                     value={newMonitoredIpInput}
                     onChange={(event) => setNewMonitoredIpInput(event.target.value)}
                     disabled={monitoredIpRulesSaving}
