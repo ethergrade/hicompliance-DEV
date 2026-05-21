@@ -453,25 +453,50 @@ const SurfaceScan360: React.FC = () => {
                 Scansione completa della superficie di attacco esterna
               </p>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center space-x-2">
-                <Calendar className="w-4 h-4 text-primary" />
-                <span className="text-sm text-muted-foreground">Monitoraggio Mensile</span>
-                <Switch
-                  checked={monthlyMonitoring}
-                  onCheckedChange={setMonthlyMonitoring}
-                />
-              </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <Badge variant="outline" className="border-primary/40 text-primary bg-primary/5 gap-1.5 py-1.5">
+                <Calendar className="w-3.5 h-3.5" />
+                Scansione automatica settimanale
+                {scanHistory.latest && (
+                  <span className="text-muted-foreground font-normal ml-1">
+                    · Ultima: {new Date(scanHistory.latest.scanned_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+                {!scanHistory.latest && !scanHistory.isLoading && (
+                  <span className="text-muted-foreground font-normal ml-1">· In attesa primo snapshot</span>
+                )}
+              </Badge>
               <Button variant="outline" onClick={handleExportPdf} disabled={exportingPdf}>
                 <Download className="w-4 h-4 mr-2" />
                 {exportingPdf ? 'Esportazione...' : 'Esporta PDF'}
               </Button>
-              <Button className="bg-primary text-primary-foreground">
+              <Button
+                className="bg-primary text-primary-foreground"
+                disabled={triggeringScan || !hasMonitoredRules}
+                onClick={async () => {
+                  if (!hasMonitoredRules) {
+                    toast.error('Nessuna regola monitorata', { description: 'Aggiungi almeno un IP/dominio prima di lanciare la scansione.' });
+                    return;
+                  }
+                  setTriggeringScan(true);
+                  try {
+                    const res = await triggerManualSurfaceScan(monitoredIpRules[0].organization_id);
+                    const total = res?.results?.[0]?.total_assets ?? 0;
+                    toast.success('Scansione completata', { description: `${total} asset analizzati e salvati su DB.` });
+                    await scanHistory.refetch();
+                  } catch (e: any) {
+                    toast.error('Errore scansione', { description: e?.message ?? 'Riprova più tardi' });
+                  } finally {
+                    setTriggeringScan(false);
+                  }
+                }}
+              >
                 <Search className="w-4 h-4 mr-2" />
-                Nuova Scansione
+                {triggeringScan ? 'Scansione in corso...' : 'Esegui Scansione'}
               </Button>
             </div>
           </div>
+
 
           {isAdminUser && (
             <Card className="border-primary/30 bg-primary/5">
