@@ -239,21 +239,26 @@ const Dashboard: React.FC = () => {
             </div>
           </CardHeader>
           <CardContent className="space-y-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {hiSolutionServices.length > 0
-                ? hiSolutionServices.map((orgService, index) => {
-                    const service = orgService.services;
-                    return renderServiceCard(
-                      service,
-                      orgService.health_score || 0,
-                      index
-                    );
-                  })
-                : fallbackServices.map((s, i) =>
-                    renderServiceCard({ name: s.name, code: s.code, id: s.id }, s.healthScore, i)
-                  )
-              }
-            </div>
+            {hiSolutionServices.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {hiSolutionServices.map((orgService, index) => {
+                  const service = orgService.services;
+                  return renderServiceCard(service, orgService.health_score ?? 0, index);
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-12 border border-dashed border-border rounded-lg">
+                <p className="text-sm text-muted-foreground mb-3">
+                  Nessun servizio HiSolution collegato per questo cliente.
+                </p>
+                {(isSuperAdmin || canManageIntegrationSettings) && (
+                  <Button variant="outline" size="sm" onClick={() => activeOrgId && setModulesDialogOpen(true)}>
+                    <Settings className="w-4 h-4 mr-1" />
+                    Configura servizi
+                  </Button>
+                )}
+              </div>
+            )}
 
             <div className="border-t border-border pt-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
