@@ -63,7 +63,8 @@ import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceS
 import { useSurfaceScanAlerts, SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
 import { useSurfaceScanMonitoredIps } from '@/hooks/useSurfaceScanMonitoredIps';
 import { isIpInRange } from '@/lib/ipRange';
-import { useShodanScan } from '@/hooks/useShodanScan';
+import { useProgressiveShodanScan } from '@/hooks/useProgressiveShodanScan';
+import { Progress } from '@/components/ui/progress';
 
 const SurfaceScan360: React.FC = () => {
   const exportContainerRef = useRef<HTMLDivElement>(null);
@@ -115,19 +116,24 @@ const SurfaceScan360: React.FC = () => {
     { ip: '203.0.113.186', hostname: 'monitor.cliente1.com', score: 77, risk: 'Medio', status: 'Attenzione', ports: [443, 9090], services: ['HTTPS', 'Prometheus'] },
   ];
 
-  // Target da inviare a Shodan: input_value delle regole (IP singolo, hostname, o ip_start per range)
-  const shodanTargets = React.useMemo(() => {
-    return monitoredIpRules
-      .map((r) => (r.entry_type === 'range' ? r.ip_start : r.input_value))
-      .filter(Boolean);
-  }, [monitoredIpRules]);
+  // Engine progressivo: 1 query per regola, range espansi server-side
+  const scanRules = React.useMemo(
+    () => monitoredIpRules.map((r) => ({
+      id: r.id,
+      entry_type: r.entry_type as 'single' | 'range' | 'cidr',
+      input_value: r.input_value,
+      ip_start: r.ip_start,
+      ip_end: r.ip_end,
+    })),
+    [monitoredIpRules]
+  );
 
-  const { data: shodanData, isLoading: shodanLoading, error: shodanError } =
-    useShodanScan(shodanTargets, hasMonitoredRules);
+  const shodanScan = useProgressiveShodanScan(scanRules, hasMonitoredRules);
+  const { assets: shodanAssets, isLoading: shodanLoading, error: shodanError, progress: scanProgress, completed: scanCompleted, total: scanTotal, truncatedRules } = shodanScan;
 
   // Se ci sono regole monitorate -> usa dati reali Shodan; altrimenti mock di anteprima
   const allPublicAssets = hasMonitoredRules
-    ? (shodanData?.assets ?? []).map((a) => ({
+    ? shodanAssets.map((a) => ({
         ip: a.ip,
         hostname: a.hostname,
         score: a.score,
@@ -512,9 +518,27 @@ const SurfaceScan360: React.FC = () => {
                 </div>
 
                 <div className="rounded-lg border border-border">
-                  <div className="px-3 py-2 border-b border-border bg-muted/30 text-xs text-muted-foreground">
-                    Regole attive: {monitoredIpRules.length}
+                  <div className="px-3 py-2 border-b border-border bg-muted/30 text-xs text-muted-foreground flex items-center justify-between gap-3">
+                    <span>Regole attive: {monitoredIpRules.length}</span>
+                    {hasMonitoredRules && scanTotal > 0 && (
+                      <div className="flex items-center gap-2 min-w-0 flex-1 max-w-xs">
+                        <Progress value={scanProgress} className="h-1.5 flex-1" />
+                        <span className="whitespace-nowrap">
+                          {shodanLoading ? `Scansione ${scanCompleted}/${scanTotal}` : `Completata ${scanCompleted}/${scanTotal}`}
+                        </span>
+                      </div>
+                    )}
                   </div>
+                  {truncatedRules.length > 0 && (
+                    <div className="px-3 py-2 border-b border-border bg-amber-500/10 text-xs text-amber-600 dark:text-amber-400">
+                      Range troncati a 256 IP: {truncatedRules.join(', ')}
+                    </div>
+                  )}
+                  {shodanError && (
+                    <div className="px-3 py-2 border-b border-border bg-destructive/10 text-xs text-destructive">
+                      Errore Shodan: {shodanError.message}
+                    </div>
+                  )}
 
                   {monitoredIpRulesLoading ? (
                     <div className="p-4 text-sm text-muted-foreground">Caricamento regole in corso...</div>
