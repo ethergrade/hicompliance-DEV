@@ -9,6 +9,8 @@ import { Switch } from '@/components/ui/switch';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { generateSurfaceScan360Pdf } from '@/lib/surfaceScan360PdfReport';
 import {
   Tooltip,
   TooltipContent,
