@@ -10,16 +10,17 @@
    created_at: string;
  }
  
- interface ClientContextType {
-   selectedOrganization: Organization | null;
-   setSelectedOrganization: (org: Organization) => void;
-   clearSelection: () => void;
-   canManageMultipleClients: boolean;
-   isLoadingClients: boolean;
-   organizations: Organization[];
-   fetchOrganizations: () => Promise<void>;
-   userOrganizationId: string | null;
- }
+interface ClientContextType {
+  selectedOrganization: Organization | null;
+  setSelectedOrganization: (org: Organization) => void;
+  clearSelection: () => void;
+  canManageMultipleClients: boolean;
+  isLoadingClients: boolean;
+  hasFetchedOrganizations: boolean;
+  organizations: Organization[];
+  fetchOrganizations: () => Promise<void>;
+  userOrganizationId: string | null;
+}
  
  const ClientContext = createContext<ClientContextType | undefined>(undefined);
  
