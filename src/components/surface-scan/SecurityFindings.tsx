@@ -41,6 +41,7 @@ import {
   Calendar,
   Loader2,
   Lightbulb,
+  GitBranch,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
