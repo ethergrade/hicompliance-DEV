@@ -49,11 +49,22 @@ Deno.serve(async (req) => {
     const assets: any[] = [];
     const errors: string[] = [];
 
+    const mapFinding = (f: any, provider: string) => ({
+      organization_id: job.organization_id, scan_job_id: job_id, provider,
+      module: f.module, finding_type: f.finding_type, title: f.title,
+      description: f.description ?? null, severity: f.severity,
+      affected_asset: f.affected_asset ?? null, affected_url: f.affected_url ?? null,
+      remediation: f.remediation ?? null, evidence: f.evidence ?? null,
+      attribution_confidence: f.attribution_confidence ?? 'medium',
+      port: f.port ?? null, protocol: f.protocol ?? null,
+      cve: f.cve ?? null, cvss: f.cvss ?? null, cisa_kev: f.cisa_kev ?? null,
+    });
+
     for (const r of results) {
       if (r.status === 'fulfilled') {
         const v = r.value as ModuleResult;
         for (const o of v.observations) observations.push({ organization_id: job.organization_id, scan_job_id: job_id, module: o.module, observation_type: o.observation_type, title: o.title ?? null, value: o.value, severity: o.severity ?? 'info', confidence: o.confidence ?? 'medium' });
-        for (const f of v.findings) findings.push({ organization_id: job.organization_id, scan_job_id: job_id, provider: 'internal', module: f.module, finding_type: f.finding_type, title: f.title, description: f.description ?? null, severity: f.severity, affected_asset: f.affected_asset ?? null, affected_url: f.affected_url ?? null, remediation: f.remediation ?? null, evidence: f.evidence ?? null, attribution_confidence: f.attribution_confidence ?? 'medium' });
+        for (const f of v.findings) findings.push(mapFinding(f, 'internal'));
         for (const a of v.assets) assets.push({ organization_id: job.organization_id, scan_job_id: job_id, asset_type: a.asset_type, asset_value: a.asset_value, hostname: a.hostname ?? null, root_domain: a.root_domain ?? null, ip: a.ip ?? null, source: a.source, confidence: a.confidence ?? 'medium', raw: a.raw ?? null });
       } else {
         errors.push(String(r.reason));
@@ -79,13 +90,25 @@ Deno.serve(async (req) => {
       intelRows.push(...sho.intel, ...urls.intel);
       observations.push(...sho.observations.map((o: any) => ({ organization_id: job.organization_id, scan_job_id: job_id, module: o.module, observation_type: o.observation_type, title: o.title ?? null, value: o.value, severity: o.severity ?? 'info', confidence: o.confidence ?? 'medium' })));
       observations.push(...urls.observations.map((o: any) => ({ organization_id: job.organization_id, scan_job_id: job_id, module: o.module, observation_type: o.observation_type, title: o.title ?? null, value: o.value, severity: o.severity ?? 'info', confidence: o.confidence ?? 'medium' })));
-      findings.push(...sho.findings.map((f: any) => ({ organization_id: job.organization_id, scan_job_id: job_id, provider: 'shodan', module: f.module, finding_type: f.finding_type, title: f.title, description: f.description ?? null, severity: f.severity, affected_asset: f.affected_asset ?? null, affected_url: f.affected_url ?? null, remediation: f.remediation ?? null, evidence: f.evidence ?? null, attribution_confidence: f.attribution_confidence ?? 'medium' })));
+      findings.push(...sho.findings.map((f: any) => mapFinding(f, 'shodan')));
+
+      // Arricchisci asset esistenti con services/fingerprint Shodan
+      for (const s of sho.intel as IntelRow[]) {
+        if (s.provider !== 'shodan' || !s.found) continue;
+        const asset = assets.find((a: any) => a.asset_value === s.target);
+        if (asset) {
+          asset.raw = { ...(asset.raw || {}), shodan: s.summary };
+          asset.confidence = 'high';
+        } else {
+          assets.push({ organization_id: job.organization_id, scan_job_id: job_id, asset_type: 'ipv4', asset_value: s.target, ip: s.target, source: 'shodan', confidence: 'high', raw: { shodan: s.summary } });
+        }
+      }
 
       // Hosting context dipende da shodan + http
       const hcRes = await hostingContextModule(ctx, sho.intel, httpObs.map((o) => ({ module: o.module, observation_type: o.observation_type, value: o.value })) as any);
       intelRows.push(...hcRes.intel);
       observations.push(...hcRes.observations.map((o: any) => ({ organization_id: job.organization_id, scan_job_id: job_id, module: o.module, observation_type: o.observation_type, title: o.title ?? null, value: o.value, severity: o.severity ?? 'info', confidence: o.confidence ?? 'medium' })));
-      findings.push(...hcRes.findings.map((f: any) => ({ organization_id: job.organization_id, scan_job_id: job_id, provider: 'internal', module: f.module, finding_type: f.finding_type, title: f.title, description: f.description ?? null, severity: f.severity, affected_asset: f.affected_asset ?? null, affected_url: f.affected_url ?? null, remediation: f.remediation ?? null, evidence: f.evidence ?? null, attribution_confidence: f.attribution_confidence ?? 'low' })));
+      findings.push(...hcRes.findings.map((f: any) => mapFinding(f, 'internal')));
     } catch (e) {
       errors.push(`intel: ${(e as Error).message}`);
     }
