@@ -258,7 +258,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
       const row = ensureRow(`external-${target}`, {
         id: `external-${target}`,
         ip: finding.ip || '—',
-        source: 'Pentest-Tools',
+        source: 'Validazione CVE',
         hostname: target,
         assetType: finding.service || finding.scan_job_id,
         operatingSystem: finding.port ? `Porta ${finding.port}` : 'Validazione CVE attiva',
