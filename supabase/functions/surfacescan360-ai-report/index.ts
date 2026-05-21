@@ -267,6 +267,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       findings_by_severity: sevCount,
       intel,
       observations,
+      monitored_scope,
       remediation_tasks,
       kev_generation: kevGen,
       ai: aiReport,
