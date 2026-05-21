@@ -232,7 +232,7 @@ const Dashboard: React.FC = () => {
                     </Button>
                 )}
                 <div className="text-right">
-                  <div className="text-2xl font-bold text-primary mb-1">{totalIssues || 23}</div>
+                  <div className="text-2xl font-bold text-primary mb-1">{totalIssues}</div>
                   <p className="text-xs text-muted-foreground">Issues Attive</p>
                 </div>
               </div>
