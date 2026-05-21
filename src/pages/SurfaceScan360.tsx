@@ -578,13 +578,19 @@ const SurfaceScan360: React.FC = () => {
                     </div>
                   ) : (
                     <div className="divide-y divide-border">
-                      {monitoredIpRules.map((rule) => (
+                      {monitoredIpRules.map((rule: any) => (
                         <div key={rule.id} className="flex items-center justify-between px-3 py-2">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <Badge variant="outline" className="uppercase">
                               {rule.entry_type}
                             </Badge>
                             <span className="text-sm font-medium">{rule.input_value}</span>
+                            {rule.discovered_via === 'subdomain_dump' && (
+                              <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary border-primary/30">
+                                <Globe className="w-3 h-3 mr-1" />
+                                Subdomain Dump{rule.discovered_from ? ` · ${rule.discovered_from}` : ''}
+                              </Badge>
+                            )}
                           </div>
                           <Button
                             variant="ghost"
