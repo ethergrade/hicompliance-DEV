@@ -150,7 +150,7 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
       });
 
       await fetchSuppliers();
-      return data as SupplierDirectoryEntry;
+      return data as unknown as SupplierDirectoryEntry;
     } catch (error) {
       console.error('Error adding supplier:', error);
       toast({

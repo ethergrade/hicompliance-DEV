@@ -55,7 +55,7 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
 
       if (error) throw error;
 
-      setRules((data || []) as SurfaceScanMonitoredIpRule[]);
+      setRules((data || []) as unknown as SurfaceScanMonitoredIpRule[]);
     } catch (error) {
       console.error('Error fetching monitored IP rules:', error);
       toast({
