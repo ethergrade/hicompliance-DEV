@@ -162,11 +162,11 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
 
     // Persisti il report (best-effort)
     try {
-      await supabase.from('external_scan_reports').insert({
+      await supabase.from('surface_scan_ai_reports').insert({
         organization_id, scan_job_id: job.id,
-        report_type: 'surface_scan_ai',
         title: `Report AI - ${job.raw_target}`,
         payload: reportPayload as any,
+        created_by: userData.user.id,
       });
     } catch (e) { console.warn('persist report failed', e); }
 
