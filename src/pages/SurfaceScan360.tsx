@@ -766,6 +766,10 @@ const SurfaceScan360: React.FC = () => {
             <SecurityFindings
               shodanAssets={shodanAssets}
               scanRunning={shodanLoading || startSurfaceScan.isPending}
+              dumpedHosts={(monitoredIpRules as any[])
+                .filter((r) => r.discovered_via === 'subdomain_dump')
+                .map((r) => ({ host: normHost(r.input_value), from: r.discovered_from || null }))
+                .filter((r) => r.host)}
             />
           )}
 
