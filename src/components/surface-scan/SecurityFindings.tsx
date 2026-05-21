@@ -60,7 +60,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 interface SecurityFindingsProps {
   shodanAssets?: ShodanAsset[];
   scanRunning?: boolean;
-  dumpedHosts?: Array<{ host: string; from: string | null }>;
+  dumpedHosts?: Array<{ host: string; from: string | null; ip?: string | null; meta?: string | null }>;
 }
 
 interface SecurityFinding {
@@ -201,15 +201,15 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
 
   const normHost = (v: string) => String(v || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
   const dumpedMap = useMemo(() => {
-    const m = new Map<string, string | null>();
+    const m = new Map<string, { from: string | null; ip?: string | null; meta?: string | null }>();
     for (const d of dumpedHosts) {
-      if (d.host) m.set(normHost(d.host), d.from || null);
+      if (d.host) m.set(normHost(d.host), { from: d.from || null, ip: d.ip, meta: d.meta });
     }
     return m;
   }, [dumpedHosts]);
   const getDumpedFrom = (hostname: string): { isDumped: boolean; from: string | null } => {
     const h = normHost(hostname);
-    if (dumpedMap.has(h)) return { isDumped: true, from: dumpedMap.get(h) ?? null };
+    if (dumpedMap.has(h)) return { isDumped: true, from: dumpedMap.get(h)?.from ?? null };
     return { isDumped: false, from: null };
   };
 
@@ -388,12 +388,49 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
       }
     }
 
+    for (const dumped of dumpedHosts) {
+      const host = normHost(dumped.host);
+      if (!host) continue;
+      const row = ensureRow(`dumped-${host}`, {
+        id: `dumped-${host}`,
+        ip: dumped.ip || resolveIp(host),
+        source: 'Discovery sottodomini',
+        hostname: host,
+        assetType: 'subdomain',
+        operatingSystem: dumped.meta || 'Evidenza discovery',
+        lastUpdated: new Date().toISOString(),
+      });
+      if (row.vulnerabilities.some((v) => v.id === `dumped-${host}-evidence`)) continue;
+      pushVulnerability(row, {
+        id: `dumped-${host}-evidence`,
+        cveId: 'subdomain_evidence',
+        cveList: [],
+        cvssScore: null,
+        cvssVector: '—',
+        epssScore: null,
+        epssPercentile: null,
+        description: `Sottodominio rilevato nello scope${dumped.from ? ` da ${dumped.from}` : ''}`,
+        severity: 'info',
+        category: 'Discovery sottodomini',
+        cwe: null,
+        owasp: null,
+        discoveredDate: new Date().toISOString(),
+        lastModified: new Date().toISOString(),
+        remediationStatus: 'open',
+        patchAvailable: false,
+        remediationText: null,
+        exploitAvailable: false,
+        affectedService: dumped.ip ? `IP ${dumped.ip}` : 'DNS',
+        source: 'Discovery sottodomini',
+      });
+    }
+
     return Array.from(rows.values()).sort((a, b) => {
       const severityDiff = severityRank[b.highestSeverity] - severityRank[a.highestSeverity];
       if (severityDiff !== 0) return severityDiff;
       return new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime();
     });
-  }, [externalFindings, shodanAssets, surfaceFindings, hostIpMap]);
+  }, [externalFindings, shodanAssets, surfaceFindings, hostIpMap, dumpedHosts]);
 
   // Collect all CVE IDs and enrich with NVD/EPSS/KEV cache
   const allCveIds = useMemo(() => {

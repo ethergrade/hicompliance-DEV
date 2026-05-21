@@ -15,6 +15,17 @@ const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: 
 
 const SEV_RANK: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
 
+function normalizeHost(value: string): string {
+  return String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, 'www.');
+}
+
+function subdomainDepth(host: string, rootDomain: string): number {
+  const h = normalizeHost(host);
+  const root = normalizeHost(rootDomain);
+  if (!h || !root || h === root || !h.endsWith(`.${root}`)) return 0;
+  return h.slice(0, -(root.length + 1)).split('.').filter(Boolean).length;
+}
+
 // Mappa euristica CVE → categoria assessment NIS2 (14 categorie ufficiali)
 function inferCategoryFromCwe(cweIds: string[] | null, title: string): string {
   const cwes = (cweIds ?? []).map((c) => String(c).toUpperCase());
@@ -158,7 +169,7 @@ Deno.serve(async (req) => {
     }
     if (!job) return json({ error: 'Nessuno scan disponibile per l\'organizzazione' }, 404);
 
-    const [profileRes, orgRes, assetsRes, findingsRes, intelRes, obsRes, monitoredRes] = await Promise.all([
+    const [profileRes, orgRes, assetsRes, findingsRes, intelRes, obsRes, monitoredRes, subdomainDumpRes] = await Promise.all([
       supabase.from('organization_profiles').select('*').eq('organization_id', organization_id).maybeSingle(),
       supabase.from('organizations').select('id, name').eq('id', organization_id).maybeSingle(),
       supabase.from('surface_assets').select('asset_type, asset_value, hostname, ip, source').eq('scan_job_id', job.id).limit(500),
@@ -166,11 +177,38 @@ Deno.serve(async (req) => {
       supabase.from('surface_external_intel').select('provider, target, summary, confidence').eq('scan_job_id', job.id).limit(200),
       supabase.from('surface_observations').select('module, observation_type, title, value, severity').eq('scan_job_id', job.id).limit(500),
       supabase.from('surface_scan_monitored_ips').select('entry_type, input_value, ip_start, ip_end, discovered_via, discovered_from').eq('organization_id', organization_id),
+      supabase.from('subdomain_dumps').select('id, root_domain, depth_limit, total_discovered, total_returned, truncated, sources, results, created_at').eq('organization_id', organization_id).order('created_at', { ascending: false }).limit(50),
     ]);
 
     const profile = profileRes.data;
     const org = orgRes.data;
-    const assets = assetsRes.data ?? [];
+    const rawAssets = assetsRes.data ?? [];
+    const subdomain_dumps = subdomainDumpRes.data ?? [];
+    const assetKeys = new Set(rawAssets.map((a: any) => normalizeHost(a.hostname || a.asset_value || a.ip)));
+    const discoveredSubdomainAssets = subdomain_dumps.flatMap((dump: any) =>
+      ((dump.results ?? []) as any[]).map((r: any) => ({
+        asset_type: 'subdomain',
+        asset_value: r.subdomain,
+        hostname: r.subdomain,
+        ip: r.ip,
+        source: 'discovery_sottodomini',
+        root_domain: dump.root_domain,
+        depth: subdomainDepth(r.subdomain, dump.root_domain),
+        discovered_at: dump.created_at,
+        evidence: {
+          root_domain: dump.root_domain,
+          country: r.country,
+          asn_name: r.asn_name,
+          depth_limit: dump.depth_limit,
+        },
+      }))
+    ).filter((a: any) => {
+      const key = normalizeHost(a.hostname || a.asset_value);
+      if (!key || assetKeys.has(key)) return false;
+      assetKeys.add(key);
+      return true;
+    });
+    const assets = [...rawAssets, ...discoveredSubdomainAssets];
     const findings = (findingsRes.data ?? []).sort((a, b) => (SEV_RANK[b.severity] ?? 0) - (SEV_RANK[a.severity] ?? 0));
     const intel = intelRes.data ?? [];
     const observations = obsRes.data ?? [];
@@ -183,7 +221,7 @@ Deno.serve(async (req) => {
     }));
 
     // ---- AI correlation ----
-    const systemPrompt = `Sei un CISO esperto in cybersecurity. Analizzi i risultati di una scansione Attack Surface (SurfaceScan360, basato su Shodan/Pentest-Tools/OSINT Web-Check).
+    const systemPrompt = `Sei un CISO esperto in cybersecurity. Analizzi i risultati di una scansione Attack Surface esterna.
 Produci un report STRUTTURATO in italiano, formato JSON con campi:
 {
   "executive_summary": "string (max 6 frasi, no emoji, no liste, severità con [CRITICO]/[ALTO]/[MEDIO]/[BASSO])",
@@ -200,6 +238,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       scan: { target: job.raw_target, type: job.target_type, profile: job.scan_profile, hosting_context: job.hosting_context, completed_at: job.completed_at },
       asset_count: assets.length,
       assets_sample: assets.slice(0, 30),
+      subdomain_evidence: discoveredSubdomainAssets.map((a: any) => ({ host: a.hostname, ip: a.ip, root_domain: a.root_domain, depth: a.depth })).slice(0, 50),
       findings_by_severity: sevCount,
       top_findings: topFindings,
       intel_summary: intel.slice(0, 20),
@@ -268,6 +307,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       intel,
       observations,
       monitored_scope,
+      subdomain_dumps,
       remediation_tasks,
       kev_generation: kevGen,
       ai: aiReport,

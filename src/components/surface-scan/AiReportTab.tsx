@@ -6,7 +6,7 @@ import { Loader2, FileText, Download, Sparkles, ChevronLeft, ChevronRight } from
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
-import jsPDF from 'jspdf';
+import { generateSurfaceScan360Pdf } from '@/lib/surfaceScan360PdfReport';
 
 interface AiReport {
   generated_at: string;
@@ -17,6 +17,7 @@ interface AiReport {
   findings_by_severity: Record<string, number>;
   intel: any[];
   observations?: any[];
+  subdomain_dumps?: any[];
   ai: {
     executive_summary?: string;
     risk_score?: number;
@@ -43,6 +44,14 @@ const sevColor = (s?: string) => {
 };
 
 const PAGE_SIZE = 20;
+
+const normalizeHost = (value?: string) => String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+const getSubdomainDepth = (host: string, root: string) => {
+  const h = normalizeHost(host);
+  const r = normalizeHost(root);
+  if (!h || !r || h === r || !h.endsWith(`.${r}`)) return 0;
+  return h.slice(0, -(r.length + 1)).split('.').filter(Boolean).length;
+};
 
 function Paginator({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (p: number) => void }) {
   if (totalPages <= 1) return null;
@@ -96,6 +105,16 @@ export const AiReportTab: React.FC = () => {
   const findings = report?.findings ?? [];
   const intel = report?.intel ?? [];
   const observations = report?.observations ?? [];
+  const subdomainEvidence = useMemo(() => (report?.subdomain_dumps ?? []).flatMap((dump: any) =>
+    ((dump.results ?? []) as any[]).map((r: any) => ({
+      host: r.subdomain,
+      ip: r.ip,
+      root: dump.root_domain,
+      depth: getSubdomainDepth(r.subdomain, dump.root_domain),
+      discoveredAt: dump.created_at,
+      meta: [r.country, r.asn_name].filter(Boolean).join(' · '),
+    }))
+  ), [report?.subdomain_dumps]);
 
   const assetPages = Math.max(1, Math.ceil(assets.length / PAGE_SIZE));
   const findingPages = Math.max(1, Math.ceil(findings.length / PAGE_SIZE));
@@ -109,113 +128,7 @@ export const AiReportTab: React.FC = () => {
 
   const downloadPdf = () => {
     if (!report) return;
-    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-    const margin = 40;
-    const w = doc.internal.pageSize.getWidth();
-    const h = doc.internal.pageSize.getHeight();
-    let y = margin;
-
-    const newPage = () => { doc.addPage(); y = margin; };
-    const ensure = (need: number) => { if (y + need > h - margin) newPage(); };
-    const line = (txt: string, opts: { size?: number; bold?: boolean; color?: [number, number, number] } = {}) => {
-      const size = opts.size ?? 10; doc.setFontSize(size);
-      doc.setFont('helvetica', opts.bold ? 'bold' : 'normal');
-      if (opts.color) doc.setTextColor(...opts.color); else doc.setTextColor(20, 20, 20);
-      const lines = doc.splitTextToSize(txt, w - margin * 2);
-      for (const l of lines) { ensure(size + 2); doc.text(l, margin, y); y += size + 4; }
-    };
-    const hr = () => { ensure(8); doc.setDrawColor(200); doc.line(margin, y, w - margin, y); y += 8; };
-
-    line('Report SurfaceScan360 - Sintesi AI', { size: 18, bold: true });
-    line(`Generato: ${new Date(report.generated_at).toLocaleString('it-IT')}`, { size: 9, color: [120, 120, 120] });
-    hr();
-
-    // Anagrafica
-    line('1. Anagrafica cliente', { size: 13, bold: true });
-    const o = report.organization || {};
-    [
-      ['Ragione sociale', o.legal_name || o.name],
-      ['P.IVA', o.vat_number], ['CF', o.fiscal_code],
-      ['Sede legale', o.legal_address], ['Sede operativa', o.operational_address],
-      ['PEC', o.pec], ['Email', o.email], ['Telefono', o.phone],
-      ['Settore', o.business_sector], ['Classificazione NIS2', o.nis2_classification],
-    ].forEach(([k, v]) => { if (v) line(`${k}: ${v}`); });
-    hr();
-
-    // Scope
-    line('2. Asset in scope', { size: 13, bold: true });
-    const s = report.scan || {};
-    line(`Target: ${s.target} (${s.target_type}) - Profilo: ${s.scan_profile}`);
-    line(`Hosting: ${s.hosting_context || 'n/d'} - Completato: ${s.completed_at ? new Date(s.completed_at).toLocaleString('it-IT') : 'n/d'}`);
-    line(`Asset rilevati: ${assets.length}`);
-    assets.forEach((a) => line(`  - [${a.asset_type}] ${a.asset_value}${a.hostname ? ' (' + a.hostname + ')' : ''}${a.ip ? ' ' + a.ip : ''}`, { size: 9 }));
-    hr();
-
-    // AI
-    if (report.ai) {
-      line('3. Executive summary (AI)', { size: 13, bold: true });
-      if (report.ai.risk_score != null) line(`Risk score: ${report.ai.risk_score}/100 - Livello: ${report.ai.risk_level || 'n/d'}`, { bold: true });
-      if (report.ai.executive_summary) line(report.ai.executive_summary);
-      hr();
-
-      line('4. Top 5 raccomandazioni (AI)', { size: 13, bold: true });
-      (report.ai.top_recommendations || []).forEach((r) => {
-        line(`#${r.priority} [${(r.severity || '').toUpperCase()}] ${r.title}`, { bold: true });
-        if (r.rationale) line(`Razionale: ${r.rationale}`, { size: 9 });
-        if (r.action) line(`Azione: ${r.action}`, { size: 9 });
-        if (r.affected_assets?.length) line(`Asset: ${r.affected_assets.join(', ')}`, { size: 9, color: [100, 100, 100] });
-        y += 4;
-      });
-      hr();
-
-      if (report.ai.correlations?.length) {
-        line('5. Correlazioni', { size: 13, bold: true });
-        report.ai.correlations.forEach((c) => line(`- ${c}`));
-        hr();
-      }
-      if (report.ai.compliance_notes) {
-        line('6. Note di compliance', { size: 13, bold: true });
-        line(report.ai.compliance_notes);
-        hr();
-      }
-    } else if (report.ai_error) {
-      line(`Sintesi AI non disponibile: ${report.ai_error}`, { color: [180, 0, 0] });
-      hr();
-    }
-
-    // Findings
-    line('7. Findings completi', { size: 13, bold: true });
-    const sc = report.findings_by_severity || {};
-    line(`Totale: ${findings.length} - Critici: ${sc.critical || 0}, Alti: ${sc.high || 0}, Medi: ${sc.medium || 0}, Bassi: ${sc.low || 0}, Info: ${sc.info || 0}`);
-    y += 4;
-    findings.forEach((f) => {
-      line(`[${(f.severity || '').toUpperCase()}] ${f.title}`, { bold: true, size: 10 });
-      if (f.affected_asset || f.affected_url) line(`Asset: ${f.affected_asset || f.affected_url}`, { size: 9, color: [100, 100, 100] });
-      if (f.cve?.length) line(`CVE: ${(f.cve || []).join(', ')}`, { size: 9 });
-      if (f.remediation) line(`Remediation: ${f.remediation}`, { size: 9 });
-      y += 2;
-    });
-    hr();
-
-    // Intel
-    if (intel.length) {
-      line('8. OSINT / Intel', { size: 13, bold: true });
-      intel.forEach((i) => {
-        line(`[${i.provider}] ${i.target}`, { bold: true, size: 10 });
-        if (i.summary) line(typeof i.summary === 'string' ? i.summary : JSON.stringify(i.summary).slice(0, 300), { size: 9 });
-      });
-      hr();
-    }
-
-    // Observations
-    if (observations.length) {
-      line('9. Osservazioni', { size: 13, bold: true });
-      observations.forEach((ob) => {
-        line(`[${ob.module}] ${ob.title} - ${ob.severity}`, { size: 9 });
-      });
-    }
-
-    doc.save(`SurfaceScan360_Report_${(o.name || 'org').replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`);
+    generateSurfaceScan360Pdf(report as any);
   };
 
   const o = report?.organization || {};
@@ -280,10 +193,44 @@ export const AiReportTab: React.FC = () => {
             </CardContent>
           </Card>
 
+          <Card>
+            <CardHeader><CardTitle>3. Evidenze sottodomini ({subdomainEvidence.length})</CardTitle></CardHeader>
+            <CardContent>
+              {subdomainEvidence.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nessuna evidenza di sottodominio disponibile per questo cliente.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="text-xs text-muted-foreground border-b border-border">
+                      <tr>
+                        <th className="text-left py-2 pr-3">Sottodominio</th>
+                        <th className="text-left py-2 pr-3">IP</th>
+                        <th className="text-left py-2 pr-3">Root</th>
+                        <th className="text-left py-2 pr-3">Profondità</th>
+                        <th className="text-left py-2">Evidenza</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {subdomainEvidence.map((item, i) => (
+                        <tr key={`${item.host}-${i}`} className="border-b border-border/40">
+                          <td className="py-2 pr-3 font-medium break-all">{item.host}</td>
+                          <td className="py-2 pr-3"><Badge variant="outline">{item.ip || '—'}</Badge></td>
+                          <td className="py-2 pr-3 text-muted-foreground">{item.root}</td>
+                          <td className="py-2 pr-3"><Badge className={sevColor(item.depth >= 2 ? 'medium' : 'low')}>L{item.depth}</Badge></td>
+                          <td className="py-2 text-xs text-muted-foreground">{item.meta || (item.discoveredAt ? new Date(item.discoveredAt).toLocaleString('it-IT') : '—')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* AI summary */}
           {report.ai && (
             <Card>
-              <CardHeader><CardTitle>3. Executive summary (AI)</CardTitle></CardHeader>
+              <CardHeader><CardTitle>4. Executive summary (AI)</CardTitle></CardHeader>
               <CardContent className="space-y-2">
                 {report.ai.risk_score != null && (
                   <Badge className={sevColor(report.ai.risk_level)}>
@@ -297,7 +244,7 @@ export const AiReportTab: React.FC = () => {
 
           {report.ai?.top_recommendations?.length ? (
             <Card>
-              <CardHeader><CardTitle>4. Top 5 raccomandazioni</CardTitle></CardHeader>
+              <CardHeader><CardTitle>5. Top 5 raccomandazioni</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 {report.ai.top_recommendations.map((r, i) => (
                   <div key={i} className="border-l-4 pl-3 py-2" style={{ borderColor: 'hsl(var(--primary))' }}>
@@ -317,7 +264,7 @@ export const AiReportTab: React.FC = () => {
 
           {report.ai?.correlations?.length ? (
             <Card>
-              <CardHeader><CardTitle>5. Correlazioni</CardTitle></CardHeader>
+              <CardHeader><CardTitle>6. Correlazioni</CardTitle></CardHeader>
               <CardContent>
                 <ul className="text-sm list-disc pl-5 space-y-1">
                   {report.ai.correlations.map((c, i) => <li key={i}>{c}</li>)}
@@ -328,7 +275,7 @@ export const AiReportTab: React.FC = () => {
 
           {report.ai?.compliance_notes ? (
             <Card>
-              <CardHeader><CardTitle>6. Note di compliance</CardTitle></CardHeader>
+              <CardHeader><CardTitle>7. Note di compliance</CardTitle></CardHeader>
               <CardContent><p className="text-sm whitespace-pre-wrap">{report.ai.compliance_notes}</p></CardContent>
             </Card>
           ) : null}
@@ -339,7 +286,7 @@ export const AiReportTab: React.FC = () => {
 
           {/* Asset in scope - paginati */}
           <Card>
-            <CardHeader><CardTitle>7. Asset in scope ({assets.length})</CardTitle></CardHeader>
+            <CardHeader><CardTitle>8. Asset in scope ({assets.length})</CardTitle></CardHeader>
             <CardContent>
               <ul className="text-sm space-y-1">
                 {assetsSlice.map((a, i) => (
@@ -361,7 +308,7 @@ export const AiReportTab: React.FC = () => {
           {/* Findings - paginati */}
           <Card>
             <CardHeader>
-              <CardTitle>8. Findings ({findings.length})</CardTitle>
+              <CardTitle>9. Findings ({findings.length})</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-2 mb-3 text-xs">
@@ -391,7 +338,7 @@ export const AiReportTab: React.FC = () => {
           {/* Intel - paginati */}
           {intel.length > 0 && (
             <Card>
-              <CardHeader><CardTitle>9. Intel OSINT ({intel.length})</CardTitle></CardHeader>
+              <CardHeader><CardTitle>10. Intel OSINT ({intel.length})</CardTitle></CardHeader>
               <CardContent>
                 <ul className="text-sm space-y-2">
                   {intelSlice.map((it, i) => (
@@ -416,7 +363,7 @@ export const AiReportTab: React.FC = () => {
           {/* Observations - paginate */}
           {observations.length > 0 && (
             <Card>
-              <CardHeader><CardTitle>10. Osservazioni ({observations.length})</CardTitle></CardHeader>
+              <CardHeader><CardTitle>11. Osservazioni ({observations.length})</CardTitle></CardHeader>
               <CardContent>
                 <ul className="text-sm space-y-1">
                   {observationsSlice.map((ob, i) => (
