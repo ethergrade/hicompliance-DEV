@@ -879,7 +879,7 @@ const SurfaceScan360: React.FC = () => {
                             <div className="flex items-start gap-2">
                               <BarChart3 className="w-4 h-4 text-orange-600 mt-0.5 flex-shrink-0" />
                               <div>
-                                <p className="text-sm font-medium text-orange-800 mb-1">💡 Confronto Mensile</p>
+                                <p className="text-sm font-medium text-orange-800 mb-1">💡 Confronto Settimanale</p>
                                 <p className="text-xs text-orange-700">
                                   Il rapporto ideale mostra CVE critiche in diminuzione e CVE risolte stabili o in aumento, 
                                   indicando un miglioramento continuo della postura di sicurezza.
@@ -908,7 +908,7 @@ const SurfaceScan360: React.FC = () => {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <TrendingUp className="w-5 h-5 text-chart-3" />
-                      EPSS Score Mensile
+                      EPSS Score Settimanale
                     </CardTitle>
                     <p className="text-sm text-muted-foreground">
                       Exploit Prediction Scoring System - predice la probabilità di sfruttamento delle vulnerabilità
@@ -1069,7 +1069,7 @@ const SurfaceScan360: React.FC = () => {
               {/* Risk Trend Analysis with Collapsible Legend */}
               <Card className="border-border">
                 <CardHeader>
-                  <CardTitle>Analisi Trend Rischio Mensile</CardTitle>
+                  <CardTitle>Analisi Trend Rischio Settimanale</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ChartContainer config={chartConfig} className="h-[350px]">
