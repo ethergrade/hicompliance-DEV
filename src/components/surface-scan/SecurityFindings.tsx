@@ -137,6 +137,14 @@ const pickHighestSeverity = (items: Vulnerability[]): SecurityFinding['highestSe
   ), 'info');
 };
 
+const getCvssVector = (evidence: unknown) => {
+  if (evidence && typeof evidence === 'object' && 'cvss_vector' in evidence) {
+    const value = (evidence as { cvss_vector?: unknown }).cvss_vector;
+    return typeof value === 'string' ? value : '—';
+  }
+  return '—';
+};
+
 const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], scanRunning = false }) => {
   const { organizationId } = useClientOrganization();
   const [searchTerm, setSearchTerm] = useState('');
@@ -209,7 +217,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
         id: finding.id,
         cveId: cveList.length ? cveList.join(', ') : finding.finding_type,
         cvssScore: finding.cvss,
-        cvssVector: finding.evidence?.cvss_vector || '—',
+        cvssVector: getCvssVector(finding.evidence),
         epssScore: epssToDisplay(finding.epss),
         epssPercentile: null,
         description: finding.description || finding.title,
