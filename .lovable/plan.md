@@ -1,96 +1,79 @@
-# SurfaceScan360 — WebCheck-lite Enrichment Engine
+## Sistema classificazione e arricchimento findings
 
-Reimplementazione clean-room ispirata a `lissy93/web-check`, nativa Supabase Edge + Lovable. Niente Express, niente Puppeteer, niente container. Si integra con quanto già fatto: cron Shodan, `external_scan_jobs`, integrazione Pentest-Tools, tab "CVE validati" su `SurfaceScan360`.
+### 1. Database (migrazione approvata in chat precedente — già eseguita)
 
-## Architettura
+- **`cve_intel_cache`** — cache per CVE: descrizione NVD, CVSS v3/v2 (score+vector+severity), CWE list, references, CPE, exploit links, EPSS score+percentile, flag CISA KEV, date pubblicazione/modifica
+- **`cve_enrichment_queue`** — coda di lavoro (status: queued/processing/done/failed)
+- **`cisa_kev_catalog`** — copia completa del catalogo CISA KEV (~1200 record)
+- **Trigger automatici** su `surface_findings` e `external_cve_findings`: ad ogni insert/update con CVE non vuoto, chiama `enqueue_cve_enrichment()` che accoda i CVE non già in cache recente (<7 giorni)
+- Funzione helper `enqueue_cve_enrichment(cves[], org_id, source)` con dedup
 
-```text
-Lovable UI (/admin/surfacescan360 + tab esistenti)
-    │
-    ▼
-surfacescan360-start-scan  ──►  surface_scan_jobs (queued)
-                                       │
-                                       ▼
-                       surfacescan360-run-enrichment
-                                       │
-        ┌──────────────────────────────┼───────────────────────────────┐
-        ▼            ▼          ▼          ▼           ▼          ▼
-       DNS       HTTP/Hdr   Sec.Hdr/HSTS  Robots/    Redirect    Mail
-                                         Sitemap/    Chain      (SPF/DMARC/
-                                         Sec.txt                 DKIM/BIMI)
-                                       │
-                       ┌───────────────┼────────────────┐
-                       ▼               ▼                ▼
-                   Shodan         Shared-Hosting    urlscan.io
-                  (esistente)      Detector         (opt.)
-                                       │
-                                       ▼
-                       Pentest-Tools (già integrato)
-                                       │
-                                       ▼
-        surface_assets · surface_observations · surface_findings ·
-        surface_external_intel · surface_scan_audit_log
+### 2. Edge function `cve-enrichment` (worker coda)
+
+Consuma fino a 25 elementi `queued` per invocazione, in sequenza:
+1. **NVD 2.0 API** (`services.nvd.nist.gov/rest/json/cves/2.0?cveId=...`) → descrizione, CVSS, CWE, references, CPE, exploit links (filtra ref con tag `Exploit`/`PoC` o URL exploit-db/metasploit/github)
+2. **FIRST EPSS API** (`api.first.org/data/v1/epss?cve=...`) → epss_score + percentile
+3. **Match KEV locale** su `cisa_kev_catalog`
+4. **Upsert** in `cve_intel_cache` con `refreshed_at = now()`
+5. Rate limit: 6.5s tra chiamate senza NVD API key, 250ms con key (supporta opzionale `NVD_API_KEY` secret)
+6. Retry fino a 3 tentativi, poi `failed`
+
+**Trigger di esecuzione:**
+- pg_cron ogni 30 secondi → drena la coda automaticamente
+- Invocazione "kick" dal client all'apertura del modal CVE (per immediatezza)
+
+### 3. Edge function `cisa-kev-sync` + cron
+
+Scarica `cisa.gov/.../known_exploited_vulnerabilities.json`, upsert batch in `cisa_kev_catalog`, propaga flag KEV alle entries esistenti in `cve_intel_cache`.
+
+**Cron:** ogni giorno alle 03:00 UTC via pg_cron + pg_net (registrato con tool insert, non migration, perché contiene URL+anon key).
+
+### 4. Tassonomia statica per findings senza CVE — `src/lib/findingTaxonomy.ts`
+
+Mappa `finding_type` → `{ cwe, owasp, baseScore, severity, category }` per i ~30 finding types Web Check/OSINT (security_headers, tls, dns, email_auth, cookies, exposure, components, auth). Esempi: `missing_xfo` → CWE-1021/A05:2021/5.4; `default_credentials` → CWE-798/A07:2021/9.8. Include link helpers per NVD, MITRE CWE, OWASP Top 10.
+
+### 5. UI — Frontend
+
+**`src/hooks/useCveIntel.ts`**
+- `useCveIntel(cveId)` — fetch singolo da cache, se assente invoca `cve-enrichment` e ripolla ogni 4s finché arriva
+- `useCveIntelBatch(cveIds[])` — fetch multipla per arricchire le righe della tabella
+
+**`src/components/surface-scan/CveDetailDialog.tsx` (NEW)**
+Modal con vista essenziale sempre visibile + sezioni collassabili:
+- Sempre visibile: CVSS v3 (score+severity+vector), EPSS %+percentile, badge KEV (con data e azione richiesta CISA in box rosso), data pubblicazione, badges CWE cliccabili, descrizione completa
+- Collassabili (chiuse di default tranne Exploit): **Exploit / PoC links**, **References complete**, **CPE affette**
+- Footer: bottone "Apri su NVD" + timestamp refresh
+
+**`src/components/surface-scan/SecurityFindings.tsx` (extend)**
+- Ricerca estesa: accetta CVE-ID, CWE-ID, OWASP code, finding_type (regex match)
+- 3 nuovi filtri: dropdown **OWASP Top 10**, toggle **Solo CISA KEV**, toggle **Solo con CVE**
+- Nuova colonna **Classificazione** con badges CWE + OWASP (cliccabili → MITRE/OWASP docs)
+- Click su qualsiasi CVE-ID nella riga vulnerability → apre `CveDetailDialog`
+- Riga finding mostra EPSS reale (da `cve_intel_cache` quando disponibile) sovrascrivendo il valore parziale
+
+### 6. Tecnicamente
+
+Files da creare:
+```
+supabase/functions/cve-enrichment/index.ts
+supabase/functions/cisa-kev-sync/index.ts
+src/lib/findingTaxonomy.ts
+src/hooks/useCveIntel.ts
+src/components/surface-scan/CveDetailDialog.tsx
 ```
 
-I dati esistenti restano: `external_scan_jobs/tasks/findings`, `shodan_enrichments`, `surface_scan_history`. Il nuovo modello `surface_*` affianca e generalizza (multi-provider, multi-modulo); ponti soft via `provider` + viste, no rottura.
+Files da modificare:
+```
+src/components/surface-scan/SecurityFindings.tsx   (badges, filtri, modal, EPSS reale)
+```
 
-## Fasi (consigliato: approvare una fase per volta)
+Setup post-deploy:
+- cron job pg_cron `cve-enrichment-drain` ogni 30s (via insert tool)
+- cron job pg_cron `cisa-kev-sync-daily` ogni giorno 03:00 UTC (via insert tool)
+- Trigger manuale immediato di `cisa-kev-sync` per popolare subito il catalogo
+- Bootstrap: enqueue di tutti i CVE già presenti in `surface_findings` + `external_cve_findings` (one-shot INSERT...SELECT)
 
-### Fase 1 — Core engine "safe_recon" (nessuna API a pagamento)
-Deliverable: scan domain/url passivo, salvataggio normalizzato, UI base.
-- **DB migration**: nuove tabelle `surface_scan_jobs`, `surface_assets`, `surface_observations`, `surface_findings`, `surface_external_intel`, `surface_scan_audit_log` con RLS multi-tenant allineata alle altre (`organization_id`, Sales globale, admin write).
-- **Shared lib** `supabase/functions/_shared/targetParser.ts`: parser/normalizzatore + blocklist privati/loopback/metadata.
-- **Edge fn `surfacescan360-start-scan`** (verify_jwt=true): auth, ownership, autorizzazione, normalizza, crea job. Limite 3 concurrent/org.
-- **Edge fn `surfacescan360-run-enrichment`** (verify_jwt=false, invocata server-side): esegue moduli in `Promise.allSettled`, scrive observations/findings, aggiorna status.
-- **Moduli**: DNS (DoH Cloudflare), HTTP status, HTTP headers, Security headers, HSTS, robots.txt, security.txt, sitemap, redirect chain, mail security (SPF/DMARC/DKIM/BIMI).
-- **UI** in `SurfaceScan360.tsx`: nuovo tab "OSINT enrichment" con launcher + lista job + observations a card + findings a tabella + JSON viewer evidence. Hook `useSurfaceScanEngine`.
+### 7. Note
 
-### Fase 2 — External intel
-- **Shodan enricher** (riusa `SHODAN_API_KEY`, allinea a `shodan_enrichments`).
-- **Shared-hosting detector** (regola: >3 hostname non correlati, ASN CDN, signal da PT Virtual Hosts) → setta `hosting_context` su job.
-- **urlscan.io** (nuovo secret `URLSCAN_API_KEY`, opzionale): screenshot URL, tech, verdetto malicious.
-- **SecurityTrails subdomain discovery** (opzionale, `SECURITYTRAILS_API_KEY`).
-- Aggancio: se job nuovo per dominio già coperto da cron Shodan, riusa snapshot esistente (no doppia chiamata).
-
-### Fase 3 — Active validation
-- Integrare Pentest-Tools già pronto come modulo del nuovo engine (profilo `cve_api_validation`).
-- Mappare `external_cve_findings` → `surface_findings` via vista o doppia scrittura.
-- Trigger automatico dal cron resta come oggi; in più il nuovo engine può essere lanciato manualmente con profilo dedicato.
-
-### Fase 4 — Scoring & report
-- Exposure Score, Mail Security Score, Web Hardening Score, Attack Surface Confidence, Attribution Confidence calcolati su `surface_findings` con pesatura severity + KEV/EPSS.
-- Card riepilogo in `SurfaceScan360` + export PDF/DOCX riusando il pattern esistente.
-
-## Vincoli & sicurezza (validi per tutte le fasi)
-
-- RLS sempre attiva, scoping `organization_id`, Sales/Admin override come per le altre tabelle.
-- Secret server-side only (`SHODAN_API_KEY`, `PENTEST_TOOLS_*`, eventuali `URLSCAN_API_KEY`, `SECURITYTRAILS_API_KEY`).
-- Block list target: privati, loopback, link-local, 169.254.169.254, CIDR (v1).
-- Max 3 scan concorrenti per org; rate-limit creazione (10/h/utente).
-- Mai attribuire CVE IP-level a un dominio in `shared_hosting`: solo `external_signal_not_attributed`.
-- Audit obbligatorio su start/retry/profile cambio.
-- Zero codice Web-Check copiato; se in futuro qualche snippet venisse riusato, includere attribuzione MIT (autore Alicia Sykes).
-
-## Dettagli tecnici chiave
-
-- Tutti i moduli sono funzioni pure `(ctx) => Promise<{observations[], findings[], assets[]}>`. Centralizzato error handling.
-- DoH provider configurabile via env (`DOH_URL`, default Cloudflare); fallback Google su 5xx.
-- Redirect chain: implementazione manuale `redirect: 'manual'`, max 10 hop, traccia ogni hop e classifica downgrade/cross-domain.
-- Mail security: lookup SPF (TXT v=spf1), DMARC (`_dmarc.<dom>`), DKIM su selettori comuni, BIMI (`default._bimi.<dom>`).
-- Tutte le risposte raw salvate in `surface_external_intel.raw_response` per audit/replay.
-
-## Cosa NON è incluso
-
-- Port scan TCP nativo, traceroute, screenshot Chromium, Lighthouse (delegati a Pentest-Tools/urlscan).
-- Wildcard/CIDR scanning (v2 con autorizzazione esplicita).
-- Migrazione automatica dei findings storici Pentest-Tools nelle nuove tabelle (solo nuovi job).
-
-## Domanda di approvazione
-
-Lo scope completo è grande (4 fasi, ~6 tabelle nuove, 2 edge fn nuove + ~12 moduli, UI dedicata). Conferma se procedere così:
-
-1. **Solo Fase 1** ora (più sicuro, ~1 PR grande): engine + safe_recon + UI base.
-2. **Fase 1 + 2** insieme (engine + intel passiva): include Shodan/urlscan/shared-hosting detector.
-3. **Tutto end-to-end** (4 fasi): rischio errori più alto, response più lunga.
-
-Dimmi quale opzione e procedo. Default consigliato: **Fase 1**, poi iteriamo.
+- NVD API funziona senza key (rate limit 5 req/30s). Se vuoi velocità >10x posso chiedere un `NVD_API_KEY` gratuito su https://nvd.nist.gov/developers/request-an-api-key (rate limit 50 req/30s).
+- I findings senza CVE (security headers, TLS, ecc.) restano classificati via tassonomia statica → comunque ricercabili per CWE/OWASP e con severity score numerico per ordinamento.
