@@ -45,6 +45,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { LogoutButton } from '@/components/auth/LogoutButton';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useRolePermissions } from '@/hooks/useRolePermissions';
+import { usePermissions } from '@/hooks/usePermissions';
 import { useClientContext } from '@/contexts/ClientContext';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
