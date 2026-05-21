@@ -339,7 +339,7 @@ Deno.serve(async (req) => {
         .eq('id', orgId)
         .maybeSingle();
       if ((orgRow as any)?.pentest_tools_auto_validation) {
-        await maybeTriggerAutoValidation(supabaseUrl, serviceRoleKey, orgId, perRule);
+        await maybeTriggerAutoValidation(supabase, supabaseUrl, serviceRoleKey, orgId, perRule);
       }
     }
 
