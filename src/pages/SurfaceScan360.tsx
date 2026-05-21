@@ -690,54 +690,70 @@ const SurfaceScan360: React.FC = () => {
           {/* Weekly Monitoring Section — dati REALI dal cron settimanale (surface_scan_history) */}
           {hasMonitoredRules && scanHistory.hasHistory && (
             <>
-              {/* Monthly KPI Cards */}
+              {/* Weekly KPI Cards — dati REALI */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <Card className="border-border">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-muted-foreground">Nuove Porte Aperte</p>
-                        <p className="text-2xl font-bold text-destructive">+12</p>
-                        <p className="text-xs text-muted-foreground">Questo mese</p>
+                        <p className="text-sm text-muted-foreground">Nuovi Asset Esposti</p>
+                        <p className={`text-2xl font-bold ${scanHistory.newOpenLast > 0 ? 'text-destructive' : 'text-primary'}`}>
+                          {scanHistory.newOpenLast > 0 ? `+${scanHistory.newOpenLast}` : '0'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">vs settimana precedente</p>
                       </div>
-                      <Network className="w-8 h-8 text-destructive" />
+                      <Network className={`w-8 h-8 ${scanHistory.newOpenLast > 0 ? 'text-destructive' : 'text-primary'}`} />
                     </div>
                   </CardContent>
                 </Card>
-                
+
                 <Card className="border-border">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm text-muted-foreground">CVE Risolte</p>
-                        <p className="text-2xl font-bold text-primary">20</p>
-                        <p className="text-xs text-muted-foreground">Dicembre 2024</p>
+                        <p className="text-2xl font-bold text-primary">{scanHistory.cveResolvedLast}</p>
+                        <p className="text-xs text-muted-foreground">vs settimana precedente</p>
                       </div>
                       <CheckCircle className="w-8 h-8 text-primary" />
                     </div>
                   </CardContent>
                 </Card>
-                
+
                 <Card className="border-border">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm text-muted-foreground">EPSS Score Medio</p>
-                        <p className="text-2xl font-bold text-chart-3">4.6</p>
-                        <p className="text-xs text-green-500">-0.6 vs ultimo mese</p>
+                        <p className="text-2xl font-bold text-chart-3">
+                          {scanHistory.latest ? (Math.round(((100 - Number(scanHistory.latest.avg_score)) / 10) * 10) / 10).toFixed(1) : '—'}
+                        </p>
+                        <p className={`text-xs ${scanHistory.epssDelta < 0 ? 'text-green-500' : scanHistory.epssDelta > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
+                          {scanHistory.epssDelta === 0 ? '= invariato' : `${scanHistory.epssDelta > 0 ? '+' : ''}${scanHistory.epssDelta} vs settimana precedente`}
+                        </p>
                       </div>
                       <BarChart3 className="w-8 h-8 text-chart-3" />
                     </div>
                   </CardContent>
                 </Card>
-                
+
                 <Card className="border-border">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-muted-foreground">Trend Rischio</p>
-                        <p className="text-2xl font-bold text-green-500">↓ 69%</p>
-                        <p className="text-xs text-muted-foreground">Rischio basso</p>
+                        {(() => {
+                          const total = scanHistory.latest ? scanHistory.latest.total_assets : 0;
+                          const safePct = scanHistory.latest && total > 0
+                            ? Math.round((scanHistory.latest.safe_count / total) * 100)
+                            : 0;
+                          return (
+                            <>
+                              <p className="text-sm text-muted-foreground">Asset Sicuri</p>
+                              <p className="text-2xl font-bold text-green-500">{safePct}%</p>
+                              <p className="text-xs text-muted-foreground">{scanHistory.latest?.safe_count ?? 0} / {total}</p>
+                            </>
+                          );
+                        })()}
                       </div>
                       <Activity className="w-8 h-8 text-green-500" />
                     </div>
@@ -745,12 +761,12 @@ const SurfaceScan360: React.FC = () => {
                 </Card>
               </div>
 
-              {/* Monthly Charts */}
+              {/* Weekly Charts */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Ports Timeline */}
                 <Card className="border-border">
                   <CardHeader>
-                    <CardTitle>Trend Porte Aperte/Chiuse</CardTitle>
+                    <CardTitle>Trend Asset Esposti / Sicuri</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <ChartContainer config={chartConfig} className="h-[300px]">
@@ -758,6 +774,7 @@ const SurfaceScan360: React.FC = () => {
                         <LineChart data={monthlyData}>
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                           <XAxis dataKey="mese" className="text-muted-foreground" />
+
                           <YAxis className="text-muted-foreground" />
                           <ChartTooltip content={<ChartTooltipContent />} />
                           <Line 
