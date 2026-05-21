@@ -87,6 +87,7 @@ interface Vulnerability {
   lastModified: string;
   remediationStatus: 'open' | 'in_progress' | 'resolved' | 'false_positive';
   patchAvailable: boolean;
+  remediationText: string | null;
   exploitAvailable: boolean;
   affectedService: string;
   source: string;
