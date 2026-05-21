@@ -19,39 +19,40 @@ export interface SurfaceScanHistoryRow {
 export interface WeeklyPoint {
   label: string;
   scanned_at: string;
-  porte_aperte: number;        // total exposed assets/services (proxy)
-  porte_chiuse: number;        // safe assets (proxy for "hardened")
+  porte_aperte: number;
+  porte_chiuse: number;
   cve_critiche: number;
-  cve_risolte: number;         // delta vs previous (positive only)
-  epss_score: number;          // 0..10 derived from avg_score inverse
+  cve_risolte: number;
+  epss_score: number;
   rischio_alto: number;
   rischio_medio: number;
   rischio_basso: number;
 }
 
-const WEEKLY_LIMIT = 12;
-
-const fmt = (iso: string) => {
-  const d = new Date(iso);
-  return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
-};
+const fmt = (iso: string) => new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
 
 const toEpss = (avgScore: number) => {
-  // avg_score 0..100 (higher = better). Map inversely to 0..10 EPSS-like indicator.
   const s = Math.max(0, Math.min(100, avgScore || 0));
   return Math.round(((100 - s) / 10) * 10) / 10;
 };
 
-export const useSurfaceScanHistory = (enabled: boolean = true) => {
+export async function triggerManualSurfaceScan(organizationId: string) {
+  const { data, error } = await supabase.functions.invoke('surface-scan-cron', {
+    body: { organization_id: organizationId, triggered_by: 'manual' },
+  });
+  if (error) throw error;
+  return data as any;
+}
+
+export const useSurfaceScanHistory = (limit: number = 12) => {
   const { organizationId, isLoading: orgLoading } = useClientOrganization();
   const [rows, setRows] = useState<SurfaceScanHistoryRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [triggering, setTriggering] = useState(false);
 
   const fetchHistory = useCallback(async () => {
-    if (!enabled || orgLoading || !organizationId) return;
-    setLoading(true);
+    if (orgLoading || !organizationId) return;
+    setIsLoading(true);
     setError(null);
     try {
       const { data, error: qErr } = await supabase
@@ -59,19 +60,18 @@ export const useSurfaceScanHistory = (enabled: boolean = true) => {
         .select('id, scanned_at, total_assets, critical_count, warning_count, safe_count, avg_score, high_cves, medium_cves, low_cves, triggered_by')
         .eq('organization_id', organizationId)
         .order('scanned_at', { ascending: false })
-        .limit(WEEKLY_LIMIT);
+        .limit(limit);
       if (qErr) throw qErr;
       setRows((data ?? []) as SurfaceScanHistoryRow[]);
     } catch (e: any) {
       setError(e?.message ?? 'Errore caricamento storico');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
-  }, [enabled, orgLoading, organizationId]);
+  }, [orgLoading, organizationId, limit]);
 
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
-  // Realtime: nuove righe da cron
   useEffect(() => {
     if (!organizationId) return;
     const ch = supabase
@@ -84,46 +84,27 @@ export const useSurfaceScanHistory = (enabled: boolean = true) => {
     return () => { supabase.removeChannel(ch); };
   }, [organizationId, fetchHistory]);
 
-  const triggerManualScan = useCallback(async () => {
-    if (!organizationId) return false;
-    setTriggering(true);
-    try {
-      const { error: invErr } = await supabase.functions.invoke('surface-scan-cron', {
-        body: { organization_id: organizationId, triggered_by: 'manual' },
-      });
-      if (invErr) throw invErr;
-      await fetchHistory();
-      return true;
-    } catch (e: any) {
-      setError(e?.message ?? 'Errore avvio scansione');
-      return false;
-    } finally {
-      setTriggering(false);
-    }
-  }, [organizationId, fetchHistory]);
+  // ASC ordering for charts/trendlines (oldest → newest)
+  const data = [...rows].reverse();
 
-  // Trasforma da DESC a ASC per i grafici, deriva metriche
-  const weekly: WeeklyPoint[] = (() => {
-    const asc = [...rows].reverse();
-    return asc.map((r, idx) => {
-      const prev = idx > 0 ? asc[idx - 1] : null;
-      const resolved = prev
-        ? Math.max(0, (prev.high_cves + prev.medium_cves) - (r.high_cves + r.medium_cves))
-        : 0;
-      return {
-        label: fmt(r.scanned_at),
-        scanned_at: r.scanned_at,
-        porte_aperte: r.total_assets,
-        porte_chiuse: r.safe_count,
-        cve_critiche: r.high_cves,
-        cve_risolte: resolved,
-        epss_score: toEpss(Number(r.avg_score) || 0),
-        rischio_alto: r.critical_count,
-        rischio_medio: r.warning_count,
-        rischio_basso: r.safe_count,
-      };
-    });
-  })();
+  const weekly: WeeklyPoint[] = data.map((r, idx) => {
+    const prev = idx > 0 ? data[idx - 1] : null;
+    const resolved = prev
+      ? Math.max(0, (prev.high_cves + prev.medium_cves) - (r.high_cves + r.medium_cves))
+      : 0;
+    return {
+      label: fmt(r.scanned_at),
+      scanned_at: r.scanned_at,
+      porte_aperte: r.total_assets,
+      porte_chiuse: r.safe_count,
+      cve_critiche: r.high_cves,
+      cve_risolte: resolved,
+      epss_score: toEpss(Number(r.avg_score) || 0),
+      rischio_alto: r.critical_count,
+      rischio_medio: r.warning_count,
+      rischio_basso: r.safe_count,
+    };
+  });
 
   const latest = rows[0] ?? null;
   const previous = rows[1] ?? null;
@@ -139,6 +120,7 @@ export const useSurfaceScanHistory = (enabled: boolean = true) => {
 
   return {
     rows,
+    data,
     weekly,
     latest,
     previous,
@@ -146,10 +128,9 @@ export const useSurfaceScanHistory = (enabled: boolean = true) => {
     cveResolvedLast,
     newOpenLast,
     hasHistory: rows.length > 0,
-    loading,
+    isLoading,
+    loading: isLoading,
     error,
-    triggering,
-    triggerManualScan,
     refetch: fetchHistory,
   };
 };
