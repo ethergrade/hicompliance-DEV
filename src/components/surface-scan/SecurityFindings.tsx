@@ -599,7 +599,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
         ) : filteredFindings.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
             {scanRunning
-              ? 'Scansione in corso: i findings reali compariranno appena Shodan, Web Check o Pentest-Tools restituiscono risultati.'
+              ? 'Scansione in corso: i findings reali compariranno appena i motori di intelligence restituiscono risultati.'
               : 'Nessun finding reale disponibile per gli asset monitorati.'}
           </div>
         ) : (
