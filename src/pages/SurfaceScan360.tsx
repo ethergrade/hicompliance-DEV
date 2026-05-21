@@ -68,6 +68,7 @@ import { Progress } from '@/components/ui/progress';
 import { SurfaceScanTrendline } from '@/components/surface-scan/SurfaceScanTrendline';
 import { ValidatedCveTab } from '@/components/surface-scan/ValidatedCveTab';
 import { OsintEnrichmentTab } from '@/components/surface-scan/OsintEnrichmentTab';
+import { AiReportTab } from '@/components/surface-scan/AiReportTab';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const SurfaceScan360: React.FC = () => {
@@ -586,6 +587,7 @@ const SurfaceScan360: React.FC = () => {
               <TabsTrigger value="exposed">Asset esposti (Shodan)</TabsTrigger>
               <TabsTrigger value="validated">CVE validati (Pentest-Tools)</TabsTrigger>
               <TabsTrigger value="osint">OSINT enrichment</TabsTrigger>
+              <TabsTrigger value="ai-report">Report AI</TabsTrigger>
             </TabsList>
             <TabsContent value="validated" className="mt-4">
               <ValidatedCveTab />
@@ -593,7 +595,11 @@ const SurfaceScan360: React.FC = () => {
             <TabsContent value="osint" className="mt-4">
               <OsintEnrichmentTab />
             </TabsContent>
+            <TabsContent value="ai-report" className="mt-4">
+              <AiReportTab />
+            </TabsContent>
             <TabsContent value="exposed" className="mt-4 space-y-6">
+
 
           {/* Stats Overview */}
           <div className="grid grid-cols-1 md:grid-cols-5 gap-6">

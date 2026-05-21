@@ -2266,6 +2266,36 @@ export type Database = {
           },
         ]
       }
+      surface_scan_ai_reports: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          organization_id: string
+          payload: Json
+          scan_job_id: string | null
+          title: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id: string
+          payload: Json
+          scan_job_id?: string | null
+          title?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id?: string
+          payload?: Json
+          scan_job_id?: string | null
+          title?: string | null
+        }
+        Relationships: []
+      }
       surface_scan_alerts: {
         Row: {
           alert_email: string
