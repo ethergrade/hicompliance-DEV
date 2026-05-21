@@ -810,7 +810,7 @@ const SurfaceScan360: React.FC = () => {
             <SecurityFindings
               shodanAssets={shodanAssets}
               scanRunning={shodanLoading || startSurfaceScan.isPending}
-              dumpedHosts={dumpedSubdomainHosts.map((r) => ({ host: r.host, from: r.from }))}
+              dumpedHosts={dumpedSubdomainHosts.map((r) => ({ host: r.host, from: r.from, ip: r.ip, meta: r.meta }))}
             />
           )}
 
