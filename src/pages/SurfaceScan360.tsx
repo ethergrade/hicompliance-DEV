@@ -124,6 +124,9 @@ const SurfaceScan360: React.FC = () => {
   const shodanScan = useProgressiveShodanScan(scanRules, hasMonitoredRules);
   const { assets: shodanAssets, isLoading: shodanLoading, error: shodanError, progress: scanProgress, completed: scanCompleted, total: scanTotal, truncatedRules } = shodanScan;
 
+  // Storico settimanale REALE (cron + DB)
+  const scanHistory = useSurfaceScanHistory(12);
+
   // Nessun dato mock: se non ci sono regole monitorate, l'elenco è vuoto
   const allPublicAssets = hasMonitoredRules
     ? shodanAssets.map((a: any) => ({
