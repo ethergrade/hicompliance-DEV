@@ -293,7 +293,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
       const target = finding.affected_url || finding.ip || finding.target;
       const row = ensureRow(`external-${target}`, {
         id: `external-${target}`,
-        ip: finding.ip || '—',
+        ip: resolveIp(target, finding.ip),
         source: 'Validazione CVE',
         hostname: target,
         assetType: finding.service || finding.scan_job_id,
