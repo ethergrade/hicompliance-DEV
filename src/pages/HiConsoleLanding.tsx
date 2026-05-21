@@ -9,6 +9,7 @@ import {
   CheckCircle2, Network, Zap, LineChart, Users, BookOpen, Siren,
   Wrench, Wallet, Gauge, Target, TrendingUp, CalendarClock
 } from 'lucide-react';
+import logoHi from '@/assets/logo-hi.png';
 
 const modules = [
   {
