@@ -1145,14 +1145,22 @@ const SurfaceScan360: React.FC = () => {
                       </Collapsible>
                     </div>
 
-                    {/* Current Status */}
-                    <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-                      <div className="flex items-center gap-2 text-sm">
-                        <Activity className="w-4 h-4 text-chart-3" />
-                        <span className="font-medium">Trend Attuale:</span>
-                        <span className="text-green-500">↓ Miglioramento (-1.6 vs Gen 2024)</span>
+                    {/* Current Status - delta reale */}
+                    {scanHistory.latest && (
+                      <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          <Activity className="w-4 h-4 text-chart-3" />
+                          <span className="font-medium">Trend Attuale:</span>
+                          {scanHistory.previous ? (
+                            <span className={scanHistory.epssDelta <= 0 ? 'text-green-500' : 'text-red-500'}>
+                              {scanHistory.epssDelta <= 0 ? '↓ Miglioramento' : '↑ Peggioramento'} ({scanHistory.epssDelta > 0 ? '+' : ''}{scanHistory.epssDelta} vs scansione precedente)
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">In attesa di una seconda scansione per calcolare il trend</span>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </CardContent>
                 </Card>
 
