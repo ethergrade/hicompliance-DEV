@@ -7,6 +7,20 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import jsPDF from 'jspdf';
 
+interface RemediationTask {
+  id: string;
+  task: string;
+  category: string;
+  start_date: string;
+  end_date: string;
+  progress: number;
+  priority: string;
+  assignee?: string | null;
+  source?: string | null;
+  source_ref?: string | null;
+  status?: 'pianificato' | 'completato';
+}
+
 interface AiReport {
   generated_at: string;
   organization: any;
@@ -15,6 +29,8 @@ interface AiReport {
   findings: any[];
   findings_by_severity: Record<string, number>;
   intel: any[];
+  remediation_tasks?: RemediationTask[];
+  kev_generation?: { created: number; total_kev: number; existing: number };
   ai: {
     executive_summary?: string;
     risk_score?: number;
@@ -132,8 +148,31 @@ export const AiReportTab: React.FC = () => {
       hr();
     }
 
+    // Azioni di remediation (incluse quelle generate da CISA KEV)
+    const tasks = report.remediation_tasks || [];
+    if (tasks.length > 0) {
+      line('7. Azioni di remediation pianificate / completate', { size: 13, bold: true });
+      if (report.kev_generation && report.kev_generation.total_kev > 0) {
+        line(`CISA KEV: ${report.kev_generation.total_kev} CVE rilevate, ${report.kev_generation.created} nuove azioni auto-generate, ${report.kev_generation.existing} già presenti.`, { size: 9, color: [100, 100, 100] });
+      }
+      const byCat: Record<string, RemediationTask[]> = {};
+      tasks.forEach((t) => { (byCat[t.category] ||= []).push(t); });
+      Object.keys(byCat).sort().forEach((cat) => {
+        const list = byCat[cat];
+        const done = list.filter((t) => (t.progress ?? 0) >= 100).length;
+        line(`${cat} (${done}/${list.length} completati)`, { bold: true, size: 11 });
+        list.forEach((t) => {
+          const status = (t.progress ?? 0) >= 100 ? 'COMPLETATO' : 'PIANIFICATO';
+          line(`  [${status}] [${(t.priority || '').toUpperCase()}] ${t.task}`, { size: 9 });
+          line(`    ${t.start_date} -> ${t.end_date} | progress: ${t.progress ?? 0}%${t.assignee ? ' | ' + t.assignee : ''}${t.source === 'cisa_kev' ? ' | sorgente: CISA KEV ' + (t.source_ref || '') : ''}`, { size: 8, color: [120, 120, 120] });
+        });
+        y += 2;
+      });
+      hr();
+    }
+
     // Findings
-    line('7. Findings completi', { size: 13, bold: true });
+    line('8. Findings completi', { size: 13, bold: true });
     const sc = report.findings_by_severity || {};
     line(`Totale: ${report.findings.length} - Critici: ${sc.critical || 0}, Alti: ${sc.high || 0}, Medi: ${sc.medium || 0}, Bassi: ${sc.low || 0}, Info: ${sc.info || 0}`);
     y += 4;
@@ -144,6 +183,7 @@ export const AiReportTab: React.FC = () => {
       if (f.remediation) line(`Remediation: ${f.remediation}`, { size: 9 });
       y += 2;
     });
+
 
     doc.save(`SurfaceScan360_Report_${(o.name || 'org').replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`);
   };
@@ -218,6 +258,58 @@ export const AiReportTab: React.FC = () => {
             </Card>
           ) : null}
         </>
+      )}
+
+      {report?.remediation_tasks && report.remediation_tasks.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Azioni di remediation (pianificate / completate)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {report.kev_generation && report.kev_generation.total_kev > 0 && (
+              <p className="text-xs text-muted-foreground">
+                CISA KEV rilevate: {report.kev_generation.total_kev} - Nuove azioni auto-generate: {report.kev_generation.created} - Già esistenti: {report.kev_generation.existing}
+              </p>
+            )}
+            {Object.entries(
+              report.remediation_tasks.reduce<Record<string, RemediationTask[]>>((acc, t) => {
+                (acc[t.category] ||= []).push(t);
+                return acc;
+              }, {})
+            ).sort(([a], [b]) => a.localeCompare(b)).map(([cat, list]) => {
+              const done = list.filter((t) => (t.progress ?? 0) >= 100).length;
+              return (
+                <div key={cat} className="border-l-4 pl-3 py-2" style={{ borderColor: 'hsl(var(--primary))' }}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-semibold text-sm">{cat}</span>
+                    <Badge variant="outline">{done}/{list.length} completati</Badge>
+                  </div>
+                  <ul className="text-xs space-y-1">
+                    {list.map((t) => {
+                      const completed = (t.progress ?? 0) >= 100;
+                      const sev = t.priority === 'critical' ? 'critical' : t.priority === 'high' ? 'high' : t.priority === 'medium' ? 'medium' : 'low';
+                      return (
+                        <li key={t.id} className="flex items-start gap-2">
+                          <Badge variant={completed ? 'default' : 'secondary'} className="shrink-0">
+                            {completed ? 'COMPLETATO' : 'PIANIFICATO'}
+                          </Badge>
+                          <Badge className={sevColor(sev)}>{t.priority}</Badge>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">{t.task}</p>
+                            <p className="text-muted-foreground">
+                              {t.start_date} → {t.end_date} · {t.progress ?? 0}%
+                              {t.source === 'cisa_kev' && t.source_ref ? ` · sorgente: CISA KEV ${t.source_ref}` : ''}
+                            </p>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
       )}
 
       {report?.ai_error && (
