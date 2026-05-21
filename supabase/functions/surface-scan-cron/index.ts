@@ -213,8 +213,11 @@ Deno.serve(async (req) => {
 
     const results: any[] = [];
 
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
     for (const [orgId, orgRules] of byOrg.entries()) {
-      const { assets, truncated } = await scanOrganization(orgId, orgRules, SHODAN_API_KEY);
+      const { assets, truncated, perRule } = await scanOrganization(orgId, orgRules, SHODAN_API_KEY);
 
       const total = assets.length;
       const critical = assets.filter(a => a.status === 'Critico').length;
@@ -244,6 +247,16 @@ Deno.serve(async (req) => {
         results.push({ orgId, ok: false, error: insErr.message });
       } else {
         results.push({ orgId, ok: true, total_assets: total, critical, warning, safe });
+      }
+
+      // Auto-trigger Pentest-Tools validation se l'org ha il flag attivo
+      const { data: orgRow } = await supabase
+        .from('organizations')
+        .select('pentest_tools_auto_validation')
+        .eq('id', orgId)
+        .maybeSingle();
+      if ((orgRow as any)?.pentest_tools_auto_validation) {
+        await maybeTriggerAutoValidation(supabaseUrl, serviceRoleKey, orgId, perRule);
       }
     }
 
