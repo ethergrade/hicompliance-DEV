@@ -105,7 +105,7 @@ export const AppSidebar: React.FC = () => {
 
   const isAdmin = userProfile?.user_type === 'admin';
   const isConsoleUser = isSuperAdmin || isSales;
-  const platformName = isConsoleUser ? 'HiConsole' : 'HiCompliance';
+  const platformName = isConsoleUser ? 'HiSolution Console' : 'HiCompliance';
 
   // Fetch feature flags of selected/active organization to gate sidebar modules
   const { data: orgFlags } = useQuery({

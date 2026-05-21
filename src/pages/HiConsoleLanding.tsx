@@ -6,7 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import {
   Shield, Globe, Eye, AlertTriangle, ClipboardCheck, Bot, ArrowRight,
   Server, Lock, Mail, Monitor, Activity, Search, Smartphone, FileCheck,
-  CheckCircle2, Network, Zap, LineChart, Users, BookOpen, Siren
+  CheckCircle2, Network, Zap, LineChart, Users, BookOpen, Siren,
+  Wrench, Wallet, Gauge, Target, TrendingUp, CalendarClock
 } from 'lucide-react';
 
 const modules = [
@@ -67,7 +68,7 @@ const HiConsoleLanding: React.FC = () => {
               <Shield className="w-5 h-5 text-primary-foreground" />
             </div>
             <div className="leading-tight">
-              <div className="font-bold text-base">HiConsole</div>
+              <div className="font-bold text-base">HiSolution Console</div>
               <div className="text-xs text-muted-foreground">by HiCompliance</div>
             </div>
           </Link>
@@ -99,9 +100,9 @@ const HiConsoleLanding: React.FC = () => {
             </span>
           </h1>
           <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            HiConsole è la piattaforma unificata HiCompliance per gestire IT e cybersecurity dei tuoi clienti:
-            assessment normativi, monitoraggio della superficie d'attacco, threat intelligence sul dark web e
-            risposta agli incidenti — tutto in un unico posto.
+            <strong>HiSolution Console</strong> è la piattaforma unificata HiCompliance per gestire IT e cybersecurity dei tuoi clienti:
+            assessment normativi, monitoraggio della superficie d'attacco, threat intelligence sul dark web,
+            risposta agli incidenti e <strong>remediation pianificata con budget</strong> — tutto in un unico posto.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
             <Link to="/auth?role=admin">
@@ -129,9 +130,9 @@ const HiConsoleLanding: React.FC = () => {
       {/* Modules */}
       <section id="moduli" className="container mx-auto px-4 py-16">
         <div className="text-center mb-12 space-y-3">
-          <Badge variant="secondary">I moduli integrabili</Badge>
-          <h2 className="text-3xl md:text-4xl font-bold">Quattro pilastri, una sola piattaforma</h2>
-          <p className="text-muted-foreground max-w-2xl mx-auto">
+          <Badge variant="secondary" className="text-sm px-3 py-1">I moduli integrabili</Badge>
+          <h2 className="text-3xl md:text-5xl font-bold">I moduli che puoi attivare</h2>
+          <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
             Attivi solo quello che ti serve, modulo per modulo e cliente per cliente. Senza vincoli.
           </p>
         </div>
@@ -161,6 +162,93 @@ const HiConsoleLanding: React.FC = () => {
             </Card>
           ))}
         </div>
+
+        {/* Remediation Pianificata - full width row under the 3 boxes */}
+        <div className="max-w-6xl mx-auto mt-6">
+          <Card className="relative overflow-hidden border-amber-500/30">
+            <div className="absolute inset-0 bg-gradient-to-br from-amber-500/15 via-orange-500/10 to-transparent" />
+            <CardContent className="relative p-8 grid md:grid-cols-[auto_1fr_auto] gap-6 items-center">
+              <div className="w-14 h-14 rounded-xl bg-background/80 backdrop-blur flex items-center justify-center border">
+                <Wrench className="w-7 h-7 text-amber-500" />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-2xl font-bold">Remediation Pianificata</h3>
+                  <Badge variant="outline" className="border-amber-500/40 text-amber-500">
+                    <Wallet className="w-3 h-3 mr-1" /> con evidenza del budget
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground leading-relaxed max-w-3xl">
+                  Trasforma findings e gap di compliance in un <strong>piano operativo con tempi, owner e costi</strong>.
+                  Ogni intervento ha priorità, effort stimato, budget allocato e stato avanzamento.
+                  Vedi a colpo d'occhio quanto stai investendo, quanto rischio stai abbattendo e quando sarai conforme.
+                </p>
+                <ul className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm pt-1">
+                  <li className="flex items-start gap-2"><CalendarClock className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" /><span>Roadmap con milestone trimestrali</span></li>
+                  <li className="flex items-start gap-2"><Wallet className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" /><span>Budget per intervento: previsto / consuntivo</span></li>
+                  <li className="flex items-start gap-2"><Target className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" /><span>Linking automatico a findings, CVE e gap NIS2</span></li>
+                  <li className="flex items-start gap-2"><TrendingUp className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" /><span>Impatto stimato sul True Risk Score</span></li>
+                </ul>
+              </div>
+              <Link to="/auth?role=admin" className="hidden md:block">
+                <Button variant="outline" className="border-amber-500/40">
+                  Vedi nella console
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      {/* True Risk Score */}
+      <section className="container mx-auto px-4 py-20">
+        <div className="max-w-6xl mx-auto">
+          <Card className="relative overflow-hidden border-primary/30">
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/15 via-background to-background" />
+            <CardContent className="relative p-10 grid md:grid-cols-[1fr_auto] gap-10 items-center">
+              <div className="space-y-5">
+                <Badge variant="outline" className="px-3 py-1">
+                  <Gauge className="w-3 h-3 mr-1.5 text-primary" />
+                  Indice unico di rischio
+                </Badge>
+                <h2 className="text-3xl md:text-5xl font-bold tracking-tight">
+                  True Risk Score
+                  <span className="block text-base font-normal text-muted-foreground mt-2">
+                    Un solo numero per capire dove sei. Davvero.
+                  </span>
+                </h2>
+                <p className="text-muted-foreground leading-relaxed">
+                  Il <strong>True Risk Score</strong> è l'unico indice sintetico della piattaforma:
+                  un valore <strong>0–100</strong> che combina in un solo numero tutto ciò che conta —
+                  postura di compliance, superficie d'attacco, esposizione su dark web,
+                  maturità IRP e copertura dei servizi gestiti. Niente cruscotti contraddittori,
+                  niente metriche slegate: una sola verità, aggiornata ad ogni assessment, scan e alert.
+                </p>
+                <ul className="grid sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                  <li className="flex items-start gap-2"><CheckCircle2 className="w-4 h-4 text-primary mt-0.5 shrink-0" /><span>Pesato su criticità asset e classificazione NIS2</span></li>
+                  <li className="flex items-start gap-2"><CheckCircle2 className="w-4 h-4 text-primary mt-0.5 shrink-0" /><span>Aggiornato in tempo reale dai moduli attivi</span></li>
+                  <li className="flex items-start gap-2"><CheckCircle2 className="w-4 h-4 text-primary mt-0.5 shrink-0" /><span>Storico trend per dimostrare il miglioramento</span></li>
+                  <li className="flex items-start gap-2"><CheckCircle2 className="w-4 h-4 text-primary mt-0.5 shrink-0" /><span>Simulazione "what-if" sugli interventi in roadmap</span></li>
+                </ul>
+                <p className="text-xs text-muted-foreground italic pt-1">
+                  Disponibile esclusivamente con il modulo <strong>HiCompliance</strong> attivo — è l'assessment a fornire la baseline di calcolo.
+                </p>
+              </div>
+              <div className="flex justify-center md:justify-end">
+                <div className="relative w-56 h-56 rounded-full bg-gradient-to-br from-primary/30 to-primary/5 border-4 border-primary/40 flex items-center justify-center shadow-2xl shadow-primary/20">
+                  <div className="absolute inset-3 rounded-full bg-background/60 backdrop-blur flex flex-col items-center justify-center">
+                    <div className="text-5xl font-bold bg-gradient-to-br from-primary to-primary/60 bg-clip-text text-transparent">72</div>
+                    <div className="text-xs text-muted-foreground mt-1 uppercase tracking-wider">True Risk Score</div>
+                    <div className="text-[10px] text-emerald-500 mt-1 flex items-center gap-1">
+                      <TrendingUp className="w-3 h-3" /> +8 negli ultimi 90gg
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </section>
 
       {/* IRP deep dive */}
@@ -176,7 +264,7 @@ const HiConsoleLanding: React.FC = () => {
                 Quando succede, sai esattamente cosa fare.
               </h2>
               <p className="text-muted-foreground leading-relaxed">
-                L'<strong>Incident Response Plan</strong> di HiConsole non è un documento PDF da aggiornare ogni due anni:
+                L'<strong>Incident Response Plan</strong> di HiSolution Console non è un documento PDF da aggiornare ogni due anni:
                 è un sistema vivo, integrato con la tua infrastruttura e il tuo team. Quando scatta un incidente,
                 il responsabile apre il playbook giusto, segue gli step, assegna i task ai responsabili nominati nella rubrica,
                 allega evidenze e screenshot, e a fine procedura ottiene automaticamente il documento archiviabile per l'ACN o l'autorità di controllo.
@@ -197,7 +285,7 @@ const HiConsoleLanding: React.FC = () => {
                 <Card key={f.title} className="border-border/50">
                   <CardContent className="p-4 space-y-2">
                     <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <f.icon className="w-4.5 h-4.5 text-primary" />
+                      <f.icon className="w-5 h-5 text-primary" />
                     </div>
                     <h4 className="font-semibold text-sm">{f.title}</h4>
                     <p className="text-xs text-muted-foreground leading-relaxed">{f.desc}</p>
@@ -244,8 +332,8 @@ const HiConsoleLanding: React.FC = () => {
             <Bot className="w-12 h-12 text-primary mx-auto" />
             <h2 className="text-3xl font-bold">Serenità tecnologica, in una sola login.</h2>
             <p className="text-muted-foreground max-w-xl mx-auto">
-              Accedi alla HiConsole per orchestrare compliance, attack surface, dark web monitoring,
-              incident response e i servizi HiSolution dei tuoi clienti.
+              Accedi a HiSolution Console per orchestrare compliance, attack surface, dark web monitoring,
+              incident response, remediation pianificata e i servizi HiSolution dei tuoi clienti.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
               <Link to="/auth?role=admin">
@@ -267,7 +355,7 @@ const HiConsoleLanding: React.FC = () => {
       {/* Footer */}
       <footer className="border-t border-border/40 py-8">
         <div className="container mx-auto px-4 text-center text-xs text-muted-foreground">
-          © {new Date().getFullYear()} HiCompliance · HiConsole — Piattaforma per la serenità tecnologica
+          © {new Date().getFullYear()} HiCompliance · HiSolution Console — Piattaforma per la serenità tecnologica
         </div>
       </footer>
     </div>
