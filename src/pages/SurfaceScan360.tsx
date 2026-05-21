@@ -1409,18 +1409,18 @@ const SurfaceScan360: React.FC = () => {
                   const dumpedFrom = asset.__dumpedFrom || discoveredRule?.discovered_from;
                   const isDumped = Boolean(discoveredRule) || Boolean(asset.__dumpedFrom);
                   return (
-                  <div key={index} className={`flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-muted/50 transition-colors ${isDumped ? 'border-primary/40 bg-primary/5' : 'border-border'}`}>
+                  <div key={index} className={`flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-muted/50 transition-colors ${isDumped ? 'border-l-4 border-l-purple-500 border-purple-500/30 bg-purple-500/5' : 'border-border'}`}>
                     <div className="flex items-center space-x-4">
-                      <div className="p-2 rounded-lg bg-primary/10">
-                        <Shield className="w-5 h-5 text-primary" />
+                      <div className={`p-2 rounded-lg ${isDumped ? 'bg-purple-500/15' : 'bg-primary/10'}`}>
+                        {isDumped ? <GitBranch className="w-5 h-5 text-purple-500" /> : <Shield className="w-5 h-5 text-primary" />}
                       </div>
                       <div>
                         <h4 className="font-medium flex items-center gap-2 flex-wrap">
                           {asset.ip}
                           {isDumped && (
-                            <Badge variant="secondary" className="text-[10px] bg-primary/15 text-primary border-primary/30">
-                              <Globe className="w-3 h-3 mr-1" />
-                              Reverse Dump{dumpedFrom ? ` · ${dumpedFrom}` : ''}
+                            <Badge variant="outline" className="text-[10px] bg-purple-500/10 text-purple-500 border-purple-500/40 font-medium">
+                              <GitBranch className="w-3 h-3 mr-1" />
+                              Sottodominio{dumpedFrom ? ` · da ${dumpedFrom}` : ''}
                             </Badge>
                           )}
                         </h4>
