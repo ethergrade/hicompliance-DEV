@@ -8,13 +8,14 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, Building2, Calendar, ArrowRight, Users, FileText, Server, Plug, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Search, Building2, Calendar, ArrowRight, Users, FileText, Server, Plug, Plus, Pencil, Trash2, ShieldCheck } from 'lucide-react';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
 import ClientProfileSheet from '@/components/clients/ClientProfileSheet';
 import ClientAssetSheet from '@/components/clients/ClientAssetSheet';
 import ClientServicesDialog from '@/components/clients/ClientServicesDialog';
 import ClientCrudDialog from '@/components/clients/ClientCrudDialog';
+import ClientContactsDialog from '@/components/clients/ClientContactsDialog';
 import DeleteClientDialog from '@/components/clients/DeleteClientDialog';
 
 const ClientSelection: React.FC = () => {
@@ -27,6 +28,7 @@ const ClientSelection: React.FC = () => {
   const [profileOpen, setProfileOpen] = useState(false);
   const [assetOpen, setAssetOpen] = useState(false);
   const [servicesOpen, setServicesOpen] = useState(false);
+  const [contactsOpen, setContactsOpen] = useState(false);
 
   // CRUD state
   const [crudOpen, setCrudOpen] = useState(false);
@@ -64,6 +66,13 @@ const ClientSelection: React.FC = () => {
     setEditingOrgId(org.id);
     setEditingOrgName(org.name);
     setServicesOpen(true);
+  };
+
+  const openContacts = (e: React.MouseEvent, org: typeof organizations[0]) => {
+    e.stopPropagation();
+    setEditingOrgId(org.id);
+    setEditingOrgName(org.name);
+    setContactsOpen(true);
   };
 
   const openCreate = () => {
