@@ -518,9 +518,27 @@ const SurfaceScan360: React.FC = () => {
                 </div>
 
                 <div className="rounded-lg border border-border">
-                  <div className="px-3 py-2 border-b border-border bg-muted/30 text-xs text-muted-foreground">
-                    Regole attive: {monitoredIpRules.length}
+                  <div className="px-3 py-2 border-b border-border bg-muted/30 text-xs text-muted-foreground flex items-center justify-between gap-3">
+                    <span>Regole attive: {monitoredIpRules.length}</span>
+                    {hasMonitoredRules && scanTotal > 0 && (
+                      <div className="flex items-center gap-2 min-w-0 flex-1 max-w-xs">
+                        <Progress value={scanProgress} className="h-1.5 flex-1" />
+                        <span className="whitespace-nowrap">
+                          {shodanLoading ? `Scansione ${scanCompleted}/${scanTotal}` : `Completata ${scanCompleted}/${scanTotal}`}
+                        </span>
+                      </div>
+                    )}
                   </div>
+                  {truncatedRules.length > 0 && (
+                    <div className="px-3 py-2 border-b border-border bg-amber-500/10 text-xs text-amber-600 dark:text-amber-400">
+                      Range troncati a 256 IP: {truncatedRules.join(', ')}
+                    </div>
+                  )}
+                  {shodanError && (
+                    <div className="px-3 py-2 border-b border-border bg-destructive/10 text-xs text-destructive">
+                      Errore Shodan: {shodanError.message}
+                    </div>
+                  )}
 
                   {monitoredIpRulesLoading ? (
                     <div className="p-4 text-sm text-muted-foreground">Caricamento regole in corso...</div>
