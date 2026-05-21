@@ -205,6 +205,25 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
 
   const { data: externalFindings = [], isLoading: externalFindingsLoading } = useExternalCveFindings();
 
+  // hostname → IP map costruita dagli asset Shodan (i findings OSINT spesso non hanno IP risolto)
+  const hostIpMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of shodanAssets) {
+      if (!a.ip) continue;
+      const hosts = [a.hostname, ...(((a as any).hostnames as string[]) || [])].filter(Boolean);
+      for (const h of hosts) {
+        const k = normHost(h);
+        if (k && !m.has(k)) m.set(k, a.ip);
+      }
+    }
+    return m;
+  }, [shodanAssets]);
+  const resolveIp = (target: string | null | undefined, fallback?: string | null) => {
+    if (fallback && fallback !== '—') return fallback;
+    const k = normHost(String(target || ''));
+    return hostIpMap.get(k) || fallback || '—';
+  };
+
   const realFindings = useMemo<SecurityFinding[]>(() => {
     const rows = new Map<string, SecurityFinding>();
 
@@ -237,7 +256,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
       const source = 'OSINT Intel';
       const row = ensureRow(`surface-${target}`, {
         id: `surface-${target}`,
-        ip: finding.ip || '—',
+        ip: resolveIp(target, finding.ip),
         source,
         hostname: target,
         assetType: finding.module || finding.finding_type,
@@ -274,7 +293,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
       const target = finding.affected_url || finding.ip || finding.target;
       const row = ensureRow(`external-${target}`, {
         id: `external-${target}`,
-        ip: finding.ip || '—',
+        ip: resolveIp(target, finding.ip),
         source: 'Validazione CVE',
         hostname: target,
         assetType: finding.service || finding.scan_job_id,
@@ -347,7 +366,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
       if (severityDiff !== 0) return severityDiff;
       return new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime();
     });
-  }, [externalFindings, shodanAssets, surfaceFindings]);
+  }, [externalFindings, shodanAssets, surfaceFindings, hostIpMap]);
 
   // Collect all CVE IDs and enrich with NVD/EPSS/KEV cache
   const allCveIds = useMemo(() => {
