@@ -39,55 +39,43 @@ const Dashboard: React.FC = () => {
   const { selectedOrganization } = useClientContext();
   const activeOrgId = selectedOrganization?.id || userProfile?.organization_id;
   const activeOrgName = selectedOrganization?.name || userProfile?.organizations?.name || 'Organizzazione';
-  const { isServiceConnected, hasAnyIntegrationsConfigured } = useServiceIntegrations();
+  const { integrations, isServiceConnected, hasAnyIntegrationsConfigured } = useServiceIntegrations();
   const { isSuperAdmin, isSales } = useUserRoles();
   const canManageIntegrationSettings = isSuperAdmin || isSales;
   const [modulesDialogOpen, setModulesDialogOpen] = useState(false);
 
-  const services = useMemo(() => ([
-    { id: '1', status: 'alert', health_score: 15, services: { name: 'HiFirewall', code: 'hi_firewall', id: 's1' } },
-    { id: '2', status: 'alert', health_score: 70, services: { name: 'HiEndpoint', code: 'hi_endpoint', id: 's2' } },
-    { id: '3', status: 'maintenance', health_score: 75, services: { name: 'HiMail', code: 'hi_mail', id: 's3' } },
-    { id: '4', status: 'alert', health_score: 10, services: { name: 'HiLog', code: 'hi_log', id: 's4' } },
-    { id: '5', status: 'maintenance', health_score: 65, services: { name: 'HiPatch', code: 'hi_patch', id: 's5' } },
-    { id: '6', status: 'active', health_score: 90, services: { name: 'HiTrack', code: 'hi_track', id: 's6' } },
-    { id: '7', status: 'active', health_score: 92, services: { name: 'HiDetect', code: 'hi_detect', id: 's7' } },
-    { id: '8', status: 'alert', health_score: 24, services: { name: 'HiMobile', code: 'hi_mobile', id: 's8' } },
-  ]), []);
-
-  const excludedServices = ['hi_mfa', 'hi_cloud_optix', 'hi_phish_threat', 'hi_ztna'];
-  const hiSolutionServices = services.filter(s => 
-    s.services?.code?.startsWith('hi_') && !excludedServices.includes(s.services?.code)
-  );
-
-  const servicesWithCriticalHealth = hiSolutionServices.filter(s => (s.health_score || 0) < 50);
-  const totalIssues = hiSolutionServices.reduce((acc, service) => {
-    const healthScore = service.health_score || 0;
-    if (healthScore < 80) return acc + Math.ceil((100 - healthScore) / 20);
-    return acc;
-  }, 0);
-
-  const fallbackData = { alertCount: 4, activeCount: 2, warningCount: 2, avgScore: 47, totalIssues: 22 };
-
-  const mockData = {
-    nis2Compliance: servicesWithCriticalHealth.length > 3 ? 35 : 65,
-    riskIndicator: 51,
-    totalAssets: services.length || 8,
-    activeThreats: totalIssues || fallbackData.totalIssues
+  // Catalogo statico nomi servizi HiSolution
+  const SERVICE_CATALOG: Record<string, string> = {
+    hi_firewall: 'HiFirewall',
+    hi_endpoint: 'HiEndpoint',
+    hi_mail: 'HiMail',
+    hi_log: 'HiLog',
+    hi_patch: 'HiPatch',
+    hi_track: 'HiTrack',
+    hi_detect: 'HiDetect',
+    hi_mobile: 'HiMobile',
   };
 
-  const isModuleEnabledForDashboard = (serviceCode: string) => {
-    if (!hasAnyIntegrationsConfigured) return true;
-    return isServiceConnected(serviceCode);
-  };
+  // Costruisci la lista servizi SOLO dagli integration realmente configurati per il cliente
+  const hiSolutionServices = useMemo(() => {
+    return (integrations || [])
+      .filter((i) => i.is_active && i.service_code && SERVICE_CATALOG[i.service_code])
+      .map((i) => ({
+        id: i.id,
+        status: 'active' as const,
+        health_score: null as number | null,
+        services: { name: SERVICE_CATALOG[i.service_code!], code: i.service_code!, id: i.service_id },
+      }));
+  }, [integrations]);
 
-  const connectedServicesCount = hiSolutionServices.filter((service) => isModuleEnabledForDashboard(service.services.code)).length;
-  const alertServicesCount = hiSolutionServices.filter(
-    (service) => isModuleEnabledForDashboard(service.services.code) && (service.health_score || 0) < 80
-  ).length;
-  const operativeServicesCount = hiSolutionServices.filter(
-    (service) => isModuleEnabledForDashboard(service.services.code) && (service.health_score || 0) >= 80
-  ).length;
+  const totalIssues = 0;
+
+  const isModuleEnabledForDashboard = (serviceCode: string) => isServiceConnected(serviceCode);
+
+  const connectedServicesCount = hiSolutionServices.length;
+  const alertServicesCount = 0;
+  const operativeServicesCount = connectedServicesCount;
+
   const handleServiceClick = (service: { code: string }) => {
     navigate(`/dashboard/service/${service.code}`);
   };
