@@ -1007,15 +1007,18 @@ const SurfaceScan360: React.FC = () => {
                       </Collapsible>
                     </div>
 
-                    {/* Current Status */}
-                    <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-                      <div className="flex items-center gap-2 text-sm">
-                        <CheckCircle className="w-4 h-4 text-primary" />
-                        <span className="font-medium">Stato Attuale:</span>
-                        <span className="text-primary">20 CVE risolte a Dicembre</span>
-                        <span className="text-destructive">vs 5 critiche attive</span>
+                    {/* Current Status - dati reali */}
+                    {scanHistory.latest && (
+                      <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          <CheckCircle className="w-4 h-4 text-primary" />
+                          <span className="font-medium">Stato Attuale:</span>
+                          <span className="text-primary">{scanHistory.cveResolvedLast} CVE risolte vs ultima scansione</span>
+                          <span className="text-destructive">{scanHistory.latest.high_cves} critiche attive</span>
+                          <span className="text-muted-foreground">· {new Date(scanHistory.latest.scanned_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -1142,14 +1145,22 @@ const SurfaceScan360: React.FC = () => {
                       </Collapsible>
                     </div>
 
-                    {/* Current Status */}
-                    <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-                      <div className="flex items-center gap-2 text-sm">
-                        <Activity className="w-4 h-4 text-chart-3" />
-                        <span className="font-medium">Trend Attuale:</span>
-                        <span className="text-green-500">↓ Miglioramento (-1.6 vs Gen 2024)</span>
+                    {/* Current Status - delta reale */}
+                    {scanHistory.latest && (
+                      <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          <Activity className="w-4 h-4 text-chart-3" />
+                          <span className="font-medium">Trend Attuale:</span>
+                          {scanHistory.previous ? (
+                            <span className={scanHistory.epssDelta <= 0 ? 'text-green-500' : 'text-red-500'}>
+                              {scanHistory.epssDelta <= 0 ? '↓ Miglioramento' : '↑ Peggioramento'} ({scanHistory.epssDelta > 0 ? '+' : ''}{scanHistory.epssDelta} vs scansione precedente)
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">In attesa di una seconda scansione per calcolare il trend</span>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -1302,15 +1313,24 @@ const SurfaceScan360: React.FC = () => {
                     </Collapsible>
                   </div>
 
-                  {/* Current Status */}
-                  <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-                    <div className="flex items-center gap-2 text-sm">
-                      <TrendingUp className="w-4 h-4 text-green-500" />
-                      <span className="font-medium">Trend Positivo:</span>
-                      <span className="text-green-500">Rischio basso al 69% (+12% vs Gen 2024)</span>
-                      <span className="text-red-500">Rischio alto ridotto al 6% (-9% vs Gen 2024)</span>
-                    </div>
-                  </div>
+                  {/* Current Status - calcolato dai dati reali */}
+                  {scanHistory.latest && (() => {
+                    const tot = scanHistory.latest.critical_count + scanHistory.latest.warning_count + scanHistory.latest.safe_count;
+                    const pct = (n: number) => tot > 0 ? Math.round((n / tot) * 100) : 0;
+                    const altoPct = pct(scanHistory.latest.critical_count);
+                    const bassoPct = pct(scanHistory.latest.safe_count);
+                    return (
+                      <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          <TrendingUp className="w-4 h-4 text-green-500" />
+                          <span className="font-medium">Distribuzione attuale:</span>
+                          <span className="text-green-500">Rischio basso al {bassoPct}%</span>
+                          <span className="text-red-500">Rischio alto al {altoPct}%</span>
+                          <span className="text-muted-foreground">· {tot} asset analizzati</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </CardContent>
               </Card>
             </>
