@@ -67,6 +67,7 @@ import { useProgressiveShodanScan } from '@/hooks/useProgressiveShodanScan';
 import { Progress } from '@/components/ui/progress';
 import { SurfaceScanTrendline } from '@/components/surface-scan/SurfaceScanTrendline';
 import { ValidatedCveTab } from '@/components/surface-scan/ValidatedCveTab';
+import { OsintEnrichmentTab } from '@/components/surface-scan/OsintEnrichmentTab';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const SurfaceScan360: React.FC = () => {
@@ -584,9 +585,13 @@ const SurfaceScan360: React.FC = () => {
             <TabsList>
               <TabsTrigger value="exposed">Asset esposti (Shodan)</TabsTrigger>
               <TabsTrigger value="validated">CVE validati (Pentest-Tools)</TabsTrigger>
+              <TabsTrigger value="osint">OSINT enrichment</TabsTrigger>
             </TabsList>
             <TabsContent value="validated" className="mt-4">
               <ValidatedCveTab />
+            </TabsContent>
+            <TabsContent value="osint" className="mt-4">
+              <OsintEnrichmentTab />
             </TabsContent>
             <TabsContent value="exposed" className="mt-4 space-y-6">
 
