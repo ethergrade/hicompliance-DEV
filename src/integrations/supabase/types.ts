@@ -402,6 +402,51 @@ export type Database = {
           },
         ]
       }
+      cisa_kev_catalog: {
+        Row: {
+          cve_id: string
+          cwes: string[] | null
+          date_added: string | null
+          due_date: string | null
+          known_ransomware_use: string | null
+          notes: string | null
+          product: string | null
+          required_action: string | null
+          short_description: string | null
+          synced_at: string
+          vendor_project: string | null
+          vulnerability_name: string | null
+        }
+        Insert: {
+          cve_id: string
+          cwes?: string[] | null
+          date_added?: string | null
+          due_date?: string | null
+          known_ransomware_use?: string | null
+          notes?: string | null
+          product?: string | null
+          required_action?: string | null
+          short_description?: string | null
+          synced_at?: string
+          vendor_project?: string | null
+          vulnerability_name?: string | null
+        }
+        Update: {
+          cve_id?: string
+          cwes?: string[] | null
+          date_added?: string | null
+          due_date?: string | null
+          known_ransomware_use?: string | null
+          notes?: string | null
+          product?: string | null
+          required_action?: string | null
+          short_description?: string | null
+          synced_at?: string
+          vendor_project?: string | null
+          vulnerability_name?: string | null
+        }
+        Relationships: []
+      }
       consistenze_clienti: {
         Row: {
           created_at: string
@@ -646,6 +691,123 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      cve_enrichment_queue: {
+        Row: {
+          attempts: number
+          cve_id: string
+          id: string
+          last_error: string | null
+          organization_id: string | null
+          processed_at: string | null
+          queued_at: string
+          source: string | null
+          status: string
+        }
+        Insert: {
+          attempts?: number
+          cve_id: string
+          id?: string
+          last_error?: string | null
+          organization_id?: string | null
+          processed_at?: string | null
+          queued_at?: string
+          source?: string | null
+          status?: string
+        }
+        Update: {
+          attempts?: number
+          cve_id?: string
+          id?: string
+          last_error?: string | null
+          organization_id?: string | null
+          processed_at?: string | null
+          queued_at?: string
+          source?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
+      cve_intel_cache: {
+        Row: {
+          cisa_kev: boolean | null
+          cpe_json: Json | null
+          created_at: string
+          cve_id: string
+          cvss_v2_score: number | null
+          cvss_v2_vector: string | null
+          cvss_v3_score: number | null
+          cvss_v3_severity: string | null
+          cvss_v3_vector: string | null
+          cwe_ids: string[] | null
+          description: string | null
+          epss_percentile: number | null
+          epss_score: number | null
+          exploit_links: Json | null
+          fetch_error: string | null
+          fetch_status: string | null
+          kev_date_added: string | null
+          kev_due_date: string | null
+          kev_required_action: string | null
+          last_modified_at: string | null
+          nvd_status: string | null
+          published_at: string | null
+          references_json: Json | null
+          refreshed_at: string
+        }
+        Insert: {
+          cisa_kev?: boolean | null
+          cpe_json?: Json | null
+          created_at?: string
+          cve_id: string
+          cvss_v2_score?: number | null
+          cvss_v2_vector?: string | null
+          cvss_v3_score?: number | null
+          cvss_v3_severity?: string | null
+          cvss_v3_vector?: string | null
+          cwe_ids?: string[] | null
+          description?: string | null
+          epss_percentile?: number | null
+          epss_score?: number | null
+          exploit_links?: Json | null
+          fetch_error?: string | null
+          fetch_status?: string | null
+          kev_date_added?: string | null
+          kev_due_date?: string | null
+          kev_required_action?: string | null
+          last_modified_at?: string | null
+          nvd_status?: string | null
+          published_at?: string | null
+          references_json?: Json | null
+          refreshed_at?: string
+        }
+        Update: {
+          cisa_kev?: boolean | null
+          cpe_json?: Json | null
+          created_at?: string
+          cve_id?: string
+          cvss_v2_score?: number | null
+          cvss_v2_vector?: string | null
+          cvss_v3_score?: number | null
+          cvss_v3_severity?: string | null
+          cvss_v3_vector?: string | null
+          cwe_ids?: string[] | null
+          description?: string | null
+          epss_percentile?: number | null
+          epss_score?: number | null
+          exploit_links?: Json | null
+          fetch_error?: string | null
+          fetch_status?: string | null
+          kev_date_added?: string | null
+          kev_due_date?: string | null
+          kev_required_action?: string | null
+          last_modified_at?: string | null
+          nvd_status?: string | null
+          published_at?: string | null
+          references_json?: Json | null
+          refreshed_at?: string
+        }
+        Relationships: []
       }
       dark_risk_alerts: {
         Row: {
@@ -2659,6 +2821,10 @@ export type Database = {
       can_manage_all_organizations: {
         Args: { _user_id: string }
         Returns: boolean
+      }
+      enqueue_cve_enrichment: {
+        Args: { _cves: string[]; _org_id: string; _source: string }
+        Returns: undefined
       }
       get_current_user_type: { Args: never; Returns: string }
       get_my_module_permissions: { Args: never; Returns: Json }
