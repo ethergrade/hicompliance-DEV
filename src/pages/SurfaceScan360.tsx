@@ -647,9 +647,9 @@ const SurfaceScan360: React.FC = () => {
                             </Badge>
                             <span className="text-sm font-medium">{rule.input_value}</span>
                             {rule.discovered_via === 'subdomain_dump' && (
-                              <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary border-primary/30">
-                                <Globe className="w-3 h-3 mr-1" />
-                                Subdomain Dump{rule.discovered_from ? ` · ${rule.discovered_from}` : ''}
+                              <Badge variant="outline" className="text-[10px] bg-purple-500/10 text-purple-500 border-purple-500/40 font-medium">
+                                <GitBranch className="w-3 h-3 mr-1" />
+                                Sottodominio{rule.discovered_from ? ` · da ${rule.discovered_from}` : ''}
                               </Badge>
                             )}
                           </div>
