@@ -811,9 +811,15 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
 
         <div className="mt-4 text-sm text-muted-foreground text-center">
           Visualizzati {paginatedFindings.length} di {filteredFindings.length} findings reali
-          {filteredFindings.length !== realFindings.length && ` (${realFindings.length} totali)`}
+          {filteredFindings.length !== enrichedFindings.length && ` (${enrichedFindings.length} totali)`}
         </div>
       </CardContent>
+
+      <CveDetailDialog
+        cveId={modalCve}
+        open={!!modalCve}
+        onOpenChange={(o) => !o && setModalCve(null)}
+      />
     </Card>
   );
 };
