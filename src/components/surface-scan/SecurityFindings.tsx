@@ -157,7 +157,7 @@ const getCvssVector = (evidence: unknown) => {
   return '—';
 };
 
-const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], scanRunning = false }) => {
+const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], scanRunning = false, dumpedHosts = [] }) => {
   const { organizationId } = useClientOrganization();
   const [searchTerm, setSearchTerm] = useState('');
   const [severityFilter, setSeverityFilter] = useState('all');
