@@ -739,6 +739,325 @@ export type Database = {
           },
         ]
       }
+      external_cve_findings: {
+        Row: {
+          affected_url: string | null
+          attribution_confidence: string
+          confidence: string
+          created_at: string
+          cve: string[]
+          cvss: number | null
+          cvssv3: number | null
+          cwe: string | null
+          epss_percentile: number | null
+          epss_score: number | null
+          evidence: Json | null
+          external_finding_id: number | null
+          id: string
+          in_cisa_catalog: boolean
+          ip: unknown
+          name: string
+          organization_id: string
+          port: number | null
+          protocol: string | null
+          provider: string
+          raw_finding: Json | null
+          recommendation: string | null
+          risk_level: number
+          scan_job_id: string
+          service: string | null
+          severity: string
+          status: string
+          target: string
+          task_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          affected_url?: string | null
+          attribution_confidence?: string
+          confidence?: string
+          created_at?: string
+          cve?: string[]
+          cvss?: number | null
+          cvssv3?: number | null
+          cwe?: string | null
+          epss_percentile?: number | null
+          epss_score?: number | null
+          evidence?: Json | null
+          external_finding_id?: number | null
+          id?: string
+          in_cisa_catalog?: boolean
+          ip?: unknown
+          name: string
+          organization_id: string
+          port?: number | null
+          protocol?: string | null
+          provider?: string
+          raw_finding?: Json | null
+          recommendation?: string | null
+          risk_level?: number
+          scan_job_id: string
+          service?: string | null
+          severity?: string
+          status?: string
+          target: string
+          task_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          affected_url?: string | null
+          attribution_confidence?: string
+          confidence?: string
+          created_at?: string
+          cve?: string[]
+          cvss?: number | null
+          cvssv3?: number | null
+          cwe?: string | null
+          epss_percentile?: number | null
+          epss_score?: number | null
+          evidence?: Json | null
+          external_finding_id?: number | null
+          id?: string
+          in_cisa_catalog?: boolean
+          ip?: unknown
+          name?: string
+          organization_id?: string
+          port?: number | null
+          protocol?: string | null
+          provider?: string
+          raw_finding?: Json | null
+          recommendation?: string | null
+          risk_level?: number
+          scan_job_id?: string
+          service?: string | null
+          severity?: string
+          status?: string
+          target?: string
+          task_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_cve_findings_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "external_scan_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "external_cve_findings_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "external_scan_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      external_scan_audit_log: {
+        Row: {
+          action: string
+          actor_email: string | null
+          actor_id: string | null
+          created_at: string
+          details: Json | null
+          id: string
+          organization_id: string | null
+          scan_job_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_email?: string | null
+          actor_id?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: string
+          organization_id?: string | null
+          scan_job_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_email?: string | null
+          actor_id?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: string
+          organization_id?: string | null
+          scan_job_id?: string | null
+        }
+        Relationships: []
+      }
+      external_scan_jobs: {
+        Row: {
+          authorization_proof: string | null
+          completed_at: string | null
+          created_at: string
+          error_message: string | null
+          hosting_context: string
+          id: string
+          organization_id: string
+          provider: string
+          requested_by: string | null
+          resolved_ips: string[]
+          scan_profile: string
+          shodan_status: string
+          started_at: string | null
+          status: string
+          target: string
+          target_type: string
+          triggered_by: string
+        }
+        Insert: {
+          authorization_proof?: string | null
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          hosting_context?: string
+          id?: string
+          organization_id: string
+          provider?: string
+          requested_by?: string | null
+          resolved_ips?: string[]
+          scan_profile: string
+          shodan_status?: string
+          started_at?: string | null
+          status?: string
+          target: string
+          target_type: string
+          triggered_by?: string
+        }
+        Update: {
+          authorization_proof?: string | null
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          hosting_context?: string
+          id?: string
+          organization_id?: string
+          provider?: string
+          requested_by?: string | null
+          resolved_ips?: string[]
+          scan_profile?: string
+          shodan_status?: string
+          started_at?: string | null
+          status?: string
+          target?: string
+          target_type?: string
+          triggered_by?: string
+        }
+        Relationships: []
+      }
+      external_scan_reports: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          download_url: string | null
+          external_report_id: number | null
+          format: string
+          group_by: string
+          id: string
+          organization_id: string
+          scan_job_id: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          download_url?: string | null
+          external_report_id?: number | null
+          format?: string
+          group_by?: string
+          id?: string
+          organization_id: string
+          scan_job_id: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          download_url?: string | null
+          external_report_id?: number | null
+          format?: string
+          group_by?: string
+          id?: string
+          organization_id?: string
+          scan_job_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_scan_reports_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "external_scan_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      external_scan_tasks: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          error_message: string | null
+          external_scan_id: number | null
+          external_task_id: number | null
+          id: string
+          organization_id: string
+          progress: number | null
+          provider: string
+          raw_status: Json | null
+          scan_job_id: string
+          started_at: string | null
+          status: string
+          target: string
+          tool_id: number
+          tool_name: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          external_scan_id?: number | null
+          external_task_id?: number | null
+          id?: string
+          organization_id: string
+          progress?: number | null
+          provider?: string
+          raw_status?: Json | null
+          scan_job_id: string
+          started_at?: string | null
+          status?: string
+          target: string
+          tool_id: number
+          tool_name: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          external_scan_id?: number | null
+          external_task_id?: number | null
+          id?: string
+          organization_id?: string
+          progress?: number | null
+          provider?: string
+          raw_status?: Json | null
+          scan_job_id?: string
+          started_at?: string | null
+          status?: string
+          target?: string
+          tool_id?: number
+          tool_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_scan_tasks_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "external_scan_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       hilog_correlation_reports: {
         Row: {
           created_at: string
@@ -1302,6 +1621,7 @@ export type Database = {
           id: string
           irp_extended: boolean
           name: string
+          pentest_tools_auto_validation: boolean
           surface_scan_extended: boolean
           updated_at: string
         }
@@ -1312,6 +1632,7 @@ export type Database = {
           id?: string
           irp_extended?: boolean
           name: string
+          pentest_tools_auto_validation?: boolean
           surface_scan_extended?: boolean
           updated_at?: string
         }
@@ -1322,6 +1643,7 @@ export type Database = {
           id?: string
           irp_extended?: boolean
           name?: string
+          pentest_tools_auto_validation?: boolean
           surface_scan_extended?: boolean
           updated_at?: string
         }
@@ -1585,6 +1907,65 @@ export type Database = {
           name?: string
         }
         Relationships: []
+      }
+      shodan_enrichments: {
+        Row: {
+          confidence: string
+          cpes: string[] | null
+          created_at: string
+          found: boolean
+          hostnames: string[] | null
+          id: string
+          ip: unknown
+          organization_id: string
+          ports: number[] | null
+          raw_response: Json | null
+          scan_job_id: string
+          source: string
+          target: string
+          vulns: Json | null
+        }
+        Insert: {
+          confidence?: string
+          cpes?: string[] | null
+          created_at?: string
+          found?: boolean
+          hostnames?: string[] | null
+          id?: string
+          ip?: unknown
+          organization_id: string
+          ports?: number[] | null
+          raw_response?: Json | null
+          scan_job_id: string
+          source?: string
+          target: string
+          vulns?: Json | null
+        }
+        Update: {
+          confidence?: string
+          cpes?: string[] | null
+          created_at?: string
+          found?: boolean
+          hostnames?: string[] | null
+          id?: string
+          ip?: unknown
+          organization_id?: string
+          ports?: number[] | null
+          raw_response?: Json | null
+          scan_job_id?: string
+          source?: string
+          target?: string
+          vulns?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shodan_enrichments_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "external_scan_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       supplier_directory: {
         Row: {
