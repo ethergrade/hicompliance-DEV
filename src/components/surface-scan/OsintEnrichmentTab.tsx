@@ -153,7 +153,7 @@ export const OsintEnrichmentTab = () => {
               <Tabs defaultValue="findings">
                 <TabsList>
                   <TabsTrigger value="findings">Findings ({findings.length})</TabsTrigger>
-                  <TabsTrigger value="observations">Observations ({observations.length})</TabsTrigger>
+                  <TabsTrigger value="observations">Observations ({visibleObservationsCount})</TabsTrigger>
                   <TabsTrigger value="intel">Intel ({intel.length})</TabsTrigger>
                 </TabsList>
                 <TabsContent value="findings" className="mt-3">
