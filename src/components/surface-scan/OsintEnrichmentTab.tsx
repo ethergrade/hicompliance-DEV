@@ -13,6 +13,7 @@ import {
   useSurfaceEngineJobs,
   useSurfaceObservations,
   useSurfaceEngineFindings,
+  useSurfaceExternalIntel,
   type SurfaceFinding,
 } from '@/hooks/useSurfaceScanEngine';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
