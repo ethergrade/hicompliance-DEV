@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { triggerManualSurfaceScan } from '@/hooks/useSurfaceScanHistory';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -42,6 +44,7 @@ import {
   Loader2,
   Lightbulb,
   GitBranch,
+  RefreshCw,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
@@ -160,6 +163,8 @@ const getCvssVector = (evidence: unknown) => {
 
 const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], scanRunning = false, dumpedHosts = [] }) => {
   const { organizationId } = useClientOrganization();
+  const queryClient = useQueryClient();
+  const [rescanning, setRescanning] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [severityFilter, setSeverityFilter] = useState('all');
   const [epssRangeFilter, setEpssRangeFilter] = useState('all');
@@ -171,6 +176,28 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+
+  const handleRescan = async () => {
+    if (!organizationId) {
+      toast.error('Nessuna organizzazione selezionata');
+      return;
+    }
+    setRescanning(true);
+    try {
+      const res = await triggerManualSurfaceScan(organizationId);
+      const total = res?.results?.[0]?.total_assets ?? 0;
+      toast.success('Scansione completata', { description: `${total} asset analizzati e salvati su DB.` });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['surface-security-findings', organizationId] }),
+        queryClient.invalidateQueries({ queryKey: ['external-cve-findings'] }),
+        queryClient.invalidateQueries({ queryKey: ['shodan-scan'] }),
+      ]);
+    } catch (e: any) {
+      toast.error('Errore scansione', { description: e?.message ?? 'Riprova più tardi' });
+    } finally {
+      setRescanning(false);
+    }
+  };
 
   const normHost = (v: string) => String(v || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
   const dumpedMap = useMemo(() => {
@@ -527,10 +554,21 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
               Findings reali rilevati dai nostri motori di Attack Surface Intelligence, OSINT e validazione attiva delle vulnerabilità sugli asset monitorati
             </p>
           </div>
-          <Button variant="outline" className="flex items-center gap-2" disabled={enrichedFindings.length === 0}>
-            <Download className="w-4 h-4" />
-            Esporta Report
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="default"
+              className="flex items-center gap-2"
+              onClick={handleRescan}
+              disabled={rescanning || !organizationId}
+            >
+              <RefreshCw className={`w-4 h-4 ${rescanning ? 'animate-spin' : ''}`} />
+              {rescanning ? 'Scansione in corso...' : 'Riesegui scansione'}
+            </Button>
+            <Button variant="outline" className="flex items-center gap-2" disabled={enrichedFindings.length === 0}>
+              <Download className="w-4 h-4" />
+              Esporta Report
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
