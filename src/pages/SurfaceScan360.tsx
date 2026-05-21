@@ -425,7 +425,7 @@ const SurfaceScan360: React.FC = () => {
       if (input && !/^\d{1,3}(\.\d{1,3}){3}/.test(input) && !input.includes('/') && !input.includes('-')) {
         try {
           await startSurfaceScan.mutateAsync({ target: input });
-          toast.success(`Scansione avviata: Shodan + Web Check + Pentest-Tools su ${input}`);
+          toast.success(`Scansione avviata su ${input}: Attack Surface + OSINT + validazione CVE attiva`);
         } catch (e: any) {
           console.warn('start surface scan failed', e);
         }
