@@ -74,6 +74,14 @@ const PROVIDER_LABELS: Record<string, string> = {
 };
 const providerLabel = (p: string) => PROVIDER_LABELS[p] || p.replace(/_/g, ' ');
 
+const normalizeHost = (value: string): string => String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+const depthFromRoot = (host: string, rootDomain: string): number => {
+  const h = normalizeHost(host);
+  const root = normalizeHost(rootDomain);
+  if (!h || !root || h === root || !h.endsWith(`.${root}`)) return 0;
+  return h.slice(0, -(root.length + 1)).split('.').filter(Boolean).length;
+};
+
 const isJunkSummary = (s: any): boolean => {
   if (!s) return true;
   if (typeof s === 'object') {
