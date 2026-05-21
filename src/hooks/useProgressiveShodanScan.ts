@@ -5,7 +5,7 @@ import type { ShodanAsset } from './useShodanScan';
 
 export interface ScanRule {
   id: string;
-  entry_type: 'single' | 'range' | 'cidr';
+  entry_type: 'single' | 'range' | 'cidr' | 'domain';
   input_value: string;
   ip_start: string;
   ip_end: string;
