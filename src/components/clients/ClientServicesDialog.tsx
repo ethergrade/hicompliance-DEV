@@ -52,17 +52,17 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     queryFn: async () => {
       const { data, error } = await supabase
         .from('organizations')
-        .select('hicompliance_enabled, irp_extended, surface_scan_extended')
+        .select('hicompliance_enabled, irp_extended, surface_scan_extended, pentest_tools_auto_validation')
         .eq('id', organizationId)
         .maybeSingle();
       if (error) throw error;
-      return data || { hicompliance_enabled: false, irp_extended: false, surface_scan_extended: false };
+      return data || { hicompliance_enabled: false, irp_extended: false, surface_scan_extended: false, pentest_tools_auto_validation: false };
     },
     enabled: open && !!organizationId,
   });
 
   const updateFlagsMutation = useMutation({
-    mutationFn: async (patch: Partial<{ hicompliance_enabled: boolean; irp_extended: boolean; surface_scan_extended: boolean }>) => {
+    mutationFn: async (patch: Partial<{ hicompliance_enabled: boolean; irp_extended: boolean; surface_scan_extended: boolean; pentest_tools_auto_validation: boolean }>) => {
       const { error } = await supabase.from('organizations').update(patch).eq('id', organizationId);
       if (error) throw error;
     },
@@ -242,6 +242,21 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                       checked={!!orgFlags?.surface_scan_extended}
                       disabled={updateFlagsMutation.isPending}
                       onCheckedChange={(v) => updateFlagsMutation.mutate({ surface_scan_extended: v })}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 py-2">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium">Validazione attiva CVE (Pentest-Tools)</p>
+                        <p className="text-xs text-muted-foreground">Auto-scan attivo quando Shodan è cieco o l'IP è shared hosting</p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={!!orgFlags?.pentest_tools_auto_validation}
+                      disabled={updateFlagsMutation.isPending}
+                      onCheckedChange={(v) => updateFlagsMutation.mutate({ pentest_tools_auto_validation: v })}
                     />
                   </div>
                 </div>

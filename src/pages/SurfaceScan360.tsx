@@ -66,6 +66,8 @@ import { isIpInRange } from '@/lib/ipRange';
 import { useProgressiveShodanScan } from '@/hooks/useProgressiveShodanScan';
 import { Progress } from '@/components/ui/progress';
 import { SurfaceScanTrendline } from '@/components/surface-scan/SurfaceScanTrendline';
+import { ValidatedCveTab } from '@/components/surface-scan/ValidatedCveTab';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const SurfaceScan360: React.FC = () => {
   const exportContainerRef = useRef<HTMLDivElement>(null);
@@ -577,6 +579,16 @@ const SurfaceScan360: React.FC = () => {
 
           {/* Trendline storico settimanale */}
           <SurfaceScanTrendline />
+
+          <Tabs defaultValue="exposed" className="w-full">
+            <TabsList>
+              <TabsTrigger value="exposed">Asset esposti (Shodan)</TabsTrigger>
+              <TabsTrigger value="validated">CVE validati (Pentest-Tools)</TabsTrigger>
+            </TabsList>
+            <TabsContent value="validated" className="mt-4">
+              <ValidatedCveTab />
+            </TabsContent>
+            <TabsContent value="exposed" className="mt-4 space-y-6">
 
           {/* Stats Overview */}
           <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
@@ -1359,6 +1371,8 @@ const SurfaceScan360: React.FC = () => {
             </CardContent>
           </Card>
         </div>
+            </TabsContent>
+          </Tabs>
 
         {/* Alert Configuration Dialog */}
         <SurfaceScanAlertConfigDialog
