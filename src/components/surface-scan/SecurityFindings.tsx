@@ -788,6 +788,18 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
                                         )}
                                       </div>
 
+                                      {vuln.remediationText && (
+                                        <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-3">
+                                          <div className="flex items-center gap-2 mb-1 text-xs font-semibold text-green-700">
+                                            <Lightbulb className="w-3.5 h-3.5" />
+                                            Remediation consigliata
+                                          </div>
+                                          <div className="text-xs leading-relaxed whitespace-pre-wrap text-foreground/90">
+                                            {vuln.remediationText}
+                                          </div>
+                                        </div>
+                                      )}
+
                                       <div className="text-xs text-muted-foreground">
                                         <strong>CVSS Vector:</strong>
                                         <code className="block mt-1 p-1 bg-muted rounded text-xs break-all">{vuln.cvssVector}</code>
