@@ -1,6 +1,7 @@
 // Esegue moduli di enrichment OSINT per un job SurfaceScan360.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SAFE_RECON_MODULES, type ScanContext, type ModuleResult } from '../_shared/osintModules.ts';
+import { shodanHostModule, urlscanModule, hostingContextModule, type IntelRow } from '../_shared/intelModules.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
