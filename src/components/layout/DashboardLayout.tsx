@@ -2,6 +2,7 @@ import React from 'react';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar } from './AppSidebar';
 import { ClientIndicator } from './ClientIndicator';
+import { AppFooter } from './AppFooter';
 import { useUserRoles } from '@/hooks/useUserRoles';
 
 interface DashboardLayoutProps {
