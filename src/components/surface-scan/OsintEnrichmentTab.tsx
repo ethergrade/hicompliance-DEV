@@ -6,7 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Loader2, PlayCircle, Eye, AlertTriangle } from 'lucide-react';
+import { Loader2, PlayCircle, Eye, AlertTriangle, Server, Users, Shield } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import {
   useStartSurfaceScan,
