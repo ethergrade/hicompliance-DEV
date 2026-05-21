@@ -102,7 +102,7 @@ interface SurfaceDbFinding {
   epss: number | null;
   cisa_kev: boolean | null;
   remediation: string | null;
-  evidence: any;
+  evidence: unknown;
   attribution_confidence: string | null;
   status: string;
   created_at: string;
@@ -153,7 +153,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
     refetchInterval: scanRunning ? 5000 : 15000,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('surface_findings' as any)
+        .from('surface_findings' as never)
         .select('id, provider, module, finding_type, title, description, severity, affected_asset, affected_url, ip, port, protocol, cve, cvss, epss, cisa_kev, remediation, evidence, attribution_confidence, status, created_at')
         .eq('organization_id', organizationId!)
         .order('created_at', { ascending: false })
