@@ -223,44 +223,39 @@ const SurfaceScan360: React.FC = () => {
     }
   };
 
-  const monthlyData = hasMonitoredRules ? [
-    { mese: 'Gen', porte_aperte: 45, porte_chiuse: 23, cve_critiche: 12, cve_risolte: 8, epss_score: 6.2 },
-    { mese: 'Feb', porte_aperte: 52, porte_chiuse: 18, cve_critiche: 15, cve_risolte: 11, epss_score: 6.8 },
-    { mese: 'Mar', porte_aperte: 48, porte_chiuse: 25, cve_critiche: 9, cve_risolte: 14, epss_score: 5.9 },
-    { mese: 'Apr', porte_aperte: 41, porte_chiuse: 32, cve_critiche: 7, cve_risolte: 18, epss_score: 5.1 },
-    { mese: 'Mag', porte_aperte: 39, porte_chiuse: 34, cve_critiche: 8, cve_risolte: 16, epss_score: 5.4 },
-    { mese: 'Giu', porte_aperte: 43, porte_chiuse: 30, cve_critiche: 11, cve_risolte: 13, epss_score: 5.8 },
-    { mese: 'Lug', porte_aperte: 46, porte_chiuse: 27, cve_critiche: 13, cve_risolte: 10, epss_score: 6.1 },
-    { mese: 'Ago', porte_aperte: 44, porte_chiuse: 29, cve_critiche: 10, cve_risolte: 15, epss_score: 5.7 },
-    { mese: 'Set', porte_aperte: 38, porte_chiuse: 35, cve_critiche: 6, cve_risolte: 19, epss_score: 4.9 },
-    { mese: 'Ott', porte_aperte: 42, porte_chiuse: 31, cve_critiche: 9, cve_risolte: 16, epss_score: 5.5 },
-    { mese: 'Nov', porte_aperte: 40, porte_chiuse: 33, cve_critiche: 8, cve_risolte: 17, epss_score: 5.2 },
-    { mese: 'Dic', porte_aperte: 37, porte_chiuse: 36, cve_critiche: 5, cve_risolte: 20, epss_score: 4.6 }
-  ] : [];
+  // Dati REALI derivati dal cron settimanale (surface_scan_history)
+  const monthlyData = scanHistory.weekly.map(w => ({
+    mese: w.label,
+    porte_aperte: w.porte_aperte,
+    porte_chiuse: w.porte_chiuse,
+    cve_critiche: w.cve_critiche,
+    cve_risolte: w.cve_risolte,
+    epss_score: w.epss_score,
+  }));
 
-  const exposedServicesData = hasMonitoredRules ? [
-    { name: 'HTTP/HTTPS', value: 35, color: '#3b82f6' },
-    { name: 'SSH', value: 25, color: '#10b981' },
-    { name: 'FTP', value: 15, color: '#f59e0b' },
-    { name: 'SMTP', value: 12, color: '#ef4444' },
-    { name: 'DNS', value: 8, color: '#8b5cf6' },
-    { name: 'Altro', value: 5, color: '#6b7280' }
-  ] : [];
+  const exposedServicesData = hasMonitoredRules ? (() => {
+    // Aggregato servizi dalla snapshot Shodan live (best-effort)
+    const counts = new Map<string, number>();
+    for (const a of shodanAssets) {
+      for (const s of (a.services ?? [])) {
+        const key = String(s).split('/')[0].toUpperCase().slice(0, 12) || 'ALTRO';
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+    const palette = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#6b7280'];
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([name, value], i) => ({ name, value, color: palette[i % palette.length] }));
+  })() : [];
 
-  const riskTrendData = hasMonitoredRules ? [
-    { mese: 'Gen', rischio_alto: 15, rischio_medio: 28, rischio_basso: 57 },
-    { mese: 'Feb', rischio_alto: 18, rischio_medio: 32, rischio_basso: 50 },
-    { mese: 'Mar', rischio_alto: 12, rischio_medio: 35, rischio_basso: 53 },
-    { mese: 'Apr', rischio_alto: 9, rischio_medio: 31, rischio_basso: 60 },
-    { mese: 'Mag', rischio_alto: 11, rischio_medio: 29, rischio_basso: 60 },
-    { mese: 'Giu', rischio_alto: 14, rischio_medio: 33, rischio_basso: 53 },
-    { mese: 'Lug', rischio_alto: 16, rischio_medio: 36, rischio_basso: 48 },
-    { mese: 'Ago', rischio_alto: 13, rischio_medio: 34, rischio_basso: 53 },
-    { mese: 'Set', rischio_alto: 8, rischio_medio: 27, rischio_basso: 65 },
-    { mese: 'Ott', rischio_alto: 10, rischio_medio: 30, rischio_basso: 60 },
-    { mese: 'Nov', rischio_alto: 9, rischio_medio: 28, rischio_basso: 63 },
-    { mese: 'Dic', rischio_alto: 6, rischio_medio: 25, rischio_basso: 69 }
-  ] : [];
+  const riskTrendData = scanHistory.weekly.map(w => ({
+    mese: w.label,
+    rischio_alto: w.rischio_alto,
+    rischio_medio: w.rischio_medio,
+    rischio_basso: w.rischio_basso,
+  }));
+
 
 
   const chartConfig = {
