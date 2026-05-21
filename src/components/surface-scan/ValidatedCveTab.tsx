@@ -29,7 +29,7 @@ const severityClass: Record<string, string> = {
 };
 
 const confidenceLabel: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }> = {
-  validated: { label: 'Validato (Shodan + Pentest-Tools)', variant: 'default' },
+  validated: { label: 'Validato', variant: 'default' },
   active_scan_validated: { label: 'Scan attivo confermato', variant: 'default' },
   external_signal_not_attributed: { label: 'Solo segnale esterno', variant: 'outline' },
   unvalidated: { label: 'Non validato', variant: 'secondary' },
@@ -92,7 +92,7 @@ export const ValidatedCveTab: React.FC = () => {
           <div>
             <CardTitle className="flex items-center gap-2">
               <ShieldCheck className="w-5 h-5" />
-              CVE validati attivamente (Pentest-Tools)
+              CVE validati attivamente
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
               Validazione attiva di domini, hostname e IP autorizzati. Su shared hosting le CVE IP-level non vengono attribuite al dominio.
@@ -106,7 +106,7 @@ export const ValidatedCveTab: React.FC = () => {
               <SheetContent className="w-full sm:max-w-md overflow-y-auto">
                 <SheetHeader>
                   <SheetTitle>Validazione attiva CVE</SheetTitle>
-                  <SheetDescription>Lancia uno scan Pentest-Tools sul target indicato.</SheetDescription>
+                  <SheetDescription>Lancia una validazione attiva sul target indicato.</SheetDescription>
                 </SheetHeader>
                 <div className="space-y-4 py-4">
                   <div>
@@ -157,7 +157,7 @@ export const ValidatedCveTab: React.FC = () => {
               <p className="text-2xl font-bold text-red-500">{summary.high}</p>
             </div>
             <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Validati (Shodan+PT)</p>
+              <p className="text-xs text-muted-foreground">Validati</p>
               <p className="text-2xl font-bold">{summary.validated}</p>
             </div>
             <div className="rounded-lg border p-3">
@@ -172,7 +172,7 @@ export const ValidatedCveTab: React.FC = () => {
             {jobsLoading ? <div className="text-sm text-muted-foreground">Caricamento...</div> :
              jobs.length === 0 ? (
               <div className="text-sm text-muted-foreground p-4 border border-dashed rounded-lg">
-                Nessuno scan attivo eseguito. La validazione parte automaticamente dal cron settimanale quando Shodan è cieco, oppure può essere lanciata manualmente da admin.
+                Nessuno scan attivo eseguito. La validazione parte automaticamente dal cron settimanale quando la scansione passiva è cieca, oppure può essere lanciata manualmente da admin.
               </div>
             ) : (
               <div className="space-y-2 max-h-48 overflow-y-auto">
