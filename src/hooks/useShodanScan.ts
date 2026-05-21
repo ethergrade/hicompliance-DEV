@@ -10,6 +10,7 @@ export interface ShodanAsset {
   risk: 'Basso' | 'Medio' | 'Alto';
   status: 'Sicuro' | 'Attenzione' | 'Critico';
   cves: Array<{ id: string; severity: 'low' | 'medium' | 'high'; description: string }>;
+  banners?: Array<{ port: number; transport?: string; product?: string; module?: string; version?: string }>;
   org?: string;
   os?: string;
   country?: string;
