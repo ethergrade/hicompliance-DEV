@@ -68,6 +68,7 @@ import { Progress } from '@/components/ui/progress';
 import { SurfaceScanTrendline } from '@/components/surface-scan/SurfaceScanTrendline';
 import { ValidatedCveTab } from '@/components/surface-scan/ValidatedCveTab';
 import { OsintEnrichmentTab } from '@/components/surface-scan/OsintEnrichmentTab';
+import { AiReportTab } from '@/components/surface-scan/AiReportTab';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const SurfaceScan360: React.FC = () => {
