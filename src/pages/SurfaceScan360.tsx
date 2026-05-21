@@ -493,15 +493,15 @@ const SurfaceScan360: React.FC = () => {
           {isAdminUser && (
             <Card className="border-primary/30 bg-primary/5">
               <CardHeader>
-                <CardTitle>Gestione IP Monitorati (Solo Admin)</CardTitle>
+                <CardTitle>Gestione Asset Monitorati (Solo Admin)</CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Aggiungi IP singoli, range o reti CIDR per controllare quali asset pubblici rientrano nel monitoraggio.
+                  Aggiungi <strong>domini</strong>, IP singoli, range o reti CIDR. Le scansioni vengono lanciate sui motori Shodan, Web Check e Pentest-Tools.
                 </p>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex flex-col md:flex-row gap-2">
                   <Input
-                    placeholder="Es. 203.0.113.10 | 203.0.113.10-203.0.113.20 | 203.0.113.0/24"
+                    placeholder="Es. cliente.com | 203.0.113.10 | 203.0.113.10-203.0.113.20 | 203.0.113.0/24"
                     value={newMonitoredIpInput}
                     onChange={(event) => setNewMonitoredIpInput(event.target.value)}
                     disabled={monitoredIpRulesSaving}
