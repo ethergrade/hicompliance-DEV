@@ -528,7 +528,7 @@ const SurfaceScan360: React.FC = () => {
                   )}
                   {shodanError && (
                     <div className="px-3 py-2 border-b border-border bg-destructive/10 text-xs text-destructive">
-                      Errore Shodan: {shodanError.message}
+                      Errore scansione: {shodanError.message}
                     </div>
                   )}
 
@@ -571,8 +571,8 @@ const SurfaceScan360: React.FC = () => {
 
           <Tabs defaultValue="exposed" className="w-full">
             <TabsList>
-              <TabsTrigger value="exposed">Asset esposti (Shodan)</TabsTrigger>
-              <TabsTrigger value="validated">CVE validati (Pentest-Tools)</TabsTrigger>
+              <TabsTrigger value="exposed">Asset esposti</TabsTrigger>
+              <TabsTrigger value="validated">CVE validati</TabsTrigger>
               <TabsTrigger value="osint">OSINT enrichment</TabsTrigger>
               <TabsTrigger value="ai-report">Report AI</TabsTrigger>
             </TabsList>
