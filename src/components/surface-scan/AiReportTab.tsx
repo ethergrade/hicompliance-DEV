@@ -148,8 +148,31 @@ export const AiReportTab: React.FC = () => {
       hr();
     }
 
+    // Azioni di remediation (incluse quelle generate da CISA KEV)
+    const tasks = report.remediation_tasks || [];
+    if (tasks.length > 0) {
+      line('7. Azioni di remediation pianificate / completate', { size: 13, bold: true });
+      if (report.kev_generation && report.kev_generation.total_kev > 0) {
+        line(`CISA KEV: ${report.kev_generation.total_kev} CVE rilevate, ${report.kev_generation.created} nuove azioni auto-generate, ${report.kev_generation.existing} già presenti.`, { size: 9, color: [100, 100, 100] });
+      }
+      const byCat: Record<string, RemediationTask[]> = {};
+      tasks.forEach((t) => { (byCat[t.category] ||= []).push(t); });
+      Object.keys(byCat).sort().forEach((cat) => {
+        const list = byCat[cat];
+        const done = list.filter((t) => (t.progress ?? 0) >= 100).length;
+        line(`${cat} (${done}/${list.length} completati)`, { bold: true, size: 11 });
+        list.forEach((t) => {
+          const status = (t.progress ?? 0) >= 100 ? 'COMPLETATO' : 'PIANIFICATO';
+          line(`  [${status}] [${(t.priority || '').toUpperCase()}] ${t.task}`, { size: 9 });
+          line(`    ${t.start_date} -> ${t.end_date} | progress: ${t.progress ?? 0}%${t.assignee ? ' | ' + t.assignee : ''}${t.source === 'cisa_kev' ? ' | sorgente: CISA KEV ' + (t.source_ref || '') : ''}`, { size: 8, color: [120, 120, 120] });
+        });
+        y += 2;
+      });
+      hr();
+    }
+
     // Findings
-    line('7. Findings completi', { size: 13, bold: true });
+    line('8. Findings completi', { size: 13, bold: true });
     const sc = report.findings_by_severity || {};
     line(`Totale: ${report.findings.length} - Critici: ${sc.critical || 0}, Alti: ${sc.high || 0}, Medi: ${sc.medium || 0}, Bassi: ${sc.low || 0}, Info: ${sc.info || 0}`);
     y += 4;
@@ -160,6 +183,7 @@ export const AiReportTab: React.FC = () => {
       if (f.remediation) line(`Remediation: ${f.remediation}`, { size: 9 });
       y += 2;
     });
+
 
     doc.save(`SurfaceScan360_Report_${(o.name || 'org').replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`);
   };
