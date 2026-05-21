@@ -104,21 +104,21 @@ const Index = () => {
     description: "Monitoraggio Dispositivi"
   }];
   const stats = [{
-    label: "Organizzazioni Protette",
+    label: "Aziende che ci hanno scelto",
     value: "500+",
     icon: Users
   }, {
-    label: "Conformità NIS2",
-    value: "100%",
+    label: "Riduzione media del rischio cyber",
+    value: "-72%",
+    icon: Shield
+  }, {
+    label: "Tempo risparmiato sulla compliance",
+    value: "10x",
     icon: CheckCircle
   }, {
-    label: "Uptime Garantito",
-    value: "99.9%",
+    label: "Clienti che rinnovano ogni anno",
+    value: "98%",
     icon: Network
-  }, {
-    label: "delle aziende hanno ridotto il rischio nei primi 3 mesi",
-    value: "63%",
-    icon: Shield
   }];
   return <div className="min-h-screen bg-background">
       {/* Header */}
