@@ -451,14 +451,28 @@ const SurfaceScan360: React.FC = () => {
 
   const startSurfaceScan = useStartSurfaceScan();
   const subdomainDump = useSubdomainDump();
+  const triggerPentestScan = useTriggerPentestScan();
 
   const handleAddMonitoredIpRule = async () => {
     const input = newMonitoredIpInput.trim();
     const success = await addMonitoredIpRule(input);
     if (success) {
       setNewMonitoredIpInput('');
-      // Se è un dominio, avvia anche il motore Web Check + Pentest-Tools (enrichment OSINT/CVE)
-      const isDomain = input && !/^\d{1,3}(\.\d{1,3}){3}/.test(input) && !input.includes('/') && !input.includes('-');
+      const isIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(input);
+      const isDomain = input && !isIp && !input.includes('/') && !input.includes('-');
+
+      // Auto-trigger validazione CVE attiva (autorizzazione implicita da T&C registrazione)
+      const profile: 'cve_web' | 'cve_network' | null = isDomain ? 'cve_web' : isIp ? 'cve_network' : null;
+      if (profile) {
+        triggerPentestScan.mutateAsync({
+          target: input,
+          profile,
+          authorization_proof: 'Autorizzazione implicita: cliente ha accettato T&C in fase di registrazione (HiCompliance MSA)',
+        }).then(() => {
+          toast.success(`Validazione CVE attiva avviata su ${input}`);
+        }).catch((e: any) => console.warn('auto pentest scan failed', e?.message));
+      }
+
       if (isDomain) {
         try {
           await startSurfaceScan.mutateAsync({ target: input });
@@ -476,6 +490,7 @@ const SurfaceScan360: React.FC = () => {
       }
     }
   };
+
 
   const handleRemoveMonitoredIpRule = async (ruleId: string) => {
     await removeMonitoredIpRule(ruleId);
