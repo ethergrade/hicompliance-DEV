@@ -260,6 +260,58 @@ export const AiReportTab: React.FC = () => {
         </>
       )}
 
+      {report?.remediation_tasks && report.remediation_tasks.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Azioni di remediation (pianificate / completate)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {report.kev_generation && report.kev_generation.total_kev > 0 && (
+              <p className="text-xs text-muted-foreground">
+                CISA KEV rilevate: {report.kev_generation.total_kev} - Nuove azioni auto-generate: {report.kev_generation.created} - Già esistenti: {report.kev_generation.existing}
+              </p>
+            )}
+            {Object.entries(
+              report.remediation_tasks.reduce<Record<string, RemediationTask[]>>((acc, t) => {
+                (acc[t.category] ||= []).push(t);
+                return acc;
+              }, {})
+            ).sort(([a], [b]) => a.localeCompare(b)).map(([cat, list]) => {
+              const done = list.filter((t) => (t.progress ?? 0) >= 100).length;
+              return (
+                <div key={cat} className="border-l-4 pl-3 py-2" style={{ borderColor: 'hsl(var(--primary))' }}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-semibold text-sm">{cat}</span>
+                    <Badge variant="outline">{done}/{list.length} completati</Badge>
+                  </div>
+                  <ul className="text-xs space-y-1">
+                    {list.map((t) => {
+                      const completed = (t.progress ?? 0) >= 100;
+                      const sev = t.priority === 'critical' ? 'critical' : t.priority === 'high' ? 'high' : t.priority === 'medium' ? 'medium' : 'low';
+                      return (
+                        <li key={t.id} className="flex items-start gap-2">
+                          <Badge variant={completed ? 'default' : 'secondary'} className="shrink-0">
+                            {completed ? 'COMPLETATO' : 'PIANIFICATO'}
+                          </Badge>
+                          <Badge className={sevColor(sev)}>{t.priority}</Badge>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">{t.task}</p>
+                            <p className="text-muted-foreground">
+                              {t.start_date} → {t.end_date} · {t.progress ?? 0}%
+                              {t.source === 'cisa_kev' && t.source_ref ? ` · sorgente: CISA KEV ${t.source_ref}` : ''}
+                            </p>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
       {report?.ai_error && (
         <Card><CardContent className="pt-6 text-sm text-destructive">Sintesi AI non disponibile: {report.ai_error}</CardContent></Card>
       )}
