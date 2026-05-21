@@ -45,7 +45,8 @@ const ClientSelection: React.FC = () => {
 
   const handleSelectClient = (org: typeof organizations[0]) => {
     setSelectedOrganization(org);
-    navigate('/dashboard');
+    const from = (location.state as { from?: string } | null)?.from;
+    navigate(from || '/dashboard');
   };
 
   const openProfile = (e: React.MouseEvent, org: typeof organizations[0]) => {
