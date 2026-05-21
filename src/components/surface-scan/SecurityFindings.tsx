@@ -41,6 +41,7 @@ import {
   Calendar,
   Loader2,
   Lightbulb,
+  GitBranch,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
@@ -56,6 +57,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 interface SecurityFindingsProps {
   shodanAssets?: ShodanAsset[];
   scanRunning?: boolean;
+  dumpedHosts?: Array<{ host: string; from: string | null }>;
 }
 
 interface SecurityFinding {
@@ -156,7 +158,7 @@ const getCvssVector = (evidence: unknown) => {
   return '—';
 };
 
-const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], scanRunning = false }) => {
+const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], scanRunning = false, dumpedHosts = [] }) => {
   const { organizationId } = useClientOrganization();
   const [searchTerm, setSearchTerm] = useState('');
   const [severityFilter, setSeverityFilter] = useState('all');
@@ -169,6 +171,21 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+
+  const normHost = (v: string) => String(v || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+  const dumpedMap = useMemo(() => {
+    const m = new Map<string, string | null>();
+    for (const d of dumpedHosts) {
+      if (d.host) m.set(normHost(d.host), d.from || null);
+    }
+    return m;
+  }, [dumpedHosts]);
+  const getDumpedFrom = (hostname: string): { isDumped: boolean; from: string | null } => {
+    const h = normHost(hostname);
+    if (dumpedMap.has(h)) return { isDumped: true, from: dumpedMap.get(h) ?? null };
+    return { isDumped: false, from: null };
+  };
+
 
   const { data: surfaceFindings = [], isLoading: surfaceFindingsLoading } = useQuery<SurfaceDbFinding[]>({
     queryKey: ['surface-security-findings', organizationId],
@@ -635,11 +652,28 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
                         </Button>
                       </TableCell>
                       <TableCell>
-                        <div>
-                          <div className="font-medium break-all">{finding.hostname}</div>
-                          <div className="text-sm text-muted-foreground">{finding.assetType}</div>
-                          <div className="text-xs text-muted-foreground">{finding.operatingSystem}</div>
-                        </div>
+                        {(() => {
+                          const d = getDumpedFrom(finding.hostname);
+                          return (
+                            <div>
+                              <div className="font-medium break-all flex items-center gap-2 flex-wrap">
+                                <span>{finding.hostname}</span>
+                                {d.isDumped && (
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-purple-500/10 text-purple-600 border-purple-500/30 text-[10px] px-1.5 py-0 h-5 inline-flex items-center gap-1"
+                                    title={d.from ? `Sottodominio scoperto da ${d.from}` : 'Sottodominio scoperto via Subdomain Dump'}
+                                  >
+                                    <GitBranch className="w-3 h-3" />
+                                    Sottodominio{d.from ? ` · ${d.from}` : ''}
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="text-sm text-muted-foreground">{finding.assetType}</div>
+                              <div className="text-xs text-muted-foreground">{finding.operatingSystem}</div>
+                            </div>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell>
                         <code className="px-2 py-1 bg-muted rounded text-sm">{finding.ip}</code>
