@@ -1,4 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -76,6 +78,32 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const SurfaceScan360: React.FC = () => {
   const exportContainerRef = useRef<HTMLDivElement>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const {
+    organizations,
+    selectedOrganization,
+    setSelectedOrganization,
+    canManageMultipleClients,
+    hasFetchedOrganizations,
+  } = useClientOrganization();
+
+  // Sync ?org=<id> <-> selected client so refresh / link sharing preserves context
+  useEffect(() => {
+    if (!hasFetchedOrganizations || !canManageMultipleClients) return;
+    const urlOrgId = searchParams.get('org');
+    if (urlOrgId) {
+      if (urlOrgId !== selectedOrganization?.id) {
+        const target = organizations.find((o) => o.id === urlOrgId);
+        if (target) setSelectedOrganization(target);
+      }
+    } else if (selectedOrganization) {
+      const next = new URLSearchParams(searchParams);
+      next.set('org', selectedOrganization.id);
+      setSearchParams(next, { replace: true });
+    }
+  }, [hasFetchedOrganizations, canManageMultipleClients, searchParams, selectedOrganization, organizations, setSelectedOrganization, setSearchParams]);
+
+
   const [openTooltip, setOpenTooltip] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useClientContext } from '@/contexts/ClientContext';
 import { useUserRoles } from '@/hooks/useUserRoles';
@@ -20,6 +20,7 @@ import DeleteClientDialog from '@/components/clients/DeleteClientDialog';
 
 const ClientSelection: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { organizations, setSelectedOrganization, isLoadingClients, selectedOrganization, fetchOrganizations } = useClientContext();
   const { isSuperAdmin } = useUserRoles();
   const [searchQuery, setSearchQuery] = useState('');
@@ -44,7 +45,8 @@ const ClientSelection: React.FC = () => {
 
   const handleSelectClient = (org: typeof organizations[0]) => {
     setSelectedOrganization(org);
-    navigate('/dashboard');
+    const from = (location.state as { from?: string } | null)?.from;
+    navigate(from || '/dashboard');
   };
 
   const openProfile = (e: React.MouseEvent, org: typeof organizations[0]) => {
