@@ -70,7 +70,7 @@ import { useStartSurfaceScan } from '@/hooks/useSurfaceScanEngine';
 import { useSurfaceScanHistory, triggerManualSurfaceScan } from '@/hooks/useSurfaceScanHistory';
 import { Progress } from '@/components/ui/progress';
 import { SurfaceScanTrendline } from '@/components/surface-scan/SurfaceScanTrendline';
-import { SubdomainDumpPanel } from '@/components/surface-scan/SubdomainDumpPanel';
+import { useSubdomainDump } from '@/hooks/useSubdomainDump';
 import { ValidatedCveTab } from '@/components/surface-scan/ValidatedCveTab';
 import { OsintEnrichmentTab } from '@/components/surface-scan/OsintEnrichmentTab';
 import { AiReportTab } from '@/components/surface-scan/AiReportTab';
@@ -472,6 +472,7 @@ const SurfaceScan360: React.FC = () => {
   };
 
   const startSurfaceScan = useStartSurfaceScan();
+  const subdomainDump = useSubdomainDump();
 
   const handleAddMonitoredIpRule = async () => {
     const input = newMonitoredIpInput.trim();
@@ -479,12 +480,20 @@ const SurfaceScan360: React.FC = () => {
     if (success) {
       setNewMonitoredIpInput('');
       // Se è un dominio, avvia anche il motore Web Check + Pentest-Tools (enrichment OSINT/CVE)
-      if (input && !/^\d{1,3}(\.\d{1,3}){3}/.test(input) && !input.includes('/') && !input.includes('-')) {
+      const isDomain = input && !/^\d{1,3}(\.\d{1,3}){3}/.test(input) && !input.includes('/') && !input.includes('-');
+      if (isDomain) {
         try {
           await startSurfaceScan.mutateAsync({ target: input });
           toast.success(`Scansione avviata su ${input}: Attack Surface + OSINT + validazione CVE attiva`);
         } catch (e: any) {
           console.warn('start surface scan failed', e);
+        }
+        // Auto-discovery sottodomini (fire-and-forget) usando la profondità configurata sull'organizzazione
+        if (subdomainDump.enabledSetting !== false) {
+          subdomainDump.runDump(input).then((res) => {
+            const count = (res as any)?.total_returned ?? 0;
+            if (count > 0) toast.success(`Discovery sottodomini su ${input}: ${count} host individuati`);
+          }).catch((e) => console.warn('subdomain dump failed', e));
         }
       }
     }
@@ -568,11 +577,39 @@ const SurfaceScan360: React.FC = () => {
                   />
                   <Button
                     onClick={handleAddMonitoredIpRule}
-                    disabled={monitoredIpRulesSaving || !newMonitoredIpInput.trim()}
+                    disabled={monitoredIpRulesSaving || !newMonitoredIpInput.trim() || subdomainDump.running}
                   >
                     <Plus className="w-4 h-4 mr-2" />
-                    Aggiungi
+                    {subdomainDump.running ? 'Discovery in corso...' : 'Aggiungi'}
                   </Button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground rounded-md border border-border bg-muted/20 px-3 py-2">
+                  <span className="font-medium text-foreground">Auto-discovery sottodomini</span>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={subdomainDump.enabledSetting}
+                      onChange={(e) => subdomainDump.updateSettings(subdomainDump.depthSetting, e.target.checked)}
+                      className="h-3.5 w-3.5"
+                    />
+                    Attivo all'inserimento di un dominio
+                  </label>
+                  <label className="flex items-center gap-2">
+                    Profondità
+                    <Input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={subdomainDump.depthSetting}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
+                        if (!isNaN(v)) subdomainDump.updateSettings(v, subdomainDump.enabledSetting);
+                      }}
+                      className="h-7 w-20"
+                    />
+                  </label>
+                  <span className="text-muted-foreground">(default 10)</span>
                 </div>
 
                 <div className="rounded-lg border border-border">
@@ -638,8 +675,7 @@ const SurfaceScan360: React.FC = () => {
             </Card>
           )}
 
-          {/* Subdomain Discovery — DNSDumpster-like */}
-          <SubdomainDumpPanel isAdmin={isAdminUser} />
+          {/* Subdomain discovery is performed automatically when a domain is added (depth configured per organization). */}
 
           {/* Trendline storico settimanale */}
           <SurfaceScanTrendline />
