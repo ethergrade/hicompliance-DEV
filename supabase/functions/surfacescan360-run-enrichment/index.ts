@@ -109,6 +109,72 @@ Deno.serve(async (req) => {
       intelRows.push(...hcRes.intel);
       observations.push(...hcRes.observations.map((o: any) => ({ organization_id: job.organization_id, scan_job_id: job_id, module: o.module, observation_type: o.observation_type, title: o.title ?? null, value: o.value, severity: o.severity ?? 'info', confidence: o.confidence ?? 'medium' })));
       findings.push(...hcRes.findings.map((f: any) => mapFinding(f, 'internal')));
+
+      // ── Auto-trigger Pentest-Tools se shared hosting rilevato ──
+      const sharedRow = hcRes.intel.find((i: any) => i?.summary?.type === 'shared_hosting');
+      if (sharedRow) {
+        try {
+          const { data: orgRow } = await supabase
+            .from('organizations')
+            .select('pentest_tools_auto_validation')
+            .eq('id', job.organization_id)
+            .maybeSingle();
+          if ((orgRow as any)?.pentest_tools_auto_validation) {
+            const shoRow = sho.intel.find((i: any) => i.provider === 'shodan' && i.found);
+            const s: any = shoRow?.summary ?? null;
+            const snapshot = s ? {
+              found: true,
+              hostnames: Array.isArray(s.hostnames) ? s.hostnames : [],
+              ports: Array.isArray(s.ports) ? s.ports : [],
+              vulns: Array.isArray(s.vulns_top) ? s.vulns_top.map((v: any) => v.cve).filter(Boolean) : [],
+              last_update: s.last_update,
+              asn: s.fingerprint?.asn,
+              org: s.fingerprint?.org,
+            } : { found: false, hostnames: [], ports: [], vulns: [] };
+            const target = job.normalized_target || job.hostname || job.raw_target;
+            const startedAt = new Date().toISOString();
+            const orchUrl = `${SUPABASE_URL}/functions/v1/pentest-tools-orchestrator`;
+            const resp = await fetch(orchUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SERVICE_ROLE}` },
+              body: JSON.stringify({
+                organization_id: job.organization_id,
+                target,
+                profile: 'recon_safe',
+                triggered_by: 'auto_from_shodan',
+                resolved_ips: resolvedIps,
+                shodan_snapshot: snapshot,
+              }),
+            });
+            const respBody = await resp.json().catch(() => ({}));
+            const action = resp.ok ? 'auto_trigger_accepted'
+              : resp.status === 403 ? 'auto_trigger_blocked'
+              : resp.status === 429 ? 'auto_trigger_rate_limited'
+              : (resp.status === 200 && respBody?.skipped) ? 'auto_trigger_skipped'
+              : 'auto_trigger_failed';
+            await supabase.from('external_scan_audit_log').insert({
+              organization_id: job.organization_id,
+              scan_job_id: respBody?.job_id ?? null,
+              actor_email: 'system:surfacescan360',
+              action,
+              details: {
+                source: 'osint_enrichment',
+                reason: 'shared_hosting_detected',
+                shared_score: sharedRow.summary?.shared_score,
+                co_hosted_count: sharedRow.summary?.co_hosted_count,
+                target,
+                triggered_by: 'auto_from_shodan',
+                http_status: resp.status,
+                requested_at: startedAt,
+                job_id: respBody?.job_id ?? null,
+                error: !resp.ok ? (respBody?.error ?? null) : null,
+              },
+            });
+          }
+        } catch (e) {
+          errors.push(`auto_pentest_trigger: ${(e as Error).message}`);
+        }
+      }
     } catch (e) {
       errors.push(`intel: ${(e as Error).message}`);
     }
