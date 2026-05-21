@@ -326,8 +326,53 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
     });
   }, [externalFindings, shodanAssets, surfaceFindings]);
 
+  // Collect all CVE IDs and enrich with NVD/EPSS/KEV cache
+  const allCveIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of realFindings) {
+      for (const v of f.vulnerabilities) {
+        for (const c of v.cveList || []) {
+          const matches = String(c).match(CVE_REGEX);
+          if (matches) matches.forEach((m) => set.add(m.toUpperCase()));
+        }
+      }
+    }
+    return Array.from(set);
+  }, [realFindings]);
+
+  const { data: intelMap = {} } = useCveIntelBatch(allCveIds);
+
+  // Re-enrich findings with real intel data (EPSS, CWE, KEV)
+  const enrichedFindings = useMemo(() => {
+    return realFindings.map((f) => {
+      let maxEpss = f.epssScore;
+      let anyKev = false;
+      const vulns = f.vulnerabilities.map((v) => {
+        const cves = (v.cveList || []).map((c) => c.toUpperCase());
+        let epss = v.epssScore;
+        let cwe = v.cwe;
+        let kev = false;
+        for (const c of cves) {
+          const intel = intelMap[c];
+          if (intel) {
+            if (intel.epss_score != null) {
+              const score = intel.epss_score * 10;
+              if (epss == null || score > epss) epss = score;
+            }
+            if (!cwe && intel.cwe_ids?.length) cwe = intel.cwe_ids[0];
+            if (intel.cisa_kev) kev = true;
+          }
+        }
+        if (epss != null && (maxEpss == null || epss > maxEpss)) maxEpss = epss;
+        if (kev) anyKev = true;
+        return { ...v, epssScore: epss, cwe, exploitAvailable: v.exploitAvailable || kev };
+      });
+      return { ...f, vulnerabilities: vulns, epssScore: maxEpss ?? 0, kev: anyKev };
+    });
+  }, [realFindings, intelMap]);
+
   const filteredFindings = useMemo(() => {
-    return realFindings.filter(finding => {
+    return enrichedFindings.filter(finding => {
       const term = searchTerm.toLowerCase();
       const matchesSearch = searchTerm === '' ||
         finding.ip.toLowerCase().includes(term) ||
@@ -336,7 +381,9 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
         finding.vulnerabilities.some(vuln =>
           vuln.cveId.toLowerCase().includes(term) ||
           vuln.description.toLowerCase().includes(term) ||
-          vuln.source.toLowerCase().includes(term)
+          vuln.source.toLowerCase().includes(term) ||
+          (vuln.cwe || '').toLowerCase().includes(term) ||
+          (vuln.owasp || '').toLowerCase().includes(term)
         );
 
       const matchesSeverity = severityFilter === 'all' || finding.highestSeverity === severityFilter;
@@ -346,8 +393,12 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
         (epssRangeFilter === 'low' && finding.epssScore < 4);
       const matchesStatus = statusFilter === 'all' ||
         finding.vulnerabilities.some(vuln => vuln.remediationStatus === statusFilter);
+      const matchesOwasp = owaspFilter === 'all' ||
+        finding.vulnerabilities.some(v => v.owasp === owaspFilter);
+      const matchesKev = !kevOnly || (finding as any).kev;
+      const matchesOnlyCve = !onlyCve || finding.vulnerabilities.some(v => (v.cveList || []).length > 0);
 
-      return matchesSearch && matchesSeverity && matchesEpss && matchesStatus;
+      return matchesSearch && matchesSeverity && matchesEpss && matchesStatus && matchesOwasp && matchesKev && matchesOnlyCve;
     });
   }, [realFindings, searchTerm, severityFilter, epssRangeFilter, statusFilter]);
 
