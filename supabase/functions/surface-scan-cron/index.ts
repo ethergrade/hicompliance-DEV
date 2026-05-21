@@ -130,6 +130,47 @@ async function scanOrganization(orgId: string, rules: MonitoredRule[], shodanKey
   return { assets: Array.from(dedup.values()), truncated, perRule };
 }
 
+const AUTO_VAL_MAX_RETRIES = 3;
+const AUTO_VAL_BASE_DELAY = 1000;
+const AUTO_VAL_TIMEOUT = 20_000;
+
+async function callOrchestratorWithRetry(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  payload: Record<string, unknown>,
+): Promise<{ ok: boolean; status: number; body: any; attempts: number; error?: string }> {
+  let lastErr: string | undefined;
+  for (let attempt = 0; attempt <= AUTO_VAL_MAX_RETRIES; attempt++) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), AUTO_VAL_TIMEOUT);
+    try {
+      const resp = await fetch(`${supabaseUrl}/functions/v1/pentest-tools-orchestrator`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceRoleKey}` },
+        body: JSON.stringify(payload),
+        signal: ctrl.signal,
+      });
+      clearTimeout(t);
+      const body = await resp.json().catch(() => ({}));
+      // 200 (anche con skipped per rate-limit settimanale) → terminale
+      // 4xx (no 429) → terminale, non riprovare
+      if (resp.status < 500 && resp.status !== 429) {
+        return { ok: resp.ok, status: resp.status, body, attempts: attempt + 1 };
+      }
+      lastErr = `HTTP ${resp.status}: ${body?.error ?? 'transient'}`;
+    } catch (e) {
+      clearTimeout(t);
+      const isAbort = (e as any)?.name === 'AbortError';
+      lastErr = isAbort ? 'timeout' : `network: ${(e as Error).message}`;
+    }
+    if (attempt === AUTO_VAL_MAX_RETRIES) break;
+    const wait = Math.min(AUTO_VAL_BASE_DELAY * Math.pow(2, attempt), 15_000) + Math.floor(Math.random() * 300);
+    console.warn(`[auto-validation] retry in ${wait}ms (attempt ${attempt + 1}/${AUTO_VAL_MAX_RETRIES}) reason: ${lastErr}`);
+    await new Promise((r) => setTimeout(r, wait));
+  }
+  return { ok: false, status: 0, body: null, attempts: AUTO_VAL_MAX_RETRIES + 1, error: lastErr };
+}
+
 async function maybeTriggerAutoValidation(
   supabaseUrl: string,
   serviceRoleKey: string,
@@ -154,26 +195,23 @@ async function maybeTriggerAutoValidation(
       org: host.org,
     } : { found: false, hostnames: [], ports: [], vulns: [] };
 
-    try {
-      const resp = await fetch(`${supabaseUrl}/functions/v1/pentest-tools-orchestrator`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${serviceRoleKey}`,
-        },
-        body: JSON.stringify({
-          organization_id: orgId,
-          target,
-          profile: 'recon_safe',
-          triggered_by: 'auto_from_shodan',
-          resolved_ips: r.ip ? [r.ip] : [],
-          shodan_snapshot: snapshot,
-        }),
-      });
-      const j = await resp.json().catch(() => ({}));
-      console.log(`Auto-validation org=${orgId} target=${target}: ${resp.status}`, j?.error ?? j?.job_id ?? 'ok');
-    } catch (e) {
-      console.error(`Auto-validation failed for ${target}:`, e);
+    const result = await callOrchestratorWithRetry(supabaseUrl, serviceRoleKey, {
+      organization_id: orgId,
+      target,
+      profile: 'recon_safe',
+      triggered_by: 'auto_from_shodan',
+      resolved_ips: r.ip ? [r.ip] : [],
+      shodan_snapshot: snapshot,
+    });
+
+    if (result.ok) {
+      console.log(`[auto-validation] org=${orgId} target=${target} OK job=${result.body?.job_id ?? '-'} attempts=${result.attempts}`);
+    } else if (result.status === 429) {
+      console.warn(`[auto-validation] org=${orgId} target=${target} rate-limited, attempts=${result.attempts}`);
+    } else if (result.status >= 400 && result.status < 500) {
+      console.warn(`[auto-validation] org=${orgId} target=${target} skipped (${result.status}): ${result.body?.error ?? result.error}`);
+    } else {
+      console.error(`[auto-validation] org=${orgId} target=${target} FAILED dopo ${result.attempts} tentativi: ${result.error ?? result.body?.error ?? 'unknown'}`);
     }
   }
 }
