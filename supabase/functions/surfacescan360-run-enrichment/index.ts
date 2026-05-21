@@ -1,0 +1,77 @@
+// Esegue moduli di enrichment OSINT per un job SurfaceScan360.
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SAFE_RECON_MODULES, type ScanContext, type ModuleResult } from '../_shared/osintModules.ts';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  try {
+    const { job_id } = await req.json();
+    if (!job_id) return json({ error: 'job_id richiesto' }, 400);
+
+    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
+    const { data: job, error } = await supabase.from('surface_scan_jobs').select('*').eq('id', job_id).single();
+    if (error || !job) return json({ error: 'Job non trovato' }, 404);
+
+    await supabase.from('surface_scan_jobs').update({ status: 'running', started_at: new Date().toISOString() }).eq('id', job_id);
+
+    const ctx: ScanContext = {
+      job_id,
+      organization_id: job.organization_id,
+      parsed: {
+        raw_target: job.raw_target,
+        normalized_target: job.normalized_target,
+        target_type: job.target_type,
+        hostname: job.hostname,
+        root_domain: job.root_domain,
+        protocol: job.protocol,
+        port: job.port,
+      },
+    };
+
+    const results = await Promise.allSettled(SAFE_RECON_MODULES.map((fn) => fn(ctx)));
+    const observations: any[] = [];
+    const findings: any[] = [];
+    const assets: any[] = [];
+    const errors: string[] = [];
+
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        const v = r.value as ModuleResult;
+        for (const o of v.observations) observations.push({ organization_id: job.organization_id, scan_job_id: job_id, module: o.module, observation_type: o.observation_type, title: o.title ?? null, value: o.value, severity: o.severity ?? 'info', confidence: o.confidence ?? 'medium' });
+        for (const f of v.findings) findings.push({ organization_id: job.organization_id, scan_job_id: job_id, provider: 'internal', module: f.module, finding_type: f.finding_type, title: f.title, description: f.description ?? null, severity: f.severity, affected_asset: f.affected_asset ?? null, affected_url: f.affected_url ?? null, remediation: f.remediation ?? null, evidence: f.evidence ?? null, attribution_confidence: f.attribution_confidence ?? 'medium' });
+        for (const a of v.assets) assets.push({ organization_id: job.organization_id, scan_job_id: job_id, asset_type: a.asset_type, asset_value: a.asset_value, hostname: a.hostname ?? null, root_domain: a.root_domain ?? null, ip: a.ip ?? null, source: a.source, confidence: a.confidence ?? 'medium', raw: a.raw ?? null });
+      } else {
+        errors.push(String(r.reason));
+        console.error('module failed', r.reason);
+      }
+    }
+
+    if (observations.length) await supabase.from('surface_observations').insert(observations);
+    if (findings.length) await supabase.from('surface_findings').insert(findings);
+    if (assets.length) await supabase.from('surface_assets').insert(assets);
+
+    const resolvedIps = assets.filter((a) => a.asset_type === 'ipv4' || a.asset_type === 'ipv6').map((a) => a.asset_value);
+    await supabase.from('surface_scan_jobs').update({
+      status: errors.length === SAFE_RECON_MODULES.length ? 'failed' : (errors.length ? 'partial' : 'completed'),
+      completed_at: new Date().toISOString(),
+      error_message: errors.length ? errors.join(' | ').slice(0, 1000) : null,
+      resolved_ips: resolvedIps,
+    }).eq('id', job_id);
+
+    return json({ ok: true, observations: observations.length, findings: findings.length, assets: assets.length, errors });
+  } catch (e) {
+    console.error('run-enrichment error', e);
+    return json({ error: String((e as Error).message) }, 500);
+  }
+});
