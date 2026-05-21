@@ -45,6 +45,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useExternalCveFindings, type ExternalCveFinding } from '@/hooks/usePentestTools';
 import type { ShodanAsset } from '@/hooks/useShodanScan';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { getFindingTaxonomy, OWASP_TOP_10, cweLink, CVE_REGEX } from '@/lib/findingTaxonomy';
+import { useCveIntelBatch } from '@/hooks/useCveIntel';
+import { CveDetailDialog } from './CveDetailDialog';
 
 interface SecurityFindingsProps {
   shodanAssets?: ShodanAsset[];
@@ -68,6 +73,7 @@ interface SecurityFinding {
 interface Vulnerability {
   id: string;
   cveId: string;
+  cveList: string[];
   cvssScore: number | null;
   cvssVector: string;
   epssScore: number | null;
@@ -75,6 +81,8 @@ interface Vulnerability {
   description: string;
   severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
   category: string;
+  cwe: string | null;
+  owasp: string | null;
   discoveredDate: string;
   lastModified: string;
   remediationStatus: 'open' | 'in_progress' | 'resolved' | 'false_positive';
@@ -151,6 +159,10 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
   const [severityFilter, setSeverityFilter] = useState('all');
   const [epssRangeFilter, setEpssRangeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [owaspFilter, setOwaspFilter] = useState('all');
+  const [kevOnly, setKevOnly] = useState(false);
+  const [onlyCve, setOnlyCve] = useState(false);
+  const [modalCve, setModalCve] = useState<string | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
