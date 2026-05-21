@@ -256,7 +256,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
       const source = 'OSINT Intel';
       const row = ensureRow(`surface-${target}`, {
         id: `surface-${target}`,
-        ip: finding.ip || '—',
+        ip: resolveIp(target, finding.ip),
         source,
         hostname: target,
         assetType: finding.module || finding.finding_type,
