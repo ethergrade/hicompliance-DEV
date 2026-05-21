@@ -217,14 +217,14 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
 
     for (const finding of surfaceFindings) {
       const target = finding.affected_url || finding.affected_asset || finding.ip || 'Target SurfaceScan';
-      const source = finding.provider || finding.module || 'Web Check';
+      const source = 'OSINT Intel';
       const row = ensureRow(`surface-${target}`, {
         id: `surface-${target}`,
         ip: finding.ip || '—',
         source,
         hostname: target,
         assetType: finding.module || finding.finding_type,
-        operatingSystem: finding.protocol || (finding.port ? `Porta ${finding.port}` : 'OSINT/Web Check'),
+        operatingSystem: finding.protocol || (finding.port ? `Porta ${finding.port}` : 'OSINT'),
         lastUpdated: finding.created_at,
       });
       const cveList = Array.isArray(finding.cve) ? finding.cve.filter(Boolean) : [];
