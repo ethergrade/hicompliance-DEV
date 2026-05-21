@@ -1577,6 +1577,63 @@ export type Database = {
         }
         Relationships: []
       }
+      supplier_directory: {
+        Row: {
+          contact_name: string | null
+          created_at: string
+          email: string | null
+          id: string
+          linked_asset_id: string | null
+          notes: string | null
+          organization_id: string
+          phone: string | null
+          service_type: string | null
+          supplier_name: string
+          updated_at: string
+        }
+        Insert: {
+          contact_name?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          linked_asset_id?: string | null
+          notes?: string | null
+          organization_id: string
+          phone?: string | null
+          service_type?: string | null
+          supplier_name: string
+          updated_at?: string
+        }
+        Update: {
+          contact_name?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          linked_asset_id?: string | null
+          notes?: string | null
+          organization_id?: string
+          phone?: string | null
+          service_type?: string | null
+          supplier_name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_directory_linked_asset_id_fkey"
+            columns: ["linked_asset_id"]
+            isOneToOne: false
+            referencedRelation: "critical_infrastructure"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_directory_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       surface_scan_alerts: {
         Row: {
           alert_email: string
