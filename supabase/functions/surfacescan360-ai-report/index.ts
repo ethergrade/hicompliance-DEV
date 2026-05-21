@@ -158,13 +158,14 @@ Deno.serve(async (req) => {
     }
     if (!job) return json({ error: 'Nessuno scan disponibile per l\'organizzazione' }, 404);
 
-    const [profileRes, orgRes, assetsRes, findingsRes, intelRes, obsRes] = await Promise.all([
+    const [profileRes, orgRes, assetsRes, findingsRes, intelRes, obsRes, monitoredRes] = await Promise.all([
       supabase.from('organization_profiles').select('*').eq('organization_id', organization_id).maybeSingle(),
       supabase.from('organizations').select('id, name').eq('id', organization_id).maybeSingle(),
       supabase.from('surface_assets').select('asset_type, asset_value, hostname, ip, source').eq('scan_job_id', job.id).limit(500),
       supabase.from('surface_findings').select('module, finding_type, title, description, severity, affected_asset, affected_url, remediation, cve, cvss, attribution_confidence').eq('scan_job_id', job.id).limit(500),
       supabase.from('surface_external_intel').select('provider, target, summary, confidence').eq('scan_job_id', job.id).limit(200),
       supabase.from('surface_observations').select('module, observation_type, title, value, severity').eq('scan_job_id', job.id).limit(500),
+      supabase.from('surface_scan_monitored_ips').select('entry_type, input_value, ip_start, ip_end, discovered_via, discovered_from').eq('organization_id', organization_id),
     ]);
 
     const profile = profileRes.data;
@@ -173,6 +174,7 @@ Deno.serve(async (req) => {
     const findings = (findingsRes.data ?? []).sort((a, b) => (SEV_RANK[b.severity] ?? 0) - (SEV_RANK[a.severity] ?? 0));
     const intel = intelRes.data ?? [];
     const observations = obsRes.data ?? [];
+    const monitored_scope = monitoredRes.data ?? [];
 
     const sevCount = findings.reduce((acc: Record<string, number>, f) => { acc[f.severity] = (acc[f.severity] ?? 0) + 1; return acc; }, {});
     const topFindings = findings.slice(0, 25).map((f) => ({
