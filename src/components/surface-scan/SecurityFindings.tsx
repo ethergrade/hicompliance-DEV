@@ -56,6 +56,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 interface SecurityFindingsProps {
   shodanAssets?: ShodanAsset[];
   scanRunning?: boolean;
+  dumpedHosts?: Array<{ host: string; from: string | null }>;
 }
 
 interface SecurityFinding {
