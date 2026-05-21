@@ -217,14 +217,14 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
 
     for (const finding of surfaceFindings) {
       const target = finding.affected_url || finding.affected_asset || finding.ip || 'Target SurfaceScan';
-      const source = finding.provider || finding.module || 'Web Check';
+      const source = 'OSINT Intel';
       const row = ensureRow(`surface-${target}`, {
         id: `surface-${target}`,
         ip: finding.ip || '—',
         source,
         hostname: target,
         assetType: finding.module || finding.finding_type,
-        operatingSystem: finding.protocol || (finding.port ? `Porta ${finding.port}` : 'OSINT/Web Check'),
+        operatingSystem: finding.protocol || (finding.port ? `Porta ${finding.port}` : 'OSINT'),
         lastUpdated: finding.created_at,
       });
       const cveList = Array.isArray(finding.cve) ? finding.cve.filter(Boolean) : [];
@@ -258,7 +258,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
       const row = ensureRow(`external-${target}`, {
         id: `external-${target}`,
         ip: finding.ip || '—',
-        source: 'Pentest-Tools',
+        source: 'Validazione CVE',
         hostname: target,
         assetType: finding.service || finding.scan_job_id,
         operatingSystem: finding.port ? `Porta ${finding.port}` : 'Validazione CVE attiva',
@@ -284,8 +284,8 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
         patchAvailable: Boolean(finding.recommendation),
         remediationText: finding.recommendation ?? null,
         exploitAvailable: Boolean(finding.in_cisa_catalog),
-        affectedService: finding.service || (finding.port ? `Porta ${finding.port}` : 'Pentest-Tools'),
-        source: 'Pentest-Tools',
+        affectedService: finding.service || (finding.port ? `Porta ${finding.port}` : 'Validazione CVE'),
+        source: 'Validazione CVE',
       });
     }
 
@@ -294,10 +294,10 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
         const row = ensureRow(`shodan-${asset.ip}`, {
           id: `shodan-${asset.ip}`,
           ip: asset.ip,
-          source: 'Shodan',
+          source: 'Attack Surface',
           hostname: asset.hostname || asset.ip,
           assetType: asset.services?.[0] || 'Asset esposto',
-          operatingSystem: asset.os || asset.org || 'Fingerprint Shodan',
+          operatingSystem: asset.os || asset.org || 'Fingerprint asset',
           lastUpdated: asset.last_update || new Date().toISOString(),
         });
         pushVulnerability(row, {
@@ -310,7 +310,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
           epssPercentile: null,
           description: cve.description,
           severity: normalizeSeverity(cve.severity),
-          category: 'Shodan CVE',
+          category: 'CVE Esposta',
           cwe: null,
           owasp: null,
           discoveredDate: asset.last_update || new Date().toISOString(),
@@ -320,7 +320,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
           remediationText: null,
           exploitAvailable: false,
           affectedService: asset.services?.join(', ') || 'Servizio esposto',
-          source: 'Shodan',
+          source: 'Attack Surface',
         });
       }
     }
@@ -488,7 +488,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
               {scanRunning && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Findings reali da Shodan, Web Check/OSINT e Pentest-Tools per gli asset monitorati
+              Findings reali rilevati dai nostri motori di Attack Surface Intelligence, OSINT e validazione attiva delle vulnerabilità sugli asset monitorati
             </p>
           </div>
           <Button variant="outline" className="flex items-center gap-2" disabled={enrichedFindings.length === 0}>
@@ -599,7 +599,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
         ) : filteredFindings.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
             {scanRunning
-              ? 'Scansione in corso: i findings reali compariranno appena Shodan, Web Check o Pentest-Tools restituiscono risultati.'
+              ? 'Scansione in corso: i findings reali compariranno appena i motori di intelligence restituiscono risultati.'
               : 'Nessun finding reale disponibile per gli asset monitorati.'}
           </div>
         ) : (
