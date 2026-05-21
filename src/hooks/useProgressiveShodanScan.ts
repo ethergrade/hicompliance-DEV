@@ -59,12 +59,17 @@ export const useProgressiveShodanScan = (rules: ScanRule[], enabled = true) => {
       if (q.isError && !anyError) anyError = q.error as Error;
     });
 
-    // Dedup per IP (un IP potrebbe matchare più regole)
-    const dedupMap = new Map<string, ShodanAsset>();
+    // Dedup per IP — merge hostnames per non perdere domini co-locati (Cloudflare / shared hosting)
+    const dedupMap = new Map<string, ShodanAsset & { hostnames: string[] }>();
     for (const a of assets) {
       const existing = dedupMap.get(a.ip);
-      if (!existing || a.raw_service_count > existing.raw_service_count) {
-        dedupMap.set(a.ip, a);
+      const incoming = [a.hostname].filter(Boolean) as string[];
+      if (!existing) {
+        dedupMap.set(a.ip, { ...a, hostnames: incoming });
+      } else {
+        const merged = Array.from(new Set([...(existing.hostnames || []), ...incoming]));
+        const winner = a.raw_service_count > existing.raw_service_count ? a : existing;
+        dedupMap.set(a.ip, { ...winner, hostnames: merged });
       }
     }
 
