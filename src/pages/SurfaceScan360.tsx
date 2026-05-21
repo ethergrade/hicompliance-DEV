@@ -449,10 +449,22 @@ const SurfaceScan360: React.FC = () => {
     }
   };
 
+  const startSurfaceScan = useStartSurfaceScan();
+
   const handleAddMonitoredIpRule = async () => {
-    const success = await addMonitoredIpRule(newMonitoredIpInput);
+    const input = newMonitoredIpInput.trim();
+    const success = await addMonitoredIpRule(input);
     if (success) {
       setNewMonitoredIpInput('');
+      // Se è un dominio, avvia anche il motore Web Check + Pentest-Tools (enrichment OSINT/CVE)
+      if (input && !/^\d{1,3}(\.\d{1,3}){3}/.test(input) && !input.includes('/') && !input.includes('-')) {
+        try {
+          await startSurfaceScan.mutateAsync({ target: input });
+          toast.success(`Scansione avviata: Shodan + Web Check + Pentest-Tools su ${input}`);
+        } catch (e: any) {
+          console.warn('start surface scan failed', e);
+        }
+      }
     }
   };
 
