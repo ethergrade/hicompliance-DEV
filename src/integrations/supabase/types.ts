@@ -1797,6 +1797,8 @@ export type Database = {
           irp_extended: boolean
           name: string
           pentest_tools_auto_validation: boolean
+          subdomain_dump_depth: number
+          subdomain_dump_enabled: boolean
           surface_scan_extended: boolean
           surface_scan360_enabled: boolean
           updated_at: string
@@ -1810,6 +1812,8 @@ export type Database = {
           irp_extended?: boolean
           name: string
           pentest_tools_auto_validation?: boolean
+          subdomain_dump_depth?: number
+          subdomain_dump_enabled?: boolean
           surface_scan_extended?: boolean
           surface_scan360_enabled?: boolean
           updated_at?: string
@@ -1823,6 +1827,8 @@ export type Database = {
           irp_extended?: boolean
           name?: string
           pentest_tools_auto_validation?: boolean
+          subdomain_dump_depth?: number
+          subdomain_dump_enabled?: boolean
           surface_scan_extended?: boolean
           surface_scan360_enabled?: boolean
           updated_at?: string
@@ -2146,6 +2152,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      subdomain_dumps: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          depth_limit: number
+          id: string
+          organization_id: string
+          results: Json
+          root_domain: string
+          sources: Json
+          total_discovered: number
+          total_returned: number
+          triggered_by: string
+          truncated: boolean
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          depth_limit?: number
+          id?: string
+          organization_id: string
+          results?: Json
+          root_domain: string
+          sources?: Json
+          total_discovered?: number
+          total_returned?: number
+          triggered_by?: string
+          truncated?: boolean
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          depth_limit?: number
+          id?: string
+          organization_id?: string
+          results?: Json
+          root_domain?: string
+          sources?: Json
+          total_discovered?: number
+          total_returned?: number
+          triggered_by?: string
+          truncated?: boolean
+        }
+        Relationships: []
       }
       supplier_directory: {
         Row: {

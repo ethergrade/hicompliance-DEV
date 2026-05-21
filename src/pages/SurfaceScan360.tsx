@@ -68,6 +68,7 @@ import { useStartSurfaceScan } from '@/hooks/useSurfaceScanEngine';
 import { useSurfaceScanHistory, triggerManualSurfaceScan } from '@/hooks/useSurfaceScanHistory';
 import { Progress } from '@/components/ui/progress';
 import { SurfaceScanTrendline } from '@/components/surface-scan/SurfaceScanTrendline';
+import { SubdomainDumpPanel } from '@/components/surface-scan/SubdomainDumpPanel';
 import { ValidatedCveTab } from '@/components/surface-scan/ValidatedCveTab';
 import { OsintEnrichmentTab } from '@/components/surface-scan/OsintEnrichmentTab';
 import { AiReportTab } from '@/components/surface-scan/AiReportTab';
@@ -574,6 +575,9 @@ const SurfaceScan360: React.FC = () => {
               </CardContent>
             </Card>
           )}
+
+          {/* Subdomain Discovery — DNSDumpster-like */}
+          <SubdomainDumpPanel isAdmin={isAdminUser} />
 
           {/* Trendline storico settimanale */}
           <SurfaceScanTrendline />
