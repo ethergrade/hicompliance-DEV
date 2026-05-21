@@ -284,8 +284,8 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
         patchAvailable: Boolean(finding.recommendation),
         remediationText: finding.recommendation ?? null,
         exploitAvailable: Boolean(finding.in_cisa_catalog),
-        affectedService: finding.service || (finding.port ? `Porta ${finding.port}` : 'Pentest-Tools'),
-        source: 'Pentest-Tools',
+        affectedService: finding.service || (finding.port ? `Porta ${finding.port}` : 'Validazione CVE'),
+        source: 'Validazione CVE',
       });
     }
 
