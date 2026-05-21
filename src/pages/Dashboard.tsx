@@ -39,55 +39,43 @@ const Dashboard: React.FC = () => {
   const { selectedOrganization } = useClientContext();
   const activeOrgId = selectedOrganization?.id || userProfile?.organization_id;
   const activeOrgName = selectedOrganization?.name || userProfile?.organizations?.name || 'Organizzazione';
-  const { isServiceConnected, hasAnyIntegrationsConfigured } = useServiceIntegrations();
+  const { integrations, isServiceConnected, hasAnyIntegrationsConfigured } = useServiceIntegrations();
   const { isSuperAdmin, isSales } = useUserRoles();
   const canManageIntegrationSettings = isSuperAdmin || isSales;
   const [modulesDialogOpen, setModulesDialogOpen] = useState(false);
 
-  const services = useMemo(() => ([
-    { id: '1', status: 'alert', health_score: 15, services: { name: 'HiFirewall', code: 'hi_firewall', id: 's1' } },
-    { id: '2', status: 'alert', health_score: 70, services: { name: 'HiEndpoint', code: 'hi_endpoint', id: 's2' } },
-    { id: '3', status: 'maintenance', health_score: 75, services: { name: 'HiMail', code: 'hi_mail', id: 's3' } },
-    { id: '4', status: 'alert', health_score: 10, services: { name: 'HiLog', code: 'hi_log', id: 's4' } },
-    { id: '5', status: 'maintenance', health_score: 65, services: { name: 'HiPatch', code: 'hi_patch', id: 's5' } },
-    { id: '6', status: 'active', health_score: 90, services: { name: 'HiTrack', code: 'hi_track', id: 's6' } },
-    { id: '7', status: 'active', health_score: 92, services: { name: 'HiDetect', code: 'hi_detect', id: 's7' } },
-    { id: '8', status: 'alert', health_score: 24, services: { name: 'HiMobile', code: 'hi_mobile', id: 's8' } },
-  ]), []);
-
-  const excludedServices = ['hi_mfa', 'hi_cloud_optix', 'hi_phish_threat', 'hi_ztna'];
-  const hiSolutionServices = services.filter(s => 
-    s.services?.code?.startsWith('hi_') && !excludedServices.includes(s.services?.code)
-  );
-
-  const servicesWithCriticalHealth = hiSolutionServices.filter(s => (s.health_score || 0) < 50);
-  const totalIssues = hiSolutionServices.reduce((acc, service) => {
-    const healthScore = service.health_score || 0;
-    if (healthScore < 80) return acc + Math.ceil((100 - healthScore) / 20);
-    return acc;
-  }, 0);
-
-  const fallbackData = { alertCount: 4, activeCount: 2, warningCount: 2, avgScore: 47, totalIssues: 22 };
-
-  const mockData = {
-    nis2Compliance: servicesWithCriticalHealth.length > 3 ? 35 : 65,
-    riskIndicator: 51,
-    totalAssets: services.length || 8,
-    activeThreats: totalIssues || fallbackData.totalIssues
+  // Catalogo statico nomi servizi HiSolution
+  const SERVICE_CATALOG: Record<string, string> = {
+    hi_firewall: 'HiFirewall',
+    hi_endpoint: 'HiEndpoint',
+    hi_mail: 'HiMail',
+    hi_log: 'HiLog',
+    hi_patch: 'HiPatch',
+    hi_track: 'HiTrack',
+    hi_detect: 'HiDetect',
+    hi_mobile: 'HiMobile',
   };
 
-  const isModuleEnabledForDashboard = (serviceCode: string) => {
-    if (!hasAnyIntegrationsConfigured) return true;
-    return isServiceConnected(serviceCode);
-  };
+  // Costruisci la lista servizi SOLO dagli integration realmente configurati per il cliente
+  const hiSolutionServices = useMemo(() => {
+    return (integrations || [])
+      .filter((i) => i.is_active && i.service_code && SERVICE_CATALOG[i.service_code])
+      .map((i) => ({
+        id: i.id,
+        status: 'active' as const,
+        health_score: null as number | null,
+        services: { name: SERVICE_CATALOG[i.service_code!], code: i.service_code!, id: i.service_id },
+      }));
+  }, [integrations]);
 
-  const connectedServicesCount = hiSolutionServices.filter((service) => isModuleEnabledForDashboard(service.services.code)).length;
-  const alertServicesCount = hiSolutionServices.filter(
-    (service) => isModuleEnabledForDashboard(service.services.code) && (service.health_score || 0) < 80
-  ).length;
-  const operativeServicesCount = hiSolutionServices.filter(
-    (service) => isModuleEnabledForDashboard(service.services.code) && (service.health_score || 0) >= 80
-  ).length;
+  const totalIssues = 0;
+
+  const isModuleEnabledForDashboard = (serviceCode: string) => isServiceConnected(serviceCode);
+
+  const connectedServicesCount = hiSolutionServices.length;
+  const alertServicesCount = 0;
+  const operativeServicesCount = connectedServicesCount;
+
   const handleServiceClick = (service: { code: string }) => {
     navigate(`/dashboard/service/${service.code}`);
   };
@@ -173,16 +161,8 @@ const Dashboard: React.FC = () => {
     );
   };
 
-  const fallbackServices = [
-    { name: 'HiFirewall', code: 'hi_firewall', id: '', healthScore: 56 },
-    { name: 'HiEndpoint', code: 'hi_endpoint', id: '', healthScore: 26 },
-    { name: 'HiMail', code: 'hi_mail', id: '', healthScore: 13 },
-    { name: 'HiLog', code: 'hi_log', id: '', healthScore: 55 },
-    { name: 'HiPatch', code: 'hi_patch', id: '', healthScore: 23 },
-    { name: 'HiTrack', code: 'hi_track', id: '', healthScore: 88 },
-    { name: 'HiDetect', code: 'hi_detect', id: '', healthScore: 89 },
-    { name: 'HiMobile', code: 'hi_mobile', id: '', healthScore: 24 },
-  ];
+  // Nessun servizio di fallback: si mostrano solo gli integration reali del cliente
+
 
   return (
     <DashboardLayout>
@@ -193,7 +173,7 @@ const Dashboard: React.FC = () => {
             <p className="text-muted-foreground">{activeOrgName}</p>
           </div>
           <div className="text-right">
-            <div className="text-4xl font-bold text-red-500 mb-1">{totalIssues || fallbackData.totalIssues}</div>
+            <div className="text-4xl font-bold text-red-500 mb-1">{totalIssues}</div>
             <p className="text-sm text-muted-foreground">Issues Attive</p>
           </div>
         </div>
@@ -222,7 +202,7 @@ const Dashboard: React.FC = () => {
                 <div className="flex flex-col items-center justify-center p-5 text-center space-y-3">
                   <p className="text-sm font-medium text-muted-foreground">Issues Totali</p>
                   <Badge variant="secondary" className="bg-cyber-red/20 text-cyber-red w-full justify-center">Critico</Badge>
-                  <div className="text-4xl font-bold text-foreground">{mockData.activeThreats}</div>
+                  <div className="text-4xl font-bold text-foreground">{totalIssues}</div>
                   <p className="text-sm text-muted-foreground">Da risolvere</p>
                 </div>
               </div>
@@ -252,28 +232,33 @@ const Dashboard: React.FC = () => {
                     </Button>
                 )}
                 <div className="text-right">
-                  <div className="text-2xl font-bold text-primary mb-1">{totalIssues || 23}</div>
+                  <div className="text-2xl font-bold text-primary mb-1">{totalIssues}</div>
                   <p className="text-xs text-muted-foreground">Issues Attive</p>
                 </div>
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {hiSolutionServices.length > 0
-                ? hiSolutionServices.map((orgService, index) => {
-                    const service = orgService.services;
-                    return renderServiceCard(
-                      service,
-                      orgService.health_score || 0,
-                      index
-                    );
-                  })
-                : fallbackServices.map((s, i) =>
-                    renderServiceCard({ name: s.name, code: s.code, id: s.id }, s.healthScore, i)
-                  )
-              }
-            </div>
+            {hiSolutionServices.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {hiSolutionServices.map((orgService, index) => {
+                  const service = orgService.services;
+                  return renderServiceCard(service, orgService.health_score ?? 0, index);
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-12 border border-dashed border-border rounded-lg">
+                <p className="text-sm text-muted-foreground mb-3">
+                  Nessun servizio HiSolution collegato per questo cliente.
+                </p>
+                {(isSuperAdmin || canManageIntegrationSettings) && (
+                  <Button variant="outline" size="sm" onClick={() => activeOrgId && setModulesDialogOpen(true)}>
+                    <Settings className="w-4 h-4 mr-1" />
+                    Configura servizi
+                  </Button>
+                )}
+              </div>
+            )}
 
             <div className="border-t border-border pt-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

@@ -107,20 +107,6 @@ const SurfaceScan360: React.FC = () => {
   
   const assetsPerPage = 5;
 
-  // Mock di fallback (clienti senza IP monitorati configurati)
-  const mockPublicAssets = [
-    { ip: '203.0.113.10', hostname: 'cliente1.com', score: 95, risk: 'Basso', status: 'Sicuro', ports: [80, 443], services: ['HTTP', 'HTTPS'] },
-    { ip: '203.0.113.25', hostname: 'mail.cliente1.com', score: 78, risk: 'Medio', status: 'Attenzione', ports: [25, 587, 993], services: ['SMTP', 'IMAPS'] },
-    { ip: '203.0.113.45', hostname: 'vpn.cliente1.com', score: 45, risk: 'Alto', status: 'Critico', ports: [1723, 443], services: ['PPTP', 'OpenVPN'] },
-    { ip: '203.0.113.67', hostname: 'api.cliente1.com', score: 88, risk: 'Basso', status: 'Sicuro', ports: [443, 8080], services: ['HTTPS', 'API'] },
-    { ip: '203.0.113.89', hostname: 'ftp.cliente1.com', score: 62, risk: 'Medio', status: 'Attenzione', ports: [21, 22], services: ['FTP', 'SSH'] },
-    { ip: '203.0.113.102', hostname: 'db.cliente1.com', score: 72, risk: 'Medio', status: 'Attenzione', ports: [3306, 5432], services: ['MySQL', 'PostgreSQL'] },
-    { ip: '203.0.113.123', hostname: 'cdn.cliente1.com', score: 91, risk: 'Basso', status: 'Sicuro', ports: [80, 443], services: ['HTTP', 'HTTPS'] },
-    { ip: '203.0.113.144', hostname: 'test.cliente1.com', score: 55, risk: 'Alto', status: 'Critico', ports: [80, 8080], services: ['HTTP', 'Apache'] },
-    { ip: '203.0.113.165', hostname: 'backup.cliente1.com', score: 82, risk: 'Basso', status: 'Sicuro', ports: [22, 873], services: ['SSH', 'rsync'] },
-    { ip: '203.0.113.186', hostname: 'monitor.cliente1.com', score: 77, risk: 'Medio', status: 'Attenzione', ports: [443, 9090], services: ['HTTPS', 'Prometheus'] },
-  ];
-
   // Engine progressivo: 1 query per regola, range espansi server-side
   const scanRules = React.useMemo(
     () => monitoredIpRules.map((r) => ({
@@ -136,7 +122,7 @@ const SurfaceScan360: React.FC = () => {
   const shodanScan = useProgressiveShodanScan(scanRules, hasMonitoredRules);
   const { assets: shodanAssets, isLoading: shodanLoading, error: shodanError, progress: scanProgress, completed: scanCompleted, total: scanTotal, truncatedRules } = shodanScan;
 
-  // Se ci sono regole monitorate -> usa dati reali Shodan; altrimenti mock di anteprima
+  // Nessun dato mock: se non ci sono regole monitorate, l'elenco è vuoto
   const allPublicAssets = hasMonitoredRules
     ? shodanAssets.map((a) => ({
         ip: a.ip,
@@ -147,7 +133,8 @@ const SurfaceScan360: React.FC = () => {
         ports: a.ports,
         services: a.services,
       }))
-    : mockPublicAssets;
+    : [];
+
 
 
   const monitoredAssets = allPublicAssets.filter((asset) => {
