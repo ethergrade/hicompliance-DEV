@@ -231,7 +231,7 @@ export const HiLogDashboard: React.FC = () => {
       return acc;
     }, {});
 
-    const topCategory = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1])[0];
+    const topCategory = Object.entries(categoryTotals).sort((a, b) => (b[1] as number) - (a[1] as number))[0];
     const topCategoryLabel = topCategory ? `${topCategory[0]} (${topCategory[1]} eventi)` : 'Login';
     const urgentCount = severityTotals.critical + severityTotals.high;
 
