@@ -100,8 +100,9 @@ const SurfaceScan360: React.FC = () => {
   };
   
   const assetsPerPage = 5;
-  
-  const allPublicAssets = [
+
+  // Mock di fallback (clienti senza IP monitorati configurati)
+  const mockPublicAssets = [
     { ip: '203.0.113.10', hostname: 'cliente1.com', score: 95, risk: 'Basso', status: 'Sicuro', ports: [80, 443], services: ['HTTP', 'HTTPS'] },
     { ip: '203.0.113.25', hostname: 'mail.cliente1.com', score: 78, risk: 'Medio', status: 'Attenzione', ports: [25, 587, 993], services: ['SMTP', 'IMAPS'] },
     { ip: '203.0.113.45', hostname: 'vpn.cliente1.com', score: 45, risk: 'Alto', status: 'Critico', ports: [1723, 443], services: ['PPTP', 'OpenVPN'] },
@@ -113,6 +114,30 @@ const SurfaceScan360: React.FC = () => {
     { ip: '203.0.113.165', hostname: 'backup.cliente1.com', score: 82, risk: 'Basso', status: 'Sicuro', ports: [22, 873], services: ['SSH', 'rsync'] },
     { ip: '203.0.113.186', hostname: 'monitor.cliente1.com', score: 77, risk: 'Medio', status: 'Attenzione', ports: [443, 9090], services: ['HTTPS', 'Prometheus'] },
   ];
+
+  // Target da inviare a Shodan: input_value delle regole (IP singolo, hostname, o ip_start per range)
+  const shodanTargets = React.useMemo(() => {
+    return monitoredIpRules
+      .map((r) => (r.entry_type === 'range' ? r.ip_start : r.input_value))
+      .filter(Boolean);
+  }, [monitoredIpRules]);
+
+  const { data: shodanData, isLoading: shodanLoading, error: shodanError } =
+    useShodanScan(shodanTargets, hasMonitoredRules);
+
+  // Se ci sono regole monitorate -> usa dati reali Shodan; altrimenti mock di anteprima
+  const allPublicAssets = hasMonitoredRules
+    ? (shodanData?.assets ?? []).map((a) => ({
+        ip: a.ip,
+        hostname: a.hostname,
+        score: a.score,
+        risk: a.risk,
+        status: a.status,
+        ports: a.ports,
+        services: a.services,
+      }))
+    : mockPublicAssets;
+
 
   const monitoredAssets = allPublicAssets.filter((asset) => {
     if (!hasMonitoredRules) return true;
