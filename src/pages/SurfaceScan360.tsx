@@ -139,9 +139,13 @@ const SurfaceScan360: React.FC = () => {
 
   const monitoredAssets = allPublicAssets.filter((asset) => {
     if (!hasMonitoredRules) return true;
-    return monitoredIpRules.some((rule) =>
-      isIpInRange(asset.ip, rule.ip_start, rule.ip_end)
-    );
+    return monitoredIpRules.some((rule) => {
+      if (rule.entry_type === 'domain') {
+        const dom = rule.input_value.toLowerCase();
+        return asset.hostname?.toLowerCase().includes(dom);
+      }
+      return isIpInRange(asset.ip, rule.ip_start, rule.ip_end);
+    });
   });
 
   const filteredAssets = monitoredAssets.filter(asset => {
