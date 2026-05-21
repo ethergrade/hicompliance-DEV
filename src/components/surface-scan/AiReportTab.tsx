@@ -244,7 +244,7 @@ export const AiReportTab: React.FC = () => {
 
           {report.ai?.top_recommendations?.length ? (
             <Card>
-              <CardHeader><CardTitle>4. Top 5 raccomandazioni</CardTitle></CardHeader>
+              <CardHeader><CardTitle>5. Top 5 raccomandazioni</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 {report.ai.top_recommendations.map((r, i) => (
                   <div key={i} className="border-l-4 pl-3 py-2" style={{ borderColor: 'hsl(var(--primary))' }}>
@@ -264,7 +264,7 @@ export const AiReportTab: React.FC = () => {
 
           {report.ai?.correlations?.length ? (
             <Card>
-              <CardHeader><CardTitle>5. Correlazioni</CardTitle></CardHeader>
+              <CardHeader><CardTitle>6. Correlazioni</CardTitle></CardHeader>
               <CardContent>
                 <ul className="text-sm list-disc pl-5 space-y-1">
                   {report.ai.correlations.map((c, i) => <li key={i}>{c}</li>)}
@@ -275,7 +275,7 @@ export const AiReportTab: React.FC = () => {
 
           {report.ai?.compliance_notes ? (
             <Card>
-              <CardHeader><CardTitle>6. Note di compliance</CardTitle></CardHeader>
+              <CardHeader><CardTitle>7. Note di compliance</CardTitle></CardHeader>
               <CardContent><p className="text-sm whitespace-pre-wrap">{report.ai.compliance_notes}</p></CardContent>
             </Card>
           ) : null}
@@ -286,7 +286,7 @@ export const AiReportTab: React.FC = () => {
 
           {/* Asset in scope - paginati */}
           <Card>
-            <CardHeader><CardTitle>7. Asset in scope ({assets.length})</CardTitle></CardHeader>
+            <CardHeader><CardTitle>8. Asset in scope ({assets.length})</CardTitle></CardHeader>
             <CardContent>
               <ul className="text-sm space-y-1">
                 {assetsSlice.map((a, i) => (
@@ -308,7 +308,7 @@ export const AiReportTab: React.FC = () => {
           {/* Findings - paginati */}
           <Card>
             <CardHeader>
-              <CardTitle>8. Findings ({findings.length})</CardTitle>
+              <CardTitle>9. Findings ({findings.length})</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-2 mb-3 text-xs">
@@ -338,7 +338,7 @@ export const AiReportTab: React.FC = () => {
           {/* Intel - paginati */}
           {intel.length > 0 && (
             <Card>
-              <CardHeader><CardTitle>9. Intel OSINT ({intel.length})</CardTitle></CardHeader>
+              <CardHeader><CardTitle>10. Intel OSINT ({intel.length})</CardTitle></CardHeader>
               <CardContent>
                 <ul className="text-sm space-y-2">
                   {intelSlice.map((it, i) => (
@@ -363,7 +363,7 @@ export const AiReportTab: React.FC = () => {
           {/* Observations - paginate */}
           {observations.length > 0 && (
             <Card>
-              <CardHeader><CardTitle>10. Osservazioni ({observations.length})</CardTitle></CardHeader>
+              <CardHeader><CardTitle>11. Osservazioni ({observations.length})</CardTitle></CardHeader>
               <CardContent>
                 <ul className="text-sm space-y-1">
                   {observationsSlice.map((ob, i) => (
