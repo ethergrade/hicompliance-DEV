@@ -9,6 +9,8 @@ import { Switch } from '@/components/ui/switch';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { generateSurfaceScan360Pdf } from '@/lib/surfaceScan360PdfReport';
 import {
   Tooltip,
   TooltipContent,
@@ -421,55 +423,31 @@ const SurfaceScan360: React.FC = () => {
   };
 
   const handleExportPdf = async () => {
-    if (!exportContainerRef.current) return;
-
+    const organizationId = selectedOrganization?.id;
+    if (!organizationId) {
+      toast.error('Seleziona prima un cliente');
+      return;
+    }
     setExportingPdf(true);
-
+    const t = toast.loading('Generazione report PDF in corso…');
     try {
-      const target = exportContainerRef.current;
-      const canvas = await html2canvas(target, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#0b1120',
-        windowWidth: target.scrollWidth,
-        windowHeight: target.scrollHeight,
+      const { data, error } = await supabase.functions.invoke('surfacescan360-ai-report', {
+        body: { organization_id: organizationId },
       });
-
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const margin = 8;
-      const printableWidth = pageWidth - margin * 2;
-      const printableHeight = pageHeight - margin * 2;
-
-      const imgWidth = printableWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-      let heightLeft = imgHeight;
-      let position = margin;
-
-      pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight, '', 'FAST');
-      heightLeft -= printableHeight;
-
-      while (heightLeft > 0) {
-        position = margin - (imgHeight - heightLeft);
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight, '', 'FAST');
-        heightLeft -= printableHeight;
-      }
-
-      const fileName = `surfacescan360-report-${new Date().toISOString().slice(0, 10)}.pdf`;
-      pdf.save(fileName);
-      toast.success('Export PDF completato');
-    } catch (error) {
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      const report = (data as any).report;
+      if (!report) throw new Error('Report vuoto');
+      generateSurfaceScan360Pdf(report);
+      toast.success('Export PDF completato', { id: t });
+    } catch (error: any) {
       console.error('SurfaceScan360 PDF export error:', error);
-      toast.error('Errore durante l\'export PDF');
+      toast.error(`Errore export PDF: ${error?.message || 'sconosciuto'}`, { id: t });
     } finally {
       setExportingPdf(false);
     }
   };
+
 
   const startSurfaceScan = useStartSurfaceScan();
   const subdomainDump = useSubdomainDump();
