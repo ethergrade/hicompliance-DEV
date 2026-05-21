@@ -172,6 +172,7 @@ async function callOrchestratorWithRetry(
 }
 
 async function maybeTriggerAutoValidation(
+  supabase: any,
   supabaseUrl: string,
   serviceRoleKey: string,
   orgId: string,
@@ -186,15 +187,11 @@ async function maybeTriggerAutoValidation(
       ? Array.isArray(host.vulns) ? host.vulns : Object.keys(host.vulns)
       : [];
     const snapshot = host ? {
-      found: true,
-      hostnames,
-      ports,
-      vulns,
-      last_update: host.last_update,
-      asn: host.asn,
-      org: host.org,
+      found: true, hostnames, ports, vulns,
+      last_update: host.last_update, asn: host.asn, org: host.org,
     } : { found: false, hostnames: [], ports: [], vulns: [] };
 
+    const startedAt = new Date().toISOString();
     const result = await callOrchestratorWithRetry(supabaseUrl, serviceRoleKey, {
       organization_id: orgId,
       target,
@@ -204,14 +201,62 @@ async function maybeTriggerAutoValidation(
       shodan_snapshot: snapshot,
     });
 
-    if (result.ok) {
-      console.log(`[auto-validation] org=${orgId} target=${target} OK job=${result.body?.job_id ?? '-'} attempts=${result.attempts}`);
-    } else if (result.status === 429) {
-      console.warn(`[auto-validation] org=${orgId} target=${target} rate-limited, attempts=${result.attempts}`);
-    } else if (result.status >= 400 && result.status < 500) {
-      console.warn(`[auto-validation] org=${orgId} target=${target} skipped (${result.status}): ${result.body?.error ?? result.error}`);
-    } else {
-      console.error(`[auto-validation] org=${orgId} target=${target} FAILED dopo ${result.attempts} tentativi: ${result.error ?? result.body?.error ?? 'unknown'}`);
+    const baseDetails = {
+      target,
+      triggered_by: 'auto_from_shodan',
+      attempts: result.attempts,
+      http_status: result.status,
+      resolved_ip: r.ip,
+      requested_at: startedAt,
+      shodan_found: snapshot.found,
+    };
+
+    try {
+      if (result.ok) {
+        console.log(`[auto-validation] org=${orgId} target=${target} OK job=${result.body?.job_id ?? '-'} attempts=${result.attempts}`);
+        await supabase.from('external_scan_audit_log').insert({
+          organization_id: orgId,
+          scan_job_id: result.body?.job_id ?? null,
+          actor_email: 'system:cron',
+          action: 'auto_trigger_accepted',
+          details: { ...baseDetails, job_id: result.body?.job_id ?? null, tasks: result.body?.tasks?.length ?? 0 },
+        });
+      } else if (result.status === 200 && result.body?.skipped) {
+        console.warn(`[auto-validation] org=${orgId} target=${target} skipped: ${result.body?.error}`);
+        await supabase.from('external_scan_audit_log').insert({
+          organization_id: orgId,
+          actor_email: 'system:cron',
+          action: 'auto_trigger_skipped',
+          details: { ...baseDetails, reason: result.body?.error ?? 'weekly_limit' },
+        });
+      } else if (result.status === 403) {
+        console.warn(`[auto-validation] org=${orgId} target=${target} blocked: ${result.body?.error}`);
+        await supabase.from('external_scan_audit_log').insert({
+          organization_id: orgId,
+          actor_email: 'system:cron',
+          action: 'auto_trigger_blocked',
+          details: { ...baseDetails, reason: result.body?.error ?? 'plan_blocked' },
+        });
+      } else if (result.status === 429) {
+        console.warn(`[auto-validation] org=${orgId} target=${target} rate-limited`);
+        await supabase.from('external_scan_audit_log').insert({
+          organization_id: orgId,
+          actor_email: 'system:cron',
+          action: 'auto_trigger_rate_limited',
+          details: { ...baseDetails, reason: result.body?.error ?? 'concurrency_limit' },
+        });
+      } else {
+        const errorMsg = result.error ?? result.body?.error ?? 'unknown';
+        console.error(`[auto-validation] org=${orgId} target=${target} FAILED dopo ${result.attempts} tentativi: ${errorMsg}`);
+        await supabase.from('external_scan_audit_log').insert({
+          organization_id: orgId,
+          actor_email: 'system:cron',
+          action: 'auto_trigger_failed',
+          details: { ...baseDetails, error: errorMsg },
+        });
+      }
+    } catch (e) {
+      console.error(`[auto-validation] audit log insert failed for org=${orgId} target=${target}:`, e);
     }
   }
 }
@@ -294,7 +339,7 @@ Deno.serve(async (req) => {
         .eq('id', orgId)
         .maybeSingle();
       if ((orgRow as any)?.pentest_tools_auto_validation) {
-        await maybeTriggerAutoValidation(supabaseUrl, serviceRoleKey, orgId, perRule);
+        await maybeTriggerAutoValidation(supabase, supabaseUrl, serviceRoleKey, orgId, perRule);
       }
     }
 
