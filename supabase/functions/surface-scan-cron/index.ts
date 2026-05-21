@@ -102,7 +102,15 @@ async function scanOrganization(orgId: string, rules: MonitoredRule[], shodanKey
   const perRule: RuleScanResult[] = [];
   for (const r of rules) {
     try {
-      if (r.entry_type === 'single') {
+      // 'single' (IP) e 'domain' (hostname) → 1 asset (host risolto)
+      // 'range' → scan CIDR via shodanSearch (limitato)
+      if (r.entry_type === 'range' && r.ip_start && r.ip_end) {
+        const banners = await shodanSearch(`net:${r.ip_start}-${r.ip_end}`, shodanKey);
+        const hosts = bannersToHosts(banners);
+        if (hosts.length > MAX_IPS_PER_RULE) truncated.push(r.input_value);
+        hosts.slice(0, MAX_IPS_PER_RULE).forEach(h => assets.push(aggregateAsset(h)));
+        perRule.push({ rule: r, host: hosts[0] ?? null, ip: hosts[0]?.ip_str ?? null });
+      } else {
         let ip = r.input_value;
         if (!isIp(ip)) {
           const resolved = await shodanResolve(ip, shodanKey);
@@ -112,12 +120,6 @@ async function scanOrganization(orgId: string, rules: MonitoredRule[], shodanKey
         const host = await shodanHost(ip, shodanKey);
         if (host) assets.push(aggregateAsset(host));
         perRule.push({ rule: r, host, ip });
-      } else {
-        const banners = await shodanSearch(`net:${r.ip_start}-${r.ip_end}`, shodanKey);
-        const hosts = bannersToHosts(banners);
-        if (hosts.length > MAX_IPS_PER_RULE) truncated.push(r.input_value);
-        hosts.slice(0, MAX_IPS_PER_RULE).forEach(h => assets.push(aggregateAsset(h)));
-        perRule.push({ rule: r, host: hosts[0] ?? null, ip: hosts[0]?.ip_str ?? null });
       }
     } catch (e) {
       console.error(`Rule ${r.input_value} failed:`, e);
