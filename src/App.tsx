@@ -33,6 +33,7 @@ import CyberNews from "./pages/CyberNews";
 import AdminReporting from "./pages/AdminReporting";
 import Consistenze from "./pages/Consistenze";
 import AICiso from "./pages/AICiso";
+import HiConsoleLanding from "./pages/HiConsoleLanding";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -48,6 +49,7 @@ const App = () => (
           <ScrollToTop />
           <Routes>
             <Route path="/" element={<Index />} />
+            <Route path="/hiconsole" element={<HiConsoleLanding />} />
             <Route path="/auth" element={<LoginPage />} />
             <Route path="/admin/clients" element={<ClientSelection />} />
             <Route path="/dashboard" element={<ClientSelectionGuard><Dashboard /></ClientSelectionGuard>} />
