@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
     );
 
     await supabase.from('surface_scan_jobs').update({
-      status: errors.length === SAFE_RECON_MODULES.length ? 'failed' : (errors.length ? 'partial' : 'completed'),
+      status: errors.length === ALL_RECON.length ? 'failed' : (errors.length ? 'partial' : 'completed'),
       completed_at: new Date().toISOString(),
       error_message: errors.length ? errors.join(' | ').slice(0, 1000) : null,
       resolved_ips: resolvedIps,
