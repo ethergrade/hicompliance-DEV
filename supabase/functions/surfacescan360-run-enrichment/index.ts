@@ -1,6 +1,7 @@
 // Esegue moduli di enrichment OSINT per un job SurfaceScan360.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SAFE_RECON_MODULES, type ScanContext, type ModuleResult } from '../_shared/osintModules.ts';
+import { shodanHostModule, urlscanModule, hostingContextModule, type IntelRow } from '../_shared/intelModules.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -57,11 +58,42 @@ Deno.serve(async (req) => {
       }
     }
 
+    // --- Phase 2: intel passiva (Shodan, urlscan) + hosting detector --------
+    const resolvedIps = assets.filter((a) => a.asset_type === 'ipv4' || a.asset_type === 'ipv6').map((a) => a.asset_value);
+    const intelRows: IntelRow[] = [];
+    try {
+      const httpObs = observations.filter((o) => o.module === 'http_headers' || o.module === 'security_headers');
+      const [shodanRes, urlscanRes] = await Promise.allSettled([
+        shodanHostModule(ctx, resolvedIps),
+        urlscanModule(ctx),
+      ]);
+      const collect = (r: PromiseSettledResult<any>, label: string) => {
+        if (r.status === 'fulfilled') return r.value;
+        errors.push(`${label}: ${String(r.reason)}`); return { intel: [], observations: [], findings: [] };
+      };
+      const sho = collect(shodanRes, 'shodan');
+      const urls = collect(urlscanRes, 'urlscan');
+      intelRows.push(...sho.intel, ...urls.intel);
+      observations.push(...sho.observations.map((o: any) => ({ organization_id: job.organization_id, scan_job_id: job_id, module: o.module, observation_type: o.observation_type, title: o.title ?? null, value: o.value, severity: o.severity ?? 'info', confidence: o.confidence ?? 'medium' })));
+      observations.push(...urls.observations.map((o: any) => ({ organization_id: job.organization_id, scan_job_id: job_id, module: o.module, observation_type: o.observation_type, title: o.title ?? null, value: o.value, severity: o.severity ?? 'info', confidence: o.confidence ?? 'medium' })));
+      findings.push(...sho.findings.map((f: any) => ({ organization_id: job.organization_id, scan_job_id: job_id, provider: 'shodan', module: f.module, finding_type: f.finding_type, title: f.title, description: f.description ?? null, severity: f.severity, affected_asset: f.affected_asset ?? null, affected_url: f.affected_url ?? null, remediation: f.remediation ?? null, evidence: f.evidence ?? null, attribution_confidence: f.attribution_confidence ?? 'medium' })));
+
+      // Hosting context dipende da shodan + http
+      const hcRes = await hostingContextModule(ctx, sho.intel, httpObs.map((o) => ({ module: o.module, observation_type: o.observation_type, value: o.value })) as any);
+      intelRows.push(...hcRes.intel);
+      observations.push(...hcRes.observations.map((o: any) => ({ organization_id: job.organization_id, scan_job_id: job_id, module: o.module, observation_type: o.observation_type, title: o.title ?? null, value: o.value, severity: o.severity ?? 'info', confidence: o.confidence ?? 'medium' })));
+      findings.push(...hcRes.findings.map((f: any) => ({ organization_id: job.organization_id, scan_job_id: job_id, provider: 'internal', module: f.module, finding_type: f.finding_type, title: f.title, description: f.description ?? null, severity: f.severity, affected_asset: f.affected_asset ?? null, affected_url: f.affected_url ?? null, remediation: f.remediation ?? null, evidence: f.evidence ?? null, attribution_confidence: f.attribution_confidence ?? 'low' })));
+    } catch (e) {
+      errors.push(`intel: ${(e as Error).message}`);
+    }
+
     if (observations.length) await supabase.from('surface_observations').insert(observations);
     if (findings.length) await supabase.from('surface_findings').insert(findings);
     if (assets.length) await supabase.from('surface_assets').insert(assets);
+    if (intelRows.length) await supabase.from('surface_external_intel').insert(
+      intelRows.map((i) => ({ organization_id: job.organization_id, scan_job_id: job_id, provider: i.provider, target: i.target, found: i.found, summary: i.summary, raw_response: i.raw_response, confidence: i.confidence })),
+    );
 
-    const resolvedIps = assets.filter((a) => a.asset_type === 'ipv4' || a.asset_type === 'ipv6').map((a) => a.asset_value);
     await supabase.from('surface_scan_jobs').update({
       status: errors.length === SAFE_RECON_MODULES.length ? 'failed' : (errors.length ? 'partial' : 'completed'),
       completed_at: new Date().toISOString(),
@@ -69,7 +101,7 @@ Deno.serve(async (req) => {
       resolved_ips: resolvedIps,
     }).eq('id', job_id);
 
-    return json({ ok: true, observations: observations.length, findings: findings.length, assets: assets.length, errors });
+    return json({ ok: true, observations: observations.length, findings: findings.length, assets: assets.length, intel: intelRows.length, errors });
   } catch (e) {
     console.error('run-enrichment error', e);
     return json({ error: String((e as Error).message) }, 500);

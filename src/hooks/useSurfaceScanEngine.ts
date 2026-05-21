@@ -101,6 +101,34 @@ export const useSurfaceEngineFindings = (jobId?: string) => {
   });
 };
 
+export interface SurfaceExternalIntel {
+  id: string;
+  scan_job_id: string;
+  provider: 'shodan' | 'urlscan' | 'hosting_context' | string;
+  target: string;
+  found: boolean;
+  summary: any;
+  raw_response: any;
+  confidence: string;
+  created_at: string;
+}
+
+export const useSurfaceExternalIntel = (jobId?: string) => {
+  const { organizationId } = useClientOrganization();
+  return useQuery<SurfaceExternalIntel[]>({
+    queryKey: ['surface-external-intel', organizationId, jobId],
+    enabled: !!organizationId && !!jobId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('surface_external_intel' as any)
+        .select('*').eq('organization_id', organizationId!).eq('scan_job_id', jobId!)
+        .order('provider');
+      if (error) throw error;
+      return (data ?? []) as unknown as SurfaceExternalIntel[];
+    },
+  });
+};
+
 export const useStartSurfaceScan = () => {
   const { organizationId } = useClientOrganization();
   const qc = useQueryClient();
