@@ -2511,6 +2511,42 @@ export type Database = {
         }
         Relationships: []
       }
+      surface_scan_monitored_ips: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          entry_type: string
+          id: string
+          input_value: string
+          ip_end: string
+          ip_start: string
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          entry_type: string
+          id?: string
+          input_value: string
+          ip_end?: string
+          ip_start?: string
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          entry_type?: string
+          id?: string
+          input_value?: string
+          ip_end?: string
+          ip_start?: string
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_preferences: {
         Row: {
           created_at: string

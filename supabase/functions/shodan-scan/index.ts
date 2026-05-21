@@ -237,9 +237,9 @@ Deno.serve(async (req) => {
 
     // === Engine v2: rule singola (preferito per progressive scan) ===
     if (body.rule) {
-      const rule = body.rule as { entry_type: 'single' | 'range' | 'cidr'; input_value: string; ip_start: string; ip_end: string };
+      const rule = body.rule as { entry_type: 'single' | 'range' | 'cidr' | 'domain'; input_value: string; ip_start: string; ip_end: string };
       let result;
-      if (rule.entry_type === 'single') {
+      if (rule.entry_type === 'single' || rule.entry_type === 'domain') {
         result = await scanSingleTarget(rule.input_value, SHODAN_API_KEY);
         return new Response(JSON.stringify({ ...result, truncated: false, rule_id: rule.input_value, scanned_at: new Date().toISOString() }),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

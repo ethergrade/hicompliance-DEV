@@ -1,4 +1,8 @@
-export type MonitoredIpEntryType = 'single' | 'range' | 'cidr';
+export type MonitoredIpEntryType = 'single' | 'range' | 'cidr' | 'domain';
+
+const DOMAIN_REGEX = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
+
+export const isValidDomain = (value: string): boolean => DOMAIN_REGEX.test(value.trim());
 
 export interface ParsedMonitoredIpInput {
   entryType: MonitoredIpEntryType;
@@ -129,15 +133,26 @@ const parseSingleIp = (rawInput: string): ParsedMonitoredIpInput => {
 export const parseMonitoredIpInput = (input: string): ParsedMonitoredIpInput => {
   const rawInput = input.trim();
   if (!rawInput) {
-    throw new Error('Inserisci un IP, un range o una rete CIDR');
+    throw new Error('Inserisci un IP, un range, una rete CIDR o un dominio');
   }
 
   if (rawInput.includes('/')) {
     return parseCidr(rawInput);
   }
 
-  if (rawInput.includes('-')) {
+  if (rawInput.includes('-') && !/[a-z]/i.test(rawInput.split('-')[0])) {
     return parseRange(rawInput);
+  }
+
+  // Try domain first if not a pure IP
+  if (!IPV4_REGEX.test(rawInput) && isValidDomain(rawInput)) {
+    const normalized = rawInput.toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    return {
+      entryType: 'domain',
+      inputValue: normalized,
+      ipStart: '',
+      ipEnd: '',
+    };
   }
 
   return parseSingleIp(rawInput);
