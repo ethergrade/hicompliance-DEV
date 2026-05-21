@@ -554,10 +554,21 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
               Findings reali rilevati dai nostri motori di Attack Surface Intelligence, OSINT e validazione attiva delle vulnerabilità sugli asset monitorati
             </p>
           </div>
-          <Button variant="outline" className="flex items-center gap-2" disabled={enrichedFindings.length === 0}>
-            <Download className="w-4 h-4" />
-            Esporta Report
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="default"
+              className="flex items-center gap-2"
+              onClick={handleRescan}
+              disabled={rescanning || !organizationId}
+            >
+              <RefreshCw className={`w-4 h-4 ${rescanning ? 'animate-spin' : ''}`} />
+              {rescanning ? 'Scansione in corso...' : 'Riesegui scansione'}
+            </Button>
+            <Button variant="outline" className="flex items-center gap-2" disabled={enrichedFindings.length === 0}>
+              <Download className="w-4 h-4" />
+              Esporta Report
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
