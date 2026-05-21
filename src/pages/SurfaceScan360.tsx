@@ -64,7 +64,7 @@ import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
 import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceScanAlertConfigDialog';
 import { useSurfaceScanAlerts, SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
 import { useSurfaceScanMonitoredIps } from '@/hooks/useSurfaceScanMonitoredIps';
-import { isIpInRange } from '@/lib/ipRange';
+import { isIpInRange, isValidDomain } from '@/lib/ipRange';
 import { useProgressiveShodanScan } from '@/hooks/useProgressiveShodanScan';
 import { useStartSurfaceScan } from '@/hooks/useSurfaceScanEngine';
 import { useSurfaceScanHistory, triggerManualSurfaceScan } from '@/hooks/useSurfaceScanHistory';
