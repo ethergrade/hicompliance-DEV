@@ -189,11 +189,73 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
             </div>
           </div>
         ) : (
-          <ScrollArea className="max-h-[400px]">
+          <ScrollArea className="max-h-[500px] pr-2">
+            {/* HiCompliance feature flags */}
+            <div className="space-y-3 mb-4">
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <div className="flex items-center gap-3">
+                  <div className={`p-1.5 rounded-md ${orgFlags?.hicompliance_enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">HiCompliance</p>
+                    <p className="text-xs text-muted-foreground">Include Assessment, SurfaceScan360 e Dark Risk</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={!!orgFlags?.hicompliance_enabled}
+                  disabled={updateFlagsMutation.isPending}
+                  onCheckedChange={(v) => {
+                    const patch: any = { hicompliance_enabled: v };
+                    if (!v) { patch.irp_extended = false; patch.surface_scan_extended = false; }
+                    updateFlagsMutation.mutate(patch);
+                  }}
+                />
+              </div>
+
+              {orgFlags?.hicompliance_enabled && (
+                <div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
+                  <div className="flex items-center justify-between rounded-md border p-2.5">
+                    <div className="flex items-center gap-3">
+                      <FileCheck className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium">IRP Esteso</p>
+                        <p className="text-xs text-muted-foreground">Playbook avanzati e documento esteso</p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={!!orgFlags?.irp_extended}
+                      disabled={updateFlagsMutation.isPending}
+                      onCheckedChange={(v) => updateFlagsMutation.mutate({ irp_extended: v })}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-md border p-2.5">
+                    <div className="flex items-center gap-3">
+                      <Radar className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium">SurfaceScan Esteso</p>
+                        <p className="text-xs text-muted-foreground">Più di 2 domini e range IP da scansionare</p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={!!orgFlags?.surface_scan_extended}
+                      disabled={updateFlagsMutation.isPending}
+                      onCheckedChange={(v) => updateFlagsMutation.mutate({ surface_scan_extended: v })}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <Separator className="my-3" />
+            <p className="text-xs font-medium text-muted-foreground mb-2 px-1">Servizi HiSolution (API)</p>
+
             {isLoading ? (
               <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
             ) : (
               <div className="space-y-1">
+
                 {services.map((svc, idx) => {
                   const integration = getIntegration(svc.id);
                   const connected = !!integration;
