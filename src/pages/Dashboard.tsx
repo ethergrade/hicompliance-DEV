@@ -202,7 +202,7 @@ const Dashboard: React.FC = () => {
                 <div className="flex flex-col items-center justify-center p-5 text-center space-y-3">
                   <p className="text-sm font-medium text-muted-foreground">Issues Totali</p>
                   <Badge variant="secondary" className="bg-cyber-red/20 text-cyber-red w-full justify-center">Critico</Badge>
-                  <div className="text-4xl font-bold text-foreground">{mockData.activeThreats}</div>
+                  <div className="text-4xl font-bold text-foreground">{totalIssues}</div>
                   <p className="text-sm text-muted-foreground">Da risolvere</p>
                 </div>
               </div>
