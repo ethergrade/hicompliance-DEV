@@ -57,7 +57,8 @@ import {
   ChevronUp,
   Download,
   Plus,
-  Trash2
+  Trash2,
+  GitBranch
 } from 'lucide-react';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Tooltip as RechartsTooltip } from 'recharts';
