@@ -63,6 +63,7 @@ import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceS
 import { useSurfaceScanAlerts, SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
 import { useSurfaceScanMonitoredIps } from '@/hooks/useSurfaceScanMonitoredIps';
 import { isIpInRange } from '@/lib/ipRange';
+import { useShodanScan } from '@/hooks/useShodanScan';
 
 const SurfaceScan360: React.FC = () => {
   const exportContainerRef = useRef<HTMLDivElement>(null);
