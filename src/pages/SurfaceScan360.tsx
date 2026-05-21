@@ -64,7 +64,7 @@ import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
 import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceScanAlertConfigDialog';
 import { useSurfaceScanAlerts, SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
 import { useSurfaceScanMonitoredIps } from '@/hooks/useSurfaceScanMonitoredIps';
-import { isIpInRange } from '@/lib/ipRange';
+import { isIpInRange, isValidDomain } from '@/lib/ipRange';
 import { useProgressiveShodanScan } from '@/hooks/useProgressiveShodanScan';
 import { useStartSurfaceScan } from '@/hooks/useSurfaceScanEngine';
 import { useSurfaceScanHistory, triggerManualSurfaceScan } from '@/hooks/useSurfaceScanHistory';
@@ -632,7 +632,15 @@ const SurfaceScan360: React.FC = () => {
           {/* Stats Overview */}
           <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
             {(() => {
-              const domains = hasMonitoredRules ? monitoredIpRules.filter(r => r.entry_type === 'domain').length : 0;
+              // Conta domini unici: include sia entry_type='domain' sia input_value che è un dominio valido
+              const uniqueDomains = hasMonitoredRules
+                ? new Set(
+                    monitoredIpRules
+                      .filter(r => String(r.entry_type).toLowerCase() === 'domain' || isValidDomain(r.input_value))
+                      .map(r => r.input_value.trim().toLowerCase())
+                  ).size
+                : 0;
+              const domains = uniqueDomains;
               const totalMonitored = hasMonitoredRules ? monitoredIpRules.length : 0;
               const criticalVulns = hasMonitoredRules ? shodanAssets.reduce((acc, a) => acc + a.cves.filter(c => c.severity === 'high').length, 0) : 0;
               const avgScore = hasMonitoredRules && shodanAssets.length > 0
