@@ -55,6 +55,24 @@ export const SubdomainDumpPanel: React.FC<Props> = ({ isAdmin }) => {
       toast.success('Dump completato', {
         description: `${res.total_returned}/${res.total_discovered} sottodomini${res.truncated ? ' (troncato al limite)' : ''}`,
       });
+      // Auto-aggiunge i sottodomini scoperti alla lista monitorata (silenzioso, dedup via unique key)
+      const subs: SubdomainResult[] = (res.results ?? []) as any;
+      if (subs.length > 0) {
+        let added = 0;
+        for (const s of subs) {
+          const ok = await addRule(s.subdomain, {
+            discovered_via: 'subdomain_dump',
+            discovered_from: d,
+            silent: true,
+          });
+          if (ok) added++;
+        }
+        if (added > 0) {
+          toast.success(`${added} sottodomini aggiunti al monitoraggio`, {
+            description: `Scoperti da ${d} · saranno scansionati al prossimo run`,
+          });
+        }
+      }
     } else if (dump.error) {
       toast.error('Errore dump', { description: dump.error });
     }
@@ -72,7 +90,10 @@ export const SubdomainDumpPanel: React.FC<Props> = ({ isAdmin }) => {
 
   const handleAddToMonitoring = async (sub: SubdomainResult) => {
     const target = sub.subdomain;
-    const ok = await addRule(target);
+    const ok = await addRule(target, {
+      discovered_via: 'subdomain_dump',
+      discovered_from: latest?.root_domain ?? null,
+    });
     if (ok) toast.success(`${target} aggiunto al monitoraggio`);
   };
 
