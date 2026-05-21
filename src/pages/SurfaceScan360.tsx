@@ -671,8 +671,8 @@ const SurfaceScan360: React.FC = () => {
             })()}
           </div>
 
-          {/* Security Findings Section - NEW */}
-          <SecurityFindings />
+          {/* Security Findings Section - solo se ci sono regole di monitoraggio */}
+          {hasMonitoredRules && <SecurityFindings />}
 
           {/* Monthly Monitoring Section */}
           {monthlyMonitoring && (
