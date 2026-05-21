@@ -69,6 +69,7 @@ import { useSurfaceScanMonitoredIps } from '@/hooks/useSurfaceScanMonitoredIps';
 import { isIpInRange, isValidDomain } from '@/lib/ipRange';
 import { useProgressiveShodanScan } from '@/hooks/useProgressiveShodanScan';
 import { useStartSurfaceScan } from '@/hooks/useSurfaceScanEngine';
+import { useTriggerPentestScan } from '@/hooks/usePentestTools';
 import { useSurfaceScanHistory, triggerManualSurfaceScan } from '@/hooks/useSurfaceScanHistory';
 import { Progress } from '@/components/ui/progress';
 import { SurfaceScanTrendline } from '@/components/surface-scan/SurfaceScanTrendline';
