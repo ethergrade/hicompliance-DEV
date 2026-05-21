@@ -165,7 +165,7 @@ const SurfaceScan360: React.FC = () => {
     setCurrentPage(1);
   }, [searchTerm, statusFilter, riskFilter, monitoredIpRules.length]);
 
-  const scanResults = [
+  const scanResults = hasMonitoredRules ? [
     { 
       domain: 'cliente1.com', 
       status: 'Sicuro', 
@@ -209,7 +209,8 @@ const SurfaceScan360: React.FC = () => {
         { id: 'CVE-2024-0011', severity: 'low', description: 'Rate limiting not configured' }
       ]
     },
-  ];
+  ] : [];
+
 
   const getRiskColor = (risk: string) => {
     switch (risk) {
@@ -247,7 +248,7 @@ const SurfaceScan360: React.FC = () => {
     }
   };
 
-  const monthlyData = [
+  const monthlyData = hasMonitoredRules ? [
     { mese: 'Gen', porte_aperte: 45, porte_chiuse: 23, cve_critiche: 12, cve_risolte: 8, epss_score: 6.2 },
     { mese: 'Feb', porte_aperte: 52, porte_chiuse: 18, cve_critiche: 15, cve_risolte: 11, epss_score: 6.8 },
     { mese: 'Mar', porte_aperte: 48, porte_chiuse: 25, cve_critiche: 9, cve_risolte: 14, epss_score: 5.9 },
@@ -260,18 +261,18 @@ const SurfaceScan360: React.FC = () => {
     { mese: 'Ott', porte_aperte: 42, porte_chiuse: 31, cve_critiche: 9, cve_risolte: 16, epss_score: 5.5 },
     { mese: 'Nov', porte_aperte: 40, porte_chiuse: 33, cve_critiche: 8, cve_risolte: 17, epss_score: 5.2 },
     { mese: 'Dic', porte_aperte: 37, porte_chiuse: 36, cve_critiche: 5, cve_risolte: 20, epss_score: 4.6 }
-  ];
+  ] : [];
 
-  const exposedServicesData = [
+  const exposedServicesData = hasMonitoredRules ? [
     { name: 'HTTP/HTTPS', value: 35, color: '#3b82f6' },
     { name: 'SSH', value: 25, color: '#10b981' },
     { name: 'FTP', value: 15, color: '#f59e0b' },
     { name: 'SMTP', value: 12, color: '#ef4444' },
     { name: 'DNS', value: 8, color: '#8b5cf6' },
     { name: 'Altro', value: 5, color: '#6b7280' }
-  ];
+  ] : [];
 
-  const riskTrendData = [
+  const riskTrendData = hasMonitoredRules ? [
     { mese: 'Gen', rischio_alto: 15, rischio_medio: 28, rischio_basso: 57 },
     { mese: 'Feb', rischio_alto: 18, rischio_medio: 32, rischio_basso: 50 },
     { mese: 'Mar', rischio_alto: 12, rischio_medio: 35, rischio_basso: 53 },
@@ -284,7 +285,8 @@ const SurfaceScan360: React.FC = () => {
     { mese: 'Ott', rischio_alto: 10, rischio_medio: 30, rischio_basso: 60 },
     { mese: 'Nov', rischio_alto: 9, rischio_medio: 28, rischio_basso: 63 },
     { mese: 'Dic', rischio_alto: 6, rischio_medio: 25, rischio_basso: 69 }
-  ];
+  ] : [];
+
 
   const chartConfig = {
     porte_aperte: {
