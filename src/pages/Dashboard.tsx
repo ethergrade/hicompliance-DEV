@@ -56,21 +56,25 @@ const Dashboard: React.FC = () => {
     hi_mobile: 'HiMobile',
   };
 
-  // Costruisci la lista servizi SOLO dagli integration realmente configurati per il cliente
+  // Mostra TUTTI i servizi HiSolution con dashboard mock funzionanti.
+  // Lo stato "connected" riflette le integration realmente configurate.
   const hiSolutionServices = useMemo(() => {
-    return (integrations || [])
-      .filter((i) => i.is_active && i.service_code && SERVICE_CATALOG[i.service_code])
-      .map((i) => ({
-        id: i.id,
-        status: 'active' as const,
+    return Object.entries(SERVICE_CATALOG).map(([code, name]) => {
+      const connected = isServiceConnected(code);
+      return {
+        id: code,
+        status: connected ? ('active' as const) : ('mock' as const),
         health_score: null as number | null,
-        services: { name: SERVICE_CATALOG[i.service_code!], code: i.service_code!, id: i.service_id },
-      }));
+        services: { name, code, id: code },
+      };
+    });
   }, [integrations]);
+
 
   const totalIssues = 0;
 
-  const isModuleEnabledForDashboard = (serviceCode: string) => isServiceConnected(serviceCode);
+  // Tutte le tile sono cliccabili: in assenza di integration mostriamo dashboard mock funzionante
+  const isModuleEnabledForDashboard = (_serviceCode: string) => true;
 
   const connectedServicesCount = hiSolutionServices.length;
   const alertServicesCount = 0;
