@@ -366,7 +366,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
       if (severityDiff !== 0) return severityDiff;
       return new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime();
     });
-  }, [externalFindings, shodanAssets, surfaceFindings]);
+  }, [externalFindings, shodanAssets, surfaceFindings, hostIpMap]);
 
   // Collect all CVE IDs and enrich with NVD/EPSS/KEV cache
   const allCveIds = useMemo(() => {
