@@ -125,9 +125,10 @@ const SurfaceScan360: React.FC = () => {
 
   // Nessun dato mock: se non ci sono regole monitorate, l'elenco è vuoto
   const allPublicAssets = hasMonitoredRules
-    ? shodanAssets.map((a) => ({
+    ? shodanAssets.map((a: any) => ({
         ip: a.ip,
         hostname: a.hostname,
+        hostnames: Array.isArray(a.hostnames) ? a.hostnames : [a.hostname].filter(Boolean),
         score: a.score,
         risk: a.risk,
         status: a.status,
@@ -143,7 +144,8 @@ const SurfaceScan360: React.FC = () => {
     return monitoredIpRules.some((rule) => {
       if (rule.entry_type === 'domain') {
         const dom = rule.input_value.toLowerCase();
-        return asset.hostname?.toLowerCase().includes(dom);
+        const hostList = (asset.hostnames && asset.hostnames.length ? asset.hostnames : [asset.hostname]).filter(Boolean);
+        return hostList.some((h: string) => h.toLowerCase().includes(dom));
       }
       return isIpInRange(asset.ip, rule.ip_start, rule.ip_end);
     });
@@ -574,7 +576,8 @@ const SurfaceScan360: React.FC = () => {
           {/* Stats Overview */}
           <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
             {(() => {
-              const domains = hasMonitoredRules ? new Set(shodanAssets.map(a => a.hostname || a.ip)).size : 0;
+              const domains = hasMonitoredRules ? monitoredIpRules.filter(r => r.entry_type === 'domain').length : 0;
+              const totalMonitored = hasMonitoredRules ? monitoredIpRules.length : 0;
               const criticalVulns = hasMonitoredRules ? shodanAssets.reduce((acc, a) => acc + a.cves.filter(c => c.severity === 'high').length, 0) : 0;
               const avgScore = hasMonitoredRules && shodanAssets.length > 0
                 ? Math.round(shodanAssets.reduce((s, a) => s + (a.score || 0), 0) / shodanAssets.length)
@@ -629,7 +632,7 @@ const SurfaceScan360: React.FC = () => {
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-sm text-muted-foreground">Asset Monitorati</p>
-                          <p className="text-2xl font-bold text-foreground">{monitoredAssets.length}</p>
+                          <p className="text-2xl font-bold text-foreground">{totalMonitored}</p>
                         </div>
                         <Shield className="w-8 h-8 text-primary" />
                       </div>
