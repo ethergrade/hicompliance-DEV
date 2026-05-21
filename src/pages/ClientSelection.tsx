@@ -218,17 +218,21 @@ const ClientSelection: React.FC = () => {
                   </div>
 
                   {/* Quick edit buttons */}
-                  <div className="flex gap-2 mb-3">
-                    <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={(e) => openProfile(e, org)}>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    <Button variant="outline" size="sm" className="flex-1 text-xs min-w-[110px]" onClick={(e) => openProfile(e, org)}>
                       <FileText className="w-3.5 h-3.5 mr-1" />
                       Anagrafica
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={(e) => openAsset(e, org)}>
+                    <Button variant="outline" size="sm" className="flex-1 text-xs min-w-[110px]" onClick={(e) => openAsset(e, org)}>
                       <Server className="w-3.5 h-3.5 mr-1" />
                       Consistenze
                     </Button>
+                    <Button variant="outline" size="sm" className="flex-1 text-xs min-w-[110px]" onClick={(e) => openContacts(e, org)}>
+                      <ShieldCheck className="w-3.5 h-3.5 mr-1" />
+                      Rubrica & Permessi
+                    </Button>
                     {isSuperAdmin && (
-                      <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={(e) => openServices(e, org)}>
+                      <Button variant="outline" size="sm" className="flex-1 text-xs min-w-[110px]" onClick={(e) => openServices(e, org)}>
                         <Plug className="w-3.5 h-3.5 mr-1" />
                         Servizi
                       </Button>
@@ -251,6 +255,9 @@ const ClientSelection: React.FC = () => {
       <ClientAssetSheet organizationId={editingOrgId} organizationName={editingOrgName} open={assetOpen} onOpenChange={setAssetOpen} />
       {isSuperAdmin && editingOrgId && (
         <ClientServicesDialog organizationId={editingOrgId} organizationName={editingOrgName} open={servicesOpen} onOpenChange={setServicesOpen} />
+      )}
+      {editingOrgId && (
+        <ClientContactsDialog organizationId={editingOrgId} organizationName={editingOrgName} open={contactsOpen} onOpenChange={setContactsOpen} />
       )}
 
       {/* CRUD Dialogs */}
