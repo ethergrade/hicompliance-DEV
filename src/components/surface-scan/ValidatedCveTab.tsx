@@ -144,7 +144,7 @@ export const ValidatedCveTab: React.FC = () => {
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium truncate">{j.target}</p>
                         <p className="text-xs text-muted-foreground">
-                          {j.scan_profile} · {j.triggered_by} · {new Date(j.created_at).toLocaleString('it-IT')}
+                          {scanProfileLabel(j.scan_profile)} · {triggeredByLabel(j.triggered_by)} · {new Date(j.created_at).toLocaleString('it-IT')}
                         </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
