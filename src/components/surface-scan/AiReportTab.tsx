@@ -157,7 +157,7 @@ export const AiReportTab: React.FC = () => {
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
             Genera un report con anagrafica cliente, asset in scope, findings e Top-5 raccomandazioni
-            correlate da AI agent (OpenAI gpt-4o-mini). Nessuno screenshot, pronto per export PDF.
+            correlate da AI agent. Pronto per export PDF.
           </p>
           <div className="flex gap-2">
             <Button onClick={generate} disabled={loading}>
