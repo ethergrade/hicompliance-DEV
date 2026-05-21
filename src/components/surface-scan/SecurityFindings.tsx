@@ -40,6 +40,7 @@ import {
   Eye,
   Calendar,
   Loader2,
+  Lightbulb,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
@@ -50,6 +51,7 @@ import { Label } from '@/components/ui/label';
 import { getFindingTaxonomy, OWASP_TOP_10, cweLink, CVE_REGEX } from '@/lib/findingTaxonomy';
 import { useCveIntelBatch } from '@/hooks/useCveIntel';
 import { CveDetailDialog } from './CveDetailDialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface SecurityFindingsProps {
   shodanAssets?: ShodanAsset[];
@@ -87,6 +89,7 @@ interface Vulnerability {
   lastModified: string;
   remediationStatus: 'open' | 'in_progress' | 'resolved' | 'false_positive';
   patchAvailable: boolean;
+  remediationText: string | null;
   exploitAvailable: boolean;
   affectedService: string;
   source: string;
@@ -243,6 +246,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
         lastModified: finding.created_at,
         remediationStatus: normalizeStatus(finding.status),
         patchAvailable: Boolean(finding.remediation),
+        remediationText: finding.remediation ?? null,
         exploitAvailable: Boolean(finding.cisa_kev),
         affectedService: finding.port ? `${finding.protocol || 'tcp'}:${finding.port}` : source,
         source,
@@ -278,6 +282,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
         lastModified: finding.created_at,
         remediationStatus: normalizeStatus(finding.status),
         patchAvailable: Boolean(finding.recommendation),
+        remediationText: finding.recommendation ?? null,
         exploitAvailable: Boolean(finding.in_cisa_catalog),
         affectedService: finding.service || (finding.port ? `Porta ${finding.port}` : 'Pentest-Tools'),
         source: 'Pentest-Tools',
@@ -312,6 +317,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
           lastModified: asset.last_update || new Date().toISOString(),
           remediationStatus: 'open',
           patchAvailable: false,
+          remediationText: null,
           exploitAvailable: false,
           affectedService: asset.services?.join(', ') || 'Servizio esposto',
           source: 'Shodan',
@@ -741,12 +747,30 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
                                       </div>
 
                                       <div className="flex flex-wrap gap-2">
-                                        {vuln.patchAvailable && (
-                                          <Badge variant="outline" className="text-green-700 border-green-300">
-                                            <CheckCircle className="w-3 h-3 mr-1" />
-                                            Remediation Disponibile
-                                          </Badge>
-                                        )}
+                                        {vuln.patchAvailable && (() => {
+                                          const isPatch = vuln.cveList && vuln.cveList.length > 0;
+                                          const label = isPatch ? 'Patch CVE Disponibile' : 'Mitigazione Suggerita';
+                                          const Icon = isPatch ? CheckCircle : Lightbulb;
+                                          const cls = isPatch
+                                            ? 'text-green-700 border-green-400 bg-green-50/40'
+                                            : 'text-green-700/80 border-green-300/60';
+                                          const badge = (
+                                            <Badge variant="outline" className={`${cls} cursor-help`}>
+                                              <Icon className="w-3 h-3 mr-1" />
+                                              {label}
+                                            </Badge>
+                                          );
+                                          return vuln.remediationText ? (
+                                            <TooltipProvider delayDuration={150}>
+                                              <Tooltip>
+                                                <TooltipTrigger asChild>{badge}</TooltipTrigger>
+                                                <TooltipContent className="max-w-sm text-xs leading-relaxed">
+                                                  {vuln.remediationText}
+                                                </TooltipContent>
+                                              </Tooltip>
+                                            </TooltipProvider>
+                                          ) : badge;
+                                        })()}
                                         {vuln.exploitAvailable && (
                                           <Badge variant="outline" className="text-red-700 border-red-300">
                                             <AlertTriangle className="w-3 h-3 mr-1" />
