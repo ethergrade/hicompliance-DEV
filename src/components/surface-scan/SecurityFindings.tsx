@@ -205,6 +205,25 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
 
   const { data: externalFindings = [], isLoading: externalFindingsLoading } = useExternalCveFindings();
 
+  // hostname → IP map costruita dagli asset Shodan (i findings OSINT spesso non hanno IP risolto)
+  const hostIpMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of shodanAssets) {
+      if (!a.ip) continue;
+      const hosts = [a.hostname, ...(((a as any).hostnames as string[]) || [])].filter(Boolean);
+      for (const h of hosts) {
+        const k = normHost(h);
+        if (k && !m.has(k)) m.set(k, a.ip);
+      }
+    }
+    return m;
+  }, [shodanAssets]);
+  const resolveIp = (target: string | null | undefined, fallback?: string | null) => {
+    if (fallback && fallback !== '—') return fallback;
+    const k = normHost(String(target || ''));
+    return hostIpMap.get(k) || fallback || '—';
+  };
+
   const realFindings = useMemo<SecurityFinding[]>(() => {
     const rows = new Map<string, SecurityFinding>();
 
