@@ -44,6 +44,7 @@ export const OsintEnrichmentTab = () => {
   const { data: jobs = [], isLoading: jobsLoading } = useSurfaceEngineJobs();
   const { data: observations = [] } = useSurfaceObservations(selectedJobId ?? undefined);
   const { data: findings = [] } = useSurfaceEngineFindings(selectedJobId ?? undefined);
+  const { data: intel = [] } = useSurfaceExternalIntel(selectedJobId ?? undefined);
 
   const handleStart = async () => {
     if (!target.trim()) {
