@@ -1371,6 +1371,8 @@ const SurfaceScan360: React.FC = () => {
             </CardContent>
           </Card>
         </div>
+            </TabsContent>
+          </Tabs>
 
         {/* Alert Configuration Dialog */}
         <SurfaceScanAlertConfigDialog
