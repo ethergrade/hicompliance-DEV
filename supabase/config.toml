@@ -11,3 +11,6 @@ verify_jwt = false
 
  [functions.surface-scan-cron]
  verify_jwt = false
+
+ [functions.pentest-tools-webhook]
+ verify_jwt = false
