@@ -65,6 +65,7 @@ import { useSurfaceScanMonitoredIps } from '@/hooks/useSurfaceScanMonitoredIps';
 import { isIpInRange } from '@/lib/ipRange';
 import { useProgressiveShodanScan } from '@/hooks/useProgressiveShodanScan';
 import { Progress } from '@/components/ui/progress';
+import { SurfaceScanTrendline } from '@/components/surface-scan/SurfaceScanTrendline';
 
 const SurfaceScan360: React.FC = () => {
   const exportContainerRef = useRef<HTMLDivElement>(null);
@@ -573,6 +574,9 @@ const SurfaceScan360: React.FC = () => {
               </CardContent>
             </Card>
           )}
+
+          {/* Trendline storico settimanale */}
+          <SurfaceScanTrendline />
 
           {/* Stats Overview */}
           <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
