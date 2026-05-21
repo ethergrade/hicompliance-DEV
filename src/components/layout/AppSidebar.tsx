@@ -211,52 +211,51 @@ export const AppSidebar: React.FC = () => {
         </SidebarGroup>
 
         {/* HiCompliance collapsible group */}
-        <SidebarGroup>
-          <Collapsible open={hiComplianceOpen} onOpenChange={setHiComplianceOpen}>
-            <CollapsibleTrigger className="flex w-full items-center justify-between px-4 py-2 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>HiCompliance</span>
-              </div>
-              {!collapsed && (
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${hiComplianceOpen ? 'rotate-180' : ''}`} />
-              )}
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {hiComplianceModules
-                    .filter(item => isModuleEnabled(item.href))
-                    .map(item => renderNavItem(item))}
+        {hiComplianceGroupVisible && (
+          <SidebarGroup>
+            <Collapsible open={hiComplianceOpen} onOpenChange={setHiComplianceOpen}>
+              <CollapsibleTrigger className="flex w-full items-center justify-between px-4 py-2 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>HiCompliance</span>
+                </div>
+                {!collapsed && (
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${hiComplianceOpen ? 'rotate-180' : ''}`} />
+                )}
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {visibleHiCompliance.map(item => renderNavItem(item))}
 
-                  {/* INCIDENT sub-collapsible */}
-                  {(isModuleEnabled('/incident-response') || isModuleEnabled('/compliance-events')) && (
-                    <li>
-                      <Collapsible open={incidentOpen} onOpenChange={setIncidentOpen}>
-                        <CollapsibleTrigger className="flex w-full items-center justify-between mx-2 px-3 py-2 text-sm rounded-lg text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors">
-                          <div className="flex items-center gap-2">
-                            <Shield className="w-4 h-4" />
-                            {!collapsed && <span>Incident</span>}
-                          </div>
-                          {!collapsed && (
-                            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${incidentOpen ? 'rotate-180' : ''}`} />
-                          )}
-                        </CollapsibleTrigger>
-                        <CollapsibleContent>
-                          <SidebarMenu>
-                            {incidentSubItems
-                              .filter(item => isModuleEnabled(item.href))
-                              .map(item => renderNavItem(item, true))}
-                          </SidebarMenu>
-                        </CollapsibleContent>
-                      </Collapsible>
-                    </li>
-                  )}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </CollapsibleContent>
-          </Collapsible>
-        </SidebarGroup>
+                    {/* INCIDENT sub-collapsible */}
+                    {visibleIncident.length > 0 && (
+                      <li>
+                        <Collapsible open={incidentOpen} onOpenChange={setIncidentOpen}>
+                          <CollapsibleTrigger className="flex w-full items-center justify-between mx-2 px-3 py-2 text-sm rounded-lg text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors">
+                            <div className="flex items-center gap-2">
+                              <Shield className="w-4 h-4" />
+                              {!collapsed && <span>Incident</span>}
+                            </div>
+                            {!collapsed && (
+                              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${incidentOpen ? 'rotate-180' : ''}`} />
+                            )}
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <SidebarMenu>
+                              {visibleIncident.map(item => renderNavItem(item, true))}
+                            </SidebarMenu>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      </li>
+                    )}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </Collapsible>
+          </SidebarGroup>
+        )}
+
 
         {/* Threat Management */}
         {isModuleEnabled('/threat-management') && (
