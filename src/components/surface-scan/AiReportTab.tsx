@@ -1,26 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, FileText, Download, Sparkles } from 'lucide-react';
+import { Loader2, FileText, Download, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import jsPDF from 'jspdf';
-
-interface RemediationTask {
-  id: string;
-  task: string;
-  category: string;
-  start_date: string;
-  end_date: string;
-  progress: number;
-  priority: string;
-  assignee?: string | null;
-  source?: string | null;
-  source_ref?: string | null;
-  status?: 'pianificato' | 'completato';
-}
 
 interface AiReport {
   generated_at: string;
@@ -30,8 +16,7 @@ interface AiReport {
   findings: any[];
   findings_by_severity: Record<string, number>;
   intel: any[];
-  remediation_tasks?: RemediationTask[];
-  kev_generation?: { created: number; total_kev: number; existing: number };
+  observations?: any[];
   ai: {
     executive_summary?: string;
     risk_score?: number;
@@ -44,18 +29,45 @@ interface AiReport {
 }
 
 const sevColor = (s?: string) => {
-  switch (s) {
-    case 'critical': return 'bg-red-600 text-white';
-    case 'high': return 'bg-orange-600 text-white';
-    case 'medium': return 'bg-yellow-500 text-black';
-    case 'low': return 'bg-blue-500 text-white';
+  switch ((s || '').toLowerCase()) {
+    case 'critical':
+    case 'critico': return 'bg-red-600 text-white';
+    case 'high':
+    case 'alto': return 'bg-orange-600 text-white';
+    case 'medium':
+    case 'medio': return 'bg-yellow-500 text-black';
+    case 'low':
+    case 'basso': return 'bg-blue-500 text-white';
     default: return 'bg-muted text-foreground';
   }
 };
 
+const PAGE_SIZE = 20;
+
+function Paginator({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (p: number) => void }) {
+  if (totalPages <= 1) return null;
+  return (
+    <div className="flex items-center justify-between text-xs mt-3">
+      <span className="text-muted-foreground">Pagina {page + 1} di {totalPages}</span>
+      <div className="flex gap-1">
+        <Button variant="outline" size="sm" disabled={page === 0} onClick={() => onChange(page - 1)}>
+          <ChevronLeft className="w-4 h-4" />
+        </Button>
+        <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => onChange(page + 1)}>
+          <ChevronRight className="w-4 h-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export const AiReportTab: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<AiReport | null>(null);
+  const [assetPage, setAssetPage] = useState(0);
+  const [findingPage, setFindingPage] = useState(0);
+  const [intelPage, setIntelPage] = useState(0);
+  const [obsPage, setObsPage] = useState(0);
   const { organizationId } = useClientOrganization();
 
   const generate = async () => {
@@ -64,6 +76,7 @@ export const AiReportTab: React.FC = () => {
       return;
     }
     setLoading(true);
+    setAssetPage(0); setFindingPage(0); setIntelPage(0); setObsPage(0);
     try {
       const { data, error } = await supabase.functions.invoke('surfacescan360-ai-report', {
         body: { organization_id: organizationId },
@@ -78,6 +91,21 @@ export const AiReportTab: React.FC = () => {
       setLoading(false);
     }
   };
+
+  const assets = report?.assets_in_scope ?? [];
+  const findings = report?.findings ?? [];
+  const intel = report?.intel ?? [];
+  const observations = report?.observations ?? [];
+
+  const assetPages = Math.max(1, Math.ceil(assets.length / PAGE_SIZE));
+  const findingPages = Math.max(1, Math.ceil(findings.length / PAGE_SIZE));
+  const intelPages = Math.max(1, Math.ceil(intel.length / PAGE_SIZE));
+  const obsPages = Math.max(1, Math.ceil(observations.length / PAGE_SIZE));
+
+  const assetsSlice = useMemo(() => assets.slice(assetPage * PAGE_SIZE, (assetPage + 1) * PAGE_SIZE), [assets, assetPage]);
+  const findingsSlice = useMemo(() => findings.slice(findingPage * PAGE_SIZE, (findingPage + 1) * PAGE_SIZE), [findings, findingPage]);
+  const intelSlice = useMemo(() => intel.slice(intelPage * PAGE_SIZE, (intelPage + 1) * PAGE_SIZE), [intel, intelPage]);
+  const observationsSlice = useMemo(() => observations.slice(obsPage * PAGE_SIZE, (obsPage + 1) * PAGE_SIZE), [observations, obsPage]);
 
   const downloadPdf = () => {
     if (!report) return;
@@ -98,7 +126,6 @@ export const AiReportTab: React.FC = () => {
     };
     const hr = () => { ensure(8); doc.setDrawColor(200); doc.line(margin, y, w - margin, y); y += 8; };
 
-    // Header
     line('Report SurfaceScan360 - Sintesi AI', { size: 18, bold: true });
     line(`Generato: ${new Date(report.generated_at).toLocaleString('it-IT')}`, { size: 9, color: [120, 120, 120] });
     hr();
@@ -120,8 +147,8 @@ export const AiReportTab: React.FC = () => {
     const s = report.scan || {};
     line(`Target: ${s.target} (${s.target_type}) - Profilo: ${s.scan_profile}`);
     line(`Hosting: ${s.hosting_context || 'n/d'} - Completato: ${s.completed_at ? new Date(s.completed_at).toLocaleString('it-IT') : 'n/d'}`);
-    line(`Asset rilevati: ${report.assets_in_scope.length}`);
-    report.assets_in_scope.slice(0, 60).forEach((a) => line(`  - [${a.asset_type}] ${a.asset_value}${a.hostname ? ' (' + a.hostname + ')' : ''}`, { size: 9 }));
+    line(`Asset rilevati: ${assets.length}`);
+    assets.forEach((a) => line(`  - [${a.asset_type}] ${a.asset_value}${a.hostname ? ' (' + a.hostname + ')' : ''}${a.ip ? ' ' + a.ip : ''}`, { size: 9 }));
     hr();
 
     // AI
@@ -156,45 +183,43 @@ export const AiReportTab: React.FC = () => {
       hr();
     }
 
-    // Azioni di remediation (incluse quelle generate da CISA KEV)
-    const tasks = report.remediation_tasks || [];
-    if (tasks.length > 0) {
-      line('7. Azioni di remediation pianificate / completate', { size: 13, bold: true });
-      if (report.kev_generation && report.kev_generation.total_kev > 0) {
-        line(`CISA KEV: ${report.kev_generation.total_kev} CVE rilevate, ${report.kev_generation.created} nuove azioni auto-generate, ${report.kev_generation.existing} già presenti.`, { size: 9, color: [100, 100, 100] });
-      }
-      const byCat: Record<string, RemediationTask[]> = {};
-      tasks.forEach((t) => { (byCat[t.category] ||= []).push(t); });
-      Object.keys(byCat).sort().forEach((cat) => {
-        const list = byCat[cat];
-        const done = list.filter((t) => (t.progress ?? 0) >= 100).length;
-        line(`${cat} (${done}/${list.length} completati)`, { bold: true, size: 11 });
-        list.forEach((t) => {
-          const status = (t.progress ?? 0) >= 100 ? 'COMPLETATO' : 'PIANIFICATO';
-          line(`  [${status}] [${(t.priority || '').toUpperCase()}] ${t.task}`, { size: 9 });
-          line(`    ${t.start_date} -> ${t.end_date} | progress: ${t.progress ?? 0}%${t.assignee ? ' | ' + t.assignee : ''}${t.source === 'cisa_kev' ? ' | sorgente: CISA KEV ' + (t.source_ref || '') : ''}`, { size: 8, color: [120, 120, 120] });
-        });
-        y += 2;
-      });
-      hr();
-    }
-
     // Findings
-    line('8. Findings completi', { size: 13, bold: true });
+    line('7. Findings completi', { size: 13, bold: true });
     const sc = report.findings_by_severity || {};
-    line(`Totale: ${report.findings.length} - Critici: ${sc.critical || 0}, Alti: ${sc.high || 0}, Medi: ${sc.medium || 0}, Bassi: ${sc.low || 0}, Info: ${sc.info || 0}`);
+    line(`Totale: ${findings.length} - Critici: ${sc.critical || 0}, Alti: ${sc.high || 0}, Medi: ${sc.medium || 0}, Bassi: ${sc.low || 0}, Info: ${sc.info || 0}`);
     y += 4;
-    report.findings.slice(0, 120).forEach((f) => {
-      line(`[${f.severity.toUpperCase()}] ${f.title}`, { bold: true, size: 10 });
+    findings.forEach((f) => {
+      line(`[${(f.severity || '').toUpperCase()}] ${f.title}`, { bold: true, size: 10 });
       if (f.affected_asset || f.affected_url) line(`Asset: ${f.affected_asset || f.affected_url}`, { size: 9, color: [100, 100, 100] });
       if (f.cve?.length) line(`CVE: ${(f.cve || []).join(', ')}`, { size: 9 });
       if (f.remediation) line(`Remediation: ${f.remediation}`, { size: 9 });
       y += 2;
     });
+    hr();
 
+    // Intel
+    if (intel.length) {
+      line('8. OSINT / Intel', { size: 13, bold: true });
+      intel.forEach((i) => {
+        line(`[${i.provider}] ${i.target}`, { bold: true, size: 10 });
+        if (i.summary) line(typeof i.summary === 'string' ? i.summary : JSON.stringify(i.summary).slice(0, 300), { size: 9 });
+      });
+      hr();
+    }
+
+    // Observations
+    if (observations.length) {
+      line('9. Osservazioni', { size: 13, bold: true });
+      observations.forEach((ob) => {
+        line(`[${ob.module}] ${ob.title} - ${ob.severity}`, { size: 9 });
+      });
+    }
 
     doc.save(`SurfaceScan360_Report_${(o.name || 'org').replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`);
   };
+
+  const o = report?.organization || {};
+  const s = report?.scan || {};
 
   return (
     <div className="space-y-4">
@@ -204,8 +229,8 @@ export const AiReportTab: React.FC = () => {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Genera un report con anagrafica cliente, asset in scope, findings e Top-5 raccomandazioni
-            correlate da AI agent. Pronto per export PDF.
+            Genera un report completo con anagrafica cliente, asset in scope, findings, intel OSINT e Top-5
+            raccomandazioni AI. Tutte le sezioni sono paginate per una lettura ordinata e pronte per export PDF.
           </p>
           <div className="flex gap-2">
             <Button onClick={generate} disabled={loading}>
@@ -221,43 +246,78 @@ export const AiReportTab: React.FC = () => {
         </CardContent>
       </Card>
 
-      {report?.ai && (
+      {report && (
         <>
+          {/* Anagrafica */}
           <Card>
-            <CardHeader><CardTitle>Executive summary</CardTitle></CardHeader>
-            <CardContent className="space-y-2">
-              {report.ai.risk_score != null && (
-                <div className="flex items-center gap-3">
-                  <Badge className={sevColor(report.ai.risk_level?.toLowerCase())}>
-                    {report.ai.risk_level} - {report.ai.risk_score}/100
-                  </Badge>
+            <CardHeader><CardTitle>1. Anagrafica cliente</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+              {[
+                ['Ragione sociale', o.legal_name || o.name],
+                ['P.IVA', o.vat_number], ['Codice fiscale', o.fiscal_code],
+                ['Sede legale', o.legal_address], ['Sede operativa', o.operational_address],
+                ['PEC', o.pec], ['Email', o.email], ['Telefono', o.phone],
+                ['Settore', o.business_sector], ['Classificazione NIS2', o.nis2_classification],
+              ].map(([k, v]) => v ? (
+                <div key={k as string} className="flex flex-col">
+                  <span className="text-xs text-muted-foreground">{k}</span>
+                  <span className="font-medium">{v as string}</span>
                 </div>
-              )}
-              <p className="text-sm whitespace-pre-wrap">{report.ai.executive_summary}</p>
+              ) : null)}
             </CardContent>
           </Card>
 
+          {/* Scan */}
           <Card>
-            <CardHeader><CardTitle>Top 5 raccomandazioni</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              {(report.ai.top_recommendations || []).map((r, i) => (
-                <div key={i} className="border-l-4 pl-3 py-2" style={{ borderColor: 'hsl(var(--primary))' }}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <Badge variant="outline">#{r.priority}</Badge>
-                    <Badge className={sevColor(r.severity)}>{r.severity}</Badge>
-                    <span className="font-semibold">{r.title}</span>
-                  </div>
-                  <p className="text-sm"><b>Razionale:</b> {r.rationale}</p>
-                  <p className="text-sm"><b>Azione:</b> {r.action}</p>
-                  {r.affected_assets?.length ? <p className="text-xs text-muted-foreground">Asset: {r.affected_assets.join(', ')}</p> : null}
-                </div>
-              ))}
+            <CardHeader><CardTitle>2. Dettagli scansione</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+              <div><span className="text-xs text-muted-foreground block">Target</span><span className="font-medium">{s.target}</span></div>
+              <div><span className="text-xs text-muted-foreground block">Tipo target</span><span className="font-medium">{s.target_type}</span></div>
+              <div><span className="text-xs text-muted-foreground block">Profilo</span><span className="font-medium">{s.scan_profile}</span></div>
+              <div><span className="text-xs text-muted-foreground block">Hosting</span><span className="font-medium">{s.hosting_context || 'n/d'}</span></div>
+              <div><span className="text-xs text-muted-foreground block">Avviata</span><span className="font-medium">{s.started_at ? new Date(s.started_at).toLocaleString('it-IT') : 'n/d'}</span></div>
+              <div><span className="text-xs text-muted-foreground block">Completata</span><span className="font-medium">{s.completed_at ? new Date(s.completed_at).toLocaleString('it-IT') : 'n/d'}</span></div>
             </CardContent>
           </Card>
 
-          {report.ai.correlations?.length ? (
+          {/* AI summary */}
+          {report.ai && (
             <Card>
-              <CardHeader><CardTitle>Correlazioni</CardTitle></CardHeader>
+              <CardHeader><CardTitle>3. Executive summary (AI)</CardTitle></CardHeader>
+              <CardContent className="space-y-2">
+                {report.ai.risk_score != null && (
+                  <Badge className={sevColor(report.ai.risk_level)}>
+                    {report.ai.risk_level} · {report.ai.risk_score}/100
+                  </Badge>
+                )}
+                <p className="text-sm whitespace-pre-wrap">{report.ai.executive_summary}</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {report.ai?.top_recommendations?.length ? (
+            <Card>
+              <CardHeader><CardTitle>4. Top 5 raccomandazioni</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                {report.ai.top_recommendations.map((r, i) => (
+                  <div key={i} className="border-l-4 pl-3 py-2" style={{ borderColor: 'hsl(var(--primary))' }}>
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <Badge variant="outline">#{r.priority}</Badge>
+                      <Badge className={sevColor(r.severity)}>{r.severity}</Badge>
+                      <span className="font-semibold">{r.title}</span>
+                    </div>
+                    <p className="text-sm"><b>Razionale:</b> {r.rationale}</p>
+                    <p className="text-sm"><b>Azione:</b> {r.action}</p>
+                    {r.affected_assets?.length ? <p className="text-xs text-muted-foreground">Asset: {r.affected_assets.join(', ')}</p> : null}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {report.ai?.correlations?.length ? (
+            <Card>
+              <CardHeader><CardTitle>5. Correlazioni</CardTitle></CardHeader>
               <CardContent>
                 <ul className="text-sm list-disc pl-5 space-y-1">
                   {report.ai.correlations.map((c, i) => <li key={i}>{c}</li>)}
@@ -265,63 +325,113 @@ export const AiReportTab: React.FC = () => {
               </CardContent>
             </Card>
           ) : null}
+
+          {report.ai?.compliance_notes ? (
+            <Card>
+              <CardHeader><CardTitle>6. Note di compliance</CardTitle></CardHeader>
+              <CardContent><p className="text-sm whitespace-pre-wrap">{report.ai.compliance_notes}</p></CardContent>
+            </Card>
+          ) : null}
+
+          {report.ai_error && (
+            <Card><CardContent className="pt-6 text-sm text-destructive">Sintesi AI non disponibile: {report.ai_error}</CardContent></Card>
+          )}
+
+          {/* Asset in scope - paginati */}
+          <Card>
+            <CardHeader><CardTitle>7. Asset in scope ({assets.length})</CardTitle></CardHeader>
+            <CardContent>
+              <ul className="text-sm space-y-1">
+                {assetsSlice.map((a, i) => (
+                  <li key={i} className="flex items-start gap-2 border-b border-border/40 py-1">
+                    <Badge variant="outline" className="text-xs shrink-0">{a.asset_type}</Badge>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium truncate">{a.asset_value}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {a.hostname || '—'}{a.ip ? ` · ${a.ip}` : ''}{a.source ? ` · ${a.source}` : ''}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <Paginator page={assetPage} totalPages={assetPages} onChange={setAssetPage} />
+            </CardContent>
+          </Card>
+
+          {/* Findings - paginati */}
+          <Card>
+            <CardHeader>
+              <CardTitle>8. Findings ({findings.length})</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2 mb-3 text-xs">
+                {Object.entries(report.findings_by_severity || {}).map(([sev, n]) => (
+                  <Badge key={sev} className={sevColor(sev)}>{sev}: {n}</Badge>
+                ))}
+              </div>
+              <ul className="space-y-2">
+                {findingsSlice.map((f, i) => (
+                  <li key={i} className="border-l-4 pl-3 py-2 border-border">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge className={sevColor(f.severity)}>{f.severity}</Badge>
+                      <span className="font-semibold text-sm">{f.title}</span>
+                    </div>
+                    {(f.affected_asset || f.affected_url) && (
+                      <p className="text-xs text-muted-foreground mt-1">Asset: {f.affected_asset || f.affected_url}</p>
+                    )}
+                    {f.cve?.length ? <p className="text-xs">CVE: {f.cve.join(', ')}</p> : null}
+                    {f.remediation && <p className="text-xs"><b>Remediation:</b> {f.remediation}</p>}
+                  </li>
+                ))}
+              </ul>
+              <Paginator page={findingPage} totalPages={findingPages} onChange={setFindingPage} />
+            </CardContent>
+          </Card>
+
+          {/* Intel - paginati */}
+          {intel.length > 0 && (
+            <Card>
+              <CardHeader><CardTitle>9. Intel OSINT ({intel.length})</CardTitle></CardHeader>
+              <CardContent>
+                <ul className="text-sm space-y-2">
+                  {intelSlice.map((it, i) => (
+                    <li key={i} className="border-b border-border/40 pb-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline" className="text-xs">{it.provider}</Badge>
+                        <span className="font-medium text-sm truncate">{it.target}</span>
+                      </div>
+                      {it.summary && (
+                        <p className="text-xs text-muted-foreground mt-1 line-clamp-3">
+                          {typeof it.summary === 'string' ? it.summary : JSON.stringify(it.summary).slice(0, 400)}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                <Paginator page={intelPage} totalPages={intelPages} onChange={setIntelPage} />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Observations - paginate */}
+          {observations.length > 0 && (
+            <Card>
+              <CardHeader><CardTitle>10. Osservazioni ({observations.length})</CardTitle></CardHeader>
+              <CardContent>
+                <ul className="text-sm space-y-1">
+                  {observationsSlice.map((ob, i) => (
+                    <li key={i} className="flex items-start gap-2 border-b border-border/40 py-1">
+                      <Badge variant="outline" className="text-xs shrink-0">{ob.module}</Badge>
+                      <span className="flex-1 min-w-0 truncate">{ob.title}</span>
+                      <Badge className={sevColor(ob.severity)}>{ob.severity}</Badge>
+                    </li>
+                  ))}
+                </ul>
+                <Paginator page={obsPage} totalPages={obsPages} onChange={setObsPage} />
+              </CardContent>
+            </Card>
+          )}
         </>
-      )}
-
-      {report?.remediation_tasks && report.remediation_tasks.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Azioni di remediation (pianificate / completate)</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {report.kev_generation && report.kev_generation.total_kev > 0 && (
-              <p className="text-xs text-muted-foreground">
-                CISA KEV rilevate: {report.kev_generation.total_kev} - Nuove azioni auto-generate: {report.kev_generation.created} - Già esistenti: {report.kev_generation.existing}
-              </p>
-            )}
-            {Object.entries(
-              report.remediation_tasks.reduce<Record<string, RemediationTask[]>>((acc, t) => {
-                (acc[t.category] ||= []).push(t);
-                return acc;
-              }, {})
-            ).sort(([a], [b]) => a.localeCompare(b)).map(([cat, list]) => {
-              const done = list.filter((t) => (t.progress ?? 0) >= 100).length;
-              return (
-                <div key={cat} className="border-l-4 pl-3 py-2" style={{ borderColor: 'hsl(var(--primary))' }}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-semibold text-sm">{cat}</span>
-                    <Badge variant="outline">{done}/{list.length} completati</Badge>
-                  </div>
-                  <ul className="text-xs space-y-1">
-                    {list.map((t) => {
-                      const completed = (t.progress ?? 0) >= 100;
-                      const sev = t.priority === 'critical' ? 'critical' : t.priority === 'high' ? 'high' : t.priority === 'medium' ? 'medium' : 'low';
-                      return (
-                        <li key={t.id} className="flex items-start gap-2">
-                          <Badge variant={completed ? 'default' : 'secondary'} className="shrink-0">
-                            {completed ? 'COMPLETATO' : 'PIANIFICATO'}
-                          </Badge>
-                          <Badge className={sevColor(sev)}>{t.priority}</Badge>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium truncate">{t.task}</p>
-                            <p className="text-muted-foreground">
-                              {t.start_date} → {t.end_date} · {t.progress ?? 0}%
-                              {t.source === 'cisa_kev' && t.source_ref ? ` · sorgente: CISA KEV ${t.source_ref}` : ''}
-                            </p>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      )}
-
-      {report?.ai_error && (
-        <Card><CardContent className="pt-6 text-sm text-destructive">Sintesi AI non disponibile: {report.ai_error}</CardContent></Card>
       )}
     </div>
   );

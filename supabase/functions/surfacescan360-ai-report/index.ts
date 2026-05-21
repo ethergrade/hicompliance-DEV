@@ -98,9 +98,13 @@ async function generateKevRemediations(supabase: any, organizationId: string, fi
 
 async function callOpenAi(systemPrompt: string, userPrompt: string) {
   if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY non configurata');
+  // Sanitize: rimuovi whitespace/newline/caratteri non-ASCII che fanno fallire fetch con
+  // "Failed to construct 'Request': 'headers' is not a valid ByteString"
+  const cleanKey = OPENAI_API_KEY.trim().replace(/[^\x20-\x7E]/g, '');
+  if (!cleanKey) throw new Error('OPENAI_API_KEY contiene solo caratteri non validi');
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+    headers: { 'Authorization': `Bearer ${cleanKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: 'gpt-4o-mini',
       temperature: 0.2,
