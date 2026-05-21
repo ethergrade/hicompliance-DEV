@@ -90,34 +90,92 @@ function bannersToHosts(banners: ShodanBanner[]) {
   return Array.from(map.values());
 }
 
+interface RuleScanResult {
+  rule: MonitoredRule;
+  host: any | null;
+  ip: string | null;
+}
+
 async function scanOrganization(orgId: string, rules: MonitoredRule[], shodanKey: string) {
   const assets: any[] = [];
   const truncated: string[] = [];
+  const perRule: RuleScanResult[] = [];
   for (const r of rules) {
     try {
       if (r.entry_type === 'single') {
         let ip = r.input_value;
         if (!isIp(ip)) {
           const resolved = await shodanResolve(ip, shodanKey);
-          if (!resolved) continue;
+          if (!resolved) { perRule.push({ rule: r, host: null, ip: null }); continue; }
           ip = resolved;
         }
         const host = await shodanHost(ip, shodanKey);
         if (host) assets.push(aggregateAsset(host));
+        perRule.push({ rule: r, host, ip });
       } else {
         const banners = await shodanSearch(`net:${r.ip_start}-${r.ip_end}`, shodanKey);
         const hosts = bannersToHosts(banners);
         if (hosts.length > MAX_IPS_PER_RULE) truncated.push(r.input_value);
         hosts.slice(0, MAX_IPS_PER_RULE).forEach(h => assets.push(aggregateAsset(h)));
+        perRule.push({ rule: r, host: hosts[0] ?? null, ip: hosts[0]?.ip_str ?? null });
       }
     } catch (e) {
       console.error(`Rule ${r.input_value} failed:`, e);
+      perRule.push({ rule: r, host: null, ip: null });
     }
   }
   // Dedup
   const dedup = new Map<string, any>();
   assets.forEach(a => dedup.set(a.ip, a));
-  return { assets: Array.from(dedup.values()), truncated };
+  return { assets: Array.from(dedup.values()), truncated, perRule };
+}
+
+async function maybeTriggerAutoValidation(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  orgId: string,
+  perRule: RuleScanResult[],
+) {
+  for (const r of perRule) {
+    const target = r.rule.input_value;
+    const host = r.host;
+    const hostnames: string[] = host?.hostnames ?? [];
+    const ports: number[] = host?.ports ?? [];
+    const vulns: string[] = host?.vulns
+      ? Array.isArray(host.vulns) ? host.vulns : Object.keys(host.vulns)
+      : [];
+    const snapshot = host ? {
+      found: true,
+      hostnames,
+      ports,
+      vulns,
+      last_update: host.last_update,
+      asn: host.asn,
+      org: host.org,
+    } : { found: false, hostnames: [], ports: [], vulns: [] };
+
+    try {
+      const resp = await fetch(`${supabaseUrl}/functions/v1/pentest-tools-orchestrator`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${serviceRoleKey}`,
+        },
+        body: JSON.stringify({
+          organization_id: orgId,
+          target,
+          profile: 'recon_safe',
+          triggered_by: 'auto_from_shodan',
+          resolved_ips: r.ip ? [r.ip] : [],
+          shodan_snapshot: snapshot,
+        }),
+      });
+      const j = await resp.json().catch(() => ({}));
+      console.log(`Auto-validation org=${orgId} target=${target}: ${resp.status}`, j?.error ?? j?.job_id ?? 'ok');
+    } catch (e) {
+      console.error(`Auto-validation failed for ${target}:`, e);
+    }
+  }
 }
 
 Deno.serve(async (req) => {
@@ -155,8 +213,11 @@ Deno.serve(async (req) => {
 
     const results: any[] = [];
 
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
     for (const [orgId, orgRules] of byOrg.entries()) {
-      const { assets, truncated } = await scanOrganization(orgId, orgRules, SHODAN_API_KEY);
+      const { assets, truncated, perRule } = await scanOrganization(orgId, orgRules, SHODAN_API_KEY);
 
       const total = assets.length;
       const critical = assets.filter(a => a.status === 'Critico').length;
@@ -186,6 +247,16 @@ Deno.serve(async (req) => {
         results.push({ orgId, ok: false, error: insErr.message });
       } else {
         results.push({ orgId, ok: true, total_assets: total, critical, warning, safe });
+      }
+
+      // Auto-trigger Pentest-Tools validation se l'org ha il flag attivo
+      const { data: orgRow } = await supabase
+        .from('organizations')
+        .select('pentest_tools_auto_validation')
+        .eq('id', orgId)
+        .maybeSingle();
+      if ((orgRow as any)?.pentest_tools_auto_validation) {
+        await maybeTriggerAutoValidation(supabaseUrl, serviceRoleKey, orgId, perRule);
       }
     }
 
