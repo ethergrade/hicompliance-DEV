@@ -52,18 +52,18 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     queryFn: async () => {
       const { data, error } = await supabase
         .from('organizations')
-        .select('hicompliance_enabled, irp_extended, surface_scan_extended, pentest_tools_auto_validation')
+        .select('hicompliance_enabled, irp_extended, surface_scan_extended, pentest_tools_auto_validation, surface_scan360_enabled, dark_risk360_enabled' as any)
         .eq('id', organizationId)
         .maybeSingle();
       if (error) throw error;
-      return data || { hicompliance_enabled: false, irp_extended: false, surface_scan_extended: false, pentest_tools_auto_validation: false };
+      return (data as any) || { hicompliance_enabled: false, irp_extended: false, surface_scan_extended: false, pentest_tools_auto_validation: false, surface_scan360_enabled: false, dark_risk360_enabled: false };
     },
     enabled: open && !!organizationId,
   });
 
   const updateFlagsMutation = useMutation({
-    mutationFn: async (patch: Partial<{ hicompliance_enabled: boolean; irp_extended: boolean; surface_scan_extended: boolean; pentest_tools_auto_validation: boolean }>) => {
-      const { error } = await supabase.from('organizations').update(patch).eq('id', organizationId);
+    mutationFn: async (patch: Record<string, boolean>) => {
+      const { error } = await supabase.from('organizations').update(patch as any).eq('id', organizationId);
       if (error) throw error;
     },
     onSuccess: () => {
