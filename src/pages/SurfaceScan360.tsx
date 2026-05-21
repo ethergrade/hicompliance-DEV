@@ -77,6 +77,7 @@ import { useSubdomainDump } from '@/hooks/useSubdomainDump';
 import { ValidatedCveTab } from '@/components/surface-scan/ValidatedCveTab';
 import { OsintEnrichmentTab } from '@/components/surface-scan/OsintEnrichmentTab';
 import { AiReportTab } from '@/components/surface-scan/AiReportTab';
+import { AllCvesTab } from '@/components/surface-scan/AllCvesTab';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const SurfaceScan360: React.FC = () => {
@@ -677,10 +678,14 @@ const SurfaceScan360: React.FC = () => {
           <Tabs defaultValue="exposed" className="w-full">
             <TabsList>
               <TabsTrigger value="exposed">Asset esposti</TabsTrigger>
+              <TabsTrigger value="all-cves">Tutti i CVE</TabsTrigger>
               <TabsTrigger value="validated">CVE validati</TabsTrigger>
               <TabsTrigger value="osint">OSINT enrichment</TabsTrigger>
               <TabsTrigger value="ai-report">Report AI</TabsTrigger>
             </TabsList>
+            <TabsContent value="all-cves" className="mt-4">
+              <AllCvesTab shodanAssets={shodanAssets} />
+            </TabsContent>
             <TabsContent value="validated" className="mt-4">
               <ValidatedCveTab />
             </TabsContent>
