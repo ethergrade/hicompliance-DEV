@@ -193,10 +193,44 @@ export const AiReportTab: React.FC = () => {
             </CardContent>
           </Card>
 
+          <Card>
+            <CardHeader><CardTitle>3. Evidenze sottodomini ({subdomainEvidence.length})</CardTitle></CardHeader>
+            <CardContent>
+              {subdomainEvidence.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nessuna evidenza di sottodominio disponibile per questo cliente.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="text-xs text-muted-foreground border-b border-border">
+                      <tr>
+                        <th className="text-left py-2 pr-3">Sottodominio</th>
+                        <th className="text-left py-2 pr-3">IP</th>
+                        <th className="text-left py-2 pr-3">Root</th>
+                        <th className="text-left py-2 pr-3">Profondità</th>
+                        <th className="text-left py-2">Evidenza</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {subdomainEvidence.map((item, i) => (
+                        <tr key={`${item.host}-${i}`} className="border-b border-border/40">
+                          <td className="py-2 pr-3 font-medium break-all">{item.host}</td>
+                          <td className="py-2 pr-3"><Badge variant="outline">{item.ip || '—'}</Badge></td>
+                          <td className="py-2 pr-3 text-muted-foreground">{item.root}</td>
+                          <td className="py-2 pr-3"><Badge className={sevColor(item.depth >= 2 ? 'medium' : 'low')}>L{item.depth}</Badge></td>
+                          <td className="py-2 text-xs text-muted-foreground">{item.meta || (item.discoveredAt ? new Date(item.discoveredAt).toLocaleString('it-IT') : '—')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* AI summary */}
           {report.ai && (
             <Card>
-              <CardHeader><CardTitle>3. Executive summary (AI)</CardTitle></CardHeader>
+              <CardHeader><CardTitle>4. Executive summary (AI)</CardTitle></CardHeader>
               <CardContent className="space-y-2">
                 {report.ai.risk_score != null && (
                   <Badge className={sevColor(report.ai.risk_level)}>
