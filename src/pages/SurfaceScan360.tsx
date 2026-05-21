@@ -632,15 +632,23 @@ const SurfaceScan360: React.FC = () => {
           {/* Stats Overview */}
           <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
             {(() => {
-              // Conta domini unici: include sia entry_type='domain' sia input_value che è un dominio valido
-              const uniqueDomains = hasMonitoredRules
-                ? new Set(
-                    monitoredIpRules
-                      .filter(r => String(r.entry_type).toLowerCase() === 'domain' || isValidDomain(r.input_value))
-                      .map(r => r.input_value.trim().toLowerCase())
-                  ).size
-                : 0;
-              const domains = uniqueDomains;
+              // Conta domini unici: normalizza (lowercase, no www., no path) e include sia entry_type='domain'
+              // sia qualunque input_value che risulta un dominio valido.
+              const normalize = (v: string) =>
+                v.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+              const domainSet = new Set<string>();
+              if (hasMonitoredRules) {
+                for (const r of monitoredIpRules) {
+                  const n = normalize(r.input_value || '');
+                  const isDomainType = String(r.entry_type).toLowerCase() === 'domain';
+                  if (isDomainType || isValidDomain(n)) domainSet.add(n);
+                }
+              }
+              if (typeof window !== 'undefined') {
+                // Debug log per diagnosticare mismatch DB ↔ UI
+                console.debug('[SurfaceScan360] monitoredIpRules:', monitoredIpRules.length, monitoredIpRules.map(r => `${r.entry_type}:${r.input_value}`), '→ uniqueDomains:', domainSet.size);
+              }
+              const domains = domainSet.size;
               const totalMonitored = hasMonitoredRules ? monitoredIpRules.length : 0;
               const criticalVulns = hasMonitoredRules ? shodanAssets.reduce((acc, a) => acc + a.cves.filter(c => c.severity === 'high').length, 0) : 0;
               const avgScore = hasMonitoredRules && shodanAssets.length > 0
