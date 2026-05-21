@@ -532,7 +532,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
 
     if (report.ai.top_recommendations?.length) {
       y += 6;
-      sectionTitle(8, 'Remediation Recommendation (Top 5 AI)');
+      sectionTitle(8, 'Priorità operative AI (Top 5)');
       report.ai.top_recommendations.forEach((r) => {
         ensure(40);
         const badgeW = severityBadge(r.severity || 'info');
@@ -542,7 +542,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
         doc.text(`#${r.priority}  ${r.title}`, margin + badgeW + 6, y);
         y += 14;
         if (r.rationale) text(`Razionale: ${r.rationale}`, { size: 9 });
-        if (r.action) text(`Azione: ${r.action}`, { size: 9, bold: true });
+        if (r.action) text(`Indicazione: ${r.action}`, { size: 9, bold: true });
         if (r.affected_assets?.length) text(`Asset: ${r.affected_assets.join(', ')}`, { size: 8, color: [MUTED.r, MUTED.g, MUTED.b] });
         y += 6;
       });
