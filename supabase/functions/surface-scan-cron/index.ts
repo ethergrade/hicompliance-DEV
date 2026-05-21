@@ -334,15 +334,9 @@ Deno.serve(async (req) => {
         results.push({ orgId, ok: true, total_assets: total, critical, warning, safe });
       }
 
-      // Auto-trigger Pentest-Tools validation se l'org ha il flag attivo
-      const { data: orgRow } = await supabase
-        .from('organizations')
-        .select('pentest_tools_auto_validation')
-        .eq('id', orgId)
-        .maybeSingle();
-      if ((orgRow as any)?.pentest_tools_auto_validation) {
-        await maybeTriggerAutoValidation(supabase, supabaseUrl, serviceRoleKey, orgId, perRule);
-      }
+      // Pentest-Tools validation: SEMPRE attiva per ogni scansione
+      await maybeTriggerAutoValidation(supabase, supabaseUrl, serviceRoleKey, orgId, perRule);
+
     }
 
     return new Response(
