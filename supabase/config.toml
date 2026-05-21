@@ -8,3 +8,6 @@ verify_jwt = false
 
  [functions.ai-ciso-chat]
  verify_jwt = false
+
+ [functions.surface-scan-cron]
+ verify_jwt = false

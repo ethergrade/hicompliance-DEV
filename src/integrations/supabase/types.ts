@@ -1684,6 +1684,60 @@ export type Database = {
           },
         ]
       }
+      surface_scan_history: {
+        Row: {
+          assets_snapshot: Json
+          avg_score: number
+          created_at: string
+          critical_count: number
+          high_cves: number
+          id: string
+          low_cves: number
+          medium_cves: number
+          organization_id: string
+          safe_count: number
+          scanned_at: string
+          total_assets: number
+          triggered_by: string
+          truncated_rules: Json
+          warning_count: number
+        }
+        Insert: {
+          assets_snapshot?: Json
+          avg_score?: number
+          created_at?: string
+          critical_count?: number
+          high_cves?: number
+          id?: string
+          low_cves?: number
+          medium_cves?: number
+          organization_id: string
+          safe_count?: number
+          scanned_at?: string
+          total_assets?: number
+          triggered_by?: string
+          truncated_rules?: Json
+          warning_count?: number
+        }
+        Update: {
+          assets_snapshot?: Json
+          avg_score?: number
+          created_at?: string
+          critical_count?: number
+          high_cves?: number
+          id?: string
+          low_cves?: number
+          medium_cves?: number
+          organization_id?: string
+          safe_count?: number
+          scanned_at?: string
+          total_assets?: number
+          triggered_by?: string
+          truncated_rules?: Json
+          warning_count?: number
+        }
+        Relationships: []
+      }
       user_preferences: {
         Row: {
           created_at: string
