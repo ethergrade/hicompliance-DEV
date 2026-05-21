@@ -576,7 +576,8 @@ const SurfaceScan360: React.FC = () => {
           {/* Stats Overview */}
           <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
             {(() => {
-              const domains = hasMonitoredRules ? new Set(shodanAssets.map(a => a.hostname || a.ip)).size : 0;
+              const domains = hasMonitoredRules ? monitoredIpRules.filter(r => r.entry_type === 'domain').length : 0;
+              const totalMonitored = hasMonitoredRules ? monitoredIpRules.length : 0;
               const criticalVulns = hasMonitoredRules ? shodanAssets.reduce((acc, a) => acc + a.cves.filter(c => c.severity === 'high').length, 0) : 0;
               const avgScore = hasMonitoredRules && shodanAssets.length > 0
                 ? Math.round(shodanAssets.reduce((s, a) => s + (a.score || 0), 0) / shodanAssets.length)
