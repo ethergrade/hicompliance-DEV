@@ -74,3 +74,51 @@ export function cweLink(cwe: string): string {
 
 export const CVE_REGEX = /CVE-\d{4}-\d{4,7}/gi;
 export const CWE_REGEX = /CWE-\d{1,5}/gi;
+
+// Descrizioni brevi (IT) per CWE usate dalla tassonomia interna
+export const CWE_DESCRIPTIONS: Record<string, string> = {
+  'CWE-79': 'Cross-site Scripting (XSS): input non sanitizzato che permette iniezione di script nel browser della vittima.',
+  'CWE-200': 'Esposizione di informazioni sensibili a soggetti non autorizzati.',
+  'CWE-284': 'Controllo accessi improprio: risorse accessibili senza adeguata autorizzazione.',
+  'CWE-290': 'Bypass dell\'autenticazione tramite spoofing (es. mittente email falsificato).',
+  'CWE-295': 'Validazione del certificato TLS impropria o assente.',
+  'CWE-298': 'Validazione della scadenza del certificato impropria.',
+  'CWE-319': 'Trasmissione di dati sensibili in chiaro (senza HTTPS/HSTS).',
+  'CWE-326': 'Algoritmo crittografico debole o inadeguato.',
+  'CWE-327': 'Uso di cipher TLS deboli o obsoleti.',
+  'CWE-345': 'Verifica insufficiente dell\'autenticità dei dati (es. DNSSEC mancante).',
+  'CWE-538': 'File con informazioni sensibili esposti pubblicamente.',
+  'CWE-548': 'Directory listing abilitato che espone la struttura del server.',
+  'CWE-614': 'Cookie sensibile senza attributo Secure (rischio man-in-the-middle).',
+  'CWE-693': 'Meccanismo di protezione mancante (es. Permissions-Policy).',
+  'CWE-798': 'Credenziali di default o hard-coded utilizzate in produzione.',
+  'CWE-1004': 'Cookie sensibile senza flag HttpOnly (rischio XSS).',
+  'CWE-1021': 'Restrizioni sul rendering improprie: rischio clickjacking / framing.',
+  'CWE-1104': 'Uso di componenti software non mantenuti o vulnerabili.',
+  'CWE-1275': 'Cookie sensibile con SameSite mancante o non restrittivo.',
+};
+
+export function cweDescription(cwe?: string | null): string | null {
+  if (!cwe) return null;
+  return CWE_DESCRIPTIONS[cwe.toUpperCase()] ?? null;
+}
+
+export function owaspDescription(code?: string | null): string | null {
+  if (!code) return null;
+  const label = OWASP_2021[code];
+  return label ? `OWASP Top 10 (${code}) — ${label}` : null;
+}
+
+// Sintesi leggibile (IT) per un finding interno
+export function findingSummary(findingType?: string | null): string | null {
+  if (!findingType) return null;
+  const tax = getFindingTaxonomy(findingType);
+  if (!tax) return null;
+  const cweDesc = cweDescription(tax.cwe);
+  const owaspLabel = OWASP_2021[tax.owasp];
+  const parts = [
+    cweDesc,
+    owaspLabel ? `Categoria OWASP ${tax.owasp}: ${owaspLabel}.` : null,
+  ].filter(Boolean);
+  return parts.join(' ');
+}
