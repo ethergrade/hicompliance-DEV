@@ -95,59 +95,20 @@ export const ValidatedCveTab: React.FC = () => {
               CVE validati attivamente
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
-              Validazione attiva di domini, hostname e IP autorizzati. Su shared hosting le CVE IP-level non vengono attribuite al dominio.
+              Validazione attiva automatica su domini e IP autorizzati: parte non appena un nuovo target viene aggiunto al monitoraggio
+              (autorizzazione implicita dai T&amp;C accettati in fase di registrazione). Su shared hosting le CVE IP-level non vengono attribuite al dominio.
             </p>
           </div>
           {isAdmin && (
-            <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-              <SheetTrigger asChild>
-                <Button size="sm"><PlayCircle className="w-4 h-4 mr-2" />Esegui validazione</Button>
-              </SheetTrigger>
-              <SheetContent className="w-full sm:max-w-md overflow-y-auto">
-                <SheetHeader>
-                  <SheetTitle>Validazione attiva CVE</SheetTitle>
-                  <SheetDescription>Lancia una validazione attiva sul target indicato.</SheetDescription>
-                </SheetHeader>
-                <div className="space-y-4 py-4">
-                  <div>
-                    <Label htmlFor="pt-target">Target</Label>
-                    <Input id="pt-target" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="https://example.com oppure 1.2.3.4" />
-                  </div>
-                  <div>
-                    <Label htmlFor="pt-profile">Profilo</Label>
-                    <Select value={profile} onValueChange={(v) => setProfile(v as ScanProfile)}>
-                      <SelectTrigger id="pt-profile"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="recon_safe">Recon sicuro (non invasivo)</SelectItem>
-                        <SelectItem value="cve_web">CVE Web (dominio)</SelectItem>
-                        <SelectItem value="cve_network">CVE Network (IP autorizzato)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {profile === 'cve_network' && (
-                    <div>
-                      <Label htmlFor="pt-proof">Prova di ownership IP</Label>
-                      <Textarea id="pt-proof" value={ownershipProof} onChange={(e) => setOwnershipProof(e.target.value)}
-                        placeholder="ASN, allocazione RIPE, contratto hosting, ecc." rows={3} />
-                    </div>
-                  )}
-                  <div className="flex items-start gap-2 rounded-md border p-3 bg-muted/30">
-                    <Checkbox id="pt-auth" checked={authorized} onCheckedChange={(c) => setAuthorized(!!c)} />
-                    <Label htmlFor="pt-auth" className="text-xs leading-relaxed cursor-pointer">
-                      Dichiaro di avere autorizzazione esplicita a effettuare scan attivi su questo target. Comprendo che gli scan generano traffico e log presso il target.
-                    </Label>
-                  </div>
-                  <Button onClick={handleLaunch} disabled={triggerMut.isPending} className="w-full">
-                    {triggerMut.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <PlayCircle className="w-4 h-4 mr-2" />}
-                    Avvia scan
-                  </Button>
-                </div>
-              </SheetContent>
-            </Sheet>
+            <Badge variant="outline" className="gap-1.5 border-primary/40 text-primary bg-primary/5">
+              <Activity className="w-3.5 h-3.5" />
+              Auto-trigger attivo
+            </Badge>
           )}
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">Critical</p>
               <p className="text-2xl font-bold text-destructive">{summary.critical}</p>
