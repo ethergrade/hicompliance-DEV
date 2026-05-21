@@ -47,6 +47,32 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   const [apiUrl, setApiUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
 
+  const { data: orgFlags } = useQuery({
+    queryKey: ['org-feature-flags', organizationId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('organizations')
+        .select('hicompliance_enabled, irp_extended, surface_scan_extended')
+        .eq('id', organizationId)
+        .maybeSingle();
+      if (error) throw error;
+      return data || { hicompliance_enabled: false, irp_extended: false, surface_scan_extended: false };
+    },
+    enabled: open && !!organizationId,
+  });
+
+  const updateFlagsMutation = useMutation({
+    mutationFn: async (patch: Partial<{ hicompliance_enabled: boolean; irp_extended: boolean; surface_scan_extended: boolean }>) => {
+      const { error } = await supabase.from('organizations').update(patch).eq('id', organizationId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['org-feature-flags', organizationId] });
+      toast.success('Configurazione aggiornata');
+    },
+    onError: (err: Error) => toast.error(`Errore: ${err.message}`),
+  });
+
   const { data: services = [] } = useQuery({
     queryKey: ['hisolution-services'],
     queryFn: async () => {
