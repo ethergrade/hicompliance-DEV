@@ -276,8 +276,8 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                     <div className="flex items-center gap-3">
                       <ShieldCheck className="w-4 h-4 text-muted-foreground" />
                       <div>
-                        <p className="text-sm font-medium">Validazione attiva CVE (Pentest-Tools)</p>
-                        <p className="text-xs text-muted-foreground">Auto-scan quando Shodan è cieco o IP è shared hosting</p>
+                        <p className="text-sm font-medium">Validazione attiva CVE</p>
+                        <p className="text-xs text-muted-foreground">Auto-scan quando la scansione passiva è cieca o IP è shared hosting</p>
                       </div>
                     </div>
                     <Switch
