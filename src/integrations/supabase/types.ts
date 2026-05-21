@@ -1907,6 +1907,8 @@ export type Database = {
           organization_id: string | null
           priority: string
           progress: number
+          source: string | null
+          source_ref: string | null
           start_date: string
           task: string
           updated_at: string
@@ -1926,6 +1928,8 @@ export type Database = {
           organization_id?: string | null
           priority?: string
           progress?: number
+          source?: string | null
+          source_ref?: string | null
           start_date: string
           task: string
           updated_at?: string
@@ -1945,6 +1949,8 @@ export type Database = {
           organization_id?: string | null
           priority?: string
           progress?: number
+          source?: string | null
+          source_ref?: string | null
           start_date?: string
           task?: string
           updated_at?: string

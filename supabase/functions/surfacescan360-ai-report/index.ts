@@ -15,6 +15,87 @@ const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: 
 
 const SEV_RANK: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
 
+// Mappa euristica CVE → categoria assessment NIS2 (14 categorie ufficiali)
+function inferCategoryFromCwe(cweIds: string[] | null, title: string): string {
+  const cwes = (cweIds ?? []).map((c) => String(c).toUpperCase());
+  const t = (title || '').toLowerCase();
+  const has = (xs: string[]) => xs.some((c) => cwes.includes(c));
+  if (has(['CWE-287','CWE-798','CWE-522','CWE-306','CWE-307','CWE-862','CWE-863']) || /auth|login|credential|privilege/.test(t))
+    return 'Gestione delle identità Gestione degli accessi';
+  if (has(['CWE-310','CWE-311','CWE-326','CWE-327','CWE-330']) || /crypt|tls|ssl|cipher/.test(t))
+    return 'Crittografia';
+  if (has(['CWE-79','CWE-89','CWE-22','CWE-78','CWE-77','CWE-94','CWE-502','CWE-434','CWE-918']) || /injection|xss|rce|deserial|upload/.test(t))
+    return 'Sviluppo software';
+  if (has(['CWE-200','CWE-209','CWE-538']) || /information disclosure|leak/.test(t))
+    return 'Gestione delle risorse';
+  if (/dos|denial of service|exhaust|overflow/.test(t) || has(['CWE-400','CWE-770']))
+    return 'Network Security Best Practices & Operations';
+  // Default: i KEV sono per definizione vulnerabilità note → patching/manutenzione
+  return 'Manutenzione e miglioramento continuo';
+}
+
+function priorityFromCvss(cvss: number | null): { priority: string; color: string } {
+  const s = Number(cvss ?? 0);
+  if (s >= 9) return { priority: 'critical', color: '#DC2626' };
+  if (s >= 7) return { priority: 'high', color: '#EA580C' };
+  if (s >= 4) return { priority: 'medium', color: '#EAB308' };
+  return { priority: 'low', color: '#22C55E' };
+}
+
+async function generateKevRemediations(supabase: any, organizationId: string, findings: any[]) {
+  // 1) raccogli CVE unici dai findings
+  const allCves = Array.from(new Set(findings.flatMap((f) => (f.cve ?? [])).map((c: string) => String(c).toUpperCase()).filter(Boolean)));
+  if (allCves.length === 0) return { created: 0, total_kev: 0, existing: 0 };
+
+  // 2) filtra KEV via cve_intel_cache
+  const { data: intel } = await supabase
+    .from('cve_intel_cache')
+    .select('cve_id, cvss_v3_score, cwe_ids, kev_due_date, kev_required_action, description')
+    .in('cve_id', allCves)
+    .eq('cisa_kev', true);
+  const kevList = intel ?? [];
+  if (kevList.length === 0) return { created: 0, total_kev: 0, existing: 0 };
+
+  // 3) trova già esistenti per evitare duplicati
+  const { data: existing } = await supabase
+    .from('remediation_tasks')
+    .select('source_ref')
+    .eq('organization_id', organizationId)
+    .eq('source', 'cisa_kev');
+  const have = new Set((existing ?? []).map((r: any) => r.source_ref));
+
+  // 4) costruisci righe da inserire
+  const today = new Date();
+  const rows: any[] = [];
+  for (const k of kevList) {
+    if (have.has(k.cve_id)) continue;
+    const cat = inferCategoryFromCwe(k.cwe_ids, k.description || k.cve_id);
+    const { priority, color } = priorityFromCvss(k.cvss_v3_score);
+    const due = k.kev_due_date ? new Date(k.kev_due_date) : new Date(today.getTime() + 14 * 24 * 3600 * 1000);
+    const start = today;
+    rows.push({
+      organization_id: organizationId,
+      task: `[KEV] ${k.cve_id} - ${k.kev_required_action || 'Applicare patch / mitigare vulnerabilità sfruttata attivamente'}`,
+      category: cat,
+      start_date: start.toISOString().slice(0, 10),
+      end_date: due.toISOString().slice(0, 10),
+      progress: 0, // pianificato
+      priority,
+      color,
+      assignee: 'IT Security Team',
+      source: 'cisa_kev',
+      source_ref: k.cve_id,
+    });
+  }
+  if (rows.length === 0) return { created: 0, total_kev: kevList.length, existing: have.size };
+
+  const { error: insErr } = await supabase
+    .from('remediation_tasks')
+    .upsert(rows, { onConflict: 'organization_id,source,source_ref', ignoreDuplicates: true });
+  if (insErr) console.warn('KEV remediation insert failed', insErr.message);
+  return { created: rows.length, total_kev: kevList.length, existing: have.size };
+}
+
 async function callOpenAi(systemPrompt: string, userPrompt: string) {
   if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY non configurata');
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -124,6 +205,26 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       aiError = (e as Error).message;
     }
 
+    // ---- Auto-genera azioni di remediation per CVE KEV (se non esistono già) ----
+    const kevGen = await generateKevRemediations(supabase, organization_id, findings).catch((e) => {
+      console.warn('generateKevRemediations error', (e as Error).message);
+      return { created: 0, total_kev: 0, existing: 0 };
+    });
+
+    // ---- Carica tutte le remediation_tasks attive dell'organizzazione ----
+    const { data: remediationRows } = await supabase
+      .from('remediation_tasks')
+      .select('id, task, category, start_date, end_date, progress, priority, assignee, color, source, source_ref, budget')
+      .eq('organization_id', organization_id)
+      .eq('is_deleted', false)
+      .order('priority', { ascending: true })
+      .order('start_date', { ascending: true })
+      .limit(500);
+    const remediation_tasks = (remediationRows ?? []).map((t: any) => ({
+      ...t,
+      status: (t.progress ?? 0) >= 100 ? 'completato' : 'pianificato',
+    }));
+
     const reportPayload = {
       generated_at: new Date().toISOString(),
       organization: {
@@ -156,6 +257,8 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       findings_by_severity: sevCount,
       intel,
       observations,
+      remediation_tasks,
+      kev_generation: kevGen,
       ai: aiReport,
       ai_error: aiError,
     };
