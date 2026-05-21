@@ -294,10 +294,10 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
         const row = ensureRow(`shodan-${asset.ip}`, {
           id: `shodan-${asset.ip}`,
           ip: asset.ip,
-          source: 'Shodan',
+          source: 'Attack Surface',
           hostname: asset.hostname || asset.ip,
           assetType: asset.services?.[0] || 'Asset esposto',
-          operatingSystem: asset.os || asset.org || 'Fingerprint Shodan',
+          operatingSystem: asset.os || asset.org || 'Fingerprint asset',
           lastUpdated: asset.last_update || new Date().toISOString(),
         });
         pushVulnerability(row, {
@@ -310,7 +310,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
           epssPercentile: null,
           description: cve.description,
           severity: normalizeSeverity(cve.severity),
-          category: 'Shodan CVE',
+          category: 'CVE Esposta',
           cwe: null,
           owasp: null,
           discoveredDate: asset.last_update || new Date().toISOString(),
@@ -320,7 +320,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
           remediationText: null,
           exploitAvailable: false,
           affectedService: asset.services?.join(', ') || 'Servizio esposto',
-          source: 'Shodan',
+          source: 'Attack Surface',
         });
       }
     }
