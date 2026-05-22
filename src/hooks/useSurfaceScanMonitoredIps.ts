@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { useUserRoles } from '@/hooks/useUserRoles';
 import {
   MonitoredIpEntryType,
   parseMonitoredIpInput,
@@ -47,8 +48,9 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
   const { toast } = useToast();
   const { organizationId, isLoading: isClientLoading } = useClientOrganization();
   const { user, userProfile } = useAuth();
+  const { isSuperAdmin } = useUserRoles();
 
-  const isAdmin = userProfile?.user_type === 'admin';
+  const isAdmin = userProfile?.user_type === 'admin' || isSuperAdmin;
 
   const fetchRules = useCallback(async () => {
     if (isClientLoading || !organizationId) return;

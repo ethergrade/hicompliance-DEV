@@ -1,7 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { triggerManualSurfaceScan } from '@/hooks/useSurfaceScanHistory';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,976 +26,228 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
-import {
-  Search,
-  ChevronDown,
-  ChevronRight,
-  AlertTriangle,
-  Shield,
-  Clock,
-  CheckCircle,
-  XCircle,
-  Download,
-  Eye,
-  Calendar,
-  Loader2,
-  Lightbulb,
-  GitBranch,
-  RefreshCw,
-} from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import { useClientOrganization } from '@/hooks/useClientOrganization';
-import { useExternalCveFindings, type ExternalCveFinding } from '@/hooks/usePentestTools';
-import type { ShodanAsset } from '@/hooks/useShodanScan';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
-import { getFindingTaxonomy, OWASP_TOP_10, cweLink, CVE_REGEX, cweDescription, owaspDescription, findingSummary } from '@/lib/findingTaxonomy';
-import { useCveIntelBatch } from '@/hooks/useCveIntel';
-import { CveDetailDialog } from './CveDetailDialog';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Shield, Search, Download } from 'lucide-react';
+import { useSurfaceScanFindings } from '@/hooks/useSurfaceScanFindings';
 
-interface SecurityFindingsProps {
-  shodanAssets?: ShodanAsset[];
-  scanRunning?: boolean;
-  dumpedHosts?: Array<{ host: string; from: string | null; ip?: string | null; meta?: string | null }>;
-}
-
-interface SecurityFinding {
-  id: string;
-  ip: string;
-  source: string;
-  hostname: string;
-  assetType: string;
-  operatingSystem: string;
-  lastUpdated: string;
-  highestSeverity: 'critical' | 'high' | 'medium' | 'low' | 'info';
-  totalFindings: number;
-  epssScore: number;
-  vulnerabilities: Vulnerability[];
-}
-
-interface Vulnerability {
-  id: string;
-  cveId: string;
-  cveList: string[];
-  cvssScore: number | null;
-  cvssVector: string;
-  epssScore: number | null;
-  epssPercentile: number | null;
-  description: string;
-  severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
-  category: string;
-  cwe: string | null;
-  owasp: string | null;
-  discoveredDate: string;
-  lastModified: string;
-  remediationStatus: 'open' | 'in_progress' | 'resolved' | 'false_positive';
-  patchAvailable: boolean;
-  remediationText: string | null;
-  exploitAvailable: boolean;
-  affectedService: string;
-  source: string;
-}
-
-interface SurfaceDbFinding {
-  id: string;
-  provider: string | null;
-  module: string | null;
-  finding_type: string;
-  title: string;
-  description: string | null;
-  severity: string;
-  affected_asset: string | null;
-  affected_url: string | null;
-  ip: string | null;
-  port: number | null;
-  protocol: string | null;
-  cve: string[] | null;
-  cvss: number | null;
-  epss: number | null;
-  cisa_kev: boolean | null;
-  remediation: string | null;
-  evidence: unknown;
-  attribution_confidence: string | null;
-  status: string;
-  created_at: string;
-}
-
-const severityRank: Record<SecurityFinding['highestSeverity'], number> = {
-  critical: 4,
-  high: 3,
-  medium: 2,
-  low: 1,
-  info: 0,
+const severityOrder: Record<string, number> = {
+  critical: 5,
+  high: 4,
+  medium: 3,
+  low: 2,
+  info: 1,
 };
 
-const normalizeSeverity = (severity?: string | null): SecurityFinding['highestSeverity'] => {
-  if (severity === 'critical' || severity === 'high' || severity === 'medium' || severity === 'low') return severity;
-  return 'info';
+const severityStyle: Record<string, string> = {
+  critical: 'bg-red-100 text-red-800 border-red-300',
+  high: 'bg-orange-100 text-orange-800 border-orange-300',
+  medium: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+  low: 'bg-green-100 text-green-800 border-green-300',
+  info: 'bg-blue-100 text-blue-800 border-blue-300',
 };
 
-const normalizeStatus = (status?: string | null): Vulnerability['remediationStatus'] => {
-  if (status === 'resolved' || status === 'in_progress' || status === 'false_positive') return status;
-  return 'open';
-};
-
-const epssToDisplay = (value?: number | null) => {
-  if (value == null || Number.isNaN(value)) return null;
-  return value <= 1 ? value * 10 : value;
-};
-
-const pickHighestSeverity = (items: Vulnerability[]): SecurityFinding['highestSeverity'] => {
-  return items.reduce<SecurityFinding['highestSeverity']>((highest, item) => (
-    severityRank[item.severity] > severityRank[highest] ? item.severity : highest
-  ), 'info');
-};
-
-const getCvssVector = (evidence: unknown) => {
-  if (evidence && typeof evidence === 'object' && 'cvss_vector' in evidence) {
-    const value = (evidence as { cvss_vector?: unknown }).cvss_vector;
-    return typeof value === 'string' ? value : '—';
-  }
-  return '—';
-};
-
-const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], scanRunning = false, dumpedHosts = [] }) => {
-  const { organizationId } = useClientOrganization();
-  const queryClient = useQueryClient();
-  const [rescanning, setRescanning] = useState(false);
+const SecurityFindings: React.FC = () => {
+  const { findings, loading, counts } = useSurfaceScanFindings();
   const [searchTerm, setSearchTerm] = useState('');
   const [severityFilter, setSeverityFilter] = useState('all');
-  const [epssRangeFilter, setEpssRangeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [owaspFilter, setOwaspFilter] = useState('all');
-  const [kevOnly, setKevOnly] = useState(false);
-  const [onlyCve, setOnlyCve] = useState(false);
-  const [modalCve, setModalCve] = useState<string | null>(null);
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
 
-  const handleRescan = async () => {
-    if (!organizationId) {
-      toast.error('Nessuna organizzazione selezionata');
-      return;
-    }
-    setRescanning(true);
-    try {
-      const res = await triggerManualSurfaceScan(organizationId);
-      const total = res?.results?.[0]?.total_assets ?? 0;
-      toast.success('Scansione completata', { description: `${total} asset analizzati e salvati su DB.` });
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['surface-security-findings', organizationId] }),
-        queryClient.invalidateQueries({ queryKey: ['external-cve-findings'] }),
-        queryClient.invalidateQueries({ queryKey: ['shodan-scan'] }),
-      ]);
-    } catch (e: any) {
-      toast.error('Errore scansione', { description: e?.message ?? 'Riprova più tardi' });
-    } finally {
-      setRescanning(false);
-    }
-  };
+  const itemsPerPage = 15;
 
-  const normHost = (v: string) => String(v || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
-  const dumpedMap = useMemo(() => {
-    const m = new Map<string, { from: string | null; ip?: string | null; meta?: string | null }>();
-    for (const d of dumpedHosts) {
-      if (d.host) m.set(normHost(d.host), { from: d.from || null, ip: d.ip, meta: d.meta });
-    }
-    return m;
-  }, [dumpedHosts]);
-  const getDumpedFrom = (hostname: string): { isDumped: boolean; from: string | null } => {
-    const h = normHost(hostname);
-    if (dumpedMap.has(h)) return { isDumped: true, from: dumpedMap.get(h)?.from ?? null };
-    return { isDumped: false, from: null };
-  };
+  const filtered = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    return findings
+      .filter((row) => {
+        const matchesTerm =
+          !term ||
+          row.title.toLowerCase().includes(term) ||
+          (row.finding_type || '').toLowerCase().includes(term) ||
+          (row.affected_asset || '').toLowerCase().includes(term) ||
+          (row.affected_url || '').toLowerCase().includes(term) ||
+          (row.ip || '').toLowerCase().includes(term) ||
+          (row.provider || '').toLowerCase().includes(term) ||
+          (row.module || '').toLowerCase().includes(term) ||
+          (row.cve || []).some((cve) => cve.toLowerCase().includes(term));
 
-
-  const { data: surfaceFindings = [], isLoading: surfaceFindingsLoading } = useQuery<SurfaceDbFinding[]>({
-    queryKey: ['surface-security-findings', organizationId],
-    enabled: !!organizationId,
-    refetchInterval: scanRunning ? 5000 : 15000,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('surface_findings' as never)
-        .select('id, provider, module, finding_type, title, description, severity, affected_asset, affected_url, ip, port, protocol, cve, cvss, epss, cisa_kev, remediation, evidence, attribution_confidence, status, created_at')
-        .eq('organization_id', organizationId!)
-        .order('created_at', { ascending: false })
-        .limit(500);
-      if (error) throw error;
-      return (data ?? []) as unknown as SurfaceDbFinding[];
-    },
-  });
-
-  const { data: externalFindings = [], isLoading: externalFindingsLoading } = useExternalCveFindings();
-
-  // hostname → IP map costruita dagli asset Shodan (i findings OSINT spesso non hanno IP risolto)
-  const hostIpMap = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const a of shodanAssets) {
-      if (!a.ip) continue;
-      const hosts = [a.hostname, ...(((a as any).hostnames as string[]) || [])].filter(Boolean);
-      for (const h of hosts) {
-        const k = normHost(h);
-        if (k && !m.has(k)) m.set(k, a.ip);
-      }
-    }
-    return m;
-  }, [shodanAssets]);
-  const resolveIp = (target: string | null | undefined, fallback?: string | null) => {
-    if (fallback && fallback !== '—') return fallback;
-    const k = normHost(String(target || ''));
-    return hostIpMap.get(k) || fallback || '—';
-  };
-
-  const realFindings = useMemo<SecurityFinding[]>(() => {
-    const rows = new Map<string, SecurityFinding>();
-
-    const ensureRow = (key: string, base: Omit<SecurityFinding, 'vulnerabilities' | 'highestSeverity' | 'totalFindings' | 'epssScore'>) => {
-      const normalizedKey = key.toLowerCase();
-      if (!rows.has(normalizedKey)) {
-        rows.set(normalizedKey, {
-          ...base,
-          highestSeverity: 'info',
-          totalFindings: 0,
-          epssScore: 0,
-          vulnerabilities: [],
-        });
-      }
-      return rows.get(normalizedKey)!;
-    };
-
-    const pushVulnerability = (row: SecurityFinding, vulnerability: Vulnerability) => {
-      row.vulnerabilities.push(vulnerability);
-      row.totalFindings = row.vulnerabilities.length;
-      row.highestSeverity = pickHighestSeverity(row.vulnerabilities);
-      const epssValues = row.vulnerabilities
-        .map((v) => v.epssScore)
-        .filter((v): v is number => v != null && !Number.isNaN(v));
-      row.epssScore = epssValues.length ? Math.max(...epssValues) : 0;
-    };
-
-    for (const finding of surfaceFindings) {
-      const target = finding.affected_url || finding.affected_asset || finding.ip || 'Target SurfaceScan';
-      const source = 'OSINT Intel';
-      const row = ensureRow(`surface-${target}`, {
-        id: `surface-${target}`,
-        ip: resolveIp(target, finding.ip),
-        source,
-        hostname: target,
-        assetType: finding.module || finding.finding_type,
-        operatingSystem: finding.protocol || (finding.port ? `Porta ${finding.port}` : 'OSINT'),
-        lastUpdated: finding.created_at,
+        const matchesSeverity = severityFilter === 'all' || row.severity === severityFilter;
+        const matchesStatus = statusFilter === 'all' || row.status === statusFilter;
+        return matchesTerm && matchesSeverity && matchesStatus;
+      })
+      .sort((a, b) => {
+        const sevDiff = (severityOrder[b.severity] || 0) - (severityOrder[a.severity] || 0);
+        if (sevDiff !== 0) return sevDiff;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
-      const cveList = Array.isArray(finding.cve) ? finding.cve.filter(Boolean) : [];
-      const tax = getFindingTaxonomy(finding.finding_type);
-      pushVulnerability(row, {
-        id: finding.id,
-        cveId: cveList.length ? cveList.join(', ') : finding.finding_type,
-        cveList,
-        cvssScore: finding.cvss ?? tax?.baseScore ?? null,
-        cvssVector: getCvssVector(finding.evidence),
-        epssScore: epssToDisplay(finding.epss),
-        epssPercentile: null,
-        description: finding.description || finding.title,
-        severity: normalizeSeverity(finding.severity ?? tax?.severity),
-        category: finding.module || finding.finding_type,
-        cwe: tax?.cwe ?? null,
-        owasp: tax?.owasp ?? null,
-        discoveredDate: finding.created_at,
-        lastModified: finding.created_at,
-        remediationStatus: normalizeStatus(finding.status),
-        patchAvailable: Boolean(finding.remediation),
-        remediationText: finding.remediation ?? null,
-        exploitAvailable: Boolean(finding.cisa_kev),
-        affectedService: finding.port ? `${finding.protocol || 'tcp'}:${finding.port}` : source,
-        source,
-      });
-    }
+  }, [findings, searchTerm, severityFilter, statusFilter]);
 
-    for (const finding of externalFindings as ExternalCveFinding[]) {
-      const target = finding.affected_url || finding.ip || finding.target;
-      const row = ensureRow(`external-${target}`, {
-        id: `external-${target}`,
-        ip: resolveIp(target, finding.ip),
-        source: 'Validazione CVE',
-        hostname: target,
-        assetType: finding.service || finding.scan_job_id,
-        operatingSystem: finding.port ? `Porta ${finding.port}` : 'Validazione CVE attiva',
-        lastUpdated: finding.created_at,
-      });
-      const cveList = Array.isArray(finding.cve) ? finding.cve.filter(Boolean) : [];
-      pushVulnerability(row, {
-        id: finding.id,
-        cveId: cveList.length ? cveList.join(', ') : finding.name,
-        cveList,
-        cvssScore: finding.cvssv3 ?? finding.cvss,
-        cvssVector: finding.raw_finding?.cvss_vector || '—',
-        epssScore: epssToDisplay(finding.epss_score),
-        epssPercentile: null,
-        description: finding.recommendation || finding.name,
-        severity: normalizeSeverity(finding.severity),
-        category: finding.confidence,
-        cwe: null,
-        owasp: null,
-        discoveredDate: finding.created_at,
-        lastModified: finding.created_at,
-        remediationStatus: normalizeStatus(finding.status),
-        patchAvailable: Boolean(finding.recommendation),
-        remediationText: finding.recommendation ?? null,
-        exploitAvailable: Boolean(finding.in_cisa_catalog),
-        affectedService: finding.service || (finding.port ? `Porta ${finding.port}` : 'Validazione CVE'),
-        source: 'Validazione CVE',
-      });
-    }
-
-    for (const asset of shodanAssets) {
-      for (const cve of asset.cves || []) {
-        const row = ensureRow(`shodan-${asset.ip}`, {
-          id: `shodan-${asset.ip}`,
-          ip: asset.ip,
-          source: 'Attack Surface',
-          hostname: asset.hostname || asset.ip,
-          assetType: asset.services?.[0] || 'Asset esposto',
-          operatingSystem: asset.os || asset.org || 'Fingerprint asset',
-          lastUpdated: asset.last_update || new Date().toISOString(),
-        });
-        pushVulnerability(row, {
-          id: `${asset.ip}-${cve.id}`,
-          cveId: cve.id,
-          cveList: [cve.id],
-          cvssScore: null,
-          cvssVector: '—',
-          epssScore: null,
-          epssPercentile: null,
-          description: cve.description,
-          severity: normalizeSeverity(cve.severity),
-          category: 'CVE Esposta',
-          cwe: null,
-          owasp: null,
-          discoveredDate: asset.last_update || new Date().toISOString(),
-          lastModified: asset.last_update || new Date().toISOString(),
-          remediationStatus: 'open',
-          patchAvailable: false,
-          remediationText: null,
-          exploitAvailable: false,
-          affectedService: asset.services?.join(', ') || 'Servizio esposto',
-          source: 'Attack Surface',
-        });
-      }
-    }
-
-    for (const dumped of dumpedHosts) {
-      const host = normHost(dumped.host);
-      if (!host) continue;
-      const row = ensureRow(`dumped-${host}`, {
-        id: `dumped-${host}`,
-        ip: dumped.ip || resolveIp(host),
-        source: 'Discovery sottodomini',
-        hostname: host,
-        assetType: 'subdomain',
-        operatingSystem: dumped.meta || 'Evidenza discovery',
-        lastUpdated: new Date().toISOString(),
-      });
-      if (row.vulnerabilities.some((v) => v.id === `dumped-${host}-evidence`)) continue;
-      pushVulnerability(row, {
-        id: `dumped-${host}-evidence`,
-        cveId: 'subdomain_evidence',
-        cveList: [],
-        cvssScore: null,
-        cvssVector: '—',
-        epssScore: null,
-        epssPercentile: null,
-        description: `Sottodominio rilevato nello scope${dumped.from ? ` da ${dumped.from}` : ''}`,
-        severity: 'info',
-        category: 'Discovery sottodomini',
-        cwe: null,
-        owasp: null,
-        discoveredDate: new Date().toISOString(),
-        lastModified: new Date().toISOString(),
-        remediationStatus: 'open',
-        patchAvailable: false,
-        remediationText: null,
-        exploitAvailable: false,
-        affectedService: dumped.ip ? `IP ${dumped.ip}` : 'DNS',
-        source: 'Discovery sottodomini',
-      });
-    }
-
-    return Array.from(rows.values()).sort((a, b) => {
-      const severityDiff = severityRank[b.highestSeverity] - severityRank[a.highestSeverity];
-      if (severityDiff !== 0) return severityDiff;
-      return new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime();
-    });
-  }, [externalFindings, shodanAssets, surfaceFindings, hostIpMap, dumpedHosts]);
-
-  // Collect all CVE IDs and enrich with NVD/EPSS/KEV cache
-  const allCveIds = useMemo(() => {
-    const set = new Set<string>();
-    for (const f of realFindings) {
-      for (const v of f.vulnerabilities) {
-        for (const c of v.cveList || []) {
-          const matches = String(c).match(CVE_REGEX);
-          if (matches) matches.forEach((m) => set.add(m.toUpperCase()));
-        }
-      }
-    }
-    return Array.from(set);
-  }, [realFindings]);
-
-  const { data: intelMap = {} } = useCveIntelBatch(allCveIds);
-
-  // Re-enrich findings with real intel data (EPSS, CWE, KEV)
-  const enrichedFindings = useMemo(() => {
-    return realFindings.map((f) => {
-      let maxEpss = f.epssScore;
-      let anyKev = false;
-      const vulns = f.vulnerabilities.map((v) => {
-        const cves = (v.cveList || []).map((c) => c.toUpperCase());
-        let epss = v.epssScore;
-        let cwe = v.cwe;
-        let kev = false;
-        for (const c of cves) {
-          const intel = intelMap[c];
-          if (intel) {
-            if (intel.epss_score != null) {
-              const score = intel.epss_score * 10;
-              if (epss == null || score > epss) epss = score;
-            }
-            if (!cwe && intel.cwe_ids?.length) cwe = intel.cwe_ids[0];
-            if (intel.cisa_kev) kev = true;
-          }
-        }
-        if (epss != null && (maxEpss == null || epss > maxEpss)) maxEpss = epss;
-        if (kev) anyKev = true;
-        return { ...v, epssScore: epss, cwe, exploitAvailable: v.exploitAvailable || kev };
-      });
-      return { ...f, vulnerabilities: vulns, epssScore: maxEpss ?? 0, kev: anyKev };
-    });
-  }, [realFindings, intelMap]);
-
-  const filteredFindings = useMemo(() => {
-    return enrichedFindings.filter(finding => {
-      const term = searchTerm.toLowerCase();
-      const matchesSearch = searchTerm === '' ||
-        finding.ip.toLowerCase().includes(term) ||
-        finding.source.toLowerCase().includes(term) ||
-        finding.hostname.toLowerCase().includes(term) ||
-        finding.vulnerabilities.some(vuln =>
-          vuln.cveId.toLowerCase().includes(term) ||
-          vuln.description.toLowerCase().includes(term) ||
-          vuln.source.toLowerCase().includes(term) ||
-          (vuln.cwe || '').toLowerCase().includes(term) ||
-          (vuln.owasp || '').toLowerCase().includes(term)
-        );
-
-      const matchesSeverity = severityFilter === 'all' || finding.highestSeverity === severityFilter;
-      const matchesEpss = epssRangeFilter === 'all' ||
-        (epssRangeFilter === 'high' && finding.epssScore >= 7) ||
-        (epssRangeFilter === 'medium' && finding.epssScore >= 4 && finding.epssScore < 7) ||
-        (epssRangeFilter === 'low' && finding.epssScore < 4);
-      const matchesStatus = statusFilter === 'all' ||
-        finding.vulnerabilities.some(vuln => vuln.remediationStatus === statusFilter);
-      const matchesOwasp = owaspFilter === 'all' ||
-        finding.vulnerabilities.some(v => v.owasp === owaspFilter);
-      const matchesKev = !kevOnly || (finding as any).kev;
-      const matchesOnlyCve = !onlyCve || finding.vulnerabilities.some(v => (v.cveList || []).length > 0);
-
-      return matchesSearch && matchesSeverity && matchesEpss && matchesStatus && matchesOwasp && matchesKev && matchesOnlyCve;
-    });
-  }, [enrichedFindings, searchTerm, severityFilter, epssRangeFilter, statusFilter, owaspFilter, kevOnly, onlyCve]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, severityFilter, epssRangeFilter, statusFilter, owaspFilter, kevOnly, onlyCve, enrichedFindings.length]);
-
-  const totalPages = Math.ceil(filteredFindings.length / itemsPerPage);
-  const paginatedFindings = filteredFindings.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
-
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'critical': return 'bg-red-100 text-red-800 border-red-200';
-      case 'high': return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'low': return 'bg-green-100 text-green-800 border-green-200';
-      default: return 'bg-muted text-muted-foreground border-border';
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'resolved': return 'bg-green-100 text-green-800 border-green-200';
-      case 'in_progress': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'open': return 'bg-red-100 text-red-800 border-red-200';
-      case 'false_positive': return 'bg-gray-100 text-gray-800 border-gray-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'resolved': return <CheckCircle className="w-4 h-4" />;
-      case 'in_progress': return <Clock className="w-4 h-4" />;
-      case 'open': return <XCircle className="w-4 h-4" />;
-      case 'false_positive': return <Eye className="w-4 h-4" />;
-      default: return <AlertTriangle className="w-4 h-4" />;
-    }
-  };
-
-  const toggleRowExpansion = (findingId: string) => {
-    const newExpanded = new Set(expandedRows);
-    if (newExpanded.has(findingId)) {
-      newExpanded.delete(findingId);
-    } else {
-      newExpanded.add(findingId);
-    }
-    setExpandedRows(newExpanded);
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('it-IT', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const loading = surfaceFindingsLoading || externalFindingsLoading;
-  const summary = {
-    critical: enrichedFindings.filter(f => f.highestSeverity === 'critical').length,
-    high: enrichedFindings.filter(f => f.highestSeverity === 'high').length,
-    medium: enrichedFindings.filter(f => f.highestSeverity === 'medium').length,
-    low: enrichedFindings.filter(f => f.highestSeverity === 'low' || f.highestSeverity === 'info').length,
-    kev: enrichedFindings.filter(f => (f as any).kev).length,
-  };
+  }, [searchTerm, severityFilter, statusFilter]);
 
   return (
     <Card className="border-border">
       <CardHeader>
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-4">
           <div>
             <CardTitle className="flex items-center gap-2">
               <Shield className="w-5 h-5 text-red-500" />
-              Security Findings & Vulnerabilità
-              {scanRunning && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+              Security Findings & Vulnerabilita
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Findings reali rilevati dai nostri motori di Attack Surface Intelligence, OSINT e validazione attiva delle vulnerabilità sugli asset monitorati
+              Finding normalizzati da SurfaceScan360 con severity, CVE/CVSS/EPSS, fonte e remediation
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="default"
-              className="flex items-center gap-2"
-              onClick={handleRescan}
-              disabled={rescanning || !organizationId}
-            >
-              <RefreshCw className={`w-4 h-4 ${rescanning ? 'animate-spin' : ''}`} />
-              {rescanning ? 'Scansione in corso...' : 'Riesegui scansione'}
-            </Button>
-            <Button variant="outline" className="flex items-center gap-2" disabled={enrichedFindings.length === 0}>
-              <Download className="w-4 h-4" />
-              Esporta Report
-            </Button>
-          </div>
+          <Button variant="outline" disabled>
+            <Download className="w-4 h-4 mr-2" />
+            Export PDF
+          </Button>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 p-4 bg-muted/20 rounded-lg">
+
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 p-3 bg-muted/20 rounded-lg">
           <div className="text-center">
-            <div className="text-2xl font-bold text-red-600">{summary.critical}</div>
-            <div className="text-sm text-muted-foreground">Critiche</div>
+            <div className="text-xl font-bold">{counts.total}</div>
+            <div className="text-xs text-muted-foreground">Totali</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-orange-600">{summary.high}</div>
-            <div className="text-sm text-muted-foreground">Alta</div>
+            <div className="text-xl font-bold text-red-600">{counts.critical}</div>
+            <div className="text-xs text-muted-foreground">Critical</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-yellow-600">{summary.medium}</div>
-            <div className="text-sm text-muted-foreground">Media</div>
+            <div className="text-xl font-bold text-orange-600">{counts.high}</div>
+            <div className="text-xs text-muted-foreground">High</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-green-600">{summary.low}</div>
-            <div className="text-sm text-muted-foreground">Bassa/Info</div>
+            <div className="text-xl font-bold text-yellow-600">{counts.medium}</div>
+            <div className="text-xs text-muted-foreground">Medium</div>
+          </div>
+          <div className="text-center">
+            <div className="text-xl font-bold text-green-600">{counts.low}</div>
+            <div className="text-xs text-muted-foreground">Low</div>
           </div>
         </div>
 
-        <div className="flex flex-col md:flex-row gap-4 mb-6 p-4 bg-muted/10 rounded-lg">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
             <Input
-              placeholder="Cerca per target, IP, CVE, CWE, OWASP, fonte o descrizione..."
+              className="pl-9"
+              placeholder="Cerca per titolo, CVE, asset, modulo, provider..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
+              onChange={(event) => setSearchTerm(event.target.value)}
             />
           </div>
           <Select value={severityFilter} onValueChange={setSeverityFilter}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Severità" />
+            <SelectTrigger className="w-full md:w-40">
+              <SelectValue placeholder="Severity" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Tutte le severità</SelectItem>
-              <SelectItem value="critical">Critica</SelectItem>
-              <SelectItem value="high">Alta</SelectItem>
-              <SelectItem value="medium">Media</SelectItem>
-              <SelectItem value="low">Bassa</SelectItem>
+              <SelectItem value="all">Tutte</SelectItem>
+              <SelectItem value="critical">Critical</SelectItem>
+              <SelectItem value="high">High</SelectItem>
+              <SelectItem value="medium">Medium</SelectItem>
+              <SelectItem value="low">Low</SelectItem>
               <SelectItem value="info">Info</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={epssRangeFilter} onValueChange={setEpssRangeFilter}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="EPSS Score" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tutti gli EPSS</SelectItem>
-              <SelectItem value="high">Alto ≥ 7.0</SelectItem>
-              <SelectItem value="medium">Medio 4.0-6.9</SelectItem>
-              <SelectItem value="low">Basso &lt; 4.0</SelectItem>
-            </SelectContent>
-          </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Stato" />
+            <SelectTrigger className="w-full md:w-40">
+              <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Tutti gli stati</SelectItem>
-              <SelectItem value="open">Aperte</SelectItem>
-              <SelectItem value="in_progress">In Corso</SelectItem>
-              <SelectItem value="resolved">Risolte</SelectItem>
-              <SelectItem value="false_positive">Falsi Positivi</SelectItem>
+              <SelectItem value="all">Tutti</SelectItem>
+              <SelectItem value="open">Open</SelectItem>
+              <SelectItem value="in_progress">In progress</SelectItem>
+              <SelectItem value="resolved">Resolved</SelectItem>
+              <SelectItem value="false_positive">False positive</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={owaspFilter} onValueChange={setOwaspFilter}>
-            <SelectTrigger className="w-56">
-              <SelectValue placeholder="OWASP Top 10" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tutti gli OWASP</SelectItem>
-              {Object.entries(OWASP_TOP_10).map(([code, label]) => (
-                <SelectItem key={code} value={code}>{code} — {label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <div className="flex items-center gap-2 px-2">
-            <Switch id="kev-only" checked={kevOnly} onCheckedChange={setKevOnly} />
-            <Label htmlFor="kev-only" className="text-xs">Solo CISA KEV</Label>
-          </div>
-          <div className="flex items-center gap-2 px-2">
-            <Switch id="cve-only" checked={onlyCve} onCheckedChange={setOnlyCve} />
-            <Label htmlFor="cve-only" className="text-xs">Solo con CVE</Label>
-          </div>
         </div>
 
-        {kevOnly === false && summary.kev > 0 && (
-          <div className="mb-4 p-3 rounded-lg border border-red-300/40 bg-red-50/30 text-sm text-red-700 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4" />
-            <strong>{summary.kev}</strong> asset hanno CVE nel catalogo CISA KEV (sfruttate attivamente)
-          </div>
-        )}
-
-        {loading && enrichedFindings.length === 0 ? (
-          <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border p-8 text-sm text-muted-foreground">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Caricamento findings reali...
-          </div>
-        ) : filteredFindings.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-            {scanRunning
-              ? 'Scansione in corso: i findings reali compariranno appena i motori di intelligence restituiscono risultati.'
-              : 'Nessun finding reale disponibile per gli asset monitorati.'}
-          </div>
-        ) : (
-          <div className="rounded-lg border border-border overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/50">
-                  <TableHead className="w-12"></TableHead>
-                  <TableHead>Asset</TableHead>
-                  <TableHead>IP Address</TableHead>
-                  <TableHead>Fonte</TableHead>
-                  <TableHead>Severità Max</TableHead>
-                  <TableHead className="text-center">Findings</TableHead>
-                  <TableHead className="text-center">EPSS Score</TableHead>
-                  <TableHead>Ultimo Aggiornamento</TableHead>
+        <div className="rounded-lg border border-border overflow-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Severity</TableHead>
+                <TableHead>Titolo</TableHead>
+                <TableHead>Affected Asset</TableHead>
+                <TableHead>CVE</TableHead>
+                <TableHead>CVSS</TableHead>
+                <TableHead>EPSS</TableHead>
+                <TableHead>CISA KEV</TableHead>
+                <TableHead>Confidence</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Remediation</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading && (
+                <TableRow>
+                  <TableCell colSpan={10} className="text-center text-muted-foreground py-6">
+                    Caricamento findings...
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paginatedFindings.map((finding) => (
-                  <React.Fragment key={finding.id}>
-                    <TableRow className="hover:bg-muted/20">
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => toggleRowExpansion(finding.id)}
-                          className="p-1"
-                        >
-                          {expandedRows.has(finding.id) ?
-                            <ChevronDown className="w-4 h-4" /> :
-                            <ChevronRight className="w-4 h-4" />
-                          }
-                        </Button>
-                      </TableCell>
-                      <TableCell>
-                        {(() => {
-                          const d = getDumpedFrom(finding.hostname);
-                          return (
-                            <div>
-                              <div className="font-medium break-all flex items-center gap-2 flex-wrap">
-                                <span>{finding.hostname}</span>
-                                {d.isDumped && (
-                                  <Badge
-                                    variant="outline"
-                                    className="bg-purple-500/10 text-purple-600 border-purple-500/30 text-[10px] px-1.5 py-0 h-5 inline-flex items-center gap-1"
-                                    title={d.from ? `Sottodominio scoperto da ${d.from}` : 'Sottodominio scoperto via Subdomain Dump'}
-                                  >
-                                    <GitBranch className="w-3 h-3" />
-                                    Sottodominio{d.from ? ` · ${d.from}` : ''}
-                                  </Badge>
-                                )}
-                              </div>
-                              <div className="text-sm text-muted-foreground">{finding.assetType}</div>
-                              <div className="text-xs text-muted-foreground">{finding.operatingSystem}</div>
-                            </div>
-                          );
-                        })()}
-                      </TableCell>
-                      <TableCell>
-                        <code className="px-2 py-1 bg-muted rounded text-sm">{finding.ip}</code>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{finding.source}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={getSeverityColor(finding.highestSeverity)}>
-                          {finding.highestSeverity.toUpperCase()}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge variant="outline" className="font-mono">
-                          {finding.totalFindings}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge
-                          variant="outline"
-                          className={`font-mono ${
-                            finding.epssScore >= 7 ? 'border-red-300 text-red-700' :
-                            finding.epssScore >= 4 ? 'border-orange-300 text-orange-700' :
-                            'border-green-300 text-green-700'
-                          }`}
-                        >
-                          {finding.epssScore ? finding.epssScore.toFixed(1) : '—'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Calendar className="w-4 h-4" />
-                          {formatDate(finding.lastUpdated)}
-                        </div>
-                      </TableCell>
-                    </TableRow>
+              )}
 
-                    {expandedRows.has(finding.id) && (
-                      <TableRow>
-                        <TableCell colSpan={8}>
-                          <div className="p-4 bg-muted/10 rounded-lg">
-                            <h4 className="font-semibold mb-3">Dettagli Findings</h4>
-                            <div className="space-y-4">
-                              {[...finding.vulnerabilities]
-                                 .sort((a, b) => {
-                                   const aHas = typeof a.cvssScore === 'number' && !isNaN(a.cvssScore as number);
-                                   const bHas = typeof b.cvssScore === 'number' && !isNaN(b.cvssScore as number);
-                                   if (aHas && bHas) return (b.cvssScore as number) - (a.cvssScore as number);
-                                   if (aHas) return -1;
-                                   if (bHas) return 1;
-                                   return (severityRank[normalizeSeverity(b.severity)] ?? 0) - (severityRank[normalizeSeverity(a.severity)] ?? 0);
-                                 })
-                                .map((vuln) => (
-                                <div key={vuln.id} className="border border-border rounded-lg p-4 bg-background">
-                                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                    <div>
-                                      <TooltipProvider delayDuration={150}>
-                                      <div className="flex flex-wrap items-center gap-2 mb-2">
-                                        {(vuln.cveList && vuln.cveList.length > 0) ? (
-                                          vuln.cveList.map((c) => (
-                                            <button
-                                              key={c}
-                                              type="button"
-                                              onClick={() => setModalCve(c.toUpperCase())}
-                                              className="inline-flex"
-                                            >
-                                              <Badge className={`${getSeverityColor(vuln.severity)} cursor-pointer hover:opacity-80`}>
-                                                {c}
-                                              </Badge>
-                                            </button>
-                                          ))
-                                        ) : (() => {
-                                          const summary = findingSummary(vuln.cveId);
-                                          const badge = (
-                                            <Badge className={`${getSeverityColor(vuln.severity)} ${summary ? 'cursor-help' : ''}`}>
-                                              {vuln.cveId}
-                                            </Badge>
-                                          );
-                                          return summary ? (
-                                            <Tooltip>
-                                              <TooltipTrigger asChild><span>{badge}</span></TooltipTrigger>
-                                              <TooltipContent className="max-w-sm text-xs leading-relaxed">{summary}</TooltipContent>
-                                            </Tooltip>
-                                          ) : badge;
-                                        })()}
-                                        {vuln.cwe && (() => {
-                                          const desc = cweDescription(vuln.cwe);
-                                          const badge = (
-                                            <a href={cweLink(vuln.cwe)} target="_blank" rel="noopener noreferrer">
-                                              <Badge variant="secondary" className="cursor-pointer hover:opacity-80">{vuln.cwe}</Badge>
-                                            </a>
-                                          );
-                                          return desc ? (
-                                            <Tooltip>
-                                              <TooltipTrigger asChild><span>{badge}</span></TooltipTrigger>
-                                              <TooltipContent className="max-w-sm text-xs leading-relaxed">
-                                                <div className="font-semibold mb-1">{vuln.cwe}</div>{desc}
-                                              </TooltipContent>
-                                            </Tooltip>
-                                          ) : badge;
-                                        })()}
-                                        {vuln.owasp && (() => {
-                                          const desc = owaspDescription(vuln.owasp);
-                                          const badge = (
-                                            <Badge variant="outline" className="border-primary/30 text-primary cursor-help">
-                                              {vuln.owasp}
-                                            </Badge>
-                                          );
-                                          return desc ? (
-                                            <Tooltip>
-                                              <TooltipTrigger asChild><span>{badge}</span></TooltipTrigger>
-                                              <TooltipContent className="max-w-sm text-xs leading-relaxed">{desc}</TooltipContent>
-                                            </Tooltip>
-                                          ) : badge;
-                                        })()}
-                                        <Badge className={getStatusColor(vuln.remediationStatus)} variant="outline">
-                                          <div className="flex items-center gap-1">
-                                            {getStatusIcon(vuln.remediationStatus)}
-                                            {vuln.remediationStatus.replace('_', ' ').toUpperCase()}
-                                          </div>
-                                        </Badge>
-                                        <Badge variant="secondary">{vuln.source}</Badge>
-                                      </div>
-                                      </TooltipProvider>
-                                      {(() => {
-                                        const summary = findingSummary(vuln.cveId) || [cweDescription(vuln.cwe), owaspDescription(vuln.owasp)].filter(Boolean).join(' ');
-                                        return summary ? (
-                                          <p className="text-xs text-muted-foreground italic mb-2 leading-relaxed">{summary}</p>
-                                        ) : null;
-                                      })()}
-                                      <p className="text-sm mb-3">{vuln.description}</p>
-                                      <div className="space-y-1 text-xs text-muted-foreground">
-                                        <div><strong>Servizio:</strong> {vuln.affectedService}</div>
-                                        <div><strong>Categoria:</strong> {vuln.category}</div>
-                                        <div><strong>Rilevato:</strong> {formatDate(vuln.discoveredDate)}</div>
-                                      </div>
-                                    </div>
+              {!loading && paginated.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={10} className="text-center text-muted-foreground py-6">
+                    Nessun finding disponibile
+                  </TableCell>
+                </TableRow>
+              )}
 
-
-                                    <div className="space-y-3">
-                                      <div className="flex items-center justify-between p-3 bg-muted/20 rounded-lg">
-                                        <div>
-                                          <div className="text-sm font-medium">CVSS Score</div>
-                                          <div className="text-2xl font-bold text-red-600">{vuln.cvssScore ?? '—'}</div>
-                                        </div>
-                                        <div>
-                                          <div className="text-sm font-medium">EPSS Score</div>
-                                          <div className="text-2xl font-bold text-orange-600">{vuln.epssScore != null ? vuln.epssScore.toFixed(1) : '—'}</div>
-                                          <div className="text-xs text-muted-foreground">
-                                            {vuln.epssPercentile != null ? `${vuln.epssPercentile}° percentile` : 'Dato non disponibile'}
-                                          </div>
-                                        </div>
-                                      </div>
-
-                                      <div className="flex flex-wrap gap-2">
-                                        {vuln.patchAvailable && (() => {
-                                          const isPatch = vuln.cveList && vuln.cveList.length > 0;
-                                          const label = isPatch ? 'Patch CVE Disponibile' : 'Mitigazione Suggerita';
-                                          const Icon = isPatch ? CheckCircle : Lightbulb;
-                                          const cls = isPatch
-                                            ? 'text-green-700 border-green-400 bg-green-50/40'
-                                            : 'text-green-700/80 border-green-300/60';
-                                          const badge = (
-                                            <Badge variant="outline" className={`${cls} cursor-help`}>
-                                              <Icon className="w-3 h-3 mr-1" />
-                                              {label}
-                                            </Badge>
-                                          );
-                                          return vuln.remediationText ? (
-                                            <TooltipProvider delayDuration={150}>
-                                              <Tooltip>
-                                                <TooltipTrigger asChild>{badge}</TooltipTrigger>
-                                                <TooltipContent className="max-w-sm text-xs leading-relaxed">
-                                                  {vuln.remediationText}
-                                                </TooltipContent>
-                                              </Tooltip>
-                                            </TooltipProvider>
-                                          ) : badge;
-                                        })()}
-                                        {vuln.exploitAvailable && (
-                                          <Badge variant="outline" className="text-red-700 border-red-300">
-                                            <AlertTriangle className="w-3 h-3 mr-1" />
-                                            KEV/Exploit Signal
-                                          </Badge>
-                                        )}
-                                      </div>
-
-                                      {vuln.remediationText && (
-                                        <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-3">
-                                          <div className="flex items-center gap-2 mb-1 text-xs font-semibold text-green-700">
-                                            <Lightbulb className="w-3.5 h-3.5" />
-                                            Remediation consigliata
-                                          </div>
-                                          <div className="text-xs leading-relaxed whitespace-pre-wrap text-foreground/90">
-                                            {vuln.remediationText}
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      <div className="text-xs text-muted-foreground">
-                                        <strong>CVSS Vector:</strong>
-                                        <code className="block mt-1 p-1 bg-muted rounded text-xs break-all">{vuln.cvssVector}</code>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </React.Fragment>
+              {!loading &&
+                paginated.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell>
+                      <Badge className={severityStyle[row.severity] || severityStyle.info}>
+                        {row.severity.toUpperCase()}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="min-w-64">
+                      <div className="font-medium">{row.title}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {(row.module || 'n/a')} • {(row.finding_type || 'n/a')}
+                      </div>
+                    </TableCell>
+                    <TableCell className="min-w-44">
+                      <div>{row.affected_asset || row.affected_url || row.ip || '-'}</div>
+                    </TableCell>
+                    <TableCell className="min-w-32">
+                      <div className="text-xs font-mono">{(row.cve || []).join(', ') || '-'}</div>
+                    </TableCell>
+                    <TableCell>{row.cvss ?? '-'}</TableCell>
+                    <TableCell>{row.epss ?? '-'}</TableCell>
+                    <TableCell>{row.cisa_kev ? 'Yes' : 'No'}</TableCell>
+                    <TableCell>{row.attribution_confidence || '-'}</TableCell>
+                    <TableCell className="min-w-32">
+                      {(row.provider || 'surface_scan_engine')} / {(row.module || '-')}
+                    </TableCell>
+                    <TableCell className="min-w-72 text-xs text-muted-foreground">
+                      {row.remediation || '-'}
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
+            </TableBody>
+          </Table>
+        </div>
 
         {totalPages > 1 && (
-          <div className="mt-6 flex justify-center">
+          <div className="flex justify-center">
             <Pagination>
               <PaginationContent>
                 <PaginationItem>
                   <PaginationPrevious
-                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                    onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
                     className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
                   />
                 </PaginationItem>
-
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                {Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => (
                   <PaginationItem key={page}>
                     <PaginationLink
                       onClick={() => setCurrentPage(page)}
@@ -1009,10 +258,9 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
                     </PaginationLink>
                   </PaginationItem>
                 ))}
-
                 <PaginationItem>
                   <PaginationNext
-                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                    onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
                     className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
                   />
                 </PaginationItem>
@@ -1020,18 +268,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ shodanAssets = [], 
             </Pagination>
           </div>
         )}
-
-        <div className="mt-4 text-sm text-muted-foreground text-center">
-          Visualizzati {paginatedFindings.length} di {filteredFindings.length} findings reali
-          {filteredFindings.length !== enrichedFindings.length && ` (${enrichedFindings.length} totali)`}
-        </div>
       </CardContent>
-
-      <CveDetailDialog
-        cveId={modalCve}
-        open={!!modalCve}
-        onOpenChange={(o) => !o && setModalCve(null)}
-      />
     </Card>
   );
 };

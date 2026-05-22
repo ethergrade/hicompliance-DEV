@@ -5,11 +5,9 @@ import {
   getCallerProfile,
   makeSupabaseClients,
 } from "../_shared/surface-scan-utils.ts";
-import { runSurfaceScanEnrichment } from "../_shared/surface-scan-engine.ts";
 
-interface RunEnrichmentRequest {
+interface GetStatusRequest {
   job_id: string;
-  force?: boolean;
 }
 
 serve(async (req: Request) => {
@@ -27,9 +25,8 @@ serve(async (req: Request) => {
       });
     }
 
-    const body = (await req.json()) as RunEnrichmentRequest;
+    const body = (await req.json()) as GetStatusRequest;
     const jobId = String(body?.job_id || "").trim();
-    const force = Boolean(body?.force);
     if (!jobId) {
       return new Response(JSON.stringify({ error: "job_id is required" }), {
         status: 400,
@@ -52,35 +49,48 @@ serve(async (req: Request) => {
 
     const caller = await getCallerProfile(adminClient, authData.user.id);
     assertCustomerAccess(caller, job.customer_id);
-    if (!caller.isAdminLike) {
-      return new Response(JSON.stringify({ error: "Only admin users can run enrichment" }), {
-        status: 403,
+
+    const [findingsRes, assetsRes, obsRes] = await Promise.all([
+      adminClient
+        .from("surface_findings" as any)
+        .select("severity", { count: "exact", head: true })
+        .eq("scan_job_id", jobId),
+      adminClient
+        .from("surface_assets" as any)
+        .select("id", { count: "exact", head: true })
+        .eq("scan_job_id", jobId),
+      adminClient
+        .from("surface_observations" as any)
+        .select("id", { count: "exact", head: true })
+        .eq("scan_job_id", jobId),
+    ]);
+
+    return new Response(
+      JSON.stringify({
+        id: job.id,
+        status: job.status,
+        scan_profile: job.scan_profile,
+        target_type: job.target_type,
+        raw_target: job.raw_target,
+        normalized_target: job.normalized_target,
+        hostname: job.hostname,
+        root_domain: job.root_domain,
+        resolved_ips: job.resolved_ips || [],
+        hosting_context: job.hosting_context,
+        shodan_status: job.shodan_status,
+        started_at: job.started_at,
+        completed_at: job.completed_at,
+        error_message: job.error_message,
+        created_at: job.created_at,
+        findings_count: findingsRes.count || 0,
+        assets_count: assetsRes.count || 0,
+        observations_count: obsRes.count || 0,
+      }),
+      {
+        status: 200,
         headers: { "Content-Type": "application/json", ...corsHeaders },
-      });
-    }
-
-    if (!force && job.status === "running") {
-      return new Response(JSON.stringify({ error: "Job is already running" }), {
-        status: 409,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      });
-    }
-
-    await runSurfaceScanEnrichment(adminClient, job, {
-      initiatedByUserId: authData.user.id,
-      force,
-    });
-
-    const { data: updatedJob } = await adminClient
-      .from("surface_scan_jobs" as any)
-      .select("id, status, started_at, completed_at, error_message")
-      .eq("id", jobId)
-      .single();
-
-    return new Response(JSON.stringify(updatedJob), {
-      status: 200,
-      headers: { "Content-Type": "application/json", ...corsHeaders },
-    });
+      },
+    );
   } catch (error: any) {
     return new Response(
       JSON.stringify({
