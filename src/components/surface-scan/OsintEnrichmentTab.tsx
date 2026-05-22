@@ -256,20 +256,25 @@ export const OsintEnrichmentTab = () => {
                                     </div>
                                   </div>
                                 )}
-                                {Array.isArray(s.signals) && s.signals.length > 0 && (
-                                  <div>
-                                    <div className="text-xs font-medium mb-1">Segnali (evidenza)</div>
-                                    <div className="space-y-1">
-                                      {s.signals.slice(0, 8).map((sig: any, idx: number) => (
-                                        <div key={idx} className="text-[11px] flex items-start gap-2">
-                                          <Badge variant="outline" className="shrink-0 text-[10px]">+{sig.weight}</Badge>
-                                          <span className="text-muted-foreground shrink-0">{sig.source}:</span>
-                                          <span className="break-all">{sig.value}</span>
-                                        </div>
-                                      ))}
+                                {Array.isArray(s.signals) && s.signals.length > 0 && (() => {
+                                  const TECH_SOURCES = new Set(['http_server_header','server_header','x_powered_by','tech','technology','banner','product','module','cms','framework']);
+                                  const filtered = s.signals.filter((sig: any) => !TECH_SOURCES.has(String(sig.source || '').toLowerCase()));
+                                  if (filtered.length === 0) return null;
+                                  return (
+                                    <div>
+                                      <div className="text-xs font-medium mb-1">Segnali (evidenza)</div>
+                                      <div className="space-y-1">
+                                        {filtered.slice(0, 8).map((sig: any, idx: number) => (
+                                          <div key={idx} className="text-[11px] flex items-start gap-2">
+                                            <Badge variant="outline" className="shrink-0 text-[10px]">+{sig.weight}</Badge>
+                                            <span className="text-muted-foreground shrink-0">{sig.source}:</span>
+                                            <span className="break-all">{sig.value}</span>
+                                          </div>
+                                        ))}
+                                      </div>
                                     </div>
-                                  </div>
-                                )}
+                                  );
+                                })()}
                               </div>
                             );
                           })}
