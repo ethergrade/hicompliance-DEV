@@ -23,6 +23,7 @@ export interface SurfaceFindingRow {
   epss: number | null;
   cisa_kev: boolean | null;
   remediation: string | null;
+  evidence: Record<string, any> | null;
   attribution_confidence: string | null;
   status: string | null;
   created_at: string;
@@ -55,6 +56,7 @@ export const useSurfaceScanFindings = () => {
       epss: record.epss ?? null,
       cisa_kev: record.cisa_kev ?? null,
       remediation: record.remediation ?? null,
+      evidence: record.evidence && typeof record.evidence === 'object' ? (record.evidence as Record<string, any>) : null,
       attribution_confidence: record.attribution_confidence ?? null,
       status: record.status ?? null,
       created_at: String(record.created_at || new Date().toISOString()),
@@ -69,14 +71,18 @@ export const useSurfaceScanFindings = () => {
       const { data, error } = await supabase
         .from('surface_findings' as any)
         .select(
-          'id, provider, module, finding_type, title, description, severity, affected_asset, affected_url, ip, port, protocol, cve, cwe, cvss, epss, cisa_kev, remediation, attribution_confidence, status, created_at',
+          'id, provider, module, finding_type, title, description, severity, affected_asset, affected_url, ip, port, protocol, cve, cwe, cvss, epss, cisa_kev, remediation, evidence, attribution_confidence, status, created_at',
         )
         .eq('customer_id', organizationId)
         .order('created_at', { ascending: false })
         .limit(1000);
 
       if (error) throw error;
-      setFindings((data || []) as SurfaceFindingRow[]);
+      setFindings(
+        ((data || []) as Record<string, any>[])
+          .map((record) => mapRecord(record))
+          .filter((record): record is SurfaceFindingRow => Boolean(record)),
+      );
     } catch (error) {
       console.error('Error fetching surface findings:', error);
       toast({
@@ -87,7 +93,7 @@ export const useSurfaceScanFindings = () => {
     } finally {
       setLoading(false);
     }
-  }, [clientLoading, organizationId, toast]);
+  }, [clientLoading, organizationId, mapRecord, toast]);
 
   useEffect(() => {
     if (!clientLoading && organizationId) {

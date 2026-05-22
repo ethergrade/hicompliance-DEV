@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -28,7 +28,14 @@ export const CveDetailDialog: React.FC<CveDetailDialogProps> = ({ cveId, open, o
   const { data: intel, isLoading } = useCveIntel(open ? cveId : null);
   const [openRefs, setOpenRefs] = useState(false);
   const [openCpe, setOpenCpe] = useState(false);
-  const [openExploits, setOpenExploits] = useState(true);
+  const [openExploits, setOpenExploits] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setOpenRefs(false);
+    setOpenCpe(false);
+    setOpenExploits(false);
+  }, [open, cveId]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

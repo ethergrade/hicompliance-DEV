@@ -35,6 +35,15 @@ export interface CallerProfile {
   isAdminLike: boolean;
 }
 
+export interface HostScopeClassification {
+  host: string;
+  normalizedHost: string;
+  inScope: boolean;
+  isLikelySharedNoise: boolean;
+  blocked: boolean;
+  reason: string | null;
+}
+
 const IPV4_REGEX =
   /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
 
@@ -98,6 +107,72 @@ function hasCidr(value: string): boolean {
 
 function isDomainLike(value: string): boolean {
   return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(value);
+}
+
+function normalizeHost(value: string): string {
+  return String(value || "").trim().toLowerCase().replace(/\.$/, "");
+}
+
+function normalizeScopeDomain(value: string): string {
+  return normalizeHost(value).replace(/^www\./, "");
+}
+
+const SHARED_NOISE_PATTERNS: RegExp[] = [
+  /^net-\d{1,3}(?:-\d{1,3}){3}\./i,
+  /^host-\d{1,3}(?:-\d{1,3}){3}\./i,
+  /^dyn-\d{1,3}(?:-\d{1,3}){3}\./i,
+  /^webx\d+\./i,
+  /\bcust\b/i,
+  /\bdsl\b/i,
+  /\bpppoe\b/i,
+  /\bpool\b/i,
+  /\bdynamic\b/i,
+];
+
+const SHARED_NOISE_SUFFIXES = [
+  "aruba.it",
+  "vodafonedsl.it",
+  "teletu.it",
+  "fastwebnet.it",
+  "alice.it",
+  "tim.it",
+  "tiscali.it",
+];
+
+export function isHostWithinScope(hostname: string, scopeDomains: string[]): boolean {
+  const host = normalizeScopeDomain(hostname);
+  if (!host) return false;
+  for (const rawDomain of scopeDomains) {
+    const scopeDomain = normalizeScopeDomain(rawDomain);
+    if (!scopeDomain) continue;
+    if (host === scopeDomain || host.endsWith(`.${scopeDomain}`)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function classifyHostForScope(
+  hostname: string,
+  scopeDomains: string[] = [],
+): HostScopeClassification {
+  const normalizedHost = normalizeHost(hostname);
+  const inScope = isHostWithinScope(normalizedHost, scopeDomains);
+  const matchesPattern = SHARED_NOISE_PATTERNS.some((pattern) => pattern.test(normalizedHost));
+  const matchesSuffix = SHARED_NOISE_SUFFIXES.some(
+    (suffix) => normalizedHost === suffix || normalizedHost.endsWith(`.${suffix}`),
+  );
+  const isLikelySharedNoise = matchesPattern || matchesSuffix;
+  const blocked = isLikelySharedNoise && !inScope;
+  const reason = blocked ? "shared_or_noise_host_out_of_scope" : null;
+  return {
+    host: hostname,
+    normalizedHost,
+    inScope,
+    isLikelySharedNoise,
+    blocked,
+    reason,
+  };
 }
 
 function getRootDomain(hostname: string): string | null {

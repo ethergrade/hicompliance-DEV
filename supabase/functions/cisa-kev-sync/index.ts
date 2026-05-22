@@ -42,6 +42,12 @@ Deno.serve(async (req) => {
 
     const kevIds = rows.map((r) => r.cve_id);
     if (kevIds.length > 0) {
+      // Reset flag prima del nuovo allineamento, così rimuoviamo CVE non più presenti nel catalogo.
+      await supabase
+        .from('cve_intel_cache')
+        .update({ cisa_kev: false, kev_date_added: null, kev_due_date: null, kev_required_action: null })
+        .eq('cisa_kev', true);
+
       for (let i = 0; i < kevIds.length; i += 500) {
         const chunk = kevIds.slice(i, i + 500);
         await supabase.from('cve_intel_cache')

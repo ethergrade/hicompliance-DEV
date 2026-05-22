@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 export interface CveIntel {
   cve_id: string;
@@ -26,6 +27,8 @@ export interface CveIntel {
 }
 
 export const useCveIntel = (cveId?: string | null) => {
+  const { organizationId } = useClientOrganization();
+
   return useQuery<CveIntel | null>({
     queryKey: ['cve-intel', cveId],
     enabled: !!cveId,
@@ -38,6 +41,13 @@ export const useCveIntel = (cveId?: string | null) => {
         .select('*').eq('cve_id', id).maybeSingle();
       if (error) throw error;
       if (!data) {
+        if (organizationId) {
+          await supabase.rpc('enqueue_cve_enrichment', {
+            _cves: [id],
+            _org_id: organizationId,
+            _source: 'ui_cve_modal',
+          }).catch(() => {});
+        }
         await supabase.functions.invoke('cve-enrichment', { body: {} }).catch(() => {});
       }
       return (data ?? null) as unknown as CveIntel | null;

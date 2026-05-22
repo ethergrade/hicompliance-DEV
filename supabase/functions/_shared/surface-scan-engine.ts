@@ -1,6 +1,8 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.50.3";
 import {
+  classifyHostForScope,
   fetchWithTimeout,
+  isHostWithinScope,
   normalizeTargetInput,
   resolveWithDnsOverHttps,
   toSeverity,
@@ -92,6 +94,124 @@ function severityRank(severity: string): number {
   }
 }
 
+const HIGH_RISK_EXPOSED_PORTS = new Set([
+  21, 22, 23, 25, 53, 110, 111, 135, 139, 143, 445, 465, 587, 993, 995,
+  1433, 1521, 3306, 3389, 5432, 5900, 6379, 9200, 27017,
+]);
+
+function severityForExposedPort(port: number): "low" | "medium" {
+  return HIGH_RISK_EXPOSED_PORTS.has(port) ? "medium" : "low";
+}
+
+type AttributionConfidence = "low" | "medium" | "high";
+
+interface ShodanAttributionFactor {
+  score: number;
+  confidence: AttributionConfidence;
+  allowDomainAttribution: boolean;
+  allowIpAttribution: boolean;
+  sharedRisk: boolean;
+  reasons: string[];
+}
+
+function clampAttributionScore(rawScore: number): number {
+  return Math.max(0, Math.min(1, Math.round(rawScore * 100) / 100));
+}
+
+function confidenceFromScore(score: number): AttributionConfidence {
+  if (score >= 0.82) return "high";
+  if (score >= 0.62) return "medium";
+  return "low";
+}
+
+function computeShodanAttributionFactor(params: {
+  hostMatch: boolean;
+  rootDomain: string | null;
+  hostnames: string[];
+  unrelatedHostnames: number;
+  hostingContext: string;
+}): ShodanAttributionFactor {
+  const reasons: string[] = [];
+  let score = 0.15;
+
+  if (params.hostMatch) {
+    score += 0.38;
+    reasons.push("hostname_match");
+  } else {
+    score -= 0.25;
+    reasons.push("hostname_mismatch");
+  }
+
+  const normalizedRoot = (params.rootDomain || "").toLowerCase();
+  if (normalizedRoot) {
+    const rootAligned = params.hostnames.some((host) => {
+      const normalized = String(host || "").toLowerCase();
+      return normalized === normalizedRoot || normalized.endsWith(`.${normalizedRoot}`);
+    });
+    if (rootAligned) {
+      score += 0.16;
+      reasons.push("root_domain_alignment");
+    } else {
+      score -= 0.08;
+      reasons.push("root_domain_not_seen");
+    }
+  }
+
+  if (params.unrelatedHostnames === 0) {
+    score += 0.2;
+    reasons.push("no_unrelated_hosts");
+  } else if (params.unrelatedHostnames <= 2) {
+    score += 0.12;
+    reasons.push("few_unrelated_hosts");
+  } else if (params.unrelatedHostnames <= 5) {
+    score += 0.03;
+    reasons.push("some_unrelated_hosts");
+  } else {
+    score -= 0.28;
+    reasons.push("many_unrelated_hosts");
+  }
+
+  if (params.hostingContext === "dedicated") {
+    score += 0.12;
+    reasons.push("hosting_dedicated");
+  } else if (params.hostingContext === "unknown") {
+    score += 0.02;
+    reasons.push("hosting_unknown");
+  } else if (params.hostingContext === "cdn_proxy") {
+    score -= 0.1;
+    reasons.push("hosting_cdn_proxy");
+  } else if (params.hostingContext === "shared_hosting") {
+    score -= 0.45;
+    reasons.push("hosting_shared");
+  }
+
+  const sharedRisk = params.hostingContext === "shared_hosting" || params.unrelatedHostnames > 6;
+  if (sharedRisk) {
+    score -= 0.2;
+    reasons.push("shared_risk_guard");
+  }
+
+  const normalizedScore = clampAttributionScore(score);
+  const confidence = confidenceFromScore(normalizedScore);
+  const allowDomainAttribution =
+    !sharedRisk && params.hostMatch && normalizedScore >= 0.65;
+  const allowIpAttribution =
+    !sharedRisk &&
+    params.hostMatch &&
+    normalizedScore >= 0.78 &&
+    params.unrelatedHostnames <= 1 &&
+    params.hostingContext !== "cdn_proxy";
+
+  return {
+    score: normalizedScore,
+    confidence,
+    allowDomainAttribution,
+    allowIpAttribution,
+    sharedRisk,
+    reasons,
+  };
+}
+
 function parseDmarcPolicy(record: string): string | null {
   const match = record.match(/(?:^|;)\s*p=([a-zA-Z]+)/i);
   return match?.[1]?.toLowerCase() || null;
@@ -159,6 +279,74 @@ export async function dispatchSurfaceScanQueue(
   organizationId: string,
   options: DispatchQueueOptions = {},
 ): Promise<string[]> {
+  const nowIso = new Date().toISOString();
+  const stalePendingCutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const staleRunningCutoff = new Date(Date.now() - 45 * 60 * 1000).toISOString();
+
+  const [stalePendingRes, staleRunningRes] = await Promise.all([
+    adminClient
+      .from("surface_scan_jobs" as any)
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("status", "pending")
+      .lt("created_at", stalePendingCutoff)
+      .limit(50),
+    adminClient
+      .from("surface_scan_jobs" as any)
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("status", "running")
+      .lt("started_at", staleRunningCutoff)
+      .limit(50),
+  ]);
+
+  const stalePendingIds = (stalePendingRes.data || [])
+    .map((row: any) => String(row?.id || "").trim())
+    .filter(Boolean);
+  const staleRunningIds = (staleRunningRes.data || [])
+    .map((row: any) => String(row?.id || "").trim())
+    .filter(Boolean);
+
+  if (stalePendingIds.length > 0) {
+    await adminClient
+      .from("surface_scan_jobs" as any)
+      .update({
+        status: "failed",
+        completed_at: nowIso,
+        error_message: "Queue timeout while pending",
+      })
+      .in("id", stalePendingIds);
+
+    await adminClient.from("surface_scan_audit_log" as any).insert(
+      stalePendingIds.map((id: string) => ({
+        scan_job_id: id,
+        user_id: options.initiatedByUserId || null,
+        action: "scan_auto_failed_pending_timeout",
+        details: { reason: "pending_timeout_10m" },
+      })),
+    );
+  }
+
+  if (staleRunningIds.length > 0) {
+    await adminClient
+      .from("surface_scan_jobs" as any)
+      .update({
+        status: "failed",
+        completed_at: nowIso,
+        error_message: "Scan timed out while running",
+      })
+      .in("id", staleRunningIds);
+
+    await adminClient.from("surface_scan_audit_log" as any).insert(
+      staleRunningIds.map((id: string) => ({
+        scan_job_id: id,
+        user_id: options.initiatedByUserId || null,
+        action: "scan_auto_failed_timeout",
+        details: { reason: "running_timeout_45m" },
+      })),
+    );
+  }
+
   const maxConcurrent = 3;
   const maxToStart = options.maxToStart ?? maxConcurrent;
 
@@ -241,6 +429,26 @@ export async function runSurfaceScanEnrichment(
   const targetUrl = parsedTarget.normalized_target;
   const seenAssetKeys = new Set<string>();
   const seenFindingKeys = new Set<string>();
+  const scopeDomains = new Set<string>();
+  if (rootDomain) scopeDomains.add(rootDomain.toLowerCase());
+  const { data: monitoredScopeDomains } = await adminClient
+    .from("surface_scan_monitored_ips" as any)
+    .select("input_value")
+    .eq("organization_id", organizationId)
+    .eq("entry_type", "domain");
+  for (const row of monitoredScopeDomains || []) {
+    const d = String((row as any)?.input_value || "").trim().toLowerCase().replace(/^www\./, "");
+    if (d) scopeDomains.add(d);
+  }
+
+  const shouldExcludeSharedNoiseHost = (candidateHost: string): ReturnType<typeof classifyHostForScope> => {
+    return classifyHostForScope(candidateHost, [...scopeDomains]);
+  };
+
+  const shouldAcceptScannableHost = (candidateHost: string): boolean => {
+    const classified = shouldExcludeSharedNoiseHost(candidateHost);
+    return !classified.blocked;
+  };
 
   if (options.force) {
     await Promise.all([
@@ -370,6 +578,111 @@ export async function runSurfaceScanEnrichment(
       action,
       details,
     });
+  };
+
+  const triggerAutoReportRepository = async () => {
+    const autoReportEnabled =
+      String(Deno.env.get("SURFACESCAN_AUTO_REPORT_ENABLED") || "true").toLowerCase() !== "false";
+    if (!autoReportEnabled) {
+      await logAudit("scan_report_auto_skipped", { reason: "auto_report_disabled" });
+      return;
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+    const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    if (!supabaseUrl || !serviceRole) {
+      await logAudit("scan_report_auto_failed", { reason: "missing_supabase_env" });
+      return;
+    }
+
+    const internalSecret =
+      Deno.env.get("SURFACESCAN_REPORT_INTERNAL_SECRET") ||
+      Deno.env.get("SURFACESCAN_INTERNAL_REPORT_SECRET") ||
+      "";
+
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceRole}`,
+      };
+      if (internalSecret) {
+        headers["x-surface-internal-secret"] = internalSecret;
+      }
+
+      const reportRes = await fetch(`${supabaseUrl}/functions/v1/surfacescan360-ai-report`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          organization_id: organizationId,
+          job_id: job.id,
+          trigger_source: "auto_on_complete",
+          force_regenerate: false,
+          created_by: options.initiatedByUserId || job.requested_by || null,
+        }),
+      });
+
+      const reportBody = await reportRes.json().catch(() => ({}));
+      if (!reportRes.ok || reportBody?.error) {
+        await logAudit("scan_report_auto_failed", {
+          status: reportRes.status,
+          error: reportBody?.error || "unknown_error",
+        });
+        return;
+      }
+
+      await logAudit("scan_report_auto_generated", {
+        repository_id: reportBody?.repository_id || null,
+        reused_existing: Boolean(reportBody?.existing),
+      });
+    } catch (error: any) {
+      await logAudit("scan_report_auto_failed", {
+        error: error?.message || String(error),
+      });
+    }
+  };
+
+  const triggerCveEnrichmentQueue = async () => {
+    const autoCveEnrichmentEnabled =
+      String(Deno.env.get("SURFACESCAN_AUTO_CVE_ENRICHMENT_ENABLED") || "true").toLowerCase() !== "false";
+    if (!autoCveEnrichmentEnabled) return;
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+    const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    if (!supabaseUrl || !serviceRole) {
+      await logAudit("scan_cve_enrichment_trigger_failed", { reason: "missing_supabase_env" });
+      return;
+    }
+
+    try {
+      const res = await fetch(`${supabaseUrl}/functions/v1/cve-enrichment`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${serviceRole}`,
+        },
+        body: JSON.stringify({
+          trigger: "surface_scan_complete",
+          max_per_run: 1,
+          drain_all: false,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body?.error) {
+        await logAudit("scan_cve_enrichment_trigger_failed", {
+          status: res.status,
+          error: body?.error || "unknown_error",
+        });
+        return;
+      }
+      await logAudit("scan_cve_enrichment_triggered", {
+        processed_count: body?.processed_count ?? null,
+        mode: body?.mode ?? null,
+      });
+    } catch (error: any) {
+      await logAudit("scan_cve_enrichment_trigger_failed", {
+        error: error?.message || String(error),
+      });
+    }
   };
 
   await adminClient
@@ -1097,6 +1410,24 @@ export async function runSurfaceScanEnrichment(
         for (const ptrHost of ptr) {
           const normalizedPtr = ptrHost.trim().toLowerCase().replace(/\.$/, "");
           if (!isValidHostnameCandidate(normalizedPtr)) continue;
+          const ptrClassification = shouldExcludeSharedNoiseHost(normalizedPtr);
+          if (ptrClassification.blocked) {
+            await insertAsset({
+              asset_type: "reverse_dns_hostname",
+              asset_value: normalizedPtr,
+              hostname: normalizedPtr,
+              root_domain: rootDomain,
+              source: "reverse_dns",
+              confidence: "low",
+              raw: {
+                ip,
+                _scope_excluded: true,
+                _scope_exclusion_reason: ptrClassification.reason,
+                _scope_excluded_at: new Date().toISOString(),
+              },
+            });
+            continue;
+          }
           discoveredHostnames.add(normalizedPtr);
           await insertAsset({
             asset_type: "reverse_dns_hostname",
@@ -1147,6 +1478,22 @@ export async function runSurfaceScanEnrichment(
           }
 
           for (const sub of [...names].slice(0, 200)) {
+            if (!shouldAcceptScannableHost(sub) && !isHostWithinScope(sub, [...scopeDomains])) {
+              await insertAsset({
+                asset_type: "subdomain",
+                asset_value: sub,
+                hostname: sub,
+                root_domain: rootDomain,
+                source: "certificate_transparency",
+                confidence: "low",
+                raw: {
+                  _scope_excluded: true,
+                  _scope_exclusion_reason: "shared_or_noise_host_out_of_scope",
+                  _scope_excluded_at: new Date().toISOString(),
+                },
+              });
+              continue;
+            }
             discoveredHostnames.add(sub);
             const [aRecords, aaaaRecords] = await Promise.all([
               resolveWithDnsOverHttps(sub, "A"),
@@ -1228,6 +1575,7 @@ export async function runSurfaceScanEnrichment(
         hostDataFound = true;
         const hostnames = Array.isArray(payload?.hostnames) ? payload.hostnames.map((h: any) => String(h)) : [];
         const ports = Array.isArray(payload?.ports) ? payload.ports : [];
+        const cpes = Array.isArray(payload?.cpes) ? payload.cpes.map((c: any) => String(c)).filter(Boolean) : [];
         const vulns = Array.isArray(payload?.vulns)
           ? payload.vulns.map((v: any) => String(v))
           : payload?.vulns && typeof payload.vulns === "object"
@@ -1238,7 +1586,14 @@ export async function runSurfaceScanEnrichment(
         for (const h of hostnames) discoveredHostnames.add(String(h).toLowerCase());
 
         const hostMatchForIp = hostname
-          ? hostnames.some((h: string) => h.toLowerCase() === hostname.toLowerCase())
+          ? hostnames.some((h: string) => {
+            const current = h.toLowerCase();
+            const targetHost = hostname.toLowerCase();
+            if (current === targetHost) return true;
+            if (rootDomain && (current === rootDomain.toLowerCase() || current === `www.${rootDomain.toLowerCase()}`)) return true;
+            if (rootDomain && current.endsWith(`.${rootDomain.toLowerCase()}`)) return true;
+            return false;
+          })
           : true;
 
         if (hostMatchForIp) {
@@ -1253,6 +1608,14 @@ export async function runSurfaceScanEnrichment(
           unrelatedHostCount += unrelatedOnThisIp;
         }
 
+        const attributionFactor = computeShodanAttributionFactor({
+          hostMatch: hostMatchForIp,
+          rootDomain,
+          hostnames,
+          unrelatedHostnames: unrelatedOnThisIp,
+          hostingContext,
+        });
+
         await insertExternalIntel(
           "shodan",
           ip,
@@ -1261,37 +1624,104 @@ export async function runSurfaceScanEnrichment(
             ports_count: ports.length,
             vulns_count: vulns.length,
             hostnames_count: hostnames.length,
+            confidence_factor: attributionFactor.score,
+            confidence_reasons: attributionFactor.reasons,
+            allow_domain_attribution: attributionFactor.allowDomainAttribution,
+            allow_ip_attribution: attributionFactor.allowIpAttribution,
           },
           payload,
-          exactHostMatch ? "high" : "medium",
+          attributionFactor.confidence,
         );
 
         if (vulns.length > 0) {
-          const canAttributeVulns = hostMatchForIp && unrelatedOnThisIp <= 3 && hostingContext !== "shared_hosting";
-          if (canAttributeVulns) {
+          const canAttributeDomain = attributionFactor.allowDomainAttribution;
+          const canAttributeIp = attributionFactor.allowIpAttribution;
+          if (canAttributeDomain || canAttributeIp) {
             for (const cve of vulns.slice(0, 30)) {
+              if (canAttributeDomain) {
+                await insertFinding({
+                  provider: "shodan",
+                  module: "shodan",
+                  finding_type: "shodan_cve_signal_domain",
+                  severity: "medium",
+                  title: `Shodan reports ${cve} (domain scope)`,
+                  description: "Segnale CVE su dominio/subdominio con confidenza sufficiente e rischio shared non rilevato",
+                  affected_asset: hostname || rootDomain || ip,
+                  ip,
+                  cve: [cve],
+                  cwe: ["CWE-1104"],
+                  evidence: {
+                    ip,
+                    hostnames: hostnames.slice(0, 50),
+                    ports: ports.slice(0, 50),
+                    tags: tags.slice(0, 30),
+                    confidence_factor: attributionFactor.score,
+                    confidence_reasons: attributionFactor.reasons,
+                    shared_risk: attributionFactor.sharedRisk,
+                    attribution_target: "domain",
+                  },
+                  attribution_confidence: attributionFactor.confidence,
+                  remediation:
+                    "Confermare versione servizio e validare vulnerabilità con scanner API autorizzato (Pentest-Tools).",
+                });
+              }
+
+              if (canAttributeIp) {
+                await insertFinding({
+                  provider: "shodan",
+                  module: "shodan",
+                  finding_type: "shodan_cve_signal_ip",
+                  severity: "medium",
+                  title: `Shodan reports ${cve} (ip scope)`,
+                  description: "Segnale CVE attribuito all'IP con confidenza elevata e senza indicatori di shared hosting",
+                  affected_asset: ip,
+                  ip,
+                  cve: [cve],
+                  cwe: ["CWE-1104"],
+                  evidence: {
+                    ip,
+                    hostnames: hostnames.slice(0, 50),
+                    ports: ports.slice(0, 50),
+                    tags: tags.slice(0, 30),
+                    confidence_factor: attributionFactor.score,
+                    confidence_reasons: attributionFactor.reasons,
+                    shared_risk: attributionFactor.sharedRisk,
+                    attribution_target: "ip",
+                  },
+                  attribution_confidence: attributionFactor.confidence,
+                  remediation:
+                    "Validare con scansione attiva autorizzata sul target IP e verificare ownership prima di remediation.",
+                });
+              }
+            }
+          } else {
+            for (const cve of vulns.slice(0, 20)) {
               await insertFinding({
                 provider: "shodan",
                 module: "shodan",
-                finding_type: "shodan_cve_signal",
-                severity: "medium",
-                title: `Shodan reports ${cve}`,
-                description: "Segnale CVE proveniente da Shodan con attribuzione host plausibile",
-                affected_asset: hostname || ip,
+                finding_type: "shodan_cve_signal_unattributed",
+                severity: "low",
+                title: `Shodan signal ${cve} (non attribuito)`,
+                description: "Segnale CVE su IP condiviso o host non attribuibile con confidenza alta",
+                affected_asset: ip,
                 ip,
                 cve: [cve],
+                cwe: ["CWE-200"],
                 evidence: {
                   ip,
-                  hostnames,
-                  ports: ports.slice(0, 50),
-                  tags: tags.slice(0, 30),
+                  hostnames: hostnames.slice(0, 50),
+                  host_match: hostMatchForIp,
+                  unrelated_hostnames: unrelatedOnThisIp,
+                  tags: tags.slice(0, 20),
+                  confidence_factor: attributionFactor.score,
+                  confidence_reasons: attributionFactor.reasons,
+                  shared_risk: attributionFactor.sharedRisk,
                 },
-                attribution_confidence: "medium",
+                attribution_confidence: "low",
                 remediation:
-                  "Confermare versione servizio e validare vulnerabilità con scanner API autorizzato (Pentest-Tools)",
+                  "Trattare come segnale OSINT: confermare ownership e validare con scansione attiva autorizzata.",
               });
             }
-          } else {
             await insertObservation({
               module: "shodan",
               observation_type: "vuln_signal_unattributed",
@@ -1301,6 +1731,9 @@ export async function runSurfaceScanEnrichment(
                 vulns: vulns.slice(0, 50),
                 host_match: hostMatchForIp,
                 unrelated_hostnames: unrelatedOnThisIp,
+                confidence_factor: attributionFactor.score,
+                confidence_reasons: attributionFactor.reasons,
+                shared_risk: attributionFactor.sharedRisk,
               },
               severity: "info",
             });
@@ -1317,6 +1750,51 @@ export async function runSurfaceScanEnrichment(
             source: "shodan",
             confidence: "medium",
             raw: { port },
+          });
+
+          await insertFinding({
+            provider: "shodan",
+            module: "shodan",
+            finding_type: "open_port_exposed",
+            severity: severityForExposedPort(Number(port)),
+            title: `Porta ${port} esposta pubblicamente`,
+            description:
+              "Host raggiungibile su porta aperta da Internet (dato OSINT passivo). Verificare esposizione e controlli di accesso.",
+            affected_asset: hostname || ip,
+            ip,
+            port: Number(port),
+            protocol: "tcp",
+            cwe: ["CWE-284"],
+            evidence: {
+              ip,
+              port,
+              source: "shodan",
+              hostnames: hostnames.slice(0, 10),
+            },
+            remediation:
+              "Limitare esposizione con firewall/ACL, consentire accesso solo da IP trusted e disabilitare servizi non necessari.",
+          });
+        }
+
+        for (const cpe of cpes.slice(0, 20)) {
+          await insertFinding({
+            provider: "shodan",
+            module: "shodan",
+            finding_type: "service_fingerprint_exposed",
+            severity: "low",
+            title: "Fingerprint servizio/versione esposto",
+            description:
+              "Sono stati rilevati fingerprint CPE pubblici che possono facilitare identificazione tecnologica e targeting.",
+            affected_asset: hostname || ip,
+            ip,
+            cwe: ["CWE-200"],
+            evidence: {
+              ip,
+              cpe,
+              source: "shodan",
+            },
+            remediation:
+              "Ridurre leakage di banner/versioni, harden del servizio e verificare patching continuo delle componenti esposte.",
           });
         }
       } catch {
@@ -1441,6 +1919,64 @@ export async function runSurfaceScanEnrichment(
       return [stringValue];
     };
 
+    const CVE_RX = /CVE-\d{4}-\d{4,7}/gi;
+    const extractCvesFromText = (value: unknown): string[] => {
+      const text = String(value || "");
+      return (text.match(CVE_RX) || []).map((entry) => entry.toUpperCase());
+    };
+
+    const parseCveList = (finding: Record<string, unknown>): string[] => {
+      const fromArray = (value: unknown): string[] => {
+        if (!Array.isArray(value)) return [];
+        return value
+          .map((entry) => String(entry || "").trim().toUpperCase())
+          .filter((entry) => /^CVE-\d{4}-\d{4,7}$/i.test(entry));
+      };
+      const fromString = (value: unknown): string[] => {
+        if (typeof value !== "string") return [];
+        return extractCvesFromText(value);
+      };
+
+      const candidates = [
+        ...fromArray(finding.cve),
+        ...fromArray(finding.cves),
+        ...fromArray(finding.cve_ids),
+        ...fromString(finding.cve),
+        ...fromString(finding.cves),
+        ...fromString(finding.cve_ids),
+        ...extractCvesFromText(finding.vuln_id),
+        ...extractCvesFromText(finding.name),
+        ...extractCvesFromText(finding.vuln_description),
+      ];
+      return [...new Set(candidates)];
+    };
+
+    const parseCvssScore = (finding: Record<string, unknown>): number | null => {
+      const rawValues = [
+        finding.cvssv3,
+        finding.vuln_cvssv3,
+        finding.cvss,
+      ];
+      for (const raw of rawValues) {
+        if (typeof raw === "number" && Number.isFinite(raw)) {
+          return Number(raw);
+        }
+        const parsed = Number(raw);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          return parsed;
+        }
+      }
+      return null;
+    };
+
+    const parseRiskLevel = (finding: Record<string, unknown>): number | null => {
+      const raw = finding.risk_level;
+      if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed)) return parsed;
+      return null;
+    };
+
     const parseJsonSafe = (value: string): unknown | null => {
       try {
         return JSON.parse(value);
@@ -1508,16 +2044,9 @@ export async function runSurfaceScanEnrichment(
     ) => {
       for (const rawFinding of findings) {
         const finding = rawFinding || {};
-        const cveList = Array.isArray(finding.cve)
-          ? finding.cve.map((entry: unknown) => String(entry || "").trim()).filter(Boolean)
-          : [];
-        const cvssScore =
-          typeof finding.cvssv3 === "number"
-            ? Number(finding.cvssv3)
-            : typeof finding.cvss === "number"
-              ? Number(finding.cvss)
-              : null;
-        const riskLevel = typeof finding.risk_level === "number" ? finding.risk_level : null;
+        const cveList = parseCveList(finding);
+        const cvssScore = parseCvssScore(finding);
+        const riskLevel = parseRiskLevel(finding);
         const findingStatus = String(finding.status || "open").toLowerCase();
 
         await insertFinding({
@@ -1650,15 +2179,31 @@ export async function runSurfaceScanEnrichment(
           const host = String((entry as Record<string, unknown>)?.hostname || "").trim().toLowerCase();
           const ip = String((entry as Record<string, unknown>)?.ip_address || "").trim();
           if (host) {
+            const classifiedHost = shouldExcludeSharedNoiseHost(host);
             await insertAsset({
               asset_type: "subdomain",
               asset_value: host,
               hostname: host,
               root_domain: rootDomain,
               source: "pentest_tools_subdomain_finder",
-              confidence: (entry as Record<string, unknown>)?.resolved === false ? "low" : "medium",
-              raw: (entry as Record<string, unknown>) || {},
+              confidence:
+                classifiedHost.blocked || (entry as Record<string, unknown>)?.resolved === false
+                  ? "low"
+                  : "medium",
+              raw: {
+                ...((entry as Record<string, unknown>) || {}),
+                ...(classifiedHost.blocked
+                  ? {
+                    _scope_excluded: true,
+                    _scope_exclusion_reason: classifiedHost.reason,
+                    _scope_excluded_at: new Date().toISOString(),
+                  }
+                  : {}),
+              },
             });
+            if (!classifiedHost.blocked) {
+              discoveredHostnames.add(host);
+            }
           }
           if (ip) {
             discoveredIps.add(ip);
@@ -1689,15 +2234,28 @@ export async function runSurfaceScanEnrichment(
             .trim()
             .toLowerCase();
           if (!domainCandidate) continue;
+          const classifiedDomain = shouldExcludeSharedNoiseHost(domainCandidate);
           await insertAsset({
             asset_type: "domain",
             asset_value: domainCandidate,
             hostname: domainCandidate,
             root_domain: rootDomain,
             source: "pentest_tools_domain_finder",
-            confidence: "low",
-            raw: (entry as Record<string, unknown>) || {},
+            confidence: classifiedDomain.blocked ? "low" : "medium",
+            raw: {
+              ...((entry as Record<string, unknown>) || {}),
+              ...(classifiedDomain.blocked
+                ? {
+                  _scope_excluded: true,
+                  _scope_exclusion_reason: classifiedDomain.reason,
+                  _scope_excluded_at: new Date().toISOString(),
+                }
+                : {}),
+            },
           });
+          if (!classifiedDomain.blocked) {
+            discoveredHostnames.add(domainCandidate);
+          }
         }
         scan.outputCollected = true;
         return true;
@@ -1709,6 +2267,7 @@ export async function runSurfaceScanEnrichment(
         for (const reverseHost of hostnames.slice(0, 200)) {
           const reverseHostValue = String(reverseHost || "").trim().toLowerCase();
           if (!reverseHostValue) continue;
+          const classifiedReverseHost = shouldExcludeSharedNoiseHost(reverseHostValue);
           await insertAsset({
             asset_type: "reverse_dns_hostname",
             asset_value: reverseHostValue,
@@ -1716,8 +2275,20 @@ export async function runSurfaceScanEnrichment(
             root_domain: rootDomain,
             source: "pentest_tools_port_scanner",
             confidence: "low",
-            raw: { ip: ipAddress || null },
+            raw: {
+              ip: ipAddress || null,
+              ...(classifiedReverseHost.blocked
+                ? {
+                  _scope_excluded: true,
+                  _scope_exclusion_reason: classifiedReverseHost.reason,
+                  _scope_excluded_at: new Date().toISOString(),
+                }
+                : {}),
+            },
           });
+          if (!classifiedReverseHost.blocked) {
+            discoveredHostnames.add(reverseHostValue);
+          }
         }
 
         const ports = Array.isArray(outputData?.ports) ? outputData.ports : [];
@@ -1726,6 +2297,9 @@ export async function runSurfaceScanEnrichment(
           const port = typeof portData?.number === "number" ? portData.number : null;
           const state = String(portData?.state || "").toLowerCase();
           if (!port || state !== "open") continue;
+          const protocol = String(portData?.protocol || "tcp").toLowerCase();
+          const serviceName = String(portData?.service || portData?.service_name || "").trim();
+          const serviceVersion = String(portData?.version || portData?.service_version || "").trim();
           await insertAsset({
             asset_type: "open_port",
             asset_value: `${ipAddress}:${port}`,
@@ -1736,6 +2310,53 @@ export async function runSurfaceScanEnrichment(
             confidence: "medium",
             raw: portData,
           });
+
+          await insertFinding({
+            provider: "pentest_tools",
+            module: "pentest_tools_port_scanner",
+            finding_type: "open_port_exposed",
+            severity: severityForExposedPort(port),
+            title: `Porta ${port}/${protocol} esposta`,
+            description: serviceName
+              ? `Servizio rilevato: ${serviceName}${serviceVersion ? ` ${serviceVersion}` : ""}.`
+              : "Porta aperta raggiungibile da rete pubblica.",
+            affected_asset: hostname || ipAddress || parsedTarget.hostname || null,
+            ip: ipAddress || null,
+            port,
+            protocol,
+            cwe: ["CWE-284"],
+            evidence: {
+              source: "pentest_tools_port_scanner",
+              service: serviceName || null,
+              version: serviceVersion || null,
+              raw: portData,
+            },
+            remediation:
+              "Confermare necessità della porta esposta, limitare accesso con ACL/firewall e disabilitare servizi non necessari.",
+          });
+
+          if (serviceName || serviceVersion) {
+            await insertFinding({
+              provider: "pentest_tools",
+              module: "pentest_tools_port_scanner",
+              finding_type: "service_fingerprint_exposed",
+              severity: "low",
+              title: "Fingerprint servizio esposto",
+              description:
+                "Informazioni di servizio/versione rilevate pubblicamente possono facilitare attività di ricognizione ostile.",
+              affected_asset: hostname || ipAddress || parsedTarget.hostname || null,
+              ip: ipAddress || null,
+              port,
+              protocol,
+              cwe: ["CWE-200"],
+              evidence: {
+                service: serviceName || null,
+                version: serviceVersion || null,
+              },
+              remediation:
+                "Ridurre esposizione di banner/versione e mantenere il servizio costantemente aggiornato.",
+            });
+          }
         }
         scan.outputCollected = true;
         return true;
@@ -2121,6 +2742,9 @@ export async function runSurfaceScanEnrichment(
       hosting_context: hostingContext,
       shodan_status: shodanStatus,
     });
+
+    await triggerCveEnrichmentQueue();
+    await triggerAutoReportRepository();
   } catch (error: any) {
     await adminClient
       .from("surface_scan_jobs" as any)

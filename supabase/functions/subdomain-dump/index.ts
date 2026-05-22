@@ -13,6 +13,19 @@ const BodySchema = z.object({
 
 const DOMAIN_RX = /^([a-z0-9-]+\.)+[a-z]{2,}$/i;
 const SHODAN_KEY = Deno.env.get('SHODAN_API_KEY');
+const NOISE_PATTERNS: RegExp[] = [
+  /^net-\d{1,3}(?:-\d{1,3}){3}\./i,
+  /^host-\d{1,3}(?:-\d{1,3}){3}\./i,
+  /^dyn-\d{1,3}(?:-\d{1,3}){3}\./i,
+  /^webx\d+\./i,
+  /\bcust\b/i,
+  /\bdsl\b/i,
+  /\bpppoe\b/i,
+  /\bpool\b/i,
+  /\bdynamic\b/i,
+];
+
+const NOISE_SUFFIXES = ['aruba.it', 'vodafonedsl.it', 'teletu.it', 'fastwebnet.it', 'alice.it', 'tim.it', 'tiscali.it'];
 
 interface EnrichedSub {
   subdomain: string;
@@ -22,6 +35,14 @@ interface EnrichedSub {
   cidr: string | null;
   country: string | null;
   source: string[];
+}
+
+function isLikelyNoiseSharedHost(hostname: string, rootDomain: string): boolean {
+  const host = hostname.toLowerCase().trim().replace(/\.$/, '');
+  if (!host || !host.endsWith(`.${rootDomain}`)) return true;
+  const byPattern = NOISE_PATTERNS.some((pattern) => pattern.test(host));
+  const bySuffix = NOISE_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+  return byPattern || bySuffix;
 }
 
 async function ctSubdomains(domain: string): Promise<Set<string>> {
@@ -169,7 +190,8 @@ Deno.serve(async (req) => {
 
     // 2) Trunc al depth_limit (ordine stabile: alfabetico)
     const ordered = Array.from(all).sort();
-    const selected = ordered.slice(0, depth_limit);
+    const filtered = ordered.filter((sub) => !isLikelyNoiseSharedHost(sub, root_domain));
+    const selected = filtered.slice(0, depth_limit);
     const truncated = total_discovered > selected.length;
 
     // 3) Risoluzione IP + ASN/Country per i selezionati (max 10 in parallelo)
