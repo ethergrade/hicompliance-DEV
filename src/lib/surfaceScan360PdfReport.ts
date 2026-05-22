@@ -248,14 +248,14 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
           doc.text(ln, cx2 + 4, ty);
           ty += 10;
         });
-        cx2 += columnWidths[i];
+      cx2 += columnWidths[i];
       });
       y += rh;
     });
     // outer border
     doc.setDrawColor(BORDER.r, BORDER.g, BORDER.b);
     doc.rect(margin, y - (rows.length * rowHeight + rowHeight), totalW, 1, 'S');
-    y += 6;
+    y += 14;
   };
 
   // ===== COVER =====
