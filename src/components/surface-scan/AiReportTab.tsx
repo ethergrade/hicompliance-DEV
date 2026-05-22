@@ -142,8 +142,8 @@ export const AiReportTab: React.FC = () => {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Genera un report completo con anagrafica cliente, asset in scope, findings, intel OSINT e Top-5
-            raccomandazioni AI. Tutte le sezioni sono paginate per una lettura ordinata e pronte per export PDF.
+            Genera un report completo con anagrafica cliente, scope, sottodomini, findings e top-5
+            raccomandazioni consulenziali. Tutte le sezioni sono paginate per una lettura ordinata e pronte per export PDF.
           </p>
           <div className="flex gap-2">
             <Button onClick={generate} disabled={loading}>
@@ -280,10 +280,6 @@ export const AiReportTab: React.FC = () => {
             </Card>
           ) : null}
 
-          {report.ai_error && (
-            <Card><CardContent className="pt-6 text-sm text-destructive">Sintesi AI non disponibile: {report.ai_error}</CardContent></Card>
-          )}
-
           {/* Asset in scope - paginati */}
           <Card>
             <CardHeader><CardTitle>8. Asset in scope ({assets.length})</CardTitle></CardHeader>
@@ -295,7 +291,7 @@ export const AiReportTab: React.FC = () => {
                     <div className="min-w-0 flex-1">
                       <p className="font-medium truncate">{a.asset_value}</p>
                       <p className="text-xs text-muted-foreground">
-                        {a.hostname || '—'}{a.ip ? ` · ${a.ip}` : ''}{a.source ? ` · ${a.source}` : ''}
+                        {a.hostname || '—'}{a.ip ? ` · ${a.ip}` : ''}
                       </p>
                     </div>
                   </li>
@@ -335,21 +331,21 @@ export const AiReportTab: React.FC = () => {
             </CardContent>
           </Card>
 
-          {/* Intel - paginati */}
+          {/* Evidenze esterne - paginati */}
           {intel.length > 0 && (
             <Card>
-              <CardHeader><CardTitle>10. Intel OSINT ({intel.length})</CardTitle></CardHeader>
+              <CardHeader><CardTitle>10. Evidenze esterne ({intel.length})</CardTitle></CardHeader>
               <CardContent>
                 <ul className="text-sm space-y-2">
                   {intelSlice.map((it, i) => (
                     <li key={i} className="border-b border-border/40 pb-2">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <Badge variant="outline" className="text-xs">{it.provider}</Badge>
+                        <Badge variant="outline" className="text-xs">{it.category || 'Evidenza'}</Badge>
                         <span className="font-medium text-sm truncate">{it.target}</span>
                       </div>
-                      {it.summary && (
+                      {(it.summary_text || it.summary) && (
                         <p className="text-xs text-muted-foreground mt-1 line-clamp-3">
-                          {typeof it.summary === 'string' ? it.summary : JSON.stringify(it.summary).slice(0, 400)}
+                          {String(it.summary_text || (typeof it.summary === 'string' ? it.summary : JSON.stringify(it.summary).slice(0, 400)))}
                         </p>
                       )}
                     </li>

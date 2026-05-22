@@ -103,14 +103,6 @@ export const useSurfaceScanFindings = () => {
 
   useEffect(() => {
     if (!organizationId) return;
-    const interval = setInterval(() => {
-      fetchFindings();
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [organizationId, fetchFindings]);
-
-  useEffect(() => {
-    if (!organizationId) return;
 
     const channel = supabase
       .channel(`surface-findings-${organizationId}`)

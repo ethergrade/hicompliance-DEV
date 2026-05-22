@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Database, Download, FileText, Loader2, RefreshCw } from 'lucide-react';
+import { Database, Download, FileText, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { SurfaceScanJob } from '@/hooks/useSurfaceScanEngine';
 import { useSurfaceScanReportRepository } from '@/hooks/useSurfaceScanReportRepository';
@@ -34,9 +34,11 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
     reports,
     loading,
     generating,
+    deletingReportId,
     missingCompletedJobs,
     refetch,
     generateReport,
+    deleteReport,
     generateMissingReports,
   } = useSurfaceScanReportRepository(scanJobs);
 
@@ -58,6 +60,12 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
     toast.success(
       `Repository aggiornato: ${result.created} creati${result.skipped > 0 ? `, ${result.skipped} non generati` : ''}`,
     );
+  };
+
+  const handleDelete = async (reportId: string) => {
+    const shouldDelete = window.confirm('Confermi l’eliminazione di questo report dal repository?');
+    if (!shouldDelete) return;
+    await deleteReport(reportId);
   };
 
   return (
@@ -173,6 +181,7 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
                             size="sm"
                             variant="outline"
                             onClick={() => downloadPdf(payload)}
+                            disabled={deletingReportId === row.id}
                           >
                             <Download className="w-4 h-4 mr-2" />
                             PDF
@@ -192,6 +201,20 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
                               Rigenera
                             </Button>
                           )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive hover:text-destructive"
+                            disabled={generating || deletingReportId === row.id}
+                            onClick={() => handleDelete(row.id)}
+                          >
+                            {deletingReportId === row.id ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4 mr-2" />
+                            )}
+                            Elimina
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -206,4 +229,3 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
 };
 
 export default SurfaceScanReportRepository;
-

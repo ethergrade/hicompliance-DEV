@@ -28,10 +28,11 @@ import {
 } from '@/components/ui/pagination';
 import { Shield, Search, Download, ChevronRight, ChevronDown } from 'lucide-react';
 import { useSurfaceScanFindings, type SurfaceFindingRow } from '@/hooks/useSurfaceScanFindings';
+import { useCveIntelBatch } from '@/hooks/useCveIntel';
 import { useSurfaceScanDiscoveredAssets } from '@/hooks/useSurfaceScanDiscoveredAssets';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { CveDetailDialog } from '@/components/surface-scan/CveDetailDialog';
-import { cweDescription, cweLink, findingSummary, getFindingTaxonomy, owaspDescription } from '@/lib/findingTaxonomy';
+import { CVE_REGEX, cweDescription, cweLink, findingSummary, getFindingTaxonomy, owaspDescription } from '@/lib/findingTaxonomy';
 
 const severityOrder: Record<string, number> = {
   critical: 5,
@@ -104,6 +105,19 @@ const normalizeSubAsset = (row: SurfaceFindingRow, assetLabel: string): string =
   return composed;
 };
 
+const extractCvesFromText = (value: string): string[] =>
+  ((value || '').match(CVE_REGEX) || []).map((cve) => cve.toUpperCase());
+
+const findingCves = (row: SurfaceFindingRow): string[] => {
+  const explicit = Array.isArray(row.cve) ? row.cve : [];
+  const inferred = [
+    ...extractCvesFromText(String(row.title || '')),
+    ...extractCvesFromText(String(row.description || '')),
+    ...extractCvesFromText(String(row.remediation || '')),
+  ];
+  return [...new Set([...explicit, ...inferred])];
+};
+
 const sourceFamily = (row: SurfaceFindingRow): string => {
   const provider = String(row.provider || '').toLowerCase();
   const module = String(row.module || '').toLowerCase();
@@ -157,6 +171,14 @@ const SecurityFindings: React.FC = () => {
   const [selectedCveId, setSelectedCveId] = useState<string | null>(null);
 
   const itemsPerPage = 15;
+
+  const allCves = useMemo(
+    () =>
+      [...new Set(findings.flatMap((row) => findingCves(row)).map((cve) => cve.toUpperCase()))]
+        .slice(0, 500),
+    [findings],
+  );
+  const { data: cveIntelMap } = useCveIntelBatch(allCves);
 
   const filtered = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -434,6 +456,26 @@ const SecurityFindings: React.FC = () => {
                                 <TableBody>
                                   {assetGroup.findings.map((row) => (
                                     <TableRow key={row.id}>
+                                      {(() => {
+                                        const rowCves = findingCves(row);
+                                        const rowIntel = rowCves
+                                          .map((cve) => cveIntelMap?.[cve.toUpperCase()])
+                                          .filter(Boolean);
+                                        const inferredCvss =
+                                          row.cvss ??
+                                          rowIntel
+                                            .map((intel) => Number(intel?.cvss_v3_score ?? NaN))
+                                            .filter((score) => Number.isFinite(score))
+                                            .sort((a, b) => b - a)[0];
+                                        const inferredEpss =
+                                          row.epss ??
+                                          rowIntel
+                                            .map((intel) => Number(intel?.epss_score ?? NaN))
+                                            .filter((score) => Number.isFinite(score))
+                                            .sort((a, b) => b - a)[0];
+                                        const inferredKev = row.cisa_kev || rowIntel.some((intel) => Boolean(intel?.cisa_kev));
+                                        return (
+                                          <>
                                       <TableCell>
                                         <Badge className={severityStyle[row.severity] || severityStyle.info}>
                                           {row.severity.toUpperCase()}
@@ -476,7 +518,10 @@ const SecurityFindings: React.FC = () => {
                                                   <TooltipProvider>
                                                     <Tooltip>
                                                       <TooltipTrigger asChild>
-                                                        <Badge className={`text-[10px] ${owaspBadgeTone(owasp)}`}>
+                                                        <Badge
+                                                          className={`text-[10px] ${owaspBadgeTone(owasp)} cursor-help`}
+                                                          title={owaspDescription(owasp) || owasp}
+                                                        >
                                                           {owasp}
                                                         </Badge>
                                                       </TooltipTrigger>
@@ -504,9 +549,9 @@ const SecurityFindings: React.FC = () => {
                                         {normalizeSubAsset(row, assetGroup.assetLabel)}
                                       </TableCell>
                                       <TableCell className="min-w-32">
-                                        {(row.cve || []).length > 0 ? (
+                                        {rowCves.length > 0 ? (
                                           <div className="flex flex-wrap gap-1">
-                                            {(row.cve || []).slice(0, 3).map((cve) => (
+                                            {rowCves.slice(0, 3).map((cve) => (
                                               <Button
                                                 key={`${row.id}-${cve}`}
                                                 size="sm"
@@ -517,9 +562,9 @@ const SecurityFindings: React.FC = () => {
                                                 {cve}
                                               </Button>
                                             ))}
-                                            {(row.cve || []).length > 3 && (
+                                            {rowCves.length > 3 && (
                                               <Badge variant="secondary" className="text-[10px]">
-                                                +{(row.cve || []).length - 3}
+                                                +{rowCves.length - 3}
                                               </Badge>
                                             )}
                                           </div>
@@ -527,11 +572,11 @@ const SecurityFindings: React.FC = () => {
                                           <div className="text-xs font-mono">-</div>
                                         )}
                                       </TableCell>
-                                      <TableCell>{row.cvss ?? '-'}</TableCell>
+                                      <TableCell>{inferredCvss != null ? Number(inferredCvss).toFixed(1) : '-'}</TableCell>
                                       <TableCell>
-                                        {row.epss != null ? `${(Number(row.epss) * 100).toFixed(2)}%` : '-'}
+                                        {inferredEpss != null ? `${(Number(inferredEpss) * 100).toFixed(2)}%` : '-'}
                                       </TableCell>
-                                      <TableCell>{row.cisa_kev ? 'Yes' : 'No'}</TableCell>
+                                      <TableCell>{inferredKev ? 'Yes' : 'No'}</TableCell>
                                       <TableCell>
                                         {(() => {
                                           const factor = confidenceFactor(row);
@@ -564,6 +609,9 @@ const SecurityFindings: React.FC = () => {
                                       <TableCell className="min-w-72 text-xs text-muted-foreground">
                                         {row.remediation || '-'}
                                       </TableCell>
+                                          </>
+                                        );
+                                      })()}
                                     </TableRow>
                                   ))}
                                 </TableBody>

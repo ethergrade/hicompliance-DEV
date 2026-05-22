@@ -18,9 +18,11 @@ interface UseSurfaceScanReportRepositoryResult {
   reports: SurfaceScanAiReportRow[];
   loading: boolean;
   generating: boolean;
+  deletingReportId: string | null;
   missingCompletedJobs: SurfaceScanJob[];
   refetch: () => Promise<void>;
   generateReport: (options?: { jobId?: string; forceRegenerate?: boolean; silent?: boolean }) => Promise<boolean>;
+  deleteReport: (reportId: string, options?: { silent?: boolean }) => Promise<boolean>;
   generateMissingReports: () => Promise<{ created: number; skipped: number }>;
 }
 
@@ -31,6 +33,7 @@ export const useSurfaceScanReportRepository = (
   const [reports, setReports] = useState<SurfaceScanAiReportRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
 
   const fetchReports = useCallback(async () => {
     if (organizationLoading || !organizationId) return;
@@ -109,6 +112,46 @@ export const useSurfaceScanReportRepository = (
     return completed.filter((job) => !reportJobIds.has(job.id));
   }, [reports, scanJobs]);
 
+  const deleteReport = useCallback(
+    async (reportId: string, options?: { silent?: boolean }): Promise<boolean> => {
+      const id = String(reportId || '').trim();
+      if (!organizationId) {
+        if (!options?.silent) toast.error('Cliente non selezionato');
+        return false;
+      }
+      if (!id) {
+        if (!options?.silent) toast.error('ID report non valido');
+        return false;
+      }
+
+      setDeletingReportId(id);
+      try {
+        const { error } = await supabase
+          .from('surface_scan_ai_reports')
+          .delete()
+          .eq('id', id)
+          .eq('organization_id', organizationId);
+
+        if (error) throw error;
+
+        setReports((prev) => prev.filter((row) => row.id !== id));
+        if (!options?.silent) {
+          toast.success('Report eliminato dal repository');
+        }
+        return true;
+      } catch (error: any) {
+        console.error('Error deleting SurfaceScan report:', error);
+        if (!options?.silent) {
+          toast.error(`Errore eliminazione report: ${error?.message || 'unknown'}`);
+        }
+        return false;
+      } finally {
+        setDeletingReportId(null);
+      }
+    },
+    [organizationId],
+  );
+
   const generateMissingReports = useCallback(async (): Promise<{ created: number; skipped: number }> => {
     if (missingCompletedJobs.length === 0) return { created: 0, skipped: 0 };
     let created = 0;
@@ -126,10 +169,11 @@ export const useSurfaceScanReportRepository = (
     reports,
     loading,
     generating,
+    deletingReportId,
     missingCompletedJobs,
     refetch: fetchReports,
     generateReport,
+    deleteReport,
     generateMissingReports,
   };
 };
-

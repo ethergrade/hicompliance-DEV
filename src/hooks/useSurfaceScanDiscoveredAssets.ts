@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useToast } from '@/hooks/use-toast';
 import { classifySurfaceHostForScope, sourceLabel } from '@/lib/surfaceScopeGuard';
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 interface AssetRow {
   asset_type: string;
@@ -47,10 +48,13 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
   const { organizationId, isLoading: clientLoading } = useClientOrganization();
   const { toast } = useToast();
 
-  const fetchAssets = useCallback(async () => {
+  const fetchAssets = useCallback(async (options?: { background?: boolean }) => {
     if (clientLoading || !organizationId) return;
 
-    setLoading(true);
+    const background = Boolean(options?.background);
+    if (!background) {
+      setLoading(true);
+    }
     try {
       const { data, error } = await supabase
         .from('surface_assets' as any)
@@ -76,13 +80,17 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
       );
     } catch (error) {
       console.error('Error fetching discovered surface assets:', error);
-      toast({
-        title: 'Errore',
-        description: 'Impossibile caricare subdomain/IP scoperti',
-        variant: 'destructive',
-      });
+      if (!background) {
+        toast({
+          title: 'Errore',
+          description: 'Impossibile caricare subdomain/IP scoperti',
+          variant: 'destructive',
+        });
+      }
     } finally {
-      setLoading(false);
+      if (!background) {
+        setLoading(false);
+      }
     }
   }, [clientLoading, organizationId, toast]);
 
@@ -94,10 +102,42 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
 
   useEffect(() => {
     if (!organizationId) return;
-    const interval = setInterval(() => {
-      fetchAssets();
-    }, 10000);
-    return () => clearInterval(interval);
+    const assetsChannel = supabase
+      .channel(`surface-assets-${organizationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'surface_assets',
+          filter: `customer_id=eq.${organizationId}`,
+        },
+        (_payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
+          void fetchAssets({ background: true });
+        },
+      )
+      .subscribe();
+
+    const scopeChannel = supabase
+      .channel(`surface-scope-domains-${organizationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'surface_scan_monitored_ips',
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        (_payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
+          void fetchAssets({ background: true });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(assetsChannel);
+      supabase.removeChannel(scopeChannel);
+    };
   }, [organizationId, fetchAssets]);
 
   const { subdomains, ips, hostMeta } = useMemo(() => {
