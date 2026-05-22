@@ -639,12 +639,12 @@ const SurfaceScan360: React.FC = () => {
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Domini/IP Scansionati</p>
+                  <p className="text-sm text-muted-foreground">Host unici scansionati</p>
                   <p className="text-2xl font-bold text-foreground">
                     {scanDiscovery.scannedDomains.length + scanDiscovery.scannedIps.length}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {scanDiscovery.scannedDomains.length} domini • {scanDiscovery.scannedIps.length} IP
+                    Target lanciati: {scanDiscovery.scannedTargets.length}
                   </p>
                 </div>
                 <Globe className="w-8 h-8 text-primary" />
