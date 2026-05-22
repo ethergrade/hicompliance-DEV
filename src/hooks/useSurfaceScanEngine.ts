@@ -17,6 +17,9 @@ export interface SurfaceScanJob {
   raw_target: string;
   normalized_target: string;
   target_type: string;
+  hostname: string | null;
+  root_domain: string | null;
+  resolved_ips: string[] | null;
   scan_profile: SurfaceScanProfile;
   status: SurfaceScanJobStatus;
   hosting_context: string | null;
@@ -30,6 +33,13 @@ export interface SurfaceScanJob {
 interface StartScanInput {
   target: string;
   scan_profile: SurfaceScanProfile;
+  authorization_confirmed: boolean;
+  ownership_proof?: string;
+}
+
+interface StartScanQueueInput {
+  targets: string[];
+  scan_profiles: SurfaceScanProfile[];
   authorization_confirmed: boolean;
   ownership_proof?: string;
 }
@@ -54,7 +64,7 @@ export const useSurfaceScanEngine = () => {
       const { data, error } = await supabase
         .from('surface_scan_jobs' as any)
         .select(
-          'id, raw_target, normalized_target, target_type, scan_profile, status, hosting_context, shodan_status, created_at, started_at, completed_at, error_message',
+          'id, raw_target, normalized_target, target_type, hostname, root_domain, resolved_ips, scan_profile, status, hosting_context, shodan_status, created_at, started_at, completed_at, error_message',
         )
         .eq('customer_id', organizationId)
         .order('created_at', { ascending: false })
@@ -144,6 +154,107 @@ export const useSurfaceScanEngine = () => {
     [organizationId, isAdmin, fetchJobs, toast],
   );
 
+  const startScanQueue = useCallback(
+    async (input: StartScanQueueInput): Promise<{ queued: number; failed: number }> => {
+      if (!organizationId) {
+        toast({
+          title: 'Cliente non selezionato',
+          description: 'Seleziona prima un cliente',
+          variant: 'destructive',
+        });
+        return { queued: 0, failed: 0 };
+      }
+
+      if (!isAdmin) {
+        toast({
+          title: 'Operazione non consentita',
+          description: 'Solo gli admin possono avviare scansioni in v1',
+          variant: 'destructive',
+        });
+        return { queued: 0, failed: 0 };
+      }
+
+      const targets = [...new Set(input.targets.map((target) => target.trim()).filter(Boolean))];
+      const profiles = [...new Set(input.scan_profiles)];
+
+      if (targets.length === 0 || profiles.length === 0) {
+        toast({
+          title: 'Dati incompleti',
+          description: 'Seleziona almeno un target e un profilo',
+          variant: 'destructive',
+        });
+        return { queued: 0, failed: 0 };
+      }
+
+      const queuePairs: Array<{ target: string; profile: SurfaceScanProfile }> = [];
+      for (const target of targets) {
+        for (const profile of profiles) {
+          queuePairs.push({ target, profile });
+        }
+      }
+
+      const maxQueuePairs = 40;
+      const pairsToQueue = queuePairs.slice(0, maxQueuePairs);
+      if (queuePairs.length > maxQueuePairs) {
+        toast({
+          title: 'Coda limitata',
+          description: `Accodate le prime ${maxQueuePairs} scansioni per sicurezza`,
+        });
+      }
+
+      setStartingScan(true);
+      let queued = 0;
+      let failed = 0;
+
+      try {
+        for (const pair of pairsToQueue) {
+          const { data, error } = await supabase.functions.invoke('surfacescan360-start-scan', {
+            body: {
+              target: pair.target,
+              customer_id: organizationId,
+              scan_profile: pair.profile,
+              authorization_confirmed: input.authorization_confirmed,
+              ownership_proof: input.ownership_proof || null,
+            },
+          });
+
+          if (error || data?.error) {
+            failed += 1;
+            continue;
+          }
+
+          queued += 1;
+        }
+
+        if (queued > 0) {
+          toast({
+            title: 'Coda scansioni creata',
+            description: `${queued} job in coda${failed > 0 ? `, ${failed} non avviati` : ''}`,
+          });
+        } else {
+          toast({
+            title: 'Nessun job accodato',
+            description: 'Controlla autorizzazione, limiti o input target',
+            variant: 'destructive',
+          });
+        }
+      } catch (error: any) {
+        console.error('Error queueing surface scans:', error);
+        toast({
+          title: 'Errore coda scansioni',
+          description: error?.message || 'Impossibile creare la coda',
+          variant: 'destructive',
+        });
+      } finally {
+        setStartingScan(false);
+        await fetchJobs();
+      }
+
+      return { queued, failed };
+    },
+    [organizationId, isAdmin, fetchJobs, toast],
+  );
+
   const activeJobsCount = useMemo(
     () => jobs.filter((job) => ['pending', 'queued', 'running'].includes(job.status)).length,
     [jobs],
@@ -156,6 +267,7 @@ export const useSurfaceScanEngine = () => {
     isAdmin,
     activeJobsCount,
     startScan,
+    startScanQueue,
     refetch: fetchJobs,
   };
 };

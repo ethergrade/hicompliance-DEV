@@ -28,6 +28,11 @@ interface RunOptions {
   force?: boolean;
 }
 
+interface DispatchQueueOptions {
+  initiatedByUserId?: string | null;
+  maxToStart?: number;
+}
+
 interface FindingInput {
   provider?: string;
   module?: string;
@@ -138,6 +143,79 @@ function buildIpv6PtrName(ipv6: string): string | null {
 
   if (!expanded || !/^[0-9a-f]{32}$/.test(expanded)) return null;
   return `${expanded.split("").reverse().join(".")}.ip6.arpa`;
+}
+
+function enqueueBackgroundTask(task: Promise<void>): boolean {
+  const edgeRuntime = (globalThis as any)?.EdgeRuntime;
+  if (edgeRuntime && typeof edgeRuntime.waitUntil === "function") {
+    edgeRuntime.waitUntil(task);
+    return true;
+  }
+  return false;
+}
+
+export async function dispatchSurfaceScanQueue(
+  adminClient: SupabaseClient,
+  organizationId: string,
+  options: DispatchQueueOptions = {},
+): Promise<string[]> {
+  const maxConcurrent = 3;
+  const maxToStart = options.maxToStart ?? maxConcurrent;
+
+  const runningRes = await adminClient
+    .from("surface_scan_jobs" as any)
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", organizationId)
+    .in("status", ["pending", "running"]);
+
+  const runningCount = runningRes.count || 0;
+  let freeSlots = Math.max(0, maxConcurrent - runningCount);
+  freeSlots = Math.min(freeSlots, Math.max(0, maxToStart));
+
+  if (freeSlots <= 0) {
+    return [];
+  }
+
+  const { data: queuedJobs } = await adminClient
+    .from("surface_scan_jobs" as any)
+    .select("*")
+    .eq("organization_id", organizationId)
+    .eq("status", "queued")
+    .order("created_at", { ascending: true })
+    .limit(freeSlots);
+
+  const startedJobIds: string[] = [];
+  for (const jobRow of (queuedJobs || []) as SurfaceScanJob[]) {
+    const { data: claimedJob, error: claimError } = await adminClient
+      .from("surface_scan_jobs" as any)
+      .update({
+        status: "pending",
+        error_message: null,
+      })
+      .eq("id", jobRow.id)
+      .eq("status", "queued")
+      .select("*")
+      .maybeSingle();
+
+    if (claimError || !claimedJob) {
+      continue;
+    }
+
+    startedJobIds.push(claimedJob.id);
+
+    const runTask = runSurfaceScanEnrichment(adminClient, claimedJob as SurfaceScanJob, {
+      initiatedByUserId: options.initiatedByUserId || claimedJob.requested_by || null,
+      force: false,
+    }).catch((error) => {
+      console.error("[surface-scan-queue] run task failed:", error);
+    });
+
+    if (!enqueueBackgroundTask(runTask)) {
+      await runTask;
+    }
+  }
+
+  return startedJobIds;
 }
 
 export async function runSurfaceScanEnrichment(
@@ -2058,5 +2136,14 @@ export async function runSurfaceScanEnrichment(
     });
 
     throw error;
+  } finally {
+    try {
+      await dispatchSurfaceScanQueue(adminClient, organizationId, {
+        initiatedByUserId: options.initiatedByUserId || job.requested_by || null,
+        maxToStart: 1,
+      });
+    } catch (queueError) {
+      console.error("[surface-scan-queue] dispatch after completion failed:", queueError);
+    }
   }
 }
