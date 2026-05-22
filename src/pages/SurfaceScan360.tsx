@@ -37,6 +37,7 @@ import {
   Search,
 } from 'lucide-react';
 import SecurityFindings from '@/components/surface-scan/SecurityFindings';
+import SurfaceScanReportRepository from '@/components/surface-scan/SurfaceScanReportRepository';
 import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
 import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceScanAlertConfigDialog';
 import { useSurfaceScanAlerts, SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
@@ -49,6 +50,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useSubdomainDump } from '@/hooks/useSubdomainDump';
 import { SubdomainDumpPanel } from '@/components/surface-scan/SubdomainDumpPanel';
+import { classifySurfaceHostForScope } from '@/lib/surfaceScopeGuard';
 
 const IPV4_REGEX =
   /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
@@ -122,10 +124,11 @@ const profileLabel = (profile: SurfaceScanProfile): string => {
 };
 
 const hostingLabel = (context: string | null): string => {
+  if (context === 'excluded_noise') return 'Fuori scope (PTR/shared)';
   if (context === 'shared_hosting') return 'Servizio in shared host';
   if (context === 'cdn_proxy') return 'Servizio dietro CDN/Proxy';
   if (context === 'dedicated') return 'Server dedicato';
-  return 'In analisi';
+  return 'Non classificato';
 };
 
 interface ReverseAssetRow {
@@ -158,6 +161,8 @@ const SurfaceScan360: React.FC = () => {
   const {
     subdomains: discoveredSubdomains,
     ips: discoveredIps,
+    hostMeta,
+    scopeDomains,
     loading: discoveredAssetsLoading,
   } = useSurfaceScanDiscoveredAssets();
   const subdomainDump = useSubdomainDump();
@@ -201,8 +206,12 @@ const SurfaceScan360: React.FC = () => {
     const lastScanAt = scanJobs.length > 0 ? scanJobs[0].created_at : null;
 
     const dumpedSubdomains = subdomainDump.history
-      .flatMap((dump) => dump.results.map((entry) => String(entry.subdomain || '').trim().toLowerCase()))
-      .filter(Boolean);
+      .flatMap((dump) =>
+        dump.results
+          .map((entry) => String(entry.subdomain || '').trim().toLowerCase())
+          .filter(Boolean)
+          .filter((host) => !classifySurfaceHostForScope(host, scopeDomains).blocked),
+      );
 
     const mergedSubdomains = [...new Set([...discoveredSubdomains, ...dumpedSubdomains])];
 
@@ -215,23 +224,25 @@ const SurfaceScan360: React.FC = () => {
       lastScanAt,
       lastScanLabel: formatLastScanLabel(lastScanAt),
     };
-  }, [scanJobs, discoveredSubdomains, discoveredIps, subdomainDump.history]);
+  }, [scanJobs, discoveredSubdomains, discoveredIps, subdomainDump.history, scopeDomains]);
 
   const dumpedSubdomainMeta = useMemo(() => {
-    const map: Record<string, { ip: string | null; note: string }> = {};
+    const map: Record<string, { ip: string | null; note: string; sources: string[] }> = {};
     for (const dump of subdomainDump.history) {
       for (const entry of dump.results) {
         const key = String(entry.subdomain || '').trim().toLowerCase();
         if (!key || map[key]) continue;
+        if (classifySurfaceHostForScope(key, scopeDomains).blocked) continue;
         const note = [entry.country, entry.asn_name].filter(Boolean).join(' · ');
         map[key] = {
           ip: entry.ip || null,
           note: note || `Fonte: ${dump.sources.join(', ')}`,
+          sources: dump.sources || [],
         };
       }
     }
     return map;
-  }, [subdomainDump.history]);
+  }, [subdomainDump.history, scopeDomains]);
 
   React.useEffect(() => {
     const loadReverseDnsMap = async () => {
@@ -283,12 +294,31 @@ const SurfaceScan360: React.FC = () => {
     return map;
   }, [scanJobs]);
 
+  const resolvedIpsByHost = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const job of scanJobs) {
+      const host = String(job.hostname || '').trim().toLowerCase();
+      if (!host) continue;
+      const ips = Array.isArray(job.resolved_ips)
+        ? job.resolved_ips.map((ip) => String(ip).trim()).filter(Boolean)
+        : [];
+      if (ips.length === 0) continue;
+      if (!map.has(host)) map.set(host, []);
+      const current = map.get(host)!;
+      for (const ip of ips) {
+        if (!current.includes(ip)) current.push(ip);
+      }
+    }
+    return map;
+  }, [scanJobs]);
+
   const reverseAnalysisRows = useMemo(() => {
     const rows: Array<{
       host: string;
       hostingContext: string | null;
       resolvedIps: string[];
       reverseHosts: string[];
+      inScope: boolean;
     }> = [];
 
     const hostsToAnalyze = [...new Set([
@@ -309,26 +339,32 @@ const SurfaceScan360: React.FC = () => {
         hostingContext: job?.hosting_context || null,
         resolvedIps,
         reverseHosts,
+        inScope: classifySurfaceHostForScope(host, scopeDomains).inScope,
       });
     }
 
     return rows;
-  }, [scanDiscovery.scannedDomains, scanDiscovery.discoveredSubdomains, latestJobByHost, reverseDnsMap]);
+  }, [scanDiscovery.scannedDomains, scanDiscovery.discoveredSubdomains, latestJobByHost, reverseDnsMap, scopeDomains]);
 
   const rescanTargets = useMemo(() => {
     const unique = new Set<string>();
     for (const job of scanJobs) {
       const target = String(job.raw_target || job.normalized_target || '').trim();
-      if (target) unique.add(target);
+      if (!target) continue;
+      const host = extractHostFromTarget(target);
+      if (host && classifySurfaceHostForScope(host, scopeDomains).blocked) continue;
+      unique.add(target);
     }
     for (const subdomain of scanDiscovery.discoveredSubdomains) {
-      if (subdomain) unique.add(subdomain);
+      if (!subdomain) continue;
+      if (classifySurfaceHostForScope(subdomain, scopeDomains).blocked) continue;
+      unique.add(subdomain);
     }
     for (const ip of scanDiscovery.discoveredIps) {
       if (ip) unique.add(ip);
     }
     return [...unique];
-  }, [scanJobs, scanDiscovery.discoveredSubdomains, scanDiscovery.discoveredIps]);
+  }, [scanJobs, scanDiscovery.discoveredSubdomains, scanDiscovery.discoveredIps, scopeDomains]);
 
   const monitoredLiveIps = useMemo(() => {
     let ips = [...scanDiscovery.discoveredIps];
@@ -769,7 +805,7 @@ const SurfaceScan360: React.FC = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Subdomain / Dominio</TableHead>
-                    <TableHead>IP</TableHead>
+                    <TableHead>IP Dominio/Host</TableHead>
                     <TableHead>Tipo Hosting</TableHead>
                     <TableHead>Ruolo</TableHead>
                     <TableHead>Evidenza</TableHead>
@@ -779,23 +815,49 @@ const SurfaceScan360: React.FC = () => {
                   {scanDiscovery.discoveredSubdomains.slice(0, 20).map((subdomain) => {
                     const directJob = latestJobByHost.get(subdomain);
                     const rootJob = latestJobByHost.get(simpleRootDomain(subdomain));
-                    const context = directJob?.hosting_context ?? rootJob?.hosting_context ?? null;
-                    const isShared = context === 'shared_hosting';
+                    const classification = classifySurfaceHostForScope(subdomain, scopeDomains);
+                    const context = directJob?.hosting_context ?? rootJob?.hosting_context ?? (classification.blocked ? 'excluded_noise' : null);
+                    const isShared = context === 'shared_hosting' || context === 'excluded_noise';
                     const dumpMeta = dumpedSubdomainMeta[subdomain];
+                    const meta = hostMeta[subdomain];
+                    const ipCandidates = [
+                      ...(resolvedIpsByHost.get(subdomain) || []),
+                      ...(resolvedIpsByHost.get(simpleRootDomain(subdomain)) || []),
+                      ...(meta?.ips || []),
+                      ...(dumpMeta?.ip ? [dumpMeta.ip] : []),
+                    ].filter(Boolean);
+                    const uniqueIps = [...new Set(ipCandidates)];
+                    const role = classification.blocked
+                      ? 'Fuori scope (shared/noise)'
+                      : classification.inScope
+                        ? 'Scope monitorato'
+                        : meta?.fromReverseDns
+                          ? 'Subdomain reverse/dump'
+                          : 'Subdomain scoperto';
+                    const evidenceLabels = [...new Set([...(meta?.sourceLabels || []), ...(dumpMeta?.sources || [])])];
                     return (
                       <TableRow key={subdomain}>
                         <TableCell className="font-medium">{subdomain}</TableCell>
-                        <TableCell className="text-sm">{dumpMeta?.ip || '-'}</TableCell>
+                        <TableCell className="text-sm">{uniqueIps.length > 0 ? uniqueIps.join(', ') : '-'}</TableCell>
                         <TableCell>
                           <Badge variant={isShared ? 'destructive' : 'outline'}>
                             {hostingLabel(context)}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {isShared ? 'Servizio (multi-tenant)' : 'Server/servizio dedicato'}
+                          {role}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {dumpMeta?.note || 'Da scansione SurfaceScan360'}
+                        <TableCell className="text-xs text-muted-foreground space-y-1">
+                          <div>{dumpMeta?.note || 'Da scansione SurfaceScan360'}</div>
+                          {evidenceLabels.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {evidenceLabels.map((label) => (
+                                <Badge key={`${subdomain}-${label}`} variant="secondary" className="text-[10px] px-1.5 py-0">
+                                  {label}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
                         </TableCell>
                       </TableRow>
                     );
@@ -819,6 +881,7 @@ const SurfaceScan360: React.FC = () => {
                     <TableHead>IP Puntuale</TableHead>
                     <TableHead>Reverse DNS (PTR)</TableHead>
                     <TableHead>Hosting</TableHead>
+                    <TableHead>Scope</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -836,11 +899,16 @@ const SurfaceScan360: React.FC = () => {
                           {hostingLabel(row.hostingContext)}
                         </Badge>
                       </TableCell>
+                      <TableCell>
+                        <Badge variant={row.inScope ? 'default' : 'secondary'}>
+                          {row.inScope ? 'In Scope' : 'Scoperta OSINT'}
+                        </Badge>
+                      </TableCell>
                     </TableRow>
                   ))}
                   {reverseAnalysisRows.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground py-4">
+                      <TableCell colSpan={5} className="text-center text-muted-foreground py-4">
                         Nessuna analisi reverse disponibile
                       </TableCell>
                     </TableRow>
@@ -852,6 +920,8 @@ const SurfaceScan360: React.FC = () => {
         </Card>
 
         <SecurityFindings />
+
+        <SurfaceScanReportRepository scanJobs={scanJobs} />
 
         <Card className="border-border">
           <CardHeader>

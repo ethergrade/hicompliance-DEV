@@ -28,6 +28,10 @@ import {
 } from '@/components/ui/pagination';
 import { Shield, Search, Download, ChevronRight, ChevronDown } from 'lucide-react';
 import { useSurfaceScanFindings, type SurfaceFindingRow } from '@/hooks/useSurfaceScanFindings';
+import { useSurfaceScanDiscoveredAssets } from '@/hooks/useSurfaceScanDiscoveredAssets';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { CveDetailDialog } from '@/components/surface-scan/CveDetailDialog';
+import { cweDescription, cweLink, findingSummary, getFindingTaxonomy, owaspDescription } from '@/lib/findingTaxonomy';
 
 const severityOrder: Record<string, number> = {
   critical: 5,
@@ -52,11 +56,39 @@ interface GroupedAsset {
   maxSeverity: SurfaceFindingRow['severity'];
   lastUpdate: string;
   subAssets: string[];
+  primaryIp: string | null;
+  sourceBadge: string;
 }
 
+const normalizeHost = (value: string): string =>
+  String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/\.$/, '');
+
+const extractAssetHost = (row: SurfaceFindingRow): string => {
+  const urlCandidate = String(row.affected_url || '').trim();
+  if (urlCandidate) {
+    try {
+      return normalizeHost(new URL(urlCandidate).hostname);
+    } catch {
+      // noop
+    }
+  }
+  const assetCandidate = String(row.affected_asset || '').trim();
+  if (assetCandidate) {
+    if (/^https?:\/\//i.test(assetCandidate)) {
+      try {
+        return normalizeHost(new URL(assetCandidate).hostname);
+      } catch {
+        // noop
+      }
+    }
+    return normalizeHost(assetCandidate);
+  }
+  if (row.ip) return String(row.ip).trim();
+  return '';
+};
+
 const normalizeAsset = (row: SurfaceFindingRow): string => {
-  const candidate = row.affected_asset || row.affected_url || row.ip || '';
-  const normalized = String(candidate).trim();
+  const normalized = extractAssetHost(row);
   return normalized || 'Asset non specificato';
 };
 
@@ -72,13 +104,57 @@ const normalizeSubAsset = (row: SurfaceFindingRow, assetLabel: string): string =
   return composed;
 };
 
+const sourceFamily = (row: SurfaceFindingRow): string => {
+  const provider = String(row.provider || '').toLowerCase();
+  const module = String(row.module || '').toLowerCase();
+  if (provider.includes('pentest')) return 'Pentest-Tools';
+  if (provider.includes('shodan')) return 'Shodan';
+  if (provider.includes('urlscan')) return 'urlscan';
+  if (provider.includes('internal') || provider.includes('surface_scan') || module) return 'OSINT Intel';
+  return 'Internal';
+};
+
+const confidenceFactor = (row: SurfaceFindingRow): number | null => {
+  const raw = row.evidence && typeof row.evidence === 'object' ? (row.evidence as Record<string, any>).confidence_factor : null;
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return Math.max(0, Math.min(1, raw));
+  }
+  const parsed = Number(raw);
+  if (Number.isFinite(parsed)) {
+    return Math.max(0, Math.min(1, parsed));
+  }
+  return null;
+};
+
+const confidenceReasons = (row: SurfaceFindingRow): string[] => {
+  const raw = row.evidence && typeof row.evidence === 'object' ? (row.evidence as Record<string, any>).confidence_reasons : null;
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry) => String(entry || '').trim()).filter(Boolean);
+};
+
+const owaspBadgeTone = (owasp?: string | null): string => {
+  const key = String(owasp || '').toUpperCase();
+  if (key.startsWith('A01') || key.startsWith('A03') || key.startsWith('A07')) {
+    return 'bg-red-500/15 text-red-400 border-red-500/30';
+  }
+  if (key.startsWith('A02') || key.startsWith('A06')) {
+    return 'bg-orange-500/15 text-orange-300 border-orange-500/30';
+  }
+  if (key.startsWith('A05')) {
+    return 'bg-violet-500/20 text-violet-300 border-violet-500/30';
+  }
+  return 'bg-muted text-muted-foreground border-border';
+};
+
 const SecurityFindings: React.FC = () => {
   const { findings, loading, counts } = useSurfaceScanFindings();
+  const { hostMeta } = useSurfaceScanDiscoveredAssets();
   const [searchTerm, setSearchTerm] = useState('');
   const [severityFilter, setSeverityFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [openAssets, setOpenAssets] = useState<Record<string, boolean>>({});
+  const [selectedCveId, setSelectedCveId] = useState<string | null>(null);
 
   const itemsPerPage = 15;
 
@@ -86,6 +162,15 @@ const SecurityFindings: React.FC = () => {
     const term = searchTerm.trim().toLowerCase();
     return findings
       .filter((row) => {
+        const taxonomy = getFindingTaxonomy(row.finding_type);
+        const cweCandidates = [
+          ...(row.cwe || []),
+          ...(taxonomy?.cwe ? [taxonomy.cwe] : []),
+        ];
+        const owaspCandidates = [
+          ...(taxonomy?.owasp ? [taxonomy.owasp] : []),
+          ...(taxonomy?.owaspLabel ? [taxonomy.owaspLabel] : []),
+        ];
         const matchesTerm =
           !term ||
           row.title.toLowerCase().includes(term) ||
@@ -95,7 +180,9 @@ const SecurityFindings: React.FC = () => {
           (row.ip || '').toLowerCase().includes(term) ||
           (row.provider || '').toLowerCase().includes(term) ||
           (row.module || '').toLowerCase().includes(term) ||
-          (row.cve || []).some((cve) => cve.toLowerCase().includes(term));
+          (row.cve || []).some((cve) => cve.toLowerCase().includes(term)) ||
+          cweCandidates.some((cwe) => String(cwe || '').toLowerCase().includes(term)) ||
+          owaspCandidates.some((owasp) => String(owasp || '').toLowerCase().includes(term));
 
         const matchesSeverity = severityFilter === 'all' || row.severity === severityFilter;
         const matchesStatus = statusFilter === 'all' || row.status === statusFilter;
@@ -129,6 +216,14 @@ const SecurityFindings: React.FC = () => {
         const maxSeverity = sortedRows[0]?.severity || 'info';
         const lastUpdate = sortedRows[0]?.created_at || new Date(0).toISOString();
         const assetLabel = normalizeAsset(sortedRows[0]);
+        const primaryIp = sortedRows.find((entry) => entry.ip)?.ip || hostMeta[assetLabel]?.ips?.[0] || null;
+        const sourceBadge = hostMeta[assetLabel]?.fromScope
+          ? 'Scope'
+          : hostMeta[assetLabel]?.fromDump
+            ? 'Dump/OSINT'
+            : hostMeta[assetLabel]?.fromReverseDns
+              ? 'Reverse'
+              : 'Scan';
 
         const subAssets = [...new Set(sortedRows.map((row) => normalizeSubAsset(row, assetLabel)).filter((v) => v !== '-'))];
 
@@ -139,10 +234,20 @@ const SecurityFindings: React.FC = () => {
           maxSeverity,
           lastUpdate,
           subAssets,
+          primaryIp,
+          sourceBadge,
         };
       })
       .sort((a, b) => a.assetLabel.localeCompare(b.assetLabel, 'it', { sensitivity: 'base' }));
-  }, [filtered]);
+  }, [filtered, hostMeta]);
+
+  const unattributedSignals = useMemo(
+    () =>
+      filtered.filter(
+        (row) => row.finding_type === 'shodan_cve_signal_unattributed' || row.attribution_confidence === 'low',
+      ),
+    [filtered],
+  );
 
   const totalPages = Math.max(1, Math.ceil(groupedAssets.length / itemsPerPage));
   const paginatedAssets = groupedAssets.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -156,6 +261,7 @@ const SecurityFindings: React.FC = () => {
   }, [searchTerm, severityFilter, statusFilter]);
 
   return (
+    <>
     <Card className="border-border">
       <CardHeader>
         <div className="flex items-center justify-between gap-4">
@@ -165,7 +271,7 @@ const SecurityFindings: React.FC = () => {
               Security Findings & Vulnerabilita
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Finding normalizzati da SurfaceScan360 con severity, CVE/CVSS/EPSS, fonte e remediation
+              Finding reali da Shodan, OSINT/WebCheck e Pentest-Tools con severity, CVE/CVSS/EPSS, CWE/OWASP e remediation
             </p>
           </div>
           <Button variant="outline" disabled>
@@ -199,12 +305,21 @@ const SecurityFindings: React.FC = () => {
           </div>
         </div>
 
+        {unattributedSignals.length > 0 && (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+            <p className="text-sm font-medium">Segnali CVE non attribuiti: {unattributedSignals.length}</p>
+            <p className="text-xs text-muted-foreground">
+              Questi segnali provengono da IP condivisi/hosting multi-tenant: visibili separatamente, non forzati sul dominio.
+            </p>
+          </div>
+        )}
+
         <div className="flex flex-col md:flex-row gap-3">
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
             <Input
               className="pl-9"
-              placeholder="Cerca per titolo, CVE, asset, modulo, provider..."
+              placeholder="Cerca per titolo, CVE/CWE/OWASP, asset, modulo, provider..."
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
             />
@@ -242,6 +357,8 @@ const SecurityFindings: React.FC = () => {
               <TableRow>
                 <TableHead className="w-14"></TableHead>
                 <TableHead>Affected Asset</TableHead>
+                <TableHead>IP Dominio</TableHead>
+                <TableHead>Origine</TableHead>
                 <TableHead>Sub Asset</TableHead>
                 <TableHead>Tot. Finding</TableHead>
                 <TableHead>Severity Max</TableHead>
@@ -251,7 +368,7 @@ const SecurityFindings: React.FC = () => {
             <TableBody>
               {loading && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-6">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-6">
                     Caricamento findings...
                   </TableCell>
                 </TableRow>
@@ -259,7 +376,7 @@ const SecurityFindings: React.FC = () => {
 
               {!loading && paginatedAssets.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-6">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-6">
                     Nessun finding disponibile
                   </TableCell>
                 </TableRow>
@@ -278,6 +395,10 @@ const SecurityFindings: React.FC = () => {
                           </Button>
                         </TableCell>
                         <TableCell className="font-medium">{assetGroup.assetLabel}</TableCell>
+                        <TableCell className="text-sm">{assetGroup.primaryIp || '-'}</TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">{assetGroup.sourceBadge}</Badge>
+                        </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {assetGroup.subAssets.length > 0 ? assetGroup.subAssets.slice(0, 2).join(' • ') : '-'}
                           {assetGroup.subAssets.length > 2 ? ' ...' : ''}
@@ -293,7 +414,7 @@ const SecurityFindings: React.FC = () => {
 
                       {isOpen && (
                         <TableRow>
-                          <TableCell colSpan={6} className="bg-muted/10 p-0">
+                          <TableCell colSpan={8} className="bg-muted/10 p-0">
                             <div className="p-3">
                               <Table>
                                 <TableHeader>
@@ -320,20 +441,123 @@ const SecurityFindings: React.FC = () => {
                                       </TableCell>
                                       <TableCell className="min-w-64">
                                         <div className="font-medium">{row.title}</div>
-                                        <div className="text-xs text-muted-foreground">
-                                          {(row.module || 'n/a')} • {(row.finding_type || 'n/a')}
+                                        <div className="flex flex-wrap gap-1 mt-1">
+                                          <Badge variant="outline" className="text-[10px] font-mono">
+                                            {row.finding_type || 'n/a'}
+                                          </Badge>
+                                          {(() => {
+                                            const taxonomy = getFindingTaxonomy(row.finding_type);
+                                            const cwes = [...new Set([...(row.cwe || []), ...(taxonomy?.cwe ? [taxonomy.cwe] : [])])];
+                                            const owasp = taxonomy?.owasp || null;
+                                            return (
+                                              <>
+                                                {cwes.map((cwe) => {
+                                                  const tooltip = cweDescription(cwe);
+                                                  return (
+                                                    <TooltipProvider key={`${row.id}-${cwe}`}>
+                                                      <Tooltip>
+                                                        <TooltipTrigger asChild>
+                                                          <a href={cweLink(cwe)} target="_blank" rel="noopener noreferrer">
+                                                            <Badge variant="secondary" className="text-[10px] font-mono">
+                                                              {cwe}
+                                                            </Badge>
+                                                          </a>
+                                                        </TooltipTrigger>
+                                                        {tooltip && (
+                                                          <TooltipContent className="max-w-xs text-xs">
+                                                            {tooltip}
+                                                          </TooltipContent>
+                                                        )}
+                                                      </Tooltip>
+                                                    </TooltipProvider>
+                                                  );
+                                                })}
+                                                {owasp && (
+                                                  <TooltipProvider>
+                                                    <Tooltip>
+                                                      <TooltipTrigger asChild>
+                                                        <Badge className={`text-[10px] ${owaspBadgeTone(owasp)}`}>
+                                                          {owasp}
+                                                        </Badge>
+                                                      </TooltipTrigger>
+                                                      <TooltipContent className="max-w-xs text-xs">
+                                                        {owaspDescription(owasp) || owasp}
+                                                      </TooltipContent>
+                                                    </Tooltip>
+                                                  </TooltipProvider>
+                                                )}
+                                                <Badge variant={row.status === 'open' ? 'destructive' : 'secondary'} className="text-[10px]">
+                                                  {(row.status || 'open').toUpperCase()}
+                                                </Badge>
+                                                <Badge variant="outline" className="text-[10px]">
+                                                  {sourceFamily(row)}
+                                                </Badge>
+                                              </>
+                                            );
+                                          })()}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground mt-2">
+                                          {row.description || findingSummary(row.finding_type) || 'Nessuna sintesi disponibile'}
                                         </div>
                                       </TableCell>
                                       <TableCell className="min-w-44">
                                         {normalizeSubAsset(row, assetGroup.assetLabel)}
                                       </TableCell>
                                       <TableCell className="min-w-32">
-                                        <div className="text-xs font-mono">{(row.cve || []).join(', ') || '-'}</div>
+                                        {(row.cve || []).length > 0 ? (
+                                          <div className="flex flex-wrap gap-1">
+                                            {(row.cve || []).slice(0, 3).map((cve) => (
+                                              <Button
+                                                key={`${row.id}-${cve}`}
+                                                size="sm"
+                                                variant="outline"
+                                                className="h-6 px-2 text-[10px] font-mono"
+                                                onClick={() => setSelectedCveId(String(cve))}
+                                              >
+                                                {cve}
+                                              </Button>
+                                            ))}
+                                            {(row.cve || []).length > 3 && (
+                                              <Badge variant="secondary" className="text-[10px]">
+                                                +{(row.cve || []).length - 3}
+                                              </Badge>
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <div className="text-xs font-mono">-</div>
+                                        )}
                                       </TableCell>
                                       <TableCell>{row.cvss ?? '-'}</TableCell>
-                                      <TableCell>{row.epss ?? '-'}</TableCell>
+                                      <TableCell>
+                                        {row.epss != null ? `${(Number(row.epss) * 100).toFixed(2)}%` : '-'}
+                                      </TableCell>
                                       <TableCell>{row.cisa_kev ? 'Yes' : 'No'}</TableCell>
-                                      <TableCell>{row.attribution_confidence || '-'}</TableCell>
+                                      <TableCell>
+                                        {(() => {
+                                          const factor = confidenceFactor(row);
+                                          const reasons = confidenceReasons(row);
+                                          const label = row.attribution_confidence || '-';
+                                          if (factor == null) {
+                                            return <span>{label}</span>;
+                                          }
+                                          const value = `${label} · ${factor.toFixed(2)}`;
+                                          if (reasons.length === 0) {
+                                            return <span>{value}</span>;
+                                          }
+                                          return (
+                                            <TooltipProvider>
+                                              <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                  <span className="cursor-help underline decoration-dotted underline-offset-2">{value}</span>
+                                                </TooltipTrigger>
+                                                <TooltipContent className="max-w-xs text-xs">
+                                                  {reasons.join(' | ')}
+                                                </TooltipContent>
+                                              </Tooltip>
+                                            </TooltipProvider>
+                                          );
+                                        })()}
+                                      </TableCell>
                                       <TableCell className="min-w-32">
                                         {(row.provider || 'surface_scan_engine')} / {(row.module || '-')}
                                       </TableCell>
@@ -388,6 +612,14 @@ const SecurityFindings: React.FC = () => {
         )}
       </CardContent>
     </Card>
+    <CveDetailDialog
+      cveId={selectedCveId}
+      open={Boolean(selectedCveId)}
+      onOpenChange={(open) => {
+        if (!open) setSelectedCveId(null);
+      }}
+    />
+    </>
   );
 };
 

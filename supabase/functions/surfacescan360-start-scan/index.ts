@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import {
   assertCustomerAccess,
+  classifyHostForScope,
   corsHeaders,
   getCallerProfile,
   isAllowedProfile,
@@ -82,6 +83,30 @@ serve(async (req: Request) => {
     }
 
     const normalized = normalizeTargetInput(target);
+    let scopeDomains: string[] = [];
+    if (normalized.target_type === "domain" || normalized.target_type === "subdomain" || normalized.target_type === "url") {
+      const { data: monitoredDomains } = await adminClient
+        .from("surface_scan_monitored_ips" as any)
+        .select("input_value")
+        .eq("organization_id", customerId)
+        .eq("entry_type", "domain");
+      scopeDomains = (monitoredDomains || [])
+        .map((row: any) => String(row?.input_value || "").trim().toLowerCase())
+        .filter(Boolean);
+      if (normalized.hostname) {
+        const classified = classifyHostForScope(normalized.hostname, [...new Set(scopeDomains)]);
+        if (classified.blocked) {
+          return new Response(
+            JSON.stringify({
+              error:
+                "Target escluso: host shared/noise fuori scope monitorato. Usa dominio/IP ufficiale in scope.",
+              code: "target_out_of_scope_shared_noise",
+            }),
+            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } },
+          );
+        }
+      }
+    }
 
     // Batch-friendly rate limit for queue mode.
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();

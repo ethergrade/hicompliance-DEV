@@ -1,15 +1,19 @@
 // Genera report SurfaceScan360 con sintesi e top-5 raccomandazioni via OpenAI gpt-4o-mini.
-// Body: { job_id?: string, organization_id?: string }
+// Body: { job_id?: string, scan_job_id?: string, organization_id?: string, trigger_source?: "manual"|"auto_on_complete", force_regenerate?: boolean }
 // Se job_id non fornito, usa l'ultimo job completato dell'organizzazione.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-surface-internal-secret',
 };
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+const INTERNAL_REPORT_SECRET =
+  Deno.env.get('SURFACESCAN_REPORT_INTERNAL_SECRET') ||
+  Deno.env.get('SURFACESCAN_INTERNAL_REPORT_SECRET') ||
+  '';
 
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
@@ -135,30 +139,59 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
     const body = await req.json().catch(() => ({}));
-    let { job_id, organization_id } = body as { job_id?: string; organization_id?: string };
+    const requestedJobId = String((body as any)?.job_id || (body as any)?.scan_job_id || '').trim() || undefined;
+    let organization_id = String((body as any)?.organization_id || '').trim() || undefined;
+    const triggerSource = String((body as any)?.trigger_source || 'manual').trim() || 'manual';
+    const forceRegenerate = Boolean((body as any)?.force_regenerate);
+    const requestedCreatedBy = String((body as any)?.created_by || '').trim() || null;
 
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-    // Auth: deve essere autenticato; ricaviamo organization_id se non fornito
+    // Auth: utente autenticato o chiamata interna sicura (service role/secret)
     const authHeader = req.headers.get('authorization');
-    if (!authHeader) return json({ error: 'Autenticazione richiesta' }, 401);
-    const { data: userData } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-    if (!userData?.user) return json({ error: 'Token non valido' }, 401);
+    const bearerToken = (authHeader || '').replace(/^Bearer\s+/i, '').trim();
+    const internalHeaderSecret = req.headers.get('x-surface-internal-secret') || '';
+    const isInternalCall =
+      (INTERNAL_REPORT_SECRET && internalHeaderSecret === INTERNAL_REPORT_SECRET) ||
+      (bearerToken && bearerToken === SERVICE_ROLE);
+
+    let actorUserId: string | null = null;
+    if (!isInternalCall) {
+      if (!authHeader) return json({ error: 'Autenticazione richiesta' }, 401);
+      const { data: userData } = await supabase.auth.getUser(bearerToken);
+      if (!userData?.user) return json({ error: 'Token non valido' }, 401);
+      actorUserId = userData.user.id;
+
+      if (!organization_id) {
+        const { data: u } = await supabase.from('users').select('organization_id').eq('auth_user_id', userData.user.id).maybeSingle();
+        organization_id = u?.organization_id ?? undefined;
+      }
+      if (!organization_id) {
+        const { data: cd } = await supabase.from('contact_directory').select('organization_id').eq('auth_user_id', userData.user.id).limit(1).maybeSingle();
+        organization_id = cd?.organization_id ?? undefined;
+      }
+    } else {
+      actorUserId = requestedCreatedBy;
+    }
+
+    // Se chiamata interna senza organization_id, prova a risolvere dal job.
+    if (!organization_id && requestedJobId) {
+      const { data: jOrg } = await supabase
+        .from('surface_scan_jobs')
+        .select('organization_id, customer_id')
+        .eq('id', requestedJobId)
+        .maybeSingle();
+      organization_id = jOrg?.organization_id || jOrg?.customer_id || undefined;
+    }
 
     if (!organization_id) {
-      const { data: u } = await supabase.from('users').select('organization_id').eq('auth_user_id', userData.user.id).maybeSingle();
-      organization_id = u?.organization_id ?? undefined;
+      return json({ error: 'organization_id mancante: passa organization_id nel body o associa l\'utente a un\'organizzazione' }, 400);
     }
-    if (!organization_id) {
-      const { data: cd } = await supabase.from('contact_directory').select('organization_id').eq('auth_user_id', userData.user.id).limit(1).maybeSingle();
-      organization_id = cd?.organization_id ?? undefined;
-    }
-    if (!organization_id) return json({ error: 'organization_id mancante: passa organization_id nel body o associa l\'utente a un\'organizzazione' }, 400);
 
     // Job: ultimo completato se non passato
     let job: any = null;
-    if (job_id) {
-      const { data } = await supabase.from('surface_scan_jobs').select('*').eq('id', job_id).eq('organization_id', organization_id).maybeSingle();
+    if (requestedJobId) {
+      const { data } = await supabase.from('surface_scan_jobs').select('*').eq('id', requestedJobId).eq('organization_id', organization_id).maybeSingle();
       job = data;
     } else {
       const { data } = await supabase.from('surface_scan_jobs')
@@ -168,6 +201,28 @@ Deno.serve(async (req) => {
       job = data;
     }
     if (!job) return json({ error: 'Nessuno scan disponibile per l\'organizzazione' }, 404);
+    if (!['completed', 'partial'].includes(String(job.status || '').toLowerCase())) {
+      return json({ error: 'Il report AI può essere generato solo su scansioni completate/partial' }, 409);
+    }
+
+    // Evita duplicazione per auto-report sullo stesso job (repository persistente).
+    const { data: latestReportRow } = await supabase
+      .from('surface_scan_ai_reports')
+      .select('id, payload, created_at, title')
+      .eq('organization_id', organization_id)
+      .eq('scan_job_id', job.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestReportRow && !forceRegenerate && triggerSource === 'auto_on_complete') {
+      return json({
+        ok: true,
+        existing: true,
+        repository_id: latestReportRow.id,
+        created_at: latestReportRow.created_at,
+        report: latestReportRow.payload,
+      });
+    }
 
     const [profileRes, orgRes, assetsRes, findingsRes, intelRes, obsRes, monitoredRes, subdomainDumpRes] = await Promise.all([
       supabase.from('organization_profiles').select('*').eq('organization_id', organization_id).maybeSingle(),
@@ -276,6 +331,12 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
 
     const reportPayload = {
       generated_at: new Date().toISOString(),
+      report_repository: {
+        trigger_source: triggerSource,
+        auto_generated: triggerSource === 'auto_on_complete',
+        generated_by_user_id: actorUserId,
+        generated_via: isInternalCall ? 'internal_call' : 'manual_call',
+      },
       organization: {
         id: organization_id,
         name: org?.name,
@@ -315,16 +376,38 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
     };
 
     // Persisti il report (best-effort)
+    let repositoryId: string | null = null;
     try {
-      await supabase.from('surface_scan_ai_reports').insert({
-        organization_id, scan_job_id: job.id,
-        title: `Report AI - ${job.raw_target}`,
-        payload: reportPayload as any,
-        created_by: userData.user.id,
-      });
+      if (latestReportRow && triggerSource === 'auto_on_complete') {
+        const { data: updated } = await supabase
+          .from('surface_scan_ai_reports')
+          .update({
+            title: `Report AI - ${job.raw_target}`,
+            payload: reportPayload as any,
+            created_by: actorUserId,
+            created_at: new Date().toISOString(),
+          })
+          .eq('id', latestReportRow.id)
+          .select('id')
+          .maybeSingle();
+        repositoryId = updated?.id ?? latestReportRow.id;
+      } else {
+        const { data: inserted } = await supabase
+          .from('surface_scan_ai_reports')
+          .insert({
+            organization_id,
+            scan_job_id: job.id,
+            title: `Report AI - ${job.raw_target}`,
+            payload: reportPayload as any,
+            created_by: actorUserId,
+          })
+          .select('id')
+          .maybeSingle();
+        repositoryId = inserted?.id ?? null;
+      }
     } catch (e) { console.warn('persist report failed', e); }
 
-    return json({ ok: true, report: reportPayload });
+    return json({ ok: true, repository_id: repositoryId, report: reportPayload });
   } catch (e) {
     console.error('ai-report error', e);
     return json({ error: String((e as Error).message) }, 500);

@@ -23,3 +23,8 @@ verify_jwt = false
  [functions.pentest-tools-poll]
  verify_jwt = false
 
+ [functions.cve-enrichment]
+ verify_jwt = false
+
+ [functions.cisa-kev-sync]
+ verify_jwt = false
