@@ -19,3 +19,7 @@ verify_jwt = false
  verify_jwt = false
  [functions.surfacescan360-ai-report]
  verify_jwt = false
+
+ [functions.pentest-tools-poll]
+ verify_jwt = false
+
