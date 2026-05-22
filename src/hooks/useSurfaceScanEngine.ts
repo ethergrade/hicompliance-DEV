@@ -4,6 +4,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 export type SurfaceScanJobStatus = 'pending' | 'queued' | 'running' | 'completed' | 'failed';
 export type SurfaceScanProfile =
@@ -56,10 +57,13 @@ export const useSurfaceScanEngine = () => {
 
   const isAdmin = userProfile?.user_type === 'admin' || isSuperAdmin;
 
-  const fetchJobs = useCallback(async () => {
+  const fetchJobs = useCallback(async (options?: { background?: boolean }) => {
     if (clientLoading || !organizationId) return;
 
-    setLoading(true);
+    const background = Boolean(options?.background);
+    if (!background) {
+      setLoading(true);
+    }
     try {
       const { data, error } = await supabase
         .from('surface_scan_jobs' as any)
@@ -74,13 +78,17 @@ export const useSurfaceScanEngine = () => {
       setJobs((data || []) as SurfaceScanJob[]);
     } catch (error) {
       console.error('Error fetching surface scan jobs:', error);
-      toast({
-        title: 'Errore',
-        description: 'Impossibile caricare lo stato delle scansioni',
-        variant: 'destructive',
-      });
+      if (!background) {
+        toast({
+          title: 'Errore',
+          description: 'Impossibile caricare lo stato delle scansioni',
+          variant: 'destructive',
+        });
+      }
     } finally {
-      setLoading(false);
+      if (!background) {
+        setLoading(false);
+      }
     }
   }, [clientLoading, organizationId, toast]);
 
@@ -92,10 +100,25 @@ export const useSurfaceScanEngine = () => {
 
   useEffect(() => {
     if (!organizationId) return;
-    const interval = setInterval(() => {
-      fetchJobs();
-    }, 8000);
-    return () => clearInterval(interval);
+    const channel = supabase
+      .channel(`surface-scan-jobs-${organizationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'surface_scan_jobs',
+          filter: `customer_id=eq.${organizationId}`,
+        },
+        (_payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
+          void fetchJobs({ background: true });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [organizationId, fetchJobs]);
 
   const startScan = useCallback(

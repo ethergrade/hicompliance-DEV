@@ -56,6 +56,7 @@ export const useCveIntel = (cveId?: string | null) => {
 };
 
 export const useCveIntelBatch = (cveIds: string[]) => {
+  const { organizationId } = useClientOrganization();
   const sorted = [...new Set(cveIds.map((c) => c.toUpperCase()))].sort();
   return useQuery<Record<string, CveIntel>>({
     queryKey: ['cve-intel-batch', sorted],
@@ -68,6 +69,21 @@ export const useCveIntelBatch = (cveIds: string[]) => {
       if (error) throw error;
       const map: Record<string, CveIntel> = {};
       for (const row of (data ?? []) as unknown as CveIntel[]) map[row.cve_id] = row;
+
+      const missing = sorted.filter((id) => !map[id]);
+      if (missing.length > 0) {
+        if (organizationId) {
+          await supabase.rpc('enqueue_cve_enrichment', {
+            _cves: missing,
+            _org_id: organizationId,
+            _source: 'ui_findings_batch',
+          }).catch(() => {});
+        }
+        await supabase.functions.invoke('cve-enrichment', {
+          body: { max_per_run: 25 },
+        }).catch(() => {});
+      }
+
       return map;
     },
   });

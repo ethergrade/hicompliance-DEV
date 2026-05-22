@@ -18,6 +18,15 @@ const INTERNAL_REPORT_SECRET =
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
 const SEV_RANK: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
+const TECHNOLOGY_TOKENS: RegExp[] = [
+  /\bshodan\b/gi,
+  /\bpentest-?tools?\b/gi,
+  /\bweb[\s-]?check\b/gi,
+  /\burlscan\b/gi,
+  /\bcrt\.sh\b/gi,
+  /\bhackertarget\b/gi,
+  /\bpassive[_\s-]?dns\b/gi,
+];
 
 function normalizeHost(value: string): string {
   return String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, 'www.');
@@ -55,6 +64,253 @@ function priorityFromCvss(cvss: number | null): { priority: string; color: strin
   if (s >= 7) return { priority: 'high', color: '#EA580C' };
   if (s >= 4) return { priority: 'medium', color: '#EAB308' };
   return { priority: 'low', color: '#22C55E' };
+}
+
+function redactTechnologyMentions(value: string): string {
+  let out = String(value || '');
+  for (const token of TECHNOLOGY_TOKENS) {
+    out = out.replace(token, 'motore di analisi');
+  }
+  return out.replace(/\s{2,}/g, ' ').trim();
+}
+
+function toTextSummary(value: unknown): string {
+  if (value == null) return 'Nessuna evidenza disponibile.';
+  if (typeof value === 'string') {
+    return redactTechnologyMentions(value);
+  }
+  if (typeof value !== 'object') {
+    return String(value);
+  }
+  const obj = value as Record<string, unknown>;
+  const parts: string[] = [];
+  const asArray = (k: string) => (Array.isArray(obj[k]) ? (obj[k] as unknown[]) : []);
+  const ports = [...asArray('ports'), ...asArray('open_ports')]
+    .map((p) => Number(p))
+    .filter((p) => Number.isFinite(p));
+  if (ports.length > 0) {
+    parts.push(`Porte esposte rilevate: ${[...new Set(ports)].slice(0, 15).join(', ')}`);
+  }
+  const hostnames = asArray('hostnames')
+    .map((h) => String(h || '').trim())
+    .filter(Boolean);
+  if (hostnames.length > 0) {
+    parts.push(`Host correlati: ${hostnames.slice(0, 5).join(', ')}`);
+  }
+  if (obj['type']) {
+    parts.push(`Contesto: ${String(obj['type'])}`);
+  }
+  if (obj['multi_tenant'] != null) {
+    parts.push(`Multi-tenant: ${obj['multi_tenant'] ? 'sì' : 'no'}`);
+  }
+  if (obj['total'] != null) {
+    parts.push(`Risultati storici trovati: ${String(obj['total'])}`);
+  }
+  if (parts.length === 0) {
+    parts.push('Evidenza disponibile nel dettaglio tecnico della scansione.');
+  }
+  return redactTechnologyMentions(parts.join(' · '));
+}
+
+function mapIntelCategory(provider: string): string {
+  const key = String(provider || '').toLowerCase();
+  if (key.includes('pentest')) return 'Validazione esposizione e vulnerabilità';
+  if (key.includes('shodan')) return 'Esposizione servizi pubblici';
+  if (key.includes('urlscan')) return 'Comportamento applicativo esterno';
+  if (key.includes('dns') || key.includes('mail')) return 'Postura DNS e posta';
+  if (key.includes('security_headers') || key.includes('http')) return 'Configurazione sicurezza web';
+  if (key.includes('hosting')) return 'Classificazione contesto hosting';
+  return 'Evidenze esterne';
+}
+
+function normalizeRiskLevelFromScore(score: number): 'Critico' | 'Alto' | 'Medio' | 'Basso' {
+  if (score <= 30) return 'Critico';
+  if (score <= 50) return 'Alto';
+  if (score <= 75) return 'Medio';
+  return 'Basso';
+}
+
+function computeRiskScoreFromSeverity(sevCount: Record<string, number>): number {
+  const crit = Number(sevCount.critical || 0);
+  const high = Number(sevCount.high || 0);
+  const med = Number(sevCount.medium || 0);
+  const low = Number(sevCount.low || 0);
+  const info = Number(sevCount.info || 0);
+  const penalty = crit * 22 + high * 12 + med * 6 + low * 2 + info;
+  return Math.max(5, Math.min(100, 100 - penalty));
+}
+
+function buildConsultingRecommendations(input: {
+  findings: any[];
+  assets: any[];
+  monitoredScope: any[];
+  discoveredSubdomains: any[];
+}): Array<{ priority: number; title: string; rationale: string; action: string; affected_assets: string[]; severity: string }> {
+  const findings = input.findings || [];
+  const assets = input.assets || [];
+  const monitoredScope = input.monitoredScope || [];
+  const discoveredSubdomains = input.discoveredSubdomains || [];
+  const byType = new Set(findings.map((f: any) => String(f.finding_type || '').toLowerCase()));
+  const affectedAssets = Array.from(
+    new Set(
+      findings
+        .map((f: any) => String(f.affected_asset || f.affected_url || '').trim())
+        .filter(Boolean),
+    ),
+  ).slice(0, 6);
+
+  const out: Array<{ priority: number; title: string; rationale: string; action: string; affected_assets: string[]; severity: string }> = [];
+
+  out.push({
+    priority: 1,
+    title: 'Ridurre immediatamente l’esposizione ad alta priorità',
+    rationale: 'Sono presenti evidenze con severità elevata o media che aumentano la superficie d’attacco esterna.',
+    action: 'Definire una finestra di remediation rapida, confermare ownership degli asset coinvolti e chiudere prima i punti più esposti.',
+    affected_assets: affectedAssets,
+    severity: 'high',
+  });
+
+  if (findings.some((f: any) => Array.isArray(f.cve) && f.cve.length > 0)) {
+    out.push({
+      priority: 2,
+      title: 'Prioritizzare patching e mitigazioni CVE confermate',
+      rationale: 'La presenza di CVE richiede una gestione ordinata per ridurre rischio operativo e reputazionale.',
+      action: 'Ordinare le CVE per severità e impatto business, applicare patch o compensating control e validare il risultato con nuova verifica.',
+      affected_assets: affectedAssets,
+      severity: 'high',
+    });
+  }
+
+  if (byType.has('open_port_exposed') || byType.has('service_fingerprint_exposed')) {
+    out.push({
+      priority: 3,
+      title: 'Limitare servizi pubblicamente raggiungibili',
+      rationale: 'Porte o servizi esposti aumentano il rischio di ricognizione e abuso.',
+      action: 'Applicare regole ACL/firewall, rimuovere servizi non necessari e restringere l’accesso a sorgenti autorizzate.',
+      affected_assets: affectedAssets,
+      severity: 'medium',
+    });
+  }
+
+  if (
+    byType.has('missing_csp') ||
+    byType.has('missing_hsts') ||
+    byType.has('missing_x_content_type_options') ||
+    byType.has('missing_framing_protection')
+  ) {
+    out.push({
+      priority: 4,
+      title: 'Rafforzare baseline di sicurezza applicativa',
+      rationale: 'Header e controlli web incompleti favoriscono attacchi opportunistici su asset Internet-facing.',
+      action: 'Applicare baseline standard sui controlli HTTP di sicurezza e rieseguire la validazione di conformità tecnica.',
+      affected_assets: affectedAssets,
+      severity: 'medium',
+    });
+  }
+
+  out.push({
+    priority: 5,
+    title: 'Governare scope e discovery continuativa',
+    rationale: 'L’efficacia del monitoraggio dipende da uno scope aggiornato e dalla visibilità dei sottodomini.',
+    action: `Mantenere allineato lo scope (${monitoredScope.length} regole attive), verificare i sottodomini scoperti (${discoveredSubdomains.length}) e programmare riesecuzioni periodiche.`,
+    affected_assets: assets.slice(0, 5).map((a: any) => String(a.asset_value || a.hostname || a.ip || '').trim()).filter(Boolean),
+    severity: 'low',
+  });
+
+  const unique: typeof out = [];
+  const seen = new Set<string>();
+  for (const entry of out) {
+    const key = entry.title.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(entry);
+  }
+  return unique.slice(0, 5).map((entry, index) => ({ ...entry, priority: index + 1 }));
+}
+
+function buildFallbackAiReport(input: {
+  orgName: string;
+  target: string;
+  sevCount: Record<string, number>;
+  findings: any[];
+  assets: any[];
+  monitoredScope: any[];
+  discoveredSubdomains: any[];
+}): any {
+  const score = computeRiskScoreFromSeverity(input.sevCount);
+  const level = normalizeRiskLevelFromScore(score);
+  const totalFindings = Object.values(input.sevCount || {}).reduce((sum, v) => sum + Number(v || 0), 0);
+  const recommendations = buildConsultingRecommendations({
+    findings: input.findings,
+    assets: input.assets,
+    monitoredScope: input.monitoredScope,
+    discoveredSubdomains: input.discoveredSubdomains,
+  });
+
+  const critical = Number(input.sevCount.critical || 0);
+  const high = Number(input.sevCount.high || 0);
+  const medium = Number(input.sevCount.medium || 0);
+  const subCount = input.discoveredSubdomains.length;
+  const scopeCount = input.monitoredScope.length;
+
+  return {
+    executive_summary:
+      `La valutazione dell’esposizione esterna per ${input.orgName || 'l’organizzazione'} sul target ${input.target || 'selezionato'} ` +
+      `mostra ${totalFindings} evidenze totali (critiche: ${critical}, alte: ${high}, medie: ${medium}). ` +
+      `Lo scope monitorato include ${scopeCount} regole e sono stati rilevati ${subCount} sottodomini nel perimetro osservato. ` +
+      `La priorità operativa è ridurre i punti più esposti e consolidare i controlli di sicurezza sugli asset pubblici.`,
+    risk_score: score,
+    risk_level: level,
+    top_recommendations: recommendations,
+    correlations: [
+      `La severità massima rilevata è ${critical > 0 ? 'critica' : high > 0 ? 'alta' : medium > 0 ? 'media' : 'bassa/informativa'}.`,
+      `Le evidenze su asset Internet-facing suggeriscono un approccio di remediation progressivo per priorità.`,
+      `L’ampliamento o variazione del perimetro (scope/subdomini) incide direttamente sul volume dei risultati rilevati.`,
+    ],
+    compliance_notes:
+      'Le azioni prioritarie supportano i principi di gestione del rischio, hardening continuo e riduzione dell’esposizione richiesti dai framework NIS2 e dalle buone pratiche di sicurezza.',
+  };
+}
+
+function sanitizeAiReport(report: any, fallback: any): any {
+  const safe = report && typeof report === 'object' ? { ...report } : {};
+  const normalized = {
+    executive_summary: redactTechnologyMentions(String(safe.executive_summary || fallback.executive_summary || '')),
+    risk_score: Number.isFinite(Number(safe.risk_score)) ? Number(safe.risk_score) : Number(fallback.risk_score || 50),
+    risk_level: String(safe.risk_level || '').trim() || fallback.risk_level || 'Medio',
+    top_recommendations: Array.isArray(safe.top_recommendations) ? safe.top_recommendations : fallback.top_recommendations,
+    correlations: Array.isArray(safe.correlations) ? safe.correlations : fallback.correlations,
+    compliance_notes: redactTechnologyMentions(String(safe.compliance_notes || fallback.compliance_notes || '')),
+  };
+  normalized.risk_score = Math.max(0, Math.min(100, normalized.risk_score));
+  normalized.risk_level = normalizeRiskLevelFromScore(normalized.risk_score);
+  normalized.top_recommendations = (normalized.top_recommendations || [])
+    .slice(0, 5)
+    .map((item: any, idx: number) => ({
+      priority: idx + 1,
+      title: redactTechnologyMentions(String(item?.title || `Raccomandazione ${idx + 1}`)),
+      rationale: redactTechnologyMentions(String(item?.rationale || '')),
+      action: redactTechnologyMentions(String(item?.action || '')),
+      affected_assets: Array.isArray(item?.affected_assets) ? item.affected_assets.slice(0, 10) : [],
+      severity: String(item?.severity || 'medium').toLowerCase(),
+    }));
+  while (normalized.top_recommendations.length < 5) {
+    normalized.top_recommendations.push(
+      fallback.top_recommendations[normalized.top_recommendations.length] || {
+        priority: normalized.top_recommendations.length + 1,
+        title: `Raccomandazione ${normalized.top_recommendations.length + 1}`,
+        rationale: 'Consolidare il piano di miglioramento continuo della sicurezza esterna.',
+        action: 'Programmare riesecuzione periodica della scansione e verifica delle remediation aperte.',
+        affected_assets: [],
+        severity: 'low',
+      },
+    );
+  }
+  normalized.correlations = (normalized.correlations || [])
+    .slice(0, 5)
+    .map((item: any) => redactTechnologyMentions(String(item || '')))
+    .filter(Boolean);
+  return normalized;
 }
 
 async function generateKevRemediations(supabase: any, organizationId: string, findings: any[]) {
@@ -264,8 +520,20 @@ Deno.serve(async (req) => {
       return true;
     });
     const assets = [...rawAssets, ...discoveredSubdomainAssets];
-    const findings = (findingsRes.data ?? []).sort((a, b) => (SEV_RANK[b.severity] ?? 0) - (SEV_RANK[a.severity] ?? 0));
-    const intel = intelRes.data ?? [];
+    const findingsRaw = (findingsRes.data ?? []).sort((a, b) => (SEV_RANK[b.severity] ?? 0) - (SEV_RANK[a.severity] ?? 0));
+    const findings = findingsRaw.map((f: any) => ({
+      ...f,
+      title: redactTechnologyMentions(String(f.title || '')),
+      description: redactTechnologyMentions(String(f.description || '')),
+      remediation: redactTechnologyMentions(String(f.remediation || '')),
+    }));
+    const intelRaw = intelRes.data ?? [];
+    const intel = intelRaw.map((entry: any) => ({
+      category: mapIntelCategory(String(entry.provider || '')),
+      target: entry.target,
+      summary_text: toTextSummary(entry.summary),
+      confidence: entry.confidence || null,
+    }));
     const observations = obsRes.data ?? [];
     const monitored_scope = monitoredRes.data ?? [];
 
@@ -296,18 +564,34 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       subdomain_evidence: discoveredSubdomainAssets.map((a: any) => ({ host: a.hostname, ip: a.ip, root_domain: a.root_domain, depth: a.depth })).slice(0, 50),
       findings_by_severity: sevCount,
       top_findings: topFindings,
-      intel_summary: intel.slice(0, 20),
-      key_observations: observations.filter((o) => ['mail_security','security_headers','dnssec','ssl_ct','tech_stack'].includes(o.module)).slice(0, 30),
+      intel_summary: intel.slice(0, 40),
+      key_observations: observations.slice(0, 80),
+      monitored_scope: monitored_scope.slice(0, 200),
     };
 
     let aiReport: any = null;
     let aiError: string | null = null;
+    const fallbackAiReport = buildFallbackAiReport({
+      orgName: org?.name || profile?.legal_name || 'organizzazione',
+      target: job.raw_target,
+      sevCount,
+      findings,
+      assets,
+      monitoredScope: monitored_scope,
+      discoveredSubdomains: discoveredSubdomainAssets,
+    });
     try {
-      const raw = await callOpenAi(systemPrompt, JSON.stringify(userPayload).slice(0, 60_000));
-      aiReport = JSON.parse(raw);
+      if (OPENAI_API_KEY) {
+        const raw = await callOpenAi(systemPrompt, JSON.stringify(userPayload).slice(0, 60_000));
+        aiReport = JSON.parse(raw);
+      } else {
+        aiError = 'OPENAI_API_KEY non configurata';
+      }
     } catch (e) {
       aiError = (e as Error).message;
     }
+    aiReport = sanitizeAiReport(aiReport, fallbackAiReport);
+    aiError = null;
 
     // ---- Auto-genera azioni di remediation per CVE KEV (se non esistono già) ----
     const kevGen = await generateKevRemediations(supabase, organization_id, findings).catch((e) => {

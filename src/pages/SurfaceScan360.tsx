@@ -51,6 +51,7 @@ import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useSubdomainDump } from '@/hooks/useSubdomainDump';
 import { SubdomainDumpPanel } from '@/components/surface-scan/SubdomainDumpPanel';
 import { classifySurfaceHostForScope } from '@/lib/surfaceScopeGuard';
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 const IPV4_REGEX =
   /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
@@ -277,11 +278,32 @@ const SurfaceScan360: React.FC = () => {
     };
 
     void loadReverseDnsMap();
-    const interval = setInterval(() => {
-      void loadReverseDnsMap();
-    }, 12000);
+    if (!organizationId) return;
+    const reverseDnsChannel = supabase
+      .channel(`surface-reverse-dns-${organizationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'surface_assets',
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        (payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
+          const next = payload.new as Record<string, any> | null;
+          const old = payload.old as Record<string, any> | null;
+          const nextType = String(next?.asset_type || '');
+          const oldType = String(old?.asset_type || '');
+          if (nextType === 'reverse_dns_hostname' || oldType === 'reverse_dns_hostname') {
+            void loadReverseDnsMap();
+          }
+        },
+      )
+      .subscribe();
 
-    return () => clearInterval(interval);
+    return () => {
+      supabase.removeChannel(reverseDnsChannel);
+    };
   }, [organizationId]);
 
   const latestJobByHost = useMemo(() => {
