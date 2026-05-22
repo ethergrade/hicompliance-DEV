@@ -26,8 +26,8 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
-import { Shield, Search, Download } from 'lucide-react';
-import { useSurfaceScanFindings } from '@/hooks/useSurfaceScanFindings';
+import { Shield, Search, Download, ChevronRight, ChevronDown } from 'lucide-react';
+import { useSurfaceScanFindings, type SurfaceFindingRow } from '@/hooks/useSurfaceScanFindings';
 
 const severityOrder: Record<string, number> = {
   critical: 5,
@@ -45,12 +45,40 @@ const severityStyle: Record<string, string> = {
   info: 'bg-blue-100 text-blue-800 border-blue-300',
 };
 
+interface GroupedAsset {
+  assetKey: string;
+  assetLabel: string;
+  findings: SurfaceFindingRow[];
+  maxSeverity: SurfaceFindingRow['severity'];
+  lastUpdate: string;
+  subAssets: string[];
+}
+
+const normalizeAsset = (row: SurfaceFindingRow): string => {
+  const candidate = row.affected_asset || row.affected_url || row.ip || '';
+  const normalized = String(candidate).trim();
+  return normalized || 'Asset non specificato';
+};
+
+const normalizeSubAsset = (row: SurfaceFindingRow, assetLabel: string): string => {
+  const parts = [row.affected_url || '', row.ip || '', row.port ? String(row.port) : '']
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (parts.length === 0) return '-';
+
+  const composed = parts.join(' | ');
+  if (composed === assetLabel) return '-';
+  return composed;
+};
+
 const SecurityFindings: React.FC = () => {
   const { findings, loading, counts } = useSurfaceScanFindings();
   const [searchTerm, setSearchTerm] = useState('');
   const [severityFilter, setSeverityFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
+  const [openAssets, setOpenAssets] = useState<Record<string, boolean>>({});
 
   const itemsPerPage = 15;
 
@@ -80,8 +108,48 @@ const SecurityFindings: React.FC = () => {
       });
   }, [findings, searchTerm, severityFilter, statusFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
-  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const groupedAssets = useMemo<GroupedAsset[]>(() => {
+    const grouped = new Map<string, SurfaceFindingRow[]>();
+
+    for (const row of filtered) {
+      const assetLabel = normalizeAsset(row);
+      const key = assetLabel.toLowerCase();
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key)!.push(row);
+    }
+
+    return [...grouped.entries()]
+      .map(([assetKey, rows]) => {
+        const sortedRows = [...rows].sort((a, b) => {
+          const sevDiff = (severityOrder[b.severity] || 0) - (severityOrder[a.severity] || 0);
+          if (sevDiff !== 0) return sevDiff;
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
+
+        const maxSeverity = sortedRows[0]?.severity || 'info';
+        const lastUpdate = sortedRows[0]?.created_at || new Date(0).toISOString();
+        const assetLabel = normalizeAsset(sortedRows[0]);
+
+        const subAssets = [...new Set(sortedRows.map((row) => normalizeSubAsset(row, assetLabel)).filter((v) => v !== '-'))];
+
+        return {
+          assetKey,
+          assetLabel,
+          findings: sortedRows,
+          maxSeverity,
+          lastUpdate,
+          subAssets,
+        };
+      })
+      .sort((a, b) => a.assetLabel.localeCompare(b.assetLabel, 'it', { sensitivity: 'base' }));
+  }, [filtered]);
+
+  const totalPages = Math.max(1, Math.ceil(groupedAssets.length / itemsPerPage));
+  const paginatedAssets = groupedAssets.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const toggleAsset = (assetKey: string) => {
+    setOpenAssets((prev) => ({ ...prev, [assetKey]: !prev[assetKey] }));
+  };
 
   React.useEffect(() => {
     setCurrentPage(1);
@@ -172,67 +240,117 @@ const SecurityFindings: React.FC = () => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Severity</TableHead>
-                <TableHead>Titolo</TableHead>
+                <TableHead className="w-14"></TableHead>
                 <TableHead>Affected Asset</TableHead>
-                <TableHead>CVE</TableHead>
-                <TableHead>CVSS</TableHead>
-                <TableHead>EPSS</TableHead>
-                <TableHead>CISA KEV</TableHead>
-                <TableHead>Confidence</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Remediation</TableHead>
+                <TableHead>Sub Asset</TableHead>
+                <TableHead>Tot. Finding</TableHead>
+                <TableHead>Severity Max</TableHead>
+                <TableHead>Ultimo Finding</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading && (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center text-muted-foreground py-6">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-6">
                     Caricamento findings...
                   </TableCell>
                 </TableRow>
               )}
 
-              {!loading && paginated.length === 0 && (
+              {!loading && paginatedAssets.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center text-muted-foreground py-6">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-6">
                     Nessun finding disponibile
                   </TableCell>
                 </TableRow>
               )}
 
               {!loading &&
-                paginated.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell>
-                      <Badge className={severityStyle[row.severity] || severityStyle.info}>
-                        {row.severity.toUpperCase()}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="min-w-64">
-                      <div className="font-medium">{row.title}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {(row.module || 'n/a')} • {(row.finding_type || 'n/a')}
-                      </div>
-                    </TableCell>
-                    <TableCell className="min-w-44">
-                      <div>{row.affected_asset || row.affected_url || row.ip || '-'}</div>
-                    </TableCell>
-                    <TableCell className="min-w-32">
-                      <div className="text-xs font-mono">{(row.cve || []).join(', ') || '-'}</div>
-                    </TableCell>
-                    <TableCell>{row.cvss ?? '-'}</TableCell>
-                    <TableCell>{row.epss ?? '-'}</TableCell>
-                    <TableCell>{row.cisa_kev ? 'Yes' : 'No'}</TableCell>
-                    <TableCell>{row.attribution_confidence || '-'}</TableCell>
-                    <TableCell className="min-w-32">
-                      {(row.provider || 'surface_scan_engine')} / {(row.module || '-')}
-                    </TableCell>
-                    <TableCell className="min-w-72 text-xs text-muted-foreground">
-                      {row.remediation || '-'}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                paginatedAssets.map((assetGroup) => {
+                  const isOpen = Boolean(openAssets[assetGroup.assetKey]);
+
+                  return (
+                    <React.Fragment key={assetGroup.assetKey}>
+                      <TableRow className="cursor-pointer" onClick={() => toggleAsset(assetGroup.assetKey)}>
+                        <TableCell>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                          </Button>
+                        </TableCell>
+                        <TableCell className="font-medium">{assetGroup.assetLabel}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {assetGroup.subAssets.length > 0 ? assetGroup.subAssets.slice(0, 2).join(' • ') : '-'}
+                          {assetGroup.subAssets.length > 2 ? ' ...' : ''}
+                        </TableCell>
+                        <TableCell>{assetGroup.findings.length}</TableCell>
+                        <TableCell>
+                          <Badge className={severityStyle[assetGroup.maxSeverity] || severityStyle.info}>
+                            {assetGroup.maxSeverity.toUpperCase()}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{new Date(assetGroup.lastUpdate).toLocaleString('it-IT')}</TableCell>
+                      </TableRow>
+
+                      {isOpen && (
+                        <TableRow>
+                          <TableCell colSpan={6} className="bg-muted/10 p-0">
+                            <div className="p-3">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead>Severity</TableHead>
+                                    <TableHead>Titolo</TableHead>
+                                    <TableHead>Sub Asset</TableHead>
+                                    <TableHead>CVE</TableHead>
+                                    <TableHead>CVSS</TableHead>
+                                    <TableHead>EPSS</TableHead>
+                                    <TableHead>CISA KEV</TableHead>
+                                    <TableHead>Confidence</TableHead>
+                                    <TableHead>Source</TableHead>
+                                    <TableHead>Remediation</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {assetGroup.findings.map((row) => (
+                                    <TableRow key={row.id}>
+                                      <TableCell>
+                                        <Badge className={severityStyle[row.severity] || severityStyle.info}>
+                                          {row.severity.toUpperCase()}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="min-w-64">
+                                        <div className="font-medium">{row.title}</div>
+                                        <div className="text-xs text-muted-foreground">
+                                          {(row.module || 'n/a')} • {(row.finding_type || 'n/a')}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell className="min-w-44">
+                                        {normalizeSubAsset(row, assetGroup.assetLabel)}
+                                      </TableCell>
+                                      <TableCell className="min-w-32">
+                                        <div className="text-xs font-mono">{(row.cve || []).join(', ') || '-'}</div>
+                                      </TableCell>
+                                      <TableCell>{row.cvss ?? '-'}</TableCell>
+                                      <TableCell>{row.epss ?? '-'}</TableCell>
+                                      <TableCell>{row.cisa_kev ? 'Yes' : 'No'}</TableCell>
+                                      <TableCell>{row.attribution_confidence || '-'}</TableCell>
+                                      <TableCell className="min-w-32">
+                                        {(row.provider || 'surface_scan_engine')} / {(row.module || '-')}
+                                      </TableCell>
+                                      <TableCell className="min-w-72 text-xs text-muted-foreground">
+                                        {row.remediation || '-'}
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
             </TableBody>
           </Table>
         </div>

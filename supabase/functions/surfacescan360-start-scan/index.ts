@@ -8,7 +8,7 @@ import {
   normalizeTargetInput,
   resolveWithDnsOverHttps,
 } from "../_shared/surface-scan-utils.ts";
-import { runSurfaceScanEnrichment } from "../_shared/surface-scan-engine.ts";
+import { dispatchSurfaceScanQueue } from "../_shared/surface-scan-engine.ts";
 
 interface StartScanRequest {
   target: string;
@@ -18,14 +18,7 @@ interface StartScanRequest {
   ownership_proof?: string;
 }
 
-function enqueueBackgroundTask(task: Promise<void>): boolean {
-  const edgeRuntime = (globalThis as any)?.EdgeRuntime;
-  if (edgeRuntime && typeof edgeRuntime.waitUntil === "function") {
-    edgeRuntime.waitUntil(task);
-    return true;
-  }
-  return false;
-}
+const MAX_SCANS_PER_USER_PER_HOUR = 200;
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -90,7 +83,7 @@ serve(async (req: Request) => {
 
     const normalized = normalizeTargetInput(target);
 
-    // Simple rate limit: max 20 scans per user/hour
+    // Batch-friendly rate limit for queue mode.
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const rateRes = await adminClient
       .from("surface_scan_jobs" as any)
@@ -98,7 +91,7 @@ serve(async (req: Request) => {
       .eq("requested_by", authData.user.id)
       .gte("created_at", oneHourAgo);
 
-    if ((rateRes.count || 0) >= 20) {
+    if ((rateRes.count || 0) >= MAX_SCANS_PER_USER_PER_HOUR) {
       return new Response(
         JSON.stringify({ error: "Rate limit reached. Retry later." }),
         { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } },
@@ -139,16 +132,16 @@ serve(async (req: Request) => {
       }
     }
 
-    // Max concurrent scans per tenant/customer
-    const concurrentRes = await adminClient
+    // Queue protection: avoid unbounded backlog.
+    const queueDepthRes = await adminClient
       .from("surface_scan_jobs" as any)
       .select("id", { count: "exact", head: true })
       .eq("organization_id", customerId)
       .in("status", ["pending", "queued", "running"]);
 
-    if ((concurrentRes.count || 0) >= 3) {
+    if ((queueDepthRes.count || 0) >= 50) {
       return new Response(
-        JSON.stringify({ error: "Max concurrent scans reached (3). Try later." }),
+        JSON.stringify({ error: "SurfaceScan queue is full (50 active jobs). Try later." }),
         { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } },
       );
     }
@@ -199,30 +192,27 @@ serve(async (req: Request) => {
       },
     });
 
-    const runPromise = runSurfaceScanEnrichment(adminClient, jobData, {
+    await dispatchSurfaceScanQueue(adminClient, customerId, {
       initiatedByUserId: authData.user.id,
-      force: true,
+      maxToStart: 3,
     });
-    const startedInBackground = enqueueBackgroundTask(runPromise.catch((error) => {
-      console.error("[surfacescan360-start-scan] background enrichment error:", error);
-    }));
 
-    if (!startedInBackground) {
-      await runPromise;
-    }
-
-    const { data: updatedJob } = await adminClient
+    const { data: updatedJob, error: updatedJobError } = await adminClient
       .from("surface_scan_jobs" as any)
       .select("id, status, created_at, started_at, completed_at, error_message")
       .eq("id", jobData.id)
       .single();
 
+    if (updatedJobError || !updatedJob) {
+      throw new Error(updatedJobError?.message || "Unable to load queued job status");
+    }
+
     return new Response(
       JSON.stringify({
         job_id: jobData.id,
-        status: updatedJob?.status || "queued",
+        status: updatedJob.status || "queued",
         normalized_target: normalized.normalized_target,
-        execution_mode: startedInBackground ? "background" : "inline",
+        execution_mode: "queued_dispatch",
       }),
       {
         status: 200,
