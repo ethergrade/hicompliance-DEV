@@ -51,7 +51,14 @@ serve(async (req: Request) => {
     }
 
     const caller = await getCallerProfile(adminClient, authData.user.id);
-    assertCustomerAccess(caller, job.customer_id);
+    const customerId = String(job?.customer_id || job?.organization_id || "").trim();
+    if (!customerId) {
+      return new Response(JSON.stringify({ error: "Job organization not found" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+    assertCustomerAccess(caller, customerId);
     if (!caller.isAdminLike) {
       return new Response(JSON.stringify({ error: "Only admin users can run enrichment" }), {
         status: 403,
