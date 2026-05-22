@@ -1388,6 +1388,59 @@ const SurfaceScan360: React.FC = () => {
             </CardContent>
           </Card>
 
+          {/* Sottodomini scoperti via discovery */}
+          {dumpedSubdomainHosts.length > 0 && (
+            <Card className="border-border border-l-4 border-l-purple-500">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <GitBranch className="w-5 h-5 text-purple-500" />
+                  Sottodomini scoperti via discovery ({dumpedSubdomainHosts.length})
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Host individuati tramite enumerazione passiva dei domini radice configurati.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {Object.entries(
+                    dumpedSubdomainHosts.reduce((acc: Record<string, typeof dumpedSubdomainHosts>, h) => {
+                      (acc[h.from] ||= []).push(h);
+                      return acc;
+                    }, {})
+                  ).map(([root, hosts]) => (
+                    <div key={root} className="rounded-lg border border-border overflow-hidden">
+                      <div className="px-4 py-2 bg-muted/40 flex items-center justify-between">
+                        <span className="font-medium text-sm">{root}</span>
+                        <Badge variant="outline" className="text-xs">{hosts.length} sottodomini</Badge>
+                      </div>
+                      <div className="divide-y divide-border">
+                        {hosts.map((h) => {
+                          const labels = h.host.split('.').filter(Boolean);
+                          const rootLabels = String(root).split('.').filter(Boolean).length;
+                          const depth = Math.max(0, labels.length - rootLabels);
+                          const level = depth >= 3 ? 'profondo' : depth === 2 ? 'medio' : 'diretto';
+                          return (
+                            <div key={h.host} className="px-4 py-2 flex items-center justify-between text-sm">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <Badge variant="secondary" className="text-[10px] shrink-0">L{depth || 1}</Badge>
+                                <span className="font-mono truncate">{h.host}</span>
+                                <span className="text-xs text-muted-foreground hidden md:inline">{level}</span>
+                              </div>
+                              <div className="flex items-center gap-3 shrink-0">
+                                <span className="text-xs text-muted-foreground font-mono">{h.ip}</span>
+                                {h.meta && <span className="text-xs text-muted-foreground hidden lg:inline">{h.meta}</span>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Public Assets Table */}
           <Card className="border-border">
             <CardHeader>
