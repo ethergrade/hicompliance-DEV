@@ -1,97 +1,242 @@
-// Avvia un job di scan SurfaceScan360 (Fase 1 - safe_recon).
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { parseTarget } from '../_shared/targetParser.ts';
+import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import {
+  assertCustomerAccess,
+  corsHeaders,
+  getCallerProfile,
+  isAllowedProfile,
+  makeSupabaseClients,
+  normalizeTargetInput,
+  resolveWithDnsOverHttps,
+} from "../_shared/surface-scan-utils.ts";
+import { runSurfaceScanEnrichment } from "../_shared/surface-scan-engine.ts";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+interface StartScanRequest {
+  target: string;
+  customer_id: string;
+  scan_profile?: string;
+  authorization_confirmed?: boolean;
+  ownership_proof?: string;
 }
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+function enqueueBackgroundTask(task: Promise<void>): boolean {
+  const edgeRuntime = (globalThis as any)?.EdgeRuntime;
+  if (edgeRuntime && typeof edgeRuntime.waitUntil === "function") {
+    edgeRuntime.waitUntil(task);
+    return true;
+  }
+  return false;
+}
+
+serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
 
   try {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) return json({ error: 'Unauthorized' }, 401);
-
-    const supabaseAuth = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY')!, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: userData, error: userErr } = await supabaseAuth.auth.getUser();
-    if (userErr || !userData.user) return json({ error: 'Invalid token' }, 401);
-    const userId = userData.user.id;
-
-    const body = await req.json().catch(() => ({}));
-    const { organization_id, target, scan_profile = 'safe_recon', authorization_confirmed = false } = body || {};
-
-    if (!organization_id || !target) return json({ error: 'organization_id e target richiesti' }, 400);
-    if (!authorization_confirmed) return json({ error: 'authorization_confirmed deve essere true' }, 400);
-    if (!['safe_recon'].includes(scan_profile)) return json({ error: `scan_profile non supportato in v1: ${scan_profile}` }, 400);
-
-    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
-
-    // Verifica ownership: utente deve appartenere all'org, o essere sales/admin globale
-    const { data: roles } = await supabase.from('user_roles').select('role').eq('user_id', userId);
-    const globalRoles = (roles || []).map((r: any) => r.role);
-    const isGlobal = globalRoles.includes('super_admin') || globalRoles.includes('sales');
-
-    if (!isGlobal) {
-      const { data: u } = await supabase.from('users').select('organization_id, user_type').eq('auth_user_id', userId).maybeSingle();
-      if (!u || u.organization_id !== organization_id) return json({ error: 'Accesso negato all\'organizzazione' }, 403);
-      if (u.user_type !== 'admin') return json({ error: 'Solo admin organizzazione possono avviare scan' }, 403);
+    const { userClient, adminClient } = makeSupabaseClients(req);
+    const { data: authData, error: authError } = await userClient.auth.getUser();
+    if (authError || !authData.user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
     }
 
-    // Parse target
-    let parsed;
-    try { parsed = parseTarget(target); } catch (e) { return json({ error: String((e as Error).message) }, 400); }
+    const body = (await req.json()) as StartScanRequest;
+    const target = String(body?.target || "").trim();
+    const customerId = String(body?.customer_id || "").trim();
+    const scanProfile = String(body?.scan_profile || "safe_recon").trim();
+    const authorizationConfirmed = Boolean(body?.authorization_confirmed);
 
-    // Concurrency guard
-    const { count } = await supabase.from('surface_scan_jobs').select('*', { count: 'exact', head: true })
-      .eq('organization_id', organization_id).in('status', ['queued', 'running']);
-    if ((count ?? 0) >= 3) return json({ error: 'Limite 3 scan concorrenti raggiunto per questa organizzazione' }, 429);
+    if (!target || !customerId) {
+      return new Response(
+        JSON.stringify({ error: "target and customer_id are required" }),
+        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } },
+      );
+    }
+    if (!authorizationConfirmed) {
+      return new Response(
+        JSON.stringify({ error: "authorization_confirmed must be true" }),
+        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } },
+      );
+    }
+    if (!isAllowedProfile(scanProfile)) {
+      return new Response(
+        JSON.stringify({
+          error:
+            "scan_profile must be one of safe_recon, domain_exposure, ip_exposure, cve_api_validation",
+        }),
+        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } },
+      );
+    }
 
-    // Insert job
-    const { data: job, error: insErr } = await supabase.from('surface_scan_jobs').insert({
-      organization_id,
-      requested_by: userId,
-      raw_target: parsed.raw_target,
-      normalized_target: parsed.normalized_target,
-      target_type: parsed.target_type,
-      hostname: parsed.hostname,
-      root_domain: parsed.root_domain,
-      protocol: parsed.protocol,
-      port: parsed.port,
-      scan_profile,
-      authorization_confirmed: true,
-      status: 'queued',
-    }).select('*').single();
+    const caller = await getCallerProfile(adminClient, authData.user.id);
+    assertCustomerAccess(caller, customerId);
 
-    if (insErr || !job) return json({ error: insErr?.message || 'Insert failed' }, 500);
+    // Admin-only scan start in v1
+    if (!caller.isAdminLike) {
+      return new Response(
+        JSON.stringify({ error: "Only admin users can start scans in v1" }),
+        { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } },
+      );
+    }
 
-    await supabase.from('surface_scan_audit_log').insert({
-      organization_id, scan_job_id: job.id, user_id: userId, user_email: userData.user.email, action: 'scan_started',
-      details: { profile: scan_profile, target: parsed.normalized_target },
+    if (scanProfile === "cve_api_validation" && !caller.isAdminLike) {
+      return new Response(
+        JSON.stringify({ error: "cve_api_validation is admin-only" }),
+        { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } },
+      );
+    }
+
+    const normalized = normalizeTargetInput(target);
+
+    // Simple rate limit: max 20 scans per user/hour
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const rateRes = await adminClient
+      .from("surface_scan_jobs" as any)
+      .select("id", { count: "exact", head: true })
+      .eq("requested_by", authData.user.id)
+      .gte("created_at", oneHourAgo);
+
+    if ((rateRes.count || 0) >= 20) {
+      return new Response(
+        JSON.stringify({ error: "Rate limit reached. Retry later." }),
+        { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } },
+      );
+    }
+
+    // Recover stale running jobs to avoid indefinite PENDING/RUNNING states.
+    const staleRunningCutoff = new Date(Date.now() - 45 * 60 * 1000).toISOString();
+    const { data: staleRunningJobs } = await adminClient
+      .from("surface_scan_jobs" as any)
+      .select("id")
+      .eq("customer_id", customerId)
+      .eq("status", "running")
+      .lt("started_at", staleRunningCutoff)
+      .limit(20);
+
+    if ((staleRunningJobs || []).length > 0) {
+      const staleIds = (staleRunningJobs || []).map((row: any) => row.id).filter(Boolean);
+      if (staleIds.length > 0) {
+        const nowIso = new Date().toISOString();
+        await adminClient
+          .from("surface_scan_jobs" as any)
+          .update({
+            status: "failed",
+            completed_at: nowIso,
+            error_message: "Scan timed out while running",
+          })
+          .in("id", staleIds);
+
+        await adminClient.from("surface_scan_audit_log" as any).insert(
+          staleIds.map((id: string) => ({
+            scan_job_id: id,
+            user_id: authData.user.id,
+            action: "scan_auto_failed_timeout",
+            details: { reason: "running_timeout_45m" },
+          })),
+        );
+      }
+    }
+
+    // Max concurrent scans per tenant/customer
+    const concurrentRes = await adminClient
+      .from("surface_scan_jobs" as any)
+      .select("id", { count: "exact", head: true })
+      .eq("customer_id", customerId)
+      .in("status", ["pending", "queued", "running"]);
+
+    if ((concurrentRes.count || 0) >= 3) {
+      return new Response(
+        JSON.stringify({ error: "Max concurrent scans reached (3). Try later." }),
+        { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } },
+      );
+    }
+
+    const resolvedIps = new Set<string>();
+    if (normalized.target_type === "ipv4" || normalized.target_type === "ipv6") {
+      if (normalized.hostname) resolvedIps.add(normalized.hostname);
+    } else if (normalized.hostname) {
+      const [aRecords, aaaaRecords] = await Promise.all([
+        resolveWithDnsOverHttps(normalized.hostname, "A"),
+        resolveWithDnsOverHttps(normalized.hostname, "AAAA"),
+      ]);
+      for (const ip of [...aRecords, ...aaaaRecords]) resolvedIps.add(ip);
+    }
+
+    const { data: jobData, error: jobError } = await adminClient
+      .from("surface_scan_jobs" as any)
+      .insert({
+        tenant_id: customerId,
+        customer_id: customerId,
+        requested_by: authData.user.id,
+        raw_target: normalized.raw_target,
+        normalized_target: normalized.normalized_target,
+        target_type: normalized.target_type,
+        hostname: normalized.hostname,
+        root_domain: normalized.root_domain,
+        resolved_ips: [...resolvedIps],
+        scan_profile: scanProfile,
+        status: "queued",
+        authorization_confirmed: true,
+      })
+      .select("*")
+      .single();
+
+    if (jobError || !jobData) {
+      throw new Error(jobError?.message || "Unable to create scan job");
+    }
+
+    await adminClient.from("surface_scan_audit_log" as any).insert({
+      scan_job_id: jobData.id,
+      user_id: authData.user.id,
+      action: "scan_created",
+      details: {
+        target: normalized.normalized_target,
+        scan_profile: scanProfile,
+        ownership_proof: body.ownership_proof || null,
+      },
     });
 
-    // Fire & forget run-enrichment
-    EdgeRuntime.waitUntil(
-      fetch(`${SUPABASE_URL}/functions/v1/surfacescan360-run-enrichment`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SERVICE_ROLE}` },
-        body: JSON.stringify({ job_id: job.id }),
-      }).catch((e) => console.error('run-enrichment trigger failed', e)),
-    );
+    const runPromise = runSurfaceScanEnrichment(adminClient, jobData, {
+      initiatedByUserId: authData.user.id,
+      force: true,
+    });
+    const startedInBackground = enqueueBackgroundTask(runPromise.catch((error) => {
+      console.error("[surfacescan360-start-scan] background enrichment error:", error);
+    }));
 
-    return json({ ok: true, job_id: job.id });
-  } catch (e) {
-    console.error('start-scan error', e);
-    return json({ error: String((e as Error).message) }, 500);
+    if (!startedInBackground) {
+      await runPromise;
+    }
+
+    const { data: updatedJob } = await adminClient
+      .from("surface_scan_jobs" as any)
+      .select("id, status, created_at, started_at, completed_at, error_message")
+      .eq("id", jobData.id)
+      .single();
+
+    return new Response(
+      JSON.stringify({
+        job_id: jobData.id,
+        status: updatedJob?.status || "queued",
+        normalized_target: normalized.normalized_target,
+        execution_mode: startedInBackground ? "background" : "inline",
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      },
+    );
+  } catch (error: any) {
+    return new Response(
+      JSON.stringify({
+        error: error?.message || "Internal error",
+      }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      },
+    );
   }
 });
