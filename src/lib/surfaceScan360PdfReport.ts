@@ -248,7 +248,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
           doc.text(ln, cx2 + 4, ty);
           ty += 10;
         });
-      cx2 += columnWidths[i];
+        cx2 += columnWidths[i];
       });
       y += rh;
     });
