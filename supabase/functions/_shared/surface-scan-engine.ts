@@ -9,6 +9,7 @@ import {
 
 interface SurfaceScanJob {
   id: string;
+  organization_id?: string | null;
   tenant_id: string | null;
   customer_id: string | null;
   requested_by: string | null;
@@ -144,8 +145,12 @@ export async function runSurfaceScanEnrichment(
   job: SurfaceScanJob,
   options: RunOptions = {},
 ): Promise<void> {
-  if (!job.customer_id) {
-    throw new Error("Job customer_id mancante");
+  const organizationId = job.customer_id || job.organization_id || null;
+  const customerId = organizationId;
+  const tenantId = job.tenant_id || organizationId;
+
+  if (!organizationId) {
+    throw new Error("Job organization/customer missing");
   }
 
   if (!options.force && ["running", "completed"].includes(job.status)) {
@@ -170,8 +175,9 @@ export async function runSurfaceScanEnrichment(
 
   const insertObservation = async (input: ObservationInput) => {
     await adminClient.from("surface_observations" as any).insert({
-      tenant_id: job.tenant_id,
-      customer_id: job.customer_id,
+      organization_id: organizationId,
+      tenant_id: tenantId,
+      customer_id: customerId,
       scan_job_id: job.id,
       asset_id: input.asset_id || null,
       module: input.module,
@@ -201,8 +207,9 @@ export async function runSurfaceScanEnrichment(
     seenFindingKeys.add(findingKey);
 
     await adminClient.from("surface_findings" as any).insert({
-      tenant_id: job.tenant_id,
-      customer_id: job.customer_id,
+      organization_id: organizationId,
+      tenant_id: tenantId,
+      customer_id: customerId,
       scan_job_id: job.id,
       provider: input.provider || "surface_scan_engine",
       module: input.module || "generic",
@@ -215,8 +222,8 @@ export async function runSurfaceScanEnrichment(
       ip: input.ip || null,
       port: input.port || null,
       protocol: input.protocol || null,
-      cve: input.cve || null,
-      cwe: input.cwe || null,
+      cve: input.cve || [],
+      cwe: input.cwe || [],
       cvss: input.cvss || null,
       epss: input.epss || null,
       cisa_kev: input.cisa_kev || false,
@@ -236,8 +243,9 @@ export async function runSurfaceScanEnrichment(
     const { data, error } = await adminClient
       .from("surface_assets" as any)
       .insert({
-        tenant_id: job.tenant_id,
-        customer_id: job.customer_id,
+        organization_id: organizationId,
+        tenant_id: tenantId,
+        customer_id: customerId,
         scan_job_id: job.id,
         asset_type: input.asset_type,
         asset_value: input.asset_value,
@@ -264,8 +272,9 @@ export async function runSurfaceScanEnrichment(
     confidence = "medium",
   ) => {
     await adminClient.from("surface_external_intel" as any).insert({
-      tenant_id: job.tenant_id,
-      customer_id: job.customer_id,
+      organization_id: organizationId,
+      tenant_id: tenantId,
+      customer_id: customerId,
       scan_job_id: job.id,
       provider,
       target,

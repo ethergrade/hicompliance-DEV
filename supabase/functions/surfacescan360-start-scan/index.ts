@@ -110,7 +110,7 @@ serve(async (req: Request) => {
     const { data: staleRunningJobs } = await adminClient
       .from("surface_scan_jobs" as any)
       .select("id")
-      .eq("customer_id", customerId)
+      .eq("organization_id", customerId)
       .eq("status", "running")
       .lt("started_at", staleRunningCutoff)
       .limit(20);
@@ -143,7 +143,7 @@ serve(async (req: Request) => {
     const concurrentRes = await adminClient
       .from("surface_scan_jobs" as any)
       .select("id", { count: "exact", head: true })
-      .eq("customer_id", customerId)
+      .eq("organization_id", customerId)
       .in("status", ["pending", "queued", "running"]);
 
     if ((concurrentRes.count || 0) >= 3) {
@@ -167,6 +167,7 @@ serve(async (req: Request) => {
     const { data: jobData, error: jobError } = await adminClient
       .from("surface_scan_jobs" as any)
       .insert({
+        organization_id: customerId,
         tenant_id: customerId,
         customer_id: customerId,
         requested_by: authData.user.id,
