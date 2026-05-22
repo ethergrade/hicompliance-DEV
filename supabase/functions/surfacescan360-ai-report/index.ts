@@ -19,6 +19,17 @@ const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: 
 
 const SEV_RANK: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
 const TECHNOLOGY_TOKENS: RegExp[] = [
+  /\bapache\b/gi,
+  /\bnginx\b/gi,
+  /\bwordpress\b/gi,
+  /\bphp\b/gi,
+  /\bopenssl\b/gi,
+  /\bcpanel\b/gi,
+  /\bplesk\b/gi,
+  /\biis\b/gi,
+  /\btomcat\b/gi,
+  /\bdrupal\b/gi,
+  /\bjoomla\b/gi,
   /\bshodan\b/gi,
   /\bpentest-?tools?\b/gi,
   /\bweb[\s-]?check\b/gi,
@@ -27,6 +38,7 @@ const TECHNOLOGY_TOKENS: RegExp[] = [
   /\bhackertarget\b/gi,
   /\bpassive[_\s-]?dns\b/gi,
 ];
+const CVE_REGEX = /\bCVE-\d{4}-\d{4,7}\b/gi;
 
 function normalizeHost(value: string): string {
   return String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, 'www.');
@@ -69,9 +81,14 @@ function priorityFromCvss(cvss: number | null): { priority: string; color: strin
 function redactTechnologyMentions(value: string): string {
   let out = String(value || '');
   for (const token of TECHNOLOGY_TOKENS) {
-    out = out.replace(token, 'motore di analisi');
+    out = out.replace(token, 'componente tecnologica');
   }
   return out.replace(/\s{2,}/g, ' ').trim();
+}
+
+function extractCvesFromText(value: string): string[] {
+  const matches = String(value || '').toUpperCase().match(CVE_REGEX) ?? [];
+  return Array.from(new Set(matches));
 }
 
 function toTextSummary(value: unknown): string {
@@ -521,12 +538,22 @@ Deno.serve(async (req) => {
     });
     const assets = [...rawAssets, ...discoveredSubdomainAssets];
     const findingsRaw = (findingsRes.data ?? []).sort((a, b) => (SEV_RANK[b.severity] ?? 0) - (SEV_RANK[a.severity] ?? 0));
-    const findings = findingsRaw.map((f: any) => ({
-      ...f,
-      title: redactTechnologyMentions(String(f.title || '')),
-      description: redactTechnologyMentions(String(f.description || '')),
-      remediation: redactTechnologyMentions(String(f.remediation || '')),
-    }));
+    const findings = findingsRaw.map((f: any) => {
+      const cvesFromArray = Array.isArray(f.cve)
+        ? f.cve.map((c: unknown) => String(c || '').toUpperCase().trim()).filter(Boolean)
+        : [];
+      const cvesFromText = extractCvesFromText(
+        `${String(f.title || '')} ${String(f.description || '')} ${String(f.remediation || '')}`,
+      );
+      const cves = Array.from(new Set([...cvesFromArray, ...cvesFromText]));
+      return {
+        ...f,
+        cve: cves,
+        title: redactTechnologyMentions(String(f.title || '')),
+        description: redactTechnologyMentions(String(f.description || '')),
+        remediation: redactTechnologyMentions(String(f.remediation || '')),
+      };
+    });
     const intelRaw = intelRes.data ?? [];
     const intel = intelRaw.map((entry: any) => ({
       category: mapIntelCategory(String(entry.provider || '')),
@@ -536,6 +563,74 @@ Deno.serve(async (req) => {
     }));
     const observations = obsRes.data ?? [];
     const monitored_scope = monitoredRes.data ?? [];
+
+    const cveByAsset = new Map<string, Set<string>>();
+    const cveSet = new Set<string>();
+    findings.forEach((finding: any) => {
+      const asset = String(finding.affected_asset || finding.affected_url || job.raw_target || '').trim() || 'Asset principale';
+      const cves = Array.isArray(finding.cve) ? finding.cve : [];
+      if (cves.length === 0) return;
+      for (const cve of cves) {
+        const cveId = String(cve || '').toUpperCase().trim();
+        if (!cveId) continue;
+        cveSet.add(cveId);
+        if (!cveByAsset.has(cveId)) cveByAsset.set(cveId, new Set<string>());
+        cveByAsset.get(cveId)!.add(asset);
+      }
+    });
+    const cveIds = Array.from(cveSet);
+
+    const cveIntelById = new Map<string, any>();
+    if (cveIds.length > 0) {
+      const { data: cveIntelRows } = await supabase
+        .from('cve_intel_cache')
+        .select('cve_id, description, cvss_v3_score, cvss_v3_severity, cvss_v2_score, cwe_ids, references_json, cpe_json, exploit_links, epss_score, epss_percentile, cisa_kev, kev_date_added, kev_due_date, kev_required_action, published_at, last_modified_at, refreshed_at')
+        .in('cve_id', cveIds.slice(0, 500));
+      (cveIntelRows ?? []).forEach((row: any) => cveIntelById.set(String(row.cve_id || '').toUpperCase(), row));
+    }
+
+    const cve_catalog = cveIds
+      .map((cveId) => {
+        const intelRow = cveIntelById.get(cveId);
+        const fallbackCvss = findings.find((f: any) => Array.isArray(f.cve) && f.cve.includes(cveId))?.cvss ?? null;
+        const references = Array.isArray(intelRow?.references_json)
+          ? intelRow.references_json
+              .map((entry: any) => {
+                if (typeof entry === 'string') return entry;
+                if (entry && typeof entry === 'object') return String(entry.url || entry.href || '').trim();
+                return '';
+              })
+              .filter(Boolean)
+              .slice(0, 8)
+          : [];
+        const cwes = Array.isArray(intelRow?.cwe_ids)
+          ? intelRow.cwe_ids.map((c: unknown) => String(c || '').trim()).filter(Boolean).slice(0, 12)
+          : [];
+        return {
+          cve_id: cveId,
+          description: redactTechnologyMentions(String(intelRow?.description || 'Descrizione non disponibile nel cache CVE.')),
+          cvss: intelRow?.cvss_v3_score ?? fallbackCvss ?? intelRow?.cvss_v2_score ?? null,
+          cvss_severity: intelRow?.cvss_v3_severity || null,
+          epss: intelRow?.epss_score ?? null,
+          epss_percentile: intelRow?.epss_percentile ?? null,
+          cisa_kev: Boolean(intelRow?.cisa_kev),
+          kev_due_date: intelRow?.kev_due_date || null,
+          kev_required_action: intelRow?.kev_required_action ? redactTechnologyMentions(String(intelRow.kev_required_action)) : null,
+          cwe: cwes,
+          references,
+          affected_assets: Array.from(cveByAsset.get(cveId) ?? []).slice(0, 20),
+          published_at: intelRow?.published_at || null,
+          last_modified_at: intelRow?.last_modified_at || null,
+          refreshed_at: intelRow?.refreshed_at || null,
+        };
+      })
+      .sort((a, b) => {
+        const aCvss = Number(a.cvss ?? -1);
+        const bCvss = Number(b.cvss ?? -1);
+        if (a.cisa_kev !== b.cisa_kev) return a.cisa_kev ? -1 : 1;
+        return bCvss - aCvss;
+      })
+      .slice(0, 200);
 
     const sevCount = findings.reduce((acc: Record<string, number>, f) => { acc[f.severity] = (acc[f.severity] ?? 0) + 1; return acc; }, {});
     const topFindings = findings.slice(0, 25).map((f) => ({
@@ -567,6 +662,13 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       intel_summary: intel.slice(0, 40),
       key_observations: observations.slice(0, 80),
       monitored_scope: monitored_scope.slice(0, 200),
+      cve_catalog: cve_catalog.slice(0, 80).map((item: any) => ({
+        cve_id: item.cve_id,
+        cvss: item.cvss,
+        epss: item.epss,
+        cisa_kev: item.cisa_kev,
+        affected_assets: item.affected_assets,
+      })),
     };
 
     let aiReport: any = null;
@@ -649,6 +751,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       assets_in_scope: assets,
       findings,
       findings_by_severity: sevCount,
+      cve_catalog,
       intel,
       observations,
       monitored_scope,
