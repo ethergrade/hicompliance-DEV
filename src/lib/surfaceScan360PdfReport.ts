@@ -159,15 +159,15 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   };
 
   const sectionTitle = (n: number, title: string) => {
-    ensure(36);
-    y += 6;
+    ensure(50);
+    y += 12;
     doc.setFillColor(BRAND.r, BRAND.g, BRAND.b);
     doc.rect(margin, y - 2, 4, 18, 'F');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
     doc.setTextColor(DARK.r, DARK.g, DARK.b);
     doc.text(`${n}. ${title}`, margin + 12, y + 12);
-    y += 24;
+    y += 32;
   };
 
   const kv = (k: string, v: string) => {
