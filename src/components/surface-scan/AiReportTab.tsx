@@ -15,6 +15,16 @@ interface AiReport {
   assets_in_scope: any[];
   findings: any[];
   findings_by_severity: Record<string, number>;
+  cve_catalog?: Array<{
+    cve_id: string;
+    description?: string | null;
+    cvss?: number | null;
+    cvss_severity?: string | null;
+    epss?: number | null;
+    epss_percentile?: number | null;
+    cisa_kev?: boolean;
+    affected_assets?: string[];
+  }>;
   intel: any[];
   observations?: any[];
   subdomain_dumps?: any[];
@@ -44,6 +54,27 @@ const sevColor = (s?: string) => {
 };
 
 const PAGE_SIZE = 20;
+
+const redactReportWords = (value: string) => {
+  const tokens = [
+    /\bshodan\b/gi,
+    /\bpentest-?tools?\b/gi,
+    /\bweb[\s-]?check\b/gi,
+    /\burlscan\b/gi,
+    /\bapache\b/gi,
+    /\bnginx\b/gi,
+    /\bwordpress\b/gi,
+    /\bphp\b/gi,
+    /\bopenssl\b/gi,
+    /\biis\b/gi,
+    /\btomcat\b/gi,
+    /\bdrupal\b/gi,
+    /\bjoomla\b/gi,
+  ];
+  let out = String(value || '');
+  for (const token of tokens) out = out.replace(token, 'componente tecnologica');
+  return out.replace(/\s{2,}/g, ' ').trim();
+};
 
 const normalizeHost = (value?: string) => String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
 const getSubdomainDepth = (host: string, root: string) => {
@@ -75,6 +106,7 @@ export const AiReportTab: React.FC = () => {
   const [report, setReport] = useState<AiReport | null>(null);
   const [assetPage, setAssetPage] = useState(0);
   const [findingPage, setFindingPage] = useState(0);
+  const [cvePage, setCvePage] = useState(0);
   const [intelPage, setIntelPage] = useState(0);
   const [obsPage, setObsPage] = useState(0);
   const { organizationId } = useClientOrganization();
@@ -85,7 +117,7 @@ export const AiReportTab: React.FC = () => {
       return;
     }
     setLoading(true);
-    setAssetPage(0); setFindingPage(0); setIntelPage(0); setObsPage(0);
+    setAssetPage(0); setFindingPage(0); setCvePage(0); setIntelPage(0); setObsPage(0);
     try {
       const { data, error } = await supabase.functions.invoke('surfacescan360-ai-report', {
         body: { organization_id: organizationId },
@@ -103,6 +135,7 @@ export const AiReportTab: React.FC = () => {
 
   const assets = report?.assets_in_scope ?? [];
   const findings = report?.findings ?? [];
+  const cveCatalog = report?.cve_catalog ?? [];
   const intel = report?.intel ?? [];
   const observations = report?.observations ?? [];
   const subdomainEvidence = useMemo(() => (report?.subdomain_dumps ?? []).flatMap((dump: any) =>
@@ -118,11 +151,13 @@ export const AiReportTab: React.FC = () => {
 
   const assetPages = Math.max(1, Math.ceil(assets.length / PAGE_SIZE));
   const findingPages = Math.max(1, Math.ceil(findings.length / PAGE_SIZE));
+  const cvePages = Math.max(1, Math.ceil(cveCatalog.length / PAGE_SIZE));
   const intelPages = Math.max(1, Math.ceil(intel.length / PAGE_SIZE));
   const obsPages = Math.max(1, Math.ceil(observations.length / PAGE_SIZE));
 
   const assetsSlice = useMemo(() => assets.slice(assetPage * PAGE_SIZE, (assetPage + 1) * PAGE_SIZE), [assets, assetPage]);
   const findingsSlice = useMemo(() => findings.slice(findingPage * PAGE_SIZE, (findingPage + 1) * PAGE_SIZE), [findings, findingPage]);
+  const cveSlice = useMemo(() => cveCatalog.slice(cvePage * PAGE_SIZE, (cvePage + 1) * PAGE_SIZE), [cveCatalog, cvePage]);
   const intelSlice = useMemo(() => intel.slice(intelPage * PAGE_SIZE, (intelPage + 1) * PAGE_SIZE), [intel, intelPage]);
   const observationsSlice = useMemo(() => observations.slice(obsPage * PAGE_SIZE, (obsPage + 1) * PAGE_SIZE), [observations, obsPage]);
 
@@ -237,7 +272,7 @@ export const AiReportTab: React.FC = () => {
                     {report.ai.risk_level} · {report.ai.risk_score}/100
                   </Badge>
                 )}
-                <p className="text-sm whitespace-pre-wrap">{report.ai.executive_summary}</p>
+                <p className="text-sm whitespace-pre-wrap">{redactReportWords(String(report.ai.executive_summary || ''))}</p>
               </CardContent>
             </Card>
           )}
@@ -251,10 +286,10 @@ export const AiReportTab: React.FC = () => {
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <Badge variant="outline">#{r.priority}</Badge>
                       <Badge className={sevColor(r.severity)}>{r.severity}</Badge>
-                      <span className="font-semibold">{r.title}</span>
+                      <span className="font-semibold">{redactReportWords(String(r.title || ''))}</span>
                     </div>
-                    <p className="text-sm"><b>Razionale:</b> {r.rationale}</p>
-                    <p className="text-sm"><b>Azione:</b> {r.action}</p>
+                    <p className="text-sm"><b>Razionale:</b> {redactReportWords(String(r.rationale || ''))}</p>
+                    <p className="text-sm"><b>Azione:</b> {redactReportWords(String(r.action || ''))}</p>
                     {r.affected_assets?.length ? <p className="text-xs text-muted-foreground">Asset: {r.affected_assets.join(', ')}</p> : null}
                   </div>
                 ))}
@@ -267,7 +302,7 @@ export const AiReportTab: React.FC = () => {
               <CardHeader><CardTitle>6. Correlazioni</CardTitle></CardHeader>
               <CardContent>
                 <ul className="text-sm list-disc pl-5 space-y-1">
-                  {report.ai.correlations.map((c, i) => <li key={i}>{c}</li>)}
+                  {report.ai.correlations.map((c, i) => <li key={i}>{redactReportWords(String(c || ''))}</li>)}
                 </ul>
               </CardContent>
             </Card>
@@ -276,7 +311,7 @@ export const AiReportTab: React.FC = () => {
           {report.ai?.compliance_notes ? (
             <Card>
               <CardHeader><CardTitle>7. Note di compliance</CardTitle></CardHeader>
-              <CardContent><p className="text-sm whitespace-pre-wrap">{report.ai.compliance_notes}</p></CardContent>
+              <CardContent><p className="text-sm whitespace-pre-wrap">{redactReportWords(String(report.ai.compliance_notes || ''))}</p></CardContent>
             </Card>
           ) : null}
 
@@ -317,13 +352,13 @@ export const AiReportTab: React.FC = () => {
                   <li key={i} className="border-l-4 pl-3 py-2 border-border">
                     <div className="flex items-center gap-2 flex-wrap">
                       <Badge className={sevColor(f.severity)}>{f.severity}</Badge>
-                      <span className="font-semibold text-sm">{f.title}</span>
+                      <span className="font-semibold text-sm">{redactReportWords(String(f.title || ''))}</span>
                     </div>
                     {(f.affected_asset || f.affected_url) && (
                       <p className="text-xs text-muted-foreground mt-1">Asset: {f.affected_asset || f.affected_url}</p>
                     )}
                     {f.cve?.length ? <p className="text-xs">CVE: {f.cve.join(', ')}</p> : null}
-                    {f.remediation && <p className="text-xs"><b>Remediation:</b> {f.remediation}</p>}
+                    {f.remediation && <p className="text-xs"><b>Remediation:</b> {redactReportWords(String(f.remediation || ''))}</p>}
                   </li>
                 ))}
               </ul>
@@ -331,10 +366,37 @@ export const AiReportTab: React.FC = () => {
             </CardContent>
           </Card>
 
+          {cveCatalog.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>10. Catalogo CVE ({cveCatalog.length})</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-2">
+                  {cveSlice.map((row) => (
+                    <li key={row.cve_id} className="border-l-4 pl-3 py-2 border-border">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="secondary">{row.cve_id}</Badge>
+                        <Badge variant="outline">CVSS: {row.cvss ?? '-'}</Badge>
+                        <Badge variant="outline">EPSS: {row.epss != null ? `${(Number(row.epss) * 100).toFixed(2)}%` : '-'}</Badge>
+                        {row.cisa_kev ? <Badge className="bg-red-600 text-white">CISA KEV</Badge> : null}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">{redactReportWords(String(row.description || 'Descrizione non disponibile.'))}</p>
+                      {row.affected_assets?.length ? (
+                        <p className="text-xs mt-1"><b>Asset:</b> {row.affected_assets.slice(0, 5).join(', ')}</p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+                <Paginator page={cvePage} totalPages={cvePages} onChange={setCvePage} />
+              </CardContent>
+            </Card>
+          )}
+
           {/* Evidenze esterne - paginati */}
           {intel.length > 0 && (
             <Card>
-              <CardHeader><CardTitle>10. Evidenze esterne ({intel.length})</CardTitle></CardHeader>
+              <CardHeader><CardTitle>11. Evidenze esterne ({intel.length})</CardTitle></CardHeader>
               <CardContent>
                 <ul className="text-sm space-y-2">
                   {intelSlice.map((it, i) => (
@@ -345,7 +407,7 @@ export const AiReportTab: React.FC = () => {
                       </div>
                       {(it.summary_text || it.summary) && (
                         <p className="text-xs text-muted-foreground mt-1 line-clamp-3">
-                          {String(it.summary_text || (typeof it.summary === 'string' ? it.summary : JSON.stringify(it.summary).slice(0, 400)))}
+                          {redactReportWords(String(it.summary_text || (typeof it.summary === 'string' ? it.summary : JSON.stringify(it.summary).slice(0, 400))))}
                         </p>
                       )}
                     </li>
@@ -359,7 +421,7 @@ export const AiReportTab: React.FC = () => {
           {/* Observations - paginate */}
           {observations.length > 0 && (
             <Card>
-              <CardHeader><CardTitle>11. Osservazioni ({observations.length})</CardTitle></CardHeader>
+              <CardHeader><CardTitle>12. Osservazioni ({observations.length})</CardTitle></CardHeader>
               <CardContent>
                 <ul className="text-sm space-y-1">
                   {observationsSlice.map((ob, i) => (

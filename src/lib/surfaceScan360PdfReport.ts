@@ -20,6 +20,23 @@ export interface SurfaceScan360Report {
   assets_in_scope: any[];
   findings: any[];
   findings_by_severity: Record<string, number>;
+  cve_catalog?: Array<{
+    cve_id: string;
+    description?: string | null;
+    cvss?: number | null;
+    cvss_severity?: string | null;
+    epss?: number | null;
+    epss_percentile?: number | null;
+    cisa_kev?: boolean;
+    kev_due_date?: string | null;
+    kev_required_action?: string | null;
+    cwe?: string[];
+    references?: string[];
+    affected_assets?: string[];
+    published_at?: string | null;
+    last_modified_at?: string | null;
+    refreshed_at?: string | null;
+  }>;
   intel: any[];
   observations?: any[];
   monitored_scope?: any[];
@@ -65,14 +82,35 @@ const sevColor = (s?: string): [number, number, number] => {
 const PROVIDER_LABELS: Record<string, string> = {
   shodan: 'Esposizione rete pubblica',
   urlscan: 'Comportamento applicativo esterno',
-  hosting_context: 'Footprint hosting & multi-tenancy',
-  ct_log: 'Certificate Transparency log',
+  hosting_context: 'Classificazione contesto hosting',
+  ct_log: 'Evidenze certificate pubbliche',
   dnssec: 'Stato DNSSEC',
-  tech_stack: 'Configurazione applicativa osservata',
+  tech_stack: 'Configurazione applicativa',
   mail_security: 'Postura sicurezza email (SPF/DKIM/DMARC)',
-  security_headers: 'Security headers HTTP',
+  security_headers: 'Controlli HTTP di sicurezza',
 };
 const providerLabel = (p: string) => PROVIDER_LABELS[p] || 'Evidenze esterne';
+
+const redactReportWords = (value: string) => {
+  const tokens = [
+    /\bshodan\b/gi,
+    /\bpentest-?tools?\b/gi,
+    /\bweb[\s-]?check\b/gi,
+    /\burlscan\b/gi,
+    /\bapache\b/gi,
+    /\bnginx\b/gi,
+    /\bwordpress\b/gi,
+    /\bphp\b/gi,
+    /\bopenssl\b/gi,
+    /\biis\b/gi,
+    /\btomcat\b/gi,
+    /\bdrupal\b/gi,
+    /\bjoomla\b/gi,
+  ];
+  let out = String(value || '');
+  for (const token of tokens) out = out.replace(token, 'componente tecnologica');
+  return out.replace(/\s{2,}/g, ' ').trim();
+};
 
 const normalizeHost = (value: string): string => String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
 const depthFromRoot = (host: string, rootDomain: string): number => {
@@ -94,7 +132,7 @@ const isJunkSummary = (s: any): boolean => {
 
 const summarizeIntel = (provider: string, target: string, summary: any): string => {
   if (summary == null) return 'Nessun dato';
-  if (typeof summary === 'string') return summary;
+  if (typeof summary === 'string') return redactReportWords(summary);
   if (provider === 'urlscan' && Array.isArray(summary.recent)) {
     if (summary.recent.length === 0) return `Nessuna scansione pubblica nota per ${target}`;
     const r = summary.recent[0];
@@ -106,7 +144,7 @@ const summarizeIntel = (provider: string, target: string, summary: any): string 
     if (summary.resolved_ips?.length) out.push(`IP risolti: ${summary.resolved_ips.join(', ')}`);
     if (summary.co_hosted_count != null) out.push(`co-hosted: ${summary.co_hosted_count}`);
     if (summary.multi_tenant != null) out.push(`multi-tenant: ${summary.multi_tenant ? 'sì' : 'no'}`);
-    if (summary.cdn_score != null) out.push(`CDN score: ${summary.cdn_score}`);
+    if (summary.cdn_score != null) out.push(`score CDN: ${summary.cdn_score}`);
     if (summary.type) out.push(`tipo: ${summary.type}`);
     return out.join(' · ') || 'n/d';
   }
@@ -116,14 +154,27 @@ const summarizeIntel = (provider: string, target: string, summary: any): string 
     const banners = summary.banners || [];
     const parts: string[] = [];
     if (ports?.length) parts.push(`porte aperte: ${ports.join(', ')}`);
-    if (banners.length) parts.push(`banner: ${banners.length}`);
+    if (banners.length) parts.push(`banner tecnici: ${banners.length}`);
     if (summary.org) parts.push(`operatore rete: ${summary.org}`);
     if (summary.asn) parts.push(`ASN: ${summary.asn}`);
-    return parts.join(' · ') || JSON.stringify(summary).slice(0, 200);
+    return redactReportWords(parts.join(' · ') || 'Evidenza tecnica disponibile.');
   }
-  // generic
-  const compact = JSON.stringify(summary);
-  return compact.length > 240 ? compact.slice(0, 240) + '…' : compact;
+  const keys = typeof summary === 'object' && summary ? Object.keys(summary) : [];
+  if (Array.isArray((summary as any)?.detected)) {
+    return `Pattern applicativi rilevati: ${(summary as any).detected.length}`;
+  }
+  if (Array.isArray((summary as any)?.ports) || Array.isArray((summary as any)?.open_ports)) {
+    const portCount = Array.isArray((summary as any)?.ports)
+      ? (summary as any).ports.length
+      : Array.isArray((summary as any)?.open_ports)
+        ? (summary as any).open_ports.length
+        : 0;
+    return `Porte esposte rilevate: ${portCount}`;
+  }
+  if (keys.length > 0) {
+    return `Evidenza tecnica disponibile (${keys.slice(0, 5).join(', ')})`;
+  }
+  return 'Evidenza tecnica disponibile.';
 };
 
 const computeFallbackRisk = (report: SurfaceScan360Report): { score: number; level: string } => {
@@ -487,7 +538,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
         return {
           group: String(i.category || 'Evidenze esterne'),
           target: String(i.target || 'n/d'),
-          summaryText: String(i.summary_text),
+          summaryText: redactReportWords(String(i.summary_text)),
         };
       }
       return {
@@ -536,6 +587,31 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     { bold: true, size: 10 }
   );
   y += 6;
+  const cveCatalog = Array.isArray(report.cve_catalog) ? report.cve_catalog : [];
+  if (cveCatalog.length > 0) {
+    text('Catalogo CVE con descrizione tecnica', { bold: true, size: 10, color: [BRAND.r, BRAND.g, BRAND.b] });
+    y += 2;
+    const cveRows = cveCatalog.slice(0, 40).map((entry) => {
+      const cvss = entry.cvss != null ? String(entry.cvss) : '-';
+      const epss = entry.epss != null ? `${(Number(entry.epss) * 100).toFixed(2)}%` : '-';
+      const kev = entry.cisa_kev ? 'Sì' : 'No';
+      const assets = (entry.affected_assets || []).slice(0, 2).join(', ');
+      const desc = redactReportWords(String(entry.description || 'Descrizione non disponibile.'));
+      return [
+        entry.cve_id || '-',
+        cvss,
+        epss,
+        kev,
+        assets || '-',
+        desc,
+      ];
+    });
+    drawTable(['CVE', 'CVSS', 'EPSS', 'KEV', 'Asset', 'Descrizione'], cveRows, [88, 42, 52, 38, 110, 185]);
+    if (cveCatalog.length > 40) {
+      text(`… e altre ${cveCatalog.length - 40} CVE nel repository del report`, { size: 8, color: [MUTED.r, MUTED.g, MUTED.b], indent: 4 });
+      y += 6;
+    }
+  }
 
   // Raggruppa per asset
   const byAsset: Record<string, any[]> = {};
@@ -580,12 +656,12 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(9);
         doc.setTextColor(DARK.r, DARK.g, DARK.b);
-        const titleLines = doc.splitTextToSize(f.title || '(senza titolo)', w - margin * 2 - badgeW - 10);
+        const titleLines = doc.splitTextToSize(redactReportWords(f.title || '(senza titolo)'), w - margin * 2 - badgeW - 10);
         doc.text(titleLines[0], margin + badgeW + 6, y);
         y += 12;
         for (let i = 1; i < titleLines.length; i++) { ensure(12); doc.text(titleLines[i], margin + badgeW + 6, y); y += 12; }
         if (Array.isArray(f.cve) && f.cve.length) text(`CVE: ${f.cve.join(', ')}${f.cvss ? '  ·  CVSS ' + f.cvss : ''}`, { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] });
-        if (f.remediation) text(`Remediation: ${f.remediation}`, { size: 9 });
+        if (f.remediation) text(`Remediation: ${redactReportWords(f.remediation)}`, { size: 9 });
         y += 3;
       });
       if (list.length > 30) text(`… e altri ${list.length - 30} findings`, { size: 8, color: [MUTED.r, MUTED.g, MUTED.b], indent: 4 });
@@ -599,7 +675,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     if (aiData.risk_score != null) {
       text(`Risk score: ${aiData.risk_score}/100  ·  Livello: ${aiData.risk_level || 'n/d'}`, { bold: true });
     }
-    if (aiData.executive_summary) text(aiData.executive_summary);
+    if (aiData.executive_summary) text(redactReportWords(aiData.executive_summary));
 
     if (aiData.top_recommendations?.length) {
       y += 6;
@@ -610,10 +686,10 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(10);
         doc.setTextColor(DARK.r, DARK.g, DARK.b);
-        doc.text(`#${r.priority}  ${r.title}`, margin + badgeW + 6, y);
+        doc.text(`#${r.priority}  ${redactReportWords(r.title)}`, margin + badgeW + 6, y);
         y += 14;
-        if (r.rationale) text(`Razionale: ${r.rationale}`, { size: 9 });
-        if (r.action) text(`Indicazione: ${r.action}`, { size: 9, bold: true });
+        if (r.rationale) text(`Razionale: ${redactReportWords(r.rationale)}`, { size: 9 });
+        if (r.action) text(`Indicazione: ${redactReportWords(r.action)}`, { size: 9, bold: true });
         if (r.affected_assets?.length) text(`Asset: ${r.affected_assets.join(', ')}`, { size: 8, color: [MUTED.r, MUTED.g, MUTED.b] });
         y += 6;
       });
@@ -621,12 +697,12 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
 
     if (aiData.correlations?.length) {
       sectionTitle(9, 'Correlazioni');
-      aiData.correlations.forEach((c: any) => text(`• ${c}`, { size: 9 }));
+      aiData.correlations.forEach((c: any) => text(`• ${redactReportWords(String(c || ''))}`, { size: 9 }));
     }
 
     if (aiData.compliance_notes) {
       sectionTitle(10, 'Note di compliance');
-      text(aiData.compliance_notes);
+      text(redactReportWords(aiData.compliance_notes));
     }
   }
 
