@@ -380,15 +380,21 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     text('Nessun sottodominio rilevato in questo snapshot. Esegui un dump sottodomini per arricchire lo scope.', { color: [MUTED.r, MUTED.g, MUTED.b], size: 9 });
   } else if (dumpSubdomains.length > 0) {
     text(`Evidenze dirette da discovery sottodomini (${dumpSubdomains.length})`, { bold: true, size: 10, color: [BRAND.r, BRAND.g, BRAND.b] });
+    y += 6;
     drawTable(['Profondità', 'Sottodominio', 'Root', 'Evidenza'], dumpSubdomains.map((x) => [`L${x.depth}`, x.host, x.root, x.evidence]), [65, 190, 110, 150]);
+    y += 8;
   } else {
     Object.entries(subdomainGroups).forEach(([root, list]) => {
       list.sort((a, b) => a.depth - b.depth || a.host.localeCompare(b.host));
       const subs = list.filter((x) => x.depth > 0);
       if (subs.length === 0) return;
+      ensure(60);
+      y += 6;
       text(`${root}  —  ${subs.length} sottodomin${subs.length === 1 ? 'io' : 'i'}`, { bold: true, size: 11, color: [BRAND.r, BRAND.g, BRAND.b] });
+      y += 8;
       const rows = subs.map((x) => [`L${x.depth}`, x.host, x.depth >= 3 ? 'profondo' : x.depth === 2 ? 'medio' : 'diretto']);
       drawTable(['Profondità', 'Sottodominio', 'Livello'], rows, [70, 320, 125]);
+      y += 10;
     });
   }
 
