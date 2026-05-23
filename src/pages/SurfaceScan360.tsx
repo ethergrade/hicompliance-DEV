@@ -182,6 +182,7 @@ interface ReverseAssetRow {
 
 const SurfaceScan360: React.FC = () => {
   const exportContainerRef = useRef<HTMLDivElement>(null);
+  const dependencyMapRef = useRef<HTMLDivElement>(null);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
   const [newMonitoredIpInput, setNewMonitoredIpInput] = useState('');
@@ -193,7 +194,7 @@ const SurfaceScan360: React.FC = () => {
   const [rescanLimit, setRescanLimit] = useState('');
   const [assetSearch, setAssetSearch] = useState('');
   const [assetPage, setAssetPage] = useState(1);
-  const [isDiscoveryCollapsed, setIsDiscoveryCollapsed] = useState(true);
+  const [isDiscoveryCollapsed, setIsDiscoveryCollapsed] = useState(false);
   const [isLiveResultsCollapsed, setIsLiveResultsCollapsed] = useState(true);
   const [showScopeDiagnostics, setShowScopeDiagnostics] = useState(false);
   const [reverseDnsMap, setReverseDnsMap] = useState<Record<string, string[]>>({});
@@ -232,6 +233,17 @@ const SurfaceScan360: React.FC = () => {
 
   const handleCreateAlert = async (data: { alert_email: string; alert_types: SurfaceScanAlertTypes }) => {
     return await createAlert(data);
+  };
+
+  const scrollToDependencyMap = () => {
+    if (isDiscoveryCollapsed) {
+      setIsDiscoveryCollapsed(false);
+      setTimeout(() => {
+        dependencyMapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 120);
+      return;
+    }
+    dependencyMapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const scanDiscovery = useMemo(() => {
@@ -922,21 +934,26 @@ const SurfaceScan360: React.FC = () => {
                   Vista rapida dei target lanciati e degli asset scoperti via enrichment OSINT.
                 </p>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsDiscoveryCollapsed((prev) => !prev)}
-              >
-                {isDiscoveryCollapsed ? (
-                  <ChevronRight className="w-4 h-4 mr-2" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 mr-2" />
-                )}
-                {isDiscoveryCollapsed ? 'Espandi' : 'Collassa'}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" size="sm" onClick={scrollToDependencyMap}>
+                  Vai alla mappa DNS
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsDiscoveryCollapsed((prev) => !prev)}
+                >
+                  {isDiscoveryCollapsed ? (
+                    <ChevronRight className="w-4 h-4 mr-2" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 mr-2" />
+                  )}
+                  {isDiscoveryCollapsed ? 'Espandi' : 'Collassa'}
+                </Button>
+              </div>
             </div>
           </CardHeader>
-          {!isDiscoveryCollapsed && (
+          {!isDiscoveryCollapsed ? (
             <CardContent className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="rounded-lg border border-border p-3">
@@ -1139,7 +1156,11 @@ const SurfaceScan360: React.FC = () => {
               </Table>
             </div>
 
-            <div className="rounded-lg border border-border p-4 space-y-3">
+            <div
+              ref={dependencyMapRef}
+              id="domain-ip-dependency-map"
+              className="rounded-lg border border-border p-4 space-y-3"
+            >
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div>
                   <p className="text-sm font-medium">Mappa Dipendenze Dominio/IP (Scope)</p>
@@ -1164,8 +1185,8 @@ const SurfaceScan360: React.FC = () => {
                     aria-label="Mappa dipendenze domini e IP"
                   >
                     <g>
-                      <text x="120" y="22" className="fill-muted-foreground text-[12px]">Domini/Subdomini</text>
-                      <text x="760" y="22" className="fill-muted-foreground text-[12px]">IP correlati</text>
+                      <text x="120" y="22" className="text-[12px]" fill="hsl(var(--muted-foreground))">Domini/Subdomini</text>
+                      <text x="760" y="22" className="text-[12px]" fill="hsl(var(--muted-foreground))">IP correlati</text>
                     </g>
                     {domainIpDependencyGraph.edges.map((edge) => {
                       const domainIndex = domainIpDependencyGraph.domains.indexOf(edge.domain);
@@ -1190,7 +1211,7 @@ const SurfaceScan360: React.FC = () => {
                       return (
                         <g key={`domain-${domain}`}>
                           <circle cx={275} cy={y} r={4} fill="rgb(99, 102, 241)" />
-                          <text x={268} y={y + 4} textAnchor="end" className="fill-foreground text-[11px]">
+                          <text x={268} y={y + 4} textAnchor="end" className="text-[11px]" fill="hsl(var(--foreground))">
                             {label}
                           </text>
                         </g>
@@ -1201,7 +1222,7 @@ const SurfaceScan360: React.FC = () => {
                       return (
                         <g key={`ip-${ip}`}>
                           <circle cx={725} cy={y} r={4} fill="rgb(34, 197, 94)" />
-                          <text x={734} y={y + 4} textAnchor="start" className="fill-foreground text-[11px]">
+                          <text x={734} y={y + 4} textAnchor="start" className="text-[11px]" fill="hsl(var(--foreground))">
                             {ip}
                           </text>
                         </g>
@@ -1260,6 +1281,20 @@ const SurfaceScan360: React.FC = () => {
                 </TableBody>
               </Table>
             </div>
+            </CardContent>
+          ) : (
+            <CardContent className="pt-0">
+              <div className="rounded-lg border border-border p-3 flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <p className="text-sm font-medium">Sezione Discovery collassata</p>
+                  <p className="text-xs text-muted-foreground">
+                    La mappa dipendenze dominio↔IP è disponibile ({domainIpDependencyGraph.totalRelations} relazioni).
+                  </p>
+                </div>
+                <Button variant="secondary" size="sm" onClick={scrollToDependencyMap}>
+                  Apri mappa DNS
+                </Button>
+              </div>
             </CardContent>
           )}
         </Card>
