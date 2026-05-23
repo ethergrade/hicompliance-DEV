@@ -388,6 +388,128 @@ function computeRiskScoreFromSeverity(sevCount: Record<string, number>): number 
   return Math.max(5, Math.min(100, 100 - penalty));
 }
 
+const OWASP_TOP10_2021: Record<string, string> = {
+  'A01:2021': 'Broken Access Control',
+  'A02:2021': 'Cryptographic Failures',
+  'A03:2021': 'Injection',
+  'A04:2021': 'Insecure Design',
+  'A05:2021': 'Security Misconfiguration',
+  'A06:2021': 'Vulnerable & Outdated Components',
+  'A07:2021': 'Identification & Authentication Failures',
+  'A08:2021': 'Software & Data Integrity Failures',
+  'A09:2021': 'Security Logging & Monitoring Failures',
+  'A10:2021': 'Server-Side Request Forgery',
+};
+
+const FINDING_TAXONOMY: Record<string, { cwe: string; owasp: string; baselineCvss: number }> = {
+  missing_referrer_policy: { cwe: 'CWE-200', owasp: 'A01:2021', baselineCvss: 3.1 },
+  missing_xfo: { cwe: 'CWE-1021', owasp: 'A05:2021', baselineCvss: 5.4 },
+  missing_xcto: { cwe: 'CWE-79', owasp: 'A03:2021', baselineCvss: 4.3 },
+  missing_x_content_type_options: { cwe: 'CWE-79', owasp: 'A03:2021', baselineCvss: 4.3 },
+  missing_csp: { cwe: 'CWE-1021', owasp: 'A05:2021', baselineCvss: 6.1 },
+  missing_hsts: { cwe: 'CWE-319', owasp: 'A02:2021', baselineCvss: 5.9 },
+  weak_hsts: { cwe: 'CWE-319', owasp: 'A02:2021', baselineCvss: 4.0 },
+  missing_permissions_policy: { cwe: 'CWE-693', owasp: 'A05:2021', baselineCvss: 3.1 },
+  server_header_leak: { cwe: 'CWE-200', owasp: 'A05:2021', baselineCvss: 2.7 },
+  server_header_exposed: { cwe: 'CWE-200', owasp: 'A05:2021', baselineCvss: 2.7 },
+  x_powered_by_leak: { cwe: 'CWE-200', owasp: 'A05:2021', baselineCvss: 2.7 },
+  x_powered_by_exposed: { cwe: 'CWE-200', owasp: 'A05:2021', baselineCvss: 2.7 },
+  missing_framing_protection: { cwe: 'CWE-1021', owasp: 'A05:2021', baselineCvss: 5.4 },
+  spf_missing: { cwe: 'CWE-290', owasp: 'A07:2021', baselineCvss: 5.3 },
+  spf_weak: { cwe: 'CWE-290', owasp: 'A07:2021', baselineCvss: 4.3 },
+  dmarc_missing: { cwe: 'CWE-290', owasp: 'A07:2021', baselineCvss: 5.3 },
+  dmarc_weak: { cwe: 'CWE-290', owasp: 'A07:2021', baselineCvss: 4.3 },
+  dkim_missing: { cwe: 'CWE-290', owasp: 'A07:2021', baselineCvss: 4.3 },
+  dnssec_missing: { cwe: 'CWE-345', owasp: 'A08:2021', baselineCvss: 4.0 },
+  cookie_missing_secure: { cwe: 'CWE-614', owasp: 'A02:2021', baselineCvss: 5.4 },
+  cookie_missing_httponly: { cwe: 'CWE-1004', owasp: 'A05:2021', baselineCvss: 5.4 },
+  cookie_missing_samesite: { cwe: 'CWE-1275', owasp: 'A05:2021', baselineCvss: 4.3 },
+  open_directory_listing: { cwe: 'CWE-548', owasp: 'A05:2021', baselineCvss: 5.3 },
+  exposed_admin_panel: { cwe: 'CWE-284', owasp: 'A01:2021', baselineCvss: 7.5 },
+  sensitive_file_exposed: { cwe: 'CWE-538', owasp: 'A01:2021', baselineCvss: 7.5 },
+  outdated_software: { cwe: 'CWE-1104', owasp: 'A06:2021', baselineCvss: 6.5 },
+  default_credentials: { cwe: 'CWE-798', owasp: 'A07:2021', baselineCvss: 9.8 },
+  open_port_exposed: { cwe: 'CWE-284', owasp: 'A05:2021', baselineCvss: 5.8 },
+  service_fingerprint_exposed: { cwe: 'CWE-200', owasp: 'A05:2021', baselineCvss: 3.3 },
+  shodan_cve_signal: { cwe: 'CWE-1104', owasp: 'A06:2021', baselineCvss: 6.8 },
+  shodan_cve_signal_domain: { cwe: 'CWE-1104', owasp: 'A06:2021', baselineCvss: 6.8 },
+  shodan_cve_signal_ip: { cwe: 'CWE-1104', owasp: 'A06:2021', baselineCvss: 7.2 },
+  shodan_cve_signal_unattributed: { cwe: 'CWE-200', owasp: 'A05:2021', baselineCvss: 3.5 },
+};
+
+function taxonomyForFindingType(findingType: string | null | undefined): { cwe: string; owasp: string; owasp_label: string; baselineCvss: number } | null {
+  const key = String(findingType || '').toLowerCase();
+  const base = FINDING_TAXONOMY[key];
+  if (!base) return null;
+  return {
+    cwe: base.cwe,
+    owasp: base.owasp,
+    owasp_label: OWASP_TOP10_2021[base.owasp] || base.owasp,
+    baselineCvss: base.baselineCvss,
+  };
+}
+
+function normalizeScanStatus(status: string): string {
+  const s = String(status || '').toLowerCase();
+  if (s === 'completed' || s === 'partial' || s === 'failed' || s === 'running' || s === 'queued') return s;
+  return 'unknown';
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  if (size <= 0) return [items];
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
+async function fetchRowsByJobIds(
+  supabase: any,
+  table: string,
+  select: string,
+  jobIds: string[],
+  options?: {
+    orderBy?: string;
+    ascending?: boolean;
+    pageSize?: number;
+    maxRows?: number;
+  },
+): Promise<any[]> {
+  if (!Array.isArray(jobIds) || jobIds.length === 0) return [];
+  const pageSize = Math.max(100, Math.min(2000, Number(options?.pageSize || 1000)));
+  const maxRows = Math.max(pageSize, Number(options?.maxRows || 25000));
+  const chunks = chunkArray(jobIds.filter(Boolean), 120);
+  const allRows: any[] = [];
+
+  for (const chunk of chunks) {
+    let from = 0;
+    while (allRows.length < maxRows) {
+      let query = supabase
+        .from(table)
+        .select(select)
+        .in('scan_job_id', chunk)
+        .range(from, from + pageSize - 1);
+
+      if (options?.orderBy) {
+        query = query.order(options.orderBy, { ascending: Boolean(options?.ascending) });
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      const rows = Array.isArray(data) ? data : [];
+      if (rows.length === 0) break;
+      allRows.push(...rows);
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+    if (allRows.length >= maxRows) break;
+  }
+
+  if (allRows.length <= maxRows) return allRows;
+  return allRows.slice(0, maxRows);
+}
+
 function buildConsultingRecommendations(input: {
   findings: any[];
   assets: any[];
@@ -724,6 +846,7 @@ Deno.serve(async (req) => {
     const triggerSource = String((body as any)?.trigger_source || 'manual').trim() || 'manual';
     const forceRegenerate = Boolean((body as any)?.force_regenerate);
     const requestedCreatedBy = String((body as any)?.created_by || '').trim() || null;
+    const scopeMode = String((body as any)?.scope_mode || 'organization_scope').trim().toLowerCase();
 
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
 
@@ -768,29 +891,81 @@ Deno.serve(async (req) => {
       return json({ error: 'organization_id mancante: passa organization_id nel body o associa l\'utente a un\'organizzazione' }, 400);
     }
 
-    // Job: ultimo completato se non passato
-    let job: any = null;
+    // Job set: scope completo organizzazione (default) o singolo job esplicito.
+    const { data: scopedJobsData, error: scopedJobsError } = await supabase
+      .from('surface_scan_jobs')
+      .select('*')
+      .or(`organization_id.eq.${organization_id},customer_id.eq.${organization_id}`)
+      .in('status', ['completed', 'partial'])
+      .order('completed_at', { ascending: false })
+      .limit(600);
+    if (scopedJobsError) throw scopedJobsError;
+
+    const allCompletedJobs = (scopedJobsData || []).filter((row: any) =>
+      ['completed', 'partial'].includes(normalizeScanStatus(String(row?.status || ''))),
+    );
+    if (allCompletedJobs.length === 0) {
+      return json({ error: 'Nessuno scan completato disponibile per l\'organizzazione' }, 404);
+    }
+
+    let anchorJob = allCompletedJobs[0];
     if (requestedJobId) {
-      const { data } = await supabase.from('surface_scan_jobs').select('*').eq('id', requestedJobId).eq('organization_id', organization_id).maybeSingle();
-      job = data;
-    } else {
-      const { data } = await supabase.from('surface_scan_jobs')
-        .select('*').eq('organization_id', organization_id)
-        .in('status', ['completed', 'partial'])
-        .order('completed_at', { ascending: false }).limit(1).maybeSingle();
-      job = data;
+      const explicitJob = allCompletedJobs.find((entry: any) => String(entry?.id || '') === requestedJobId);
+      if (!explicitJob) {
+        return json({ error: 'Job richiesto non trovato o non completato nello scope organizzazione' }, 404);
+      }
+      anchorJob = explicitJob;
     }
-    if (!job) return json({ error: 'Nessuno scan disponibile per l\'organizzazione' }, 404);
-    if (!['completed', 'partial'].includes(String(job.status || '').toLowerCase())) {
-      return json({ error: 'Il report AI può essere generato solo su scansioni completate/partial' }, 409);
+
+    const normalizedScopeMode = scopeMode === 'single_job' ? 'single_job' : 'organization_scope';
+    const scopedJobs = normalizedScopeMode === 'single_job' ? [anchorJob] : allCompletedJobs;
+    const scopedJobIds = Array.from(new Set(scopedJobs.map((entry: any) => String(entry?.id || '').trim()).filter(Boolean)));
+    if (scopedJobIds.length === 0) {
+      return json({ error: 'Nessun job valido nello scope del report' }, 404);
     }
+    const scopeTargets = Array.from(
+      new Set(
+        scopedJobs
+          .map((entry: any) => String(entry?.raw_target || entry?.normalized_target || '').trim())
+          .filter(Boolean),
+      ),
+    );
+    const scopeTargetTypes = Array.from(
+      new Set(
+        scopedJobs
+          .map((entry: any) => String(entry?.target_type || '').trim().toLowerCase())
+          .filter(Boolean),
+      ),
+    );
+    const scopeProfiles = Array.from(
+      new Set(
+        scopedJobs
+          .map((entry: any) => String(entry?.scan_profile || '').trim())
+          .filter(Boolean),
+      ),
+    );
+    const scopeCompletedEpochs = scopedJobs
+      .map((entry: any) => new Date(String(entry?.completed_at || entry?.started_at || '')).getTime())
+      .filter((ts: number) => Number.isFinite(ts) && ts > 0);
+    const scopeStartedEpochs = scopedJobs
+      .map((entry: any) => new Date(String(entry?.started_at || entry?.created_at || '')).getTime())
+      .filter((ts: number) => Number.isFinite(ts) && ts > 0);
+    const scopeCompletedAt = scopeCompletedEpochs.length > 0
+      ? new Date(Math.max(...scopeCompletedEpochs)).toISOString()
+      : anchorJob?.completed_at || null;
+    const scopeStartedAt = scopeStartedEpochs.length > 0
+      ? new Date(Math.min(...scopeStartedEpochs)).toISOString()
+      : anchorJob?.started_at || null;
+    const scopeTargetLabel = normalizedScopeMode === 'single_job'
+      ? String(anchorJob?.raw_target || anchorJob?.normalized_target || 'Target selezionato')
+      : `Scope completo in monitoraggio (${scopeTargets.length} target)`;
 
     // Evita duplicazione per auto-report sullo stesso job (repository persistente).
     const { data: latestReportRow } = await supabase
       .from('surface_scan_ai_reports')
       .select('id, payload, created_at, title')
       .eq('organization_id', organization_id)
-      .eq('scan_job_id', job.id)
+      .eq('scan_job_id', anchorJob.id)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -804,19 +979,48 @@ Deno.serve(async (req) => {
       });
     }
 
-    const [profileRes, orgRes, assetsRes, findingsRes, intelRes, obsRes, monitoredRes, subdomainDumpRes] = await Promise.all([
+    const [
+      profileRes,
+      orgRes,
+      monitoredRes,
+      subdomainDumpRes,
+      rawAssetsAll,
+      rawFindingsAll,
+      rawIntelAll,
+      rawObservationsAll,
+    ] = await Promise.all([
       supabase.from('organization_profiles').select('*').eq('organization_id', organization_id).maybeSingle(),
       supabase.from('organizations').select('id, name').eq('id', organization_id).maybeSingle(),
-      supabase.from('surface_assets').select('asset_type, asset_value, hostname, ip, source, raw').eq('scan_job_id', job.id).limit(1000),
-      supabase
-        .from('surface_findings')
-        .select('provider, module, finding_type, title, description, severity, affected_asset, affected_url, ip, port, protocol, remediation, cve, cvss, evidence, attribution_confidence')
-        .eq('scan_job_id', job.id)
-        .limit(1200),
-      supabase.from('surface_external_intel').select('provider, target, found, summary, raw_response, confidence').eq('scan_job_id', job.id).limit(400),
-      supabase.from('surface_observations').select('module, observation_type, title, value, severity').eq('scan_job_id', job.id).limit(1000),
       supabase.from('surface_scan_monitored_ips').select('entry_type, input_value, ip_start, ip_end, discovered_via, discovered_from').eq('organization_id', organization_id),
       supabase.from('subdomain_dumps').select('id, root_domain, depth_limit, total_discovered, total_returned, truncated, sources, results, created_at').eq('organization_id', organization_id).order('created_at', { ascending: false }).limit(50),
+      fetchRowsByJobIds(
+        supabase,
+        'surface_assets',
+        'asset_type, asset_value, hostname, ip, source, raw, scan_job_id, first_seen, last_seen',
+        scopedJobIds,
+        { orderBy: 'last_seen', ascending: false, pageSize: 1000, maxRows: 50000 },
+      ),
+      fetchRowsByJobIds(
+        supabase,
+        'surface_findings',
+        'provider, module, finding_type, title, description, severity, affected_asset, affected_url, ip, port, protocol, remediation, cve, cwe, cvss, evidence, attribution_confidence, created_at, scan_job_id',
+        scopedJobIds,
+        { orderBy: 'created_at', ascending: false, pageSize: 1000, maxRows: 80000 },
+      ),
+      fetchRowsByJobIds(
+        supabase,
+        'surface_external_intel',
+        'provider, target, found, summary, raw_response, confidence, created_at, scan_job_id',
+        scopedJobIds,
+        { orderBy: 'created_at', ascending: false, pageSize: 800, maxRows: 20000 },
+      ),
+      fetchRowsByJobIds(
+        supabase,
+        'surface_observations',
+        'module, observation_type, title, value, severity, created_at, scan_job_id',
+        scopedJobIds,
+        { orderBy: 'created_at', ascending: false, pageSize: 1000, maxRows: 40000 },
+      ),
     ]);
 
     const profile = profileRes.data;
@@ -843,12 +1047,27 @@ Deno.serve(async (req) => {
       }
     };
 
-    const rawAssetsAll = assetsRes.data ?? [];
-    const rawAssets = rawAssetsAll.filter((asset: any) => {
+    const rawAssetsScoped = (rawAssetsAll || []).filter((asset: any) => {
       const reason = getScopeReasonFromAsset(asset, scopeDomains, ipScopeRules);
       trackScopeReason(reason);
       return reason === null;
     });
+    const rawAssetsByKey = new Map<string, any>();
+    for (const asset of rawAssetsScoped) {
+      const key = [
+        String(asset?.asset_type || '').toLowerCase(),
+        normalizeHost(String(asset?.hostname || asset?.asset_value || '')),
+        String(asset?.ip || (asset as any)?.raw?.ip || '').trim().toLowerCase(),
+      ].join('|');
+      if (!key) continue;
+      const current = rawAssetsByKey.get(key);
+      const currentTs = new Date(String(current?.last_seen || current?.first_seen || 0)).getTime() || 0;
+      const incomingTs = new Date(String(asset?.last_seen || asset?.first_seen || 0)).getTime() || 0;
+      if (!current || incomingTs >= currentTs) {
+        rawAssetsByKey.set(key, asset);
+      }
+    }
+    const rawAssets = Array.from(rawAssetsByKey.values());
     const subdomain_dumps = (subdomainDumpRes.data ?? []).map((dump: any) => {
       const filteredResults = ((dump?.results ?? []) as any[]).filter((entry: any) => {
         const host = String(entry?.subdomain || '').trim().toLowerCase();
@@ -900,14 +1119,20 @@ Deno.serve(async (req) => {
       return true;
     });
     const assets = [...rawAssets, ...discoveredSubdomainAssets];
-    const findingsRaw = (findingsRes.data ?? [])
+    const findingsRaw = (rawFindingsAll || [])
       .filter((finding: any) => {
         const reason = getScopeReasonFromFinding(finding, scopeDomains, ipScopeRules);
         trackScopeReason(reason);
         return reason === null;
       })
-      .sort((a, b) => (SEV_RANK[b.severity] ?? 0) - (SEV_RANK[a.severity] ?? 0));
-    const findings = findingsRaw.map((f: any) => {
+      .sort((a, b) => {
+        const tsA = new Date(String(a?.created_at || 0)).getTime() || 0;
+        const tsB = new Date(String(b?.created_at || 0)).getTime() || 0;
+        if (tsA !== tsB) return tsB - tsA;
+        return (SEV_RANK[String(b?.severity || '').toLowerCase()] ?? 0) - (SEV_RANK[String(a?.severity || '').toLowerCase()] ?? 0);
+      });
+    const findingDedupMap = new Map<string, any>();
+    for (const f of findingsRaw) {
       const cvesFromArray = Array.isArray(f.cve)
         ? f.cve.map((c: unknown) => String(c || '').toUpperCase().trim()).filter(Boolean)
         : [];
@@ -915,15 +1140,71 @@ Deno.serve(async (req) => {
         `${String(f.title || '')} ${String(f.description || '')} ${String(f.remediation || '')}`,
       );
       const cves = Array.from(new Set([...cvesFromArray, ...cvesFromText]));
-      return {
-        ...f,
-        cve: cves,
+      const taxonomy = taxonomyForFindingType(String(f.finding_type || ''));
+      const cweFromFinding = Array.isArray(f.cwe)
+        ? f.cwe.map((entry: unknown) => String(entry || '').trim().toUpperCase()).filter(Boolean)
+        : [];
+      const cweMerged = Array.from(new Set([
+        ...cweFromFinding,
+        ...(taxonomy?.cwe ? [taxonomy.cwe] : []),
+      ]));
+      const resolvedCvss =
+        f.cvss != null
+          ? Number(f.cvss)
+          : cves.length === 0 && taxonomy
+            ? Number(taxonomy.baselineCvss)
+            : null;
+      const normalizedFinding = {
+        provider: String(f.provider || '').trim() || null,
+        module: String(f.module || '').trim() || null,
+        finding_type: String(f.finding_type || '').trim() || null,
         title: redactTechnologyMentions(String(f.title || '')),
         description: redactTechnologyMentions(String(f.description || '')),
+        severity: String(f.severity || 'info').toLowerCase(),
+        affected_asset: String(f.affected_asset || '').trim() || null,
+        affected_url: String(f.affected_url || '').trim() || null,
+        ip: String(f.ip || '').trim() || null,
+        port: Number.isFinite(Number(f.port)) ? Number(f.port) : null,
+        protocol: String(f.protocol || '').trim().toLowerCase() || null,
         remediation: redactTechnologyMentions(String(f.remediation || '')),
+        cve: cves,
+        cwe: cweMerged,
+        owasp: taxonomy?.owasp || null,
+        owasp_label: taxonomy?.owasp_label || null,
+        cvss: Number.isFinite(Number(resolvedCvss)) ? Number(resolvedCvss) : null,
+        cvss_source: f.cvss != null ? 'provider' : taxonomy ? 'baseline' : null,
+        attribution_confidence: String(f.attribution_confidence || '').trim() || null,
+        evidence_summary: toTextSummary(f.evidence),
+        created_at: f.created_at || null,
       };
+      const findingKey = [
+        String(normalizedFinding.finding_type || '').toLowerCase(),
+        String(normalizedFinding.title || '').trim().toLowerCase(),
+        normalizeAssetLabel(String(normalizedFinding.affected_asset || normalizedFinding.affected_url || '')),
+        String(normalizedFinding.ip || '').trim().toLowerCase(),
+        String(normalizedFinding.port || ''),
+        String(normalizedFinding.protocol || '').trim().toLowerCase(),
+        String(normalizedFinding.severity || '').trim().toLowerCase(),
+        cves.join(','),
+        cweMerged.join(','),
+        String(normalizedFinding.owasp || ''),
+      ].join('|');
+      const existing = findingDedupMap.get(findingKey);
+      if (existing) {
+        existing.occurrence_count = Number(existing.occurrence_count || 1) + 1;
+        continue;
+      }
+      findingDedupMap.set(findingKey, {
+        ...normalizedFinding,
+        occurrence_count: 1,
+      });
+    }
+    const findings = Array.from(findingDedupMap.values()).sort((a, b) => {
+      const sevDelta = (SEV_RANK[String(b?.severity || '').toLowerCase()] ?? 0) - (SEV_RANK[String(a?.severity || '').toLowerCase()] ?? 0);
+      if (sevDelta !== 0) return sevDelta;
+      return String(a?.affected_asset || a?.affected_url || '').localeCompare(String(b?.affected_asset || b?.affected_url || ''));
     });
-    const intelRaw = (intelRes.data ?? []).filter((entry: any) => {
+    const intelScoped = (rawIntelAll || []).filter((entry: any) => {
       const target = String(entry?.target || '').trim().toLowerCase();
       if (!target) return true;
       if (isIpv4(target) || isIpv6(target)) {
@@ -932,13 +1213,43 @@ Deno.serve(async (req) => {
       const targetHost = parseHostname(target) || target;
       return classifyHostScopeReason(targetHost, scopeDomains) === null;
     });
-    const intel = intelRaw.map((entry: any) => ({
+    const intelDedupMap = new Map<string, any>();
+    for (const entry of intelScoped) {
+      const summaryText = toTextSummary(entry.summary);
+      const key = [
+        String(entry?.provider || '').toLowerCase(),
+        normalizeAssetLabel(String(entry?.target || '')),
+        summaryText,
+      ].join('|');
+      if (!intelDedupMap.has(key)) {
+        intelDedupMap.set(key, {
+          ...entry,
+          category: mapIntelCategory(String(entry.provider || '')),
+          target: entry.target,
+          summary_text: summaryText,
+          confidence: entry.confidence || null,
+        });
+      }
+    }
+    const intel = Array.from(intelDedupMap.values()).map((entry: any) => ({
       category: mapIntelCategory(String(entry.provider || '')),
       target: entry.target,
       summary_text: toTextSummary(entry.summary),
       confidence: entry.confidence || null,
     }));
-    const observations = obsRes.data ?? [];
+    const observationMap = new Map<string, any>();
+    for (const observation of rawObservationsAll || []) {
+      const key = [
+        String(observation?.module || '').toLowerCase(),
+        String(observation?.observation_type || '').toLowerCase(),
+        String(observation?.title || '').trim().toLowerCase(),
+        JSON.stringify(observation?.value || {}),
+      ].join('|');
+      if (!observationMap.has(key)) {
+        observationMap.set(key, observation);
+      }
+    }
+    const observations = Array.from(observationMap.values());
 
     const addToSetMap = (map: Map<string, Set<string>>, key: string, value: string) => {
       const k = String(key || '').trim();
@@ -1018,10 +1329,15 @@ Deno.serve(async (req) => {
       }
     };
 
-    const scanTargetHost = parseHostname(job.raw_target) || parseHostname(job.normalized_target || '') || '';
-    const scanTargetIp = isIpv4(scanTargetHost) ? scanTargetHost : '';
-    if (scanTargetHost) registerAsset(scanTargetHost, inferAssetType(scanTargetHost), scanTargetIp || null);
-    if (scanTargetIp) registerAsset(scanTargetIp, 'ip', scanTargetIp);
+    for (const scopedJob of scopedJobs) {
+      const jobTargetHost =
+        parseHostname(String(scopedJob?.raw_target || '')) ||
+        parseHostname(String(scopedJob?.normalized_target || '')) ||
+        '';
+      const jobTargetIp = isIpv4(jobTargetHost) ? jobTargetHost : '';
+      if (jobTargetHost) registerAsset(jobTargetHost, inferAssetType(jobTargetHost), jobTargetIp || null);
+      if (jobTargetIp) registerAsset(jobTargetIp, 'ip', jobTargetIp);
+    }
 
     for (const asset of assets) {
       const assetType = String(asset?.asset_type || '').toLowerCase();
@@ -1066,7 +1382,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    for (const intelEntry of intelRaw) {
+    for (const intelEntry of intelScoped) {
       const target = String(intelEntry?.target || '').trim();
       if (!target) continue;
       const targetType = isIpv4(target) ? 'ip' : inferAssetType(target);
@@ -1076,7 +1392,7 @@ Deno.serve(async (req) => {
     const cveByAsset = new Map<string, Set<string>>();
     const cveSet = new Set<string>();
     findings.forEach((finding: any) => {
-      const asset = String(finding.affected_asset || finding.affected_url || job.raw_target || '').trim() || 'Asset principale';
+      const asset = String(finding.affected_asset || finding.affected_url || scopeTargetLabel || '').trim() || 'Asset principale';
       registerAsset(asset, inferAssetType(asset), String(finding.ip || '').trim() || null);
       const ipFromFinding = String(finding.ip || finding.evidence?.ip || '').trim();
       if (ipFromFinding && isIpv4(ipFromFinding)) {
@@ -1177,7 +1493,7 @@ Deno.serve(async (req) => {
         if (a.cisa_kev !== b.cisa_kev) return a.cisa_kev ? -1 : 1;
         return bCvss - aCvss;
       })
-      .slice(0, 200);
+      ;
 
     const sevCount = findings.reduce((acc: Record<string, number>, f) => { acc[f.severity] = (acc[f.severity] ?? 0) + 1; return acc; }, {});
     const topFindings = findings.slice(0, 25).map((f) => ({
@@ -1200,7 +1516,24 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
 
     const userPayload = {
       organization: { name: org?.name, legal_name: profile?.legal_name, sector: profile?.business_sector, nis2: profile?.nis2_classification },
-      scan: { target: job.raw_target, type: job.target_type, profile: job.scan_profile, hosting_context: job.hosting_context, completed_at: job.completed_at },
+      scan: {
+        job_id: anchorJob.id,
+        target: scopeTargetLabel,
+        normalized_target: anchorJob.normalized_target,
+        target_type: normalizedScopeMode === 'single_job' ? anchorJob.target_type : 'mixed_scope',
+        scan_profile: scopeProfiles.length === 1 ? scopeProfiles[0] : 'multi_profile',
+        hosting_context: normalizedScopeMode === 'single_job' ? anchorJob.hosting_context : 'mixed_scope',
+        status: 'completed',
+        started_at: scopeStartedAt,
+        completed_at: scopeCompletedAt,
+        scope_mode: normalizedScopeMode,
+        scope_jobs_total: scopedJobIds.length,
+        scope_job_ids: scopedJobIds,
+        scope_targets_total: scopeTargets.length,
+        scope_targets: scopeTargets,
+        scope_target_types: scopeTargetTypes,
+        scope_profiles: scopeProfiles,
+      },
       asset_count: assets.length,
       assets_sample: assets.slice(0, 30),
       subdomain_evidence: discoveredSubdomainAssets.map((a: any) => ({ host: a.hostname, ip: a.ip, root_domain: a.root_domain, depth: a.depth })).slice(0, 50),
@@ -1223,7 +1556,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
     let aiError: string | null = null;
     const fallbackAiReport = buildFallbackAiReport({
       orgName: org?.name || profile?.legal_name || 'organizzazione',
-      target: job.raw_target,
+      target: scopeTargetLabel,
       sevCount,
       findings,
       assets,
@@ -1263,6 +1596,138 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       status: (t.progress ?? 0) >= 100 ? 'completato' : 'pianificato',
     }));
 
+    const assetsForReportMap = new Map<string, any>();
+    const upsertAssetForReport = (candidate: any) => {
+      const assetType = String(candidate?.asset_type || '').trim().toLowerCase() || inferAssetType(String(candidate?.asset_value || candidate?.hostname || candidate?.ip || ''));
+      const assetValue = String(candidate?.asset_value || candidate?.hostname || candidate?.ip || '').trim();
+      const hostname = String(candidate?.hostname || '').trim() || null;
+      const ip = String(candidate?.ip || '').trim() || null;
+      const key = `${assetType}|${normalizeAssetLabel(assetValue || hostname || ip || '')}|${String(ip || '').trim()}`;
+      if (!assetValue && !hostname && !ip) return;
+      const normalized = {
+        asset_type: assetType || null,
+        asset_value: assetValue || hostname || ip || null,
+        hostname,
+        ip,
+        source: candidate?.source || null,
+        root_domain: candidate?.root_domain || null,
+        depth: candidate?.depth ?? null,
+        discovered_at: candidate?.discovered_at || candidate?.last_seen || candidate?.first_seen || candidate?.created_at || null,
+        evidence: candidate?.evidence || null,
+      };
+      const existing = assetsForReportMap.get(key);
+      if (!existing) {
+        assetsForReportMap.set(key, normalized);
+        return;
+      }
+      const existingTs = new Date(String(existing?.discovered_at || 0)).getTime() || 0;
+      const incomingTs = new Date(String(normalized?.discovered_at || 0)).getTime() || 0;
+      if (incomingTs >= existingTs) {
+        assetsForReportMap.set(key, { ...existing, ...normalized });
+      }
+    };
+    for (const asset of assets) {
+      upsertAssetForReport({
+        asset_type: asset?.asset_type || null,
+        asset_value: asset?.asset_value || null,
+        hostname: asset?.hostname || null,
+        ip: asset?.ip || asset?.raw?.ip || null,
+        source: asset?.source || null,
+        root_domain: asset?.root_domain || asset?.raw?.root_domain || null,
+        depth: asset?.depth ?? null,
+        discovered_at: asset?.discovered_at || asset?.last_seen || asset?.first_seen || null,
+        evidence: asset?.evidence || null,
+      });
+    }
+    for (const scopeRow of monitored_scope) {
+      const entryType = String(scopeRow?.entry_type || '').trim().toLowerCase();
+      if (entryType === 'domain') {
+        upsertAssetForReport({
+          asset_type: 'domain',
+          asset_value: String(scopeRow?.input_value || '').trim(),
+          hostname: String(scopeRow?.input_value || '').trim(),
+          source: 'scope_rule',
+          discovered_at: null,
+        });
+      } else if (entryType === 'single') {
+        const scopeIp = String(scopeRow?.ip_start || scopeRow?.input_value || '').trim();
+        upsertAssetForReport({
+          asset_type: 'ip',
+          asset_value: scopeIp,
+          ip: scopeIp,
+          source: 'scope_rule',
+          discovered_at: null,
+        });
+      } else if (entryType === 'range') {
+        const rangeValue = `${String(scopeRow?.ip_start || '').trim()}-${String(scopeRow?.ip_end || '').trim()}`.replace(/\s+/g, '');
+        upsertAssetForReport({
+          asset_type: 'range',
+          asset_value: rangeValue,
+          source: 'scope_rule',
+          discovered_at: null,
+        });
+      } else if (entryType === 'cidr') {
+        upsertAssetForReport({
+          asset_type: 'cidr',
+          asset_value: String(scopeRow?.input_value || '').trim(),
+          source: 'scope_rule',
+          discovered_at: null,
+        });
+      }
+    }
+    for (const target of scopeTargets) {
+      const targetHost = parseHostname(target) || target;
+      const inferredType = inferAssetType(targetHost);
+      upsertAssetForReport({
+        asset_type: inferredType,
+        asset_value: target,
+        hostname: inferredType === 'ip' ? null : targetHost,
+        ip: inferredType === 'ip' ? targetHost : null,
+        source: 'scan_target',
+        discovered_at: scopeCompletedAt,
+      });
+    }
+    const assetsForReport = Array.from(assetsForReportMap.values());
+    const observationsForReport = observations.map((observation: any) => {
+      const rawValue = observation?.value && typeof observation.value === 'object' ? observation.value as Record<string, any> : {};
+      const compactValue: Record<string, unknown> = {};
+      const passKeys = ['host', 'hostname', 'domain', 'target', 'url', 'ip', 'ip_address', 'host_ip', 'asn', 'org', 'type', 'policy'];
+      for (const key of passKeys) {
+        if (rawValue?.[key] != null && String(rawValue[key]).trim() !== '') {
+          compactValue[key] = rawValue[key];
+        }
+      }
+      if (Array.isArray(rawValue?.ports)) {
+        compactValue.ports = Array.from(new Set(rawValue.ports.map((entry: any) => Number(entry)).filter((entry: number) => Number.isFinite(entry)))).slice(0, 40);
+      }
+      if (Array.isArray(rawValue?.open_ports)) {
+        compactValue.open_ports = Array.from(new Set(rawValue.open_ports.map((entry: any) => Number(entry)).filter((entry: number) => Number.isFinite(entry)))).slice(0, 40);
+      }
+      if (Array.isArray(rawValue?.hostnames)) {
+        compactValue.hostnames = rawValue.hostnames.map((entry: any) => String(entry || '').trim()).filter(Boolean).slice(0, 25);
+      }
+      if (Array.isArray(rawValue?.data)) {
+        compactValue.data = rawValue.data.slice(0, 30).map((entry: any) => ({
+          port: Number.isFinite(Number(entry?.port)) ? Number(entry.port) : null,
+          transport: entry?.transport || entry?.protocol || null,
+          service: entry?.service || entry?.product || null,
+          product: entry?.product || null,
+          version: entry?.version || null,
+        }));
+      }
+      if (Object.keys(compactValue).length === 0) {
+        compactValue.summary = toTextSummary(rawValue);
+      }
+      return {
+        module: observation?.module || null,
+        observation_type: observation?.observation_type || null,
+        title: observation?.title || null,
+        severity: observation?.severity || 'info',
+        created_at: observation?.created_at || null,
+        value: compactValue,
+      };
+    });
+
     const reportPayload = {
       generated_at: new Date().toISOString(),
       report_repository: {
@@ -1286,22 +1751,29 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
         nis2_classification: profile?.nis2_classification,
       },
       scan: {
-        job_id: job.id,
-        target: job.raw_target,
-        normalized_target: job.normalized_target,
-        target_type: job.target_type,
-        scan_profile: job.scan_profile,
-        hosting_context: job.hosting_context,
-        status: job.status,
-        started_at: job.started_at,
-        completed_at: job.completed_at,
+        job_id: anchorJob.id,
+        target: scopeTargetLabel,
+        normalized_target: anchorJob.normalized_target,
+        target_type: normalizedScopeMode === 'single_job' ? anchorJob.target_type : 'mixed_scope',
+        scan_profile: scopeProfiles.length === 1 ? scopeProfiles[0] : 'multi_profile',
+        hosting_context: normalizedScopeMode === 'single_job' ? anchorJob.hosting_context : 'mixed_scope',
+        status: 'completed',
+        started_at: scopeStartedAt,
+        completed_at: scopeCompletedAt,
+        scope_mode: normalizedScopeMode,
+        scope_jobs_total: scopedJobIds.length,
+        scope_job_ids: scopedJobIds,
+        scope_targets_total: scopeTargets.length,
+        scope_targets: scopeTargets,
+        scope_target_types: scopeTargetTypes,
+        scope_profiles: scopeProfiles,
       },
-      assets_in_scope: assets,
+      assets_in_scope: assetsForReport,
       findings,
       findings_by_severity: sevCount,
       cve_catalog,
       intel,
-      observations,
+      observations: observationsForReport,
       monitored_scope,
       scope_guard_summary,
       subdomain_dumps,
@@ -1318,7 +1790,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
         const { data: updated } = await supabase
           .from('surface_scan_ai_reports')
           .update({
-            title: `Report AI - ${job.raw_target}`,
+            title: `Report AI - ${scopeTargetLabel}`,
             payload: reportPayload as any,
             created_by: actorUserId,
             created_at: new Date().toISOString(),
@@ -1332,8 +1804,8 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
           .from('surface_scan_ai_reports')
           .insert({
             organization_id,
-            scan_job_id: job.id,
-            title: `Report AI - ${job.raw_target}`,
+            scan_job_id: anchorJob.id,
+            title: `Report AI - ${scopeTargetLabel}`,
             payload: reportPayload as any,
             created_by: actorUserId,
           })

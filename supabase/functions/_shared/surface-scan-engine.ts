@@ -2042,8 +2042,25 @@ export async function runSurfaceScanEnrichment(
     const maxScanTimeMinutes = Math.min(1440, Math.max(1, Number(Deno.env.get("PENTESTTOOLS_MAX_SCAN_MINUTES") || 30)));
     const maxDomainPortScanIps = Math.max(
       1,
-      Math.min(5, Number(Deno.env.get("PENTESTTOOLS_DOMAIN_PORT_SCAN_MAX_IPS") || 2)),
+      Math.min(100, Number(Deno.env.get("PENTESTTOOLS_DOMAIN_PORT_SCAN_MAX_IPS") || 30)),
     );
+    const maxScopeHostPortScans = Math.max(
+      0,
+      Math.min(80, Number(Deno.env.get("PENTESTTOOLS_SCOPE_HOST_PORT_SCAN_MAX_HOSTS") || 25)),
+    );
+    const maxScopeIpPortScans = Math.max(
+      1,
+      Math.min(120, Number(Deno.env.get("PENTESTTOOLS_SCOPE_IP_PORT_SCAN_MAX_IPS") || 40)),
+    );
+    const maxScopeHostDnsResolutions = Math.max(
+      0,
+      Math.min(80, Number(Deno.env.get("PENTESTTOOLS_SCOPE_HOST_DNS_RESOLVE_MAX") || 30)),
+    );
+    const enableHostPortScans = String(
+      Deno.env.get("PENTESTTOOLS_ENABLE_HOST_PORT_SCANS") || "true",
+    ).toLowerCase() !== "false";
+    const portScanType = String(Deno.env.get("PENTESTTOOLS_PORT_SCAN_TYPE") || "light").trim().toLowerCase() || "light";
+    const portScanProtocol = String(Deno.env.get("PENTESTTOOLS_PORT_SCAN_PROTOCOL") || "tcp").trim().toLowerCase() || "tcp";
     const enableNetworkScanner = String(
       Deno.env.get("PENTESTTOOLS_ENABLE_NETWORK_SCANNER") || "false",
     ).toLowerCase() === "true";
@@ -2193,6 +2210,19 @@ export async function runSurfaceScanEnrichment(
     };
 
     const isPublicIpCandidate = (value: string): boolean => isPublicIpv4(value) || isPublicIpv6(value);
+
+    const normalizeHostTarget = (value: string): string => {
+      const trimmed = String(value || "").trim().toLowerCase();
+      if (!trimmed) return "";
+      try {
+        if (/^https?:\/\//i.test(trimmed)) {
+          return new URL(trimmed).hostname.toLowerCase();
+        }
+      } catch {
+        // fallback below
+      }
+      return trimmed.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/\.$/, "");
+    };
 
     const isTerminalStatus = (status: string | null | undefined) =>
       status ? terminalStatuses.has(status.toLowerCase()) : false;
@@ -2471,7 +2501,16 @@ export async function runSurfaceScanEnrichment(
       }
 
       if (outputType === "port_scanner") {
-        const ipAddress = String(outputData?.ip_address || parsedTarget.hostname || "").trim();
+        const scanTargetNormalized = normalizeHostTarget(scan.targetName);
+        const scanTargetIsIp = isPublicIpCandidate(scanTargetNormalized);
+        const associatedHostCandidate = scanTargetIsIp ? (hostname || "") : scanTargetNormalized;
+        const associatedHost = associatedHostCandidate ? normalizeHostTarget(associatedHostCandidate) : "";
+        const ipAddress = String(
+          outputData?.ip_address ||
+          (scanTargetIsIp ? scanTargetNormalized : "") ||
+          parsedTarget.hostname ||
+          "",
+        ).trim();
         const hostnames = Array.isArray(outputData?.hostnames) ? outputData.hostnames : [];
         for (const reverseHost of hostnames.slice(0, 200)) {
           const reverseHostValue = String(reverseHost || "").trim().toLowerCase();
@@ -2512,7 +2551,7 @@ export async function runSurfaceScanEnrichment(
           await insertAsset({
             asset_type: "open_port",
             asset_value: `${ipAddress}:${port}`,
-            hostname,
+            hostname: associatedHost || hostname,
             root_domain: rootDomain,
             ip: ipAddress || null,
             source: "pentest_tools_port_scanner",
@@ -2529,7 +2568,7 @@ export async function runSurfaceScanEnrichment(
             description: serviceName
               ? `Servizio rilevato: ${serviceName}${serviceVersion ? ` ${serviceVersion}` : ""}.`
               : "Porta aperta raggiungibile da rete pubblica.",
-            affected_asset: hostname || ipAddress || parsedTarget.hostname || null,
+            affected_asset: associatedHost || hostname || ipAddress || parsedTarget.hostname || null,
             ip: ipAddress || null,
             port,
             protocol,
@@ -2553,7 +2592,7 @@ export async function runSurfaceScanEnrichment(
               title: "Fingerprint servizio esposto",
               description:
                 "Informazioni di servizio/versione rilevate pubblicamente possono facilitare attività di ricognizione ostile.",
-              affected_asset: hostname || ipAddress || parsedTarget.hostname || null,
+              affected_asset: associatedHost || hostname || ipAddress || parsedTarget.hostname || null,
               ip: ipAddress || null,
               port,
               protocol,
@@ -2600,6 +2639,61 @@ export async function runSurfaceScanEnrichment(
     };
 
     const plannedScans: PlannedPentestScan[] = [];
+    const plannedScanKeys = new Set<string>();
+    const addPlannedScan = (scan: PlannedPentestScan): boolean => {
+      const targetNameRaw = String(scan.targetName || "").trim();
+      if (!targetNameRaw) return false;
+      const key = `${scan.toolId}|${targetNameRaw.toLowerCase()}`;
+      if (plannedScanKeys.has(key)) return false;
+      plannedScanKeys.add(key);
+      plannedScans.push({
+        ...scan,
+        targetName: targetNameRaw,
+      });
+      return true;
+    };
+
+    const scopedHostCandidates = [...new Set([
+      normalizeHostTarget(hostname || ""),
+      normalizeHostTarget(rootDomain || ""),
+      ...scopeDomains.map((entry) => normalizeHostTarget(entry)),
+      ...[...discoveredHostnames].map((entry) => normalizeHostTarget(entry)),
+    ])]
+      .filter(Boolean)
+      .filter((entry) => !isPublicIpCandidate(entry))
+      .filter((entry) => {
+        const classified = classifyHostAgainstScope(entry);
+        return !classified.blocked;
+      });
+
+    const resolvedScopedIps = new Set<string>(
+      [...discoveredIps]
+        .map((entry) => String(entry || "").trim().toLowerCase())
+        .filter((entry) => entry.length > 0 && isPublicIpCandidate(entry) && isIpAllowedInScope(entry)),
+    );
+    for (const scopeHost of scopedHostCandidates.slice(0, maxScopeHostDnsResolutions)) {
+      try {
+        const [aRecords, aaaaRecords] = await Promise.all([
+          resolveWithDnsOverHttps(scopeHost, "A"),
+          resolveWithDnsOverHttps(scopeHost, "AAAA"),
+        ]);
+        for (const ipCandidateRaw of [...aRecords, ...aaaaRecords]) {
+          const ipCandidate = String(ipCandidateRaw || "").trim().toLowerCase();
+          if (!ipCandidate || !isPublicIpCandidate(ipCandidate) || !isIpAllowedInScope(ipCandidate)) continue;
+          resolvedScopedIps.add(ipCandidate);
+        }
+      } catch {
+        // Best effort: keep pentest planning resilient even if DNS resolution fails for some hosts.
+      }
+    }
+
+    const scopedHostPortTargets = scopedHostCandidates.slice(0, maxScopeHostPortScans);
+    const domainCandidateIps = [...resolvedScopedIps].slice(
+      0,
+      Math.max(maxDomainPortScanIps, maxScopeIpPortScans),
+    );
+    const skippedHostTargets = Math.max(0, scopedHostCandidates.length - scopedHostPortTargets.length);
+    const skippedIpTargets = Math.max(0, resolvedScopedIps.size - domainCandidateIps.length);
     const isDomainLikeTarget =
       parsedTarget.target_type === "domain" ||
       parsedTarget.target_type === "subdomain" ||
@@ -2608,12 +2702,14 @@ export async function runSurfaceScanEnrichment(
 
     if (isDomainLikeTarget) {
       if (!isIpExposureProfile) {
-        plannedScans.push(
+        addPlannedScan(
           {
             label: "website_recon",
             toolId: 310,
             targetName: targetUrl,
           },
+        );
+        addPlannedScan(
           {
             label: "ssl_scanner",
             toolId: 450,
@@ -2624,12 +2720,27 @@ export async function runSurfaceScanEnrichment(
       }
 
       if (isCveValidationProfile) {
-        plannedScans.push({
+        addPlannedScan({
           label: "website_scanner",
           toolId: 170,
           targetName: targetUrl,
           toolParams: { scan_type: "light" },
         });
+      }
+
+      if (enableHostPortScans) {
+        for (const scopedHost of scopedHostPortTargets) {
+          addPlannedScan({
+            label: `port_scanner_host_${scopedHost}`,
+            toolId: 70,
+            targetName: scopedHost,
+            toolParams: {
+              scan_type: portScanType,
+              protocol: portScanProtocol,
+              check_alive: true,
+            },
+          });
+        }
       }
 
       if (hostingContext === "shared_hosting" || hostingContext === "cdn_proxy") {
@@ -2644,12 +2755,6 @@ export async function runSurfaceScanEnrichment(
           severity: "info",
         });
       } else {
-        const domainCandidateIps = [...new Set(
-          [...discoveredIps]
-            .map((entry) => String(entry || "").trim().toLowerCase())
-            .filter((entry) => entry.length > 0 && isPublicIpCandidate(entry) && isIpAllowedInScope(entry)),
-        )].slice(0, maxDomainPortScanIps);
-
         if (domainCandidateIps.length === 0) {
           await insertObservation({
             module: "pentest_tools",
@@ -2657,24 +2762,24 @@ export async function runSurfaceScanEnrichment(
             title: "No public resolved IP available for domain port scan",
             value: {
               target: hostname || targetUrl,
-              resolved_ips_seen: [...discoveredIps].slice(0, 25),
+              resolved_ips_seen: [...discoveredIps].slice(0, 50),
               out_of_scope_ips: [...discoveredIps]
                 .map((entry) => String(entry || "").trim().toLowerCase())
                 .filter((entry) => entry.length > 0 && isPublicIpCandidate(entry) && !isIpAllowedInScope(entry))
-                .slice(0, 25),
-              max_domain_port_scan_ips: maxDomainPortScanIps,
+                .slice(0, 50),
+              max_domain_port_scan_ips: Math.max(maxDomainPortScanIps, maxScopeIpPortScans),
             },
             severity: "low",
           });
         } else {
           for (const domainIp of domainCandidateIps) {
-            plannedScans.push({
+            addPlannedScan({
               label: `port_scanner_${domainIp}`,
               toolId: 70,
               targetName: domainIp,
               toolParams: {
-                scan_type: "light",
-                protocol: "tcp",
+                scan_type: portScanType,
+                protocol: portScanProtocol,
                 check_alive: true,
               },
             });
@@ -2707,19 +2812,19 @@ export async function runSurfaceScanEnrichment(
           severity: "info",
         });
       } else {
-        plannedScans.push({
+        addPlannedScan({
           label: "port_scanner",
           toolId: 70,
           targetName: parsedTarget.hostname || targetUrl,
           toolParams: {
-            scan_type: "light",
-            protocol: "tcp",
+            scan_type: portScanType,
+            protocol: portScanProtocol,
             check_alive: true,
           },
         });
 
         if (enableNetworkScanner && isCveValidationProfile) {
-          plannedScans.push({
+          addPlannedScan({
             label: "network_scanner",
             toolId: 350,
             targetName: parsedTarget.hostname || targetUrl,
@@ -2732,6 +2837,25 @@ export async function runSurfaceScanEnrichment(
         }
       }
     }
+
+    await insertObservation({
+      module: "pentest_tools",
+      observation_type: "scope_port_scan_plan",
+      title: "Pentest-Tools plan for open ports and exposed services",
+      value: {
+        target: parsedTarget.normalized_target,
+        scan_profile: job.scan_profile,
+        hosting_context: hostingContext,
+        host_targets_in_scope: scopedHostCandidates.length,
+        host_targets_scheduled: scopedHostPortTargets.length,
+        host_targets_skipped_limit: skippedHostTargets,
+        ip_targets_in_scope: resolvedScopedIps.size,
+        ip_targets_scheduled: domainCandidateIps.length,
+        ip_targets_skipped_limit: skippedIpTargets,
+        planned_scans_total: plannedScans.length,
+      },
+      severity: "info",
+    });
 
     if (plannedScans.length === 0) {
       await insertObservation({

@@ -230,7 +230,13 @@ const buildFallbackAi = (report: SurfaceScan360Report) => {
 };
 
 export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
-  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const doc = new jsPDF({
+    unit: 'pt',
+    format: 'a4',
+    compress: true,
+    putOnlyUsedFonts: true,
+    precision: 2,
+  });
   const aiData = report.ai || buildFallbackAi(report);
   const margin = 40;
   const w = doc.internal.pageSize.getWidth();
@@ -417,6 +423,14 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   kv('Profilo', s.scan_profile || 'n/d');
   kv('Hosting', s.hosting_context || 'n/d');
   kv('Completata', s.completed_at ? new Date(s.completed_at).toLocaleString('it-IT') : 'n/d');
+  if (s.scope_mode) kv('Modalità report', s.scope_mode === 'single_job' ? 'Singola scansione' : 'Scope completo');
+  if (s.scope_targets_total != null) kv('Target inclusi', String(s.scope_targets_total));
+  if (Array.isArray(s.scope_profiles) && s.scope_profiles.length > 0) {
+    kv('Profili inclusi', s.scope_profiles.join(', '));
+  }
+  if (Array.isArray(s.scope_target_types) && s.scope_target_types.length > 0) {
+    kv('Tipi target', s.scope_target_types.join(', '));
+  }
   y += 6;
 
   const monitored = report.monitored_scope || [];
@@ -778,7 +792,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   if (cveCatalog.length > 0) {
     text('Catalogo CVE con descrizione tecnica', { bold: true, size: 10, color: [BRAND.r, BRAND.g, BRAND.b] });
     y += 2;
-    const cveRows = cveCatalog.slice(0, 40).map((entry) => {
+    const cveRows = cveCatalog.map((entry) => {
       const cvss = entry.cvss != null ? String(entry.cvss) : '-';
       const epss = entry.epss != null ? `${(Number(entry.epss) * 100).toFixed(2)}%` : '-';
       const kev = entry.cisa_kev ? 'Sì' : 'No';
@@ -794,10 +808,6 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
       ];
     });
     drawTable(['CVE', 'CVSS', 'EPSS', 'KEV', 'Asset', 'Descrizione'], cveRows, [88, 42, 52, 38, 110, 185]);
-    if (cveCatalog.length > 40) {
-      text(`… e altre ${cveCatalog.length - 40} CVE nel repository del report`, { size: 8, color: [MUTED.r, MUTED.g, MUTED.b], indent: 4 });
-      y += 6;
-    }
   }
 
   // Raggruppa per asset
@@ -837,7 +847,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
       list.sort((a, b) => {
         const r = { critical: 5, high: 4, medium: 3, low: 2, info: 1 } as Record<string, number>;
         return (r[b.severity] || 0) - (r[a.severity] || 0);
-      }).slice(0, 30).forEach((f: any) => {
+      }).forEach((f: any) => {
         ensure(28);
         const badgeW = severityBadge(f.severity);
         doc.setFont('helvetica', 'bold');
@@ -847,11 +857,22 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
         doc.text(titleLines[0], margin + badgeW + 6, y);
         y += 12;
         for (let i = 1; i < titleLines.length; i++) { ensure(12); doc.text(titleLines[i], margin + badgeW + 6, y); y += 12; }
+        const cweValues = Array.isArray(f.cwe) ? f.cwe.map((entry: any) => String(entry || '').trim()).filter(Boolean) : [];
+        const owaspLabel = [f.owasp, f.owasp_label].filter(Boolean).join(' · ');
         if (Array.isArray(f.cve) && f.cve.length) text(`CVE: ${f.cve.join(', ')}${f.cvss ? '  ·  CVSS ' + f.cvss : ''}`, { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] });
+        if (owaspLabel || cweValues.length > 0) {
+          const mapping = [
+            owaspLabel ? `OWASP: ${owaspLabel}` : null,
+            cweValues.length > 0 ? `CWE: ${cweValues.slice(0, 5).join(', ')}` : null,
+          ].filter(Boolean).join('  ·  ');
+          if (mapping) text(mapping, { size: 8, color: [MUTED.r, MUTED.g, MUTED.b] });
+        }
+        if (Number(f.occurrence_count || 0) > 1) {
+          text(`Occorrenze aggregate: ${Number(f.occurrence_count)}`, { size: 8, color: [MUTED.r, MUTED.g, MUTED.b] });
+        }
         if (f.remediation) text(`Remediation: ${redactReportWords(f.remediation)}`, { size: 9 });
         y += 3;
       });
-      if (list.length > 30) text(`… e altri ${list.length - 30} findings`, { size: 8, color: [MUTED.r, MUTED.g, MUTED.b], indent: 4 });
       y += 4;
     });
   }

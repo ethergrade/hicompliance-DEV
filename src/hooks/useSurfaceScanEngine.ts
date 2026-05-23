@@ -216,7 +216,7 @@ export const useSurfaceScanEngine = () => {
         }
       }
 
-      const maxQueuePairs = 40;
+      const maxQueuePairs = 300;
       const pairsToQueue = queuePairs.slice(0, maxQueuePairs);
       if (queuePairs.length > maxQueuePairs) {
         toast({
