@@ -74,6 +74,7 @@ export const useSurfaceScanReportRepository = (
           body: {
             organization_id: organizationId,
             job_id: options?.jobId,
+            scope_mode: 'organization_scope',
             trigger_source: 'manual',
             force_regenerate: Boolean(options?.forceRegenerate),
           },

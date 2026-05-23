@@ -190,7 +190,7 @@ const SurfaceScan360: React.FC = () => {
   const [authorizationConfirmed, setAuthorizationConfirmed] = useState(true);
   const [ownershipProof, setOwnershipProof] = useState('');
   const [queueRescanExisting, setQueueRescanExisting] = useState(false);
-  const [rescanLimit, setRescanLimit] = useState('10');
+  const [rescanLimit, setRescanLimit] = useState('');
   const [assetSearch, setAssetSearch] = useState('');
   const [assetPage, setAssetPage] = useState(1);
   const [isDiscoveryCollapsed, setIsDiscoveryCollapsed] = useState(true);
@@ -626,8 +626,12 @@ const SurfaceScan360: React.FC = () => {
   const handleStartScan = async () => {
     const manualTarget = scanTargetInput.trim();
     const includeRescan = queueRescanExisting;
-    const parsedRescanLimit = Math.max(1, Math.min(50, Number.parseInt(rescanLimit || '10', 10) || 10));
-    const reTargets = includeRescan ? rescanTargets.slice(0, parsedRescanLimit) : [];
+    const parsedRescanLimit = Number.parseInt((rescanLimit || '').trim(), 10);
+    const effectiveRescanLimit =
+      Number.isFinite(parsedRescanLimit) && parsedRescanLimit > 0
+        ? Math.min(2000, parsedRescanLimit)
+        : rescanTargets.length;
+    const reTargets = includeRescan ? rescanTargets.slice(0, effectiveRescanLimit) : [];
 
     const targets = [...new Set([manualTarget, ...reTargets].filter(Boolean))];
     if (targets.length === 0) {
@@ -729,13 +733,17 @@ const SurfaceScan360: React.FC = () => {
                   <Input
                     type="number"
                     min={1}
-                    max={50}
+                    max={2000}
                     value={rescanLimit}
                     onChange={(event) => setRescanLimit(event.target.value)}
-                    placeholder="Limite asset da re-scan"
+                    placeholder="Limite asset da re-scan (vuoto = tutti)"
                   />
                   <div className="text-xs text-muted-foreground flex items-center">
-                    Target storici disponibili: {rescanTargets.length}
+                    Target storici disponibili: {rescanTargets.length} • in coda: {(() => {
+                      const parsedLimit = Number.parseInt((rescanLimit || '').trim(), 10);
+                      if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) return rescanTargets.length;
+                      return Math.min(2000, parsedLimit, rescanTargets.length);
+                    })()}
                   </div>
                 </div>
               )}
