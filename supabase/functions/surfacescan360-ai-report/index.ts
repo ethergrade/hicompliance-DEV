@@ -988,6 +988,10 @@ Deno.serve(async (req) => {
       rawFindingsAll,
       rawIntelAll,
       rawObservationsAll,
+      rawExposureFindingsAll,
+      rawOpenPortsAll,
+      rawWebTechAll,
+      rawSslAll,
     ] = await Promise.all([
       supabase.from('organization_profiles').select('*').eq('organization_id', organization_id).maybeSingle(),
       supabase.from('organizations').select('id, name').eq('id', organization_id).maybeSingle(),
@@ -1020,6 +1024,34 @@ Deno.serve(async (req) => {
         'module, observation_type, title, value, severity, created_at, scan_job_id',
         scopedJobIds,
         { orderBy: 'created_at', ascending: false, pageSize: 1000, maxRows: 40000 },
+      ),
+      fetchRowsByJobIds(
+        supabase,
+        'surface_exposure_findings',
+        'finding_type, title, severity, cvss, cve_ids, affected_host, affected_port, affected_url, description, evidence, recommendation, source, created_at, scan_job_id',
+        scopedJobIds,
+        { orderBy: 'created_at', ascending: false, pageSize: 1200, maxRows: 60000 },
+      ),
+      fetchRowsByJobIds(
+        supabase,
+        'surface_open_ports',
+        'host, ip, port, protocol, service_name, service_product, service_version, exposure_level, remediation_hint, is_web, is_tls, last_seen_at, scan_job_id',
+        scopedJobIds,
+        { orderBy: 'last_seen_at', ascending: false, pageSize: 1200, maxRows: 60000 },
+      ),
+      fetchRowsByJobIds(
+        supabase,
+        'surface_web_technologies',
+        'url, host, port, technology_name, technology_version, category, confidence, created_at, scan_job_id',
+        scopedJobIds,
+        { orderBy: 'created_at', ascending: false, pageSize: 1200, maxRows: 60000 },
+      ),
+      fetchRowsByJobIds(
+        supabase,
+        'surface_ssl_results',
+        'url, host, port, grade, weak_protocols, weak_ciphers, certificate_subject, certificate_issuer, created_at, scan_job_id',
+        scopedJobIds,
+        { orderBy: 'created_at', ascending: false, pageSize: 800, maxRows: 20000 },
       ),
     ]);
 
@@ -1119,7 +1151,30 @@ Deno.serve(async (req) => {
       return true;
     });
     const assets = [...rawAssets, ...discoveredSubdomainAssets];
-    const findingsRaw = (rawFindingsAll || [])
+
+    const exposureFindingsForMerge = (rawExposureFindingsAll || []).map((finding: any) => ({
+      provider: 'surface_exposure_engine',
+      module: String(finding?.source || 'surface_exposure_engine'),
+      finding_type: finding?.finding_type,
+      title: finding?.title,
+      description: finding?.description,
+      severity: finding?.severity || 'info',
+      affected_asset: finding?.affected_host || null,
+      affected_url: finding?.affected_url || null,
+      ip: null,
+      port: finding?.affected_port ?? null,
+      protocol: null,
+      remediation: finding?.recommendation || null,
+      cve: Array.isArray(finding?.cve_ids) ? finding.cve_ids : [],
+      cwe: [],
+      cvss: finding?.cvss ?? null,
+      evidence: finding?.evidence ? { text: finding.evidence } : {},
+      attribution_confidence: 'high',
+      created_at: finding?.created_at,
+      scan_job_id: finding?.scan_job_id,
+    }));
+
+    const findingsRaw = ([...(rawFindingsAll || []), ...exposureFindingsForMerge])
       .filter((finding: any) => {
         const reason = getScopeReasonFromFinding(finding, scopeDomains, ipScopeRules);
         trackScopeReason(reason);
@@ -1237,8 +1292,63 @@ Deno.serve(async (req) => {
       summary_text: toTextSummary(entry.summary),
       confidence: entry.confidence || null,
     }));
+    const syntheticOpenPortObservations = (rawOpenPortsAll || []).map((row: any) => ({
+      module: 'port_scanner',
+      observation_type: 'open_port',
+      title: `${row.host || 'host'}:${row.port || ''}`,
+      value: {
+        host: row.host || null,
+        ip: row.ip || null,
+        open_ports: [row.port].filter(Boolean),
+        data: [row],
+      },
+      severity: row.exposure_level === 'critical' || row.exposure_level === 'high' ? 'high' : 'info',
+      created_at: row.last_seen_at || null,
+      scan_job_id: row.scan_job_id,
+    }));
+
+    const syntheticTechObservations = (rawWebTechAll || []).map((row: any) => ({
+      module: 'website_recon',
+      observation_type: 'technologies',
+      title: row.url || row.host || 'technology',
+      value: {
+        url: row.url || null,
+        host: row.host || null,
+        technologies: [row],
+      },
+      severity: 'info',
+      created_at: row.created_at || null,
+      scan_job_id: row.scan_job_id,
+    }));
+
+    const syntheticSslObservations = (rawSslAll || []).map((row: any) => ({
+      module: 'ssl_scan',
+      observation_type: 'tls_snapshot',
+      title: row.url || row.host || 'tls',
+      value: {
+        url: row.url || null,
+        host: row.host || null,
+        port: row.port || null,
+        grade: row.grade || null,
+        weak_protocols: row.weak_protocols || [],
+        weak_ciphers: row.weak_ciphers || [],
+        certificate_subject: row.certificate_subject || null,
+        certificate_issuer: row.certificate_issuer || null,
+      },
+      severity: (Array.isArray(row.weak_protocols) && row.weak_protocols.length > 0) || (Array.isArray(row.weak_ciphers) && row.weak_ciphers.length > 0) ? 'medium' : 'info',
+      created_at: row.created_at || null,
+      scan_job_id: row.scan_job_id,
+    }));
+
+    const mergedObservations = [
+      ...(rawObservationsAll || []),
+      ...syntheticOpenPortObservations,
+      ...syntheticTechObservations,
+      ...syntheticSslObservations,
+    ];
+
     const observationMap = new Map<string, any>();
-    for (const observation of rawObservationsAll || []) {
+    for (const observation of mergedObservations) {
       const key = [
         String(observation?.module || '').toLowerCase(),
         String(observation?.observation_type || '').toLowerCase(),

@@ -3,6 +3,7 @@ import {
   classifyTargetScope,
   isIpInRange,
   isIpWithinMonitoredScope,
+  normalizeTargetInput,
   splitMonitoredScopeRules,
   type MonitoredScopeRule,
   type NormalizedTarget,
@@ -102,4 +103,37 @@ Deno.test("classifyTargetScope enforces strict IP scope", () => {
 
   assertEquals(inScope.code, "ok");
   assertEquals(outOfScope.code, "target_out_of_scope_ip");
+});
+
+Deno.test("normalizeTargetInput accepts bare domain", () => {
+  const normalized = normalizeTargetInput("hisolution.it");
+  assertEquals(normalized.hostname, "hisolution.it");
+  assertEquals(normalized.target_type, "domain");
+  assertEquals(normalized.protocol, "https:");
+});
+
+Deno.test("normalizeTargetInput accepts www subdomain", () => {
+  const normalized = normalizeTargetInput("www.hisolution.it");
+  assertEquals(normalized.hostname, "www.hisolution.it");
+  assertEquals(normalized.target_type, "subdomain");
+});
+
+Deno.test("normalizeTargetInput keeps URL shape while stripping unsafe/private cases", () => {
+  const normalized = normalizeTargetInput("https://www.hisolution.it/path?a=1");
+  assertEquals(normalized.hostname, "www.hisolution.it");
+  assertEquals(normalized.target_type, "url");
+  assertEquals(normalized.protocol, "https:");
+});
+
+Deno.test("normalizeTargetInput accepts public IPv4", () => {
+  const normalized = normalizeTargetInput("192.0.2.1");
+  assertEquals(normalized.hostname, "192.0.2.1");
+  assertEquals(normalized.target_type, "ipv4");
+});
+
+Deno.test("normalizeTargetInput parses url with multi-level public suffix", () => {
+  const normalized = normalizeTargetInput("http://sub.example.co.uk");
+  assertEquals(normalized.hostname, "sub.example.co.uk");
+  assertEquals(normalized.target_type, "url");
+  assertEquals(normalized.protocol, "http:");
 });

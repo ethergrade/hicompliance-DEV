@@ -81,6 +81,27 @@ interface AssetInput {
   raw?: Record<string, unknown>;
 }
 
+type ModuleStatus = "queued" | "running" | "success" | "skipped" | "error" | "timeout";
+
+interface ModuleExecutionConfig {
+  key: string;
+  label: string;
+  timeoutMs: number;
+  featureFlag?: string;
+}
+
+interface ModuleExecutionRecord {
+  key: string;
+  label: string;
+  status: ModuleStatus;
+  severity?: "info" | "low" | "medium" | "high" | "critical";
+  started_at?: string;
+  completed_at?: string;
+  duration_ms?: number;
+  error_message?: string | null;
+  source?: string | null;
+}
+
 function severityRank(severity: string): number {
   switch (toSeverity(severity)) {
     case "critical":
@@ -274,6 +295,15 @@ function enqueueBackgroundTask(task: Promise<void>): boolean {
     return true;
   }
   return false;
+}
+
+function isFeatureEnabled(flagName: string | undefined, defaultEnabled = true): boolean {
+  if (!flagName) return true;
+  const value = String(Deno.env.get(flagName) ?? "").trim().toLowerCase();
+  if (!value) return defaultEnabled;
+  if (["0", "false", "off", "no", "disabled"].includes(value)) return false;
+  if (["1", "true", "on", "yes", "enabled"].includes(value)) return true;
+  return defaultEnabled;
 }
 
 export async function dispatchSurfaceScanQueue(
@@ -501,6 +531,7 @@ export async function runSurfaceScanEnrichment(
       adminClient.from("surface_observations" as any).delete().eq("scan_job_id", job.id),
       adminClient.from("surface_findings" as any).delete().eq("scan_job_id", job.id),
       adminClient.from("surface_external_intel" as any).delete().eq("scan_job_id", job.id),
+      adminClient.from("surface_scan_module_results" as any).delete().eq("scan_job_id", job.id),
     ]);
   }
 
@@ -682,6 +713,54 @@ export async function runSurfaceScanEnrichment(
     });
   };
 
+  const moduleExecution = new Map<string, ModuleExecutionRecord>();
+
+  const upsertModuleResult = async (
+    config: ModuleExecutionConfig,
+    status: ModuleStatus,
+    payload: {
+      severity?: "info" | "low" | "medium" | "high" | "critical";
+      startedAt?: string;
+      completedAt?: string;
+      durationMs?: number;
+      errorMessage?: string | null;
+      source?: string | null;
+      normalized?: Record<string, unknown>;
+      raw?: Record<string, unknown>;
+    } = {},
+  ) => {
+    const record: ModuleExecutionRecord = {
+      key: config.key,
+      label: config.label,
+      status,
+      severity: payload.severity,
+      started_at: payload.startedAt,
+      completed_at: payload.completedAt,
+      duration_ms: payload.durationMs,
+      error_message: payload.errorMessage ?? null,
+      source: payload.source ?? null,
+    };
+    moduleExecution.set(config.key, record);
+
+    await adminClient.from("surface_scan_module_results" as any).upsert({
+      organization_id: organizationId,
+      tenant_id: tenantId,
+      customer_id: customerId,
+      scan_job_id: job.id,
+      module_key: config.key,
+      module_label: config.label,
+      status,
+      severity: payload.severity || "info",
+      source: payload.source || null,
+      normalized: payload.normalized || {},
+      raw: payload.raw || {},
+      started_at: payload.startedAt || null,
+      completed_at: payload.completedAt || null,
+      duration_ms: payload.durationMs || null,
+      error_message: payload.errorMessage || null,
+    }, { onConflict: "scan_job_id,module_key" });
+  };
+
   const triggerAutoReportRepository = async () => {
     const autoReportEnabled =
       String(Deno.env.get("SURFACESCAN_AUTO_REPORT_ENABLED") || "true").toLowerCase() !== "false";
@@ -803,7 +882,22 @@ export async function runSurfaceScanEnrichment(
 
   const targetScopeDecision = classifyTargetScope(parsedTarget, scopeDomains, ipScopeRules);
   if (!targetScopeDecision.allowed) {
+    const scopeGuardModule: ModuleExecutionConfig = {
+      key: "scope_guard",
+      label: "Scope Guard",
+      timeoutMs: 1000,
+    };
     const nowIso = new Date().toISOString();
+    await upsertModuleResult(scopeGuardModule, "skipped", {
+      severity: "info",
+      startedAt: nowIso,
+      completedAt: nowIso,
+      durationMs: 0,
+      normalized: {
+        code: targetScopeDecision.code,
+        reason: targetScopeDecision.reason,
+      },
+    });
     await insertObservation({
       module: "scope_guard",
       observation_type: "scope_guard_blocked_target",
@@ -826,6 +920,15 @@ export async function runSurfaceScanEnrichment(
           targetScopeDecision.code === "target_out_of_scope_shared_noise" ? "excluded_noise" : "excluded_scope",
         shodan_status: "scope_blocked",
         resolved_ips: job.resolved_ips || [],
+        summary: {
+          overall_score: 0,
+          risk_level: "high",
+          scope_guard: {
+            blocked: true,
+            code: targetScopeDecision.code,
+            reason: targetScopeDecision.reason,
+          },
+        },
       })
       .eq("id", job.id);
     await logAudit("scan_scope_guard_blocked", {
@@ -838,23 +941,280 @@ export async function runSurfaceScanEnrichment(
 
   const discoveredIps = new Set<string>((job.resolved_ips || []).filter(Boolean));
   const discoveredHostnames = new Set<string>(hostname ? [hostname] : []);
+  const shodanHostPayloads: Array<{ ip: string; payload: Record<string, unknown> }> = [];
   let hostingContext = "unknown";
   let shodanStatus = "unknown";
+  type HttpScheme = "http" | "https";
+  interface HttpSnapshot {
+    attemptedUrls: string[];
+    requestUrl: string;
+    finalUrl: string;
+    statusCode: number;
+    headers: Record<string, string>;
+    setCookies: string[];
+    protocol: HttpScheme;
+    responseTimeMs: number;
+    bodyExcerpt: string;
+    fetchedAt: string;
+  }
+  interface TechFingerprintEntry {
+    name: string;
+    categories: string[];
+    version?: string;
+    confidence?: number;
+    source: string;
+  }
 
-  const safeRun = async (moduleName: string, fn: () => Promise<void>) => {
-    try {
-      await fn();
-      await logAudit("module_completed", { module: moduleName });
-    } catch (error: any) {
-      await insertObservation({
-        module: moduleName,
-        observation_type: "module_error",
-        title: `Errore modulo ${moduleName}`,
-        value: { error: error?.message || "Errore non gestito" },
-        severity: "medium",
-      });
-      await logAudit("module_failed", { module: moduleName, error: error?.message || String(error) });
+  let latestHttpSnapshot: HttpSnapshot | null = null;
+  const techFingerprintMap = new Map<string, TechFingerprintEntry>();
+
+  const addTechFingerprint = (
+    nameRaw: string,
+    options: {
+      categories?: string[];
+      version?: string;
+      confidence?: number;
+      source: string;
+    },
+  ) => {
+    const normalizedName = String(nameRaw || "").trim();
+    if (!normalizedName) return;
+    const key = normalizedName.toLowerCase();
+    const existing = techFingerprintMap.get(key);
+    const mergedCategories = [
+      ...(existing?.categories || []),
+      ...(options.categories || []),
+    ]
+      .map((entry) => String(entry || "").trim())
+      .filter(Boolean);
+    const uniqueCategories = [...new Set(mergedCategories)];
+    const nextConfidence = Math.max(existing?.confidence || 0, options.confidence || 0);
+    techFingerprintMap.set(key, {
+      name: existing?.name || normalizedName,
+      categories: uniqueCategories,
+      version: existing?.version || options.version,
+      confidence: nextConfidence > 0 ? nextConfidence : undefined,
+      source: existing?.source ? `${existing.source},${options.source}` : options.source,
+    });
+  };
+
+  const collectSetCookieHeaders = (headers: Headers): string[] => {
+    const candidate = headers as Headers & { getSetCookie?: () => string[] };
+    if (typeof candidate.getSetCookie === "function") {
+      try {
+        return (candidate.getSetCookie() || []).map((entry) => String(entry || "").trim()).filter(Boolean);
+      } catch {
+        // fallback below
+      }
     }
+    const merged = headers.get("set-cookie");
+    if (!merged) return [];
+    return merged
+      .split(/,(?=\s*[^;,=\s]+=[^;,]+)/g)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  };
+
+  const collectHeadersObject = (headers: Headers): Record<string, string> =>
+    {
+      const out: Record<string, string> = {};
+      for (const [key, value] of headers.entries()) {
+        out[String(key || "").toLowerCase()] = String(value || "");
+      }
+      return out;
+    };
+
+  const buildHttpCandidateUrls = (): string[] => {
+    const candidates: string[] = [];
+    const targetType = parsedTarget.target_type;
+    const targetHost = String(parsedTarget.hostname || hostname || "").trim();
+    const hostForUrl = targetType === "ipv6" && targetHost ? `[${targetHost}]` : targetHost;
+
+    const pushCandidate = (url: string) => {
+      const normalized = String(url || "").trim();
+      if (!normalized) return;
+      if (!candidates.includes(normalized)) candidates.push(normalized);
+    };
+
+    if (["domain", "subdomain", "ipv4", "ipv6"].includes(targetType) && hostForUrl) {
+      const pathSuffix = parsedTarget.port ? `:${parsedTarget.port}` : "";
+      pushCandidate(`https://${hostForUrl}${pathSuffix}/`);
+      pushCandidate(`http://${hostForUrl}${pathSuffix}/`);
+      return candidates;
+    }
+
+    pushCandidate(targetUrl);
+    if (targetUrl.startsWith("https://")) {
+      pushCandidate(`http://${targetUrl.replace(/^https:\/\//i, "")}`);
+    } else if (targetUrl.startsWith("http://")) {
+      pushCandidate(`https://${targetUrl.replace(/^http:\/\//i, "")}`);
+    }
+    return candidates;
+  };
+
+  const fetchPrimaryHttpSnapshot = async (): Promise<HttpSnapshot> => {
+    if (latestHttpSnapshot) return latestHttpSnapshot;
+    const attemptedUrls: string[] = [];
+    const candidates = buildHttpCandidateUrls();
+    let lastError: unknown = null;
+
+    for (const candidate of candidates) {
+      attemptedUrls.push(candidate);
+      try {
+        const start = Date.now();
+        const response = await fetchWithTimeout(candidate, { redirect: "follow" }, 12000);
+        const responseTimeMs = Date.now() - start;
+        const headersObj = collectHeadersObject(response.headers);
+        const setCookies = collectSetCookieHeaders(response.headers);
+        const bodyText = await response.text().catch(() => "");
+        const bodyExcerpt = bodyText.slice(0, 200000);
+        const finalProtocol = response.url.startsWith("https://") ? "https" : "http";
+        latestHttpSnapshot = {
+          attemptedUrls,
+          requestUrl: candidate,
+          finalUrl: response.url || candidate,
+          statusCode: response.status,
+          headers: headersObj,
+          setCookies,
+          protocol: finalProtocol,
+          responseTimeMs,
+          bodyExcerpt,
+          fetchedAt: new Date().toISOString(),
+        };
+        return latestHttpSnapshot;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError || new Error("HTTP fetch failed for all candidate URLs");
+  };
+
+  const safeRun = async (config: ModuleExecutionConfig, fn: () => Promise<void>) => {
+    if (!isFeatureEnabled(config.featureFlag, true)) {
+      await upsertModuleResult(config, "skipped", {
+        severity: "info",
+        normalized: {
+          reason: "feature_flag_disabled",
+          feature_flag: config.featureFlag,
+        },
+      });
+      await insertObservation({
+        module: config.key,
+        observation_type: "module_skipped",
+        title: `Modulo ${config.label} disabilitato`,
+        value: {
+          reason: "feature_flag_disabled",
+          feature_flag: config.featureFlag || null,
+        },
+        severity: "info",
+      });
+      await logAudit("module_skipped", {
+        module: config.key,
+        feature_flag: config.featureFlag || null,
+      });
+      return;
+    }
+
+    const startedAtIso = new Date().toISOString();
+    const startedAtMs = Date.now();
+    await upsertModuleResult(config, "running", {
+      startedAt: startedAtIso,
+      normalized: { module: config.key, status: "running" },
+    });
+
+    const timeoutError = new Error(`Module timeout after ${config.timeoutMs}ms`);
+    let timeoutHandle: number | null = null;
+
+    try {
+      await Promise.race([
+        fn(),
+        new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(() => reject(timeoutError), config.timeoutMs) as unknown as number;
+        }),
+      ]);
+      if (timeoutHandle !== null) clearTimeout(timeoutHandle);
+
+      const completedAtIso = new Date().toISOString();
+      const durationMs = Date.now() - startedAtMs;
+      await upsertModuleResult(config, "success", {
+        severity: "info",
+        startedAt: startedAtIso,
+        completedAt: completedAtIso,
+        durationMs,
+        normalized: {
+          module: config.key,
+          status: "success",
+          duration_ms: durationMs,
+        },
+      });
+      await logAudit("module_completed", { module: config.key, duration_ms: durationMs });
+    } catch (error: any) {
+      if (timeoutHandle !== null) clearTimeout(timeoutHandle);
+      const completedAtIso = new Date().toISOString();
+      const durationMs = Date.now() - startedAtMs;
+      const isTimeout = error?.message === timeoutError.message;
+      const status: ModuleStatus = isTimeout ? "timeout" : "error";
+      const severity: "info" | "low" | "medium" = isTimeout ? "low" : "medium";
+      const errorMessage = error?.message || "Errore non gestito";
+
+      await insertObservation({
+        module: config.key,
+        observation_type: isTimeout ? "module_timeout" : "module_error",
+        title: isTimeout ? `Timeout modulo ${config.label}` : `Errore modulo ${config.label}`,
+        value: { error: errorMessage, timeout_ms: config.timeoutMs },
+        severity,
+      });
+
+      await upsertModuleResult(config, status, {
+        severity,
+        startedAt: startedAtIso,
+        completedAt: completedAtIso,
+        durationMs,
+        errorMessage,
+        normalized: {
+          module: config.key,
+          status,
+          timeout_ms: config.timeoutMs,
+          duration_ms: durationMs,
+        },
+        raw: {
+          error: errorMessage,
+        },
+      });
+
+      await logAudit("module_failed", {
+        module: config.key,
+        status,
+        error: errorMessage,
+        duration_ms: durationMs,
+      });
+    }
+  };
+
+  const queryDnsJson = async (
+    name: string,
+    type: string,
+  ): Promise<Record<string, unknown>> => {
+    const url = new URL("https://dns.google/resolve");
+    url.searchParams.set("name", name);
+    url.searchParams.set("type", type);
+    url.searchParams.set("do", "1");
+    const response = await fetchWithTimeout(url.toString(), {
+      headers: { accept: "application/dns-json" },
+    }, 8000);
+    if (!response.ok) return {};
+    const payload = await response.json().catch(() => ({}));
+    return payload && typeof payload === "object" ? payload : {};
+  };
+
+  const parseRdapEventDate = (events: any[], eventAction: string): string | null => {
+    if (!Array.isArray(events)) return null;
+    const row = events.find((entry) =>
+      String(entry?.eventAction || "").trim().toLowerCase() === eventAction.toLowerCase()
+    );
+    const rawDate = String(row?.eventDate || "").trim();
+    return rawDate || null;
   };
 
   const runDnsModule = async () => {
@@ -906,6 +1266,27 @@ export async function runSurfaceScanEnrichment(
       value: records,
     });
 
+    await insertObservation({
+      module: "dns_records",
+      observation_type: "dns_records_snapshot",
+      title: "DNS records snapshot",
+      value: {
+        domain: hostname,
+        records,
+        source: "cloudflare-doh",
+      },
+    });
+
+    await insertObservation({
+      module: "txt_records",
+      observation_type: "txt_records_snapshot",
+      title: "TXT records snapshot",
+      value: {
+        domain: hostname,
+        txt_records: records.TXT,
+      },
+    });
+
     const hasIpRecords = records.A.length > 0 || records.AAAA.length > 0;
     if (!hasIpRecords) {
       await insertFinding({
@@ -943,11 +1324,11 @@ export async function runSurfaceScanEnrichment(
     }
 
     const txtCombined = records.TXT.join(" ").toLowerCase();
-    if (/password|secret|token|api[_-]?key/.test(txtCombined)) {
+    if (/password|secret|token|api[_-]?key|internal|vpn/.test(txtCombined)) {
       await insertFinding({
         module: "dns",
         finding_type: "dns_txt_leakage",
-        severity: "low",
+        severity: "medium",
         title: "Suspicious TXT leakage pattern",
         description: "Record TXT con pattern potenzialmente sensibili",
         affected_asset: hostname,
@@ -1086,27 +1467,265 @@ export async function runSurfaceScanEnrichment(
         bimi_records: bimiRecords,
       },
     });
+
+    await insertObservation({
+      module: "mail_config",
+      observation_type: "mail_config_summary",
+      title: "Mail config summary",
+      value: {
+        domain: rootDomain,
+        mx_records: records.MX,
+        spf_records: spfRecords,
+        dmarc_records: dmarcRecords,
+        dkim_selectors_found: dkimHits,
+        bimi_records: bimiRecords,
+      },
+    });
+  };
+
+  const runDnssecModule = async () => {
+    if (!rootDomain) return;
+    const [dnskeyPayload, dsPayload, aPayload] = await Promise.all([
+      queryDnsJson(rootDomain, "DNSKEY"),
+      queryDnsJson(rootDomain, "DS"),
+      queryDnsJson(rootDomain, "A"),
+    ]);
+
+    const asAnswers = (payload: Record<string, unknown>): any[] =>
+      Array.isArray(payload?.Answer) ? (payload.Answer as any[]) : [];
+    const asAuthority = (payload: Record<string, unknown>): any[] =>
+      Array.isArray(payload?.Authority) ? (payload.Authority as any[]) : [];
+
+    const dnskeyAnswers = asAnswers(dnskeyPayload).filter((row) => Number(row?.type) === 48);
+    const dsAnswers = asAnswers(dsPayload).filter((row) => Number(row?.type) === 43);
+    const rrsigPresent =
+      [...asAnswers(dnskeyPayload), ...asAnswers(dsPayload), ...asAnswers(aPayload), ...asAuthority(aPayload)]
+        .some((row) => Number(row?.type) === 46);
+    const authenticatedData =
+      Boolean(dnskeyPayload?.AD) || Boolean(dsPayload?.AD) || Boolean(aPayload?.AD);
+
+    await insertObservation({
+      module: "dnssec",
+      observation_type: "dnssec_status",
+      title: "DNSSEC status",
+      value: {
+        domain: rootDomain,
+        dnskey_present: dnskeyAnswers.length > 0,
+        ds_present: dsAnswers.length > 0,
+        rrsig_present: rrsigPresent,
+        authenticated_data: authenticatedData,
+        records: {
+          dnskey: dnskeyAnswers.slice(0, 10),
+          ds: dsAnswers.slice(0, 10),
+        },
+        source: "google-doh",
+      },
+    });
+
+    if (dnskeyAnswers.length === 0 && dsAnswers.length === 0) {
+      await insertFinding({
+        module: "dnssec",
+        finding_type: "dnssec_missing",
+        severity: "medium",
+        title: "DNSSEC not enabled",
+        description: "Il dominio non espone record DS/DNSKEY",
+        affected_asset: rootDomain,
+        remediation: "Abilitare DNSSEC presso registrar/provider DNS e verificare delega DS.",
+      });
+      return;
+    }
+
+    if (dsAnswers.length > 0 && dnskeyAnswers.length === 0) {
+      await insertFinding({
+        module: "dnssec",
+        finding_type: "dnssec_inconsistent_delegation",
+        severity: "high",
+        title: "DNSSEC delegation appears inconsistent",
+        description: "Record DS presente ma DNSKEY non rilevato: possibile incoerenza nella delega DNSSEC.",
+        affected_asset: rootDomain,
+        remediation: "Verificare firma zona, record DNSKEY e pubblicazione DS lato parent zone.",
+      });
+    }
+  };
+
+  const runWhoisModule = async () => {
+    if (!rootDomain) return;
+    const rdapUrl = `https://rdap.org/domain/${encodeURIComponent(rootDomain)}`;
+    const response = await fetchWithTimeout(rdapUrl, {
+      headers: {
+        accept: "application/rdap+json, application/json;q=0.9",
+        "user-agent": "SurfaceScan360/1.0",
+      },
+    }, 10000);
+
+    if (!response.ok) {
+      await insertObservation({
+        module: "whois",
+        observation_type: "rdap_unavailable",
+        title: "RDAP lookup unavailable",
+        value: {
+          domain: rootDomain,
+          rdap_url: rdapUrl,
+          status: response.status,
+        },
+        severity: "low",
+      });
+      return;
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    const events = Array.isArray(payload?.events) ? payload.events : [];
+    const nameservers = Array.isArray(payload?.nameservers)
+      ? payload.nameservers.map((entry: any) => String(entry?.ldhName || "").trim()).filter(Boolean)
+      : [];
+    const registrarEntity = (Array.isArray(payload?.entities) ? payload.entities : []).find((entry: any) =>
+      Array.isArray(entry?.roles) && entry.roles.some((role: any) => String(role || "").toLowerCase() === "registrar")
+    );
+
+    const registrarName = (() => {
+      const vcard = Array.isArray(registrarEntity?.vcardArray) ? registrarEntity.vcardArray[1] : [];
+      if (!Array.isArray(vcard)) return null;
+      const fnEntry = vcard.find((entry: any) => Array.isArray(entry) && String(entry?.[0] || "").toLowerCase() === "fn");
+      if (!Array.isArray(fnEntry)) return null;
+      const candidate = String(fnEntry?.[3] || "").trim();
+      return candidate || null;
+    })();
+
+    const created = parseRdapEventDate(events, "registration");
+    const updated = parseRdapEventDate(events, "last changed");
+    const expires = parseRdapEventDate(events, "expiration");
+    const expirationMs = expires ? Date.parse(expires) : NaN;
+    const daysToExpiry = Number.isFinite(expirationMs)
+      ? Math.round((expirationMs - Date.now()) / 86400000)
+      : null;
+    const registrationValid = daysToExpiry === null ? false : daysToExpiry >= 0;
+    const secureDnsSigned = payload?.secureDNS?.delegationSigned;
+
+    await insertObservation({
+      module: "whois",
+      observation_type: "whois_rdap",
+      title: "Domain WHOIS via RDAP",
+      value: {
+        domain: rootDomain,
+        registrar: registrarName,
+        created,
+        updated,
+        expires,
+        days_to_expiry: daysToExpiry,
+        registration_valid: registrationValid,
+        nameservers,
+        status: Array.isArray(payload?.status) ? payload.status : [],
+        dnssec: secureDnsSigned === true ? "signed" : secureDnsSigned === false ? "unsigned" : null,
+        source: "rdap.org",
+      },
+    });
+
+    if (daysToExpiry !== null && daysToExpiry < 0) {
+      await insertFinding({
+        module: "whois",
+        finding_type: "domain_expired",
+        severity: "critical",
+        title: "Domain registration expired",
+        affected_asset: rootDomain,
+        description: "Il dominio risulta scaduto secondo i dati RDAP.",
+        remediation: "Rinnovare immediatamente il dominio e verificare stato presso il registrar.",
+      });
+    } else if (daysToExpiry !== null && daysToExpiry < 30) {
+      await insertFinding({
+        module: "whois",
+        finding_type: "domain_expiry_soon_30d",
+        severity: "high",
+        title: "Domain expires in less than 30 days",
+        affected_asset: rootDomain,
+        description: `Scadenza dominio imminente (${daysToExpiry} giorni).`,
+        remediation: "Pianificare rinnovo immediato per evitare interruzioni operative.",
+      });
+    } else if (daysToExpiry !== null && daysToExpiry < 90) {
+      await insertFinding({
+        module: "whois",
+        finding_type: "domain_expiry_soon_90d",
+        severity: "medium",
+        title: "Domain expires in less than 90 days",
+        affected_asset: rootDomain,
+        description: `Scadenza dominio nei prossimi ${daysToExpiry} giorni.`,
+        remediation: "Programmare rinnovo dominio e verifica contatti amministrativi.",
+      });
+    }
+
+    if (!registrarName || !expires) {
+      await insertFinding({
+        module: "whois",
+        finding_type: "whois_partial_data",
+        severity: "info",
+        title: "WHOIS/RDAP partial registration data",
+        affected_asset: rootDomain,
+        description: "Informazioni registrar/scadenza non complete nei dati RDAP.",
+      });
+    }
   };
 
   const runHttpModules = async () => {
-    const start = Date.now();
-    const res = await fetchWithTimeout(targetUrl, { redirect: "follow" }, 12000);
-    const responseTime = Date.now() - start;
-    const headersObj = Object.fromEntries(res.headers.entries());
-    const status = res.status;
+    const snapshot = await fetchPrimaryHttpSnapshot();
+    const headers = snapshot.headers;
+    const headerValue = (key: string): string | null => {
+      const value = headers[key.toLowerCase()];
+      return value ? String(value) : null;
+    };
+
+    const csp = headerValue("content-security-policy");
+    const hsts = headerValue("strict-transport-security");
+    const xcto = headerValue("x-content-type-options");
+    const xfo = headerValue("x-frame-options");
+    const referrer = headerValue("referrer-policy");
+    const permissions = headerValue("permissions-policy");
+    const coop = headerValue("cross-origin-opener-policy");
+    const corp = headerValue("cross-origin-resource-policy");
+    const coep = headerValue("cross-origin-embedder-policy");
+    const xXssLegacy = headerValue("x-xss-protection");
+    const serverHeader = headerValue("server");
+    const poweredByHeader = headerValue("x-powered-by");
+
+    const checks = {
+      contentSecurityPolicy: Boolean(csp),
+      strictTransportSecurity: Boolean(hsts),
+      xContentTypeOptions: Boolean(xcto),
+      xFrameOptions: Boolean(xfo) || Boolean(csp && /frame-ancestors/i.test(csp)),
+      referrerPolicy: Boolean(referrer),
+      permissionsPolicy: Boolean(permissions),
+      crossOriginOpenerPolicy: Boolean(coop),
+      crossOriginResourcePolicy: Boolean(corp),
+      crossOriginEmbedderPolicy: Boolean(coep),
+      xXssProtectionLegacy: Boolean(xXssLegacy),
+    };
+
+    const scoreWeights = {
+      contentSecurityPolicy: 20,
+      strictTransportSecurity: 20,
+      xContentTypeOptions: 10,
+      xFrameOptions: 10,
+      referrerPolicy: 10,
+      permissionsPolicy: 10,
+      crossOriginOpenerPolicy: 7,
+      crossOriginResourcePolicy: 7,
+      crossOriginEmbedderPolicy: 6,
+    };
+    const score = Object.entries(scoreWeights).reduce((acc, [key, weight]) => {
+      return checks[key as keyof typeof checks] ? acc + weight : acc;
+    }, 0);
 
     await insertObservation({
       module: "http_status",
       observation_type: "http_status",
       title: "HTTP status collected",
       value: {
-        status,
-        response_time_ms: responseTime,
-        final_url: res.url,
-        content_type: res.headers.get("content-type"),
-        server: res.headers.get("server"),
-        powered_by: res.headers.get("x-powered-by"),
-        content_length: res.headers.get("content-length"),
+        status: snapshot.statusCode,
+        response_time_ms: snapshot.responseTimeMs,
+        final_url: snapshot.finalUrl,
+        attempted_urls: snapshot.attemptedUrls,
+        content_type: headerValue("content-type"),
+        server: serverHeader,
+        powered_by: poweredByHeader,
+        content_length: headerValue("content-length"),
       },
     });
 
@@ -1114,77 +1733,130 @@ export async function runSurfaceScanEnrichment(
       module: "http_headers",
       observation_type: "http_headers",
       title: "HTTP headers collected",
-      value: headersObj,
+      value: headers,
     });
 
-    if (status >= 500) {
+    await insertObservation({
+      module: "headers",
+      observation_type: "headers_interpretation",
+      title: "HTTP headers interpretation",
+      value: {
+        url: snapshot.requestUrl,
+        final_url: snapshot.finalUrl,
+        status_code: snapshot.statusCode,
+        highlighted: {
+          server: serverHeader,
+          x_powered_by: poweredByHeader,
+          via: headerValue("via"),
+          cf_ray: headerValue("cf-ray"),
+          cache_control: headerValue("cache-control"),
+          content_type: headerValue("content-type"),
+          content_encoding: headerValue("content-encoding"),
+          location: headerValue("location"),
+          set_cookie_count: snapshot.setCookies.length,
+        },
+        set_cookies: snapshot.setCookies.slice(0, 30),
+      },
+    });
+
+    await insertObservation({
+      module: "http_security",
+      observation_type: "http_security_summary",
+      title: "HTTP security headers summary",
+      value: {
+        url: snapshot.requestUrl,
+        finalUrl: snapshot.finalUrl,
+        statusCode: snapshot.statusCode,
+        checks,
+        score,
+        headers: {
+          "content-security-policy": csp,
+          "strict-transport-security": hsts,
+          "x-content-type-options": xcto,
+          "x-frame-options": xfo,
+          "referrer-policy": referrer,
+          "permissions-policy": permissions,
+          "cross-origin-opener-policy": coop,
+          "cross-origin-resource-policy": corp,
+          "cross-origin-embedder-policy": coep,
+          "x-xss-protection": xXssLegacy,
+        },
+        source: "http_fetch",
+      },
+    });
+
+    if (snapshot.statusCode >= 500) {
       await insertFinding({
         module: "http_status",
         finding_type: "http_5xx",
         severity: "medium",
-        title: `HTTP ${status} detected`,
+        title: `HTTP ${snapshot.statusCode} detected`,
         description: "Endpoint restituisce errore server",
-        affected_url: targetUrl,
+        affected_url: snapshot.requestUrl,
       });
-    } else if (status >= 400) {
+    } else if (snapshot.statusCode >= 400) {
       await insertFinding({
         module: "http_status",
         finding_type: "http_4xx",
         severity: "low",
-        title: `HTTP ${status} detected`,
+        title: `HTTP ${snapshot.statusCode} detected`,
         description: "Endpoint restituisce errore client",
-        affected_url: targetUrl,
+        affected_url: snapshot.requestUrl,
       });
     }
 
-    if (res.headers.get("server")) {
+    if (serverHeader) {
       await insertFinding({
-        module: "http_headers",
+        module: "headers",
         finding_type: "server_header_exposed",
         severity: "info",
         title: "Server header exposed",
         description: "Header Server visibile pubblicamente",
-        affected_url: targetUrl,
+        affected_url: snapshot.finalUrl || snapshot.requestUrl,
       });
+      if (/[a-z0-9._-]+\/\d/i.test(serverHeader)) {
+        await insertFinding({
+          module: "headers",
+          finding_type: "server_header_detailed_version",
+          severity: "low",
+          title: "Server header reveals version details",
+          description: "L'header Server espone versione o dettagli implementativi.",
+          affected_url: snapshot.finalUrl || snapshot.requestUrl,
+          evidence: { server: serverHeader },
+        });
+      }
     }
 
-    if (res.headers.get("x-powered-by")) {
+    if (poweredByHeader) {
       await insertFinding({
-        module: "security_headers",
+        module: "headers",
         finding_type: "x_powered_by_exposed",
         severity: "low",
         title: "X-Powered-By exposed",
         description: "Header X-Powered-By esposto",
-        affected_url: targetUrl,
+        affected_url: snapshot.finalUrl || snapshot.requestUrl,
       });
     }
-
-    const csp = res.headers.get("content-security-policy");
-    const hsts = res.headers.get("strict-transport-security");
-    const xcto = res.headers.get("x-content-type-options");
-    const xfo = res.headers.get("x-frame-options");
-    const referrer = res.headers.get("referrer-policy");
-    const permissions = res.headers.get("permissions-policy");
 
     if (!csp) {
       await insertFinding({
-        module: "security_headers",
+        module: "http_security",
         finding_type: "missing_csp",
         severity: "medium",
         title: "Missing Content-Security-Policy",
-        remediation: "Aggiungere header CSP restrittivo",
-        affected_url: targetUrl,
+        remediation: "Aggiungere header CSP restrittivo.",
+        affected_url: snapshot.finalUrl || snapshot.requestUrl,
       });
     }
 
-    if (parsedTarget.protocol === "https:" && !hsts) {
+    if (snapshot.protocol === "https" && !hsts) {
       await insertFinding({
-        module: "hsts",
+        module: "http_security",
         finding_type: "missing_hsts",
         severity: "medium",
         title: "Missing HSTS",
-        remediation: "Aggiungere Strict-Transport-Security",
-        affected_url: targetUrl,
+        remediation: "Aggiungere header Strict-Transport-Security.",
+        affected_url: snapshot.finalUrl || snapshot.requestUrl,
       });
     }
 
@@ -1212,7 +1884,7 @@ export async function runSurfaceScanEnrichment(
           finding_type: "hsts_max_age_low",
           severity: "low",
           title: "HSTS max-age too low",
-          affected_url: targetUrl,
+          affected_url: snapshot.finalUrl || snapshot.requestUrl,
         });
       }
       if (!includeSubdomains) {
@@ -1221,7 +1893,7 @@ export async function runSurfaceScanEnrichment(
           finding_type: "hsts_missing_include_subdomains",
           severity: "low",
           title: "HSTS includeSubDomains missing",
-          affected_url: targetUrl,
+          affected_url: snapshot.finalUrl || snapshot.requestUrl,
         });
       }
       if (!preload) {
@@ -1230,84 +1902,135 @@ export async function runSurfaceScanEnrichment(
           finding_type: "hsts_missing_preload",
           severity: "info",
           title: "HSTS preload missing",
-          affected_url: targetUrl,
+          affected_url: snapshot.finalUrl || snapshot.requestUrl,
         });
       }
     }
 
     if (!xcto) {
       await insertFinding({
-        module: "security_headers",
+        module: "http_security",
         finding_type: "missing_x_content_type_options",
         severity: "low",
         title: "Missing X-Content-Type-Options",
-        affected_url: targetUrl,
+        affected_url: snapshot.finalUrl || snapshot.requestUrl,
       });
     }
-    if (!xfo && !(csp && /frame-ancestors/i.test(csp))) {
+    if (!checks.xFrameOptions) {
       await insertFinding({
-        module: "security_headers",
+        module: "http_security",
         finding_type: "missing_framing_protection",
-        severity: "low",
+        severity: "medium",
         title: "Missing anti-framing protection",
-        affected_url: targetUrl,
+        affected_url: snapshot.finalUrl || snapshot.requestUrl,
       });
     }
     if (!referrer) {
       await insertFinding({
-        module: "security_headers",
+        module: "http_security",
         finding_type: "missing_referrer_policy",
         severity: "low",
         title: "Missing Referrer-Policy",
-        affected_url: targetUrl,
+        affected_url: snapshot.finalUrl || snapshot.requestUrl,
       });
     }
     if (!permissions) {
       await insertFinding({
-        module: "security_headers",
+        module: "http_security",
         finding_type: "missing_permissions_policy",
-        severity: "info",
+        severity: "low",
         title: "Missing Permissions-Policy",
-        affected_url: targetUrl,
+        affected_url: snapshot.finalUrl || snapshot.requestUrl,
+      });
+    }
+    if (!coop) {
+      await insertFinding({
+        module: "http_security",
+        finding_type: "missing_coop",
+        severity: "info",
+        title: "Missing Cross-Origin-Opener-Policy",
+        affected_url: snapshot.finalUrl || snapshot.requestUrl,
+      });
+    }
+    if (!corp) {
+      await insertFinding({
+        module: "http_security",
+        finding_type: "missing_corp",
+        severity: "info",
+        title: "Missing Cross-Origin-Resource-Policy",
+        affected_url: snapshot.finalUrl || snapshot.requestUrl,
+      });
+    }
+    if (!coep) {
+      await insertFinding({
+        module: "http_security",
+        finding_type: "missing_coep",
+        severity: "info",
+        title: "Missing Cross-Origin-Embedder-Policy",
+        affected_url: snapshot.finalUrl || snapshot.requestUrl,
       });
     }
 
-    const setCookie = res.headers.get("set-cookie") || "";
-    if (setCookie) {
-      const cookieEntries = setCookie.split(/,(?=\s*[^;,=\s]+=[^;,]+)/g);
-      for (const cookie of cookieEntries) {
-        const lower = cookie.toLowerCase();
-        if (!/;\s*secure\b/.test(lower)) {
-          await insertFinding({
-            module: "security_headers",
-            finding_type: "cookie_missing_secure",
-            severity: "medium",
-            title: "Cookie without Secure attribute",
-            affected_url: targetUrl,
-            evidence: { cookie },
-          });
-        }
-        if (!/;\s*httponly\b/.test(lower)) {
-          await insertFinding({
-            module: "security_headers",
-            finding_type: "cookie_missing_httponly",
-            severity: "medium",
-            title: "Cookie without HttpOnly attribute",
-            affected_url: targetUrl,
-            evidence: { cookie },
-          });
-        }
-        if (!/;\s*samesite=/i.test(lower)) {
-          await insertFinding({
-            module: "security_headers",
-            finding_type: "cookie_missing_samesite",
-            severity: "low",
-            title: "Cookie without SameSite attribute",
-            affected_url: targetUrl,
-            evidence: { cookie },
-          });
-        }
+    for (const cookie of snapshot.setCookies) {
+      const lower = cookie.toLowerCase();
+      if (!/;\s*secure\b/.test(lower)) {
+        await insertFinding({
+          module: "headers",
+          finding_type: "cookie_missing_secure",
+          severity: "medium",
+          title: "Cookie without Secure attribute",
+          affected_url: snapshot.finalUrl || snapshot.requestUrl,
+          evidence: { cookie },
+        });
       }
+      if (!/;\s*httponly\b/.test(lower)) {
+        await insertFinding({
+          module: "headers",
+          finding_type: "cookie_missing_httponly",
+          severity: "medium",
+          title: "Cookie without HttpOnly attribute",
+          affected_url: snapshot.finalUrl || snapshot.requestUrl,
+          evidence: { cookie },
+        });
+      }
+      if (!/;\s*samesite=/i.test(lower)) {
+        await insertFinding({
+          module: "headers",
+          finding_type: "cookie_missing_samesite",
+          severity: "low",
+          title: "Cookie without SameSite attribute",
+          affected_url: snapshot.finalUrl || snapshot.requestUrl,
+          evidence: { cookie },
+        });
+      }
+    }
+
+    const bodyLower = snapshot.bodyExcerpt.toLowerCase();
+    if (serverHeader) {
+      if (/nginx/i.test(serverHeader)) addTechFingerprint("nginx", { categories: ["web server"], confidence: 80, source: "headers" });
+      if (/apache/i.test(serverHeader)) addTechFingerprint("Apache HTTP Server", { categories: ["web server"], confidence: 80, source: "headers" });
+      if (/iis/i.test(serverHeader)) addTechFingerprint("Microsoft IIS", { categories: ["web server"], confidence: 80, source: "headers" });
+    }
+    if (poweredByHeader) {
+      if (/php/i.test(poweredByHeader)) addTechFingerprint("PHP", { categories: ["programming language"], confidence: 85, source: "headers" });
+      if (/asp\.net/i.test(poweredByHeader)) addTechFingerprint("ASP.NET", { categories: ["application framework"], confidence: 85, source: "headers" });
+      if (/express/i.test(poweredByHeader)) addTechFingerprint("Express", { categories: ["application framework"], confidence: 75, source: "headers" });
+    }
+    if (headerValue("cf-ray")) addTechFingerprint("Cloudflare", { categories: ["cdn", "security"], confidence: 90, source: "headers" });
+    if (bodyLower.includes("/wp-content/") || bodyLower.includes("wp-includes") || /wordpress/i.test(bodyLower)) {
+      addTechFingerprint("WordPress", { categories: ["cms"], confidence: 80, source: "html" });
+    }
+    if (bodyLower.includes("_next/static")) {
+      addTechFingerprint("Next.js", { categories: ["javascript framework"], confidence: 75, source: "html" });
+    }
+    if (bodyLower.includes("cdn.shopify.com")) {
+      addTechFingerprint("Shopify", { categories: ["ecommerce"], confidence: 75, source: "html" });
+    }
+    if (/react/i.test(bodyLower) && bodyLower.includes("data-reactroot")) {
+      addTechFingerprint("React", { categories: ["javascript framework"], confidence: 70, source: "html" });
+    }
+    if (bodyLower.includes("laravel_session")) {
+      addTechFingerprint("Laravel", { categories: ["application framework"], confidence: 75, source: "cookies" });
     }
   };
 
@@ -1459,78 +2182,1047 @@ export async function runSurfaceScanEnrichment(
   };
 
   const runRedirectModule = async () => {
-    let current = targetUrl;
-    const chain: Array<Record<string, unknown>> = [];
+    const inputUrl = (await fetchPrimaryHttpSnapshot()).requestUrl;
+    let current = inputUrl;
+    const chain: Array<{
+      url: string;
+      status: number;
+      location?: string;
+      protocol: "http" | "https";
+      host: string;
+    }> = [];
+    const visited = new Set<string>();
+    let hasLoop = false;
+
     for (let i = 0; i < 10; i++) {
+      if (visited.has(current)) {
+        hasLoop = true;
+        break;
+      }
+      visited.add(current);
+
       const res = await fetchWithTimeout(current, { redirect: "manual" }, 10000);
-      const location = res.headers.get("location");
-      const entry = {
+      const location = res.headers.get("location") || undefined;
+      const currentUrl = new URL(current);
+      chain.push({
         url: current,
         status: res.status,
         location,
-        scheme: new URL(current).protocol,
-        host: new URL(current).hostname,
-      };
-      chain.push(entry);
+        protocol: currentUrl.protocol === "https:" ? "https" : "http",
+        host: currentUrl.hostname.toLowerCase(),
+      });
+
       if (!location || !(res.status >= 300 && res.status < 400)) break;
-      current = new URL(location, current).toString();
+      const nextUrl = new URL(location, current).toString();
+      if (visited.has(nextUrl)) {
+        hasLoop = true;
+        break;
+      }
+      current = nextUrl;
     }
+
+    const finalUrl = chain.length > 0 ? chain[chain.length - 1].url : inputUrl;
+    const redirectsToHttps = finalUrl.startsWith("https://");
+    const mixedProtocol = chain.some((hop, index) => index > 0 && hop.protocol === "http");
+    const externalRedirects = rootDomain
+      ? chain.filter((hop) => !(hop.host === rootDomain || hop.host.endsWith(`.${rootDomain}`)))
+      : [];
+
+    const normalized = {
+      inputUrl,
+      finalUrl,
+      chain,
+      redirectsToHttps,
+      hasLoop,
+      hopCount: chain.length,
+    };
 
     await insertObservation({
       module: "redirect_chain",
       observation_type: "redirect_chain",
       title: "Redirect chain collected",
-      value: { hops: chain, hops_count: chain.length },
+      value: normalized,
+    });
+    await insertObservation({
+      module: "redirects",
+      observation_type: "redirects_summary",
+      title: "HTTP redirect behavior",
+      value: normalized,
     });
 
-    if (chain.length > 3) {
+    if (hasLoop) {
       await insertFinding({
-        module: "redirect_chain",
-        finding_type: "redirect_chain_too_long",
-        severity: "low",
-        title: "Redirect chain is long",
-        description: `Catena redirect con ${chain.length} hop`,
-        affected_url: targetUrl,
+        module: "redirects",
+        finding_type: "redirect_loop_detected",
+        severity: "high",
+        title: "Redirect loop detected",
+        affected_url: inputUrl,
       });
     }
 
-    const mixedHttpInside = chain.some((hop, idx) => idx > 0 && String(hop.url).startsWith("http://"));
-    if (mixedHttpInside) {
+    if (chain.length > 5) {
       await insertFinding({
-        module: "redirect_chain",
-        finding_type: "redirect_mixed_http",
+        module: "redirects",
+        finding_type: "redirect_chain_too_long",
         severity: "low",
-        title: "Mixed HTTP redirect in chain",
-        affected_url: targetUrl,
+        title: "Redirect chain longer than 5 hops",
+        description: `Catena redirect con ${chain.length} hop.`,
+        affected_url: inputUrl,
       });
     }
 
     const first = chain[0];
-    if (first && String(first.url).startsWith("http://") && chain.length === 1) {
+    if (first?.protocol === "http" && !redirectsToHttps) {
       await insertFinding({
-        module: "redirect_chain",
+        module: "redirects",
         finding_type: "no_http_to_https_redirect",
         severity: "medium",
-        title: "HTTP to HTTPS redirect missing",
-        affected_url: String(first.url),
+        title: "HTTP does not redirect to HTTPS",
+        affected_url: first.url,
       });
     }
 
-    if (rootDomain) {
-      for (const hop of chain) {
-        const hopHost = String(hop.host || "");
-        if (hopHost && !hopHost.endsWith(rootDomain)) {
+    if (mixedProtocol) {
+      await insertFinding({
+        module: "redirects",
+        finding_type: "redirect_mixed_http",
+        severity: "low",
+        title: "Mixed protocol redirect chain",
+        affected_url: inputUrl,
+      });
+    }
+
+    for (const hop of externalRedirects.slice(0, 10)) {
+      await insertFinding({
+        module: "redirects",
+        finding_type: "redirect_external_domain",
+        severity: "medium",
+        title: "Redirect to external domain",
+        affected_url: hop.url,
+        evidence: hop as unknown as Record<string, unknown>,
+      });
+    }
+  };
+
+  const toIsoDate = (value: unknown): string | null => {
+    const raw = String(value || "").trim();
+    if (!raw) return null;
+    const parsed = Date.parse(raw);
+    if (!Number.isFinite(parsed)) return null;
+    return new Date(parsed).toISOString();
+  };
+
+  const daysUntil = (isoDate: string | null): number | null => {
+    if (!isoDate) return null;
+    const parsed = Date.parse(isoDate);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.round((parsed - Date.now()) / 86400000);
+  };
+
+  const collectNestedObjectsByKey = (value: unknown, keyName: string): Record<string, unknown>[] => {
+    const out: Record<string, unknown>[] = [];
+    const walk = (node: unknown) => {
+      if (!node || typeof node !== "object") return;
+      const record = node as Record<string, unknown>;
+      if (record[keyName] && typeof record[keyName] === "object") {
+        out.push(record[keyName] as Record<string, unknown>);
+      }
+      for (const child of Object.values(record)) {
+        if (Array.isArray(child)) {
+          for (const item of child) walk(item);
+        } else if (child && typeof child === "object") {
+          walk(child);
+        }
+      }
+    };
+    walk(value);
+    return out;
+  };
+
+  const runSslCertificateModule = async () => {
+    const hostForCert = hostname || rootDomain || parsedTarget.hostname || "";
+    if (!hostForCert) {
+      await insertObservation({
+        module: "ssl_certificate",
+        observation_type: "ssl_certificate_skipped",
+        title: "SSL certificate check skipped",
+        value: { reason: "missing_hostname" },
+        severity: "info",
+      });
+      return;
+    }
+
+    const result: Record<string, unknown> = {
+      hostname: hostForCert,
+      source: "https-fetch-basic",
+      trusted: null,
+    };
+
+    let certPayload: Record<string, unknown> | null = null;
+    for (const entry of shodanHostPayloads) {
+      const directCandidates = collectNestedObjectsByKey(entry.payload, "ssl");
+      for (const sslCandidate of directCandidates) {
+        if (sslCandidate?.cert && typeof sslCandidate.cert === "object") {
+          certPayload = sslCandidate.cert as Record<string, unknown>;
+          result.source = "shodan";
+          break;
+        }
+      }
+      if (certPayload) break;
+    }
+
+    if (!certPayload) {
+      const { data: intelRows } = await adminClient
+        .from("surface_external_intel" as any)
+        .select("provider, summary, raw_response")
+        .eq("scan_job_id", job.id)
+        .eq("provider", "pentest_tools_output")
+        .limit(100);
+
+      for (const row of (intelRows || []) as Array<Record<string, unknown>>) {
+        const summary = (row?.summary as Record<string, unknown>) || {};
+        const outputType = String(summary?.output_type || "").toLowerCase();
+        if (!outputType.includes("ssl")) continue;
+        const raw = (row?.raw_response as Record<string, unknown>) || {};
+        const candidates = [
+          ...collectNestedObjectsByKey(raw, "certificate"),
+          ...collectNestedObjectsByKey(raw, "cert"),
+        ];
+        const selected = candidates.find((entry) => Object.keys(entry).length > 0);
+        if (selected) {
+          certPayload = selected;
+          result.source = "pentest-tools";
+          break;
+        }
+      }
+    }
+
+    if (certPayload) {
+      const subjectRaw = certPayload?.subject;
+      const issuerRaw = certPayload?.issuer;
+      const sanRaw =
+        certPayload?.["subject_alt_names"] ||
+        certPayload?.["subjectAltName"] ||
+        certPayload?.["san"] ||
+        certPayload?.["alt_names"];
+      const subject = typeof subjectRaw === "string"
+        ? subjectRaw
+        : String((subjectRaw as any)?.CN || (subjectRaw as any)?.common_name || "").trim() || null;
+      const issuer = typeof issuerRaw === "string"
+        ? issuerRaw
+        : String((issuerRaw as any)?.CN || (issuerRaw as any)?.common_name || "").trim() || null;
+      const validFrom = toIsoDate(
+        certPayload?.["issued"] || certPayload?.["not_before"] || certPayload?.["valid_from"],
+      );
+      const validTo = toIsoDate(
+        certPayload?.["expires"] || certPayload?.["not_after"] || certPayload?.["valid_to"],
+      );
+      const expiresInDays = daysUntil(validTo);
+      const san = Array.isArray(sanRaw)
+        ? sanRaw.map((entry) => String(entry || "").trim()).filter(Boolean)
+        : String(sanRaw || "")
+          .split(/,\s*/)
+          .map((entry) => entry.trim())
+          .filter(Boolean);
+      const signature = String(certPayload?.["sig_alg"] || certPayload?.["signature_algorithm"] || "").trim();
+      const fingerprintObject =
+        certPayload?.["fingerprint"] && typeof certPayload["fingerprint"] === "object"
+          ? certPayload["fingerprint"] as Record<string, unknown>
+          : {};
+      const fingerprintSha256 = String(
+        fingerprintObject["sha256"] || certPayload?.["fingerprint_sha256"] || "",
+      ).trim();
+      const fingerprintSha1 = String(
+        fingerprintObject["sha1"] || certPayload?.["fingerprint_sha1"] || "",
+      ).trim();
+      const serialNumber = String(certPayload?.["serial"] || certPayload?.["serial_number"] || "").trim();
+      const trustedValue = certPayload?.["trusted"];
+      const trusted = typeof trustedValue === "boolean" ? trustedValue : null;
+      const isSelfSigned = Boolean(subject && issuer && subject.toLowerCase() === issuer.toLowerCase());
+      const isExpired = expiresInDays !== null ? expiresInDays < 0 : false;
+
+      result.subject = subject;
+      result.issuer = issuer;
+      result.validFrom = validFrom;
+      result.validTo = validTo;
+      result.expiresInDays = expiresInDays;
+      result.serialNumber = serialNumber || null;
+      result.fingerprintSha256 = fingerprintSha256 || null;
+      result.fingerprintSha1 = fingerprintSha1 || null;
+      result.san = san;
+      result.signatureAlgorithm = signature || null;
+      result.trusted = trusted;
+      result.isExpired = isExpired;
+      result.isSelfSigned = isSelfSigned;
+      result.raw = certPayload;
+
+      const hasHostnameMatch = san.length > 0
+        ? san.some((entry) => {
+          const candidate = entry.replace(/^DNS:/i, "").toLowerCase();
+          return candidate === hostForCert.toLowerCase() || candidate === `*.${rootDomain?.toLowerCase() || ""}` ||
+            (candidate.startsWith("*.") && hostForCert.toLowerCase().endsWith(candidate.slice(1)));
+        })
+        : Boolean(subject && hostForCert.toLowerCase().includes(subject.toLowerCase()));
+
+      if (isExpired) {
+        await insertFinding({
+          module: "ssl_certificate",
+          finding_type: "ssl_certificate_expired",
+          severity: "critical",
+          title: "SSL certificate expired",
+          affected_asset: hostForCert,
+          remediation: "Rinnovare immediatamente il certificato TLS e verificare deployment su tutti i virtual host.",
+        });
+      } else if (expiresInDays !== null && expiresInDays < 15) {
+        await insertFinding({
+          module: "ssl_certificate",
+          finding_type: "ssl_certificate_expiring_15d",
+          severity: "high",
+          title: "SSL certificate expires in less than 15 days",
+          affected_asset: hostForCert,
+          remediation: "Avviare rinnovo urgente del certificato e verificare catena/intermediates.",
+        });
+      } else if (expiresInDays !== null && expiresInDays < 30) {
+        await insertFinding({
+          module: "ssl_certificate",
+          finding_type: "ssl_certificate_expiring_30d",
+          severity: "medium",
+          title: "SSL certificate expires in less than 30 days",
+          affected_asset: hostForCert,
+          remediation: "Pianificare rinnovo certificato entro 30 giorni.",
+        });
+      }
+
+      if (isSelfSigned) {
+        await insertFinding({
+          module: "ssl_certificate",
+          finding_type: "ssl_certificate_self_signed",
+          severity: "high",
+          title: "Self-signed certificate detected",
+          affected_asset: hostForCert,
+          remediation: "Usare certificato emesso da CA trusted pubblica o interna gestita.",
+        });
+      }
+      if (trusted === false) {
+        await insertFinding({
+          module: "ssl_certificate",
+          finding_type: "ssl_certificate_untrusted_chain",
+          severity: "high",
+          title: "SSL certificate chain not trusted",
+          affected_asset: hostForCert,
+          remediation: "Verificare chain completa, intermediate CA e trust store.",
+        });
+      }
+      if (!hasHostnameMatch) {
+        await insertFinding({
+          module: "ssl_certificate",
+          finding_type: "ssl_hostname_mismatch",
+          severity: "high",
+          title: "Certificate hostname mismatch",
+          affected_asset: hostForCert,
+          remediation: "Allineare CN/SAN del certificato al dominio servito.",
+        });
+      }
+      if (san.length === 0) {
+        await insertFinding({
+          module: "ssl_certificate",
+          finding_type: "ssl_missing_san",
+          severity: "medium",
+          title: "Certificate missing SAN entries",
+          affected_asset: hostForCert,
+        });
+      }
+      if (/sha1|md5/i.test(signature)) {
+        await insertFinding({
+          module: "ssl_certificate",
+          finding_type: "ssl_weak_signature_algorithm",
+          severity: "high",
+          title: "Weak certificate signature algorithm",
+          affected_asset: hostForCert,
+          evidence: { signature_algorithm: signature },
+          remediation: "Rigenerare certificato con algoritmo moderno (SHA-256 o superiore).",
+        });
+      }
+    } else {
+      try {
+        const httpsTarget = hostForCert.includes(":") ? `https://[${hostForCert}]/` : `https://${hostForCert}/`;
+        const res = await fetchWithTimeout(httpsTarget, { redirect: "follow" }, 10000);
+        result.source = "https-fetch-basic";
+        result.trusted = res.ok;
+        result.finalUrl = res.url || httpsTarget;
+        result.statusCode = res.status;
+      } catch (error: any) {
+        result.source = "https-fetch-basic";
+        result.trusted = false;
+        result.error = error?.message || "HTTPS fetch failed";
+      }
+    }
+
+    await insertObservation({
+      module: "ssl_certificate",
+      observation_type: "ssl_certificate_summary",
+      title: "SSL certificate summary",
+      value: result,
+    });
+  };
+
+  const runTlsSummaryModule = async () => {
+    const hostForTls = hostname || rootDomain || parsedTarget.hostname || "";
+    if (!hostForTls) return;
+
+    const result: Record<string, unknown> = {
+      hostname: hostForTls,
+      source: "https-fetch-basic",
+    };
+
+    let weakProtocolDetected = false;
+    let weakCiphers: string[] = [];
+    let selectedProtocol: string | null = null;
+    let selectedCipher: string | null = null;
+    let tls12Supported: boolean | null = null;
+    let tls13Supported: boolean | null = null;
+    let tls10Supported: boolean | null = null;
+    let tls11Supported: boolean | null = null;
+    let http2Alpn: boolean | null = null;
+
+    for (const row of shodanHostPayloads) {
+      const payload = row.payload as Record<string, unknown>;
+      const sslObjects = collectNestedObjectsByKey(payload, "ssl");
+      for (const sslObject of sslObjects) {
+        const versions = Array.isArray((sslObject as any)?.versions)
+          ? ((sslObject as any).versions as unknown[]).map((entry) => String(entry || "").toLowerCase())
+          : [];
+        if (versions.length === 0) continue;
+        result.source = "shodan";
+        tls13Supported = versions.some((entry) => entry.includes("tlsv1.3"));
+        tls12Supported = versions.some((entry) => entry.includes("tlsv1.2"));
+        tls11Supported = versions.some((entry) => entry.includes("tlsv1.1"));
+        tls10Supported = versions.some((entry) => entry.includes("tlsv1") && !entry.includes("1.1") && !entry.includes("1.2") && !entry.includes("1.3"));
+        weakProtocolDetected = Boolean(tls10Supported || tls11Supported);
+        selectedCipher = String((sslObject as any)?.cipher?.name || "").trim() || null;
+        selectedProtocol = String((sslObject as any)?.versions?.[0] || "").trim() || null;
+        const weak = Array.isArray((sslObject as any)?.cipher?.weak)
+          ? ((sslObject as any).cipher.weak as unknown[]).map((entry) => String(entry || "").trim()).filter(Boolean)
+          : [];
+        weakCiphers = [...new Set([...weakCiphers, ...weak])];
+      }
+    }
+
+    if (latestHttpSnapshot) {
+      const altSvc = latestHttpSnapshot.headers["alt-svc"] || "";
+      http2Alpn = latestHttpSnapshot.finalUrl.startsWith("https://")
+        ? /h2/i.test(altSvc) || Boolean(latestHttpSnapshot.headers[":protocol"] === "h2")
+        : false;
+      if (result.source === "https-fetch-basic") {
+        tls12Supported = latestHttpSnapshot.finalUrl.startsWith("https://");
+        tls13Supported = null;
+      }
+    }
+
+    result.tls13Supported = tls13Supported;
+    result.tls12Supported = tls12Supported;
+    result.tls10Supported = tls10Supported;
+    result.tls11Supported = tls11Supported;
+    result.http2Alpn = http2Alpn;
+    result.selectedProtocol = selectedProtocol;
+    result.selectedCipher = selectedCipher;
+    result.weakCiphers = weakCiphers;
+
+    await insertObservation({
+      module: "tls_summary",
+      observation_type: "tls_summary",
+      title: "TLS summary",
+      value: result,
+    });
+
+    if (tls10Supported || tls11Supported) {
+      await insertFinding({
+        module: "tls_summary",
+        finding_type: "tls_legacy_protocols_enabled",
+        severity: "high",
+        title: "Legacy TLS protocols enabled (TLS 1.0/1.1)",
+        affected_asset: hostForTls,
+        remediation: "Disabilitare TLS 1.0/1.1 e mantenere TLS 1.2+.",
+      });
+    }
+    if (tls12Supported === false) {
+      await insertFinding({
+        module: "tls_summary",
+        finding_type: "tls12_not_supported",
+        severity: "high",
+        title: "TLS 1.2 not supported",
+        affected_asset: hostForTls,
+      });
+    }
+    if (weakCiphers.length > 0 || weakProtocolDetected) {
+      await insertFinding({
+        module: "tls_summary",
+        finding_type: "tls_weak_cipher_detected",
+        severity: "medium",
+        title: "Weak TLS ciphers/protocols detected",
+        affected_asset: hostForTls,
+        evidence: { weak_ciphers: weakCiphers },
+      });
+    }
+  };
+
+  const runServerInfoModule = async () => {
+    const hostForInfo = hostname || rootDomain || parsedTarget.hostname || "";
+    const scopedIps = [...discoveredIps].filter((ip) => isIpAllowedInScope(ip));
+    const primaryIp = scopedIps[0] || "";
+    const serverInfo: Record<string, unknown> = {
+      hostname: hostForInfo || null,
+      ip: primaryIp || null,
+      source: "fallback",
+      ports: [],
+      technologies: [],
+    };
+
+    let shodanPorts: number[] = [];
+    let shodanTech: string[] = [];
+    for (const entry of shodanHostPayloads) {
+      const payload = entry.payload as Record<string, unknown>;
+      const ports = Array.isArray(payload?.ports)
+        ? payload.ports.map((value: unknown) => Number(value)).filter((value: number) => Number.isFinite(value))
+        : [];
+      const tags = Array.isArray(payload?.tags)
+        ? payload.tags.map((value: unknown) => String(value || "").trim()).filter(Boolean)
+        : [];
+      const cpes = Array.isArray(payload?.cpes)
+        ? payload.cpes.map((value: unknown) => String(value || "").trim()).filter(Boolean)
+        : [];
+      shodanPorts = [...new Set([...shodanPorts, ...ports])];
+      shodanTech = [...new Set([...shodanTech, ...tags, ...cpes])];
+      const org = String(payload?.org || payload?.isp || "").trim();
+      const asn = String(payload?.asn || "").trim();
+      if (org) serverInfo.organization = org;
+      if (asn) serverInfo.asn = asn;
+      serverInfo.source = "shodan";
+      if (payload?.country_name || payload?.city || payload?.region_code || payload?.country_code) {
+        serverInfo.location = {
+          city: String(payload?.city || "").trim() || null,
+          region: String(payload?.region_code || "").trim() || null,
+          country: String(payload?.country_name || "").trim() || null,
+          countryCode: String(payload?.country_code || "").trim() || null,
+        };
+      }
+    }
+
+    for (const port of shodanPorts) {
+      await insertAsset({
+        asset_type: "open_port",
+        asset_value: `${primaryIp || hostForInfo}:${port}`,
+        hostname: hostForInfo || null,
+        root_domain: rootDomain,
+        ip: primaryIp || null,
+        source: "server_info",
+        confidence: "low",
+      });
+    }
+
+    serverInfo.ports = shodanPorts.slice(0, 100);
+    serverInfo.technologies = shodanTech.slice(0, 100);
+    if (!serverInfo.organization && latestHttpSnapshot) {
+      serverInfo.serverHeader = latestHttpSnapshot.headers["server"] || null;
+      serverInfo.poweredBy = latestHttpSnapshot.headers["x-powered-by"] || null;
+      serverInfo.source = "http_headers";
+    }
+
+    await insertObservation({
+      module: "server_info",
+      observation_type: "server_info",
+      title: "Server information summary",
+      value: serverInfo,
+    });
+
+    if (String(serverInfo.serverHeader || "").trim().match(/[a-z0-9._-]+\/\d/i)) {
+      await insertFinding({
+        module: "server_info",
+        finding_type: "server_header_version_exposed",
+        severity: "low",
+        title: "Server version exposed in HTTP header",
+        affected_asset: hostForInfo || primaryIp || null,
+      });
+    }
+  };
+
+  const runServerLocationModule = async () => {
+    const primaryShodan = shodanHostPayloads[0];
+    const primaryIp = primaryShodan?.ip || [...discoveredIps].find((ip) => isIpAllowedInScope(ip)) || null;
+    if (!primaryIp) return;
+
+    const payload = (primaryShodan?.payload || {}) as Record<string, unknown>;
+    const location = {
+      ip: primaryIp,
+      city: String(payload?.city || "").trim() || null,
+      region: String(payload?.region_code || payload?.region_name || "").trim() || null,
+      country: String(payload?.country_name || "").trim() || null,
+      countryCode: String(payload?.country_code || "").trim() || null,
+      latitude: typeof payload?.latitude === "number" ? payload.latitude : null,
+      longitude: typeof payload?.longitude === "number" ? payload.longitude : null,
+      timezone: String(payload?.timezone || "").trim() || null,
+      languages: Array.isArray(payload?.languages)
+        ? payload.languages.map((entry: unknown) => String(entry || "").trim()).filter(Boolean)
+        : [],
+      currency: String(payload?.currency || "").trim() || null,
+      approximate: true,
+      source: primaryShodan ? "shodan" : "fallback",
+    };
+
+    await insertObservation({
+      module: "server_location",
+      observation_type: "server_location",
+      title: "Approximate server location",
+      value: location,
+    });
+  };
+
+  const runTechStackModule = async () => {
+    for (const entry of shodanHostPayloads) {
+      const payload = entry.payload as Record<string, unknown>;
+      const cpes = Array.isArray(payload?.cpes) ? payload.cpes : [];
+      for (const cpe of cpes.slice(0, 100)) {
+        const rawCpe = String(cpe || "").trim();
+        if (!rawCpe) continue;
+        const parts = rawCpe.split(":");
+        const product = parts.length >= 5 ? parts[4] : rawCpe;
+        const version = parts.length >= 6 ? parts[5] : "";
+        const name = product.replace(/[_-]+/g, " ").trim();
+        addTechFingerprint(name, {
+          categories: ["service", "fingerprint"],
+          version: version || undefined,
+          confidence: 70,
+          source: "shodan_cpe",
+        });
+      }
+    }
+
+    const technologies = [...techFingerprintMap.values()]
+      .sort((a, b) => (b.confidence || 0) - (a.confidence || 0))
+      .slice(0, 200)
+      .map((entry) => ({
+        name: entry.name,
+        categories: entry.categories,
+        version: entry.version || null,
+        confidence: entry.confidence || null,
+        source: entry.source,
+      }));
+
+    await insertObservation({
+      module: "tech_stack",
+      observation_type: "tech_stack",
+      title: "Technology stack fingerprint",
+      value: {
+        technologies,
+        count: technologies.length,
+      },
+    });
+
+    for (const tech of technologies.slice(0, 50)) {
+      if (tech.version) {
+        await insertFinding({
+          module: "tech_stack",
+          finding_type: "technology_version_exposed",
+          severity: "low",
+          title: `${tech.name} version exposed`,
+          description: `Versione rilevata: ${tech.version}.`,
+          affected_asset: hostname || rootDomain || null,
+          evidence: {
+            technology: tech.name,
+            version: tech.version,
+            source: tech.source,
+          },
+          remediation: "Limitare disclosure di versione e mantenere piano di patching continuo.",
+        });
+      }
+    }
+  };
+
+  const runQualityModule = async () => {
+    if (!hostname) return;
+    const googleApiKey = Deno.env.get("GOOGLE_CLOUD_API_KEY") || Deno.env.get("GOOGLE_API_KEY");
+    if (!googleApiKey) {
+      await insertObservation({
+        module: "quality",
+        observation_type: "module_skipped",
+        title: "Quality module skipped",
+        value: {
+          reason: "missing_google_cloud_api_key",
+        },
+        severity: "info",
+      });
+      return;
+    }
+
+    const endpoint = new URL("https://www.googleapis.com/pagespeedonline/v5/runPagespeed");
+    endpoint.searchParams.set("url", targetUrl);
+    endpoint.searchParams.set("strategy", "mobile");
+    endpoint.searchParams.append("category", "PERFORMANCE");
+    endpoint.searchParams.append("category", "ACCESSIBILITY");
+    endpoint.searchParams.append("category", "BEST_PRACTICES");
+    endpoint.searchParams.append("category", "SEO");
+    endpoint.searchParams.set("key", googleApiKey);
+
+    const response = await fetchWithTimeout(endpoint.toString(), {}, 30000);
+    if (!response.ok) {
+      await insertObservation({
+        module: "quality",
+        observation_type: "pagespeed_error",
+        title: "PageSpeed request failed",
+        value: {
+          status: response.status,
+          target: targetUrl,
+        },
+        severity: "low",
+      });
+      return;
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    const categories = payload?.lighthouseResult?.categories || {};
+    const toPercent = (value: unknown): number | null => {
+      const score = Number(value);
+      if (!Number.isFinite(score)) return null;
+      if (score > 1) return Math.max(0, Math.min(100, Math.round(score)));
+      return Math.max(0, Math.min(100, Math.round(score * 100)));
+    };
+
+    const quality = {
+      performance: toPercent(categories?.performance?.score),
+      accessibility: toPercent(categories?.accessibility?.score),
+      best_practices: toPercent(categories?.["best-practices"]?.score),
+      seo: toPercent(categories?.seo?.score),
+    };
+    const audits = payload?.lighthouseResult?.audits || {};
+    const criticalAuditIds = ["is-on-https", "mixed-content", "no-vulnerable-libraries"];
+    const failedAudits = Object.entries(audits)
+      .filter(([, value]: any) => typeof value?.score === "number" && value.score < 0.5)
+      .slice(0, 20)
+      .map(([id, value]: any) => ({
+        id,
+        title: value?.title || id,
+        score: value?.score,
+      }));
+
+    await insertObservation({
+      module: "quality",
+      observation_type: "quality_summary",
+      title: "Quality summary (PageSpeed)",
+      value: {
+        url: targetUrl,
+        strategy: "mobile",
+        categories: quality,
+        failed_audits: failedAudits.slice(0, 8),
+        source: "pagespeed-insights",
+      },
+    });
+
+    if (quality.performance !== null && quality.performance < 50) {
+      await insertFinding({
+        module: "quality",
+        finding_type: "quality_performance_low",
+        severity: "medium",
+        title: "Performance score below 50",
+        affected_url: targetUrl,
+        description: `Performance score attuale: ${quality.performance}/100.`,
+        remediation: "Ottimizzare performance lato frontend/backend (TTFB, caching, payload statici).",
+      });
+    }
+    if (quality.best_practices !== null && quality.best_practices < 70) {
+      await insertFinding({
+        module: "quality",
+        finding_type: "quality_best_practices_low",
+        severity: "medium",
+        title: "Best Practices score below 70",
+        affected_url: targetUrl,
+      });
+    }
+    if (quality.accessibility !== null && quality.accessibility < 70) {
+      await insertFinding({
+        module: "quality",
+        finding_type: "quality_accessibility_low",
+        severity: "low",
+        title: "Accessibility score below 70",
+        affected_url: targetUrl,
+      });
+    }
+    if (quality.seo !== null && quality.seo < 70) {
+      await insertFinding({
+        module: "quality",
+        finding_type: "quality_seo_low",
+        severity: "low",
+        title: "SEO score below 70",
+        affected_url: targetUrl,
+      });
+    }
+
+    for (const auditId of criticalAuditIds) {
+      const audit = audits?.[auditId];
+      if (!audit || typeof audit?.score !== "number" || audit.score >= 0.9) continue;
+      const severity = auditId === "mixed-content" || auditId === "is-on-https" ? "high" : "medium";
+      await insertFinding({
+        module: "quality",
+        finding_type: `quality_audit_${auditId.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}`,
+        severity,
+        title: `Audit failed: ${audit?.title || auditId}`,
+        description: String(audit?.description || "").slice(0, 400),
+        affected_url: targetUrl,
+      });
+    }
+  };
+
+  const runThreatsModule = async () => {
+    if (!hostname) return;
+    const targetUrlCandidate = targetUrl;
+    const googleApiKey = Deno.env.get("GOOGLE_CLOUD_API_KEY") || Deno.env.get("GOOGLE_API_KEY");
+    let safeBrowsingMatches: any[] = [];
+
+    if (googleApiKey) {
+      try {
+        const safeBrowsingRes = await fetchWithTimeout(
+          `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${encodeURIComponent(googleApiKey)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              client: { clientId: "surfacescan360", clientVersion: "1.0" },
+              threatInfo: {
+                threatTypes: [
+                  "MALWARE",
+                  "SOCIAL_ENGINEERING",
+                  "UNWANTED_SOFTWARE",
+                  "POTENTIALLY_HARMFUL_APPLICATION",
+                ],
+                platformTypes: ["ANY_PLATFORM"],
+                threatEntryTypes: ["URL"],
+                threatEntries: [{ url: targetUrlCandidate }],
+              },
+            }),
+          },
+          12000,
+        );
+
+        const safePayload = await safeBrowsingRes.json().catch(() => ({}));
+        safeBrowsingMatches = Array.isArray(safePayload?.matches) ? safePayload.matches : [];
+      } catch {
+        safeBrowsingMatches = [];
+      }
+    }
+
+    let urlHausListed = false;
+    let urlHausSummary: Record<string, unknown> = {};
+    try {
+      const form = new URLSearchParams();
+      form.set("host", hostname);
+      const urlHausRes = await fetchWithTimeout("https://urlhaus-api.abuse.ch/v1/host/", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: form.toString(),
+      }, 12000);
+      const urlHausPayload = await urlHausRes.json().catch(() => ({}));
+      const urls = Array.isArray(urlHausPayload?.urls) ? urlHausPayload.urls : [];
+      const queryStatus = String(urlHausPayload?.query_status || "").toLowerCase();
+      urlHausListed = queryStatus === "ok" && urls.length > 0;
+      urlHausSummary = {
+        query_status: queryStatus || "unknown",
+        listed_urls: urls.slice(0, 20),
+      };
+    } catch {
+      urlHausSummary = { query_status: "error" };
+    }
+
+    const noThreatMatches = safeBrowsingMatches.length === 0 && !urlHausListed;
+    await insertObservation({
+      module: "threats",
+      observation_type: "threats_summary",
+      title: "Threat intelligence summary",
+      value: {
+        target: targetUrlCandidate,
+        safe_browsing: {
+          configured: Boolean(googleApiKey),
+          unsafe: safeBrowsingMatches.length > 0,
+          matches: safeBrowsingMatches.slice(0, 20),
+        },
+        urlhaus: {
+          listed: urlHausListed,
+          ...urlHausSummary,
+        },
+        no_threat_matches: noThreatMatches,
+      },
+    });
+
+    if (safeBrowsingMatches.length > 0) {
+      await insertFinding({
+        module: "threats",
+        finding_type: "safe_browsing_match",
+        severity: "critical",
+        title: "Google Safe Browsing flagged target",
+        affected_asset: hostname,
+        affected_url: targetUrlCandidate,
+        evidence: { matches: safeBrowsingMatches.slice(0, 20) },
+        remediation: "Bloccare temporaneamente il target a livello di fruizione pubblica e avviare verifica incident response.",
+      });
+    }
+
+    if (urlHausListed) {
+      await insertFinding({
+        module: "threats",
+        finding_type: "urlhaus_listed",
+        severity: "high",
+        title: "Target listed in URLHaus",
+        affected_asset: hostname,
+        evidence: urlHausSummary,
+        remediation: "Verificare compromissione contenuti/redirect e ripristinare stato sicuro prima di ri-esporre il servizio.",
+      });
+    }
+  };
+
+  const runDnsBlocklistsModule = async () => {
+    const providers = ["zen.spamhaus.org", "bl.spamcop.net", "dnsbl.sorbs.net"];
+    const ipv4Targets = [...discoveredIps]
+      .map((entry) => String(entry || "").trim())
+      .filter((entry) => /^\d{1,3}(\.\d{1,3}){3}$/.test(entry))
+      .slice(0, 5);
+    if (ipv4Targets.length === 0) {
+      await insertObservation({
+        module: "dns_blocklists",
+        observation_type: "dnsbl_skipped",
+        title: "DNS blocklist skipped",
+        value: { reason: "no_ipv4_targets" },
+        severity: "info",
+      });
+      return;
+    }
+
+    const checked: Array<{ provider: string; ip: string; listed: boolean; records: string[] }> = [];
+    for (const ip of ipv4Targets) {
+      const reversed = ip.split(".").reverse().join(".");
+      for (const provider of providers) {
+        const queryName = `${reversed}.${provider}`;
+        const answers = await resolveWithDnsOverHttps(queryName, "A");
+        const listed = answers.length > 0;
+        checked.push({ provider, ip, listed, records: answers.slice(0, 10) });
+        if (listed) {
           await insertFinding({
-            module: "redirect_chain",
-            finding_type: "redirect_external_domain",
-            severity: "info",
-            title: "Redirect to unrelated external domain",
-            affected_url: String(hop.url),
-            evidence: hop,
+            module: "dns_blocklists",
+            finding_type: "dnsbl_listed",
+            severity: provider.includes("spamhaus") ? "high" : "medium",
+            title: `IP listed in DNS blocklist (${provider})`,
+            affected_asset: hostname || ip,
+            ip,
+            evidence: {
+              provider,
+              records: answers.slice(0, 10),
+            },
+            remediation: "Verificare reputazione IP, abuso SMTP/malware e avviare delisting dopo remediation.",
           });
         }
       }
     }
+
+    await insertObservation({
+      module: "dns_blocklists",
+      observation_type: "dnsbl_summary",
+      title: "DNS blocklist summary",
+      value: {
+        checked,
+        listed_count: checked.filter((entry) => entry.listed).length,
+        not_listed: checked.every((entry) => !entry.listed),
+      },
+    });
+  };
+
+  const runPassesModule = async () => {
+    const getLatestFinding = async (moduleKey: string, findingTypes: string[]) => {
+      const query = adminClient
+        .from("surface_findings" as any)
+        .select("id, severity")
+        .eq("scan_job_id", job.id)
+        .eq("module", moduleKey);
+      const { data } = await query.in("finding_type", findingTypes).limit(1);
+      return (data || [])[0] || null;
+    };
+    const getLatestFindingAnyModule = async (moduleKeys: string[], findingTypes: string[]) => {
+      const query = adminClient
+        .from("surface_findings" as any)
+        .select("id, severity")
+        .eq("scan_job_id", job.id);
+      const { data } = await query.in("module", moduleKeys).in("finding_type", findingTypes).limit(1);
+      return (data || [])[0] || null;
+    };
+
+    const qualityObservationRes = await adminClient
+      .from("surface_observations" as any)
+      .select("value")
+      .eq("scan_job_id", job.id)
+      .eq("module", "quality")
+      .eq("observation_type", "quality_summary")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const qualityValue = qualityObservationRes.data?.value || {};
+    const categories = qualityValue?.categories || {};
+    const accessibilityScore = Number(categories?.accessibility);
+    const seoScore = Number(categories?.seo);
+
+    const hasDnssecFinding = await getLatestFinding("dnssec", [
+      "dnssec_missing",
+      "dnssec_inconsistent_delegation",
+    ]);
+    const hasThreatFinding = await getLatestFinding("threats", ["safe_browsing_match", "urlhaus_listed"]);
+    const hasBlocklistFinding = await getLatestFinding("dns_blocklists", ["dnsbl_listed"]);
+    const hasSpfMissing = await getLatestFinding("mail_security", ["mail_spf_missing"]);
+    const hasRedirectMissing = await getLatestFindingAnyModule(
+      ["redirect_chain", "redirects"],
+      ["no_http_to_https_redirect"],
+    );
+    const hasExpiredDomain = await getLatestFinding("whois", ["domain_expired", "domain_expiry_soon_30d"]);
+    const hasMissingHsts = await getLatestFinding("hsts", ["missing_hsts"]);
+
+    const passItems = [
+      { key: "ssl_valid", label: "SSL certificate valid", passed: !hasMissingHsts, sourceModule: "hsts" },
+      { key: "domain_registration_valid", label: "Domain registration is valid", passed: !hasExpiredDomain, sourceModule: "whois" },
+      {
+        key: "accessibility_score",
+        label: "Accessibility score",
+        passed: Number.isFinite(accessibilityScore) ? accessibilityScore >= 80 : false,
+        value: Number.isFinite(accessibilityScore) ? accessibilityScore : null,
+        sourceModule: "quality",
+      },
+      {
+        key: "seo_score",
+        label: "SEO score",
+        passed: Number.isFinite(seoScore) ? seoScore >= 80 : false,
+        value: Number.isFinite(seoScore) ? seoScore : null,
+        sourceModule: "quality",
+      },
+      { key: "dnssec_enabled", label: "DNSSEC enabled", passed: !hasDnssecFinding, sourceModule: "dnssec" },
+      { key: "no_threat_matches", label: "No threat feed matches", passed: !hasThreatFinding, sourceModule: "threats" },
+      { key: "spf_published", label: "SPF record published", passed: !hasSpfMissing, sourceModule: "mail_security" },
+      {
+        key: "https_redirect",
+        label: "HTTP requests are redirected to HTTPS",
+        passed: !hasRedirectMissing,
+        sourceModule: "redirects",
+      },
+      {
+        key: "not_on_dns_blocklists",
+        label: "Not on tested DNS blocklists",
+        passed: !hasBlocklistFinding,
+        sourceModule: "dns_blocklists",
+      },
+    ];
+
+    await insertObservation({
+      module: "passes",
+      observation_type: "passes_summary",
+      title: "Passes summary",
+      value: {
+        passes: passItems,
+        passedCount: passItems.filter((entry) => entry.passed).length,
+        totalCount: passItems.length,
+      },
+    });
   };
 
   const runReverseAndDumpsterModule = async () => {
@@ -1747,6 +3439,10 @@ export async function runSurfaceScanEnrichment(
         const res = await fetchWithTimeout(shodanUrl, {}, 12000);
         if (!res.ok) continue;
         const payload = await res.json();
+        shodanHostPayloads.push({
+          ip,
+          payload: payload as Record<string, unknown>,
+        });
         hostDataFound = true;
         const hostnames = Array.isArray(payload?.hostnames) ? payload.hostnames.map((h: any) => String(h)) : [];
         const ports = Array.isArray(payload?.ports) ? payload.ports : [];
@@ -1757,6 +3453,15 @@ export async function runSurfaceScanEnrichment(
             ? Object.keys(payload.vulns)
             : [];
         const tags = Array.isArray(payload?.tags) ? payload.tags : [];
+        for (const tag of tags.slice(0, 30)) {
+          const normalizedTag = String(tag || "").trim();
+          if (!normalizedTag) continue;
+          addTechFingerprint(normalizedTag, {
+            categories: ["service", "osint"],
+            confidence: 65,
+            source: "shodan_tag",
+          });
+        }
 
         for (const h of hostnames) discoveredHostnames.add(String(h).toLowerCase());
 
@@ -2610,6 +4315,84 @@ export async function runSurfaceScanEnrichment(
         return true;
       }
 
+      if (
+        outputType === "website_recon" ||
+        outputType === "tech_stack" ||
+        outputType.includes("technolog")
+      ) {
+        const extractedTech: Array<{ name: string; version?: string; category?: string }> = [];
+        const collectTech = (node: unknown) => {
+          if (!node || typeof node !== "object") return;
+          if (Array.isArray(node)) {
+            for (const item of node) collectTech(item);
+            return;
+          }
+          const record = node as Record<string, unknown>;
+          const name = String(record?.name || record?.technology || record?.product || "").trim();
+          const version = String(record?.version || "").trim();
+          const category = String(record?.category || record?.group || "").trim();
+          if (name) {
+            extractedTech.push({
+              name,
+              version: version || undefined,
+              category: category || undefined,
+            });
+          }
+          for (const child of Object.values(record)) {
+            if (typeof child === "object") collectTech(child);
+          }
+        };
+        collectTech(outputData);
+        for (const tech of extractedTech.slice(0, 200)) {
+          addTechFingerprint(tech.name, {
+            categories: tech.category ? [tech.category] : ["application"],
+            version: tech.version,
+            confidence: 75,
+            source: "pentest_tools_website_recon",
+          });
+        }
+        await insertObservation({
+          module: "tech_stack",
+          observation_type: "pentest_website_recon",
+          title: "Pentest-Tools technology fingerprint",
+          value: {
+            output_type: outputType,
+            technologies: extractedTech.slice(0, 200),
+            count: extractedTech.length,
+          },
+          severity: "info",
+        });
+        scan.outputCollected = true;
+        return true;
+      }
+
+      if (outputType.includes("ssl") || outputType.includes("tls")) {
+        await insertObservation({
+          module: "ssl_certificate",
+          observation_type: "pentest_ssl_output",
+          title: "Pentest-Tools SSL/TLS output",
+          value: {
+            output_type: outputType,
+            output_data: outputData,
+            source_scan_id: scan.scanId,
+          },
+          severity: "info",
+        });
+        await insertObservation({
+          module: "tls_summary",
+          observation_type: "pentest_tls_output",
+          title: "Pentest-Tools TLS summary output",
+          value: {
+            output_type: outputType,
+            output_data: outputData,
+            source_scan_id: scan.scanId,
+          },
+          severity: "info",
+        });
+        scan.outputCollected = true;
+        return true;
+      }
+
       if (outputType === "waf_results") {
         await insertObservation({
           module: "pentest_tools",
@@ -3086,30 +4869,139 @@ export async function runSurfaceScanEnrichment(
     }
   };
 
+  const modules: Record<string, ModuleExecutionConfig> = {
+    dns: { key: "dns", label: "DNS & Mail Intelligence", timeoutMs: 20000 },
+    dnssec: {
+      key: "dnssec",
+      label: "DNSSEC",
+      timeoutMs: 8000,
+      featureFlag: "SURFACESCAN_ENABLE_DNSSEC",
+    },
+    whois: {
+      key: "whois",
+      label: "Domain WHOIS/RDAP",
+      timeoutMs: 12000,
+      featureFlag: "SURFACESCAN_ENABLE_WEBCHECK_MODULES",
+    },
+    http_security: {
+      key: "http_security",
+      label: "HTTP Security",
+      timeoutMs: 18000,
+    },
+    headers: {
+      key: "headers",
+      label: "HTTP Headers",
+      timeoutMs: 18000,
+    },
+    robots: { key: "robots", label: "Robots.txt", timeoutMs: 12000 },
+    security_txt: { key: "security_txt", label: "Security.txt", timeoutMs: 12000 },
+    sitemap: { key: "sitemap", label: "Sitemap", timeoutMs: 12000 },
+    redirects: { key: "redirects", label: "Redirect Chain", timeoutMs: 12000 },
+    ssl_certificate: {
+      key: "ssl_certificate",
+      label: "SSL Certificate",
+      timeoutMs: 16000,
+    },
+    tls_summary: {
+      key: "tls_summary",
+      label: "TLS Summary",
+      timeoutMs: 16000,
+    },
+    server_info: {
+      key: "server_info",
+      label: "Server Information",
+      timeoutMs: 15000,
+    },
+    server_location: {
+      key: "server_location",
+      label: "Server Location",
+      timeoutMs: 12000,
+    },
+    tech_stack: {
+      key: "tech_stack",
+      label: "Tech Stack",
+      timeoutMs: 15000,
+    },
+    quality: {
+      key: "quality",
+      label: "Quality Metrics",
+      timeoutMs: 35000,
+      featureFlag: "SURFACESCAN_ENABLE_QUALITY",
+    },
+    threats: {
+      key: "threats",
+      label: "Threat Checks",
+      timeoutMs: 18000,
+      featureFlag: "SURFACESCAN_ENABLE_THREATS",
+    },
+    dns_blocklists: {
+      key: "dns_blocklists",
+      label: "DNS Blocklists",
+      timeoutMs: 15000,
+      featureFlag: "SURFACESCAN_ENABLE_WEBCHECK_MODULES",
+    },
+    reverse_dns_and_dumpster: {
+      key: "reverse_dns_and_dumpster",
+      label: "Subdomain Discovery",
+      timeoutMs: 30000,
+      featureFlag: "SURFACESCAN_ENABLE_SUBDOMAINS",
+    },
+    shodan: { key: "shodan", label: "Shodan Intel", timeoutMs: 30000 },
+    urlscan: { key: "urlscan", label: "URLScan Intel", timeoutMs: 20000 },
+    pentest_tools: {
+      key: "pentest_tools",
+      label: "Pentest-Tools",
+      timeoutMs: 240000,
+      featureFlag: "SURFACESCAN_ENABLE_OPEN_PORTS",
+    },
+    passes: {
+      key: "passes",
+      label: "Passes Summary",
+      timeoutMs: 15000,
+      featureFlag: "SURFACESCAN_ENABLE_WEBCHECK_MODULES",
+    },
+  };
+
   const runSafeRecon = async () => {
-    await safeRun("dns", runDnsModule);
-    await safeRun("http", runHttpModules);
-    await safeRun("robots", runRobotsModule);
-    await safeRun("security_txt", runSecurityTxtModule);
-    await safeRun("sitemap", runSitemapModule);
-    await safeRun("redirect_chain", runRedirectModule);
+    await safeRun(modules.dns, runDnsModule);
+    await safeRun(modules.dnssec, runDnssecModule);
+    await safeRun(modules.whois, runWhoisModule);
+    await safeRun(modules.http_security, runHttpModules);
+    await safeRun(modules.headers, async () => {
+      await fetchPrimaryHttpSnapshot();
+    });
+    await safeRun(modules.robots, runRobotsModule);
+    await safeRun(modules.security_txt, runSecurityTxtModule);
+    await safeRun(modules.sitemap, runSitemapModule);
+    await safeRun(modules.redirects, runRedirectModule);
+    await safeRun(modules.quality, runQualityModule);
+    await safeRun(modules.threats, runThreatsModule);
+    await safeRun(modules.dns_blocklists, runDnsBlocklistsModule);
   };
 
   try {
     await runSafeRecon();
 
     if (["domain_exposure", "ip_exposure", "cve_api_validation"].includes(job.scan_profile)) {
-      await safeRun("reverse_dns_and_dumpster", runReverseAndDumpsterModule);
-      await safeRun("shodan", runShodanModule);
+      await safeRun(modules.reverse_dns_and_dumpster, runReverseAndDumpsterModule);
+      await safeRun(modules.shodan, runShodanModule);
     }
 
     if (["domain_exposure", "cve_api_validation"].includes(job.scan_profile)) {
-      await safeRun("urlscan", runUrlscanModule);
+      await safeRun(modules.urlscan, runUrlscanModule);
     }
 
     if (["domain_exposure", "ip_exposure", "cve_api_validation"].includes(job.scan_profile)) {
-      await safeRun("pentest_tools", runPentestToolsModule);
+      await safeRun(modules.pentest_tools, runPentestToolsModule);
     }
+
+    await safeRun(modules.ssl_certificate, runSslCertificateModule);
+    await safeRun(modules.tls_summary, runTlsSummaryModule);
+    await safeRun(modules.server_info, runServerInfoModule);
+    await safeRun(modules.server_location, runServerLocationModule);
+    await safeRun(modules.tech_stack, runTechStackModule);
+
+    await safeRun(modules.passes, runPassesModule);
 
     // Hosting context derivation fallback
     if (hostingContext === "unknown") {
@@ -3129,6 +5021,65 @@ export async function runSurfaceScanEnrichment(
     const highestSeverity = ((severityAgg.data || []) as Array<{ severity: string }>)
       .map((row) => row.severity)
       .sort((a, b) => severityRank(b) - severityRank(a))[0] || "info";
+    const severityCounts = ((severityAgg.data || []) as Array<{ severity: string }>).reduce(
+      (acc, row) => {
+        const key = toSeverity(row.severity || "info");
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      },
+      { critical: 0, high: 0, medium: 0, low: 0, info: 0 } as Record<string, number>,
+    );
+    const overallScore = Math.max(
+      0,
+      Math.round(
+        100 -
+          severityCounts.critical * 35 -
+          severityCounts.high * 20 -
+          severityCounts.medium * 8 -
+          severityCounts.low * 3 -
+          severityCounts.info * 1,
+      ),
+    );
+    const riskLevel = overallScore >= 85 ? "low" : overallScore >= 70 ? "medium" : overallScore >= 50 ? "high" : "critical";
+    const moduleSummary = [...moduleExecution.values()]
+      .sort((a, b) => a.key.localeCompare(b.key))
+      .map((entry) => ({
+        key: entry.key,
+        label: entry.label,
+        status: entry.status,
+        severity: entry.severity || "info",
+        started_at: entry.started_at || null,
+        completed_at: entry.completed_at || null,
+        duration_ms: entry.duration_ms || null,
+        error_message: entry.error_message || null,
+      }));
+    const moduleCounters = moduleSummary.reduce(
+      (acc, entry) => {
+        acc.total += 1;
+        acc[entry.status] = (acc[entry.status] || 0) + 1;
+        return acc;
+      },
+      {
+        total: 0,
+        queued: 0,
+        running: 0,
+        success: 0,
+        skipped: 0,
+        error: 0,
+        timeout: 0,
+      } as Record<string, number>,
+    );
+    const scanSummary = {
+      overall_score: overallScore,
+      risk_level: riskLevel,
+      severity_counts: severityCounts,
+      findings_total: (severityAgg.data || []).length,
+      module_counters: moduleCounters,
+      modules: moduleSummary,
+      scope_guard: scopeCounters,
+      hosting_context: hostingContext,
+      shodan_status: shodanStatus,
+    };
 
     await insertObservation({
       module: "scope_guard",
@@ -3152,6 +5103,7 @@ export async function runSurfaceScanEnrichment(
         resolved_ips: [...discoveredIps],
         hosting_context: hostingContext,
         shodan_status: shodanStatus,
+        summary: scanSummary,
       })
       .eq("id", job.id);
 
@@ -3160,6 +5112,7 @@ export async function runSurfaceScanEnrichment(
       highest_severity: highestSeverity,
       hosting_context: hostingContext,
       shodan_status: shodanStatus,
+      summary: scanSummary,
       scope_guard: scopeCounters,
     });
 
