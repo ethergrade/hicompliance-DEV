@@ -1856,13 +1856,19 @@ export async function runSurfaceScanEnrichment(
   };
 
   const runPentestToolsModule = async () => {
-    if (job.scan_profile !== "cve_api_validation") return;
+    const isCveValidationProfile = job.scan_profile === "cve_api_validation";
+    const isIpExposureProfile = job.scan_profile === "ip_exposure";
+    if (!isCveValidationProfile && job.scan_profile !== "domain_exposure" && !isIpExposureProfile) return;
     const apiKey = Deno.env.get("PENTESTTOOLS_API_KEY") || Deno.env.get("PENTEST_TOOLS_API_KEY");
     const apiBaseUrl = Deno.env.get("PENTESTTOOLS_API_BASE_URL") || "https://app.pentest-tools.com/api/v2";
     const pollIntervalMs = Math.max(1500, Number(Deno.env.get("PENTESTTOOLS_POLL_INTERVAL_MS") || 6000));
     const maxPolls = Math.max(1, Number(Deno.env.get("PENTESTTOOLS_MAX_POLLS") || 8));
     const outputPollEvery = Math.max(1, Number(Deno.env.get("PENTESTTOOLS_OUTPUT_EVERY_POLLS") || 2));
     const maxScanTimeMinutes = Math.min(1440, Math.max(1, Number(Deno.env.get("PENTESTTOOLS_MAX_SCAN_MINUTES") || 30)));
+    const maxDomainPortScanIps = Math.max(
+      1,
+      Math.min(5, Number(Deno.env.get("PENTESTTOOLS_DOMAIN_PORT_SCAN_MAX_IPS") || 2)),
+    );
     const enableNetworkScanner = String(
       Deno.env.get("PENTESTTOOLS_ENABLE_NETWORK_SCANNER") || "false",
     ).toLowerCase() === "true";
@@ -1984,6 +1990,34 @@ export async function runSurfaceScanEnrichment(
         return null;
       }
     };
+
+    const isPublicIpv4 = (value: string): boolean => {
+      const candidate = value.trim();
+      if (!/^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/.test(candidate)) {
+        return false;
+      }
+      const [a, b] = candidate.split(".").map((entry) => Number(entry));
+      if (a === 10 || a === 127 || a === 0) return false;
+      if (a === 192 && b === 168) return false;
+      if (a === 172 && b >= 16 && b <= 31) return false;
+      if (a === 169 && b === 254) return false;
+      if (a === 100 && b >= 64 && b <= 127) return false;
+      if (a === 198 && (b === 18 || b === 19)) return false;
+      if (a >= 224) return false;
+      if (candidate === "169.254.169.254") return false;
+      return true;
+    };
+
+    const isPublicIpv6 = (value: string): boolean => {
+      const candidate = value.trim().toLowerCase();
+      if (!candidate.includes(":")) return false;
+      if (candidate === "::1") return false;
+      if (candidate.startsWith("fc") || candidate.startsWith("fd")) return false;
+      if (candidate.startsWith("fe80:")) return false;
+      return true;
+    };
+
+    const isPublicIpCandidate = (value: string): boolean => isPublicIpv4(value) || isPublicIpv6(value);
 
     const isTerminalStatus = (status: string | null | undefined) =>
       status ? terminalStatuses.has(status.toLowerCase()) : false;
@@ -2391,34 +2425,91 @@ export async function runSurfaceScanEnrichment(
     };
 
     const plannedScans: PlannedPentestScan[] = [];
-    if (parsedTarget.target_type === "domain" || parsedTarget.target_type === "subdomain" || parsedTarget.target_type === "url") {
-      plannedScans.push(
-        {
-          label: "website_recon",
-          toolId: 310,
-          targetName: targetUrl,
-        },
-        {
+    const isDomainLikeTarget =
+      parsedTarget.target_type === "domain" ||
+      parsedTarget.target_type === "subdomain" ||
+      parsedTarget.target_type === "url";
+    const isIpTarget = parsedTarget.target_type === "ipv4" || parsedTarget.target_type === "ipv6";
+
+    if (isDomainLikeTarget) {
+      if (!isIpExposureProfile) {
+        plannedScans.push(
+          {
+            label: "website_recon",
+            toolId: 310,
+            targetName: targetUrl,
+          },
+          {
+            label: "ssl_scanner",
+            toolId: 450,
+            targetName: hostname || targetUrl,
+            toolParams: { preset: "light" },
+          },
+        );
+      }
+
+      if (isCveValidationProfile) {
+        plannedScans.push({
           label: "website_scanner",
           toolId: 170,
           targetName: targetUrl,
           toolParams: { scan_type: "light" },
-        },
-        {
-          label: "ssl_scanner",
-          toolId: 450,
-          targetName: hostname || targetUrl,
-          toolParams: { preset: "light" },
-        },
-      );
+        });
+      }
+
+      if (hostingContext === "shared_hosting" || hostingContext === "cdn_proxy") {
+        await insertObservation({
+          module: "pentest_tools",
+          observation_type: "domain_ip_scan_skipped_hosting_context",
+          title: "Pentest-Tools domain IP scan skipped due to hosting context",
+          value: {
+            target: hostname || targetUrl,
+            hosting_context: hostingContext,
+          },
+          severity: "info",
+        });
+      } else {
+        const domainCandidateIps = [...new Set(
+          [...discoveredIps]
+            .map((entry) => String(entry || "").trim().toLowerCase())
+            .filter((entry) => entry.length > 0 && isPublicIpCandidate(entry)),
+        )].slice(0, maxDomainPortScanIps);
+
+        if (domainCandidateIps.length === 0) {
+          await insertObservation({
+            module: "pentest_tools",
+            observation_type: "domain_ip_scan_no_public_ip",
+            title: "No public resolved IP available for domain port scan",
+            value: {
+              target: hostname || targetUrl,
+              resolved_ips_seen: [...discoveredIps].slice(0, 25),
+              max_domain_port_scan_ips: maxDomainPortScanIps,
+            },
+            severity: "low",
+          });
+        } else {
+          for (const domainIp of domainCandidateIps) {
+            plannedScans.push({
+              label: `port_scanner_${domainIp}`,
+              toolId: 70,
+              targetName: domainIp,
+              toolParams: {
+                scan_type: "light",
+                protocol: "tcp",
+                check_alive: true,
+              },
+            });
+          }
+        }
+      }
     }
 
-    if (parsedTarget.target_type === "ipv4" || parsedTarget.target_type === "ipv6") {
-      if (hostingContext === "shared_hosting") {
+    if (isIpTarget) {
+      if (hostingContext === "shared_hosting" || hostingContext === "cdn_proxy") {
         await insertObservation({
           module: "pentest_tools",
           observation_type: "ip_scan_skipped_shared_hosting",
-          title: "Pentest-Tools IP scan skipped on shared hosting",
+          title: "Pentest-Tools IP scan skipped due to hosting context",
           value: {
             target: parsedTarget.hostname,
             hosting_context: hostingContext,
@@ -2437,7 +2528,7 @@ export async function runSurfaceScanEnrichment(
           },
         });
 
-        if (enableNetworkScanner) {
+        if (enableNetworkScanner && isCveValidationProfile) {
           plannedScans.push({
             label: "network_scanner",
             toolId: 350,
@@ -2702,7 +2793,7 @@ export async function runSurfaceScanEnrichment(
       await safeRun("urlscan", runUrlscanModule);
     }
 
-    if (job.scan_profile === "cve_api_validation") {
+    if (["domain_exposure", "ip_exposure", "cve_api_validation"].includes(job.scan_profile)) {
       await safeRun("pentest_tools", runPentestToolsModule);
     }
 
