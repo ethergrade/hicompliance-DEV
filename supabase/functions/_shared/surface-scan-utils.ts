@@ -44,6 +44,18 @@ export interface HostScopeClassification {
   reason: string | null;
 }
 
+export interface MonitoredScopeRule {
+  entry_type: string;
+  input_value: string;
+  ip_start: string;
+  ip_end: string;
+}
+
+export type ScopeExclusionReason =
+  | "scope_excluded_domain"
+  | "scope_excluded_ip"
+  | "scope_excluded_shared_noise";
+
 const IPV4_REGEX =
   /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
 
@@ -57,8 +69,148 @@ function normalizeHostname(value: string): string {
   return value.trim().toLowerCase().replace(/\.$/, "");
 }
 
-function isValidIPv4(value: string): boolean {
+export function isValidIPv4(value: string): boolean {
   return IPV4_REGEX.test(value);
+}
+
+function normalizeIp(value: string): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function ipv4ToNumber(ip: string): number | null {
+  if (!isValidIPv4(ip)) return null;
+  const [a, b, c, d] = ip.split(".").map((entry) => Number(entry));
+  if ([a, b, c, d].some((entry) => Number.isNaN(entry))) return null;
+  return (((a << 24) >>> 0) + (b << 16) + (c << 8) + d) >>> 0;
+}
+
+export function isIpInRange(ip: string, ipStart: string, ipEnd: string): boolean {
+  const normalizedIp = normalizeIp(ip);
+  const normalizedStart = normalizeIp(ipStart);
+  const normalizedEnd = normalizeIp(ipEnd);
+  if (!normalizedIp || !normalizedStart || !normalizedEnd) return false;
+
+  if (normalizedIp.includes(":") || normalizedStart.includes(":") || normalizedEnd.includes(":")) {
+    return normalizedIp === normalizedStart && normalizedIp === normalizedEnd;
+  }
+
+  const current = ipv4ToNumber(normalizedIp);
+  const start = ipv4ToNumber(normalizedStart);
+  const end = ipv4ToNumber(normalizedEnd);
+  if (current === null || start === null || end === null) return false;
+  return current >= start && current <= end;
+}
+
+export function isIpWithinMonitoredScope(ip: string, scopeRules: MonitoredScopeRule[]): boolean {
+  const candidate = normalizeIp(ip);
+  if (!candidate) return false;
+
+  for (const rule of scopeRules) {
+    const entryType = String(rule?.entry_type || "").toLowerCase();
+    const inputValue = normalizeIp(rule?.input_value || "");
+    const ipStart = normalizeIp(rule?.ip_start || "");
+    const ipEnd = normalizeIp(rule?.ip_end || "");
+
+    if (!["single", "range", "cidr"].includes(entryType)) continue;
+
+    if (candidate.includes(":")) {
+      if (entryType === "single" && (candidate === inputValue || candidate === ipStart)) {
+        return true;
+      }
+      continue;
+    }
+
+    if (entryType === "single") {
+      if (candidate === ipStart || candidate === inputValue) return true;
+      continue;
+    }
+
+    if (isIpInRange(candidate, ipStart, ipEnd)) return true;
+  }
+
+  return false;
+}
+
+export function splitMonitoredScopeRules(rows: MonitoredScopeRule[]): {
+  scopeDomains: string[];
+  ipScopeRules: MonitoredScopeRule[];
+} {
+  const scopeDomains: string[] = [];
+  const ipScopeRules: MonitoredScopeRule[] = [];
+
+  for (const row of rows || []) {
+    const entryType = String(row?.entry_type || "").toLowerCase();
+    const inputValue = String(row?.input_value || "").trim().toLowerCase();
+    if (entryType === "domain" && inputValue) {
+      scopeDomains.push(inputValue);
+      continue;
+    }
+    if (["single", "range", "cidr"].includes(entryType)) {
+      ipScopeRules.push({
+        entry_type: entryType,
+        input_value: inputValue,
+        ip_start: String(row?.ip_start || "").trim().toLowerCase(),
+        ip_end: String(row?.ip_end || "").trim().toLowerCase(),
+      });
+    }
+  }
+
+  return {
+    scopeDomains: [...new Set(scopeDomains)],
+    ipScopeRules,
+  };
+}
+
+export function classifyTargetScope(
+  target: NormalizedTarget,
+  scopeDomains: string[],
+  ipScopeRules: MonitoredScopeRule[],
+): {
+  allowed: boolean;
+  code: "ok" | "target_out_of_scope_domain" | "target_out_of_scope_ip" | "target_out_of_scope_shared_noise";
+  reason: ScopeExclusionReason | null;
+} {
+  const host = normalizeHost(target.hostname || "");
+  if (!host) {
+    return {
+      allowed: false,
+      code: "target_out_of_scope_domain",
+      reason: "scope_excluded_domain",
+    };
+  }
+
+  const isIpLikeHost = isValidIPv4(host) || host.includes(":");
+  if (target.target_type === "ipv4" || target.target_type === "ipv6" || isIpLikeHost) {
+    const allowedIp = isIpWithinMonitoredScope(host, ipScopeRules);
+    return {
+      allowed: allowedIp,
+      code: allowedIp ? "ok" : "target_out_of_scope_ip",
+      reason: allowedIp ? null : "scope_excluded_ip",
+    };
+  }
+
+  const hostClassification = classifyHostForScope(host, scopeDomains);
+  if (hostClassification.blocked) {
+    return {
+      allowed: false,
+      code: "target_out_of_scope_shared_noise",
+      reason: "scope_excluded_shared_noise",
+    };
+  }
+
+  if (!hostClassification.inScope) {
+    return {
+      allowed: false,
+      code: "target_out_of_scope_domain",
+      reason: "scope_excluded_domain",
+    };
+  }
+
+  return {
+    allowed: true,
+    code: "ok",
+    reason: null,
+  };
 }
 
 function ipv4ToOctets(ip: string): number[] {

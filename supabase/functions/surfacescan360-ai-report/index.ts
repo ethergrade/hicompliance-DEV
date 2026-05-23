@@ -67,6 +67,179 @@ function parseHostname(value: string): string | null {
   return cleaned;
 }
 
+function isIpv6(value: string): boolean {
+  return String(value || '').includes(':');
+}
+
+type ScopeExclusionReason = 'scope_excluded_domain' | 'scope_excluded_ip' | 'scope_excluded_shared_noise';
+
+interface MonitoredScopeRule {
+  entry_type: string;
+  input_value: string;
+  ip_start: string;
+  ip_end: string;
+}
+
+const SHARED_NOISE_PATTERNS: RegExp[] = [
+  /^net-\d{1,3}(?:-\d{1,3}){3}\./i,
+  /^host-\d{1,3}(?:-\d{1,3}){3}\./i,
+  /^dyn-\d{1,3}(?:-\d{1,3}){3}\./i,
+  /^webx\d+\./i,
+  /\bcust\b/i,
+  /\bdsl\b/i,
+  /\bpppoe\b/i,
+  /\bpool\b/i,
+  /\bdynamic\b/i,
+];
+
+const SHARED_NOISE_SUFFIXES = [
+  'aruba.it',
+  'vodafonedsl.it',
+  'teletu.it',
+  'fastwebnet.it',
+  'alice.it',
+  'tim.it',
+  'tiscali.it',
+];
+
+function ipv4ToNumber(ip: string): number | null {
+  if (!isIpv4(ip)) return null;
+  const [a, b, c, d] = ip.split('.').map((entry) => Number(entry));
+  if ([a, b, c, d].some((entry) => Number.isNaN(entry))) return null;
+  return (((a << 24) >>> 0) + (b << 16) + (c << 8) + d) >>> 0;
+}
+
+function isIpInRange(ip: string, ipStart: string, ipEnd: string): boolean {
+  const current = String(ip || '').trim().toLowerCase();
+  const start = String(ipStart || '').trim().toLowerCase();
+  const end = String(ipEnd || '').trim().toLowerCase();
+  if (!current || !start || !end) return false;
+  if (current.includes(':') || start.includes(':') || end.includes(':')) {
+    return current === start && current === end;
+  }
+  const currentNum = ipv4ToNumber(current);
+  const startNum = ipv4ToNumber(start);
+  const endNum = ipv4ToNumber(end);
+  if (currentNum === null || startNum === null || endNum === null) return false;
+  return currentNum >= startNum && currentNum <= endNum;
+}
+
+function splitScopeRules(rows: any[]): { scopeDomains: string[]; ipScopeRules: MonitoredScopeRule[] } {
+  const scopeDomains: string[] = [];
+  const ipScopeRules: MonitoredScopeRule[] = [];
+  for (const row of rows || []) {
+    const entryType = String(row?.entry_type || '').trim().toLowerCase();
+    if (entryType === 'domain') {
+      const input = String(row?.input_value || '').trim().toLowerCase();
+      if (input) scopeDomains.push(input);
+      continue;
+    }
+    if (['single', 'range', 'cidr'].includes(entryType)) {
+      ipScopeRules.push({
+        entry_type: entryType,
+        input_value: String(row?.input_value || '').trim().toLowerCase(),
+        ip_start: String(row?.ip_start || '').trim().toLowerCase(),
+        ip_end: String(row?.ip_end || '').trim().toLowerCase(),
+      });
+    }
+  }
+  return {
+    scopeDomains: [...new Set(scopeDomains)],
+    ipScopeRules,
+  };
+}
+
+function isHostWithinScope(hostname: string, scopeDomains: string[]): boolean {
+  const host = normalizeHost(hostname).replace(/^www\./, '');
+  if (!host) return false;
+  for (const rawScope of scopeDomains) {
+    const scope = normalizeHost(rawScope).replace(/^www\./, '');
+    if (!scope) continue;
+    if (host === scope || host.endsWith(`.${scope}`)) return true;
+  }
+  return false;
+}
+
+function classifyHostScopeReason(hostname: string, scopeDomains: string[]): ScopeExclusionReason | null {
+  const host = normalizeHost(hostname).replace(/^www\./, '');
+  if (!host) return 'scope_excluded_domain';
+  const inScope = isHostWithinScope(host, scopeDomains);
+  const matchesPattern = SHARED_NOISE_PATTERNS.some((pattern) => pattern.test(host));
+  const matchesSuffix = SHARED_NOISE_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+  const sharedNoise = matchesPattern || matchesSuffix;
+  if (sharedNoise && !inScope) return 'scope_excluded_shared_noise';
+  if (!inScope) return 'scope_excluded_domain';
+  return null;
+}
+
+function isIpWithinScopeRules(ip: string, ipScopeRules: MonitoredScopeRule[]): boolean {
+  const candidate = String(ip || '').trim().toLowerCase();
+  if (!candidate) return false;
+  for (const rule of ipScopeRules || []) {
+    const entryType = String(rule?.entry_type || '').toLowerCase();
+    if (!['single', 'range', 'cidr'].includes(entryType)) continue;
+    const input = String(rule?.input_value || '').trim().toLowerCase();
+    const start = String(rule?.ip_start || '').trim().toLowerCase();
+    const end = String(rule?.ip_end || '').trim().toLowerCase();
+    if (entryType === 'single') {
+      if (candidate === input || candidate === start) return true;
+      continue;
+    }
+    if (isIpInRange(candidate, start, end)) return true;
+  }
+  return false;
+}
+
+function getScopeReasonFromAsset(
+  asset: any,
+  scopeDomains: string[],
+  ipScopeRules: MonitoredScopeRule[],
+): ScopeExclusionReason | null {
+  const backendExcluded = Boolean(asset?.raw?._scope_excluded);
+  const backendReason = String(asset?.raw?._scope_exclusion_reason || '').trim().toLowerCase();
+  if (backendExcluded) {
+    return (backendReason as ScopeExclusionReason) || 'scope_excluded_domain';
+  }
+
+  const assetType = String(asset?.asset_type || '').toLowerCase();
+  const ipCandidate = String(asset?.ip || asset?.raw?.ip || '').trim().toLowerCase();
+  const value = String(asset?.asset_value || '').trim().toLowerCase();
+
+  if (assetType === 'ip' || assetType === 'open_port' || isIpv4(value) || isIpv6(value)) {
+    const ipValue = ipCandidate || (assetType === 'open_port' ? value.split(':')[0] : value);
+    if (ipValue && !isIpWithinScopeRules(ipValue, ipScopeRules)) return 'scope_excluded_ip';
+    return null;
+  }
+
+  const hostCandidate = String(asset?.hostname || parseHostname(value) || value).trim().toLowerCase();
+  if (!hostCandidate) return 'scope_excluded_domain';
+  return classifyHostScopeReason(hostCandidate, scopeDomains);
+}
+
+function getScopeReasonFromFinding(
+  finding: any,
+  scopeDomains: string[],
+  ipScopeRules: MonitoredScopeRule[],
+): ScopeExclusionReason | null {
+  const backendExcluded = Boolean(finding?.evidence?._scope_excluded);
+  const backendReason = String(finding?.evidence?._scope_exclusion_reason || '').trim().toLowerCase();
+  if (backendExcluded) {
+    return (backendReason as ScopeExclusionReason) || 'scope_excluded_domain';
+  }
+  const ipCandidate = String(finding?.ip || finding?.evidence?.ip || '').trim().toLowerCase();
+  if (ipCandidate && (isIpv4(ipCandidate) || isIpv6(ipCandidate))) {
+    if (!isIpWithinScopeRules(ipCandidate, ipScopeRules)) return 'scope_excluded_ip';
+  }
+  const hostCandidate =
+    parseHostname(String(finding?.affected_url || '')) ||
+    parseHostname(String(finding?.affected_asset || '')) ||
+    '';
+  if (hostCandidate) {
+    return classifyHostScopeReason(hostCandidate, scopeDomains);
+  }
+  return null;
+}
+
 function normalizeAssetLabel(value: string): string {
   const raw = String(value || '').trim();
   if (!raw) return '';
@@ -648,8 +821,57 @@ Deno.serve(async (req) => {
 
     const profile = profileRes.data;
     const org = orgRes.data;
-    const rawAssets = assetsRes.data ?? [];
-    const subdomain_dumps = subdomainDumpRes.data ?? [];
+    const monitored_scope = monitoredRes.data ?? [];
+    const { scopeDomains, ipScopeRules } = splitScopeRules(monitored_scope);
+    const scope_guard_summary = {
+      in_scope: 0,
+      excluded_by_scope: 0,
+      excluded_shared_noise: 0,
+      excluded_reasons: {} as Record<string, number>,
+    };
+
+    const trackScopeReason = (reason: ScopeExclusionReason | null) => {
+      if (!reason) {
+        scope_guard_summary.in_scope += 1;
+        return;
+      }
+      scope_guard_summary.excluded_reasons[reason] = (scope_guard_summary.excluded_reasons[reason] || 0) + 1;
+      if (reason === 'scope_excluded_shared_noise') {
+        scope_guard_summary.excluded_shared_noise += 1;
+      } else {
+        scope_guard_summary.excluded_by_scope += 1;
+      }
+    };
+
+    const rawAssetsAll = assetsRes.data ?? [];
+    const rawAssets = rawAssetsAll.filter((asset: any) => {
+      const reason = getScopeReasonFromAsset(asset, scopeDomains, ipScopeRules);
+      trackScopeReason(reason);
+      return reason === null;
+    });
+    const subdomain_dumps = (subdomainDumpRes.data ?? []).map((dump: any) => {
+      const filteredResults = ((dump?.results ?? []) as any[]).filter((entry: any) => {
+        const host = String(entry?.subdomain || '').trim().toLowerCase();
+        if (!host) return false;
+        const hostReason = classifyHostScopeReason(host, scopeDomains);
+        if (hostReason) {
+          trackScopeReason(hostReason);
+          return false;
+        }
+        const ip = String(entry?.ip || '').trim().toLowerCase();
+        if (ip && !isIpWithinScopeRules(ip, ipScopeRules)) {
+          trackScopeReason('scope_excluded_ip');
+          return false;
+        }
+        trackScopeReason(null);
+        return true;
+      });
+      return {
+        ...dump,
+        total_returned: filteredResults.length,
+        results: filteredResults,
+      };
+    });
     const assetKeys = new Set(rawAssets.map((a: any) => normalizeHost(a.hostname || a.asset_value || a.ip)));
     const discoveredSubdomainAssets = subdomain_dumps.flatMap((dump: any) =>
       ((dump.results ?? []) as any[]).map((r: any) => ({
@@ -671,11 +893,20 @@ Deno.serve(async (req) => {
     ).filter((a: any) => {
       const key = normalizeHost(a.hostname || a.asset_value);
       if (!key || assetKeys.has(key)) return false;
+      const reason = getScopeReasonFromAsset(a, scopeDomains, ipScopeRules);
+      trackScopeReason(reason);
+      if (reason) return false;
       assetKeys.add(key);
       return true;
     });
     const assets = [...rawAssets, ...discoveredSubdomainAssets];
-    const findingsRaw = (findingsRes.data ?? []).sort((a, b) => (SEV_RANK[b.severity] ?? 0) - (SEV_RANK[a.severity] ?? 0));
+    const findingsRaw = (findingsRes.data ?? [])
+      .filter((finding: any) => {
+        const reason = getScopeReasonFromFinding(finding, scopeDomains, ipScopeRules);
+        trackScopeReason(reason);
+        return reason === null;
+      })
+      .sort((a, b) => (SEV_RANK[b.severity] ?? 0) - (SEV_RANK[a.severity] ?? 0));
     const findings = findingsRaw.map((f: any) => {
       const cvesFromArray = Array.isArray(f.cve)
         ? f.cve.map((c: unknown) => String(c || '').toUpperCase().trim()).filter(Boolean)
@@ -692,7 +923,15 @@ Deno.serve(async (req) => {
         remediation: redactTechnologyMentions(String(f.remediation || '')),
       };
     });
-    const intelRaw = intelRes.data ?? [];
+    const intelRaw = (intelRes.data ?? []).filter((entry: any) => {
+      const target = String(entry?.target || '').trim().toLowerCase();
+      if (!target) return true;
+      if (isIpv4(target) || isIpv6(target)) {
+        return isIpWithinScopeRules(target, ipScopeRules);
+      }
+      const targetHost = parseHostname(target) || target;
+      return classifyHostScopeReason(targetHost, scopeDomains) === null;
+    });
     const intel = intelRaw.map((entry: any) => ({
       category: mapIntelCategory(String(entry.provider || '')),
       target: entry.target,
@@ -700,7 +939,6 @@ Deno.serve(async (req) => {
       confidence: entry.confidence || null,
     }));
     const observations = obsRes.data ?? [];
-    const monitored_scope = monitoredRes.data ?? [];
 
     const addToSetMap = (map: Map<string, Set<string>>, key: string, value: string) => {
       const k = String(key || '').trim();
@@ -787,7 +1025,7 @@ Deno.serve(async (req) => {
 
     for (const asset of assets) {
       const assetType = String(asset?.asset_type || '').toLowerCase();
-      const rawIp = String(asset?.ip || asset?.raw?.ip || '').trim();
+      const rawIp = String(asset?.ip || (asset as any)?.raw?.ip || '').trim();
       const baseLabel =
         assetType === 'open_port'
           ? String(asset?.hostname || rawIp || String(asset?.asset_value || '').split(':')[0] || '').trim()
@@ -971,6 +1209,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       intel_summary: intel.slice(0, 40),
       key_observations: observations.slice(0, 80),
       monitored_scope: monitored_scope.slice(0, 200),
+      scope_guard_summary,
       cve_catalog: cve_catalog.slice(0, 80).map((item: any) => ({
         cve_id: item.cve_id,
         cvss: item.cvss,
@@ -1064,6 +1303,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       intel,
       observations,
       monitored_scope,
+      scope_guard_summary,
       subdomain_dumps,
       remediation_tasks,
       kev_generation: kevGen,

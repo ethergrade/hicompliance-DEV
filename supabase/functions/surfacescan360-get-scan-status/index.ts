@@ -85,6 +85,11 @@ serve(async (req: Request) => {
         resolved_ips: job.resolved_ips || [],
         hosting_context: job.hosting_context,
         shodan_status: job.shodan_status,
+        scope_guard: job.scope_guard || {
+          in_scope: 0,
+          excluded_by_scope: 0,
+          excluded_shared_noise: 0,
+        },
         started_at: job.started_at,
         completed_at: job.completed_at,
         error_message: job.error_message,

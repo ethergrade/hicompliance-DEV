@@ -2,7 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useToast } from '@/hooks/use-toast';
-import { classifySurfaceHostForScope, sourceLabel } from '@/lib/surfaceScopeGuard';
+import {
+  classifySurfaceHostForScope,
+  isIpWithinScopeRules,
+  isIpv4,
+  isIpv6,
+  sourceLabel,
+  splitMonitoredScopeRules,
+  type SurfaceMonitoredScopeRule,
+} from '@/lib/surfaceScopeGuard';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 interface AssetRow {
@@ -31,19 +39,19 @@ interface UseSurfaceScanDiscoveredAssetsResult {
   ips: string[];
   hostMeta: Record<string, DiscoveredHostMeta>;
   scopeDomains: string[];
+  scopeCounters: {
+    in_scope: number;
+    excluded_by_scope: number;
+    excluded_shared_noise: number;
+  };
   loading: boolean;
   refetch: () => Promise<void>;
 }
-
-const IPV4_REGEX =
-  /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
-
-const isIpv6 = (value: string): boolean => value.includes(':');
 const isDomainLike = (value: string): boolean => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(value);
 
 export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssetsResult => {
   const [rows, setRows] = useState<AssetRow[]>([]);
-  const [scopeDomains, setScopeDomains] = useState<string[]>([]);
+  const [scopeRules, setScopeRules] = useState<SurfaceMonitoredScopeRule[]>([]);
   const [loading, setLoading] = useState(false);
   const { organizationId, isLoading: clientLoading } = useClientOrganization();
   const { toast } = useToast();
@@ -69,15 +77,10 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
 
       const { data: scopeRows, error: scopeErr } = await supabase
         .from('surface_scan_monitored_ips' as any)
-        .select('input_value')
-        .eq('organization_id', organizationId)
-        .eq('entry_type', 'domain');
+        .select('entry_type, input_value, ip_start, ip_end')
+        .eq('organization_id', organizationId);
       if (scopeErr) throw scopeErr;
-      setScopeDomains(
-        (scopeRows || [])
-          .map((row: any) => String(row?.input_value || '').trim().toLowerCase())
-          .filter(Boolean),
-      );
+      setScopeRules((scopeRows || []) as SurfaceMonitoredScopeRule[]);
     } catch (error) {
       console.error('Error fetching discovered surface assets:', error);
       if (!background) {
@@ -140,17 +143,36 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
     };
   }, [organizationId, fetchAssets]);
 
-  const { subdomains, ips, hostMeta } = useMemo(() => {
+  const { subdomains, ips, hostMeta, scopeCounters, scopeDomains } = useMemo(() => {
+    const { scopeDomains, ipScopeRules } = splitMonitoredScopeRules(scopeRules);
     const subdomainSet = new Set<string>();
     const ipSet = new Set<string>();
     const metaMap: Record<string, DiscoveredHostMeta> = {};
+    const counters = {
+      in_scope: 0,
+      excluded_by_scope: 0,
+      excluded_shared_noise: 0,
+    };
 
     for (const row of rows) {
       const value = String(row.asset_value || '').trim().toLowerCase().replace(/\.$/, '');
       if (!value) continue;
 
       if (row.asset_type === 'ip') {
-        if (IPV4_REGEX.test(value) || isIpv6(value)) {
+        if (isIpv4(value) || isIpv6(value)) {
+          const backendExcluded = Boolean(row?.raw?._scope_excluded);
+          const backendReason = String(row?.raw?._scope_exclusion_reason || '').trim().toLowerCase();
+          const uiExcluded = !isIpWithinScopeRules(value, ipScopeRules);
+          const excluded = backendExcluded || uiExcluded;
+          const reason =
+            backendReason ||
+            (uiExcluded ? 'scope_excluded_ip' : '');
+          if (excluded) {
+            if (reason === 'scope_excluded_shared_noise') counters.excluded_shared_noise += 1;
+            else counters.excluded_by_scope += 1;
+            continue;
+          }
+          counters.in_scope += 1;
           ipSet.add(value);
         }
         continue;
@@ -159,7 +181,15 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
       if (isDomainLike(value) && !value.startsWith('*.')) {
         const classification = classifySurfaceHostForScope(value, scopeDomains);
         const isBackendExcluded = Boolean(row?.raw?._scope_excluded);
+        const backendReason = String(row?.raw?._scope_exclusion_reason || '').trim().toLowerCase();
         const isExcluded = classification.blocked || isBackendExcluded;
+        const exclusionReason = backendReason || classification.reason || null;
+        if (isExcluded) {
+          if (exclusionReason === 'scope_excluded_shared_noise') counters.excluded_shared_noise += 1;
+          else counters.excluded_by_scope += 1;
+        } else {
+          counters.in_scope += 1;
+        }
         if (!metaMap[value]) {
           metaMap[value] = {
             host: value,
@@ -169,12 +199,9 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
             fromReverseDns: false,
             fromDump: false,
             fromScope: false,
-            blockedNoise: classification.blocked,
+            blockedNoise: exclusionReason === 'scope_excluded_shared_noise',
             excludedByBackend: isBackendExcluded,
-            exclusionReason:
-              (row?.raw?._scope_exclusion_reason as string | undefined) ||
-              classification.reason ||
-              null,
+            exclusionReason: exclusionReason,
           };
         }
         const meta = metaMap[value];
@@ -198,14 +225,17 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
       subdomains: [...subdomainSet],
       ips: [...ipSet],
       hostMeta: metaMap,
+      scopeCounters: counters,
+      scopeDomains,
     };
-  }, [rows, scopeDomains]);
+  }, [rows, scopeRules]);
 
   return {
     subdomains,
     ips,
     hostMeta,
     scopeDomains,
+    scopeCounters,
     loading,
     refetch: fetchAssets,
   };

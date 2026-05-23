@@ -15,6 +15,12 @@ interface AiReport {
   assets_in_scope: any[];
   findings: any[];
   findings_by_severity: Record<string, number>;
+  scope_guard_summary?: {
+    in_scope?: number;
+    excluded_by_scope?: number;
+    excluded_shared_noise?: number;
+    excluded_reasons?: Record<string, number>;
+  };
   cve_catalog?: Array<{
     cve_id: string;
     description?: string | null;
@@ -229,7 +235,25 @@ export const AiReportTab: React.FC = () => {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle>3. Evidenze sottodomini ({subdomainEvidence.length})</CardTitle></CardHeader>
+            <CardHeader><CardTitle>3. Scope Guard</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+              <div className="rounded-lg border border-border p-3">
+                <div className="text-xs text-muted-foreground">Elementi in scope</div>
+                <div className="text-xl font-semibold">{Number(report.scope_guard_summary?.in_scope || 0)}</div>
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <div className="text-xs text-muted-foreground">Esclusi per scope</div>
+                <div className="text-xl font-semibold">{Number(report.scope_guard_summary?.excluded_by_scope || 0)}</div>
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <div className="text-xs text-muted-foreground">Esclusi shared/noise</div>
+                <div className="text-xl font-semibold">{Number(report.scope_guard_summary?.excluded_shared_noise || 0)}</div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>4. Evidenze sottodomini ({subdomainEvidence.length})</CardTitle></CardHeader>
             <CardContent>
               {subdomainEvidence.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Nessuna evidenza di sottodominio disponibile per questo cliente.</p>

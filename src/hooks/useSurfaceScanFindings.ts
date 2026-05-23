@@ -2,6 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useToast } from '@/hooks/use-toast';
+import {
+  classifySurfaceHostForScope,
+  isIpWithinScopeRules,
+  isIpv4,
+  isIpv6,
+  splitMonitoredScopeRules,
+  type SurfaceMonitoredScopeRule,
+} from '@/lib/surfaceScopeGuard';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 export interface SurfaceFindingRow {
@@ -31,6 +39,7 @@ export interface SurfaceFindingRow {
 
 export const useSurfaceScanFindings = () => {
   const [findings, setFindings] = useState<SurfaceFindingRow[]>([]);
+  const [scopeRules, setScopeRules] = useState<SurfaceMonitoredScopeRule[]>([]);
   const [loading, setLoading] = useState(false);
   const { organizationId, isLoading: clientLoading } = useClientOrganization();
   const { toast } = useToast();
@@ -63,35 +72,86 @@ export const useSurfaceScanFindings = () => {
     };
   }, []);
 
-  const fetchFindings = useCallback(async () => {
+  const extractHostFromRow = (row: SurfaceFindingRow): string => {
+    const urlCandidate = String(row.affected_url || '').trim();
+    if (urlCandidate) {
+      try {
+        return new URL(urlCandidate).hostname.toLowerCase();
+      } catch {
+        return '';
+      }
+    }
+    const asset = String(row.affected_asset || '').trim().toLowerCase();
+    if (!asset || isIpv4(asset) || isIpv6(asset)) return '';
+    return asset
+      .replace(/^https?:\/\//, '')
+      .replace(/\/.*$/, '')
+      .replace(/\.$/, '');
+  };
+
+  const shouldHideFindingByScope = (
+    row: SurfaceFindingRow,
+    monitoredRules: SurfaceMonitoredScopeRule[],
+  ): boolean => {
+    const backendExcluded = Boolean(row?.evidence?._scope_excluded);
+    if (backendExcluded) return true;
+
+    const { scopeDomains, ipScopeRules } = splitMonitoredScopeRules(monitoredRules);
+    const ipCandidate = String(row.ip || row.evidence?.ip || '').trim().toLowerCase();
+    if (ipCandidate && (isIpv4(ipCandidate) || isIpv6(ipCandidate))) {
+      if (!isIpWithinScopeRules(ipCandidate, ipScopeRules)) return true;
+    }
+
+    const hostCandidate = extractHostFromRow(row);
+    if (hostCandidate) {
+      const classification = classifySurfaceHostForScope(hostCandidate, scopeDomains);
+      if (classification.blocked) return true;
+    }
+    return false;
+  };
+
+  const fetchFindings = useCallback(async (options?: { background?: boolean }) => {
     if (clientLoading || !organizationId) return;
-
-    setLoading(true);
+    const background = Boolean(options?.background);
+    if (!background) setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('surface_findings' as any)
-        .select(
-          'id, provider, module, finding_type, title, description, severity, affected_asset, affected_url, ip, port, protocol, cve, cwe, cvss, epss, cisa_kev, remediation, evidence, attribution_confidence, status, created_at',
-        )
-        .eq('customer_id', organizationId)
-        .order('created_at', { ascending: false })
-        .limit(1000);
+      const [findingsRes, scopeRulesRes] = await Promise.all([
+        supabase
+          .from('surface_findings' as any)
+          .select(
+            'id, provider, module, finding_type, title, description, severity, affected_asset, affected_url, ip, port, protocol, cve, cwe, cvss, epss, cisa_kev, remediation, evidence, attribution_confidence, status, created_at',
+          )
+          .eq('customer_id', organizationId)
+          .order('created_at', { ascending: false })
+          .limit(1000),
+        supabase
+          .from('surface_scan_monitored_ips' as any)
+          .select('entry_type, input_value, ip_start, ip_end')
+          .eq('organization_id', organizationId),
+      ]);
 
-      if (error) throw error;
-      setFindings(
-        ((data || []) as Record<string, any>[])
-          .map((record) => mapRecord(record))
-          .filter((record): record is SurfaceFindingRow => Boolean(record)),
-      );
+      if (findingsRes.error) throw findingsRes.error;
+      if (scopeRulesRes.error) throw scopeRulesRes.error;
+
+      const rules = (scopeRulesRes.data || []) as SurfaceMonitoredScopeRule[];
+      setScopeRules(rules);
+
+      const normalizedRows = ((findingsRes.data || []) as Record<string, any>[])
+        .map((record) => mapRecord(record))
+        .filter((record): record is SurfaceFindingRow => Boolean(record));
+
+      setFindings(normalizedRows.filter((row) => !shouldHideFindingByScope(row, rules)));
     } catch (error) {
       console.error('Error fetching surface findings:', error);
-      toast({
-        title: 'Errore',
-        description: 'Impossibile caricare i security findings',
-        variant: 'destructive',
-      });
+      if (!background) {
+        toast({
+          title: 'Errore',
+          description: 'Impossibile caricare i security findings',
+          variant: 'destructive',
+        });
+      }
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
   }, [clientLoading, organizationId, mapRecord, toast]);
 
@@ -114,21 +174,8 @@ export const useSurfaceScanFindings = () => {
           table: 'surface_findings',
           filter: `customer_id=eq.${organizationId}`,
         },
-        (payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
-          setFindings((prev) => {
-            if (payload.eventType === 'DELETE') {
-              const deletedId = String(payload.old?.id || '');
-              if (!deletedId) return prev;
-              return prev.filter((item) => item.id !== deletedId);
-            }
-
-            const nextRow = mapRecord(payload.new);
-            if (!nextRow) return prev;
-            const withoutCurrent = prev.filter((item) => item.id !== nextRow.id);
-            return [nextRow, ...withoutCurrent].sort(
-              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-            );
-          });
+        (_payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
+          void fetchFindings({ background: true });
         },
       )
       .subscribe();
@@ -136,7 +183,7 @@ export const useSurfaceScanFindings = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [organizationId, mapRecord]);
+  }, [organizationId, fetchFindings]);
 
   const counts = useMemo(() => {
     const bySeverity = findings.reduce(
@@ -161,6 +208,7 @@ export const useSurfaceScanFindings = () => {
     findings,
     loading,
     counts,
+    scopeRules,
     refetch: fetchFindings,
   };
 };

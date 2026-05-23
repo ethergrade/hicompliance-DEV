@@ -35,6 +35,8 @@ import {
   Plus,
   Trash2,
   Search,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import SecurityFindings from '@/components/surface-scan/SecurityFindings';
 import SurfaceScanReportRepository from '@/components/surface-scan/SurfaceScanReportRepository';
@@ -50,7 +52,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useSubdomainDump } from '@/hooks/useSubdomainDump';
 import { SubdomainDumpPanel } from '@/components/surface-scan/SubdomainDumpPanel';
-import { classifySurfaceHostForScope } from '@/lib/surfaceScopeGuard';
+import {
+  classifySurfaceHostForScope,
+  isIpWithinScopeRules,
+  splitMonitoredScopeRules,
+} from '@/lib/surfaceScopeGuard';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 const IPV4_REGEX =
@@ -102,12 +108,48 @@ const formatLastScanLabel = (timestamp: string | null): string => {
   return `${diffDays}g fa`;
 };
 
-const statusBadgeVariant = (status: string): 'default' | 'secondary' | 'destructive' | 'outline' => {
+const statusProgressMeta = (
+  status: string,
+): { value: number; barClass: string; trackClass: string; title: string } => {
   const normalized = String(status || '').toLowerCase();
-  if (normalized === 'completed') return 'default';
-  if (normalized === 'failed') return 'destructive';
-  if (normalized === 'running') return 'secondary';
-  return 'outline';
+  if (normalized === 'completed') {
+    return {
+      value: 100,
+      barClass: 'bg-green-500',
+      trackClass: 'bg-green-500/20',
+      title: 'Completata',
+    };
+  }
+  if (normalized === 'failed') {
+    return {
+      value: 100,
+      barClass: 'bg-red-500',
+      trackClass: 'bg-red-500/20',
+      title: 'Fallita',
+    };
+  }
+  if (normalized === 'running') {
+    return {
+      value: 65,
+      barClass: 'bg-amber-500',
+      trackClass: 'bg-amber-500/20',
+      title: 'In esecuzione',
+    };
+  }
+  if (normalized === 'queued') {
+    return {
+      value: 25,
+      barClass: 'bg-sky-500',
+      trackClass: 'bg-sky-500/20',
+      title: 'In coda',
+    };
+  }
+  return {
+    value: 35,
+    barClass: 'bg-slate-500',
+    trackClass: 'bg-slate-500/20',
+    title: 'In attesa',
+  };
 };
 
 const SCAN_PROFILES: SurfaceScanProfile[] = [
@@ -126,6 +168,7 @@ const profileLabel = (profile: SurfaceScanProfile): string => {
 
 const hostingLabel = (context: string | null): string => {
   if (context === 'excluded_noise') return 'Fuori scope (PTR/shared)';
+  if (context === 'excluded_scope') return 'Fuori scope (scope guard)';
   if (context === 'shared_hosting') return 'Servizio in shared host';
   if (context === 'cdn_proxy') return 'Servizio dietro CDN/Proxy';
   if (context === 'dedicated') return 'Server dedicato';
@@ -143,13 +186,16 @@ const SurfaceScan360: React.FC = () => {
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
   const [newMonitoredIpInput, setNewMonitoredIpInput] = useState('');
   const [scanTargetInput, setScanTargetInput] = useState('');
-  const [selectedProfiles, setSelectedProfiles] = useState<SurfaceScanProfile[]>(['domain_exposure']);
-  const [authorizationConfirmed, setAuthorizationConfirmed] = useState(false);
+  const [selectedProfiles, setSelectedProfiles] = useState<SurfaceScanProfile[]>([...SCAN_PROFILES]);
+  const [authorizationConfirmed, setAuthorizationConfirmed] = useState(true);
   const [ownershipProof, setOwnershipProof] = useState('');
   const [queueRescanExisting, setQueueRescanExisting] = useState(false);
   const [rescanLimit, setRescanLimit] = useState('10');
   const [assetSearch, setAssetSearch] = useState('');
   const [assetPage, setAssetPage] = useState(1);
+  const [isDiscoveryCollapsed, setIsDiscoveryCollapsed] = useState(true);
+  const [isLiveResultsCollapsed, setIsLiveResultsCollapsed] = useState(true);
+  const [showScopeDiagnostics, setShowScopeDiagnostics] = useState(false);
   const [reverseDnsMap, setReverseDnsMap] = useState<Record<string, string[]>>({});
 
   const assetsPerPage = 15;
@@ -164,6 +210,7 @@ const SurfaceScan360: React.FC = () => {
     ips: discoveredIps,
     hostMeta,
     scopeDomains,
+    scopeCounters,
     loading: discoveredAssetsLoading,
   } = useSurfaceScanDiscoveredAssets();
   const subdomainDump = useSubdomainDump();
@@ -174,10 +221,14 @@ const SurfaceScan360: React.FC = () => {
     loading: monitoredIpRulesLoading,
     saving: monitoredIpRulesSaving,
     isAdmin: isAdminUser,
-    hasRules: hasMonitoredRules,
     addRule: addMonitoredIpRule,
     removeRule: removeMonitoredIpRule,
   } = useSurfaceScanMonitoredIps();
+
+  const { ipScopeRules } = useMemo(
+    () => splitMonitoredScopeRules(monitoredIpRules as any),
+    [monitoredIpRules],
+  );
 
   const handleCreateAlert = async (data: { alert_email: string; alert_types: SurfaceScanAlertTypes }) => {
     return await createAlert(data);
@@ -226,6 +277,27 @@ const SurfaceScan360: React.FC = () => {
       lastScanLabel: formatLastScanLabel(lastScanAt),
     };
   }, [scanJobs, discoveredSubdomains, discoveredIps, subdomainDump.history, scopeDomains]);
+
+  const visibleScannedTargets = useMemo(() => {
+    return scanDiscovery.scannedTargets.filter((target) => {
+      const host = extractHostFromTarget(target);
+      if (!host) return false;
+      if (IPV4_REGEX.test(host) || isIpv6(host)) {
+        return isIpWithinScopeRules(host, ipScopeRules);
+      }
+      return !classifySurfaceHostForScope(host, scopeDomains).blocked;
+    });
+  }, [scanDiscovery.scannedTargets, scopeDomains, ipScopeRules]);
+
+  const excludedScannedTargets = useMemo(() => {
+    return scanDiscovery.scannedTargets.filter((target) => !visibleScannedTargets.includes(target));
+  }, [scanDiscovery.scannedTargets, visibleScannedTargets]);
+
+  const excludedHostDiagnostics = useMemo(() => {
+    return Object.values(hostMeta)
+      .filter((meta) => Boolean(meta.exclusionReason))
+      .sort((a, b) => a.host.localeCompare(b.host));
+  }, [hostMeta]);
 
   const dumpedSubdomainMeta = useMemo(() => {
     const map: Record<string, { ip: string | null; note: string; sources: string[] }> = {};
@@ -349,6 +421,8 @@ const SurfaceScan360: React.FC = () => {
     ])].slice(0, 50);
 
     for (const host of hostsToAnalyze) {
+      const hostScope = classifySurfaceHostForScope(host, scopeDomains);
+      if (hostScope.blocked) continue;
       const job = latestJobByHost.get(host);
       const resolvedIps = Array.isArray(job?.resolved_ips)
         ? job?.resolved_ips.filter(Boolean).map((ip) => String(ip).toLowerCase())
@@ -361,12 +435,76 @@ const SurfaceScan360: React.FC = () => {
         hostingContext: job?.hosting_context || null,
         resolvedIps,
         reverseHosts,
-        inScope: classifySurfaceHostForScope(host, scopeDomains).inScope,
+        inScope: hostScope.inScope,
       });
     }
 
     return rows;
   }, [scanDiscovery.scannedDomains, scanDiscovery.discoveredSubdomains, latestJobByHost, reverseDnsMap, scopeDomains]);
+
+  const domainIpDependencyGraph = useMemo(() => {
+    const edgeSet = new Set<string>();
+    const domainToIps = new Map<string, string[]>();
+    const candidateDomains = [...new Set([
+      ...scanDiscovery.scannedDomains,
+      ...scanDiscovery.discoveredSubdomains,
+    ])]
+      .map((entry) => String(entry || '').trim().toLowerCase())
+      .filter(Boolean)
+      .filter((host) => !classifySurfaceHostForScope(host, scopeDomains).blocked)
+      .slice(0, 60);
+
+    for (const domain of candidateDomains) {
+      const ipSet = new Set<string>();
+      const jobIps = resolvedIpsByHost.get(domain) || [];
+      const metaIps = hostMeta[domain]?.ips || [];
+      const dumpIp = dumpedSubdomainMeta[domain]?.ip ? [dumpedSubdomainMeta[domain]?.ip as string] : [];
+      for (const ip of [...jobIps, ...metaIps, ...dumpIp]) {
+        const normalizedIp = String(ip || '').trim().toLowerCase();
+        if (!normalizedIp) continue;
+        if (!isIpWithinScopeRules(normalizedIp, ipScopeRules)) continue;
+        ipSet.add(normalizedIp);
+      }
+      if (ipSet.size === 0) continue;
+      const ips = [...ipSet].slice(0, 12);
+      domainToIps.set(domain, ips);
+      for (const ip of ips) {
+        edgeSet.add(`${domain}|${ip}`);
+      }
+    }
+
+    const edges = [...edgeSet].map((entry) => {
+      const [domain, ip] = entry.split('|');
+      return { domain, ip };
+    });
+
+    const ips = [...new Set(edges.map((entry) => entry.ip))].slice(0, 30);
+    const allowedIpSet = new Set(ips);
+    const filteredEdges = edges.filter((edge) => allowedIpSet.has(edge.ip)).slice(0, 180);
+    const domains = [...new Set(filteredEdges.map((entry) => entry.domain))].slice(0, 30);
+    const allowedDomainSet = new Set(domains);
+    const finalEdges = filteredEdges.filter((edge) => allowedDomainSet.has(edge.domain));
+
+    const maxRows = Math.max(domains.length, ips.length, 1);
+    const viewBoxHeight = Math.max(320, maxRows * 28 + 50);
+
+    return {
+      domains,
+      ips,
+      edges: finalEdges,
+      viewBoxHeight,
+      truncated: candidateDomains.length > domains.length || edges.length > finalEdges.length,
+      totalRelations: finalEdges.length,
+    };
+  }, [
+    dumpedSubdomainMeta,
+    hostMeta,
+    ipScopeRules,
+    resolvedIpsByHost,
+    scanDiscovery.discoveredSubdomains,
+    scanDiscovery.scannedDomains,
+    scopeDomains,
+  ]);
 
   const rescanTargets = useMemo(() => {
     const unique = new Set<string>();
@@ -374,7 +512,13 @@ const SurfaceScan360: React.FC = () => {
       const target = String(job.raw_target || job.normalized_target || '').trim();
       if (!target) continue;
       const host = extractHostFromTarget(target);
-      if (host && classifySurfaceHostForScope(host, scopeDomains).blocked) continue;
+      if (host) {
+        if (IPV4_REGEX.test(host) || isIpv6(host)) {
+          if (!isIpWithinScopeRules(host, ipScopeRules)) continue;
+        } else if (classifySurfaceHostForScope(host, scopeDomains).blocked) {
+          continue;
+        }
+      }
       unique.add(target);
     }
     for (const subdomain of scanDiscovery.discoveredSubdomains) {
@@ -383,19 +527,15 @@ const SurfaceScan360: React.FC = () => {
       unique.add(subdomain);
     }
     for (const ip of scanDiscovery.discoveredIps) {
-      if (ip) unique.add(ip);
+      if (!ip) continue;
+      if (!isIpWithinScopeRules(ip, ipScopeRules)) continue;
+      unique.add(ip);
     }
     return [...unique];
-  }, [scanJobs, scanDiscovery.discoveredSubdomains, scanDiscovery.discoveredIps, scopeDomains]);
+  }, [scanJobs, scanDiscovery.discoveredSubdomains, scanDiscovery.discoveredIps, scopeDomains, ipScopeRules]);
 
   const monitoredLiveIps = useMemo(() => {
-    let ips = [...scanDiscovery.discoveredIps];
-
-    if (hasMonitoredRules) {
-      ips = ips.filter((ip) =>
-        monitoredIpRules.some((rule) => isIpInRange(ip, rule.ip_start, rule.ip_end)),
-      );
-    }
+    let ips = [...scanDiscovery.discoveredIps].filter((ip) => isIpWithinScopeRules(ip, ipScopeRules));
 
     const term = assetSearch.trim().toLowerCase();
     if (term) {
@@ -403,14 +543,14 @@ const SurfaceScan360: React.FC = () => {
     }
 
     return ips.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-  }, [scanDiscovery.discoveredIps, hasMonitoredRules, monitoredIpRules, assetSearch]);
+  }, [scanDiscovery.discoveredIps, ipScopeRules, assetSearch]);
 
   const totalAssetPages = Math.max(1, Math.ceil(monitoredLiveIps.length / assetsPerPage));
   const paginatedLiveIps = monitoredLiveIps.slice((assetPage - 1) * assetsPerPage, assetPage * assetsPerPage);
 
   React.useEffect(() => {
     setAssetPage(1);
-  }, [assetSearch, monitoredIpRules.length, scanDiscovery.discoveredIps.length]);
+  }, [assetSearch, ipScopeRules.length, scanDiscovery.discoveredIps.length]);
 
   const handleExportPdf = async () => {
     if (!exportContainerRef.current) return;
@@ -767,41 +907,70 @@ const SurfaceScan360: React.FC = () => {
 
         <Card className="border-border">
           <CardHeader>
-            <CardTitle>Domini/IP Scansionati e Subdomain Trovati</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Vista rapida dei target lanciati e degli asset scoperti via enrichment OSINT.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="rounded-lg border border-border p-3">
-                <div className="text-xs text-muted-foreground">Target scansionati</div>
-                <div className="text-xl font-semibold">{scanDiscovery.scannedTargets.length}</div>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle>Domini/IP Scansionati e Subdomain Trovati</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Vista rapida dei target lanciati e degli asset scoperti via enrichment OSINT.
+                </p>
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsDiscoveryCollapsed((prev) => !prev)}
+              >
+                {isDiscoveryCollapsed ? (
+                  <ChevronRight className="w-4 h-4 mr-2" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 mr-2" />
+                )}
+                {isDiscoveryCollapsed ? 'Espandi' : 'Collassa'}
+              </Button>
+            </div>
+          </CardHeader>
+          {!isDiscoveryCollapsed && (
+            <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="rounded-lg border border-border p-3">
+            <div className="text-xs text-muted-foreground">Target scansionati</div>
+            <div className="text-xl font-semibold">{visibleScannedTargets.length}</div>
+          </div>
               <div className="rounded-lg border border-border p-3">
                 <div className="text-xs text-muted-foreground">Subdomain trovati</div>
                 <div className="text-xl font-semibold">
                   {discoveredAssetsLoading ? '...' : scanDiscovery.discoveredSubdomains.length}
                 </div>
               </div>
-              <div className="rounded-lg border border-border p-3">
-                <div className="text-xs text-muted-foreground">IP trovati</div>
-                <div className="text-xl font-semibold">
-                  {discoveredAssetsLoading ? '...' : scanDiscovery.discoveredIps.length}
-                </div>
-              </div>
+          <div className="rounded-lg border border-border p-3">
+            <div className="text-xs text-muted-foreground">IP trovati</div>
+            <div className="text-xl font-semibold">
+              {discoveredAssetsLoading ? '...' : scanDiscovery.discoveredIps.length}
             </div>
+          </div>
+          <div className="rounded-lg border border-border p-3">
+            <div className="text-xs text-muted-foreground">In scope</div>
+            <div className="text-xl font-semibold">{discoveredAssetsLoading ? '...' : scopeCounters.in_scope}</div>
+          </div>
+          <div className="rounded-lg border border-border p-3">
+            <div className="text-xs text-muted-foreground">Esclusi scope</div>
+            <div className="text-xl font-semibold">{discoveredAssetsLoading ? '...' : scopeCounters.excluded_by_scope}</div>
+          </div>
+          <div className="rounded-lg border border-border p-3">
+            <div className="text-xs text-muted-foreground">Esclusi shared/noise</div>
+            <div className="text-xl font-semibold">{discoveredAssetsLoading ? '...' : scopeCounters.excluded_shared_noise}</div>
+          </div>
+        </div>
 
             <div className="space-y-3">
               <div>
                 <p className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Ultimi target scansionati</p>
                 <div className="flex flex-wrap gap-2">
-                  {scanDiscovery.scannedTargets.slice(0, 12).map((target) => (
+                  {visibleScannedTargets.slice(0, 12).map((target) => (
                     <Badge key={target} variant="outline" className="max-w-full truncate">
                       {target}
                     </Badge>
                   ))}
-                  {scanDiscovery.scannedTargets.length === 0 && (
+                  {visibleScannedTargets.length === 0 && (
                     <p className="text-sm text-muted-foreground">Nessun target scansionato</p>
                   )}
                 </div>
@@ -821,6 +990,73 @@ const SurfaceScan360: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {isAdminUser && (
+              <div className="rounded-lg border border-border p-3 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">Diagnostica Scope Guard (Admin)</p>
+                    <p className="text-xs text-muted-foreground">
+                      Vista opzionale di elementi esclusi automaticamente da scope guard.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={showScopeDiagnostics}
+                      onCheckedChange={setShowScopeDiagnostics}
+                      aria-label="Mostra elementi esclusi da scope guard"
+                    />
+                    <span className="text-xs text-muted-foreground">Mostra esclusi</span>
+                  </div>
+                </div>
+
+                {showScopeDiagnostics && (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <Badge variant="secondary">Target esclusi: {excludedScannedTargets.length}</Badge>
+                      <Badge variant="secondary">Host esclusi: {excludedHostDiagnostics.length}</Badge>
+                      <Badge variant="secondary">IP esclusi scope: {scopeCounters.excluded_by_scope}</Badge>
+                      <Badge variant="secondary">Shared/noise esclusi: {scopeCounters.excluded_shared_noise}</Badge>
+                    </div>
+                    <div className="rounded-md border border-border overflow-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Elemento escluso</TableHead>
+                            <TableHead>Motivo</TableHead>
+                            <TableHead>Origine</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {excludedHostDiagnostics.slice(0, 50).map((entry) => (
+                            <TableRow key={`excluded-${entry.host}`}>
+                              <TableCell className="font-mono text-xs">{entry.host}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline">
+                                  {entry.exclusionReason === 'scope_excluded_shared_noise'
+                                    ? 'Shared/Noise'
+                                    : 'Out of Scope'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                {(entry.sourceLabels || []).join(', ') || '-'}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          {excludedHostDiagnostics.length === 0 && (
+                            <TableRow>
+                              <TableCell colSpan={3} className="text-center text-muted-foreground py-4">
+                                Nessun host escluso disponibile
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="rounded-lg border border-border overflow-auto">
               <Table>
@@ -895,6 +1131,84 @@ const SurfaceScan360: React.FC = () => {
               </Table>
             </div>
 
+            <div className="rounded-lg border border-border p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <p className="text-sm font-medium">Mappa Dipendenze Dominio/IP (Scope)</p>
+                  <p className="text-xs text-muted-foreground">
+                    Relazioni DNS operative tra domini/subdomini in scope e IP associati.
+                  </p>
+                </div>
+                <Badge variant="secondary">
+                  Relazioni: {domainIpDependencyGraph.totalRelations}
+                </Badge>
+              </div>
+              {domainIpDependencyGraph.edges.length === 0 ? (
+                <div className="text-sm text-muted-foreground py-4">
+                  Nessuna relazione dominio/IP disponibile al momento.
+                </div>
+              ) : (
+                <div className="rounded-md border border-border bg-muted/10 p-3 overflow-auto">
+                  <svg
+                    viewBox={`0 0 1000 ${domainIpDependencyGraph.viewBoxHeight}`}
+                    className="w-full min-w-[780px]"
+                    role="img"
+                    aria-label="Mappa dipendenze domini e IP"
+                  >
+                    <g>
+                      <text x="120" y="22" className="fill-muted-foreground text-[12px]">Domini/Subdomini</text>
+                      <text x="760" y="22" className="fill-muted-foreground text-[12px]">IP correlati</text>
+                    </g>
+                    {domainIpDependencyGraph.edges.map((edge) => {
+                      const domainIndex = domainIpDependencyGraph.domains.indexOf(edge.domain);
+                      const ipIndex = domainIpDependencyGraph.ips.indexOf(edge.ip);
+                      const domainY = 42 + domainIndex * 28;
+                      const ipY = 42 + ipIndex * 28;
+                      return (
+                        <line
+                          key={`edge-${edge.domain}-${edge.ip}`}
+                          x1={280}
+                          y1={domainY}
+                          x2={720}
+                          y2={ipY}
+                          stroke="rgba(99, 102, 241, 0.35)"
+                          strokeWidth="1.2"
+                        />
+                      );
+                    })}
+                    {domainIpDependencyGraph.domains.map((domain, index) => {
+                      const y = 42 + index * 28;
+                      const label = domain.length > 44 ? `${domain.slice(0, 41)}...` : domain;
+                      return (
+                        <g key={`domain-${domain}`}>
+                          <circle cx={275} cy={y} r={4} fill="rgb(99, 102, 241)" />
+                          <text x={268} y={y + 4} textAnchor="end" className="fill-foreground text-[11px]">
+                            {label}
+                          </text>
+                        </g>
+                      );
+                    })}
+                    {domainIpDependencyGraph.ips.map((ip, index) => {
+                      const y = 42 + index * 28;
+                      return (
+                        <g key={`ip-${ip}`}>
+                          <circle cx={725} cy={y} r={4} fill="rgb(34, 197, 94)" />
+                          <text x={734} y={y + 4} textAnchor="start" className="fill-foreground text-[11px]">
+                            {ip}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                </div>
+              )}
+              {domainIpDependencyGraph.truncated && (
+                <p className="text-xs text-muted-foreground">
+                  Mappa ottimizzata: alcune relazioni aggiuntive sono disponibili nei dettagli tabellari.
+                </p>
+              )}
+            </div>
+
             <div className="rounded-lg border border-border overflow-auto">
               <Table>
                 <TableHeader>
@@ -938,7 +1252,8 @@ const SurfaceScan360: React.FC = () => {
                 </TableBody>
               </Table>
             </div>
-          </CardContent>
+            </CardContent>
+          )}
         </Card>
 
         <SecurityFindings />
@@ -949,9 +1264,9 @@ const SurfaceScan360: React.FC = () => {
           <CardHeader>
             <CardTitle>Asset IP Pubblici Monitorati ({monitoredLiveIps.length} trovati)</CardTitle>
             <p className="text-sm text-muted-foreground">
-              {hasMonitoredRules
-                ? `Filtrati da ${monitoredIpRules.length} regole IP attive`
-                : 'Nessuna regola IP configurata: visualizzazione completa degli IP scoperti'}
+              {ipScopeRules.length > 0
+                ? `Filtrati da ${ipScopeRules.length} regole IP attive`
+                : 'Nessuna regola IP attiva: con strict scope gli IP fuori regola sono esclusi'}
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -980,7 +1295,11 @@ const SurfaceScan360: React.FC = () => {
                   </TableHeader>
                   <TableBody>
                     {paginatedLiveIps.map((ip) => {
-                      const matchedRules = monitoredIpRules.filter((rule) => isIpInRange(ip, rule.ip_start, rule.ip_end));
+                      const matchedRules = monitoredIpRules.filter(
+                        (rule) =>
+                          ['single', 'range', 'cidr'].includes(String(rule.entry_type || '').toLowerCase()) &&
+                          isIpInRange(ip, rule.ip_start, rule.ip_end),
+                      );
                       return (
                         <TableRow key={ip}>
                           <TableCell className="font-medium">{ip}</TableCell>
@@ -1044,16 +1363,31 @@ const SurfaceScan360: React.FC = () => {
 
         <Card className="border-border">
           <CardHeader>
-            <CardTitle>Risultati Scansione (Live)</CardTitle>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle>Risultati Scansione (Live)</CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsLiveResultsCollapsed((prev) => !prev)}
+              >
+                {isLiveResultsCollapsed ? (
+                  <ChevronRight className="w-4 h-4 mr-2" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 mr-2" />
+                )}
+                {isLiveResultsCollapsed ? 'Espandi' : 'Collassa'}
+              </Button>
+            </div>
           </CardHeader>
-          <CardContent>
+          {!isLiveResultsCollapsed && (
+            <CardContent>
             <div className="rounded-lg border border-border overflow-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Target</TableHead>
                     <TableHead>Profilo</TableHead>
-                    <TableHead>Stato</TableHead>
+                    <TableHead>Avanzamento</TableHead>
                     <TableHead>Creata</TableHead>
                     <TableHead>Completata</TableHead>
                     <TableHead>Errore</TableHead>
@@ -1072,7 +1406,20 @@ const SurfaceScan360: React.FC = () => {
                       <TableCell className="font-medium">{job.raw_target || job.normalized_target}</TableCell>
                       <TableCell>{job.scan_profile}</TableCell>
                       <TableCell>
-                        <Badge variant={statusBadgeVariant(job.status)}>{job.status}</Badge>
+                        {(() => {
+                          const progress = statusProgressMeta(job.status);
+                          return (
+                            <div className="w-32" title={progress.title}>
+                              <div className={`h-2 rounded-full overflow-hidden ${progress.trackClass}`}>
+                                <div
+                                  className={`h-2 rounded-full ${progress.barClass}`}
+                                  style={{ width: `${progress.value}%` }}
+                                />
+                              </div>
+                              <div className="text-[10px] text-muted-foreground mt-1">{progress.value}%</div>
+                            </div>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell>{new Date(job.created_at).toLocaleString('it-IT')}</TableCell>
                       <TableCell>
@@ -1082,9 +1429,10 @@ const SurfaceScan360: React.FC = () => {
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
-            </div>
-          </CardContent>
+                </Table>
+              </div>
+            </CardContent>
+          )}
         </Card>
       </div>
 

@@ -602,7 +602,7 @@ const SecurityFindings: React.FC = () => {
                                                       {row.severity.toUpperCase()}
                                                     </Badge>
                                                   </TableCell>
-                                                  <TableCell className="min-w-64">
+                                                  <TableCell className="min-w-[40rem]">
                                                     <div className="font-medium">{row.title}</div>
                                                     <div className="flex flex-wrap gap-1 mt-1">
                                                       <Badge variant="outline" className="text-[10px] font-mono">
@@ -636,11 +636,23 @@ const SecurityFindings: React.FC = () => {
                                                         {sourceFamily(row)}
                                                       </Badge>
                                                     </div>
-                                                    <div className="text-xs text-muted-foreground mt-2">
-                                                      {row.description || findingSummary(row.finding_type) || 'Nessuna sintesi disponibile'}
-                                                    </div>
-                                                    <div className="text-xs text-muted-foreground mt-1">
-                                                      {techContext}
+                                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 mt-2">
+                                                      <div className="rounded-md border border-border/60 bg-muted/20 p-2">
+                                                        <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground mb-1">
+                                                          Sintesi OWASP
+                                                        </div>
+                                                        <div className="text-xs text-muted-foreground leading-relaxed">
+                                                          {row.description || findingSummary(row.finding_type) || 'Nessuna sintesi disponibile'}
+                                                        </div>
+                                                      </div>
+                                                      <div className="rounded-md border border-border/60 bg-muted/20 p-2">
+                                                        <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground mb-1">
+                                                          Contesto Tecnico
+                                                        </div>
+                                                        <div className="text-xs text-muted-foreground leading-relaxed">
+                                                          {techContext}
+                                                        </div>
+                                                      </div>
                                                     </div>
                                                   </TableCell>
                                                   <TableCell className="min-w-44">
