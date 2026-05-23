@@ -498,36 +498,206 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
 
   // ===== 4 PORTE APERTE =====
   sectionTitle(4, 'Porte aperte e servizi esposti');
-  const portMap: Record<string, { ports: Set<number>; banners: string[] }> = {};
-  const addPort = (host: string, p: number, banner?: string) => {
-    if (!host || !Number.isFinite(p)) return;
-    portMap[host] ||= { ports: new Set(), banners: [] };
-    portMap[host].ports.add(p);
-    if (banner) portMap[host].banners.push(banner);
+  const IPV4_RX =
+    /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
+  const IPV6_RX = /:/;
+  const normalizeIp = (value: unknown): string => {
+    const raw = String(value || '').trim().toLowerCase();
+    if (!raw) return '';
+    if (IPV4_RX.test(raw) || IPV6_RX.test(raw)) return raw;
+    return '';
   };
-  (report.observations || []).forEach((obs: any) => {
-    const v = obs.value || {};
-    const host = v.ip || v.host || v.hostname || (obs.title || '').split(' ').pop();
-    if (Array.isArray(v.ports)) v.ports.forEach((p: number) => addPort(host, Number(p)));
-    if (Array.isArray(v.data)) v.data.forEach((d: any) => addPort(host, Number(d.port), d.product || d._shodan?.module));
-    if (Array.isArray(v.open_ports)) v.open_ports.forEach((p: number) => addPort(host, Number(p)));
-  });
-  (report.intel || []).forEach((i: any) => {
-    const v = i.summary || {};
-    if (Array.isArray(v.ports)) v.ports.forEach((p: number) => addPort(i.target, Number(p)));
-    if (Array.isArray(v.data)) v.data.forEach((d: any) => addPort(i.target, Number(d.port), d.product));
+  const normalizePort = (value: unknown): number | null => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 65535) return null;
+    return Math.round(parsed);
+  };
+  const severityWeight = (severity: string): number => {
+    if (severity === 'critical') return 5;
+    if (severity === 'high') return 4;
+    if (severity === 'medium') return 3;
+    if (severity === 'low') return 2;
+    return 1;
+  };
+  const bestSeverity = (severities: Set<string>): string => {
+    const normalized = Array.from(severities).map((entry) => String(entry || '').toLowerCase());
+    if (normalized.includes('critical')) return 'critical';
+    if (normalized.includes('high')) return 'high';
+    if (normalized.includes('medium')) return 'medium';
+    if (normalized.includes('low')) return 'low';
+    return 'info';
+  };
+
+  type PortEvidenceRow = {
+    host: string;
+    ip: string;
+    port: number;
+    protocol: string;
+    services: Set<string>;
+    severities: Set<string>;
+    cves: Set<string>;
+  };
+
+  const portEvidenceMap = new Map<string, PortEvidenceRow>();
+  const addPortEvidence = (input: {
+    host?: unknown;
+    ip?: unknown;
+    port?: unknown;
+    protocol?: unknown;
+    service?: unknown;
+    severity?: unknown;
+    cves?: unknown;
+  }) => {
+    const port = normalizePort(input.port);
+    if (!port) return;
+    const hostRaw = String(input.host || s.target || '').trim();
+    const host = hostRaw ? normalizeHost(hostRaw) || hostRaw.toLowerCase() : 'n/d';
+    const ip = normalizeIp(input.ip) || (normalizeIp(host) ? normalizeIp(host) : '');
+    const protocol = String(input.protocol || 'tcp').trim().toLowerCase() || 'tcp';
+    const key = `${host}|${ip}|${port}|${protocol}`;
+    if (!portEvidenceMap.has(key)) {
+      portEvidenceMap.set(key, {
+        host,
+        ip,
+        port,
+        protocol,
+        services: new Set<string>(),
+        severities: new Set<string>(),
+        cves: new Set<string>(),
+      });
+    }
+    const row = portEvidenceMap.get(key)!;
+    const serviceValue = String(input.service || '').trim();
+    if (serviceValue) row.services.add(redactReportWords(serviceValue));
+    const severity = String(input.severity || 'info').toLowerCase();
+    row.severities.add(severity);
+    if (Array.isArray(input.cves)) {
+      input.cves
+        .map((entry) => String(entry || '').trim().toUpperCase())
+        .filter((entry) => /^CVE-\d{4}-\d{4,7}$/.test(entry))
+        .forEach((entry) => row.cves.add(entry));
+    }
+  };
+
+  (report.findings || []).forEach((finding: any) => {
+    const findingType = String(finding?.finding_type || '').toLowerCase();
+    if (findingType !== 'open_port_exposed' && findingType !== 'service_fingerprint_exposed') return;
+    const evidence = finding?.evidence && typeof finding.evidence === 'object'
+      ? (finding.evidence as Record<string, any>)
+      : {};
+    const serviceName = [evidence?.service, evidence?.version].filter(Boolean).join(' ').trim()
+      || finding?.title
+      || '';
+    addPortEvidence({
+      host: finding?.affected_asset || finding?.affected_url || evidence?.hostname || evidence?.host || s.target,
+      ip: finding?.ip || evidence?.ip || evidence?.host_ip || evidence?.raw?.ip_address,
+      port: finding?.port ?? evidence?.port ?? evidence?.raw?.number,
+      protocol: finding?.protocol || evidence?.protocol || evidence?.raw?.protocol,
+      service: serviceName,
+      severity: finding?.severity || 'info',
+      cves: finding?.cve,
+    });
   });
 
-  const portEntries = Object.entries(portMap);
+  (report.observations || []).forEach((obs: any) => {
+    const value = obs?.value || {};
+    const host = value?.host || value?.hostname || value?.domain || value?.target || obs?.title;
+    const ip = value?.ip || value?.ip_address || value?.host_ip;
+    if (Array.isArray(value?.ports)) {
+      value.ports.forEach((port: number) => {
+        addPortEvidence({ host, ip, port, severity: obs?.severity || 'info' });
+      });
+    }
+    if (Array.isArray(value?.open_ports)) {
+      value.open_ports.forEach((port: number) => {
+        addPortEvidence({ host, ip, port, severity: obs?.severity || 'info' });
+      });
+    }
+    if (Array.isArray(value?.data)) {
+      value.data.forEach((entry: any) => {
+        addPortEvidence({
+          host,
+          ip,
+          port: entry?.port,
+          protocol: entry?.transport || entry?.protocol,
+          service: entry?.product || entry?.service || entry?._shodan?.module || '',
+          severity: obs?.severity || 'info',
+        });
+      });
+    }
+  });
+
+  (report.intel || []).forEach((entry: any) => {
+    const summary = entry?.summary || {};
+    const host = entry?.target || summary?.host || summary?.hostname || s.target;
+    const ip = summary?.ip || summary?.ip_address || summary?.host_ip;
+    if (Array.isArray(summary?.ports)) {
+      summary.ports.forEach((port: number) => {
+        addPortEvidence({ host, ip, port });
+      });
+    }
+    if (Array.isArray(summary?.open_ports)) {
+      summary.open_ports.forEach((port: number) => {
+        addPortEvidence({ host, ip, port });
+      });
+    }
+    if (Array.isArray(summary?.data)) {
+      summary.data.forEach((dataEntry: any) => {
+        addPortEvidence({
+          host,
+          ip,
+          port: dataEntry?.port,
+          protocol: dataEntry?.transport || dataEntry?.protocol,
+          service: dataEntry?.product || dataEntry?.service || '',
+          cves: dataEntry?.cve,
+        });
+      });
+    }
+  });
+
+  const portEntries = Array.from(portEvidenceMap.values()).sort((a, b) => {
+    const sevDelta = severityWeight(bestSeverity(b.severities)) - severityWeight(bestSeverity(a.severities));
+    if (sevDelta !== 0) return sevDelta;
+    const hostDelta = a.host.localeCompare(b.host);
+    if (hostDelta !== 0) return hostDelta;
+    return a.port - b.port;
+  });
+
   if (portEntries.length === 0) {
-    text('Nessuna porta esposta rilevata negli IP analizzati durante la scansione passiva (host non presenti nei database di banner pubblici).', { color: [MUTED.r, MUTED.g, MUTED.b], size: 9 });
+    text(
+      'Nessuna esposizione di porte/servizi confermata nei findings attuali. Rieseguire una scansione domain_exposure o cve_api_validation per aggiornare le evidenze attive.',
+      { color: [MUTED.r, MUTED.g, MUTED.b], size: 9 },
+    );
   } else {
-    const rows = portEntries.map(([host, info]) => [
-      host,
-      Array.from(info.ports).sort((a, b) => a - b).join(', '),
-      info.banners.slice(0, 3).join(' / ') || '—',
-    ]);
-    drawTable(['Host / IP', 'Porte', 'Servizi rilevati'], rows, [170, 130, 215]);
+    const rows = portEntries.slice(0, 120).map((entry) => {
+      const services = Array.from(entry.services);
+      const serviceLabel = services.length === 0
+        ? '—'
+        : services.length > 2
+          ? `${services.slice(0, 2).join(' / ')} +${services.length - 2}`
+          : services.join(' / ');
+      const cveList = Array.from(entry.cves);
+      return [
+        entry.host || 'n/d',
+        entry.ip || '-',
+        `${entry.port}/${entry.protocol}`,
+        serviceLabel,
+        bestSeverity(entry.severities).toUpperCase(),
+        cveList.length > 0 ? cveList.slice(0, 3).join(', ') : '-',
+      ];
+    });
+    drawTable(
+      ['Host / Dominio', 'IP', 'Porta / Proto', 'Servizio', 'Sev', 'CVE'],
+      rows,
+      [120, 88, 72, 120, 45, 70],
+    );
+    if (portEntries.length > 120) {
+      text(`… e altre ${portEntries.length - 120} esposizioni disponibili nel repository report`, {
+        size: 8,
+        color: [MUTED.r, MUTED.g, MUTED.b],
+        indent: 4,
+      });
+    }
   }
 
   // ===== 5 EVIDENZE ESTERNE =====
