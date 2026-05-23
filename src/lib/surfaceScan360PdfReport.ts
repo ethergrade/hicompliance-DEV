@@ -20,6 +20,12 @@ export interface SurfaceScan360Report {
   assets_in_scope: any[];
   findings: any[];
   findings_by_severity: Record<string, number>;
+  scope_guard_summary?: {
+    in_scope?: number;
+    excluded_by_scope?: number;
+    excluded_shared_noise?: number;
+    excluded_reasons?: Record<string, number>;
+  };
   cve_catalog?: Array<{
     cve_id: string;
     description?: string | null;
@@ -430,6 +436,17 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   } else {
     text('Nessuna regola di scope configurata.', { color: [MUTED.r, MUTED.g, MUTED.b], size: 9 });
   }
+
+  const scopeSummary = report.scope_guard_summary || {};
+  const inScopeCount = Number(scopeSummary.in_scope || 0);
+  const excludedScopeCount = Number(scopeSummary.excluded_by_scope || 0);
+  const excludedSharedCount = Number(scopeSummary.excluded_shared_noise || 0);
+  y += 6;
+  text('Elementi esclusi da scope guard', { bold: true, size: 10, color: [BRAND.r, BRAND.g, BRAND.b] });
+  text(
+    `In scope: ${inScopeCount} · Esclusi scope: ${excludedScopeCount} · Esclusi shared/noise: ${excludedSharedCount}`,
+    { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] },
+  );
 
   // ===== 3 SOTTODOMINI CON PROFONDITÀ =====
   sectionTitle(3, 'Sottodomini rilevati');

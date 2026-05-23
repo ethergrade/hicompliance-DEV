@@ -1,13 +1,14 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import {
   assertCustomerAccess,
-  classifyHostForScope,
+  classifyTargetScope,
   corsHeaders,
   getCallerProfile,
   isAllowedProfile,
   makeSupabaseClients,
   normalizeTargetInput,
   resolveWithDnsOverHttps,
+  splitMonitoredScopeRules,
 } from "../_shared/surface-scan-utils.ts";
 import { dispatchSurfaceScanQueue } from "../_shared/surface-scan-engine.ts";
 
@@ -83,29 +84,46 @@ serve(async (req: Request) => {
     }
 
     const normalized = normalizeTargetInput(target);
-    let scopeDomains: string[] = [];
-    if (normalized.target_type === "domain" || normalized.target_type === "subdomain" || normalized.target_type === "url") {
-      const { data: monitoredDomains } = await adminClient
-        .from("surface_scan_monitored_ips" as any)
-        .select("input_value")
-        .eq("organization_id", customerId)
-        .eq("entry_type", "domain");
-      scopeDomains = (monitoredDomains || [])
-        .map((row: any) => String(row?.input_value || "").trim().toLowerCase())
-        .filter(Boolean);
-      if (normalized.hostname) {
-        const classified = classifyHostForScope(normalized.hostname, [...new Set(scopeDomains)]);
-        if (classified.blocked) {
-          return new Response(
-            JSON.stringify({
-              error:
-                "Target escluso: host shared/noise fuori scope monitorato. Usa dominio/IP ufficiale in scope.",
-              code: "target_out_of_scope_shared_noise",
-            }),
-            { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } },
-          );
-        }
-      }
+    const { data: monitoredScopeRows, error: monitoredScopeError } = await adminClient
+      .from("surface_scan_monitored_ips" as any)
+      .select("entry_type, input_value, ip_start, ip_end")
+      .eq("organization_id", customerId);
+    if (monitoredScopeError) {
+      throw new Error(monitoredScopeError.message || "Unable to read monitored scope");
+    }
+    const { scopeDomains, ipScopeRules } = splitMonitoredScopeRules((monitoredScopeRows || []) as any[]);
+    const scopeDecision = classifyTargetScope(normalized, scopeDomains, ipScopeRules);
+    if (!scopeDecision.allowed) {
+      await adminClient.from("surface_scan_audit_log" as any).insert({
+        scan_job_id: null,
+        user_id: authData.user.id,
+        action: "scan_rejected_scope_guard",
+        details: {
+          code: scopeDecision.code,
+          reason: scopeDecision.reason,
+          raw_target: target,
+          normalized_target: normalized.normalized_target,
+          target_type: normalized.target_type,
+          hostname: normalized.hostname,
+          scope_domains_count: scopeDomains.length,
+          ip_scope_rules_count: ipScopeRules.length,
+        },
+      });
+
+      const scopeErrorMessage =
+        scopeDecision.code === "target_out_of_scope_shared_noise"
+          ? "Target escluso: host shared/noise fuori scope monitorato. Usa dominio/IP ufficiale in scope."
+          : scopeDecision.code === "target_out_of_scope_ip"
+            ? "Target IP fuori scope monitorato: aggiungi prima una regola IP (single/range/cidr)."
+            : "Target dominio/subdominio fuori scope monitorato: aggiungi prima la regola dominio.";
+
+      return new Response(
+        JSON.stringify({
+          error: scopeErrorMessage,
+          code: scopeDecision.code,
+        }),
+        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } },
+      );
     }
 
     // Batch-friendly rate limit for queue mode.

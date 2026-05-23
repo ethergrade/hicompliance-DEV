@@ -1,10 +1,12 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.50.3";
 import {
+  classifyTargetScope,
   classifyHostForScope,
   fetchWithTimeout,
-  isHostWithinScope,
+  isIpWithinMonitoredScope,
   normalizeTargetInput,
   resolveWithDnsOverHttps,
+  splitMonitoredScopeRules,
   toSeverity,
   TargetType,
 } from "./surface-scan-utils.ts";
@@ -429,25 +431,68 @@ export async function runSurfaceScanEnrichment(
   const targetUrl = parsedTarget.normalized_target;
   const seenAssetKeys = new Set<string>();
   const seenFindingKeys = new Set<string>();
-  const scopeDomains = new Set<string>();
-  if (rootDomain) scopeDomains.add(rootDomain.toLowerCase());
-  const { data: monitoredScopeDomains } = await adminClient
+  const { data: monitoredScopeRows } = await adminClient
     .from("surface_scan_monitored_ips" as any)
-    .select("input_value")
-    .eq("organization_id", organizationId)
-    .eq("entry_type", "domain");
-  for (const row of monitoredScopeDomains || []) {
-    const d = String((row as any)?.input_value || "").trim().toLowerCase().replace(/^www\./, "");
-    if (d) scopeDomains.add(d);
-  }
+    .select("entry_type, input_value, ip_start, ip_end")
+    .eq("organization_id", organizationId);
+  const { scopeDomains, ipScopeRules } = splitMonitoredScopeRules((monitoredScopeRows || []) as any[]);
 
-  const shouldExcludeSharedNoiseHost = (candidateHost: string): ReturnType<typeof classifyHostForScope> => {
-    return classifyHostForScope(candidateHost, [...scopeDomains]);
+  const scopeCounters = {
+    in_scope: 0,
+    excluded_by_scope: 0,
+    excluded_shared_noise: 0,
   };
 
-  const shouldAcceptScannableHost = (candidateHost: string): boolean => {
-    const classified = shouldExcludeSharedNoiseHost(candidateHost);
-    return !classified.blocked;
+  const scopeReasonFromHost = (candidateHost: string): "scope_excluded_domain" | "scope_excluded_shared_noise" | null => {
+    const classified = classifyHostForScope(candidateHost, scopeDomains);
+    if (classified.blocked) return "scope_excluded_shared_noise";
+    if (!classified.inScope) return "scope_excluded_domain";
+    return null;
+  };
+
+  const scopeReasonFromIp = (candidateIp: string): "scope_excluded_ip" | null => {
+    if (!candidateIp) return null;
+    return isIpWithinMonitoredScope(candidateIp, ipScopeRules) ? null : "scope_excluded_ip";
+  };
+
+  const isIpAllowedInScope = (candidateIp: string): boolean => scopeReasonFromIp(candidateIp) === null;
+  const classifyHostAgainstScope = (candidateHost: string) => {
+    const base = classifyHostForScope(candidateHost, scopeDomains);
+    const reason = scopeReasonFromHost(candidateHost);
+    return {
+      ...base,
+      blocked: reason !== null,
+      reason,
+    };
+  };
+  const shouldAcceptScannableHost = (candidateHost: string): boolean => scopeReasonFromHost(candidateHost) === null;
+
+  const addScopeCounter = (reason: string | null) => {
+    if (!reason) {
+      scopeCounters.in_scope += 1;
+      return;
+    }
+    if (reason === "scope_excluded_shared_noise") {
+      scopeCounters.excluded_shared_noise += 1;
+      return;
+    }
+    scopeCounters.excluded_by_scope += 1;
+  };
+
+  const addScopeRaw = (
+    raw: Record<string, unknown> | undefined,
+    reason: string | null,
+  ): Record<string, unknown> => {
+    const nextRaw: Record<string, unknown> = { ...(raw || {}) };
+    if (reason) {
+      nextRaw._scope_excluded = true;
+      nextRaw._scope_exclusion_reason = reason;
+      nextRaw._scope_excluded_at = new Date().toISOString();
+    } else if (nextRaw._scope_excluded === undefined) {
+      nextRaw._scope_excluded = false;
+      nextRaw._scope_exclusion_reason = null;
+    }
+    return nextRaw;
   };
 
   if (options.force) {
@@ -492,6 +537,38 @@ export async function runSurfaceScanEnrichment(
     if (seenFindingKeys.has(findingKey)) return;
     seenFindingKeys.add(findingKey);
 
+    let findingScopeReason: "scope_excluded_domain" | "scope_excluded_ip" | "scope_excluded_shared_noise" | null =
+      null;
+
+    const findingIp = String(
+      input.ip ||
+        (typeof input.evidence?.ip === "string" ? input.evidence.ip : ""),
+    )
+      .trim()
+      .toLowerCase();
+    if (findingIp) {
+      findingScopeReason = scopeReasonFromIp(findingIp);
+    }
+
+    if (!findingScopeReason) {
+      let findingHost = "";
+      const affectedUrl = String(input.affected_url || "").trim();
+      if (affectedUrl) {
+        try {
+          findingHost = new URL(affectedUrl).hostname.toLowerCase();
+        } catch {
+          findingHost = affectedUrl.toLowerCase();
+        }
+      } else {
+        findingHost = String(input.affected_asset || "").trim().toLowerCase();
+      }
+      if (findingHost && !findingHost.includes(":") && !/^\d{1,3}(\.\d{1,3}){3}$/.test(findingHost)) {
+        findingScopeReason = scopeReasonFromHost(findingHost);
+      }
+    }
+
+    const evidenceWithScope = addScopeRaw(input.evidence || {}, findingScopeReason);
+
     await adminClient.from("surface_findings" as any).insert({
       organization_id: organizationId,
       tenant_id: tenantId,
@@ -514,7 +591,7 @@ export async function runSurfaceScanEnrichment(
       epss: input.epss || null,
       cisa_kev: input.cisa_kev || false,
       remediation: input.remediation || null,
-      evidence: input.evidence || {},
+      evidence: evidenceWithScope,
       attribution_confidence: input.attribution_confidence || "medium",
       status: input.status || "open",
     });
@@ -525,6 +602,31 @@ export async function runSurfaceScanEnrichment(
     const assetKey = [input.asset_type, assetValue, input.source].join("|");
     if (!assetValue || seenAssetKeys.has(assetKey)) return null;
     seenAssetKeys.add(assetKey);
+
+    let scopeReason: "scope_excluded_domain" | "scope_excluded_ip" | "scope_excluded_shared_noise" | null =
+      null;
+
+    const ipCandidate = String(
+      input.ip ||
+        (input.asset_type === "ip" ? input.asset_value : "") ||
+        (input.asset_type === "open_port" ? String(input.asset_value || "").split(":")[0] : ""),
+    )
+      .trim()
+      .toLowerCase();
+    if (ipCandidate) {
+      scopeReason = scopeReasonFromIp(ipCandidate);
+    }
+
+    if (!scopeReason) {
+      const hostCandidate = String(input.hostname || "").trim().toLowerCase();
+      const hostScopedTypes = new Set(["domain", "subdomain", "reverse_dns_hostname", "url", "mx_host", "ns_host"]);
+      if (hostCandidate && hostScopedTypes.has(String(input.asset_type || "").toLowerCase())) {
+        scopeReason = scopeReasonFromHost(hostCandidate);
+      }
+    }
+
+    const rawWithScope = addScopeRaw(input.raw, scopeReason);
+    addScopeCounter(scopeReason);
 
     const { data, error } = await adminClient
       .from("surface_assets" as any)
@@ -539,8 +641,8 @@ export async function runSurfaceScanEnrichment(
         root_domain: input.root_domain || null,
         ip: input.ip || null,
         source: input.source,
-        confidence: input.confidence || "medium",
-        raw: input.raw || {},
+        confidence: scopeReason ? "low" : input.confidence || "medium",
+        raw: rawWithScope,
       })
       .select("id")
       .single();
@@ -698,6 +800,41 @@ export async function runSurfaceScanEnrichment(
     scan_profile: job.scan_profile,
     target: job.normalized_target,
   });
+
+  const targetScopeDecision = classifyTargetScope(parsedTarget, scopeDomains, ipScopeRules);
+  if (!targetScopeDecision.allowed) {
+    const nowIso = new Date().toISOString();
+    await insertObservation({
+      module: "scope_guard",
+      observation_type: "scope_guard_blocked_target",
+      title: "Target blocked by scope guard",
+      value: {
+        code: targetScopeDecision.code,
+        reason: targetScopeDecision.reason,
+        normalized_target: parsedTarget.normalized_target,
+        target_type: parsedTarget.target_type,
+        hostname: parsedTarget.hostname,
+      },
+      severity: "info",
+    });
+    await adminClient
+      .from("surface_scan_jobs" as any)
+      .update({
+        status: "completed",
+        completed_at: nowIso,
+        hosting_context:
+          targetScopeDecision.code === "target_out_of_scope_shared_noise" ? "excluded_noise" : "excluded_scope",
+        shodan_status: "scope_blocked",
+        resolved_ips: job.resolved_ips || [],
+      })
+      .eq("id", job.id);
+    await logAudit("scan_scope_guard_blocked", {
+      code: targetScopeDecision.code,
+      reason: targetScopeDecision.reason,
+      target: parsedTarget.normalized_target,
+    });
+    return;
+  }
 
   const discoveredIps = new Set<string>((job.resolved_ips || []).filter(Boolean));
   const discoveredHostnames = new Set<string>(hostname ? [hostname] : []);
@@ -1399,7 +1536,12 @@ export async function runSurfaceScanEnrichment(
   const runReverseAndDumpsterModule = async () => {
     if (discoveredIps.size > 0) {
       const ptrResults: Record<string, string[]> = {};
+      const ptrSkippedByScope: string[] = [];
       for (const ip of discoveredIps) {
+        if (!isIpAllowedInScope(ip)) {
+          ptrSkippedByScope.push(ip);
+          continue;
+        }
         const reverseName = ip.includes(".")
           ? `${ip.split(".").reverse().join(".")}.in-addr.arpa`
           : buildIpv6PtrName(ip);
@@ -1410,7 +1552,7 @@ export async function runSurfaceScanEnrichment(
         for (const ptrHost of ptr) {
           const normalizedPtr = ptrHost.trim().toLowerCase().replace(/\.$/, "");
           if (!isValidHostnameCandidate(normalizedPtr)) continue;
-          const ptrClassification = shouldExcludeSharedNoiseHost(normalizedPtr);
+          const ptrClassification = classifyHostAgainstScope(normalizedPtr);
           if (ptrClassification.blocked) {
             await insertAsset({
               asset_type: "reverse_dns_hostname",
@@ -1422,7 +1564,7 @@ export async function runSurfaceScanEnrichment(
               raw: {
                 ip,
                 _scope_excluded: true,
-                _scope_exclusion_reason: ptrClassification.reason,
+                _scope_exclusion_reason: ptrClassification.reason || "scope_excluded_domain",
                 _scope_excluded_at: new Date().toISOString(),
               },
             });
@@ -1444,7 +1586,10 @@ export async function runSurfaceScanEnrichment(
         module: "reverse_dns",
         observation_type: "reverse_dns",
         title: "Reverse DNS lookup",
-        value: ptrResults,
+        value: {
+          results: ptrResults,
+          skipped_out_of_scope_ips: ptrSkippedByScope,
+        },
       });
     }
 
@@ -1478,7 +1623,8 @@ export async function runSurfaceScanEnrichment(
           }
 
           for (const sub of [...names].slice(0, 200)) {
-            if (!shouldAcceptScannableHost(sub) && !isHostWithinScope(sub, [...scopeDomains])) {
+            if (!shouldAcceptScannableHost(sub)) {
+              const exclusionReason = scopeReasonFromHost(sub) || "scope_excluded_domain";
               await insertAsset({
                 asset_type: "subdomain",
                 asset_value: sub,
@@ -1488,7 +1634,7 @@ export async function runSurfaceScanEnrichment(
                 confidence: "low",
                 raw: {
                   _scope_excluded: true,
-                  _scope_exclusion_reason: "shared_or_noise_host_out_of_scope",
+                  _scope_exclusion_reason: exclusionReason,
                   _scope_excluded_at: new Date().toISOString(),
                 },
               });
@@ -1562,11 +1708,40 @@ export async function runSurfaceScanEnrichment(
       return;
     }
 
+    const shodanEligibleIps = [...discoveredIps].filter((ip) => isIpAllowedInScope(ip)).slice(0, 10);
+    const shodanSkippedIps = [...discoveredIps].filter((ip) => !isIpAllowedInScope(ip));
+    if (shodanEligibleIps.length === 0) {
+      shodanStatus = "scope_filtered";
+      await insertObservation({
+        module: "shodan",
+        observation_type: "scope_guard_skip",
+        title: "Shodan skipped: no in-scope IPs",
+        value: {
+          total_discovered_ips: discoveredIps.size,
+          skipped_out_of_scope_ips: shodanSkippedIps.slice(0, 50),
+        },
+        severity: "info",
+      });
+      await insertExternalIntel(
+        "shodan",
+        hostname || targetUrl,
+        false,
+        {
+          configured: true,
+          scope_filtered: true,
+          skipped_out_of_scope_ips: shodanSkippedIps.slice(0, 50),
+        },
+        {},
+        "low",
+      );
+      return;
+    }
+
     let exactHostMatch = false;
     let hostDataFound = false;
     let unrelatedHostCount = 0;
 
-    for (const ip of [...discoveredIps].slice(0, 10)) {
+    for (const ip of shodanEligibleIps) {
       try {
         const shodanUrl = `https://api.shodan.io/shodan/host/${encodeURIComponent(ip)}?key=${encodeURIComponent(key)}&minify=true`;
         const res = await fetchWithTimeout(shodanUrl, {}, 12000);
@@ -2213,7 +2388,7 @@ export async function runSurfaceScanEnrichment(
           const host = String((entry as Record<string, unknown>)?.hostname || "").trim().toLowerCase();
           const ip = String((entry as Record<string, unknown>)?.ip_address || "").trim();
           if (host) {
-            const classifiedHost = shouldExcludeSharedNoiseHost(host);
+            const classifiedHost = classifyHostAgainstScope(host);
             await insertAsset({
               asset_type: "subdomain",
               asset_value: host,
@@ -2229,7 +2404,7 @@ export async function runSurfaceScanEnrichment(
                 ...(classifiedHost.blocked
                   ? {
                     _scope_excluded: true,
-                    _scope_exclusion_reason: classifiedHost.reason,
+                    _scope_exclusion_reason: classifiedHost.reason || "scope_excluded_domain",
                     _scope_excluded_at: new Date().toISOString(),
                   }
                   : {}),
@@ -2268,7 +2443,7 @@ export async function runSurfaceScanEnrichment(
             .trim()
             .toLowerCase();
           if (!domainCandidate) continue;
-          const classifiedDomain = shouldExcludeSharedNoiseHost(domainCandidate);
+          const classifiedDomain = classifyHostAgainstScope(domainCandidate);
           await insertAsset({
             asset_type: "domain",
             asset_value: domainCandidate,
@@ -2281,7 +2456,7 @@ export async function runSurfaceScanEnrichment(
               ...(classifiedDomain.blocked
                 ? {
                   _scope_excluded: true,
-                  _scope_exclusion_reason: classifiedDomain.reason,
+                  _scope_exclusion_reason: classifiedDomain.reason || "scope_excluded_domain",
                   _scope_excluded_at: new Date().toISOString(),
                 }
                 : {}),
@@ -2301,7 +2476,7 @@ export async function runSurfaceScanEnrichment(
         for (const reverseHost of hostnames.slice(0, 200)) {
           const reverseHostValue = String(reverseHost || "").trim().toLowerCase();
           if (!reverseHostValue) continue;
-          const classifiedReverseHost = shouldExcludeSharedNoiseHost(reverseHostValue);
+          const classifiedReverseHost = classifyHostAgainstScope(reverseHostValue);
           await insertAsset({
             asset_type: "reverse_dns_hostname",
             asset_value: reverseHostValue,
@@ -2314,7 +2489,7 @@ export async function runSurfaceScanEnrichment(
               ...(classifiedReverseHost.blocked
                 ? {
                   _scope_excluded: true,
-                  _scope_exclusion_reason: classifiedReverseHost.reason,
+                  _scope_exclusion_reason: classifiedReverseHost.reason || "scope_excluded_domain",
                   _scope_excluded_at: new Date().toISOString(),
                 }
                 : {}),
@@ -2472,7 +2647,7 @@ export async function runSurfaceScanEnrichment(
         const domainCandidateIps = [...new Set(
           [...discoveredIps]
             .map((entry) => String(entry || "").trim().toLowerCase())
-            .filter((entry) => entry.length > 0 && isPublicIpCandidate(entry)),
+            .filter((entry) => entry.length > 0 && isPublicIpCandidate(entry) && isIpAllowedInScope(entry)),
         )].slice(0, maxDomainPortScanIps);
 
         if (domainCandidateIps.length === 0) {
@@ -2483,6 +2658,10 @@ export async function runSurfaceScanEnrichment(
             value: {
               target: hostname || targetUrl,
               resolved_ips_seen: [...discoveredIps].slice(0, 25),
+              out_of_scope_ips: [...discoveredIps]
+                .map((entry) => String(entry || "").trim().toLowerCase())
+                .filter((entry) => entry.length > 0 && isPublicIpCandidate(entry) && !isIpAllowedInScope(entry))
+                .slice(0, 25),
               max_domain_port_scan_ips: maxDomainPortScanIps,
             },
             severity: "low",
@@ -2505,7 +2684,18 @@ export async function runSurfaceScanEnrichment(
     }
 
     if (isIpTarget) {
-      if (hostingContext === "shared_hosting" || hostingContext === "cdn_proxy") {
+      if (!isIpAllowedInScope(parsedTarget.hostname || "")) {
+        await insertObservation({
+          module: "pentest_tools",
+          observation_type: "ip_scan_skipped_out_of_scope",
+          title: "Pentest-Tools IP scan skipped: out of monitored IP scope",
+          value: {
+            target: parsedTarget.hostname,
+            reason: "scope_excluded_ip",
+          },
+          severity: "info",
+        });
+      } else if (hostingContext === "shared_hosting" || hostingContext === "cdn_proxy") {
         await insertObservation({
           module: "pentest_tools",
           observation_type: "ip_scan_skipped_shared_hosting",
@@ -2816,6 +3006,20 @@ export async function runSurfaceScanEnrichment(
       .map((row) => row.severity)
       .sort((a, b) => severityRank(b) - severityRank(a))[0] || "info";
 
+    await insertObservation({
+      module: "scope_guard",
+      observation_type: "scope_guard_summary",
+      title: "Scope guard filtering summary",
+      value: {
+        in_scope: scopeCounters.in_scope,
+        excluded_by_scope: scopeCounters.excluded_by_scope,
+        excluded_shared_noise: scopeCounters.excluded_shared_noise,
+        scope_domains_count: scopeDomains.length,
+        ip_scope_rules_count: ipScopeRules.length,
+      },
+      severity: "info",
+    });
+
     await adminClient
       .from("surface_scan_jobs" as any)
       .update({
@@ -2832,6 +3036,7 @@ export async function runSurfaceScanEnrichment(
       highest_severity: highestSeverity,
       hosting_context: hostingContext,
       shodan_status: shodanStatus,
+      scope_guard: scopeCounters,
     });
 
     await triggerCveEnrichmentQueue();
