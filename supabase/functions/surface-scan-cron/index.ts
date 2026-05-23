@@ -49,7 +49,10 @@ async function shodanSearch(q: string, key: string): Promise<ShodanBanner[]> {
 }
 
 function aggregateAsset(host: any) {
-  const ports: number[] = Array.from(new Set(host.ports ?? [])).sort((a: number, b: number) => a - b) as number[];
+  const portsRaw = Array.isArray(host?.ports)
+    ? host.ports.filter((p: unknown): p is number => typeof p === 'number' && Number.isFinite(p))
+    : [];
+  const ports: number[] = Array.from(new Set<number>(portsRaw)).sort((a, b) => a - b);
   const cves: Array<{ id: string; severity: 'low' | 'medium' | 'high' }> = [];
   if (host.vulns) {
     if (Array.isArray(host.vulns)) host.vulns.forEach((id: string) => cves.push({ id, severity: 'medium' }));
@@ -139,6 +142,7 @@ const AUTO_VAL_TIMEOUT = 20_000;
 async function callOrchestratorWithRetry(
   supabaseUrl: string,
   serviceRoleKey: string,
+  internalSecret: string | null,
   payload: Record<string, unknown>,
 ): Promise<{ ok: boolean; status: number; body: any; attempts: number; error?: string }> {
   let lastErr: string | undefined;
@@ -148,7 +152,11 @@ async function callOrchestratorWithRetry(
     try {
       const resp = await fetch(`${supabaseUrl}/functions/v1/pentest-tools-orchestrator`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceRoleKey}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${serviceRoleKey}`,
+          ...(internalSecret ? { 'x-surface-internal-secret': internalSecret } : {}),
+        },
         body: JSON.stringify(payload),
         signal: ctrl.signal,
       });
@@ -177,6 +185,7 @@ async function maybeTriggerAutoValidation(
   supabase: any,
   supabaseUrl: string,
   serviceRoleKey: string,
+  internalSecret: string | null,
   orgId: string,
   perRule: RuleScanResult[],
 ) {
@@ -194,7 +203,7 @@ async function maybeTriggerAutoValidation(
     } : { found: false, hostnames: [], ports: [], vulns: [] };
 
     const startedAt = new Date().toISOString();
-    const result = await callOrchestratorWithRetry(supabaseUrl, serviceRoleKey, {
+    const result = await callOrchestratorWithRetry(supabaseUrl, serviceRoleKey, internalSecret, {
       organization_id: orgId,
       target,
       profile: 'recon_safe',
@@ -300,6 +309,10 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const internalSecret =
+      Deno.env.get('SURFACESCAN_CRON_INTERNAL_SECRET') ||
+      Deno.env.get('SURFACESCAN_INTERNAL_SECRET') ||
+      null;
 
     for (const [orgId, orgRules] of byOrg.entries()) {
       const { assets, truncated, perRule } = await scanOrganization(orgId, orgRules, SHODAN_API_KEY);
@@ -335,7 +348,7 @@ Deno.serve(async (req) => {
       }
 
       // Pentest-Tools validation: SEMPRE attiva per ogni scansione
-      await maybeTriggerAutoValidation(supabase, supabaseUrl, serviceRoleKey, orgId, perRule);
+      await maybeTriggerAutoValidation(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, perRule);
 
     }
 
