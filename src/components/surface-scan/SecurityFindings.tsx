@@ -49,6 +49,14 @@ const severityStyle: Record<string, string> = {
   low: 'bg-green-100 text-green-800 border-green-300',
   info: 'bg-blue-100 text-blue-800 border-blue-300',
 };
+const severityItalian: Record<string, string> = {
+  critical: 'Critico',
+  high: 'Alto',
+  medium: 'Medio',
+  low: 'Basso',
+  info: 'Info',
+};
+const severityBuckets: Array<SurfaceFindingRow['severity']> = ['critical', 'high', 'medium', 'low', 'info'];
 
 interface GroupedAsset {
   assetKey: string;
@@ -160,6 +168,65 @@ const owaspBadgeTone = (owasp?: string | null): string => {
   return 'bg-muted text-muted-foreground border-border';
 };
 
+const OWASP_TOP10_LINKS: Record<string, string> = {
+  'A01:2021': 'https://owasp.org/Top10/2021/A01_2021-Broken_Access_Control/',
+  'A02:2021': 'https://owasp.org/Top10/2021/A02_2021-Cryptographic_Failures/',
+  'A03:2021': 'https://owasp.org/Top10/2021/A03_2021-Injection/',
+  'A04:2021': 'https://owasp.org/Top10/2021/A04_2021-Insecure_Design/',
+  'A05:2021': 'https://owasp.org/Top10/2021/A05_2021-Security_Misconfiguration/',
+  'A06:2021': 'https://owasp.org/Top10/2021/A06_2021-Vulnerable_and_Outdated_Components/',
+  'A07:2021': 'https://owasp.org/Top10/2021/A07_2021-Identification_and_Authentication_Failures/',
+  'A08:2021': 'https://owasp.org/Top10/2021/A08_2021-Software_and_Data_Integrity_Failures/',
+  'A09:2021': 'https://owasp.org/Top10/2021/A09_2021-Security_Logging_and_Monitoring_Failures/',
+  'A10:2021': 'https://owasp.org/Top10/2021/A10_2021-Server-Side_Request_Forgery_%28SSRF%29/',
+};
+
+const owaspLink = (owasp?: string | null): string | null => {
+  if (!owasp) return null;
+  return OWASP_TOP10_LINKS[String(owasp).toUpperCase()] || null;
+};
+
+const findingTechnicalContext = (
+  row: SurfaceFindingRow,
+  taxonomy: ReturnType<typeof getFindingTaxonomy>,
+  inferredCvss: number | null | undefined,
+  rowCves: string[],
+): string => {
+  const owasp = taxonomy?.owasp;
+  const owaspText = owasp ? `${owasp}${taxonomy?.owaspLabel ? ` (${taxonomy.owaspLabel})` : ''}` : 'non mappato';
+  if (row.finding_type === 'missing_hsts') {
+    const score = inferredCvss != null ? Number(inferredCvss).toFixed(1) : String(taxonomy?.baseScore ?? '6.5');
+    return `Debolezza di configurazione mappata in OWASP ${owaspText}. CVSS tipico: ${score}. ` +
+      `Non esiste un CVE univoco per la sola assenza di HSTS ed EPSS non è applicabile senza CVE. ` +
+      `Rischio: downgrade HTTPS→HTTP e attacchi SSL stripping / Man-in-the-Middle.`;
+  }
+
+  if (rowCves.length > 0) {
+    const cvss = inferredCvss != null ? Number(inferredCvss).toFixed(1) : 'n/d';
+    return `Finding con CVE associate (${rowCves.slice(0, 3).join(', ')}${rowCves.length > 3 ? '…' : ''}) ` +
+      `e mappatura OWASP ${owaspText}. CVSS: ${cvss}.`;
+  }
+
+  const baseline = taxonomy?.baseScore != null ? taxonomy.baseScore.toFixed(1) : 'n/d';
+  return `Debolezza configurativa senza CVE specifico, mappata OWASP ${owaspText}. ` +
+    `CVSS baseline stimato: ${baseline}. EPSS non disponibile senza CVE.`;
+};
+
+const cvssTooltipText = (
+  rowCves: string[],
+  displayCvss: number | null,
+  cvssIsBaseline: boolean,
+): string => {
+  if (displayCvss == null) return 'CVSS non disponibile per questo finding.';
+  if (cvssIsBaseline) {
+    return `CVSS ${displayCvss.toFixed(1)} stimato come baseline configurativa: non legato a un CVE specifico.`;
+  }
+  if (rowCves.length > 0) {
+    return `CVSS ${displayCvss.toFixed(1)} derivato da CVE associate o da intel provider.`;
+  }
+  return `CVSS ${displayCvss.toFixed(1)} derivato dal finding.`;
+};
+
 const SecurityFindings: React.FC = () => {
   const { findings, loading, counts } = useSurfaceScanFindings();
   const { hostMeta } = useSurfaceScanDiscoveredAssets();
@@ -260,7 +327,11 @@ const SecurityFindings: React.FC = () => {
           sourceBadge,
         };
       })
-      .sort((a, b) => a.assetLabel.localeCompare(b.assetLabel, 'it', { sensitivity: 'base' }));
+      .sort((a, b) => {
+        const sevDiff = (severityOrder[b.maxSeverity] || 0) - (severityOrder[a.maxSeverity] || 0);
+        if (sevDiff !== 0) return sevDiff;
+        return a.assetLabel.localeCompare(b.assetLabel, 'it', { sensitivity: 'base' });
+      });
   }, [filtered, hostMeta]);
 
   const unattributedSignals = useMemo(
@@ -444,8 +515,35 @@ const SecurityFindings: React.FC = () => {
                                     <TableHead>Severity</TableHead>
                                     <TableHead>Titolo</TableHead>
                                     <TableHead>Sub Asset</TableHead>
+                                    <TableHead>
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <span className="cursor-help underline decoration-dotted underline-offset-2">
+                                              OWASP
+                                            </span>
+                                          </TooltipTrigger>
+                                          <TooltipContent className="max-w-xs text-xs">
+                                            Categoria OWASP Top 10 associata al finding (quando disponibile).
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
+                                    </TableHead>
                                     <TableHead>CVE</TableHead>
-                                    <TableHead>CVSS</TableHead>
+                                    <TableHead>
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <span className="cursor-help underline decoration-dotted underline-offset-2">
+                                              CVSS
+                                            </span>
+                                          </TooltipTrigger>
+                                          <TooltipContent className="max-w-xs text-xs">
+                                            Punteggio di severità. Se non c&apos;è CVE, può essere mostrata una baseline configurativa.
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
+                                    </TableHead>
                                     <TableHead>EPSS</TableHead>
                                     <TableHead>CISA KEV</TableHead>
                                     <TableHead>Confidence</TableHead>
@@ -454,166 +552,224 @@ const SecurityFindings: React.FC = () => {
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                  {assetGroup.findings.map((row) => (
-                                    <TableRow key={row.id}>
-                                      {(() => {
-                                        const rowCves = findingCves(row);
-                                        const rowIntel = rowCves
-                                          .map((cve) => cveIntelMap?.[cve.toUpperCase()])
-                                          .filter(Boolean);
-                                        const inferredCvss =
-                                          row.cvss ??
-                                          rowIntel
-                                            .map((intel) => Number(intel?.cvss_v3_score ?? NaN))
-                                            .filter((score) => Number.isFinite(score))
-                                            .sort((a, b) => b - a)[0];
-                                        const inferredEpss =
-                                          row.epss ??
-                                          rowIntel
-                                            .map((intel) => Number(intel?.epss_score ?? NaN))
-                                            .filter((score) => Number.isFinite(score))
-                                            .sort((a, b) => b - a)[0];
-                                        const inferredKev = row.cisa_kev || rowIntel.some((intel) => Boolean(intel?.cisa_kev));
-                                        return (
-                                          <>
-                                      <TableCell>
-                                        <Badge className={severityStyle[row.severity] || severityStyle.info}>
-                                          {row.severity.toUpperCase()}
-                                        </Badge>
-                                      </TableCell>
-                                      <TableCell className="min-w-64">
-                                        <div className="font-medium">{row.title}</div>
-                                        <div className="flex flex-wrap gap-1 mt-1">
-                                          <Badge variant="outline" className="text-[10px] font-mono">
-                                            {row.finding_type || 'n/a'}
-                                          </Badge>
-                                          {(() => {
-                                            const taxonomy = getFindingTaxonomy(row.finding_type);
-                                            const cwes = [...new Set([...(row.cwe || []), ...(taxonomy?.cwe ? [taxonomy.cwe] : [])])];
-                                            const owasp = taxonomy?.owasp || null;
-                                            return (
-                                              <>
-                                                {cwes.map((cwe) => {
-                                                  const tooltip = cweDescription(cwe);
-                                                  return (
-                                                    <TooltipProvider key={`${row.id}-${cwe}`}>
-                                                      <Tooltip>
-                                                        <TooltipTrigger asChild>
-                                                          <a href={cweLink(cwe)} target="_blank" rel="noopener noreferrer">
-                                                            <Badge variant="secondary" className="text-[10px] font-mono">
-                                                              {cwe}
-                                                            </Badge>
-                                                          </a>
-                                                        </TooltipTrigger>
-                                                        {tooltip && (
-                                                          <TooltipContent className="max-w-xs text-xs">
-                                                            {tooltip}
-                                                          </TooltipContent>
-                                                        )}
-                                                      </Tooltip>
-                                                    </TooltipProvider>
-                                                  );
-                                                })}
-                                                {owasp && (
-                                                  <TooltipProvider>
-                                                    <Tooltip>
-                                                      <TooltipTrigger asChild>
-                                                        <Badge
-                                                          className={`text-[10px] ${owaspBadgeTone(owasp)} cursor-help`}
-                                                          title={owaspDescription(owasp) || owasp}
-                                                        >
-                                                          {owasp}
-                                                        </Badge>
-                                                      </TooltipTrigger>
-                                                      <TooltipContent className="max-w-xs text-xs">
-                                                        {owaspDescription(owasp) || owasp}
-                                                      </TooltipContent>
-                                                    </Tooltip>
-                                                  </TooltipProvider>
-                                                )}
-                                                <Badge variant={row.status === 'open' ? 'destructive' : 'secondary'} className="text-[10px]">
-                                                  {(row.status || 'open').toUpperCase()}
-                                                </Badge>
-                                                <Badge variant="outline" className="text-[10px]">
-                                                  {sourceFamily(row)}
-                                                </Badge>
-                                              </>
-                                            );
-                                          })()}
-                                        </div>
-                                        <div className="text-xs text-muted-foreground mt-2">
-                                          {row.description || findingSummary(row.finding_type) || 'Nessuna sintesi disponibile'}
-                                        </div>
-                                      </TableCell>
-                                      <TableCell className="min-w-44">
-                                        {normalizeSubAsset(row, assetGroup.assetLabel)}
-                                      </TableCell>
-                                      <TableCell className="min-w-32">
-                                        {rowCves.length > 0 ? (
-                                          <div className="flex flex-wrap gap-1">
-                                            {rowCves.slice(0, 3).map((cve) => (
-                                              <Button
-                                                key={`${row.id}-${cve}`}
-                                                size="sm"
-                                                variant="outline"
-                                                className="h-6 px-2 text-[10px] font-mono"
-                                                onClick={() => setSelectedCveId(String(cve))}
-                                              >
-                                                {cve}
-                                              </Button>
-                                            ))}
-                                            {rowCves.length > 3 && (
-                                              <Badge variant="secondary" className="text-[10px]">
-                                                +{rowCves.length - 3}
+                                  {severityBuckets.map((bucketSeverity) => {
+                                    const bucketRows = assetGroup.findings.filter((row) => row.severity === bucketSeverity);
+                                    if (bucketRows.length === 0) return null;
+                                    return (
+                                      <React.Fragment key={`${assetGroup.assetKey}-${bucketSeverity}`}>
+                                        <TableRow>
+                                          <TableCell colSpan={11} className="bg-muted/30 py-2">
+                                            <div className="flex items-center gap-2 text-xs font-medium">
+                                              <Badge className={severityStyle[bucketSeverity] || severityStyle.info}>
+                                                {severityItalian[bucketSeverity]}
                                               </Badge>
-                                            )}
-                                          </div>
-                                        ) : (
-                                          <div className="text-xs font-mono">-</div>
-                                        )}
-                                      </TableCell>
-                                      <TableCell>{inferredCvss != null ? Number(inferredCvss).toFixed(1) : '-'}</TableCell>
-                                      <TableCell>
-                                        {inferredEpss != null ? `${(Number(inferredEpss) * 100).toFixed(2)}%` : '-'}
-                                      </TableCell>
-                                      <TableCell>{inferredKev ? 'Yes' : 'No'}</TableCell>
-                                      <TableCell>
-                                        {(() => {
-                                          const factor = confidenceFactor(row);
-                                          const reasons = confidenceReasons(row);
-                                          const label = row.attribution_confidence || '-';
-                                          if (factor == null) {
-                                            return <span>{label}</span>;
-                                          }
-                                          const value = `${label} · ${factor.toFixed(2)}`;
-                                          if (reasons.length === 0) {
-                                            return <span>{value}</span>;
-                                          }
-                                          return (
-                                            <TooltipProvider>
-                                              <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                  <span className="cursor-help underline decoration-dotted underline-offset-2">{value}</span>
-                                                </TooltipTrigger>
-                                                <TooltipContent className="max-w-xs text-xs">
-                                                  {reasons.join(' | ')}
-                                                </TooltipContent>
-                                              </Tooltip>
-                                            </TooltipProvider>
-                                          );
-                                        })()}
-                                      </TableCell>
-                                      <TableCell className="min-w-32">
-                                        {(row.provider || 'surface_scan_engine')} / {(row.module || '-')}
-                                      </TableCell>
-                                      <TableCell className="min-w-72 text-xs text-muted-foreground">
-                                        {row.remediation || '-'}
-                                      </TableCell>
-                                          </>
-                                        );
-                                      })()}
-                                    </TableRow>
-                                  ))}
+                                              <span>{bucketRows.length} finding</span>
+                                            </div>
+                                          </TableCell>
+                                        </TableRow>
+                                        {bucketRows.map((row) => (
+                                          <TableRow key={row.id}>
+                                            {(() => {
+                                              const rowCves = findingCves(row);
+                                              const rowIntel = rowCves
+                                                .map((cve) => cveIntelMap?.[cve.toUpperCase()])
+                                                .filter(Boolean);
+                                              const inferredCvss =
+                                                row.cvss ??
+                                                rowIntel
+                                                  .map((intel) => Number(intel?.cvss_v3_score ?? NaN))
+                                                  .filter((score) => Number.isFinite(score))
+                                                  .sort((a, b) => b - a)[0];
+                                              const inferredEpss =
+                                                row.epss ??
+                                                rowIntel
+                                                  .map((intel) => Number(intel?.epss_score ?? NaN))
+                                                  .filter((score) => Number.isFinite(score))
+                                                  .sort((a, b) => b - a)[0];
+                                              const inferredKev = row.cisa_kev || rowIntel.some((intel) => Boolean(intel?.cisa_kev));
+                                              const taxonomy = getFindingTaxonomy(row.finding_type);
+                                              const cwes = [...new Set([...(row.cwe || []), ...(taxonomy?.cwe ? [taxonomy.cwe] : [])])];
+                                              const owasp = taxonomy?.owasp || null;
+                                              const owaspHref = owaspLink(owasp);
+                                              const techContext = findingTechnicalContext(row, taxonomy, inferredCvss, rowCves);
+                                              const displayCvss = inferredCvss ?? taxonomy?.baseScore ?? null;
+                                              const cvssIsBaseline = inferredCvss == null && taxonomy?.baseScore != null && rowCves.length === 0;
+                                              const cvssHint = cvssTooltipText(rowCves, displayCvss, cvssIsBaseline);
+                                              return (
+                                                <>
+                                                  <TableCell>
+                                                    <Badge className={severityStyle[row.severity] || severityStyle.info}>
+                                                      {row.severity.toUpperCase()}
+                                                    </Badge>
+                                                  </TableCell>
+                                                  <TableCell className="min-w-64">
+                                                    <div className="font-medium">{row.title}</div>
+                                                    <div className="flex flex-wrap gap-1 mt-1">
+                                                      <Badge variant="outline" className="text-[10px] font-mono">
+                                                        {row.finding_type || 'n/a'}
+                                                      </Badge>
+                                                      {cwes.map((cwe) => {
+                                                        const tooltip = cweDescription(cwe);
+                                                        return (
+                                                          <TooltipProvider key={`${row.id}-${cwe}`}>
+                                                            <Tooltip>
+                                                              <TooltipTrigger asChild>
+                                                                <a href={cweLink(cwe)} target="_blank" rel="noopener noreferrer">
+                                                                  <Badge variant="secondary" className="text-[10px] font-mono">
+                                                                    {cwe}
+                                                                  </Badge>
+                                                                </a>
+                                                              </TooltipTrigger>
+                                                              {tooltip && (
+                                                                <TooltipContent className="max-w-xs text-xs">
+                                                                  {tooltip}
+                                                                </TooltipContent>
+                                                              )}
+                                                            </Tooltip>
+                                                          </TooltipProvider>
+                                                        );
+                                                      })}
+                                                      <Badge variant={row.status === 'open' ? 'destructive' : 'secondary'} className="text-[10px]">
+                                                        {(row.status || 'open').toUpperCase()}
+                                                      </Badge>
+                                                      <Badge variant="outline" className="text-[10px]">
+                                                        {sourceFamily(row)}
+                                                      </Badge>
+                                                    </div>
+                                                    <div className="text-xs text-muted-foreground mt-2">
+                                                      {row.description || findingSummary(row.finding_type) || 'Nessuna sintesi disponibile'}
+                                                    </div>
+                                                    <div className="text-xs text-muted-foreground mt-1">
+                                                      {techContext}
+                                                    </div>
+                                                  </TableCell>
+                                                  <TableCell className="min-w-44">
+                                                    {normalizeSubAsset(row, assetGroup.assetLabel)}
+                                                  </TableCell>
+                                                  <TableCell className="min-w-32">
+                                                    {owasp ? (
+                                                      <div className="space-y-1">
+                                                        <TooltipProvider>
+                                                          <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                              {owaspHref ? (
+                                                                <a href={owaspHref} target="_blank" rel="noopener noreferrer">
+                                                                  <Badge className={`text-[10px] ${owaspBadgeTone(owasp)} cursor-help`}>
+                                                                    {owasp}
+                                                                  </Badge>
+                                                                </a>
+                                                              ) : (
+                                                                <Badge className={`text-[10px] ${owaspBadgeTone(owasp)} cursor-help`}>
+                                                                  {owasp}
+                                                                </Badge>
+                                                              )}
+                                                            </TooltipTrigger>
+                                                            <TooltipContent className="max-w-xs text-xs">
+                                                              {owaspDescription(owasp) || owasp}
+                                                            </TooltipContent>
+                                                          </Tooltip>
+                                                        </TooltipProvider>
+                                                        {taxonomy?.owaspLabel && (
+                                                          <div className="text-[10px] text-muted-foreground">
+                                                            {taxonomy.owaspLabel}
+                                                          </div>
+                                                        )}
+                                                      </div>
+                                                    ) : (
+                                                      <span className="text-xs text-muted-foreground">-</span>
+                                                    )}
+                                                  </TableCell>
+                                                  <TableCell className="min-w-32">
+                                                    {rowCves.length > 0 ? (
+                                                      <div className="flex flex-wrap gap-1">
+                                                        {rowCves.slice(0, 3).map((cve) => (
+                                                          <Button
+                                                            key={`${row.id}-${cve}`}
+                                                            size="sm"
+                                                            variant="outline"
+                                                            className="h-6 px-2 text-[10px] font-mono"
+                                                            onClick={() => setSelectedCveId(String(cve))}
+                                                          >
+                                                            {cve}
+                                                          </Button>
+                                                        ))}
+                                                        {rowCves.length > 3 && (
+                                                          <Badge variant="secondary" className="text-[10px]">
+                                                            +{rowCves.length - 3}
+                                                          </Badge>
+                                                        )}
+                                                      </div>
+                                                    ) : (
+                                                      <div className="text-xs font-mono">-</div>
+                                                    )}
+                                                  </TableCell>
+                                                  <TableCell>
+                                                    {displayCvss != null ? (
+                                                      <TooltipProvider>
+                                                        <Tooltip>
+                                                          <TooltipTrigger asChild>
+                                                            <div className="inline-flex items-center gap-1">
+                                                              <span>{displayCvss.toFixed(1)}</span>
+                                                              {cvssIsBaseline && (
+                                                                <Badge variant="outline" className="text-[10px] h-5 px-1">
+                                                                  baseline
+                                                                </Badge>
+                                                              )}
+                                                            </div>
+                                                          </TooltipTrigger>
+                                                          <TooltipContent className="max-w-xs text-xs">
+                                                            {cvssHint}
+                                                          </TooltipContent>
+                                                        </Tooltip>
+                                                      </TooltipProvider>
+                                                    ) : (
+                                                      '-'
+                                                    )}
+                                                  </TableCell>
+                                                  <TableCell>
+                                                    {inferredEpss != null ? `${(Number(inferredEpss) * 100).toFixed(2)}%` : '-'}
+                                                  </TableCell>
+                                                  <TableCell>{inferredKev ? 'Yes' : 'No'}</TableCell>
+                                                  <TableCell>
+                                                    {(() => {
+                                                      const factor = confidenceFactor(row);
+                                                      const reasons = confidenceReasons(row);
+                                                      const label = row.attribution_confidence || '-';
+                                                      if (factor == null) {
+                                                        return <span>{label}</span>;
+                                                      }
+                                                      const value = `${label} · ${factor.toFixed(2)}`;
+                                                      if (reasons.length === 0) {
+                                                        return <span>{value}</span>;
+                                                      }
+                                                      return (
+                                                        <TooltipProvider>
+                                                          <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                              <span className="cursor-help underline decoration-dotted underline-offset-2">{value}</span>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent className="max-w-xs text-xs">
+                                                              {reasons.join(' | ')}
+                                                            </TooltipContent>
+                                                          </Tooltip>
+                                                        </TooltipProvider>
+                                                      );
+                                                    })()}
+                                                  </TableCell>
+                                                  <TableCell className="min-w-32">
+                                                    {(row.provider || 'surface_scan_engine')} / {(row.module || '-')}
+                                                  </TableCell>
+                                                  <TableCell className="min-w-72 text-xs text-muted-foreground">
+                                                    {row.remediation || '-'}
+                                                  </TableCell>
+                                                </>
+                                              );
+                                            })()}
+                                          </TableRow>
+                                        ))}
+                                      </React.Fragment>
+                                    );
+                                  })}
                                 </TableBody>
                               </Table>
                             </div>
