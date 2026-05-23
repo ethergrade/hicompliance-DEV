@@ -25,6 +25,9 @@ interface SurfaceScanJob {
   resolved_ips: string[] | null;
   scan_profile: string;
   status: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  created_at?: string | null;
 }
 
 interface RunOptions {
@@ -117,13 +120,48 @@ function severityRank(severity: string): number {
   }
 }
 
-const HIGH_RISK_EXPOSED_PORTS = new Set([
-  21, 22, 23, 25, 53, 110, 111, 135, 139, 143, 445, 465, 587, 993, 995,
-  1433, 1521, 3306, 3389, 5432, 5900, 6379, 9200, 27017,
-]);
+const CRITICAL_EXPOSED_PORTS = new Set([3389, 5900, 6379, 9200, 9300, 27017, 11211]);
+const HIGH_EXPOSED_PORTS = new Set([21, 23, 445, 3306, 5432, 1521, 5060]);
+const MEDIUM_EXPOSED_PORTS = new Set([22, 25, 8080, 8443, 9443, 8000, 9000, 9090, 8081]);
+const INFO_EXPOSED_PORTS = new Set([80, 443, 587, 993, 995, 53, 110, 143, 465]);
+const COMMON_PORTS = [
+  20, 21, 22, 23, 25, 53, 67, 68, 69, 80, 110, 119, 123, 143, 156,
+  161, 162, 179, 194, 389, 443, 587, 993, 995, 3000, 3306, 3389,
+  5060, 5900, 8000, 8080, 8888, 8443, 9443, 9200, 9300, 5432, 6379,
+  27017, 11211, 1521, 8081, 9000, 9090,
+];
 
-function severityForExposedPort(port: number): "low" | "medium" {
-  return HIGH_RISK_EXPOSED_PORTS.has(port) ? "medium" : "low";
+function severityForExposedPort(
+  port: number,
+): "info" | "low" | "medium" | "high" | "critical" {
+  if (CRITICAL_EXPOSED_PORTS.has(port)) return "critical";
+  if (HIGH_EXPOSED_PORTS.has(port)) return "high";
+  if (MEDIUM_EXPOSED_PORTS.has(port)) return "medium";
+  if (INFO_EXPOSED_PORTS.has(port)) return "info";
+  if (COMMON_PORTS.includes(port)) return "low";
+  return "low";
+}
+
+function remediationForExposedPort(port: number): string {
+  if (port === 23) {
+    return "Disabilitare Telnet e sostituire con SSH; consentire accesso solo via VPN/allowlist.";
+  }
+  if (port === 3389) {
+    return "Non esporre RDP su Internet. Usare VPN/ZTNA, MFA e allowlist IP.";
+  }
+  if (port === 445) {
+    return "Non esporre SMB su Internet. Limitare accesso a rete privata.";
+  }
+  if ([3306, 5432, 1433, 1521, 27017].includes(port)) {
+    return "Non esporre database pubblicamente. Applicare firewall, private networking e bastion.";
+  }
+  if ([9200, 9300, 6379, 11211].includes(port)) {
+    return "Limitare esposizione di servizi backend/cache e attivare autenticazione forte.";
+  }
+  if ([8080, 8443, 9443, 9000, 9090].includes(port)) {
+    return "Verificare pannelli admin esposti: proteggere con auth forte, MFA e restrizioni IP.";
+  }
+  return "Confermare necessità della porta e applicare principio di minima esposizione.";
 }
 
 type AttributionConfidence = "low" | "medium" | "high";
@@ -2854,32 +2892,11 @@ export async function runSurfaceScanEnrichment(
       return;
     }
 
-    const endpoint = new URL("https://www.googleapis.com/pagespeedonline/v5/runPagespeed");
-    endpoint.searchParams.set("url", targetUrl);
-    endpoint.searchParams.set("strategy", "mobile");
-    endpoint.searchParams.append("category", "PERFORMANCE");
-    endpoint.searchParams.append("category", "ACCESSIBILITY");
-    endpoint.searchParams.append("category", "BEST_PRACTICES");
-    endpoint.searchParams.append("category", "SEO");
-    endpoint.searchParams.set("key", googleApiKey);
-
-    const response = await fetchWithTimeout(endpoint.toString(), {}, 30000);
-    if (!response.ok) {
-      await insertObservation({
-        module: "quality",
-        observation_type: "pagespeed_error",
-        title: "PageSpeed request failed",
-        value: {
-          status: response.status,
-          target: targetUrl,
-        },
-        severity: "low",
-      });
-      return;
+    const strategies: Array<"mobile" | "desktop"> = ["mobile"];
+    if (job.scan_profile === "cve_api_validation") {
+      strategies.push("desktop");
     }
 
-    const payload = await response.json().catch(() => ({}));
-    const categories = payload?.lighthouseResult?.categories || {};
     const toPercent = (value: unknown): number | null => {
       const score = Number(value);
       if (!Number.isFinite(score)) return null;
@@ -2887,22 +2904,79 @@ export async function runSurfaceScanEnrichment(
       return Math.max(0, Math.min(100, Math.round(score * 100)));
     };
 
-    const quality = {
-      performance: toPercent(categories?.performance?.score),
-      accessibility: toPercent(categories?.accessibility?.score),
-      best_practices: toPercent(categories?.["best-practices"]?.score),
-      seo: toPercent(categories?.seo?.score),
-    };
-    const audits = payload?.lighthouseResult?.audits || {};
+    const summaries: Array<Record<string, unknown>> = [];
+    const allFailedAudits: Array<Record<string, unknown>> = [];
+    for (const strategy of strategies) {
+      const endpoint = new URL("https://www.googleapis.com/pagespeedonline/v5/runPagespeed");
+      endpoint.searchParams.set("url", targetUrl);
+      endpoint.searchParams.set("strategy", strategy);
+      endpoint.searchParams.append("category", "PERFORMANCE");
+      endpoint.searchParams.append("category", "ACCESSIBILITY");
+      endpoint.searchParams.append("category", "BEST_PRACTICES");
+      endpoint.searchParams.append("category", "SEO");
+      endpoint.searchParams.set("key", googleApiKey);
+
+      const response = await fetchWithTimeout(endpoint.toString(), {}, 30000);
+      if (!response.ok) {
+        await insertObservation({
+          module: "quality",
+          observation_type: "pagespeed_error",
+          title: "PageSpeed request failed",
+          value: {
+            status: response.status,
+            target: targetUrl,
+            strategy,
+          },
+          severity: "low",
+        });
+        continue;
+      }
+
+      const payload = await response.json().catch(() => ({}));
+      const categories = payload?.lighthouseResult?.categories || {};
+      const quality = {
+        performance: toPercent(categories?.performance?.score),
+        accessibility: toPercent(categories?.accessibility?.score),
+        best_practices: toPercent(categories?.["best-practices"]?.score),
+        seo: toPercent(categories?.seo?.score),
+      };
+      const audits = payload?.lighthouseResult?.audits || {};
+      const failedAudits = Object.entries(audits)
+        .filter(([, value]: any) => typeof value?.score === "number" && value.score < 0.5)
+        .slice(0, 30)
+        .map(([id, value]: any) => ({
+          id,
+          title: value?.title || id,
+          score: value?.score,
+          scoreDisplayMode: value?.scoreDisplayMode || null,
+          description: String(value?.description || "").slice(0, 500),
+          strategy,
+        }));
+      allFailedAudits.push(...failedAudits);
+      summaries.push({
+        strategy,
+        categories: quality,
+        failed_audits: failedAudits.slice(0, 10),
+      });
+
+      await insertObservation({
+        module: "quality",
+        observation_type: `quality_summary_${strategy}`,
+        title: `Quality summary (PageSpeed ${strategy})`,
+        value: {
+          url: targetUrl,
+          strategy,
+          categories: quality,
+          failed_audits: failedAudits.slice(0, 10),
+          source: "pagespeed-insights",
+        },
+      });
+    }
+
+    const primary = summaries.find((entry) => entry.strategy === "mobile") || summaries[0];
+    if (!primary) return;
+    const primaryCategories = (primary.categories as Record<string, number | null>) || {};
     const criticalAuditIds = ["is-on-https", "mixed-content", "no-vulnerable-libraries"];
-    const failedAudits = Object.entries(audits)
-      .filter(([, value]: any) => typeof value?.score === "number" && value.score < 0.5)
-      .slice(0, 20)
-      .map(([id, value]: any) => ({
-        id,
-        title: value?.title || id,
-        score: value?.score,
-      }));
 
     await insertObservation({
       module: "quality",
@@ -2911,24 +2985,30 @@ export async function runSurfaceScanEnrichment(
       value: {
         url: targetUrl,
         strategy: "mobile",
-        categories: quality,
-        failed_audits: failedAudits.slice(0, 8),
+        categories: primaryCategories,
+        failed_audits: allFailedAudits.slice(0, 20),
+        by_strategy: summaries,
         source: "pagespeed-insights",
       },
     });
 
-    if (quality.performance !== null && quality.performance < 50) {
+    const performance = Number(primaryCategories.performance);
+    const bestPractices = Number(primaryCategories.best_practices);
+    const accessibility = Number(primaryCategories.accessibility);
+    const seo = Number(primaryCategories.seo);
+
+    if (Number.isFinite(performance) && performance < 50) {
       await insertFinding({
         module: "quality",
         finding_type: "quality_performance_low",
         severity: "medium",
         title: "Performance score below 50",
         affected_url: targetUrl,
-        description: `Performance score attuale: ${quality.performance}/100.`,
+        description: `Performance score attuale: ${performance}/100.`,
         remediation: "Ottimizzare performance lato frontend/backend (TTFB, caching, payload statici).",
       });
     }
-    if (quality.best_practices !== null && quality.best_practices < 70) {
+    if (Number.isFinite(bestPractices) && bestPractices < 70) {
       await insertFinding({
         module: "quality",
         finding_type: "quality_best_practices_low",
@@ -2937,16 +3017,16 @@ export async function runSurfaceScanEnrichment(
         affected_url: targetUrl,
       });
     }
-    if (quality.accessibility !== null && quality.accessibility < 70) {
+    if (Number.isFinite(accessibility) && accessibility < 70) {
       await insertFinding({
         module: "quality",
         finding_type: "quality_accessibility_low",
-        severity: "low",
+        severity: accessibility < 50 ? "medium" : "low",
         title: "Accessibility score below 70",
         affected_url: targetUrl,
       });
     }
-    if (quality.seo !== null && quality.seo < 70) {
+    if (Number.isFinite(seo) && seo < 70) {
       await insertFinding({
         module: "quality",
         finding_type: "quality_seo_low",
@@ -2957,15 +3037,15 @@ export async function runSurfaceScanEnrichment(
     }
 
     for (const auditId of criticalAuditIds) {
-      const audit = audits?.[auditId];
-      if (!audit || typeof audit?.score !== "number" || audit.score >= 0.9) continue;
-      const severity = auditId === "mixed-content" || auditId === "is-on-https" ? "high" : "medium";
+      const match = allFailedAudits.find((entry) => String(entry.id || "").toLowerCase() === auditId);
+      if (!match) continue;
+      const severity = auditId === "mixed-content" || auditId === "is-on-https" ? "high" : "high";
       await insertFinding({
         module: "quality",
         finding_type: `quality_audit_${auditId.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}`,
         severity,
-        title: `Audit failed: ${audit?.title || auditId}`,
-        description: String(audit?.description || "").slice(0, 400),
+        title: `Audit failed: ${String(match.title || auditId)}`,
+        description: String(match.description || "").slice(0, 400),
         affected_url: targetUrl,
       });
     }
@@ -3031,7 +3111,90 @@ export async function runSurfaceScanEnrichment(
       urlHausSummary = { query_status: "error" };
     }
 
-    const noThreatMatches = safeBrowsingMatches.length === 0 && !urlHausListed;
+    const phishTankKey = Deno.env.get("PHISHTANK_API_KEY") || "";
+    let phishTank: {
+      inDatabase: boolean;
+      valid: boolean;
+      verified: boolean;
+      source: string;
+      details?: Record<string, unknown>;
+    } | null = null;
+    try {
+      const form = new URLSearchParams();
+      form.set("url", targetUrlCandidate);
+      form.set("format", "xml");
+      if (phishTankKey) form.set("app_key", phishTankKey);
+      const phishRes = await fetchWithTimeout("https://checkurl.phishtank.com/checkurl/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "SurfaceScan360/1.0 (+https://hicompliance.it)",
+        },
+        body: form.toString(),
+      }, 12000);
+      const xml = await phishRes.text();
+      const inDatabase = /<in_database>\s*true\s*<\/in_database>/i.test(xml);
+      const valid = /<valid>\s*true\s*<\/valid>/i.test(xml);
+      const verified = /<verified>\s*true\s*<\/verified>/i.test(xml);
+      phishTank = {
+        inDatabase,
+        valid,
+        verified,
+        source: "phishtank",
+        details: {
+          status: phishRes.status,
+        },
+      };
+    } catch {
+      phishTank = null;
+    }
+
+    const internalIndicators: Array<{
+      ioc: string;
+      type: "domain" | "ip" | "url";
+      confidence?: number;
+      source?: string;
+    }> = [];
+    try {
+      const { data: internalRows } = await adminClient
+        .from("surface_external_intel" as any)
+        .select("provider, target, summary, raw_response")
+        .eq("customer_id", customerId)
+        .in("provider", ["intelguard_feed", "intelguard_threat_feed", "internal_threat_feed"])
+        .order("created_at", { ascending: false })
+        .limit(200);
+      for (const row of (internalRows || []) as Array<Record<string, unknown>>) {
+        const provider = String(row?.provider || "").trim();
+        const target = String(row?.target || "").trim().toLowerCase();
+        if (!target) continue;
+        if (
+          target !== hostname.toLowerCase() &&
+          target !== targetUrlCandidate.toLowerCase() &&
+          !targetUrlCandidate.toLowerCase().includes(target)
+        ) {
+          continue;
+        }
+        const summary = (row?.summary as Record<string, unknown>) || {};
+        const confidence = Number(summary?.confidence || summary?.score || 0);
+        internalIndicators.push({
+          ioc: target,
+          type: target.includes("://") ? "url" : target.includes(".") ? "domain" : "ip",
+          confidence: Number.isFinite(confidence) ? confidence : undefined,
+          source: provider || "internal",
+        });
+      }
+    } catch {
+      // optional internal feed integration
+    }
+
+    const internalHighConfidence = internalIndicators.filter((entry) => (entry.confidence || 0) >= 90);
+    const internalMediumConfidence = internalIndicators.filter((entry) => (entry.confidence || 0) >= 70 && (entry.confidence || 0) < 90);
+
+    const noThreatMatches =
+      safeBrowsingMatches.length === 0 &&
+      !urlHausListed &&
+      !(phishTank?.inDatabase && (phishTank?.valid || phishTank?.verified)) &&
+      internalIndicators.length === 0;
     await insertObservation({
       module: "threats",
       observation_type: "threats_summary",
@@ -3046,6 +3209,20 @@ export async function runSurfaceScanEnrichment(
         urlhaus: {
           listed: urlHausListed,
           ...urlHausSummary,
+        },
+        phishtank: phishTank
+          ? {
+            in_database: phishTank.inDatabase,
+            valid: phishTank.valid,
+            verified: phishTank.verified,
+          }
+          : {
+            configured: Boolean(phishTankKey),
+            checked: false,
+          },
+        intelguard: {
+          matched: internalIndicators.length > 0,
+          indicators: internalIndicators.slice(0, 30),
         },
         no_threat_matches: noThreatMatches,
       },
@@ -3073,6 +3250,51 @@ export async function runSurfaceScanEnrichment(
         affected_asset: hostname,
         evidence: urlHausSummary,
         remediation: "Verificare compromissione contenuti/redirect e ripristinare stato sicuro prima di ri-esporre il servizio.",
+      });
+    }
+
+    if (phishTank?.inDatabase && (phishTank?.valid || phishTank?.verified)) {
+      await insertFinding({
+        module: "threats",
+        finding_type: "phishtank_verified_match",
+        severity: "critical",
+        title: "Target flagged in PhishTank",
+        affected_asset: hostname,
+        affected_url: targetUrlCandidate,
+        evidence: {
+          in_database: phishTank.inDatabase,
+          valid: phishTank.valid,
+          verified: phishTank.verified,
+        },
+        remediation: "Bloccare target, avviare incident response e validare compromissione lato contenuti/DNS.",
+      });
+    }
+
+    if (internalHighConfidence.length > 0) {
+      await insertFinding({
+        module: "threats",
+        finding_type: "intelguard_high_confidence_match",
+        severity: "high",
+        title: "High-confidence match in internal threat feed",
+        affected_asset: hostname,
+        affected_url: targetUrlCandidate,
+        evidence: {
+          indicators: internalHighConfidence.slice(0, 20),
+        },
+        remediation: "Eseguire triage IOC prioritario e validare esposizione effettiva su asset in scope.",
+      });
+    } else if (internalMediumConfidence.length > 0) {
+      await insertFinding({
+        module: "threats",
+        finding_type: "intelguard_medium_confidence_match",
+        severity: "medium",
+        title: "Medium-confidence match in internal threat feed",
+        affected_asset: hostname,
+        affected_url: targetUrlCandidate,
+        evidence: {
+          indicators: internalMediumConfidence.slice(0, 20),
+        },
+        remediation: "Validare IOC con controlli aggiuntivi (DNS, proxy, EDR) e confermare attribuzione.",
       });
     }
   };
@@ -3132,6 +3354,174 @@ export async function runSurfaceScanEnrichment(
     });
   };
 
+  const runOpenPortsModule = async () => {
+    const toProfile = (profile: string): "quick" | "full" | "deep" => {
+      if (profile === "safe_recon") return "quick";
+      if (profile === "domain_exposure" || profile === "ip_exposure") return "full";
+      return "deep";
+    };
+
+    const { data: portAssets, error: portAssetsError } = await adminClient
+      .from("surface_assets" as any)
+      .select("asset_value, ip, hostname, source, raw")
+      .eq("scan_job_id", job.id)
+      .eq("asset_type", "open_port")
+      .limit(2000);
+    if (portAssetsError) {
+      throw new Error(portAssetsError.message || "Unable to read open port assets");
+    }
+
+    const { data: cveFindings } = await adminClient
+      .from("surface_findings" as any)
+      .select("ip, port, cve")
+      .eq("scan_job_id", job.id)
+      .not("cve", "is", null)
+      .limit(4000);
+
+    const cveBySocket = new Map<string, string[]>();
+    for (const row of (cveFindings || []) as Array<Record<string, unknown>>) {
+      const ip = String(row?.ip || "").trim();
+      const port = Number(row?.port || 0);
+      const cves = Array.isArray(row?.cve)
+        ? (row.cve as unknown[]).map((entry) => String(entry || "").trim()).filter(Boolean)
+        : [];
+      if (!ip || !port || cves.length === 0) continue;
+      const key = `${ip}:${port}`;
+      const existing = cveBySocket.get(key) || [];
+      cveBySocket.set(key, [...new Set([...existing, ...cves])]);
+    }
+
+    const openPortMap = new Map<
+      string,
+      {
+        target: string;
+        ip: string;
+        source: "pentest-tools" | "shodan" | "cache" | "node-tcp";
+        port: number;
+        protocol: "tcp" | "udp";
+        service?: string;
+        product?: string;
+        version?: string;
+        banner?: string;
+        confidence?: number;
+        cves?: string[];
+      }
+    >();
+
+    for (const asset of (portAssets || []) as Array<Record<string, unknown>>) {
+      const assetValue = String(asset?.asset_value || "").trim();
+      if (!assetValue.includes(":")) continue;
+      const [hostPart, portPart] = assetValue.split(":");
+      const parsedPort = Number(portPart);
+      if (!Number.isFinite(parsedPort) || parsedPort <= 0) continue;
+      const raw = (asset?.raw as Record<string, unknown>) || {};
+      const protocolValue = String(raw?.protocol || "tcp").toLowerCase();
+      const protocol = protocolValue === "udp" ? "udp" : "tcp";
+      const ip = String(asset?.ip || hostPart || "").trim().toLowerCase();
+      const target = String(asset?.hostname || hostname || rootDomain || ip || "").trim();
+      const sourceRaw = String(asset?.source || "").toLowerCase();
+      const source: "pentest-tools" | "shodan" | "cache" | "node-tcp" = sourceRaw.includes("pentest")
+        ? "pentest-tools"
+        : sourceRaw.includes("shodan")
+          ? "shodan"
+          : sourceRaw.includes("node")
+            ? "node-tcp"
+            : "cache";
+      const key = `${ip}:${parsedPort}/${protocol}`;
+      const service = String(raw?.service || raw?.service_name || "").trim() || undefined;
+      const product = String(raw?.product || "").trim() || undefined;
+      const version = String(raw?.version || raw?.service_version || "").trim() || undefined;
+      const banner = String(raw?.banner || "").trim() || undefined;
+      const confidenceRaw = Number(raw?.confidence || 0);
+      const confidence = Number.isFinite(confidenceRaw) && confidenceRaw > 0 ? confidenceRaw : undefined;
+      const socketCves = cveBySocket.get(`${ip}:${parsedPort}`) || [];
+
+      if (!openPortMap.has(key)) {
+        openPortMap.set(key, {
+          target,
+          ip,
+          source,
+          port: parsedPort,
+          protocol,
+          service,
+          product,
+          version,
+          banner,
+          confidence,
+          cves: socketCves,
+        });
+        continue;
+      }
+      const existing = openPortMap.get(key)!;
+      existing.service = existing.service || service;
+      existing.product = existing.product || product;
+      existing.version = existing.version || version;
+      existing.banner = existing.banner || banner;
+      existing.confidence = Math.max(existing.confidence || 0, confidence || 0) || undefined;
+      existing.cves = [...new Set([...(existing.cves || []), ...socketCves])];
+    }
+
+    const openPorts = [...openPortMap.values()]
+      .sort((a, b) => {
+        const sevDiff = severityRank(severityForExposedPort(b.port)) - severityRank(severityForExposedPort(a.port));
+        if (sevDiff !== 0) return sevDiff;
+        return a.port - b.port;
+      });
+
+    const output = {
+      target: hostname || rootDomain || parsedTarget.hostname || parsedTarget.normalized_target,
+      ip: openPorts[0]?.ip || [...discoveredIps][0] || null,
+      source: openPorts[0]?.source || "cache",
+      openPorts,
+      failedPorts: [],
+      scanProfile: toProfile(job.scan_profile),
+      scanStartedAt: job.started_at || null,
+      scanCompletedAt: new Date().toISOString(),
+    };
+
+    await insertObservation({
+      module: "open_ports",
+      observation_type: "open_ports_summary",
+      title: "Open ports and exposed services",
+      value: output,
+      severity: openPorts.length > 0 ? "low" : "info",
+    });
+
+    const criticalCount = openPorts.filter((entry) => severityForExposedPort(entry.port) === "critical").length;
+    const highCount = openPorts.filter((entry) => severityForExposedPort(entry.port) === "high").length;
+    if (criticalCount > 0) {
+      await insertFinding({
+        module: "open_ports",
+        finding_type: "open_ports_critical_exposure",
+        severity: "critical",
+        title: "Critical exposed services detected",
+        affected_asset: hostname || rootDomain || null,
+        description: `${criticalCount} porte critiche esposte pubblicamente.`,
+        evidence: {
+          critical_ports: openPorts
+            .filter((entry) => severityForExposedPort(entry.port) === "critical")
+            .slice(0, 30),
+        },
+        remediation: "Isolare immediatamente i servizi critici da Internet e consentire accesso solo da reti autorizzate.",
+      });
+    } else if (highCount > 0) {
+      await insertFinding({
+        module: "open_ports",
+        finding_type: "open_ports_high_exposure",
+        severity: "high",
+        title: "High-risk exposed services detected",
+        affected_asset: hostname || rootDomain || null,
+        description: `${highCount} porte ad alto rischio esposte pubblicamente.`,
+        evidence: {
+          high_ports: openPorts
+            .filter((entry) => severityForExposedPort(entry.port) === "high")
+            .slice(0, 30),
+        },
+        remediation: "Ridurre la superficie esposta con ACL/firewall, MFA e accesso tramite VPN/ZTNA.",
+      });
+    }
+  };
+
   const runPassesModule = async () => {
     const getLatestFinding = async (moduleKey: string, findingTypes: string[]) => {
       const query = adminClient
@@ -3165,23 +3555,109 @@ export async function runSurfaceScanEnrichment(
     const accessibilityScore = Number(categories?.accessibility);
     const seoScore = Number(categories?.seo);
 
+    const whoisObservationRes = await adminClient
+      .from("surface_observations" as any)
+      .select("value")
+      .eq("scan_job_id", job.id)
+      .eq("module", "whois")
+      .eq("observation_type", "whois_rdap")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const whoisValue = whoisObservationRes.data?.value || {};
+    const daysToExpiry = Number(whoisValue?.days_to_expiry);
+
+    const tlsObservationRes = await adminClient
+      .from("surface_observations" as any)
+      .select("value")
+      .eq("scan_job_id", job.id)
+      .eq("module", "tls_summary")
+      .eq("observation_type", "tls_summary")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const tlsValue = tlsObservationRes.data?.value || {};
+    const tls13Supported = Boolean(
+      tlsValue?.tls13Supported === true || String(tlsValue?.selectedProtocol || "").toLowerCase().includes("1.3"),
+    );
+    const http2Alpn = Boolean(tlsValue?.http2Alpn === true);
+
+    const dnsblObservationRes = await adminClient
+      .from("surface_observations" as any)
+      .select("value")
+      .eq("scan_job_id", job.id)
+      .eq("module", "dns_blocklists")
+      .eq("observation_type", "dnsbl_summary")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const dnsblValue = dnsblObservationRes.data?.value || {};
+    const listedCount = Number(dnsblValue?.listed_count);
+
+    const redirectObservationRes = await adminClient
+      .from("surface_observations" as any)
+      .select("value")
+      .eq("scan_job_id", job.id)
+      .in("module", ["redirects", "redirect_chain"])
+      .in("observation_type", ["redirects_summary", "redirect_chain"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const redirectValue = redirectObservationRes.data?.value || {};
+    const redirectsToHttps = Boolean(redirectValue?.redirectsToHttps);
+
+    const mailObservationRes = await adminClient
+      .from("surface_observations" as any)
+      .select("value")
+      .eq("scan_job_id", job.id)
+      .eq("module", "mail_security")
+      .eq("observation_type", "mail_config")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const mailValue = mailObservationRes.data?.value || {};
+    const hasSpfRecord = Boolean(mailValue?.has_spf);
+
     const hasDnssecFinding = await getLatestFinding("dnssec", [
       "dnssec_missing",
       "dnssec_inconsistent_delegation",
     ]);
-    const hasThreatFinding = await getLatestFinding("threats", ["safe_browsing_match", "urlhaus_listed"]);
+    const hasThreatFinding = await getLatestFinding("threats", [
+      "safe_browsing_match",
+      "urlhaus_listed",
+      "phishtank_verified_match",
+      "intelguard_high_confidence_match",
+      "intelguard_medium_confidence_match",
+    ]);
     const hasBlocklistFinding = await getLatestFinding("dns_blocklists", ["dnsbl_listed"]);
     const hasSpfMissing = await getLatestFinding("mail_security", ["mail_spf_missing"]);
     const hasRedirectMissing = await getLatestFindingAnyModule(
       ["redirect_chain", "redirects"],
       ["no_http_to_https_redirect"],
     );
-    const hasExpiredDomain = await getLatestFinding("whois", ["domain_expired", "domain_expiry_soon_30d"]);
-    const hasMissingHsts = await getLatestFinding("hsts", ["missing_hsts"]);
+    const hasExpiredDomain = await getLatestFinding("whois", ["domain_expired"]);
+    const hasSslInvalid = await getLatestFinding("ssl_certificate", [
+      "ssl_certificate_expired",
+      "ssl_certificate_self_signed",
+      "ssl_certificate_untrusted_chain",
+      "ssl_hostname_mismatch",
+      "ssl_missing_san",
+    ]);
 
     const passItems = [
-      { key: "ssl_valid", label: "SSL certificate valid", passed: !hasMissingHsts, sourceModule: "hsts" },
-      { key: "domain_registration_valid", label: "Domain registration is valid", passed: !hasExpiredDomain, sourceModule: "whois" },
+      {
+        key: "ssl_valid",
+        label: "SSL certificate valid",
+        passed: !hasSslInvalid,
+        sourceModule: "ssl_certificate",
+      },
+      {
+        key: "domain_registration_valid",
+        label: "Domain registration is valid",
+        passed: Number.isFinite(daysToExpiry) ? daysToExpiry > 0 : !hasExpiredDomain,
+        value: Number.isFinite(daysToExpiry) ? daysToExpiry : null,
+        sourceModule: "whois",
+      },
       {
         key: "accessibility_score",
         label: "Accessibility score",
@@ -3196,19 +3672,37 @@ export async function runSurfaceScanEnrichment(
         value: Number.isFinite(seoScore) ? seoScore : null,
         sourceModule: "quality",
       },
+      {
+        key: "tls13_supported",
+        label: "TLS 1.3 negotiated/supported",
+        passed: tls13Supported,
+        sourceModule: "tls_summary",
+      },
+      {
+        key: "http2_alpn",
+        label: "HTTP/2 via ALPN",
+        passed: http2Alpn,
+        sourceModule: "tls_summary",
+      },
       { key: "dnssec_enabled", label: "DNSSEC enabled", passed: !hasDnssecFinding, sourceModule: "dnssec" },
       { key: "no_threat_matches", label: "No threat feed matches", passed: !hasThreatFinding, sourceModule: "threats" },
-      { key: "spf_published", label: "SPF record published", passed: !hasSpfMissing, sourceModule: "mail_security" },
+      {
+        key: "spf_published",
+        label: "SPF record published",
+        passed: hasSpfRecord || !hasSpfMissing,
+        sourceModule: "mail_security",
+      },
       {
         key: "https_redirect",
         label: "HTTP requests are redirected to HTTPS",
-        passed: !hasRedirectMissing,
+        passed: redirectsToHttps || !hasRedirectMissing,
         sourceModule: "redirects",
       },
       {
         key: "not_on_dns_blocklists",
         label: "Not on tested DNS blocklists",
-        passed: !hasBlocklistFinding,
+        passed: Number.isFinite(listedCount) ? listedCount === 0 : !hasBlocklistFinding,
+        value: Number.isFinite(listedCount) ? listedCount : null,
         sourceModule: "dns_blocklists",
       },
     ];
@@ -3621,6 +4115,7 @@ export async function runSurfaceScanEnrichment(
         }
 
         for (const port of ports.slice(0, 50)) {
+          const portNumber = Number(port);
           await insertAsset({
             asset_type: "open_port",
             asset_value: `${ip}:${port}`,
@@ -3629,30 +4124,32 @@ export async function runSurfaceScanEnrichment(
             ip,
             source: "shodan",
             confidence: "medium",
-            raw: { port },
+            raw: {
+              port: portNumber,
+              protocol: "tcp",
+            },
           });
 
           await insertFinding({
             provider: "shodan",
             module: "shodan",
             finding_type: "open_port_exposed",
-            severity: severityForExposedPort(Number(port)),
+            severity: severityForExposedPort(portNumber),
             title: `Porta ${port} esposta pubblicamente`,
             description:
               "Host raggiungibile su porta aperta da Internet (dato OSINT passivo). Verificare esposizione e controlli di accesso.",
             affected_asset: hostname || ip,
             ip,
-            port: Number(port),
+            port: portNumber,
             protocol: "tcp",
             cwe: ["CWE-284"],
             evidence: {
               ip,
-              port,
+              port: portNumber,
               source: "shodan",
               hostnames: hostnames.slice(0, 10),
             },
-            remediation:
-              "Limitare esposizione con firewall/ACL, consentire accesso solo da IP trusted e disabilitare servizi non necessari.",
+            remediation: remediationForExposedPort(portNumber),
           });
         }
 
@@ -4284,8 +4781,7 @@ export async function runSurfaceScanEnrichment(
               version: serviceVersion || null,
               raw: portData,
             },
-            remediation:
-              "Confermare necessità della porta esposta, limitare accesso con ACL/firewall e disabilitare servizi non necessari.",
+            remediation: remediationForExposedPort(port),
           });
 
           if (serviceName || serviceVersion) {
@@ -4954,6 +5450,12 @@ export async function runSurfaceScanEnrichment(
       timeoutMs: 240000,
       featureFlag: "SURFACESCAN_ENABLE_OPEN_PORTS",
     },
+    open_ports: {
+      key: "open_ports",
+      label: "Open Ports",
+      timeoutMs: 30000,
+      featureFlag: "SURFACESCAN_ENABLE_OPEN_PORTS",
+    },
     passes: {
       key: "passes",
       label: "Passes Summary",
@@ -4994,6 +5496,7 @@ export async function runSurfaceScanEnrichment(
     if (["domain_exposure", "ip_exposure", "cve_api_validation"].includes(job.scan_profile)) {
       await safeRun(modules.pentest_tools, runPentestToolsModule);
     }
+    await safeRun(modules.open_ports, runOpenPortsModule);
 
     await safeRun(modules.ssl_certificate, runSslCertificateModule);
     await safeRun(modules.tls_summary, runTlsSummaryModule);

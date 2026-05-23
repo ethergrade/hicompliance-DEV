@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, ShieldCheck, Globe2, MailCheck, Radar, Shield, Lock, Server, MapPin, Network } from 'lucide-react';
+import { Loader2, ShieldCheck, Globe2, MailCheck, Radar, Shield, Lock, Server, MapPin, Network, Cable } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 
@@ -44,6 +44,7 @@ const moduleOrder = [
   'headers',
   'redirects',
   'redirect_chain',
+  'open_ports',
   'ssl_certificate',
   'tls_summary',
   'server_info',
@@ -139,6 +140,7 @@ export const SurfaceScanModuleCards: React.FC = () => {
   const httpSecurity = observationByModule.http_security?.value || {};
   const headers = observationByModule.headers?.value || {};
   const redirects = observationByModule.redirects?.value || observationByModule.redirect_chain?.value || {};
+  const openPorts = observationByModule.open_ports?.value || {};
   const ssl = observationByModule.ssl_certificate?.value || {};
   const tls = observationByModule.tls_summary?.value || {};
   const serverInfo = observationByModule.server_info?.value || {};
@@ -214,6 +216,18 @@ export const SurfaceScanModuleCards: React.FC = () => {
               </div>
               <div className="text-sm text-muted-foreground">
                 Hop: {redirects.hopCount ?? '-'} · HTTPS: {redirects.redirectsToHttps ? 'sì' : 'no'}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-medium flex items-center gap-2"><Cable className="w-4 h-4" />Open Ports</div>
+                <Badge className={statusBadgeClass[moduleByKey.open_ports?.status || 'skipped']}>
+                  {moduleByKey.open_ports?.status || 'n/d'}
+                </Badge>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                Porte: {Array.isArray(openPorts.openPorts) ? openPorts.openPorts.length : 0} · Profilo: {openPorts.scanProfile || '-'}
               </div>
             </div>
 
