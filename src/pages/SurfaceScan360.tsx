@@ -39,6 +39,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import SecurityFindings from '@/components/surface-scan/SecurityFindings';
+import SurfaceScanModuleCards from '@/components/surface-scan/SurfaceScanModuleCards';
 import SurfaceScanReportRepository from '@/components/surface-scan/SurfaceScanReportRepository';
 import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
 import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceScanAlertConfigDialog';
@@ -58,6 +59,7 @@ import {
   splitMonitoredScopeRules,
 } from '@/lib/surfaceScopeGuard';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import { Link } from 'react-router-dom';
 
 const IPV4_REGEX =
   /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
@@ -674,10 +676,17 @@ const SurfaceScan360: React.FC = () => {
               Scansione completa della superficie di attacco esterna
             </p>
           </div>
-          <Button variant="outline" onClick={handleExportPdf} disabled={exportingPdf}>
-            <Download className="w-4 h-4 mr-2" />
-            {exportingPdf ? 'Esportazione...' : 'Esporta PDF'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="secondary">
+              <Link to="/surface-scan/exposure">
+                Ports &amp; Technologies
+              </Link>
+            </Button>
+            <Button variant="outline" onClick={handleExportPdf} disabled={exportingPdf}>
+              <Download className="w-4 h-4 mr-2" />
+              {exportingPdf ? 'Esportazione...' : 'Esporta PDF'}
+            </Button>
+          </div>
         </div>
 
         {isAdmin && (
@@ -1298,6 +1307,8 @@ const SurfaceScan360: React.FC = () => {
             </CardContent>
           )}
         </Card>
+
+        <SurfaceScanModuleCards />
 
         <SecurityFindings />
 

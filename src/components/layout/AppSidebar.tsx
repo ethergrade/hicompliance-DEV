@@ -65,6 +65,7 @@ const navigation = [
 const hiComplianceModules = [
   { title: 'Assessment', href: '/assessment', icon: ClipboardCheck },
   { title: 'SurfaceScan360', href: '/surface-scan', icon: Globe },
+  { title: 'SurfaceScan Exposure', href: '/surface-scan/exposure', icon: ShieldCheck },
   { title: 'DarkRisk360', href: '/dark-risk', icon: Eye },
   { title: 'Analisi', href: '/analytics', icon: BarChart3 },
   { title: 'Remediation', href: '/remediation', icon: Wrench },
@@ -130,7 +131,7 @@ export const AppSidebar: React.FC = () => {
   const isFeatureAllowed = (href: string) => {
     // SuperAdmin/Sales without a selected org see everything (console view)
     if (isConsoleUser && !selectedOrganization) return true;
-    if (href === '/surface-scan') return surfaceScanOn;
+    if (href === '/surface-scan' || href === '/surface-scan/exposure') return surfaceScanOn;
     if (href === '/dark-risk') return darkRiskOn;
     // HiCompliance core modules
     if (['/assessment', '/analytics', '/remediation', '/incident-response', '/compliance-events'].includes(href)) {
