@@ -39,6 +39,64 @@ const TECHNOLOGY_TOKENS: RegExp[] = [
   /\bpassive[_\s-]?dns\b/gi,
 ];
 const CVE_REGEX = /\bCVE-\d{4}-\d{4,7}\b/gi;
+const IPV4_REGEX = /^(?:\d{1,3}\.){3}\d{1,3}$/;
+const PARENS_CONTENT_REGEX = /^\((.*)\)$/;
+
+function isIpv4(value: string): boolean {
+  const v = String(value || '').trim();
+  if (!IPV4_REGEX.test(v)) return false;
+  const parts = v.split('.').map((x) => Number(x));
+  return parts.length === 4 && parts.every((n) => Number.isInteger(n) && n >= 0 && n <= 255);
+}
+
+function parseHostname(value: string): string | null {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  try {
+    if (/^https?:\/\//i.test(raw)) {
+      const u = new URL(raw);
+      const host = u.hostname.trim().toLowerCase();
+      return host || null;
+    }
+  } catch {
+    // fallback below
+  }
+  const cleaned = raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim().toLowerCase();
+  if (!cleaned || isIpv4(cleaned)) return null;
+  if (!cleaned.includes('.')) return null;
+  return cleaned;
+}
+
+function normalizeAssetLabel(value: string): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (isIpv4(raw)) return raw;
+  const host = parseHostname(raw);
+  if (host) return host;
+  return raw.replace(/^https?:\/\//i, '').replace(/\/+$/, '').trim().toLowerCase();
+}
+
+function inferAssetType(value: string, hint?: string | null): 'domain' | 'subdomain' | 'ip' | 'url' | 'range' | 'asset' {
+  const hinted = String(hint || '').toLowerCase();
+  if (hinted === 'range') return 'range';
+  if (hinted === 'domain' || hinted === 'subdomain' || hinted === 'ip' || hinted === 'url') {
+    return hinted;
+  }
+  const normalized = normalizeAssetLabel(value);
+  if (!normalized) return 'asset';
+  if (isIpv4(normalized)) return 'ip';
+  if (/^https?:\/\//i.test(String(value || ''))) return 'url';
+  const labels = normalized.split('.').filter(Boolean);
+  if (labels.length >= 3) return 'subdomain';
+  if (labels.length >= 2) return 'domain';
+  return 'asset';
+}
+
+function parseDmarcPolicy(record: string): string | null {
+  const m = String(record || '').match(/(?:^|;)\s*p=([a-zA-Z]+)/i);
+  if (!m) return null;
+  return String(m[1] || '').toLowerCase();
+}
 
 function normalizeHost(value: string): string {
   return String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, 'www.');
@@ -243,6 +301,82 @@ function buildConsultingRecommendations(input: {
     unique.push(entry);
   }
   return unique.slice(0, 5).map((entry, index) => ({ ...entry, priority: index + 1 }));
+}
+
+function buildOperationalPrioritiesByAsset(input: {
+  assetMatrix: Array<{
+    asset: string;
+    asset_type: string;
+    related_ips: string[];
+    findings_total: number;
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+    info: number;
+    cve_count: number;
+    open_ports_count: number;
+  }>;
+  fallbackAssets: string[];
+}): Array<{ priority: number; title: string; rationale: string; action: string; affected_assets: string[]; severity: string }> {
+  const rows = [...(input.assetMatrix || [])];
+  rows.sort((a, b) => {
+    const scoreA = a.critical * 40 + a.high * 25 + a.medium * 10 + a.cve_count * 8 + a.open_ports_count * 6 + a.low * 2 + a.info;
+    const scoreB = b.critical * 40 + b.high * 25 + b.medium * 10 + b.cve_count * 8 + b.open_ports_count * 6 + b.low * 2 + b.info;
+    return scoreB - scoreA;
+  });
+
+  const selected = rows.filter((row) => row.findings_total > 0 || row.open_ports_count > 0 || row.cve_count > 0).slice(0, 5);
+  const out = selected.map((row, index) => {
+    const hasCve = row.cve_count > 0;
+    const hasOpenPorts = row.open_ports_count > 0;
+    const highRisk = row.critical > 0 || row.high > 0;
+    const severity = highRisk ? 'high' : row.medium > 0 ? 'medium' : 'low';
+    const keyRisks: string[] = [];
+    if (row.critical > 0) keyRisks.push(`${row.critical} finding critici`);
+    if (row.high > 0) keyRisks.push(`${row.high} finding alti`);
+    if (row.medium > 0) keyRisks.push(`${row.medium} finding medi`);
+    if (hasCve) keyRisks.push(`${row.cve_count} CVE associate`);
+    if (hasOpenPorts) keyRisks.push(`${row.open_ports_count} porte esposte`);
+
+    const actionParts: string[] = [];
+    if (hasOpenPorts) {
+      actionParts.push('verificare necessità delle porte esposte e limitare accesso con ACL/firewall');
+    }
+    if (hasCve) {
+      actionParts.push('prioritizzare patching/misure compensative sulle CVE collegate');
+    }
+    if (row.medium + row.high + row.critical > 0) {
+      actionParts.push('chiudere prima i finding a severità più alta e rieseguire la validazione');
+    }
+    if (actionParts.length === 0) {
+      actionParts.push('mantenere monitoraggio continuo e verificare periodicamente la postura');
+    }
+
+    const scopeRefs = row.related_ips.length > 0 ? `${row.asset} (${row.related_ips.join(', ')})` : row.asset;
+    return {
+      priority: index + 1,
+      title: `Priorità operativa su ${row.asset}`,
+      rationale: `Asset ${scopeRefs}: ${keyRisks.join(', ') || 'nessun rischio prioritario rilevato'}.`,
+      action: `Per ${scopeRefs}: ${actionParts.join('; ')}.`,
+      affected_assets: [row.asset, ...row.related_ips].filter(Boolean).slice(0, 10),
+      severity,
+    };
+  });
+
+  while (out.length < 5) {
+    const fallback = input.fallbackAssets[out.length] || input.fallbackAssets[0] || 'perimetro monitorato';
+    out.push({
+      priority: out.length + 1,
+      title: `Priorità operativa su ${fallback}`,
+      rationale: `Asset ${fallback}: consolidare la postura di sicurezza con verifica periodica delle evidenze.`,
+      action: `Per ${fallback}: eseguire riesecuzione della scansione, validare remediation aperte e aggiornare lo scope monitorato.`,
+      affected_assets: [fallback],
+      severity: 'low',
+    });
+  }
+
+  return out.slice(0, 5).map((item, idx) => ({ ...item, priority: idx + 1 }));
 }
 
 function buildFallbackAiReport(input: {
@@ -500,10 +634,14 @@ Deno.serve(async (req) => {
     const [profileRes, orgRes, assetsRes, findingsRes, intelRes, obsRes, monitoredRes, subdomainDumpRes] = await Promise.all([
       supabase.from('organization_profiles').select('*').eq('organization_id', organization_id).maybeSingle(),
       supabase.from('organizations').select('id, name').eq('id', organization_id).maybeSingle(),
-      supabase.from('surface_assets').select('asset_type, asset_value, hostname, ip, source').eq('scan_job_id', job.id).limit(500),
-      supabase.from('surface_findings').select('module, finding_type, title, description, severity, affected_asset, affected_url, remediation, cve, cvss, attribution_confidence').eq('scan_job_id', job.id).limit(500),
-      supabase.from('surface_external_intel').select('provider, target, summary, confidence').eq('scan_job_id', job.id).limit(200),
-      supabase.from('surface_observations').select('module, observation_type, title, value, severity').eq('scan_job_id', job.id).limit(500),
+      supabase.from('surface_assets').select('asset_type, asset_value, hostname, ip, source, raw').eq('scan_job_id', job.id).limit(1000),
+      supabase
+        .from('surface_findings')
+        .select('provider, module, finding_type, title, description, severity, affected_asset, affected_url, ip, port, protocol, remediation, cve, cvss, evidence, attribution_confidence')
+        .eq('scan_job_id', job.id)
+        .limit(1200),
+      supabase.from('surface_external_intel').select('provider, target, found, summary, raw_response, confidence').eq('scan_job_id', job.id).limit(400),
+      supabase.from('surface_observations').select('module, observation_type, title, value, severity').eq('scan_job_id', job.id).limit(1000),
       supabase.from('surface_scan_monitored_ips').select('entry_type, input_value, ip_start, ip_end, discovered_via, discovered_from').eq('organization_id', organization_id),
       supabase.from('subdomain_dumps').select('id, root_domain, depth_limit, total_discovered, total_returned, truncated, sources, results, created_at').eq('organization_id', organization_id).order('created_at', { ascending: false }).limit(50),
     ]);
@@ -564,10 +702,159 @@ Deno.serve(async (req) => {
     const observations = obsRes.data ?? [];
     const monitored_scope = monitoredRes.data ?? [];
 
+    const addToSetMap = (map: Map<string, Set<string>>, key: string, value: string) => {
+      const k = String(key || '').trim();
+      const v = String(value || '').trim();
+      if (!k || !v) return;
+      if (!map.has(k)) map.set(k, new Set<string>());
+      map.get(k)!.add(v);
+    };
+
+    const hostToIps = new Map<string, Set<string>>();
+    const ipToHosts = new Map<string, Set<string>>();
+
+    const matrixMap = new Map<string, {
+      asset: string;
+      asset_type: string;
+      related_ips: Set<string>;
+      findings_total: number;
+      critical: number;
+      high: number;
+      medium: number;
+      low: number;
+      info: number;
+      cve_set: Set<string>;
+      open_port_keys: Set<string>;
+    }>();
+
+    const ensureMatrixRow = (assetLabel: string, hintType?: string | null) => {
+      const label = normalizeAssetLabel(assetLabel);
+      if (!label) return null;
+      const inferred = inferAssetType(assetLabel, hintType);
+      const key = `${inferred}:${label}`;
+      if (!matrixMap.has(key)) {
+        matrixMap.set(key, {
+          asset: label,
+          asset_type: inferred,
+          related_ips: new Set<string>(),
+          findings_total: 0,
+          critical: 0,
+          high: 0,
+          medium: 0,
+          low: 0,
+          info: 0,
+          cve_set: new Set<string>(),
+          open_port_keys: new Set<string>(),
+        });
+      }
+      return matrixMap.get(key)!;
+    };
+
+    const linkHostIp = (hostLike: string, ipLike: string) => {
+      const host = parseHostname(hostLike) || (isIpv4(hostLike) ? '' : normalizeAssetLabel(hostLike));
+      const ip = String(ipLike || '').trim();
+      if (!host || !ip || !isIpv4(ip)) return;
+      addToSetMap(hostToIps, host, ip);
+      addToSetMap(ipToHosts, ip, host);
+      const hostRow = ensureMatrixRow(host, inferAssetType(host));
+      if (hostRow) hostRow.related_ips.add(ip);
+      const ipRow = ensureMatrixRow(ip, 'ip');
+      if (ipRow) ipRow.related_ips.add(ip);
+    };
+
+    const registerAsset = (assetLabel: string, hintType?: string | null, ipLike?: string | null) => {
+      const row = ensureMatrixRow(assetLabel, hintType);
+      if (!row) return;
+      const ip = String(ipLike || '').trim();
+      if (ip && isIpv4(ip)) {
+        row.related_ips.add(ip);
+        if (row.asset_type !== 'ip') linkHostIp(row.asset, ip);
+        else addToSetMap(ipToHosts, ip, row.asset);
+      }
+      if (row.asset_type === 'ip') {
+        row.related_ips.add(row.asset);
+      } else {
+        const host = parseHostname(row.asset) || row.asset;
+        const knownIps = hostToIps.get(host);
+        if (knownIps) knownIps.forEach((knownIp) => row.related_ips.add(knownIp));
+      }
+    };
+
+    const scanTargetHost = parseHostname(job.raw_target) || parseHostname(job.normalized_target || '') || '';
+    const scanTargetIp = isIpv4(scanTargetHost) ? scanTargetHost : '';
+    if (scanTargetHost) registerAsset(scanTargetHost, inferAssetType(scanTargetHost), scanTargetIp || null);
+    if (scanTargetIp) registerAsset(scanTargetIp, 'ip', scanTargetIp);
+
+    for (const asset of assets) {
+      const assetType = String(asset?.asset_type || '').toLowerCase();
+      const rawIp = String(asset?.ip || asset?.raw?.ip || '').trim();
+      const baseLabel =
+        assetType === 'open_port'
+          ? String(asset?.hostname || rawIp || String(asset?.asset_value || '').split(':')[0] || '').trim()
+          : String(asset?.hostname || asset?.asset_value || rawIp || '').trim();
+      registerAsset(baseLabel, assetType || null, rawIp || null);
+      if (assetType === 'open_port') {
+        const ipFromValue = String(asset?.asset_value || '').split(':')[0];
+        if (isIpv4(ipFromValue)) {
+          registerAsset(ipFromValue, 'ip', ipFromValue);
+          if (baseLabel && !isIpv4(baseLabel)) linkHostIp(baseLabel, ipFromValue);
+        }
+      }
+    }
+
+    for (const scopeRow of monitored_scope) {
+      const entryType = String(scopeRow?.entry_type || '').toLowerCase();
+      if (entryType === 'domain') {
+        registerAsset(String(scopeRow?.input_value || ''), 'domain', null);
+      } else if (entryType === 'single') {
+        const singleIp = String(scopeRow?.ip_start || scopeRow?.input_value || '').trim();
+        if (isIpv4(singleIp)) registerAsset(singleIp, 'ip', singleIp);
+      } else if (entryType === 'range') {
+        const value = `${String(scopeRow?.ip_start || '').trim()}-${String(scopeRow?.ip_end || '').trim()}`.replace(/\s+/g, '');
+        registerAsset(value, 'range', null);
+      }
+    }
+
+    for (const dump of subdomain_dumps) {
+      const root = String(dump?.root_domain || '').trim();
+      if (root) registerAsset(root, 'domain', null);
+      const results = Array.isArray(dump?.results) ? dump.results : [];
+      for (const item of results) {
+        const host = String(item?.subdomain || '').trim();
+        const ip = String(item?.ip || '').trim();
+        if (!host) continue;
+        registerAsset(host, 'subdomain', ip || null);
+        if (ip && isIpv4(ip)) registerAsset(ip, 'ip', ip);
+      }
+    }
+
+    for (const intelEntry of intelRaw) {
+      const target = String(intelEntry?.target || '').trim();
+      if (!target) continue;
+      const targetType = isIpv4(target) ? 'ip' : inferAssetType(target);
+      registerAsset(target, targetType, isIpv4(target) ? target : null);
+    }
+
     const cveByAsset = new Map<string, Set<string>>();
     const cveSet = new Set<string>();
     findings.forEach((finding: any) => {
       const asset = String(finding.affected_asset || finding.affected_url || job.raw_target || '').trim() || 'Asset principale';
+      registerAsset(asset, inferAssetType(asset), String(finding.ip || '').trim() || null);
+      const ipFromFinding = String(finding.ip || finding.evidence?.ip || '').trim();
+      if (ipFromFinding && isIpv4(ipFromFinding)) {
+        registerAsset(ipFromFinding, 'ip', ipFromFinding);
+        if (asset && !isIpv4(asset)) linkHostIp(asset, ipFromFinding);
+      }
+      const matrixRow = ensureMatrixRow(asset, inferAssetType(asset));
+      if (matrixRow) {
+        matrixRow.findings_total += 1;
+        const sev = String(finding.severity || '').toLowerCase();
+        if (sev === 'critical') matrixRow.critical += 1;
+        else if (sev === 'high') matrixRow.high += 1;
+        else if (sev === 'medium') matrixRow.medium += 1;
+        else if (sev === 'low') matrixRow.low += 1;
+        else matrixRow.info += 1;
+      }
       const cves = Array.isArray(finding.cve) ? finding.cve : [];
       if (cves.length === 0) return;
       for (const cve of cves) {
@@ -576,6 +863,12 @@ Deno.serve(async (req) => {
         cveSet.add(cveId);
         if (!cveByAsset.has(cveId)) cveByAsset.set(cveId, new Set<string>());
         cveByAsset.get(cveId)!.add(asset);
+        if (matrixRow) matrixRow.cve_set.add(cveId);
+      }
+      const portCandidate = Number(finding.port || finding.evidence?.port || 0);
+      if (matrixRow && Number.isFinite(portCandidate) && portCandidate > 0) {
+        const ipKey = ipFromFinding && isIpv4(ipFromFinding) ? ipFromFinding : 'n/a';
+        matrixRow.open_port_keys.add(`${ipKey}:${portCandidate}`);
       }
     });
     const cveIds = Array.from(cveSet);
@@ -606,6 +899,20 @@ Deno.serve(async (req) => {
         const cwes = Array.isArray(intelRow?.cwe_ids)
           ? intelRow.cwe_ids.map((c: unknown) => String(c || '').trim()).filter(Boolean).slice(0, 12)
           : [];
+        const affectedAssets = Array.from(cveByAsset.get(cveId) ?? []);
+        const relatedIps = new Set<string>();
+        const relatedDomains = new Set<string>();
+        for (const rawAsset of affectedAssets) {
+          const normalizedAsset = normalizeAssetLabel(rawAsset);
+          if (!normalizedAsset) continue;
+          if (isIpv4(normalizedAsset)) {
+            relatedIps.add(normalizedAsset);
+            continue;
+          }
+          relatedDomains.add(normalizedAsset);
+          const mappedIps = hostToIps.get(normalizedAsset);
+          if (mappedIps) mappedIps.forEach((ip) => relatedIps.add(ip));
+        }
         return {
           cve_id: cveId,
           description: redactTechnologyMentions(String(intelRow?.description || 'Descrizione non disponibile nel cache CVE.')),
@@ -618,7 +925,9 @@ Deno.serve(async (req) => {
           kev_required_action: intelRow?.kev_required_action ? redactTechnologyMentions(String(intelRow.kev_required_action)) : null,
           cwe: cwes,
           references,
-          affected_assets: Array.from(cveByAsset.get(cveId) ?? []).slice(0, 20),
+          affected_assets: affectedAssets.slice(0, 20),
+          related_ips: Array.from(relatedIps).slice(0, 20),
+          related_domains: Array.from(relatedDomains).slice(0, 20),
           published_at: intelRow?.published_at || null,
           last_modified_at: intelRow?.last_modified_at || null,
           refreshed_at: intelRow?.refreshed_at || null,
