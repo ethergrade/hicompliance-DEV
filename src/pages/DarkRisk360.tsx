@@ -36,6 +36,7 @@ import { DarkRiskFindingsTable, type DarkRiskFindingRow } from '@/components/dar
 import { DarkRiskAssetsTable, type DarkRiskAssetRow } from '@/components/dark-risk/DarkRiskAssetsTable';
 import { useDarkRiskAlerts } from '@/hooks/useDarkRiskAlerts';
 import { useDarkRiskOverview } from '@/hooks/useDarkRiskOverview';
+import { useDarkRiskQaStatus } from '@/hooks/useDarkRiskQaStatus';
 import { useDarkRiskRoadmapStatus } from '@/hooks/useDarkRiskRoadmapStatus';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { supabase } from '@/integrations/supabase/client';
@@ -266,6 +267,11 @@ const DarkRisk360: React.FC = () => {
     isLoading: roadmapLoading,
     isError: roadmapError,
   } = useDarkRiskRoadmapStatus();
+  const {
+    data: qaStatus,
+    isLoading: qaLoading,
+    isError: qaError,
+  } = useDarkRiskQaStatus();
 
   const generateReportMutation = useMutation({
     mutationFn: async () => {
@@ -642,6 +648,43 @@ const DarkRisk360: React.FC = () => {
                             </div>
                           ))}
                         </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="border-border">
+                  <CardHeader className="pb-3">
+                    <CardTitle>QA Security Snapshot (MD10)</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {qaLoading ? (
+                      <p className="text-sm text-muted-foreground">Verifica automatica QA in corso...</p>
+                    ) : qaError ? (
+                      <p className="text-sm text-red-300">Impossibile leggere lo snapshot QA.</p>
+                    ) : (
+                      <>
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <Badge variant={qaStatus.score >= 80 ? 'default' : qaStatus.score >= 50 ? 'secondary' : 'destructive'}>
+                            Score {qaStatus.score}/100
+                          </Badge>
+                          <Badge variant="outline">
+                            Checklist: {qaStatus.passed}/{qaStatus.total}
+                          </Badge>
+                        </div>
+                        <div className="space-y-1">
+                          {qaStatus.checklist.map((item) => (
+                            <div key={item.id} className="flex items-center justify-between rounded border border-border/60 bg-muted/20 px-3 py-2 text-xs">
+                              <span className="font-mono">{item.id}</span>
+                              <Badge variant={item.passed ? 'default' : 'destructive'}>
+                                {item.passed ? 'PASS' : 'FAIL'}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                        {qaStatus.notes.length > 0 ? (
+                          <p className="text-xs text-muted-foreground">{qaStatus.notes[0]}</p>
+                        ) : null}
                       </>
                     )}
                   </CardContent>

@@ -255,3 +255,15 @@ Target iniziali:
 - Security test inclusi.
 - Report test impedisce leak di password.
 - QA checklist completata.
+
+## Automation implemented (MD10 rollout)
+
+- `npm run test:deno` esegue i test Deno su `supabase/functions/_shared`.
+- `npm run qa:no-secrets` esegue regressione no-secret su `src/` e `dist/`.
+- `npm run qa:darkrisk` esegue test + no-secret check in sequenza.
+- Edge Function `darkrisk360-qa-status` restituisce snapshot QA per cliente.
+- SQL helper `darkrisk_qa_security_snapshot(org_id)` verifica:
+  - RLS attiva sulle tabelle DarkRisk;
+  - assenza pattern segreti in `darkrisk_report_snapshots.report_json`;
+  - presenza audit su export/reveal/AI/scan;
+  - assenza evidence sensibile con visibilità customer.
