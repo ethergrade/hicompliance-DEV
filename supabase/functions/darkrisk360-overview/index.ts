@@ -500,6 +500,7 @@ serve(async (req: Request) => {
           status: String(finding.status || 'open').toLowerCase(),
           confidence: String(finding.attribution_confidence || 'medium').toLowerCase(),
           source: String(finding.module || finding.source || 'surface_scan_engine'),
+          finding_id: finding.id,
         };
       });
 
@@ -519,12 +520,19 @@ serve(async (req: Request) => {
       }
     }
 
+    const previousCategoryMap = new Map<string, number>();
+    for (const finding of activePrevious) {
+      const category = classifyThreatCategory(finding);
+      previousCategoryMap.set(category, (previousCategoryMap.get(category) || 0) + 1);
+    }
+
     const threatGroups = Array.from(categoryMap.entries())
       .map(([category, value]) => ({
         category,
         count: value.count,
         severity_max: value.severity_max,
         description: categoryDescription(category),
+        trend_delta: value.count - (previousCategoryMap.get(category) || 0),
       }))
       .sort((a, b) => b.count - a.count);
 
@@ -582,7 +590,7 @@ serve(async (req: Request) => {
         risk_score: {
           value: risk.score,
           level: risk.level,
-          delta: null,
+          delta: risk.score - riskFromFindings(activePrevious).score,
         },
         last_scan: {
           value: latestJob?.completed_at || latestJob?.created_at || null,
