@@ -653,11 +653,6 @@ const SurfaceScan360: React.FC = () => {
       return;
     }
 
-    if (selectedProfiles.length === 0) {
-      toast.error('Seleziona almeno un profilo di scansione');
-      return;
-    }
-
     await startScanQueue({
       targets,
       scan_profiles: selectedProfiles,
@@ -807,7 +802,6 @@ const SurfaceScan360: React.FC = () => {
                   onClick={handleStartScan}
                   disabled={
                     startingScan ||
-                    selectedProfiles.length === 0 ||
                     !authorizationConfirmed ||
                     (!scanTargetInput.trim() && !queueRescanExisting)
                   }
