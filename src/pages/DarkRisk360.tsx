@@ -121,7 +121,7 @@ const DarkRisk360: React.FC = () => {
       if (!organizationId) return [];
       const { data, error: queryError } = await supabase
         .from('darkrisk_report_snapshots' as any)
-        .select('id, title, tier, classification, status, generated_at, scan_run_id, html_storage_path, pdf_storage_path, report_json')
+        .select('id, title, tier, classification, status, generated_at, scan_run_id, html_storage_path, json_storage_path, pdf_storage_path')
         .eq('organization_id', organizationId)
         .order('generated_at', { ascending: false })
         .limit(12);
@@ -417,36 +417,32 @@ const DarkRisk360: React.FC = () => {
     }
   };
 
-  const openReportHtml = async (report: Record<string, any>) => {
-    const path = String(report?.html_storage_path || '').trim();
-    if (!path) {
-      toast.error('HTML report non disponibile per questo snapshot');
+  const openReportAsset = async (report: Record<string, any>, format: 'html' | 'json' | 'pdf') => {
+    if (!organizationId) {
+      toast.error('Nessun cliente selezionato');
       return;
     }
 
-    const { data, error: signError } = await supabase.storage.from('darkrisk-reports').createSignedUrl(path, 3600);
-    if (signError || !data?.signedUrl) {
-      toast.error(`Impossibile aprire report HTML: ${String(signError?.message || 'firma non disponibile')}`);
+    const { data, error: invokeError } = await supabase.functions.invoke('darkrisk360-report-access', {
+      body: {
+        customer_id: organizationId,
+        report_id: String(report?.id || ''),
+        format,
+        reason: 'manual_export_from_darkrisk_ui',
+      },
+    });
+
+    if (invokeError) {
+      toast.error(`Impossibile aprire export ${format.toUpperCase()}: ${String(invokeError.message || 'errore sconosciuto')}`);
       return;
     }
 
-    window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
-  };
-
-  const downloadReportJson = (report: Record<string, any>) => {
-    const payload = report?.report_json;
-    if (!payload) {
-      toast.error('Report JSON non disponibile');
+    if (!data?.ok || !data?.signed_url) {
+      toast.error(String(data?.error || `Export ${format.toUpperCase()} non disponibile`));
       return;
     }
-    const fileName = `darkrisk360-report-${String(report?.generated_at || '').slice(0, 10) || 'snapshot'}.json`;
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = fileName;
-    anchor.click();
-    URL.revokeObjectURL(url);
+
+    window.open(String(data.signed_url), '_blank', 'noopener,noreferrer');
   };
 
   const openCategoryDetail = (category: string) => {
@@ -711,11 +707,11 @@ const DarkRisk360: React.FC = () => {
                               </p>
                             </div>
                             <Badge variant="outline">{String(report.status || 'completed')}</Badge>
-                            <Button variant="outline" size="sm" onClick={() => downloadReportJson(report)}>
+                            <Button variant="outline" size="sm" onClick={() => void openReportAsset(report, 'json')}>
                               <Download className="w-4 h-4 mr-2" />
                               JSON
                             </Button>
-                            <Button variant="outline" size="sm" onClick={() => void openReportHtml(report)}>
+                            <Button variant="outline" size="sm" onClick={() => void openReportAsset(report, 'html')}>
                               <ExternalLink className="w-4 h-4 mr-2" />
                               HTML
                             </Button>

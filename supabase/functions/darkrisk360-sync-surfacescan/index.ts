@@ -251,6 +251,23 @@ serve(async (req: Request) => {
     if (scanRunErr || !scanRunData?.id) throw scanRunErr || new Error('Unable to create darkrisk scan run');
     scanRunId = scanRunData.id;
 
+    await adminClient
+      .from('darkrisk_audit_log' as any)
+      .insert({
+        organization_id: customerId,
+        tenant_id: customerId,
+        actor_id: authData.user.id,
+        action: 'darkrisk_scan_started',
+        entity_type: 'darkrisk_scan_run',
+        entity_id: scanRunId,
+        reason: triggerType,
+        metadata: {
+          source: 'surfacescan360',
+          surface_scan_job_id: scanJob.id,
+          started_at: startedAt,
+        },
+      });
+
     const [assetsRes, findingsRes, exposureFindingsRes] = await Promise.all([
       adminClient
         .from('surface_assets' as any)
@@ -563,13 +580,13 @@ serve(async (req: Request) => {
         if (!recoRes.ok) {
           const text = await recoRes.text();
           recommendationMode = 'failed';
-          recommendationWarning = `AI recommendation generation failed: ${text.slice(0, 280)}`;
+          recommendationWarning = maskPotentialSecrets(`AI recommendation generation failed: ${text.slice(0, 280)}`);
         } else {
           recommendationMode = 'generated';
         }
       } catch (recoErr: any) {
         recommendationMode = 'failed';
-        recommendationWarning = normalizeText(recoErr?.message) || 'AI recommendation generation failed';
+        recommendationWarning = maskPotentialSecrets(normalizeText(recoErr?.message) || 'AI recommendation generation failed');
       }
     } else if (!aiEnabled) {
       recommendationMode = 'disabled';
@@ -593,14 +610,14 @@ serve(async (req: Request) => {
         if (!reportRes.ok) {
           const text = await reportRes.text();
           reportMode = 'failed';
-          reportWarning = `DarkRisk report generation failed: ${text.slice(0, 280)}`;
+          reportWarning = maskPotentialSecrets(`DarkRisk report generation failed: ${text.slice(0, 280)}`);
         } else {
           const payload = await reportRes.json().catch(() => ({}));
           reportMode = payload?.reused ? 'reused' : 'generated';
         }
       } catch (reportErr: any) {
         reportMode = 'failed';
-        reportWarning = normalizeText(reportErr?.message) || 'DarkRisk report generation failed';
+        reportWarning = maskPotentialSecrets(normalizeText(reportErr?.message) || 'DarkRisk report generation failed');
       }
     } else {
       reportMode = 'disabled';
@@ -615,6 +632,30 @@ serve(async (req: Request) => {
         })
         .eq('id', scanRunId);
     }
+
+    await adminClient
+      .from('darkrisk_audit_log' as any)
+      .insert({
+        organization_id: customerId,
+        tenant_id: customerId,
+        actor_id: authData.user.id,
+        action: recommendationWarning || reportWarning ? 'darkrisk_scan_completed_with_warnings' : 'darkrisk_scan_completed',
+        entity_type: 'darkrisk_scan_run',
+        entity_id: scanRunId,
+        reason: triggerType,
+        metadata: {
+          source: 'surfacescan360',
+          surface_scan_job_id: scanJob.id,
+          assets_synced: assetRows.length,
+          source_records_created: recordsCreated,
+          evidence_created: evidenceCreated,
+          findings_created: findingsCreated,
+          alerts_created: alertsCreated,
+          recommendation_mode: recommendationMode,
+          report_mode: reportMode,
+          warning: [recommendationWarning, reportWarning].filter(Boolean),
+        },
+      });
 
     return jsonResponse({
       ok: true,
@@ -639,6 +680,12 @@ serve(async (req: Request) => {
     if (scanRunId) {
       try {
         const { adminClient } = makeSupabaseClients(req);
+        const { data: runScope } = await adminClient
+          .from('darkrisk_scan_runs' as any)
+          .select('organization_id, requested_by')
+          .eq('id', scanRunId)
+          .maybeSingle();
+
         await adminClient
           .from('darkrisk_scan_runs' as any)
           .update({
@@ -647,6 +694,21 @@ serve(async (req: Request) => {
             error_message: normalizeText(error?.message) || 'Unknown error',
           })
           .eq('id', scanRunId);
+
+        await adminClient
+          .from('darkrisk_audit_log' as any)
+          .insert({
+            organization_id: runScope?.organization_id || null,
+            tenant_id: runScope?.organization_id || null,
+            actor_id: runScope?.requested_by || null,
+            action: 'darkrisk_scan_failed',
+            entity_type: 'darkrisk_scan_run',
+            entity_id: scanRunId,
+            reason: 'sync_surfacescan_failed',
+            metadata: {
+              error: maskPotentialSecrets(normalizeText(error?.message) || 'Unknown error'),
+            },
+          });
       } catch {
         // no-op
       }
