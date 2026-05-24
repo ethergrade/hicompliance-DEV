@@ -13,6 +13,8 @@ export type SurfaceScanProfile =
   | 'ip_exposure'
   | 'cve_api_validation';
 
+const DEFAULT_SCAN_PROFILE: SurfaceScanProfile = 'domain_exposure';
+
 export interface SurfaceScanJob {
   id: string;
   raw_target: string;
@@ -34,7 +36,7 @@ export interface SurfaceScanJob {
 
 interface StartScanInput {
   target: string;
-  scan_profile: SurfaceScanProfile;
+  scan_profile?: SurfaceScanProfile;
   authorization_confirmed: boolean;
   ownership_proof?: string;
 }
@@ -200,11 +202,12 @@ export const useSurfaceScanEngine = () => {
 
       const targets = [...new Set(input.targets.map((target) => target.trim()).filter(Boolean))];
       const profiles = [...new Set(input.scan_profiles)];
+      const effectiveProfiles = profiles.length > 0 ? profiles : [DEFAULT_SCAN_PROFILE];
 
-      if (targets.length === 0 || profiles.length === 0) {
+      if (targets.length === 0) {
         toast({
           title: 'Dati incompleti',
-          description: 'Seleziona almeno un target e un profilo',
+          description: 'Seleziona almeno un target',
           variant: 'destructive',
         });
         return { queued: 0, failed: 0 };
@@ -212,7 +215,7 @@ export const useSurfaceScanEngine = () => {
 
       const queuePairs: Array<{ target: string; profile: SurfaceScanProfile }> = [];
       for (const target of targets) {
-        for (const profile of profiles) {
+        for (const profile of effectiveProfiles) {
           queuePairs.push({ target, profile });
         }
       }

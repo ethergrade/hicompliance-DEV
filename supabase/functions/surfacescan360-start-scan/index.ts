@@ -29,6 +29,11 @@ const PROFILE_RATE_LIMITS: Record<string, { tier: "quick" | "full" | "deep"; max
   cve_api_validation: { tier: "deep", maxPerHour: 3 },
 };
 const TARGET_COOLDOWN_MINUTES = 15;
+const DEFAULT_SCAN_PROFILE = (() => {
+  const configured = String(Deno.env.get("SURFACESCAN_DEFAULT_SCAN_PROFILE") || "").trim().toLowerCase();
+  if (isAllowedProfile(configured)) return configured;
+  return "domain_exposure";
+})();
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -48,7 +53,7 @@ serve(async (req: Request) => {
     const body = (await req.json()) as StartScanRequest;
     const target = String(body?.target || "").trim();
     const customerId = String(body?.customer_id || "").trim();
-    const scanProfile = String(body?.scan_profile || "safe_recon").trim();
+    const scanProfile = String(body?.scan_profile || DEFAULT_SCAN_PROFILE).trim();
     const authorizationConfirmed = Boolean(body?.authorization_confirmed);
     const forceRefresh = Boolean(body?.force_refresh);
 
