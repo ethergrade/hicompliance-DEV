@@ -521,6 +521,8 @@ serve(async (req: Request) => {
 
     let recommendationMode: 'not_requested' | 'generated' | 'failed' | 'disabled' = 'not_requested';
     let recommendationWarning: string | null = null;
+    let reportMode: 'not_requested' | 'generated' | 'reused' | 'failed' | 'disabled' = 'not_requested';
+    let reportWarning: string | null = null;
 
     const completedAt = new Date().toISOString();
     await adminClient
@@ -573,12 +575,43 @@ serve(async (req: Request) => {
       recommendationMode = 'disabled';
     }
 
-    if (recommendationWarning) {
+    if (SUPABASE_URL && SERVICE_ROLE) {
+      try {
+        const reportRes = await fetch(`${SUPABASE_URL}/functions/v1/darkrisk360-generate-report`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${SERVICE_ROLE}`,
+            apikey: SERVICE_ROLE,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            customer_id: customerId,
+            scan_run_id: scanRunId,
+            classification: 'confidential',
+          }),
+        });
+        if (!reportRes.ok) {
+          const text = await reportRes.text();
+          reportMode = 'failed';
+          reportWarning = `DarkRisk report generation failed: ${text.slice(0, 280)}`;
+        } else {
+          const payload = await reportRes.json().catch(() => ({}));
+          reportMode = payload?.reused ? 'reused' : 'generated';
+        }
+      } catch (reportErr: any) {
+        reportMode = 'failed';
+        reportWarning = normalizeText(reportErr?.message) || 'DarkRisk report generation failed';
+      }
+    } else {
+      reportMode = 'disabled';
+    }
+
+    if (recommendationWarning || reportWarning) {
       await adminClient
         .from('darkrisk_scan_runs' as any)
         .update({
           status: 'completed_with_warnings',
-          warnings: [recommendationWarning],
+          warnings: [recommendationWarning, reportWarning].filter(Boolean),
         })
         .eq('id', scanRunId);
     }
@@ -598,8 +631,9 @@ serve(async (req: Request) => {
         findings_created: findingsCreated,
         alerts_created: alertsCreated,
         recommendation_mode: recommendationMode,
+        report_mode: reportMode,
       },
-      warning: recommendationWarning,
+      warning: [recommendationWarning, reportWarning].filter(Boolean).join(' | ') || null,
     });
   } catch (error: any) {
     if (scanRunId) {
