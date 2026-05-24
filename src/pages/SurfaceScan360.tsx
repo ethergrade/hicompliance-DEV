@@ -666,6 +666,30 @@ const SurfaceScan360: React.FC = () => {
     });
   };
 
+  const handleAddSubdomainToScope = async (subdomain: string) => {
+    if (!isAdminUser) return;
+    const candidate = String(subdomain || '').trim().toLowerCase();
+    if (!candidate) return;
+    await addMonitoredIpRule(candidate, {
+      discovered_via: 'subdomain_dump',
+      discovered_from: 'surface-module-cards',
+      silent: false,
+    });
+  };
+
+  const handleScanSingleSubdomain = async (subdomain: string) => {
+    if (!isAdmin) return;
+    const target = String(subdomain || '').trim().toLowerCase();
+    if (!target) return;
+    const scanProfiles = selectedProfiles.length > 0 ? selectedProfiles : ['domain_exposure'];
+    await startScanQueue({
+      targets: [target],
+      scan_profiles: scanProfiles,
+      authorization_confirmed: true,
+      ownership_proof: ownershipProof || 'subdomain_module_card',
+    });
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6" ref={exportContainerRef}>
@@ -1308,7 +1332,12 @@ const SurfaceScan360: React.FC = () => {
           )}
         </Card>
 
-        <SurfaceScanModuleCards />
+        <SurfaceScanModuleCards
+          isAdminView={isAdminUser}
+          subdomains={scanDiscovery.discoveredSubdomains}
+          onAddSubdomainToScope={handleAddSubdomainToScope}
+          onScanSubdomain={handleScanSingleSubdomain}
+        />
 
         <SecurityFindings />
 

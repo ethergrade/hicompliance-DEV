@@ -164,6 +164,31 @@ function remediationForExposedPort(port: number): string {
   return "Confermare necessità della porta e applicare principio di minima esposizione.";
 }
 
+interface SurfaceScoreBreakdown {
+  transportScore: number;
+  dnsScore: number;
+  httpSecurityScore: number;
+  exposureScore: number;
+  reputationScore: number;
+  qualityScore: number;
+  domainHygieneScore: number;
+  overallScore: number;
+  riskLevel: "low" | "medium" | "high" | "critical";
+}
+
+function clampScore(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function riskLevelFromScore(score: number): "low" | "medium" | "high" | "critical" {
+  const normalized = clampScore(score);
+  if (normalized >= 85) return "low";
+  if (normalized >= 70) return "medium";
+  if (normalized >= 50) return "high";
+  return "critical";
+}
+
 type AttributionConfidence = "low" | "medium" | "high";
 
 interface ShodanAttributionFactor {
@@ -3611,7 +3636,7 @@ export async function runSurfaceScanEnrichment(
       .select("value")
       .eq("scan_job_id", job.id)
       .eq("module", "mail_security")
-      .eq("observation_type", "mail_config")
+      .eq("observation_type", "mail_security_summary")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -5517,14 +5542,19 @@ export async function runSurfaceScanEnrichment(
       if (hostingContext === "unknown" && discoveredIps.size > 0 && unrelated <= 1) hostingContext = "dedicated";
     }
 
-    const severityAgg = await adminClient
+    const findingsAgg = await adminClient
       .from("surface_findings" as any)
-      .select("severity")
+      .select("severity,module,finding_type")
       .eq("scan_job_id", job.id);
-    const highestSeverity = ((severityAgg.data || []) as Array<{ severity: string }>)
+    const findingRows = (findingsAgg.data || []) as Array<{
+      severity: string;
+      module?: string | null;
+      finding_type?: string | null;
+    }>;
+    const highestSeverity = findingRows
       .map((row) => row.severity)
       .sort((a, b) => severityRank(b) - severityRank(a))[0] || "info";
-    const severityCounts = ((severityAgg.data || []) as Array<{ severity: string }>).reduce(
+    const severityCounts = findingRows.reduce(
       (acc, row) => {
         const key = toSeverity(row.severity || "info");
         acc[key] = (acc[key] || 0) + 1;
@@ -5532,7 +5562,176 @@ export async function runSurfaceScanEnrichment(
       },
       { critical: 0, high: 0, medium: 0, low: 0, info: 0 } as Record<string, number>,
     );
-    const overallScore = Math.max(
+    const observationAgg = await adminClient
+      .from("surface_observations" as any)
+      .select("module,observation_type,value,created_at")
+      .eq("scan_job_id", job.id)
+      .in("module", [
+        "ssl_certificate",
+        "tls_summary",
+        "dnssec",
+        "dns",
+        "mail_security",
+        "http_security",
+        "open_ports",
+        "threats",
+        "dns_blocklists",
+        "quality",
+        "whois",
+      ])
+      .order("created_at", { ascending: false });
+    const observationRows = (observationAgg.data || []) as Array<{
+      module: string;
+      observation_type: string;
+      value: Record<string, unknown>;
+      created_at?: string | null;
+    }>;
+    const getLatestObservation = (moduleKey: string, observationType?: string) =>
+      observationRows.find((row) =>
+        row.module === moduleKey && (!observationType || row.observation_type === observationType)
+      )?.value || {};
+
+    const sslSummary = getLatestObservation("ssl_certificate", "ssl_certificate_summary") as Record<string, unknown>;
+    const tlsSummary = getLatestObservation("tls_summary", "tls_summary") as Record<string, unknown>;
+    const dnssecSummary = getLatestObservation("dnssec", "dnssec_status") as Record<string, unknown>;
+    const dnsSummary = getLatestObservation("dns", "dns_records") as Record<string, unknown>;
+    const mailSummary = getLatestObservation("mail_security", "mail_security_summary") as Record<string, unknown>;
+    const httpSecuritySummary = getLatestObservation("http_security", "http_security_summary") as Record<string, unknown>;
+    const openPortsSummary = getLatestObservation("open_ports", "open_ports_summary") as Record<string, unknown>;
+    const threatsSummary = getLatestObservation("threats", "threats_summary") as Record<string, unknown>;
+    const dnsblSummary = getLatestObservation("dns_blocklists", "dnsbl_summary") as Record<string, unknown>;
+    const qualitySummary = getLatestObservation("quality", "quality_summary") as Record<string, unknown>;
+    const whoisSummary = getLatestObservation("whois", "whois_rdap") as Record<string, unknown>;
+
+    const hasFindingType = (types: string[]): boolean => {
+      const wanted = new Set(types.map((entry) => String(entry).toLowerCase()));
+      return findingRows.some((row) => wanted.has(String(row.finding_type || "").toLowerCase()));
+    };
+    const asNumber = (value: unknown): number | null => {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) return null;
+      return parsed;
+    };
+    const asBoolean = (value: unknown): boolean => value === true;
+    const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+
+    let transportScore = 0;
+    const sslTrusted = asBoolean((sslSummary as any)?.trusted);
+    if (sslTrusted) transportScore += 40;
+    if (
+      sslTrusted &&
+      !hasFindingType([
+        "ssl_certificate_untrusted_chain",
+        "ssl_certificate_self_signed",
+      ])
+    ) {
+      transportScore += 20;
+    }
+    const expiresInDays =
+      asNumber((sslSummary as any)?.expiresInDays) ?? asNumber((sslSummary as any)?.daysToExpiry);
+    if (expiresInDays !== null && expiresInDays > 30) transportScore += 15;
+    const tls12Supported = asBoolean((tlsSummary as any)?.tls12Supported) || asBoolean((tlsSummary as any)?.tls13Supported);
+    if (tls12Supported) transportScore += 15;
+    const weakProtocolsEnabled =
+      asBoolean((tlsSummary as any)?.tls10Supported) ||
+      asBoolean((tlsSummary as any)?.tls11Supported) ||
+      hasFindingType(["tls_legacy_protocols_enabled"]);
+    if (!weakProtocolsEnabled) transportScore += 10;
+    transportScore = clampScore(transportScore);
+
+    let dnsScore = 0;
+    const dnskeyPresent = asBoolean((dnssecSummary as any)?.dnskey_present);
+    const dsPresent = asBoolean((dnssecSummary as any)?.ds_present);
+    if (dnskeyPresent && dsPresent) dnsScore += 40;
+    else if (dnskeyPresent || dsPresent) dnsScore += 20;
+    const spfRecords = asArray((mailSummary as any)?.spf_records).map((entry) => String(entry || "").trim()).filter(Boolean);
+    if (spfRecords.length > 0) dnsScore += 15;
+    const dmarcRecords = asArray((mailSummary as any)?.dmarc_records).map((entry) => String(entry || "").trim()).filter(Boolean);
+    if (dmarcRecords.length > 0) dnsScore += 20;
+    const caaRecords = asArray((dnsSummary as any)?.CAA).map((entry) => String(entry || "").trim()).filter(Boolean);
+    if (caaRecords.length > 0) dnsScore += 10;
+    const nsRecords = asArray((dnsSummary as any)?.NS).map((entry) => String(entry || "").trim()).filter(Boolean);
+    const mxRecords = asArray((dnsSummary as any)?.MX).map((entry) => String(entry || "").trim()).filter(Boolean);
+    if (nsRecords.length >= 2 && mxRecords.length >= 1) dnsScore += 15;
+    else if (nsRecords.length >= 1 && mxRecords.length >= 1) dnsScore += 10;
+    dnsScore = clampScore(dnsScore);
+
+    let httpSecurityScore = clampScore(asNumber((httpSecuritySummary as any)?.score) ?? 0);
+    if (httpSecurityScore === 0 && (httpSecuritySummary as any)?.checks && typeof (httpSecuritySummary as any).checks === "object") {
+      const checks = Object.values((httpSecuritySummary as any).checks as Record<string, unknown>);
+      const passed = checks.filter((entry) => entry === true).length;
+      httpSecurityScore = clampScore((checks.length > 0 ? (passed / checks.length) * 100 : 0));
+    }
+
+    let exposureScore = 100;
+    const openPorts = asArray((openPortsSummary as any)?.openPorts);
+    const criticalPorts = openPorts.filter((entry: any) => severityForExposedPort(Number(entry?.port || 0)) === "critical").length;
+    const highPorts = openPorts.filter((entry: any) => severityForExposedPort(Number(entry?.port || 0)) === "high").length;
+    const mediumPorts = openPorts.filter((entry: any) => severityForExposedPort(Number(entry?.port || 0)) === "medium").length;
+    exposureScore -= criticalPorts * 40;
+    exposureScore -= highPorts * 25;
+    exposureScore -= mediumPorts * 10;
+    const sensitiveKeywords = /(staging|dev|test|backup|vpn|cpanel|webmail|autodiscover|mail)/i;
+    const sensitiveSubdomainCount = [...discoveredHostnames]
+      .map((entry) => String(entry || "").toLowerCase())
+      .filter((entry) => entry && rootDomain && entry.endsWith(`.${String(rootDomain).toLowerCase()}`))
+      .filter((entry) => sensitiveKeywords.test(entry))
+      .length;
+    exposureScore -= Math.min(25, sensitiveSubdomainCount * 5);
+    exposureScore = clampScore(exposureScore);
+
+    let reputationScore = 100;
+    const safeBrowsingUnsafe = asBoolean((threatsSummary as any)?.safe_browsing?.unsafe);
+    const urlHausListed = asBoolean((threatsSummary as any)?.urlhaus?.listed);
+    const phishTankVerified =
+      asBoolean((threatsSummary as any)?.phishtank?.verified) ||
+      (asBoolean((threatsSummary as any)?.phishtank?.in_database) && asBoolean((threatsSummary as any)?.phishtank?.valid));
+    if (safeBrowsingUnsafe || urlHausListed || phishTankVerified) {
+      reputationScore = 0;
+    } else {
+      const intelIndicators = asArray((threatsSummary as any)?.intelguard?.indicators);
+      const highConfidenceIntel = intelIndicators.filter((entry: any) => Number(entry?.confidence || 0) >= 90).length;
+      reputationScore -= Math.min(30, highConfidenceIntel * 10);
+      const dnsblListedCount = asNumber((dnsblSummary as any)?.listed_count) ?? 0;
+      reputationScore -= Math.min(40, Math.max(0, Math.round(dnsblListedCount)) * 8);
+    }
+    reputationScore = clampScore(reputationScore);
+
+    const qualityCategories = ((qualitySummary as any)?.categories || {}) as Record<string, unknown>;
+    const qualityParts = [
+      asNumber(qualityCategories.performance),
+      asNumber(qualityCategories.accessibility),
+      asNumber(qualityCategories.best_practices),
+      asNumber(qualityCategories.seo),
+    ].filter((entry): entry is number => entry !== null);
+    const qualityScore = clampScore(
+      qualityParts.length > 0
+        ? qualityParts.reduce((acc, value) => acc + value, 0) / qualityParts.length
+        : 0,
+    );
+
+    let domainHygieneScore = 70;
+    const daysToExpiry = asNumber((whoisSummary as any)?.days_to_expiry);
+    if (daysToExpiry !== null) {
+      if (daysToExpiry > 90) domainHygieneScore = 100;
+      else if (daysToExpiry >= 30) domainHygieneScore = 70;
+      else if (daysToExpiry >= 0) domainHygieneScore = 40;
+      else domainHygieneScore = 0;
+    }
+    const registrarName = String((whoisSummary as any)?.registrar || "").trim();
+    if (!registrarName) domainHygieneScore -= 10;
+    domainHygieneScore = clampScore(domainHygieneScore);
+
+    const weightedOverall = clampScore(
+      transportScore * 0.20 +
+      dnsScore * 0.15 +
+      httpSecurityScore * 0.20 +
+      exposureScore * 0.15 +
+      reputationScore * 0.15 +
+      qualityScore * 0.10 +
+      domainHygieneScore * 0.05,
+    );
+    const severityPenaltyOverall = Math.max(
       0,
       Math.round(
         100 -
@@ -5543,7 +5742,19 @@ export async function runSurfaceScanEnrichment(
           severityCounts.info * 1,
       ),
     );
-    const riskLevel = overallScore >= 85 ? "low" : overallScore >= 70 ? "medium" : overallScore >= 50 ? "high" : "critical";
+    const overallScore = clampScore(Math.round((weightedOverall * 0.75) + (severityPenaltyOverall * 0.25)));
+    const riskLevel = riskLevelFromScore(overallScore);
+    const scoreBreakdown: SurfaceScoreBreakdown = {
+      transportScore,
+      dnsScore,
+      httpSecurityScore,
+      exposureScore,
+      reputationScore,
+      qualityScore,
+      domainHygieneScore,
+      overallScore,
+      riskLevel,
+    };
     const moduleSummary = [...moduleExecution.values()]
       .sort((a, b) => a.key.localeCompare(b.key))
       .map((entry) => ({
@@ -5575,8 +5786,13 @@ export async function runSurfaceScanEnrichment(
     const scanSummary = {
       overall_score: overallScore,
       risk_level: riskLevel,
+      score_breakdown: scoreBreakdown,
+      score_components: {
+        weighted_model: weightedOverall,
+        severity_penalty_model: severityPenaltyOverall,
+      },
       severity_counts: severityCounts,
-      findings_total: (severityAgg.data || []).length,
+      findings_total: findingRows.length,
       module_counters: moduleCounters,
       modules: moduleSummary,
       scope_guard: scopeCounters,
@@ -5611,7 +5827,7 @@ export async function runSurfaceScanEnrichment(
       .eq("id", job.id);
 
     await logAudit("scan_completed", {
-      findings_count: (severityAgg.data || []).length,
+      findings_count: findingRows.length,
       highest_severity: highestSeverity,
       hosting_context: hostingContext,
       shodan_status: shodanStatus,

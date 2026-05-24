@@ -29,6 +29,7 @@ export interface SurfaceScanJob {
   started_at: string | null;
   completed_at: string | null;
   error_message: string | null;
+  summary?: Record<string, any> | null;
 }
 
 interface StartScanInput {
@@ -68,7 +69,7 @@ export const useSurfaceScanEngine = () => {
       const { data, error } = await supabase
         .from('surface_scan_jobs' as any)
         .select(
-          'id, raw_target, normalized_target, target_type, hostname, root_domain, resolved_ips, scan_profile, status, hosting_context, shodan_status, created_at, started_at, completed_at, error_message',
+          'id, raw_target, normalized_target, target_type, hostname, root_domain, resolved_ips, scan_profile, status, hosting_context, shodan_status, created_at, started_at, completed_at, error_message, summary',
         )
         .eq('customer_id', organizationId)
         .order('created_at', { ascending: false })
