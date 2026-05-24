@@ -45,6 +45,11 @@ export function maskPotentialSecrets(text: string): string {
 
   return input
     .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, (m) => maskEmail(m))
+    .replace(/([a-z]+:\/\/[^/\s:@]+):([^@\s/]+)@/gi, '$1:[REDACTED]@')
+    .replace(/\b([A-Z]{2}\d{2}[A-Z0-9]{11,30})\b/g, '[IBAN_REDACTED]')
+    .replace(/\b(?:\d[ -]?){13,19}\b/g, '[CARD_REDACTED]')
+    .replace(/\b(?:cookie|set-cookie)\s*[=:]\s*[^;\n]+/gi, 'cookie=[COOKIE_REDACTED]')
+    .replace(/\b(?:authorization)\s*[:=]\s*bearer\s+\S+/gi, 'authorization=Bearer [TOKEN_REDACTED]')
     .replace(/\b(?:password|passwd|pwd)\s*[=:]\s*\S+/gi, 'password=[REDACTED]')
     .replace(/\b(?:token|apikey|api_key|secret)\s*[=:]\s*\S+/gi, 'token=[TOKEN_REDACTED]');
 }
