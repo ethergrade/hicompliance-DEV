@@ -10,8 +10,12 @@ import {
   maskPotentialSecrets,
   normalizeAssetValue,
   normalizeText,
-  riskScoreFromSeverity,
 } from '../_shared/darkrisk-utils.ts';
+import {
+  calculateFindingRiskScore,
+  inferCompromiseType,
+  inferRiskDimensions,
+} from '../_shared/darkrisk-scoring.ts';
 
 type SurfaceAssetRow = {
   id: string;
@@ -63,6 +67,29 @@ type CanonicalFinding = {
   created_at: string | null;
   payload: Record<string, unknown>;
 };
+
+function daysSince(value: string | null | undefined): number | null {
+  const parsed = Date.parse(String(value || ''));
+  if (!Number.isFinite(parsed)) return null;
+  const diff = Date.now() - parsed;
+  if (!Number.isFinite(diff) || diff < 0) return 0;
+  return Math.round(diff / (1000 * 60 * 60 * 24));
+}
+
+function inferAssetCriticality(input: string): 'low' | 'medium' | 'high' {
+  const text = normalizeText(input).toLowerCase();
+  if (!text) return 'medium';
+  if (/admin|login|vpn|gateway|mail|mx|auth|panel|firewall|domain controller/.test(text)) return 'high';
+  if (/staging|dev|test|sandbox/.test(text)) return 'low';
+  return 'medium';
+}
+
+function inferConfidence(finding: CanonicalFinding): 'low' | 'medium' | 'high' {
+  const text = `${finding.finding_type} ${finding.title} ${finding.module}`.toLowerCase();
+  if (/cve|credential|verified|critical|high/.test(text)) return 'high';
+  if (/candidate|possible|unknown/.test(text)) return 'low';
+  return 'medium';
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -398,6 +425,34 @@ serve(async (req: Request) => {
       if (evidenceErr || !evidence?.id) throw evidenceErr || new Error('evidence insert failed');
       evidenceCreated += 1;
 
+      const confidence = inferConfidence(finding);
+      const freshnessDays = daysSince(finding.created_at);
+      const recurrenceCount = canonicalFindings.filter((candidate) =>
+        candidate.finding_type === finding.finding_type &&
+        normalizeAssetValue(candidate.affected_asset) === normalizeAssetValue(finding.affected_asset),
+      ).length;
+      const compromiseType = inferCompromiseType({
+        findingType: finding.finding_type,
+        title: finding.title,
+        module: finding.module,
+      });
+      const riskDimensions = inferRiskDimensions({
+        findingType: finding.finding_type,
+        title: finding.title,
+        module: finding.module,
+        confidence,
+        freshnessDays,
+      });
+      const riskScore = calculateFindingRiskScore({
+        severity: finding.severity,
+        confidence,
+        freshnessDays,
+        recurrenceCount,
+        affectedAssetCriticality: inferAssetCriticality(finding.affected_asset),
+        isDirectCompromise: compromiseType === 'direct',
+        isThirdPartyOnly: compromiseType === 'indirect',
+      });
+
       const { data: darkFinding, error: findingErr } = await adminClient
         .from('darkrisk_findings' as any)
         .insert({
@@ -409,13 +464,10 @@ serve(async (req: Request) => {
           description: maskPotentialSecrets(finding.description),
           affected_asset_id: affectedAssetId,
           severity: finding.severity,
-          confidence: 'medium',
+          confidence,
           status: 'new',
-          risk_score: riskScoreFromSeverity(finding.severity),
-          risk_dimensions: {
-            source: 'surfacescan360',
-            module: finding.module,
-          },
+          risk_score: riskScore,
+          risk_dimensions: riskDimensions,
           evidence_ids: [evidence.id],
           first_seen_at: finding.created_at || new Date().toISOString(),
           last_seen_at: new Date().toISOString(),
@@ -423,6 +475,10 @@ serve(async (req: Request) => {
             source_scan_job_id: scanJob.id,
             source_origin: finding.origin,
             source_finding_id: finding.source_id,
+            compromise_type: compromiseType,
+            third_party_involved: compromiseType === 'indirect',
+            requires_validation: compromiseType !== 'misconfiguration',
+            recurrence_count: recurrenceCount,
           },
         })
         .select('id')
