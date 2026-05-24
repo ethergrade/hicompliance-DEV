@@ -423,6 +423,8 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   kv('Profilo', s.scan_profile || 'n/d');
   kv('Hosting', s.hosting_context || 'n/d');
   kv('Completata', s.completed_at ? new Date(s.completed_at).toLocaleString('it-IT') : 'n/d');
+  if (s.overall_score != null) kv('Overall score', `${s.overall_score}/100`);
+  if (s.risk_level) kv('Risk level', String(s.risk_level));
   if (s.scope_mode) kv('Modalità report', s.scope_mode === 'single_job' ? 'Singola scansione' : 'Scope completo');
   if (s.scope_targets_total != null) kv('Target inclusi', String(s.scope_targets_total));
   if (Array.isArray(s.scope_profiles) && s.scope_profiles.length > 0) {
@@ -461,6 +463,23 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     `In scope: ${inScopeCount} · Esclusi scope: ${excludedScopeCount} · Esclusi shared/noise: ${excludedSharedCount}`,
     { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] },
   );
+
+  const scoreBreakdown = s.score_breakdown || null;
+  if (scoreBreakdown && typeof scoreBreakdown === 'object') {
+    y += 8;
+    text('Score breakdown per area', { bold: true, size: 10, color: [BRAND.r, BRAND.g, BRAND.b] });
+    y += 2;
+    const rows = [
+      ['Transport', String(scoreBreakdown.transportScore ?? '-')],
+      ['DNS', String(scoreBreakdown.dnsScore ?? '-')],
+      ['HTTP Security', String(scoreBreakdown.httpSecurityScore ?? '-')],
+      ['Exposure', String(scoreBreakdown.exposureScore ?? '-')],
+      ['Reputation', String(scoreBreakdown.reputationScore ?? '-')],
+      ['Quality', String(scoreBreakdown.qualityScore ?? '-')],
+      ['Domain Hygiene', String(scoreBreakdown.domainHygieneScore ?? '-')],
+    ];
+    drawTable(['Area', 'Score'], rows, [260, 255]);
+  }
 
   // ===== 3 SOTTODOMINI CON PROFONDITÀ =====
   sectionTitle(3, 'Sottodomini rilevati');

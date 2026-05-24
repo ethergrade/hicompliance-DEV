@@ -139,8 +139,8 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
               {!loading &&
                 reports.map((row) => {
                   const payload = row.payload as SurfaceScan360Report;
-                  const riskScore = payload?.ai?.risk_score;
-                  const riskLevel = payload?.ai?.risk_level;
+                  const riskScore = payload?.ai?.risk_score ?? payload?.scan?.overall_score;
+                  const riskLevel = payload?.ai?.risk_level ?? payload?.scan?.risk_level;
                   const target =
                     payload?.scan?.target ||
                     payload?.scan?.normalized_target ||
