@@ -3199,46 +3199,258 @@ export async function runSurfaceScanEnrichment(
       }
     }
 
-    const internalIndicators: Array<{
+    const normalizeIocType = (value: string): "domain" | "ip" | "url" => {
+      if (value.includes("://")) return "url";
+      if (/^\d{1,3}(\.\d{1,3}){3}$/.test(value) || value.includes(":")) return "ip";
+      return "domain";
+    };
+    const normalizeIocValue = (value: string, type: "domain" | "ip" | "url"): string => {
+      const raw = String(value || "").trim().toLowerCase();
+      if (!raw) return "";
+      if (type === "domain") return raw.replace(/\.$/, "");
+      if (type === "ip") return raw;
+      try {
+        const parsed = new URL(raw);
+        parsed.hash = "";
+        parsed.search = "";
+        return parsed.toString().toLowerCase();
+      } catch {
+        return raw;
+      }
+    };
+    const toIocSeverity = (value: unknown, confidence: number): "info" | "low" | "medium" | "high" | "critical" => {
+      const normalized = toSeverity(String(value || "info"));
+      if (normalized !== "info") return normalized;
+      if (confidence >= 95) return "critical";
+      if (confidence >= 90) return "high";
+      if (confidence >= 70) return "medium";
+      if (confidence >= 50) return "low";
+      return "info";
+    };
+    const iocMatchForTarget = (
+      type: "domain" | "ip" | "url",
+      iocValue: string,
+      context: {
+        hostCandidates: string[];
+        urlCandidates: string[];
+        ipCandidates: string[];
+      },
+    ): boolean => {
+      if (type === "ip") {
+        return context.ipCandidates.some((entry) => entry === iocValue);
+      }
+      if (type === "domain") {
+        return context.hostCandidates.some((entry) => entry === iocValue || entry.endsWith(`.${iocValue}`));
+      }
+      return context.urlCandidates.some((entry) => entry === iocValue || entry.startsWith(iocValue));
+    };
+
+    const iocContext = {
+      hostCandidates: [
+        hostname.toLowerCase(),
+        String(rootDomain || "").trim().toLowerCase(),
+        ...[...discoveredHostnames].map((entry) => String(entry || "").trim().toLowerCase()),
+      ].filter(Boolean),
+      urlCandidates: [
+        targetUrlCandidate.toLowerCase(),
+      ].filter(Boolean),
+      ipCandidates: [...discoveredIps]
+        .map((entry) => String(entry || "").trim().toLowerCase())
+        .filter((entry) => Boolean(entry) && isIpAllowedInScope(entry)),
+    };
+
+    const leaseOptions = new Set([30, 60, 120, 720, 1440]);
+    let iocLeaseMinutes = 60;
+    let iocFeedEnabled = true;
+    let iocLastRefreshedAt: string | null = null;
+    let iocRefreshStatus: "skipped" | "ok" | "failed" = "skipped";
+    let iocRefreshInserted = 0;
+    const matchedIocIndicators: Array<{
       ioc: string;
       type: "domain" | "ip" | "url";
       confidence?: number;
+      severity?: "info" | "low" | "medium" | "high" | "critical";
       source?: string;
+      notes?: string | null;
     }> = [];
-    try {
-      const { data: internalRows } = await adminClient
-        .from("surface_external_intel" as any)
-        .select("provider, target, summary, raw_response")
-        .eq("customer_id", customerId)
-        .in("provider", ["intelguard_feed", "intelguard_threat_feed", "internal_threat_feed"])
-        .order("created_at", { ascending: false })
-        .limit(200);
-      for (const row of (internalRows || []) as Array<Record<string, unknown>>) {
-        const provider = String(row?.provider || "").trim();
-        const target = String(row?.target || "").trim().toLowerCase();
-        if (!target) continue;
-        if (
-          target !== hostname.toLowerCase() &&
-          target !== targetUrlCandidate.toLowerCase() &&
-          !targetUrlCandidate.toLowerCase().includes(target)
-        ) {
-          continue;
+
+    const tryLoadLegacyIocMatches = async () => {
+      const legacyIndicators: typeof matchedIocIndicators = [];
+      try {
+        const { data: legacyRows } = await adminClient
+          .from("surface_external_intel" as any)
+          .select("provider, target, summary, raw_response")
+          .eq("customer_id", customerId)
+          .in("provider", ["intelguard_feed", "intelguard_threat_feed", "internal_threat_feed"])
+          .order("created_at", { ascending: false })
+          .limit(200);
+        for (const row of (legacyRows || []) as Array<Record<string, unknown>>) {
+          const provider = String(row?.provider || "").trim();
+          const target = String(row?.target || "").trim().toLowerCase();
+          const type = normalizeIocType(target);
+          const ioc = normalizeIocValue(target, type);
+          if (!ioc || !iocMatchForTarget(type, ioc, iocContext)) continue;
+          const summary = (row?.summary as Record<string, unknown>) || {};
+          const confidence = Number(summary?.confidence || summary?.score || 0);
+          legacyIndicators.push({
+            ioc,
+            type,
+            confidence: Number.isFinite(confidence) ? confidence : undefined,
+            severity: toIocSeverity(summary?.severity, Number.isFinite(confidence) ? confidence : 0),
+            source: provider || "curated_feed",
+          });
         }
-        const summary = (row?.summary as Record<string, unknown>) || {};
-        const confidence = Number(summary?.confidence || summary?.score || 0);
-        internalIndicators.push({
-          ioc: target,
-          type: target.includes("://") ? "url" : target.includes(".") ? "domain" : "ip",
-          confidence: Number.isFinite(confidence) ? confidence : undefined,
-          source: provider || "internal",
-        });
+      } catch {
+        // no-op fallback
+      }
+      return legacyIndicators;
+    };
+
+    try {
+      const { data: configRow } = await adminClient
+        .from("surface_scan_ioc_fresh_config" as any)
+        .select("lease_minutes, is_enabled, last_refreshed_at")
+        .eq("organization_id", organizationId)
+        .maybeSingle();
+
+      if (configRow) {
+        const leaseCandidate = Number((configRow as any)?.lease_minutes || 60);
+        iocLeaseMinutes = leaseOptions.has(leaseCandidate) ? leaseCandidate : 60;
+        iocFeedEnabled = (configRow as any)?.is_enabled !== false;
+        iocLastRefreshedAt = String((configRow as any)?.last_refreshed_at || "").trim() || null;
+      }
+
+      if (iocFeedEnabled) {
+        const now = new Date();
+        const leaseMs = iocLeaseMinutes * 60 * 1000;
+        const needsRefresh = !iocLastRefreshedAt || (Date.parse(iocLastRefreshedAt) + leaseMs <= now.getTime());
+
+        if (needsRefresh) {
+          const refreshAtIso = now.toISOString();
+          const refreshExpiresIso = new Date(now.getTime() + leaseMs).toISOString();
+          const { data: curatedRows, error: curatedError } = await adminClient
+            .from("surface_external_intel" as any)
+            .select("provider, target, summary, created_at")
+            .eq("customer_id", customerId)
+            .in("provider", ["intelguard_feed", "intelguard_threat_feed", "internal_threat_feed"])
+            .order("created_at", { ascending: false })
+            .limit(800);
+
+          if (!curatedError) {
+            const curatedBatch: Array<Record<string, unknown>> = [];
+            const seen = new Set<string>();
+            for (const row of (curatedRows || []) as Array<Record<string, unknown>>) {
+              const target = String(row?.target || "").trim().toLowerCase();
+              if (!target) continue;
+              const type = normalizeIocType(target);
+              const normalized = normalizeIocValue(target, type);
+              if (!normalized) continue;
+              const key = `${type}|${normalized}`;
+              if (seen.has(key)) continue;
+              seen.add(key);
+              const summary = (row?.summary as Record<string, unknown>) || {};
+              const confidenceRaw = Number(summary?.confidence || summary?.score || 75);
+              const confidence = Number.isFinite(confidenceRaw)
+                ? Math.max(0, Math.min(100, Math.round(confidenceRaw)))
+                : 75;
+              const severity = toIocSeverity(summary?.severity, confidence);
+              curatedBatch.push({
+                organization_id: organizationId,
+                ioc_value: normalized,
+                ioc_type: type,
+                source: "curated_feed",
+                confidence,
+                severity,
+                notes: String(summary?.note || summary?.reason || "").trim() || null,
+                is_active: true,
+                synced_at: refreshAtIso,
+                expires_at: refreshExpiresIso,
+                created_by: options.initiatedByUserId || job.requested_by || null,
+              });
+            }
+
+            await adminClient
+              .from("surface_scan_ioc_fresh_items" as any)
+              .delete()
+              .eq("organization_id", organizationId)
+              .eq("source", "curated_feed");
+
+            if (curatedBatch.length > 0) {
+              await adminClient
+                .from("surface_scan_ioc_fresh_items" as any)
+                .insert(curatedBatch);
+            }
+
+            await adminClient
+              .from("surface_scan_ioc_fresh_config" as any)
+              .upsert(
+                {
+                  organization_id: organizationId,
+                  lease_minutes: iocLeaseMinutes,
+                  is_enabled: iocFeedEnabled,
+                  last_refreshed_at: refreshAtIso,
+                  created_by: options.initiatedByUserId || job.requested_by || null,
+                },
+                { onConflict: "organization_id" },
+              );
+
+            iocLastRefreshedAt = refreshAtIso;
+            iocRefreshInserted = curatedBatch.length;
+            iocRefreshStatus = "ok";
+            await logAudit("ioc_fresh_list_refreshed", {
+              lease_minutes: iocLeaseMinutes,
+              inserted: curatedBatch.length,
+            });
+          } else {
+            iocRefreshStatus = "failed";
+          }
+        }
+
+        const { data: activeIocRows } = await adminClient
+          .from("surface_scan_ioc_fresh_items" as any)
+          .select("ioc_value, ioc_type, source, confidence, severity, notes, is_active, expires_at")
+          .eq("organization_id", organizationId)
+          .eq("is_active", true)
+          .order("updated_at", { ascending: false })
+          .limit(1200);
+
+        const nowTs = Date.now();
+        for (const row of (activeIocRows || []) as Array<Record<string, unknown>>) {
+          const source = String(row?.source || "manual").trim().toLowerCase();
+          const expiresAt = String(row?.expires_at || "").trim();
+          if (source === "curated_feed" && expiresAt) {
+            const expiresTs = Date.parse(expiresAt);
+            if (Number.isFinite(expiresTs) && expiresTs < nowTs) continue;
+          }
+          const typeRaw = String(row?.ioc_type || "domain").trim().toLowerCase();
+          const type = (typeRaw === "ip" || typeRaw === "url") ? typeRaw : "domain";
+          const ioc = normalizeIocValue(String(row?.ioc_value || ""), type);
+          if (!ioc) continue;
+          if (!iocMatchForTarget(type, ioc, iocContext)) continue;
+          const confidence = Number(row?.confidence || 0);
+          matchedIocIndicators.push({
+            ioc,
+            type,
+            confidence: Number.isFinite(confidence) ? confidence : undefined,
+            severity: toIocSeverity(row?.severity, Number.isFinite(confidence) ? confidence : 0),
+            source: source || "manual",
+            notes: String(row?.notes || "").trim() || null,
+          });
+        }
       }
     } catch {
-      // optional internal feed integration
+      const fallback = await tryLoadLegacyIocMatches();
+      matchedIocIndicators.push(...fallback);
+      iocRefreshStatus = "failed";
     }
 
-    const internalHighConfidence = internalIndicators.filter((entry) => (entry.confidence || 0) >= 90);
-    const internalMediumConfidence = internalIndicators.filter((entry) => (entry.confidence || 0) >= 70 && (entry.confidence || 0) < 90);
+    if (matchedIocIndicators.length === 0) {
+      const fallback = await tryLoadLegacyIocMatches();
+      matchedIocIndicators.push(...fallback);
+    }
+
+    const internalHighConfidence = matchedIocIndicators.filter((entry) => (entry.confidence || 0) >= 90);
+    const internalMediumConfidence = matchedIocIndicators.filter((entry) => (entry.confidence || 0) >= 70 && (entry.confidence || 0) < 90);
 
     const threatSignals = summarizeThreatSignals({
       safeBrowsingMatches,
@@ -3253,7 +3465,7 @@ export async function runSurfaceScanEnrichment(
     });
     const noThreatMatches =
       !threatSignals.has_threat_match &&
-      internalIndicators.length === 0;
+      matchedIocIndicators.length === 0;
     await insertObservation({
       module: "threats",
       observation_type: "threats_summary",
@@ -3280,9 +3492,19 @@ export async function runSurfaceScanEnrichment(
             configured: Boolean(phishTankKey),
             checked: false,
           },
+        ioc_fresh_list: {
+          enabled: iocFeedEnabled,
+          lease_minutes: iocLeaseMinutes,
+          last_refreshed_at: iocLastRefreshedAt,
+          refresh_status: iocRefreshStatus,
+          refresh_inserted: iocRefreshInserted,
+          matched: matchedIocIndicators.length > 0,
+          matched_count: matchedIocIndicators.length,
+          indicators: matchedIocIndicators.slice(0, 30),
+        },
         intelguard: {
-          matched: internalIndicators.length > 0,
-          indicators: internalIndicators.slice(0, 30),
+          matched: matchedIocIndicators.length > 0,
+          indicators: matchedIocIndicators.slice(0, 30),
         },
         no_threat_matches: noThreatMatches,
       },
@@ -3333,9 +3555,9 @@ export async function runSurfaceScanEnrichment(
     if (internalHighConfidence.length > 0) {
       await insertFinding({
         module: "threats",
-        finding_type: "intelguard_high_confidence_match",
+        finding_type: "ioc_fresh_high_confidence_match",
         severity: "high",
-        title: "High-confidence match in internal threat feed",
+        title: "High-confidence match in IOC Fresh List",
         affected_asset: hostname,
         affected_url: targetUrlCandidate,
         evidence: {
@@ -3346,9 +3568,9 @@ export async function runSurfaceScanEnrichment(
     } else if (internalMediumConfidence.length > 0) {
       await insertFinding({
         module: "threats",
-        finding_type: "intelguard_medium_confidence_match",
+        finding_type: "ioc_fresh_medium_confidence_match",
         severity: "medium",
-        title: "Medium-confidence match in internal threat feed",
+        title: "Medium-confidence match in IOC Fresh List",
         affected_asset: hostname,
         affected_url: targetUrlCandidate,
         evidence: {
@@ -3689,6 +3911,8 @@ export async function runSurfaceScanEnrichment(
       "safe_browsing_match",
       "urlhaus_listed",
       "phishtank_verified_match",
+      "ioc_fresh_high_confidence_match",
+      "ioc_fresh_medium_confidence_match",
       "intelguard_high_confidence_match",
       "intelguard_medium_confidence_match",
     ]);
@@ -5727,8 +5951,11 @@ export async function runSurfaceScanEnrichment(
     if (safeBrowsingUnsafe || urlHausListed || phishTankVerified) {
       reputationScore = 0;
     } else {
-      const intelIndicators = asArray((threatsSummary as any)?.intelguard?.indicators);
-      const highConfidenceIntel = intelIndicators.filter((entry: any) => Number(entry?.confidence || 0) >= 90).length;
+      const iocIndicators = asArray(
+        (threatsSummary as any)?.ioc_fresh_list?.indicators ||
+        (threatsSummary as any)?.intelguard?.indicators,
+      );
+      const highConfidenceIntel = iocIndicators.filter((entry: any) => Number(entry?.confidence || 0) >= 90).length;
       reputationScore -= Math.min(30, highConfidenceIntel * 10);
       const dnsblListedCount = asNumber((dnsblSummary as any)?.listed_count) ?? 0;
       reputationScore -= Math.min(40, Math.max(0, Math.round(dnsblListedCount)) * 8);
