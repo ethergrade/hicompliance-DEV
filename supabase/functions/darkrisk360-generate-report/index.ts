@@ -498,7 +498,7 @@ serve(async (req: Request) => {
     if (!forceRegenerate) {
       const existingReportRes = await adminClient
         .from('darkrisk_report_snapshots' as any)
-        .select('id, generated_at, title, classification, tier, html_storage_path, pdf_storage_path')
+        .select('id, generated_at, title, classification, tier, html_storage_path, json_storage_path, pdf_storage_path')
         .eq('organization_id', customerId)
         .eq('scan_run_id', scanRun.id)
         .eq('tier', tier)
@@ -509,6 +509,23 @@ serve(async (req: Request) => {
 
       if (existingReportRes.error) throw existingReportRes.error;
       if (existingReportRes.data?.id) {
+        await adminClient
+          .from('darkrisk_audit_log' as any)
+          .insert({
+            organization_id: customerId,
+            tenant_id: customerId,
+            actor_id: actorUserId || null,
+            action: 'darkrisk_report_reused',
+            entity_type: 'darkrisk_report_snapshot',
+            entity_id: existingReportRes.data.id,
+            reason: 'existing_snapshot_for_scan_run',
+            metadata: {
+              tier,
+              classification: requestedClassification,
+              scan_run_id: scanRun.id,
+            },
+          });
+
         return jsonResponse({
           ok: true,
           reused: true,
@@ -854,6 +871,7 @@ serve(async (req: Request) => {
         status: 'completed',
         report_json: reportJson,
         html_storage_path: htmlStoragePath,
+        json_storage_path: jsonStoragePath,
         pdf_storage_path: null,
         generated_by: actorUserId || null,
         generated_at: generatedAt,

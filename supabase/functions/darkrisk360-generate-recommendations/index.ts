@@ -691,6 +691,7 @@ serve(async (req: Request) => {
     const requestedScanRunId = normalizeText(body?.scan_run_id);
 
     let customerId = requestedCustomerId;
+    let actorUserId: string | null = isInternal ? normalizeText(body?.actor_user_id) || null : null;
 
     if (!isInternal) {
       const { data: authData, error: authError } = await userClient.auth.getUser();
@@ -699,6 +700,7 @@ serve(async (req: Request) => {
       }
 
       const caller = await getCallerProfile(adminClient, authData.user.id);
+      actorUserId = authData.user.id;
       customerId = requestedCustomerId || caller.organizationId || '';
       if (!customerId) {
         return jsonResponse({ ok: false, error: 'customer_id is required' }, 400);
@@ -781,7 +783,7 @@ serve(async (req: Request) => {
         output = await callOpenAi(input);
         generationMode = 'openai';
       } catch (error: any) {
-        generationError = normalizeText(error?.message) || 'OpenAI generation failed';
+        generationError = sanitizeText(error?.message || 'OpenAI generation failed', 280);
       }
     } else if (!aiEnabled) {
       generationError = 'AI recommendations disabled by entitlement';
@@ -862,6 +864,26 @@ serve(async (req: Request) => {
       .eq('organization_id', customerId);
 
     if (runUpdateErr) throw runUpdateErr;
+
+    await adminClient
+      .from('darkrisk_audit_log' as any)
+      .insert({
+        organization_id: customerId,
+        tenant_id: customerId,
+        actor_id: actorUserId || null,
+        action: 'darkrisk_ai_recommendations_generated',
+        entity_type: 'darkrisk_scan_run',
+        entity_id: scanRunId,
+        reason: generationMode === 'openai' ? 'openai_generation' : 'deterministic_fallback',
+        metadata: {
+          mode: generationMode,
+          total_recommendations: recommendationRows.length,
+          model: OPENAI_RECOMMENDATION_MODEL,
+          prompt_version: OPENAI_PROMPT_VERSION,
+          schema_version: OPENAI_SCHEMA_VERSION,
+          warning: generationError ? sanitizeText(generationError, 280) : null,
+        },
+      });
 
     return jsonResponse({
       ok: true,
