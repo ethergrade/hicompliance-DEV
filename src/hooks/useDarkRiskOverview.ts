@@ -47,6 +47,7 @@ export type DarkRiskOverviewResponse = {
     count: number;
     severity_max: DarkRiskSeverity;
     description: string;
+    trend_delta?: number | null;
   }>;
   recent_alerts: Array<{
     id: string;
@@ -58,6 +59,7 @@ export type DarkRiskOverviewResponse = {
     status: string;
     confidence: string;
     source: string;
+    finding_id?: string | null;
   }>;
   alert_config: {
     total: number;
