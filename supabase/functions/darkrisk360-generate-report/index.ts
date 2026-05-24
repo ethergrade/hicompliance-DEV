@@ -1,0 +1,923 @@
+import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
+import {
+  assertCustomerAccess,
+  corsHeaders,
+  getCallerProfile,
+  makeSupabaseClients,
+} from '../_shared/surface-scan-utils.ts';
+import { maskPotentialSecrets, normalizeText } from '../_shared/darkrisk-utils.ts';
+
+type Severity = 'info' | 'low' | 'medium' | 'high' | 'critical';
+type Confidence = 'low' | 'medium' | 'high';
+type Tier = 'standard' | 'extended';
+type Classification = 'public' | 'private' | 'confidential';
+
+type FindingRow = {
+  id: string;
+  title: string | null;
+  finding_type: string | null;
+  description: string | null;
+  severity: Severity | null;
+  confidence: Confidence | null;
+  risk_score: number | null;
+  status: string | null;
+  affected_asset_id: string | null;
+  affected_selector_id: string | null;
+  evidence_ids: string[] | null;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string | null;
+};
+
+type RecommendationRow = {
+  id: string;
+  finding_id: string | null;
+  title: string | null;
+  priority: string | null;
+  why_it_matters: string | null;
+  actions: unknown;
+  expected_outcome: string | null;
+  confidence: string | null;
+  model: string | null;
+  prompt_version: string | null;
+  output_schema_version: string | null;
+};
+
+type AssetRow = {
+  id: string;
+  asset_type: string | null;
+  value: string | null;
+  normalized_value: string | null;
+  scope_status: string | null;
+};
+
+type SelectorRow = {
+  id: string;
+  selector_type: string | null;
+  normalized_value: string | null;
+  status: string | null;
+};
+
+type EvidenceRow = {
+  id: string;
+  title: string | null;
+  summary: string | null;
+  masked_value: string | null;
+};
+
+type SourceRecordRow = {
+  source: string | null;
+  source_type: string | null;
+  source_media: string | null;
+  asset_id: string | null;
+  selector_id: string | null;
+};
+
+type ReportFinding = {
+  id: string;
+  title: string;
+  type: string;
+  severity: string;
+  confidence: string;
+  risk_score: number;
+  affected_asset: string;
+  affected_selector_masked?: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  source_names: string[];
+  evidence_summary: string[];
+  interpretation: string;
+  status: string;
+};
+
+type ReportRecommendation = {
+  finding_id: string;
+  priority: 'immediate' | 'short_term' | 'mid_term' | 'long_term';
+  title: string;
+  why_it_matters: string;
+  actions: string[];
+  expected_outcome: string;
+};
+
+type DarkRiskReportJson = {
+  report_id: string;
+  customer_id: string;
+  tier: Tier;
+  classification: Classification;
+  generated_at: string;
+  generated_by: string;
+  scan_run_id: string;
+  document_metadata: {
+    product_name: string;
+    document_type: string;
+    status: string;
+    version: string;
+    owner: string;
+    reviewed_by?: string[];
+    customer_name: string;
+  };
+  scope: {
+    authorized_assets: string[];
+    excluded_assets: string[];
+    discovered_candidate_assets: string[];
+    limitations: string[];
+  };
+  executive_summary: {
+    risk_level: 'low' | 'medium' | 'high' | 'critical';
+    risk_score: number;
+    text: string;
+    top_drivers: string[];
+  };
+  coverage: {
+    surfacescan360: Record<string, unknown>;
+    intelx: Record<string, unknown>;
+    openai: Record<string, unknown>;
+  };
+  findings: ReportFinding[];
+  recommendations: ReportRecommendation[];
+  statistics: {
+    by_source: Array<{ source: string; count: number; percentage: number }>;
+    by_file_type: Array<{ file_type: string; count: number; percentage: number }>;
+    by_severity: Array<{ severity: string; count: number }>;
+    by_finding_type: Array<{ finding_type: string; count: number }>;
+  };
+  appendices: Record<string, unknown>;
+};
+
+const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+const INTERNAL_SECRET = Deno.env.get('DARKRISK360_INTERNAL_SECRET') || '';
+const REPORT_SCHEMA_VERSION = '1.0.0';
+const REPORT_NOTICE = 'Il presente documento contiene informazioni riservate. Non distribuire a soggetti non autorizzati. Le evidenze sensibili sono mascherate salvo diversa autorizzazione.';
+
+const severityRank: Record<Severity, number> = {
+  info: 1,
+  low: 2,
+  medium: 3,
+  high: 4,
+  critical: 5,
+};
+
+const standardSections = [
+  'Frontespizio',
+  'Executive summary',
+  'Perimetro monitorato',
+  'Copertura controlli',
+  'KPI rischio',
+  'Finding principali',
+  'Evidenze mascherate',
+  'Raccomandazioni operative',
+  'Limitazioni e note',
+  'Appendice asset',
+];
+
+const extendedSections = [
+  'Frontespizio',
+  'Classificazione documento',
+  'Accordo di servizio e scope',
+  'OSINT e CLOSINT',
+  'Standard HiSolution',
+  'Perimetro concordato',
+  'Domini collaterali e asset osservabili',
+  'DNS, WHOIS/RDAP e domain health',
+  'Email security',
+  'Provider, hosting e blast radius',
+  'Porte, servizi, TLS e tecnologie',
+  'CVE e posture SurfaceScan360',
+  'Contesto Domain Threat Intelligence',
+  'Intelligence X results per data source',
+  'Intelligence X results per file type',
+  'Identity exposure e credential risk',
+  'Stealer log e compromissioni indirette',
+  'Risk assessment',
+  'Raccomandazioni operative',
+  'Appendici tecniche',
+  'Glossario',
+  'Limitazioni',
+];
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders,
+      'Content-Type': 'application/json',
+    },
+  });
+}
+
+function clampText(value: string, max = 1200): string {
+  return normalizeText(value).slice(0, max);
+}
+
+function safeText(value: string, max = 1200): string {
+  return clampText(maskPotentialSecrets(value), max);
+}
+
+function toArray<T = string>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
+function normalizeTier(value: string | null | undefined): Tier {
+  return String(value || '').toLowerCase() === 'extended' ? 'extended' : 'standard';
+}
+
+function normalizeClassification(value: string | null | undefined): Classification {
+  const normalized = String(value || 'confidential').toLowerCase();
+  if (normalized === 'public') return 'public';
+  if (normalized === 'private') return 'private';
+  return 'confidential';
+}
+
+function normalizeSeverity(value: string | null | undefined): Severity {
+  const normalized = String(value || 'info').toLowerCase();
+  if (normalized === 'critical') return 'critical';
+  if (normalized === 'high') return 'high';
+  if (normalized === 'medium') return 'medium';
+  if (normalized === 'low') return 'low';
+  return 'info';
+}
+
+function normalizePriority(value: string | null | undefined): ReportRecommendation['priority'] {
+  const normalized = String(value || '').toLowerCase();
+  if (normalized === 'immediate' || normalized === 'short_term' || normalized === 'mid_term' || normalized === 'long_term') {
+    return normalized;
+  }
+  return 'short_term';
+}
+
+function normalizeConfidence(value: string | null | undefined): Confidence {
+  const normalized = String(value || 'medium').toLowerCase();
+  if (normalized === 'high') return 'high';
+  if (normalized === 'low') return 'low';
+  return 'medium';
+}
+
+function isoOrNow(value: string | null | undefined): string {
+  const raw = String(value || '').trim();
+  const parsed = Date.parse(raw);
+  if (!raw || !Number.isFinite(parsed)) return new Date().toISOString();
+  return new Date(parsed).toISOString();
+}
+
+function riskLevelFromFindings(findings: ReportFinding[]): 'low' | 'medium' | 'high' | 'critical' {
+  const maxRank = findings.reduce((acc, finding) => Math.max(acc, severityRank[normalizeSeverity(finding.severity)]), 1);
+  if (maxRank >= severityRank.critical) return 'critical';
+  if (maxRank >= severityRank.high) return 'high';
+  if (maxRank >= severityRank.medium) return 'medium';
+  return 'low';
+}
+
+function averageRiskScore(findings: ReportFinding[]): number {
+  if (!findings.length) return 0;
+  const sum = findings.reduce((acc, finding) => acc + Number(finding.risk_score || 0), 0);
+  return Math.max(0, Math.min(100, Math.round(sum / findings.length)));
+}
+
+function toPercentRows(counts: Map<string, number>): Array<{ label: string; count: number; percentage: number }> {
+  const total = Array.from(counts.values()).reduce((acc, value) => acc + value, 0);
+  if (total <= 0) return [];
+  return Array.from(counts.entries())
+    .map(([label, count]) => ({ label, count, percentage: Number(((count / total) * 100).toFixed(2)) }))
+    .sort((a, b) => b.count - a.count);
+}
+
+function findingInterpretation(finding: ReportFinding): string {
+  const composed = `${finding.type} ${finding.title}`.toLowerCase();
+
+  if (/credential|password|stealer|identity/.test(composed)) {
+    return 'Evidenza di possibile compromissione identitaria: richiede verifica account, revoca sessioni e hardening IAM.';
+  }
+  if (/dmarc|spf|dkim|mail|mx/.test(composed)) {
+    return 'Debolezza nel canale email che può favorire spoofing e phishing verso utenti e partner.';
+  }
+  if (/open_port|port|rdp|ssh|smb|service/.test(composed)) {
+    return 'Esposizione di superficie esterna: ridurre i servizi Internet-facing ai soli necessari e proteggere accessi amministrativi.';
+  }
+  if (/tls|ssl|hsts|http|header|certificate/.test(composed)) {
+    return 'Misconfigurazione applicativa/trasporto che può aumentare rischio MITM, downgrade o abuso sessione.';
+  }
+  return 'Finding da trattare con priorità proporzionata a severità, confidenza e contesto operativo.';
+}
+
+function escapeHtml(value: string): string {
+  return String(value || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function buildReportHtml(report: DarkRiskReportJson): string {
+  const findingRows = report.findings.slice(0, 50).map((finding) => {
+    return `<tr>
+      <td>${escapeHtml(finding.severity.toUpperCase())}</td>
+      <td>${escapeHtml(finding.title)}</td>
+      <td>${escapeHtml(finding.affected_asset || '-')}</td>
+      <td>${escapeHtml(String(finding.risk_score))}</td>
+      <td>${escapeHtml(finding.status)}</td>
+    </tr>`;
+  }).join('\n');
+
+  const recommendationRows = report.recommendations.slice(0, 50).map((recommendation) => {
+    return `<tr>
+      <td>${escapeHtml(recommendation.priority)}</td>
+      <td>${escapeHtml(recommendation.title)}</td>
+      <td>${escapeHtml(recommendation.actions.join('; '))}</td>
+      <td>${escapeHtml(recommendation.expected_outcome)}</td>
+    </tr>`;
+  }).join('\n');
+
+  const topDrivers = report.executive_summary.top_drivers.map((driver) => `<li>${escapeHtml(driver)}</li>`).join('');
+
+  return `<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>DarkRisk360 Report ${escapeHtml(report.document_metadata.customer_name)}</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
+  h1, h2, h3 { margin-bottom: 8px; color: #0f172a; }
+  p { line-height: 1.5; }
+  .notice { background: #fef3c7; border: 1px solid #f59e0b; padding: 10px; border-radius: 8px; margin-bottom: 16px; }
+  .meta { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 16px; margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0 18px; }
+  th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; font-size: 12px; vertical-align: top; }
+  th { background: #e2e8f0; }
+  ul { margin-top: 6px; }
+  .muted { color: #64748b; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>DarkRisk360 Intelligence Report</h1>
+  <div class="notice">${escapeHtml(REPORT_NOTICE)}</div>
+
+  <div class="meta">
+    <div><strong>Cliente:</strong> ${escapeHtml(report.document_metadata.customer_name)}</div>
+    <div><strong>Classificazione:</strong> ${escapeHtml(report.classification)}</div>
+    <div><strong>Tier:</strong> ${escapeHtml(report.tier)}</div>
+    <div><strong>Generato il:</strong> ${escapeHtml(new Date(report.generated_at).toLocaleString('it-IT'))}</div>
+    <div><strong>Scan run:</strong> ${escapeHtml(report.scan_run_id)}</div>
+    <div><strong>Schema report:</strong> ${escapeHtml(REPORT_SCHEMA_VERSION)}</div>
+  </div>
+
+  <h2>Executive Summary</h2>
+  <p><strong>Risk level:</strong> ${escapeHtml(report.executive_summary.risk_level)} - <strong>Risk score:</strong> ${escapeHtml(String(report.executive_summary.risk_score))}</p>
+  <p>${escapeHtml(report.executive_summary.text)}</p>
+  <ul>${topDrivers}</ul>
+
+  <h2>Scope & Coverage</h2>
+  <p><strong>Asset autorizzati:</strong> ${escapeHtml(String(report.scope.authorized_assets.length))} | <strong>Esclusi:</strong> ${escapeHtml(String(report.scope.excluded_assets.length))}</p>
+  <p class="muted">Limitazioni: ${escapeHtml(report.scope.limitations.join(' | ') || 'Nessuna limitazione dichiarata')}</p>
+
+  <h2>Findings principali</h2>
+  <table>
+    <thead>
+      <tr><th>Severity</th><th>Titolo</th><th>Asset</th><th>Risk score</th><th>Stato</th></tr>
+    </thead>
+    <tbody>
+      ${findingRows || '<tr><td colspan="5">Nessun finding disponibile</td></tr>'}
+    </tbody>
+  </table>
+
+  <h2>Raccomandazioni operative</h2>
+  <table>
+    <thead>
+      <tr><th>Priorità</th><th>Titolo</th><th>Azioni</th><th>Outcome atteso</th></tr>
+    </thead>
+    <tbody>
+      ${recommendationRows || '<tr><td colspan="4">Nessuna raccomandazione disponibile</td></tr>'}
+    </tbody>
+  </table>
+
+  <p class="muted">Report snapshot immutabile: i dati riflettono lo stato al momento della generazione.</p>
+</body>
+</html>`;
+}
+
+serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  if (req.method !== 'POST') {
+    return jsonResponse({ ok: false, error: 'Method not allowed' }, 405);
+  }
+
+  try {
+    const { userClient, adminClient } = makeSupabaseClients(req);
+
+    const authHeader = req.headers.get('authorization') || '';
+    const bearer = authHeader.replace(/^Bearer\s+/i, '').trim();
+    const internalSecret = req.headers.get('x-darkrisk-internal-secret') || '';
+    const isInternal = (SERVICE_ROLE && bearer === SERVICE_ROLE) || (INTERNAL_SECRET && internalSecret === INTERNAL_SECRET);
+
+    const body = await req.json().catch(() => ({}));
+    const requestedCustomerId = normalizeText(body?.customer_id || body?.organization_id);
+    const requestedScanRunId = normalizeText(body?.scan_run_id);
+    const requestedClassification = normalizeClassification(body?.classification);
+    const forceRegenerate = Boolean(body?.force_regenerate);
+    const includeHtml = body?.include_html !== false;
+
+    let actorUserId = normalizeText(body?.generated_by);
+    let customerId = requestedCustomerId;
+
+    if (!isInternal) {
+      const { data: authData, error: authError } = await userClient.auth.getUser();
+      if (authError || !authData.user) {
+        return jsonResponse({ ok: false, error: 'Unauthorized' }, 401);
+      }
+      actorUserId = authData.user.id;
+
+      const caller = await getCallerProfile(adminClient, authData.user.id);
+      customerId = requestedCustomerId || caller.organizationId || '';
+      if (!customerId) {
+        return jsonResponse({ ok: false, error: 'customer_id is required' }, 400);
+      }
+      assertCustomerAccess(caller, customerId);
+    }
+
+    if (!customerId && requestedScanRunId) {
+      const { data: runOrg } = await adminClient
+        .from('darkrisk_scan_runs' as any)
+        .select('organization_id')
+        .eq('id', requestedScanRunId)
+        .maybeSingle();
+      customerId = normalizeText(runOrg?.organization_id);
+    }
+
+    if (!customerId) {
+      return jsonResponse({ ok: false, error: 'Unable to resolve customer scope' }, 400);
+    }
+
+    const { data: entitlement, error: entitlementErr } = await adminClient
+      .from('darkrisk_entitlements' as any)
+      .select('enabled, tier')
+      .eq('organization_id', customerId)
+      .maybeSingle();
+
+    if (entitlementErr) {
+      const missingTable = String((entitlementErr as any)?.code || '') === '42P01';
+      if (missingTable) {
+        return jsonResponse({ ok: false, error: 'darkrisk_entitlements table missing. Apply migrations first.' }, 412);
+      }
+      throw entitlementErr;
+    }
+
+    if (!entitlement?.enabled) {
+      return jsonResponse({ ok: false, error: 'DarkRisk360 not enabled for customer' }, 403);
+    }
+
+    const tier = normalizeTier(entitlement?.tier);
+
+    const scanRunRes = requestedScanRunId
+      ? await adminClient
+          .from('darkrisk_scan_runs' as any)
+          .select('id, status, started_at, completed_at, warnings, stats, sources, organization_id')
+          .eq('id', requestedScanRunId)
+          .eq('organization_id', customerId)
+          .maybeSingle()
+      : await adminClient
+          .from('darkrisk_scan_runs' as any)
+          .select('id, status, started_at, completed_at, warnings, stats, sources, organization_id')
+          .eq('organization_id', customerId)
+          .in('status', ['completed', 'completed_with_warnings'])
+          .order('completed_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+    if (scanRunRes.error) throw scanRunRes.error;
+    if (!scanRunRes.data?.id) {
+      return jsonResponse({ ok: false, error: 'No completed scan run available for report generation' }, 404);
+    }
+
+    const scanRun = scanRunRes.data as any;
+
+    if (!forceRegenerate) {
+      const existingReportRes = await adminClient
+        .from('darkrisk_report_snapshots' as any)
+        .select('id, generated_at, title, classification, tier, html_storage_path, pdf_storage_path')
+        .eq('organization_id', customerId)
+        .eq('scan_run_id', scanRun.id)
+        .eq('tier', tier)
+        .eq('classification', requestedClassification)
+        .order('generated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingReportRes.error) throw existingReportRes.error;
+      if (existingReportRes.data?.id) {
+        return jsonResponse({
+          ok: true,
+          reused: true,
+          report: existingReportRes.data,
+        });
+      }
+    }
+
+    const [orgRes, assetsRes, selectorsRes, findingsRes, sourceRes] = await Promise.all([
+      adminClient
+        .from('organizations' as any)
+        .select('id, name')
+        .eq('id', customerId)
+        .maybeSingle(),
+      adminClient
+        .from('darkrisk_assets' as any)
+        .select('id, asset_type, value, normalized_value, scope_status')
+        .eq('organization_id', customerId),
+      adminClient
+        .from('darkrisk_selectors' as any)
+        .select('id, selector_type, normalized_value, status')
+        .eq('organization_id', customerId),
+      adminClient
+        .from('darkrisk_findings' as any)
+        .select('id, title, finding_type, description, severity, confidence, risk_score, status, affected_asset_id, affected_selector_id, evidence_ids, first_seen_at, last_seen_at, metadata, created_at')
+        .eq('organization_id', customerId)
+        .eq('scan_run_id', scanRun.id)
+        .order('risk_score', { ascending: false })
+        .limit(500),
+      adminClient
+        .from('darkrisk_source_records' as any)
+        .select('source, source_type, source_media, asset_id, selector_id')
+        .eq('organization_id', customerId)
+        .eq('scan_run_id', scanRun.id),
+    ]);
+
+    if (orgRes.error) throw orgRes.error;
+    if (assetsRes.error) throw assetsRes.error;
+    if (selectorsRes.error) throw selectorsRes.error;
+    if (findingsRes.error) throw findingsRes.error;
+    if (sourceRes.error) throw sourceRes.error;
+
+    const findings = (findingsRes.data || []) as FindingRow[];
+    const assets = (assetsRes.data || []) as AssetRow[];
+    const selectors = (selectorsRes.data || []) as SelectorRow[];
+    const sourceRows = (sourceRes.data || []) as SourceRecordRow[];
+
+    const findingIds = findings.map((finding) => finding.id);
+    const evidenceIds = Array.from(new Set(findings.flatMap((finding) => toArray<string>(finding.evidence_ids))));
+
+    const [recommendationsRes, evidenceRes] = await Promise.all([
+      findingIds.length > 0
+        ? adminClient
+            .from('darkrisk_recommendations' as any)
+            .select('id, finding_id, title, priority, why_it_matters, actions, expected_outcome, confidence, model, prompt_version, output_schema_version')
+            .eq('organization_id', customerId)
+            .in('finding_id', findingIds)
+        : Promise.resolve({ data: [], error: null }),
+      evidenceIds.length > 0
+        ? adminClient
+            .from('darkrisk_evidence' as any)
+            .select('id, title, summary, masked_value')
+            .eq('organization_id', customerId)
+            .in('id', evidenceIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    if ((recommendationsRes as any).error) throw (recommendationsRes as any).error;
+    if ((evidenceRes as any).error) throw (evidenceRes as any).error;
+
+    const recommendations = ((recommendationsRes as any).data || []) as RecommendationRow[];
+    const evidenceRows = ((evidenceRes as any).data || []) as EvidenceRow[];
+
+    const assetById = new Map<string, AssetRow>();
+    for (const asset of assets) {
+      assetById.set(asset.id, asset);
+    }
+
+    const selectorById = new Map<string, SelectorRow>();
+    for (const selector of selectors) {
+      selectorById.set(selector.id, selector);
+    }
+
+    const evidenceById = new Map<string, EvidenceRow>();
+    for (const evidence of evidenceRows) {
+      evidenceById.set(evidence.id, evidence);
+    }
+
+    const recommendationByFinding = new Map<string, RecommendationRow[]>();
+    for (const recommendation of recommendations) {
+      const findingId = normalizeText(recommendation.finding_id);
+      if (!findingId) continue;
+      const bucket = recommendationByFinding.get(findingId) || [];
+      bucket.push(recommendation);
+      recommendationByFinding.set(findingId, bucket);
+    }
+
+    const reportFindings: ReportFinding[] = findings.map((finding) => {
+      const findingAsset = finding.affected_asset_id ? assetById.get(finding.affected_asset_id) : null;
+      const findingSelector = finding.affected_selector_id ? selectorById.get(finding.affected_selector_id) : null;
+
+      const evidenceSummary = Array.from(new Set(
+        toArray<string>(finding.evidence_ids)
+          .flatMap((evidenceId) => {
+            const evidence = evidenceById.get(evidenceId);
+            if (!evidence) return [];
+            return [
+              safeText(String(evidence.title || ''), 180),
+              safeText(String(evidence.summary || ''), 240),
+              safeText(String(evidence.masked_value || ''), 120),
+            ].filter(Boolean);
+          }),
+      )).slice(0, 5);
+
+      const normalizedSeverity = normalizeSeverity(finding.severity);
+
+      const base: ReportFinding = {
+        id: finding.id,
+        title: safeText(String(finding.title || finding.finding_type || 'Finding'), 180),
+        type: safeText(String(finding.finding_type || 'unknown'), 80),
+        severity: normalizedSeverity,
+        confidence: normalizeConfidence(finding.confidence),
+        risk_score: Number(finding.risk_score || 0),
+        affected_asset: safeText(String(findingAsset?.normalized_value || findingAsset?.value || 'n/a'), 160),
+        affected_selector_masked: findingSelector?.normalized_value
+          ? safeText(String(findingSelector.normalized_value), 120)
+          : undefined,
+        first_seen_at: isoOrNow(finding.first_seen_at || finding.created_at),
+        last_seen_at: isoOrNow(finding.last_seen_at || finding.created_at),
+        source_names: Array.from(new Set(sourceRows.map((row) => safeText(String(row.source || 'unknown'), 32)))),
+        evidence_summary: evidenceSummary,
+        interpretation: '',
+        status: safeText(String(finding.status || 'new'), 32),
+      };
+
+      base.interpretation = findingInterpretation(base);
+      return base;
+    });
+
+    const reportRecommendations: ReportRecommendation[] = [];
+    for (const finding of reportFindings) {
+      const sourceRecommendations = recommendationByFinding.get(finding.id) || [];
+
+      if (sourceRecommendations.length === 0) {
+        const fallbackPriority: ReportRecommendation['priority'] =
+          finding.severity === 'critical' || finding.severity === 'high'
+            ? 'immediate'
+            : finding.severity === 'medium'
+            ? 'short_term'
+            : finding.severity === 'low'
+            ? 'mid_term'
+            : 'long_term';
+
+        reportRecommendations.push({
+          finding_id: finding.id,
+          priority: fallbackPriority,
+          title: `Ridurre rischio su ${finding.title}`,
+          why_it_matters: finding.interpretation,
+          actions: [
+            'Confermare ownership tecnica del finding e priorità di remediation.',
+            'Applicare fix/hardening e verificare con nuova scansione.',
+            'Tracciare evidenza di chiusura e aggiornare stato operativo.',
+          ],
+          expected_outcome: 'Riduzione esposizione e miglioramento del risk score associato al finding.',
+        });
+        continue;
+      }
+
+      for (const recommendation of sourceRecommendations) {
+        reportRecommendations.push({
+          finding_id: finding.id,
+          priority: normalizePriority(recommendation.priority),
+          title: safeText(String(recommendation.title || finding.title), 180),
+          why_it_matters: safeText(String(recommendation.why_it_matters || finding.interpretation), 700),
+          actions: toArray<string>(recommendation.actions).map((entry) => safeText(String(entry), 200)).filter(Boolean).slice(0, 8),
+          expected_outcome: safeText(String(recommendation.expected_outcome || 'Riduzione del rischio operativo sull’asset impattato.'), 400),
+        });
+      }
+    }
+
+    const findingsSorted = [...reportFindings].sort((a, b) => (b.risk_score || 0) - (a.risk_score || 0));
+    const riskLevel = riskLevelFromFindings(findingsSorted);
+    const riskScore = averageRiskScore(findingsSorted);
+    const topDrivers = findingsSorted.slice(0, 5).map((finding) => `${finding.title} (${finding.severity})`);
+
+    const bySourceCounts = new Map<string, number>();
+    const byTypeCounts = new Map<string, number>();
+    const bySeverityCounts = new Map<string, number>();
+    const byFindingTypeCounts = new Map<string, number>();
+
+    for (const source of sourceRows) {
+      const sourceKey = safeText(String(source.source || 'unknown'), 40);
+      bySourceCounts.set(sourceKey, (bySourceCounts.get(sourceKey) || 0) + 1);
+
+      const typeKey = safeText(String(source.source_media || source.source_type || 'unknown'), 40);
+      byTypeCounts.set(typeKey, (byTypeCounts.get(typeKey) || 0) + 1);
+    }
+
+    for (const finding of reportFindings) {
+      const severity = safeText(String(finding.severity || 'info'), 20);
+      bySeverityCounts.set(severity, (bySeverityCounts.get(severity) || 0) + 1);
+
+      const findingType = safeText(String(finding.type || 'unknown'), 80);
+      byFindingTypeCounts.set(findingType, (byFindingTypeCounts.get(findingType) || 0) + 1);
+    }
+
+    const scopeAuthorizedAssets = assets
+      .filter((asset) => String(asset.scope_status || 'approved') === 'approved')
+      .map((asset) => safeText(String(asset.normalized_value || asset.value || ''), 160))
+      .filter(Boolean);
+
+    const scopeExcludedAssets = assets
+      .filter((asset) => String(asset.scope_status || '') === 'excluded')
+      .map((asset) => safeText(String(asset.normalized_value || asset.value || ''), 160))
+      .filter(Boolean);
+
+    const scopeCandidates = assets
+      .filter((asset) => ['candidate', 'discovered', 'pending'].includes(String(asset.scope_status || '').toLowerCase()))
+      .map((asset) => safeText(String(asset.normalized_value || asset.value || ''), 160))
+      .filter(Boolean);
+
+    const runWarnings = toArray<string>((scanRun.warnings as unknown) || []).map((entry) => safeText(String(entry), 200));
+    const scopeLimitations = [
+      'Report generato da snapshot persistito: nessuna chiamata live ai provider durante la generazione.',
+      tier === 'standard'
+        ? 'Tier standard: evidenze tecniche mostrate in forma sintetica e mascherata.'
+        : 'Tier extended: maggiore dettaglio tecnico, con mascheramento dati sensibili lato cliente.',
+      ...runWarnings,
+    ];
+
+    const customerName = safeText(String(orgRes.data?.name || customerId), 120);
+    const generatedAt = new Date().toISOString();
+    const reportId = crypto.randomUUID();
+
+    const reportJson: DarkRiskReportJson = {
+      report_id: reportId,
+      customer_id: customerId,
+      tier,
+      classification: requestedClassification,
+      generated_at: generatedAt,
+      generated_by: actorUserId || 'system',
+      scan_run_id: scanRun.id,
+      document_metadata: {
+        product_name: 'DarkRisk360',
+        document_type: tier === 'extended' ? 'DarkRisk360 DTI Extended' : 'DarkRisk360 Standard Snapshot',
+        status: 'final',
+        version: REPORT_SCHEMA_VERSION,
+        owner: 'HiSolution',
+        customer_name: customerName,
+      },
+      scope: {
+        authorized_assets: Array.from(new Set(scopeAuthorizedAssets)),
+        excluded_assets: Array.from(new Set(scopeExcludedAssets)),
+        discovered_candidate_assets: Array.from(new Set(scopeCandidates)),
+        limitations: Array.from(new Set(scopeLimitations)).slice(0, 20),
+      },
+      executive_summary: {
+        risk_level: riskLevel,
+        risk_score: riskScore,
+        text: safeText(
+          `L'analisi DarkRisk360 sul perimetro autorizzato del cliente ${customerName} evidenzia rischio ${riskLevel}. La valutazione integra postura SurfaceScan360, segnali identity exposure e confidenza delle evidenze normalizzate.`,
+          900,
+        ),
+        top_drivers: topDrivers,
+      },
+      coverage: {
+        surfacescan360: {
+          findings: reportFindings.length,
+          sources: sourceRows.filter((row) => String(row.source || '').toLowerCase() === 'surfacescan360').length,
+          controls_coverage_hint: scanRun?.stats?.controls_coverage || null,
+        },
+        intelx: {
+          records: sourceRows.filter((row) => String(row.source || '').toLowerCase() === 'intelx').length,
+          selectors_monitored: selectors.length,
+        },
+        openai: {
+          recommendations: recommendations.length,
+        },
+      },
+      findings: reportFindings,
+      recommendations: reportRecommendations,
+      statistics: {
+        by_source: toPercentRows(bySourceCounts).map((entry) => ({ source: entry.label, count: entry.count, percentage: entry.percentage })),
+        by_file_type: toPercentRows(byTypeCounts).map((entry) => ({ file_type: entry.label, count: entry.count, percentage: entry.percentage })),
+        by_severity: Array.from(bySeverityCounts.entries())
+          .map(([severity, count]) => ({ severity, count }))
+          .sort((a, b) => (severityRank[normalizeSeverity(b.severity)] - severityRank[normalizeSeverity(a.severity)])),
+        by_finding_type: Array.from(byFindingTypeCounts.entries())
+          .map(([finding_type, count]) => ({ finding_type, count }))
+          .sort((a, b) => b.count - a.count),
+      },
+      appendices: {
+        confidentiality_notice: REPORT_NOTICE,
+        report_schema_version: REPORT_SCHEMA_VERSION,
+        section_plan: tier === 'extended' ? extendedSections : standardSections,
+        asset_inventory: assets.map((asset) => ({
+          type: safeText(String(asset.asset_type || 'unknown'), 30),
+          value: safeText(String(asset.normalized_value || asset.value || ''), 160),
+          scope_status: safeText(String(asset.scope_status || 'approved'), 30),
+        })),
+        selector_inventory: selectors.slice(0, 500).map((selector) => ({
+          type: safeText(String(selector.selector_type || 'unknown'), 30),
+          value: safeText(String(selector.normalized_value || ''), 120),
+          status: safeText(String(selector.status || 'approved'), 30),
+        })),
+      },
+    };
+
+    const htmlStoragePath = includeHtml ? `${customerId}/${reportId}.html` : null;
+    const jsonStoragePath = `${customerId}/${reportId}.json`;
+
+    if (includeHtml) {
+      const html = buildReportHtml(reportJson);
+      const { error: htmlUploadErr } = await adminClient.storage
+        .from('darkrisk-reports')
+        .upload(htmlStoragePath as string, html, {
+          upsert: true,
+          contentType: 'text/html; charset=utf-8',
+        });
+      if (htmlUploadErr) throw htmlUploadErr;
+    }
+
+    const { error: jsonUploadErr } = await adminClient.storage
+      .from('darkrisk-reports')
+      .upload(jsonStoragePath, JSON.stringify(reportJson, null, 2), {
+        upsert: true,
+        contentType: 'application/json; charset=utf-8',
+      });
+    if (jsonUploadErr) throw jsonUploadErr;
+
+    const primaryRecommendation = recommendations[0] || null;
+
+    const { error: insertSnapshotErr } = await adminClient
+      .from('darkrisk_report_snapshots' as any)
+      .insert({
+        id: reportId,
+        organization_id: customerId,
+        tenant_id: customerId,
+        scan_run_id: scanRun.id,
+        tier,
+        title: `DarkRisk360 Report - ${customerName} - ${new Date(generatedAt).toLocaleDateString('it-IT')}`,
+        classification: requestedClassification,
+        status: 'completed',
+        report_json: reportJson,
+        html_storage_path: htmlStoragePath,
+        pdf_storage_path: null,
+        generated_by: actorUserId || null,
+        generated_at: generatedAt,
+        model_metadata: {
+          report_schema_version: REPORT_SCHEMA_VERSION,
+          prompt_version: primaryRecommendation?.prompt_version || null,
+          model: primaryRecommendation?.model || null,
+          output_schema_version: primaryRecommendation?.output_schema_version || null,
+          scan_run_id: scanRun.id,
+          finding_ids: findingIds,
+          recommendation_ids: recommendations.map((entry) => entry.id),
+          generated_at: generatedAt,
+        },
+      });
+
+    if (insertSnapshotErr) throw insertSnapshotErr;
+
+    await adminClient
+      .from('darkrisk_audit_log' as any)
+      .insert({
+        organization_id: customerId,
+        tenant_id: customerId,
+        actor_id: actorUserId || null,
+        action: 'darkrisk_report_generated',
+        entity_type: 'darkrisk_report_snapshot',
+        entity_id: reportId,
+        reason: forceRegenerate ? 'force_regenerate' : 'generated',
+        metadata: {
+          tier,
+          classification: requestedClassification,
+          scan_run_id: scanRun.id,
+          report_schema_version: REPORT_SCHEMA_VERSION,
+        },
+      });
+
+    const htmlSignedUrl = includeHtml && htmlStoragePath
+      ? (await adminClient.storage.from('darkrisk-reports').createSignedUrl(htmlStoragePath, 3600)).data?.signedUrl || null
+      : null;
+
+    const jsonSignedUrl = (await adminClient.storage.from('darkrisk-reports').createSignedUrl(jsonStoragePath, 3600)).data?.signedUrl || null;
+
+    return jsonResponse({
+      ok: true,
+      report_id: reportId,
+      customer_id: customerId,
+      scan_run_id: scanRun.id,
+      tier,
+      classification: requestedClassification,
+      generated_at: generatedAt,
+      storage: {
+        html_storage_path: htmlStoragePath,
+        json_storage_path: jsonStoragePath,
+        html_signed_url: htmlSignedUrl,
+        json_signed_url: jsonSignedUrl,
+      },
+      stats: {
+        findings: reportFindings.length,
+        recommendations: reportRecommendations.length,
+      },
+    });
+  } catch (error: any) {
+    return jsonResponse({
+      ok: false,
+      error: safeText(error?.message || 'Internal error', 500),
+    }, 500);
+  }
+});

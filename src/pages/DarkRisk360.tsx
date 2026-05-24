@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +17,9 @@ import {
   Mail,
   Server,
   Globe,
+  FileText,
+  Download,
+  ExternalLink,
 } from 'lucide-react';
 import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
 import { AlertConfigDialog } from '@/components/dark-risk/AlertConfigDialog';
@@ -66,11 +70,58 @@ const formatDelta = (delta: number | null | undefined): string | null => {
 };
 
 const DarkRisk360: React.FC = () => {
+  const queryClient = useQueryClient();
   const { alerts, createAlert, loading: alertsLoading } = useDarkRiskAlerts();
   const { data: overview, isLoading, isError, error, refetch, isFetching } = useDarkRiskOverview();
   const { organizationId } = useClientOrganization();
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
   const [syncingScan, setSyncingScan] = useState(false);
+
+  const {
+    data: reportSnapshots = [],
+    isLoading: reportsLoading,
+    refetch: refetchReports,
+  } = useQuery({
+    queryKey: ['darkrisk360-report-snapshots', organizationId],
+    enabled: Boolean(organizationId),
+    queryFn: async () => {
+      if (!organizationId) return [];
+      const { data, error: queryError } = await supabase
+        .from('darkrisk_report_snapshots' as any)
+        .select('id, title, tier, classification, status, generated_at, scan_run_id, html_storage_path, pdf_storage_path, report_json')
+        .eq('organization_id', organizationId)
+        .order('generated_at', { ascending: false })
+        .limit(12);
+      if (queryError) throw queryError;
+      return (data || []) as Array<Record<string, any>>;
+    },
+    staleTime: 60_000,
+  });
+
+  const generateReportMutation = useMutation({
+    mutationFn: async () => {
+      if (!organizationId) throw new Error('Nessun cliente selezionato');
+      const { data, error: invokeError } = await supabase.functions.invoke('darkrisk360-generate-report', {
+        body: {
+          customer_id: organizationId,
+          classification: 'confidential',
+        },
+      });
+      if (invokeError) throw invokeError;
+      if (data?.error) throw new Error(String(data.error));
+      return data;
+    },
+    onSuccess: async (data) => {
+      toast.success(data?.reused ? 'Report esistente riutilizzato' : 'Report DarkRisk360 generato');
+      await Promise.all([
+        refetchReports(),
+        queryClient.invalidateQueries({ queryKey: ['darkrisk360-overview', organizationId] }),
+      ]);
+    },
+    onError: (err: any) => {
+      toast.error(`Errore generazione report: ${String(err?.message || 'errore sconosciuto')}`);
+    },
+  });
 
   const activeAlertsCount = alerts.filter((alert) => alert.is_active).length;
 
@@ -171,6 +222,37 @@ const DarkRisk360: React.FC = () => {
     } finally {
       setSyncingScan(false);
     }
+  };
+
+  const downloadReportJson = (report: Record<string, any>) => {
+    const payload = report?.report_json;
+    if (!payload) {
+      toast.error('Report JSON non disponibile');
+      return;
+    }
+    const fileName = `darkrisk360-report-${String(report?.generated_at || '').slice(0, 10) || 'snapshot'}.json`;
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const openReportHtml = async (report: Record<string, any>) => {
+    const path = String(report?.html_storage_path || '').trim();
+    if (!path) {
+      toast.error('HTML report non disponibile per questo snapshot');
+      return;
+    }
+
+    const { data, error: signError } = await supabase.storage.from('darkrisk-reports').createSignedUrl(path, 3600);
+    if (signError || !data?.signedUrl) {
+      toast.error(`Impossibile aprire report HTML: ${String(signError?.message || 'firma non disponibile')}`);
+      return;
+    }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -353,6 +435,54 @@ const DarkRisk360: React.FC = () => {
                         <span className="text-xs text-muted-foreground whitespace-nowrap">
                           {formatDateTime(alert.time)}
                         </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="border-border">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle>Repository Report DarkRisk360</CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!organizationId || generateReportMutation.isPending}
+                    onClick={() => generateReportMutation.mutate()}
+                  >
+                    <FileText className="w-4 h-4 mr-2" />
+                    {generateReportMutation.isPending ? 'Generazione...' : 'Genera report'}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {(reportsLoading || generateReportMutation.isPending) && (
+                  <p className="text-sm text-muted-foreground">Aggiornamento repository report in corso...</p>
+                )}
+                {!reportsLoading && reportSnapshots.length === 0 && (
+                  <p className="text-sm text-muted-foreground">Nessun report snapshot disponibile per il cliente selezionato.</p>
+                )}
+                {!reportsLoading && reportSnapshots.length > 0 && (
+                  <div className="space-y-2">
+                    {reportSnapshots.map((report) => (
+                      <div key={String(report.id)} className="flex flex-wrap items-center gap-3 rounded-lg border border-border/70 bg-muted/20 p-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate">{String(report.title || 'DarkRisk360 Report')}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {String(report.tier || 'standard')} • {String(report.classification || 'confidential')} • {formatDateTime(report.generated_at)}
+                          </p>
+                        </div>
+                        <Badge variant="outline">{String(report.status || 'completed')}</Badge>
+                        <Button variant="outline" size="sm" onClick={() => downloadReportJson(report)}>
+                          <Download className="w-4 h-4 mr-2" />
+                          JSON
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => void openReportHtml(report)}>
+                          <ExternalLink className="w-4 h-4 mr-2" />
+                          HTML
+                        </Button>
                       </div>
                     ))}
                   </div>
