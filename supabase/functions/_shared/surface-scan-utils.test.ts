@@ -1,10 +1,14 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   classifyTargetScope,
+  evaluateHttpSecurityHeaders,
   isIpInRange,
   isIpWithinMonitoredScope,
   normalizeTargetInput,
   splitMonitoredScopeRules,
+  summarizeDnssecStatus,
+  summarizeThreatSignals,
+  summarizeWhoisRdap,
   type MonitoredScopeRule,
   type NormalizedTarget,
 } from "./surface-scan-utils.ts";
@@ -136,4 +140,105 @@ Deno.test("normalizeTargetInput parses url with multi-level public suffix", () =
   assertEquals(normalized.hostname, "sub.example.co.uk");
   assertEquals(normalized.target_type, "url");
   assertEquals(normalized.protocol, "http:");
+});
+
+Deno.test("summarizeDnssecStatus parses dnskey/ds/rrsig/ad flags", () => {
+  const dnskeyPayload = {
+    AD: true,
+    Answer: [{ type: 48, data: "key-record" }],
+  };
+  const dsPayload = {
+    Answer: [{ type: 43, data: "ds-record" }],
+  };
+  const aPayload = {
+    Answer: [{ type: 1, data: "93.184.216.34" }, { type: 46, data: "rrsig" }],
+  };
+
+  const summary = summarizeDnssecStatus(dnskeyPayload, dsPayload, aPayload);
+  assertEquals(summary.dnskey_present, true);
+  assertEquals(summary.ds_present, true);
+  assertEquals(summary.rrsig_present, true);
+  assertEquals(summary.authenticated_data, true);
+});
+
+Deno.test("summarizeDnssecStatus handles missing records", () => {
+  const summary = summarizeDnssecStatus({}, {}, {});
+  assertEquals(summary.dnskey_present, false);
+  assertEquals(summary.ds_present, false);
+  assertEquals(summary.rrsig_present, false);
+  assertEquals(summary.authenticated_data, false);
+});
+
+Deno.test("summarizeWhoisRdap extracts registrar, dates, nameservers and dnssec", () => {
+  const now = Date.parse("2026-05-24T00:00:00.000Z");
+  const payload = {
+    ldhName: "hisolution.it",
+    events: [
+      { eventAction: "registration", eventDate: "2020-01-01T00:00:00Z" },
+      { eventAction: "last changed", eventDate: "2026-01-01T00:00:00Z" },
+      { eventAction: "expiration", eventDate: "2026-06-30T00:00:00Z" },
+    ],
+    secureDNS: { delegationSigned: true },
+    nameservers: [{ ldhName: "NS1.HISOLUTION.IT" }, { ldhName: "ns2.hisolution.it" }],
+    entities: [
+      {
+        roles: ["registrar"],
+        vcardArray: ["vcard", [["fn", {}, "text", "Registrar SRL"]]],
+      },
+    ],
+  };
+
+  const summary = summarizeWhoisRdap(payload, now);
+  assertEquals(summary.domain, "hisolution.it");
+  assertEquals(summary.registrar, "Registrar SRL");
+  assertEquals(summary.created, "2020-01-01T00:00:00Z");
+  assertEquals(summary.updated, "2026-01-01T00:00:00Z");
+  assertEquals(summary.expires, "2026-06-30T00:00:00Z");
+  assertEquals(summary.registration_valid, true);
+  assertEquals(summary.days_to_expiry !== null && summary.days_to_expiry > 0, true);
+  assertEquals(summary.nameservers, ["ns1.hisolution.it", "ns2.hisolution.it"]);
+  assertEquals(summary.dnssec, "signed");
+});
+
+Deno.test("evaluateHttpSecurityHeaders handles all present and frame-ancestors fallback", () => {
+  const allPresent = evaluateHttpSecurityHeaders({
+    "content-security-policy": "default-src 'self'; frame-ancestors 'none'",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "permissions-policy": "geolocation=()",
+  });
+  assertEquals(allPresent.all_present, true);
+
+  const frameAncestorsOnly = evaluateHttpSecurityHeaders({
+    "content-security-policy": "frame-ancestors 'none'",
+  });
+  assertEquals(frameAncestorsOnly.x_frame_options_or_frame_ancestors, true);
+  assertEquals(frameAncestorsOnly.all_present, false);
+});
+
+Deno.test("evaluateHttpSecurityHeaders reports missing set when headers absent", () => {
+  const summary = evaluateHttpSecurityHeaders({});
+  assertEquals(summary.content_security_policy, false);
+  assertEquals(summary.strict_transport_security, false);
+  assertEquals(summary.missing.includes("content-security-policy"), true);
+  assertEquals(summary.missing.includes("strict-transport-security"), true);
+});
+
+Deno.test("summarizeThreatSignals evaluates SafeBrowsing/URLHaus/PhishTank", () => {
+  const sbOnly = summarizeThreatSignals({
+    safeBrowsingMatches: [{ threatType: "MALWARE" }],
+    urlHausListed: false,
+    phishTank: null,
+  });
+  assertEquals(sbOnly.safe_browsing_unsafe, true);
+  assertEquals(sbOnly.has_threat_match, true);
+
+  const clean = summarizeThreatSignals({
+    safeBrowsingMatches: [],
+    urlHausListed: false,
+    phishTank: { inDatabase: false, valid: false, verified: false },
+  });
+  assertEquals(clean.has_threat_match, false);
 });

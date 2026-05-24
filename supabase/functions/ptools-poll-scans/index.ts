@@ -17,7 +17,7 @@ import {
   reconCandidatesFromOpenPorts,
   toolNameById,
 } from '../_shared/exposureUtils.ts';
-import { normalizeSubdomainFinderOutput } from '../_shared/parsers/subdomainFinderParser.ts';
+import { normalizeSubdomainFinderOutputForDomain } from '../_shared/parsers/subdomainFinderParser.ts';
 import { normalizePortScannerOutput } from '../_shared/parsers/portScannerParser.ts';
 import { normalizeWebsiteReconOutput } from '../_shared/parsers/websiteReconParser.ts';
 import { normalizeSslOutput } from '../_shared/parsers/sslScannerParser.ts';
@@ -530,7 +530,11 @@ async function persistSubdomainsAndQueuePorts(adminClient: any, args: {
   output: unknown;
 }) {
   const remoteScanId = Number(args.scanTask.remote_scan_id || 0);
-  const discovered = normalizeSubdomainFinderOutput(args.output, remoteScanId);
+  const discovered = normalizeSubdomainFinderOutputForDomain(
+    args.output,
+    remoteScanId,
+    String(args.job.root_domain || "").trim().toLowerCase(),
+  );
   if (discovered.length === 0) return;
 
   const subdomainTargetRows: any[] = [];
