@@ -1,221 +1,330 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { 
-  Shield, 
-  AlertTriangle, 
-  Eye, 
+import {
+  AlertTriangle,
+  Eye,
   UserX,
-  CreditCard,
+  Shield,
+  TrendingDown,
+  Activity,
+  Clock3,
+  Radar,
+  RefreshCw,
   Mail,
-  Lock,
-  TrendingDown
+  Server,
+  Globe,
 } from 'lucide-react';
 import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
 import { AlertConfigDialog } from '@/components/dark-risk/AlertConfigDialog';
 import { useDarkRiskAlerts } from '@/hooks/useDarkRiskAlerts';
+import { useDarkRiskOverview } from '@/hooks/useDarkRiskOverview';
+
+const severityClasses: Record<string, string> = {
+  critical: 'bg-red-500/20 text-red-300 border-red-500/40',
+  high: 'bg-orange-500/20 text-orange-300 border-orange-500/40',
+  medium: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40',
+  low: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+  info: 'bg-slate-500/20 text-slate-300 border-slate-500/40',
+};
+
+const coverageClasses: Record<string, string> = {
+  completed: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+  partial: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+  error: 'bg-red-500/20 text-red-300 border-red-500/40',
+  not_run: 'bg-slate-500/20 text-slate-300 border-slate-500/40',
+  planned: 'bg-primary/20 text-primary border-primary/40',
+};
+
+const categoryIcon = (category: string) => {
+  const text = category.toLowerCase();
+  if (text.includes('credenzial')) return UserX;
+  if (text.includes('email')) return Mail;
+  if (text.includes('servizi')) return Server;
+  if (text.includes('dns') || text.includes('tls')) return Globe;
+  if (text.includes('reputation')) return Eye;
+  return Shield;
+};
+
+const formatDateTime = (value: string | null | undefined): string => {
+  if (!value) return '-';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '-';
+  return parsed.toLocaleString('it-IT');
+};
+
+const formatDelta = (delta: number | null | undefined): string | null => {
+  if (delta == null) return null;
+  if (delta === 0) return 'Nessuna variazione';
+  if (delta > 0) return `+${delta} vs ultima scansione`;
+  return `${delta} vs ultima scansione`;
+};
 
 const DarkRisk360: React.FC = () => {
-  const { alerts, createAlert } = useDarkRiskAlerts();
+  const { alerts, createAlert, loading: alertsLoading } = useDarkRiskAlerts();
+  const { data: overview, isLoading, isError, error, refetch, isFetching } = useDarkRiskOverview();
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
-  
-  const activeAlertsCount = alerts.filter(a => a.is_active).length;
-  
-  const darkWebThreats = [
-    { 
-      type: 'Credenziali Compromesse', 
-      severity: 'Critico', 
-      count: 24, 
-      description: 'Email e password trovate sul dark web',
-      icon: UserX
-    },
-    { 
-      type: 'Dati Carte di Credito', 
-      severity: 'Alto', 
-      count: 8, 
-      description: 'Informazioni di pagamento in vendita',
-      icon: CreditCard
-    },
-    { 
-      type: 'Database Leak', 
-      severity: 'Critico', 
-      count: 3, 
-      description: 'Database aziendali compromessi',
-      icon: Shield
-    },
-    { 
-      type: 'Email Compromise', 
-      severity: 'Medio', 
-      count: 12, 
-      description: 'Account email compromessi',
-      icon: Mail
-    },
-  ];
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'Critico': return 'text-red-500';
-      case 'Alto': return 'text-orange-500';
-      case 'Medio': return 'text-yellow-500';
-      case 'Basso': return 'text-green-500';
-      default: return 'text-gray-500';
-    }
-  };
+  const activeAlertsCount = alerts.filter((alert) => alert.is_active).length;
 
-  const getSeverityBadge = (severity: string) => {
-    switch (severity) {
-      case 'Critico': return 'destructive';
-      case 'Alto': return 'destructive';
-      case 'Medio': return 'secondary';
-      case 'Basso': return 'default';
-      default: return 'outline';
-    }
-  };
+  const kpiCards = useMemo(
+    () => [
+      {
+        key: 'active_threats',
+        title: 'Minacce Attive',
+        value: overview.kpis.active_threats.value,
+        delta: overview.kpis.active_threats.delta,
+        tone: 'text-red-500',
+        icon: AlertTriangle,
+      },
+      {
+        key: 'credential_leaks',
+        title: 'Credenziali Leak',
+        value: overview.kpis.credential_leaks.value,
+        delta: overview.kpis.credential_leaks.delta,
+        tone: 'text-orange-500',
+        icon: UserX,
+      },
+      {
+        key: 'monitored_domains',
+        title: 'Domini Monitorati',
+        value: overview.kpis.monitored_domains.value,
+        delta: overview.kpis.monitored_domains.delta,
+        tone: 'text-primary',
+        icon: Shield,
+      },
+      {
+        key: 'risk_score',
+        title: 'Punteggio Rischio',
+        value: `${overview.kpis.risk_score.value}`,
+        delta: overview.kpis.risk_score.delta,
+        tone: 'text-red-500',
+        icon: TrendingDown,
+        extra: overview.kpis.risk_score.level,
+      },
+      {
+        key: 'last_scan',
+        title: 'Ultima Scansione',
+        value: overview.kpis.last_scan.value ? formatDateTime(overview.kpis.last_scan.value) : 'Nessuna scansione',
+        delta: overview.kpis.last_scan.delta,
+        tone: 'text-foreground',
+        icon: Clock3,
+      },
+      {
+        key: 'coverage',
+        title: 'Copertura Controlli',
+        value: `${overview.kpis.controls_coverage.value}%`,
+        delta: null,
+        tone: 'text-primary',
+        icon: Radar,
+        extra: `${overview.kpis.controls_coverage.completed}/${overview.kpis.controls_coverage.total} completati`,
+      },
+      {
+        key: 'critical_findings',
+        title: 'Finding Critici',
+        value: overview.kpis.critical_findings.value,
+        delta: overview.kpis.critical_findings.delta,
+        tone: 'text-red-500',
+        icon: Activity,
+      },
+      {
+        key: 'new_alerts',
+        title: 'Nuovi Alert',
+        value: overview.kpis.new_alerts.value,
+        delta: overview.kpis.new_alerts.delta,
+        tone: 'text-yellow-500',
+        icon: Eye,
+      },
+    ],
+    [overview],
+  );
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">DarkRisk360</h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-3xl font-bold text-foreground">DarkRisk360</h1>
+              <Badge variant="outline">{overview.tier === 'extended' ? 'Estesa' : 'Standard'}</Badge>
+              {!overview.enabled && <Badge variant="destructive">Servizio non abilitato</Badge>}
+            </div>
             <p className="text-muted-foreground">
-              Monitoraggio minacce nel dark web e mercati illegali
+              Monitoraggio minacce, esposizione digitale e Domain Threat Intelligence
             </p>
           </div>
-          <Button className="bg-primary text-primary-foreground">
-            <Eye className="w-4 h-4 mr-2" />
-            Scansione Deep Web
-          </Button>
+          <div className="flex items-center gap-2">
+            <AlertBellButton
+              alertCount={activeAlertsCount}
+              onClick={() => setAlertDialogOpen(true)}
+            />
+            <Button
+              variant="outline"
+              onClick={() => void refetch()}
+              disabled={isLoading || isFetching}
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
+              Aggiorna
+            </Button>
+            <Button className="bg-primary text-primary-foreground" disabled>
+              <Eye className="w-4 h-4 mr-2" />
+              Scansione Deep Web
+            </Button>
+          </div>
         </div>
 
-        {/* Threat Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        {(isLoading || alertsLoading) && (
           <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm text-muted-foreground">Minacce Attive</p>
-                    <AlertBellButton
-                      alertCount={activeAlertsCount}
-                      onClick={() => setAlertDialogOpen(true)}
-                    />
-                  </div>
-                  <p className="text-2xl font-bold text-red-500">47</p>
-                </div>
-                <AlertTriangle className="w-8 h-8 text-red-500" />
-              </div>
+            <CardContent className="py-8 text-sm text-muted-foreground">
+              Caricamento dati DarkRisk360 in corso...
             </CardContent>
           </Card>
-          
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm text-muted-foreground">Credenziali Leak</p>
-                    <AlertBellButton
-                      alertCount={activeAlertsCount}
-                      onClick={() => setAlertDialogOpen(true)}
-                    />
-                  </div>
-                  <p className="text-2xl font-bold text-orange-500">24</p>
-                </div>
-                <UserX className="w-8 h-8 text-orange-500" />
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Domini Monitorati</p>
-                  <p className="text-2xl font-bold text-primary">156</p>
-                </div>
-                <Shield className="w-8 h-8 text-primary" />
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Punteggio Rischio</p>
-                  <p className="text-2xl font-bold text-red-500">85</p>
-                </div>
-                <TrendingDown className="w-8 h-8 text-red-500" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        )}
 
-        {/* Active Threats */}
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle>Minacce Rilevate</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {darkWebThreats.map((threat, index) => {
-                const IconComponent = threat.icon;
+        {isError && !isLoading && (
+          <Card className="border-red-500/40">
+            <CardContent className="py-6 text-sm text-red-300">
+              Impossibile caricare i dati DarkRisk360: {String((error as any)?.message || 'errore sconosciuto')}.
+            </CardContent>
+          </Card>
+        )}
+
+        {!isLoading && !isError && (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+              {kpiCards.map((card) => {
+                const Icon = card.icon;
+                const delta = formatDelta(card.delta);
                 return (
-                  <div key={index} className="flex items-center justify-between p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors">
-                    <div className="flex items-center space-x-4">
-                      <div className="p-2 rounded-lg bg-red-500/10">
-                        <IconComponent className="w-5 h-5 text-red-500" />
+                  <Card key={card.key} className="border-border">
+                    <CardContent className="p-4 space-y-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm text-muted-foreground">{card.title}</p>
+                          <p className={`text-2xl font-bold ${card.tone}`}>{card.value}</p>
+                          {card.extra ? (
+                            <p className="text-xs text-muted-foreground mt-1">{card.extra}</p>
+                          ) : null}
+                        </div>
+                        <Icon className={`w-6 h-6 ${card.tone}`} />
                       </div>
-                      <div>
-                        <h4 className="font-medium">{threat.type}</h4>
-                        <p className="text-sm text-muted-foreground">
-                          {threat.description}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-3">
-                      <div className="text-2xl font-bold">
-                        <span className={getSeverityColor(threat.severity)}>
-                          {threat.count}
-                        </span>
-                      </div>
-                      <Badge variant={getSeverityBadge(threat.severity) as any}>
-                        {threat.severity}
-                      </Badge>
-                    </div>
-                  </div>
+                      {delta ? <p className="text-xs text-muted-foreground">{delta}</p> : null}
+                    </CardContent>
+                  </Card>
                 );
               })}
             </div>
-          </CardContent>
-        </Card>
 
-        {/* Recent Alerts */}
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle>Alert Recenti</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {[
-                'Nuove credenziali trovate per dominio cliente1.com',
-                'Database leak rilevato su forum underground',
-                'Aumento attività di phishing verso il brand aziendale',
-                'Credenziali admin vendute su marketplace dark web'
-              ].map((alert, index) => (
-                <div key={index} className="flex items-center space-x-3 p-3 rounded-lg bg-muted/30">
-                  <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                  <span className="text-sm">{alert}</span>
-                  <span className="text-xs text-muted-foreground ml-auto">
-                    {index + 1}h fa
-                  </span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+            <Card className="border-border">
+              <CardHeader className="pb-3">
+                <CardTitle>Copertura Controlli</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {overview.coverage_controls.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nessun controllo disponibile per l’asset selezionato.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-left text-muted-foreground">
+                          <th className="py-2 pr-4">Controllo</th>
+                          <th className="py-2 pr-4">Stato</th>
+                          <th className="py-2 pr-4">Ultima esecuzione</th>
+                          <th className="py-2">Sorgente</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {overview.coverage_controls.map((control) => (
+                          <tr key={control.key} className="border-b border-border/60">
+                            <td className="py-2 pr-4 font-medium">{control.control}</td>
+                            <td className="py-2 pr-4">
+                              <Badge className={coverageClasses[control.status] || coverageClasses.not_run}>
+                                {control.status}
+                              </Badge>
+                            </td>
+                            <td className="py-2 pr-4 text-muted-foreground">{formatDateTime(control.last_execution)}</td>
+                            <td className="py-2">{control.source}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="border-border">
+              <CardHeader className="pb-3">
+                <CardTitle>Minacce Rilevate</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {overview.threat_groups.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nessuna minaccia attiva rilevata nell’ultima scansione.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {overview.threat_groups.map((group) => {
+                      const Icon = categoryIcon(group.category);
+                      return (
+                        <div
+                          key={group.category}
+                          className="flex items-center justify-between gap-4 p-3 rounded-lg border border-border bg-card"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="p-2 rounded-lg bg-primary/10">
+                              <Icon className="w-4 h-4 text-primary" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-medium truncate">{group.category}</p>
+                              <p className="text-xs text-muted-foreground line-clamp-2">{group.description}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-xl font-bold text-foreground">{group.count}</div>
+                            <Badge className={severityClasses[group.severity_max] || severityClasses.info}>
+                              {group.severity_max}
+                            </Badge>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="border-border">
+              <CardHeader className="pb-3">
+                <CardTitle>Alert Recenti</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {overview.recent_alerts.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nessun alert recente disponibile.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {overview.recent_alerts.map((alert) => (
+                      <div key={alert.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/70">
+                        <Badge className={severityClasses[alert.severity] || severityClasses.info}>{alert.severity}</Badge>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate">{alert.title}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {alert.type}
+                            {alert.asset ? ` • ${alert.asset}` : ''}
+                            {alert.source ? ` • ${alert.source}` : ''}
+                          </p>
+                        </div>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                          {formatDateTime(alert.time)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        )}
 
         <AlertConfigDialog
           open={alertDialogOpen}
