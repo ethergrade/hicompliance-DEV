@@ -36,11 +36,12 @@ import { DarkRiskFindingsTable, type DarkRiskFindingRow } from '@/components/dar
 import { DarkRiskAssetsTable, type DarkRiskAssetRow } from '@/components/dark-risk/DarkRiskAssetsTable';
 import { useDarkRiskAlerts } from '@/hooks/useDarkRiskAlerts';
 import { useDarkRiskOverview } from '@/hooks/useDarkRiskOverview';
+import { useDarkRiskRoadmapStatus } from '@/hooks/useDarkRiskRoadmapStatus';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
-type DashboardTab = 'overview' | 'findings' | 'assets' | 'surface' | 'identity' | 'reports';
+type DashboardTab = 'overview' | 'roadmap' | 'findings' | 'assets' | 'surface' | 'identity' | 'reports';
 
 type FindingFilterState = {
   severity: 'all' | 'critical' | 'high' | 'medium' | 'low' | 'info';
@@ -91,6 +92,20 @@ const formatDelta = (delta: number | null | undefined): string | null => {
   if (delta === 0) return 'Nessuna variazione';
   if (delta > 0) return `+${delta} vs ultima scansione`;
   return `${delta} vs ultima scansione`;
+};
+
+const roadmapStatusLabel: Record<string, string> = {
+  completed: 'Completata',
+  in_progress: 'In corso',
+  planned: 'Pianificata',
+  blocked: 'Bloccata',
+};
+
+const roadmapBadgeVariant = (status: string): 'default' | 'outline' | 'secondary' | 'destructive' => {
+  if (status === 'completed') return 'default';
+  if (status === 'in_progress') return 'secondary';
+  if (status === 'blocked') return 'destructive';
+  return 'outline';
 };
 
 const DarkRisk360: React.FC = () => {
@@ -245,6 +260,12 @@ const DarkRisk360: React.FC = () => {
     },
     staleTime: 60_000,
   });
+
+  const {
+    data: roadmap,
+    isLoading: roadmapLoading,
+    isError: roadmapError,
+  } = useDarkRiskRoadmapStatus();
 
   const generateReportMutation = useMutation({
     mutationFn: async () => {
@@ -557,6 +578,7 @@ const DarkRisk360: React.FC = () => {
             <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as DashboardTab)} className="space-y-4">
               <TabsList className="w-full justify-start overflow-x-auto">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="roadmap">Roadmap</TabsTrigger>
                 <TabsTrigger value="findings">Findings</TabsTrigger>
                 <TabsTrigger value="assets">Assets</TabsTrigger>
                 <TabsTrigger value="surface">Surface</TabsTrigger>
@@ -572,6 +594,58 @@ const DarkRisk360: React.FC = () => {
                   onOpenCategory={openCategoryDetail}
                 />
                 <DarkRiskRecentAlerts alerts={overview.recent_alerts as any} onOpenFinding={openFindingDetail} />
+              </TabsContent>
+
+              <TabsContent value="roadmap" className="space-y-4">
+                <Card className="border-border">
+                  <CardHeader className="pb-3">
+                    <CardTitle>Roadmap Implementazione (MD09)</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {roadmapLoading ? (
+                      <p className="text-sm text-muted-foreground">Calcolo stato roadmap in corso...</p>
+                    ) : roadmapError ? (
+                      <p className="text-sm text-red-300">Impossibile calcolare lo stato roadmap.</p>
+                    ) : (
+                      <>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">Avanzamento complessivo</span>
+                            <span className="font-semibold">{roadmap.summary.progress_percent}%</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-muted">
+                            <div
+                              className="h-2 rounded-full bg-primary transition-all"
+                              style={{ width: `${Math.max(0, Math.min(100, roadmap.summary.progress_percent))}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+                          <Badge variant="default">Completate: {roadmap.summary.completed}</Badge>
+                          <Badge variant="secondary">In corso: {roadmap.summary.in_progress}</Badge>
+                          <Badge variant="outline">Pianificate: {roadmap.summary.planned}</Badge>
+                          <Badge variant="destructive">Bloccate: {roadmap.summary.blocked}</Badge>
+                          <Badge variant="outline">Tier: {roadmap.tier}</Badge>
+                        </div>
+
+                        <div className="space-y-2">
+                          {roadmap.phases.map((phase) => (
+                            <div key={phase.key} className="rounded-lg border border-border/70 bg-muted/20 p-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="text-sm font-medium">{phase.title}</p>
+                                <Badge variant={roadmapBadgeVariant(phase.status)}>
+                                  {roadmapStatusLabel[phase.status] || phase.status}
+                                </Badge>
+                              </div>
+                              <p className="mt-1 text-xs text-muted-foreground">{phase.evidence}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
               </TabsContent>
 
               <TabsContent value="findings" className="space-y-4">
