@@ -172,7 +172,10 @@ function categoryDescription(category: string): string {
   }
 }
 
-function buildCoverageControls(moduleRows: ModuleResultLite[]): CoverageControl[] {
+function buildCoverageControls(
+  moduleRows: ModuleResultLite[],
+  tier: 'standard' | 'extended',
+): CoverageControl[] {
   const mapping: Array<{ key: string; control: string; modules: string[]; source: string }> = [
     { key: 'dns', control: 'DNS', modules: ['dns', 'dnssec', 'dns_blocklists'], source: 'SurfaceScan360' },
     { key: 'whois', control: 'WHOIS/RDAP', modules: ['whois'], source: 'SurfaceScan360' },
@@ -201,12 +204,20 @@ function buildCoverageControls(moduleRows: ModuleResultLite[]): CoverageControl[
 
   return mapping.map((control) => {
     if (control.modules.length === 0) {
+      const isExtendedOnly = control.key === 'phonebook';
+      const controlSource = isExtendedOnly && tier !== 'extended'
+        ? 'IntelX (solo Estesa)'
+        : control.source;
+      const controlStatus = isExtendedOnly && tier !== 'extended'
+        ? ('planned' as CoverageStatus)
+        : ('not_run' as CoverageStatus);
+
       return {
         key: control.key,
         control: control.control,
-        status: 'planned' as CoverageStatus,
+        status: controlStatus,
         last_execution: null,
-        source: control.source,
+        source: controlSource,
       };
     }
 
@@ -290,11 +301,34 @@ serve(async (req: Request) => {
 
     assertCustomerAccess(caller, customerId);
 
-    const { data: orgFlags } = await adminClient
-      .from('organizations' as any)
-      .select('dark_risk360_enabled')
-      .eq('id', customerId)
-      .maybeSingle();
+    const [orgFlagsRes, entitlementRes] = await Promise.all([
+      adminClient
+        .from('organizations' as any)
+        .select('dark_risk360_enabled')
+        .eq('id', customerId)
+        .maybeSingle(),
+      adminClient
+        .from('darkrisk_entitlements' as any)
+        .select('enabled, tier')
+        .eq('organization_id', customerId)
+        .maybeSingle(),
+    ]);
+
+    const orgFlags = orgFlagsRes.data || null;
+    let entitlement: { enabled?: boolean | null; tier?: string | null } | null = null;
+    if (!entitlementRes.error) {
+      entitlement = (entitlementRes.data || null) as any;
+    } else {
+      const missingRelation = String((entitlementRes.error as any)?.code || '') === '42P01';
+      if (!missingRelation) {
+        throw entitlementRes.error;
+      }
+    }
+
+    const darkRiskEnabled = entitlement?.enabled ?? Boolean(orgFlags?.dark_risk360_enabled);
+    const darkRiskTier = String(entitlement?.tier || 'standard').toLowerCase() === 'extended'
+      ? 'extended'
+      : 'standard';
 
     const latestJobQuery = adminClient
       .from('surface_scan_jobs' as any)
@@ -405,7 +439,7 @@ serve(async (req: Request) => {
     if ((openPortsRes as any).error) throw (openPortsRes as any).error;
 
     const moduleRows = ((moduleRowsRes as any).data || []) as ModuleResultLite[];
-    const coverageControls = buildCoverageControls(moduleRows);
+    const coverageControls = buildCoverageControls(moduleRows, darkRiskTier);
 
     const latestFindings = [
       ...(((latestFindingsRes as any).data || []) as FindingLite[]),
@@ -513,8 +547,8 @@ serve(async (req: Request) => {
 
     return jsonResponse({
       customer_id: customerId,
-      enabled: Boolean(orgFlags?.dark_risk360_enabled),
-      tier: 'standard',
+      enabled: Boolean(darkRiskEnabled),
+      tier: darkRiskTier,
       latest_scan: latestJob
         ? {
             id: latestJob.id,

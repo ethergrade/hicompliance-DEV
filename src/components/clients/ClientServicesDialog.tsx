@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Link2, Unlink, Plug, Shield, Mail, Monitor, Smartphone, Activity, Search as SearchIcon, Server, ShieldCheck, FileCheck, Eye, Radar } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -61,6 +62,28 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     enabled: open && !!organizationId,
   });
 
+  const { data: darkRiskEntitlement } = useQuery({
+    queryKey: ['darkrisk-entitlement', organizationId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('darkrisk_entitlements' as any)
+        .select('tier, enabled')
+        .eq('organization_id', organizationId)
+        .maybeSingle();
+
+      if (error) {
+        const missingRelation = String((error as any)?.code || '') === '42P01';
+        if (missingRelation) {
+          return { tier: 'standard', enabled: Boolean(orgFlags?.dark_risk360_enabled) };
+        }
+        throw error;
+      }
+
+      return (data as any) || { tier: 'standard', enabled: Boolean(orgFlags?.dark_risk360_enabled) };
+    },
+    enabled: open && !!organizationId,
+  });
+
   const updateFlagsMutation = useMutation({
     mutationFn: async (patch: Record<string, boolean>) => {
       const { error } = await supabase.from('organizations').update(patch as any).eq('id', organizationId);
@@ -71,6 +94,28 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
       toast.success('Configurazione aggiornata');
     },
     onError: (err: Error) => toast.error(`Errore: ${err.message}`),
+  });
+
+  const updateDarkRiskTierMutation = useMutation({
+    mutationFn: async (tier: 'standard' | 'extended') => {
+      const payload = {
+        organization_id: organizationId,
+        tier,
+        enabled: true,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('darkrisk_entitlements' as any)
+        .upsert(payload, { onConflict: 'organization_id' });
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['darkrisk-entitlement', organizationId] });
+      toast.success('Tier DarkRisk360 aggiornato');
+    },
+    onError: (err: Error) => toast.error(`Errore tier DarkRisk360: ${err.message}`),
   });
 
   const { data: services = [] } = useQuery({
@@ -303,9 +348,45 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                 <Switch
                   checked={!!orgFlags?.dark_risk360_enabled}
                   disabled={updateFlagsMutation.isPending}
-                  onCheckedChange={(v) => updateFlagsMutation.mutate({ dark_risk360_enabled: v })}
+                  onCheckedChange={async (v) => {
+                    updateFlagsMutation.mutate({ dark_risk360_enabled: v });
+                    if (v) {
+                      await updateDarkRiskTierMutation.mutateAsync(
+                        (String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'extended' : 'standard')
+                      );
+                    }
+                  }}
                 />
               </div>
+
+              {orgFlags?.dark_risk360_enabled && (
+                <div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
+                  <div className="flex items-center justify-between rounded-md border p-2.5">
+                    <div className="flex items-center gap-3">
+                      <Eye className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium">Tier DarkRisk360</p>
+                        <p className="text-xs text-muted-foreground">Standard o Estesa sullo stesso modulo</p>
+                      </div>
+                    </div>
+                    <Select
+                      value={String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'extended' : 'standard'}
+                      onValueChange={(value) =>
+                        updateDarkRiskTierMutation.mutate(value === 'extended' ? 'extended' : 'standard')
+                      }
+                      disabled={updateDarkRiskTierMutation.isPending}
+                    >
+                      <SelectTrigger className="w-[160px]">
+                        <SelectValue placeholder="Seleziona tier" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="standard">Standard</SelectItem>
+                        <SelectItem value="extended">Estesa</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
             </div>
 
 
