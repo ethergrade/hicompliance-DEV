@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 export interface AlertTypes {
   credenziali_compromesse: boolean;
@@ -25,15 +26,24 @@ export const useDarkRiskAlerts = () => {
   const [alerts, setAlerts] = useState<DarkRiskAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+  const { organizationId } = useClientOrganization();
 
   const fetchAlerts = async () => {
+    if (!organizationId) {
+      setAlerts([]);
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      const query = supabase
         .from('dark_risk_alerts')
         .select('*')
+        .eq('organization_id', organizationId)
         .order('created_at', { ascending: false });
 
+      const { data, error } = await query;
       if (error) throw error;
       setAlerts((data || []) as unknown as DarkRiskAlert[]);
     } catch (error: any) {
@@ -69,7 +79,7 @@ export const useDarkRiskAlerts = () => {
         .from('dark_risk_alerts')
         .insert({
           user_id: targetUserId,
-          organization_id: userRecord?.organization_id || null,
+          organization_id: organizationId || userRecord?.organization_id || null,
           alert_email: data.alert_email,
           alert_types: data.alert_types as any,
         });
@@ -175,17 +185,20 @@ export const useDarkRiskAlerts = () => {
   };
 
   useEffect(() => {
+    if (!organizationId) return;
+
     fetchAlerts();
 
     // Real-time subscription
     const channel = supabase
-      .channel('dark_risk_alerts_changes')
+      .channel(`dark_risk_alerts_changes_${organizationId}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'dark_risk_alerts',
+          filter: `organization_id=eq.${organizationId}`,
         },
         () => {
           fetchAlerts();
@@ -196,7 +209,7 @@ export const useDarkRiskAlerts = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [organizationId]);
 
   return {
     alerts,
