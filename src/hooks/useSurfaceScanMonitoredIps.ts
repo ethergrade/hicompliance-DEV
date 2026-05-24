@@ -27,6 +27,7 @@ export interface AddRuleOptions {
   discovered_via?: 'manual' | 'subdomain_dump';
   discovered_from?: string | null;
   silent?: boolean;
+  auto_queue_scan?: boolean;
 }
 
 interface UseSurfaceScanMonitoredIpsReturn {
@@ -51,6 +52,48 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
   const { isSuperAdmin } = useUserRoles();
 
   const isAdmin = userProfile?.user_type === 'admin' || isSuperAdmin;
+
+  const queueScopeRuleScan = useCallback(async (args: {
+    organizationId: string;
+    target: string;
+    scanProfile: 'domain_exposure' | 'ip_exposure';
+    silent?: boolean;
+    discoveredVia?: string;
+  }) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('surfacescan360-start-scan', {
+        body: {
+          target: args.target,
+          customer_id: args.organizationId,
+          scan_profile: args.scanProfile,
+          authorization_confirmed: true,
+          ownership_proof: `auto_scope_rule:${args.discoveredVia || 'manual'}`,
+        },
+      });
+
+      if (error || data?.error) {
+        const message = String(error?.message || data?.error || '').toLowerCase();
+        const expectedFailure =
+          message.includes('cooldown')
+          || message.includes('rate limit')
+          || message.includes('queue is full')
+          || message.includes('target_module_cooldown_active');
+        if (!expectedFailure) {
+          console.warn('Auto scope scan enqueue failed:', error || data);
+        }
+        return;
+      }
+
+      if (!args.silent) {
+        toast({
+          title: 'Scansione automatica accodata',
+          description: `${args.target} (${args.scanProfile})`,
+        });
+      }
+    } catch (scanError) {
+      console.warn('Auto scope scan enqueue error:', scanError);
+    }
+  }, [toast]);
 
   const fetchRules = useCallback(async () => {
     if (isClientLoading || !organizationId) return;
@@ -157,6 +200,27 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
           title: 'Regola aggiunta',
           description: 'IP monitorato salvato con successo',
         });
+      }
+
+      const shouldAutoQueue = opts.auto_queue_scan !== false;
+      if (shouldAutoQueue) {
+        if (parsed.entryType === 'domain') {
+          void queueScopeRuleScan({
+            organizationId,
+            target: parsed.inputValue,
+            scanProfile: 'domain_exposure',
+            silent: opts.silent,
+            discoveredVia: opts.discovered_via || 'manual',
+          });
+        } else if (parsed.entryType === 'single') {
+          void queueScopeRuleScan({
+            organizationId,
+            target: parsed.inputValue,
+            scanProfile: 'ip_exposure',
+            silent: opts.silent,
+            discoveredVia: opts.discovered_via || 'manual',
+          });
+        }
       }
 
       await fetchRules();

@@ -41,6 +41,7 @@ const TECHNOLOGY_TOKENS: RegExp[] = [
 const CVE_REGEX = /\bCVE-\d{4}-\d{4,7}\b/gi;
 const IPV4_REGEX = /^(?:\d{1,3}\.){3}\d{1,3}$/;
 const PARENS_CONTENT_REGEX = /^\((.*)\)$/;
+const ORGANIZATION_SCOPE_REPORT_TITLE = 'SurfaceScan360 Report - Organization Scope';
 
 function isIpv4(value: string): boolean {
   const v = String(value || '').trim();
@@ -960,22 +961,40 @@ Deno.serve(async (req) => {
       ? String(anchorJob?.raw_target || anchorJob?.normalized_target || 'Target selezionato')
       : `Scope completo in monitoraggio (${scopeTargets.length} target)`;
 
-    // Evita duplicazione per auto-report sullo stesso job (repository persistente).
-    const { data: latestReportRow } = await supabase
-      .from('surface_scan_ai_reports')
-      .select('id, payload, created_at, title')
-      .eq('organization_id', organization_id)
-      .eq('scan_job_id', anchorJob.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (latestReportRow && !forceRegenerate && triggerSource === 'auto_on_complete') {
+    const isOrganizationScope = normalizedScopeMode === 'organization_scope';
+    const [existingCanonicalRowRes, latestSingleReportRowRes] = await Promise.all([
+      isOrganizationScope
+        ? supabase
+            .from('surface_scan_ai_reports')
+            .select('id, payload, created_at, title')
+            .eq('organization_id', organization_id)
+            .eq('title', ORGANIZATION_SCOPE_REPORT_TITLE)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null as any }),
+      !isOrganizationScope
+        ? supabase
+            .from('surface_scan_ai_reports')
+            .select('id, payload, created_at, title')
+            .eq('organization_id', organization_id)
+            .eq('scan_job_id', anchorJob.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null as any }),
+    ]);
+
+    const existingCanonicalRow = existingCanonicalRowRes?.data ?? null;
+    const latestSingleReportRow = latestSingleReportRowRes?.data ?? null;
+
+    if (!isOrganizationScope && latestSingleReportRow && !forceRegenerate && triggerSource === 'auto_on_complete') {
       return json({
         ok: true,
         existing: true,
-        repository_id: latestReportRow.id,
-        created_at: latestReportRow.created_at,
-        report: latestReportRow.payload,
+        repository_id: latestSingleReportRow.id,
+        created_at: latestSingleReportRow.created_at,
+        report: latestSingleReportRow.payload,
       });
     }
 
@@ -1848,6 +1867,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
         auto_generated: triggerSource === 'auto_on_complete',
         generated_by_user_id: actorUserId,
         generated_via: isInternalCall ? 'internal_call' : 'manual_call',
+        mode: isOrganizationScope ? 'organization_scope_canonical' : 'single_job',
       },
       organization: {
         id: organization_id,
@@ -1899,7 +1919,34 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
     // Persisti il report (best-effort)
     let repositoryId: string | null = null;
     try {
-      if (latestReportRow && triggerSource === 'auto_on_complete') {
+      if (isOrganizationScope && existingCanonicalRow) {
+        const { data: updated } = await supabase
+          .from('surface_scan_ai_reports')
+          .update({
+            title: ORGANIZATION_SCOPE_REPORT_TITLE,
+            payload: reportPayload as any,
+            scan_job_id: anchorJob.id,
+            created_by: actorUserId,
+            created_at: new Date().toISOString(),
+          })
+          .eq('id', existingCanonicalRow.id)
+          .select('id')
+          .maybeSingle();
+        repositoryId = updated?.id ?? existingCanonicalRow.id;
+      } else if (isOrganizationScope) {
+        const { data: inserted } = await supabase
+          .from('surface_scan_ai_reports')
+          .insert({
+            organization_id,
+            scan_job_id: anchorJob.id,
+            title: ORGANIZATION_SCOPE_REPORT_TITLE,
+            payload: reportPayload as any,
+            created_by: actorUserId,
+          })
+          .select('id')
+          .maybeSingle();
+        repositoryId = inserted?.id ?? null;
+      } else if (latestSingleReportRow && triggerSource === 'auto_on_complete') {
         const { data: updated } = await supabase
           .from('surface_scan_ai_reports')
           .update({
@@ -1908,10 +1955,10 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
             created_by: actorUserId,
             created_at: new Date().toISOString(),
           })
-          .eq('id', latestReportRow.id)
+          .eq('id', latestSingleReportRow.id)
           .select('id')
           .maybeSingle();
-        repositoryId = updated?.id ?? latestReportRow.id;
+        repositoryId = updated?.id ?? latestSingleReportRow.id;
       } else {
         const { data: inserted } = await supabase
           .from('surface_scan_ai_reports')

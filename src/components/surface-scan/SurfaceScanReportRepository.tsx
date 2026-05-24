@@ -78,7 +78,7 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
               Repository Report SurfaceScan360
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Report persistenti generati automaticamente a completamento scansione e disponibili per export PDF.
+              Report persistente canonico su scope organizzazione, aggiornato a completamento scansioni e disponibile per export PDF.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -88,7 +88,7 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
             </Button>
             <Button onClick={() => generateReport()} disabled={generating}>
               {generating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
-              Genera ultimo report
+              Rigenera report canonico
             </Button>
           </div>
         </div>
@@ -97,7 +97,7 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary">Report in repository: {reports.length}</Badge>
           <Badge variant={missingCompletedJobs.length > 0 ? 'destructive' : 'outline'}>
-            Scan completate senza report: {missingCompletedJobs.length}
+            Scan completate dall'ultimo report canonico: {missingCompletedJobs.length}
           </Badge>
           {missingCompletedJobs.length > 0 && (
             <Button size="sm" variant="outline" onClick={handleGenerateMissing} disabled={generating}>

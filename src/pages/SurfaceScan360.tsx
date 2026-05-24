@@ -41,6 +41,7 @@ import {
 import SecurityFindings from '@/components/surface-scan/SecurityFindings';
 import SurfaceScanModuleCards from '@/components/surface-scan/SurfaceScanModuleCards';
 import SurfaceScanReportRepository from '@/components/surface-scan/SurfaceScanReportRepository';
+import SurfaceScanExposureSection from '@/components/surface-scan/SurfaceScanExposureSection';
 import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
 import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceScanAlertConfigDialog';
 import { useSurfaceScanAlerts, SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
@@ -59,7 +60,6 @@ import {
   splitMonitoredScopeRules,
 } from '@/lib/surfaceScopeGuard';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
-import { Link } from 'react-router-dom';
 
 const IPV4_REGEX =
   /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
@@ -185,6 +185,7 @@ interface ReverseAssetRow {
 const SurfaceScan360: React.FC = () => {
   const exportContainerRef = useRef<HTMLDivElement>(null);
   const dependencyMapRef = useRef<HTMLDivElement>(null);
+  const exposureSectionRef = useRef<HTMLDivElement>(null);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
   const [newMonitoredIpInput, setNewMonitoredIpInput] = useState('');
@@ -246,6 +247,10 @@ const SurfaceScan360: React.FC = () => {
       return;
     }
     dependencyMapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const scrollToExposureSection = () => {
+    exposureSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const scanDiscovery = useMemo(() => {
@@ -696,10 +701,8 @@ const SurfaceScan360: React.FC = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button asChild variant="secondary">
-              <Link to="/surface-scan/exposure">
-                Ports &amp; Technologies
-              </Link>
+            <Button variant="secondary" onClick={scrollToExposureSection}>
+              Ports &amp; Technologies
             </Button>
             <Button variant="outline" onClick={handleExportPdf} disabled={exportingPdf}>
               <Download className="w-4 h-4 mr-2" />
@@ -1332,6 +1335,10 @@ const SurfaceScan360: React.FC = () => {
           onAddSubdomainToScope={handleAddSubdomainToScope}
           onScanSubdomain={handleScanSingleSubdomain}
         />
+
+        <div ref={exposureSectionRef}>
+          <SurfaceScanExposureSection isAdmin={isAdmin} />
+        </div>
 
         <SecurityFindings />
 
