@@ -3,9 +3,13 @@ import {
   classifyTargetScope,
   classifyHostForScope,
   fetchWithTimeout,
+  fetchWithSsrfGuard,
   isIpWithinMonitoredScope,
   normalizeTargetInput,
   resolveWithDnsOverHttps,
+  summarizeDnssecStatus,
+  summarizeThreatSignals,
+  summarizeWhoisRdap,
   splitMonitoredScopeRules,
   toSeverity,
   TargetType,
@@ -1125,17 +1129,23 @@ export async function runSurfaceScanEnrichment(
       attemptedUrls.push(candidate);
       try {
         const start = Date.now();
-        const response = await fetchWithTimeout(candidate, { redirect: "follow" }, 12000);
+        const safeFetch = await fetchWithSsrfGuard(candidate, {}, {
+          timeoutMs: 10000,
+          maxRedirects: 10,
+          maxResponseBytes: 350000,
+        });
+        const response = safeFetch.response;
         const responseTimeMs = Date.now() - start;
         const headersObj = collectHeadersObject(response.headers);
         const setCookies = collectSetCookieHeaders(response.headers);
         const bodyText = await response.text().catch(() => "");
         const bodyExcerpt = bodyText.slice(0, 200000);
-        const finalProtocol = response.url.startsWith("https://") ? "https" : "http";
+        const finalUrl = safeFetch.finalUrl || response.url || candidate;
+        const finalProtocol = finalUrl.startsWith("https://") ? "https" : "http";
         latestHttpSnapshot = {
           attemptedUrls,
           requestUrl: candidate,
-          finalUrl: response.url || candidate,
+          finalUrl,
           statusCode: response.status,
           headers: headersObj,
           setCookies,
@@ -1176,6 +1186,13 @@ export async function runSurfaceScanEnrichment(
         module: config.key,
         feature_flag: config.featureFlag || null,
       });
+      console.info("surface_scan_module_complete", {
+        scanRunId: job.id,
+        tenantId: organizationId,
+        moduleKey: config.key,
+        status: "skipped",
+        durationMs: 0,
+      });
       return;
     }
 
@@ -1184,6 +1201,12 @@ export async function runSurfaceScanEnrichment(
     await upsertModuleResult(config, "running", {
       startedAt: startedAtIso,
       normalized: { module: config.key, status: "running" },
+    });
+    console.info("surface_scan_module_start", {
+      scanRunId: job.id,
+      tenantId: organizationId,
+      moduleKey: config.key,
+      target: hostname || job.normalized_target,
     });
 
     const timeoutError = new Error(`Module timeout after ${config.timeoutMs}ms`);
@@ -1212,6 +1235,13 @@ export async function runSurfaceScanEnrichment(
         },
       });
       await logAudit("module_completed", { module: config.key, duration_ms: durationMs });
+      console.info("surface_scan_module_complete", {
+        scanRunId: job.id,
+        tenantId: organizationId,
+        moduleKey: config.key,
+        status: "success",
+        durationMs,
+      });
     } catch (error: any) {
       if (timeoutHandle !== null) clearTimeout(timeoutHandle);
       const completedAtIso = new Date().toISOString();
@@ -1252,6 +1282,14 @@ export async function runSurfaceScanEnrichment(
         error: errorMessage,
         duration_ms: durationMs,
       });
+      console.warn("surface_scan_module_error", {
+        scanRunId: job.id,
+        tenantId: organizationId,
+        moduleKey: config.key,
+        status,
+        durationMs,
+        errorMessage,
+      });
     }
   };
 
@@ -1269,15 +1307,6 @@ export async function runSurfaceScanEnrichment(
     if (!response.ok) return {};
     const payload = await response.json().catch(() => ({}));
     return payload && typeof payload === "object" ? payload : {};
-  };
-
-  const parseRdapEventDate = (events: any[], eventAction: string): string | null => {
-    if (!Array.isArray(events)) return null;
-    const row = events.find((entry) =>
-      String(entry?.eventAction || "").trim().toLowerCase() === eventAction.toLowerCase()
-    );
-    const rawDate = String(row?.eventDate || "").trim();
-    return rawDate || null;
   };
 
   const runDnsModule = async () => {
@@ -1553,19 +1582,7 @@ export async function runSurfaceScanEnrichment(
       queryDnsJson(rootDomain, "DS"),
       queryDnsJson(rootDomain, "A"),
     ]);
-
-    const asAnswers = (payload: Record<string, unknown>): any[] =>
-      Array.isArray(payload?.Answer) ? (payload.Answer as any[]) : [];
-    const asAuthority = (payload: Record<string, unknown>): any[] =>
-      Array.isArray(payload?.Authority) ? (payload.Authority as any[]) : [];
-
-    const dnskeyAnswers = asAnswers(dnskeyPayload).filter((row) => Number(row?.type) === 48);
-    const dsAnswers = asAnswers(dsPayload).filter((row) => Number(row?.type) === 43);
-    const rrsigPresent =
-      [...asAnswers(dnskeyPayload), ...asAnswers(dsPayload), ...asAnswers(aPayload), ...asAuthority(aPayload)]
-        .some((row) => Number(row?.type) === 46);
-    const authenticatedData =
-      Boolean(dnskeyPayload?.AD) || Boolean(dsPayload?.AD) || Boolean(aPayload?.AD);
+    const dnssecStatus = summarizeDnssecStatus(dnskeyPayload, dsPayload, aPayload);
 
     await insertObservation({
       module: "dnssec",
@@ -1573,19 +1590,19 @@ export async function runSurfaceScanEnrichment(
       title: "DNSSEC status",
       value: {
         domain: rootDomain,
-        dnskey_present: dnskeyAnswers.length > 0,
-        ds_present: dsAnswers.length > 0,
-        rrsig_present: rrsigPresent,
-        authenticated_data: authenticatedData,
+        dnskey_present: dnssecStatus.dnskey_present,
+        ds_present: dnssecStatus.ds_present,
+        rrsig_present: dnssecStatus.rrsig_present,
+        authenticated_data: dnssecStatus.authenticated_data,
         records: {
-          dnskey: dnskeyAnswers.slice(0, 10),
-          ds: dsAnswers.slice(0, 10),
+          dnskey: dnssecStatus.dnskey_records,
+          ds: dnssecStatus.ds_records,
         },
         source: "google-doh",
       },
     });
 
-    if (dnskeyAnswers.length === 0 && dsAnswers.length === 0) {
+    if (!dnssecStatus.dnskey_present && !dnssecStatus.ds_present) {
       await insertFinding({
         module: "dnssec",
         finding_type: "dnssec_missing",
@@ -1598,7 +1615,7 @@ export async function runSurfaceScanEnrichment(
       return;
     }
 
-    if (dsAnswers.length > 0 && dnskeyAnswers.length === 0) {
+    if (dnssecStatus.ds_present && !dnssecStatus.dnskey_present) {
       await insertFinding({
         module: "dnssec",
         finding_type: "dnssec_inconsistent_delegation",
@@ -1637,32 +1654,7 @@ export async function runSurfaceScanEnrichment(
     }
 
     const payload = await response.json().catch(() => ({}));
-    const events = Array.isArray(payload?.events) ? payload.events : [];
-    const nameservers = Array.isArray(payload?.nameservers)
-      ? payload.nameservers.map((entry: any) => String(entry?.ldhName || "").trim()).filter(Boolean)
-      : [];
-    const registrarEntity = (Array.isArray(payload?.entities) ? payload.entities : []).find((entry: any) =>
-      Array.isArray(entry?.roles) && entry.roles.some((role: any) => String(role || "").toLowerCase() === "registrar")
-    );
-
-    const registrarName = (() => {
-      const vcard = Array.isArray(registrarEntity?.vcardArray) ? registrarEntity.vcardArray[1] : [];
-      if (!Array.isArray(vcard)) return null;
-      const fnEntry = vcard.find((entry: any) => Array.isArray(entry) && String(entry?.[0] || "").toLowerCase() === "fn");
-      if (!Array.isArray(fnEntry)) return null;
-      const candidate = String(fnEntry?.[3] || "").trim();
-      return candidate || null;
-    })();
-
-    const created = parseRdapEventDate(events, "registration");
-    const updated = parseRdapEventDate(events, "last changed");
-    const expires = parseRdapEventDate(events, "expiration");
-    const expirationMs = expires ? Date.parse(expires) : NaN;
-    const daysToExpiry = Number.isFinite(expirationMs)
-      ? Math.round((expirationMs - Date.now()) / 86400000)
-      : null;
-    const registrationValid = daysToExpiry === null ? false : daysToExpiry >= 0;
-    const secureDnsSigned = payload?.secureDNS?.delegationSigned;
+    const whoisSummary = summarizeWhoisRdap(payload);
 
     await insertObservation({
       module: "whois",
@@ -1670,20 +1662,20 @@ export async function runSurfaceScanEnrichment(
       title: "Domain WHOIS via RDAP",
       value: {
         domain: rootDomain,
-        registrar: registrarName,
-        created,
-        updated,
-        expires,
-        days_to_expiry: daysToExpiry,
-        registration_valid: registrationValid,
-        nameservers,
+        registrar: whoisSummary.registrar,
+        created: whoisSummary.created,
+        updated: whoisSummary.updated,
+        expires: whoisSummary.expires,
+        days_to_expiry: whoisSummary.days_to_expiry,
+        registration_valid: whoisSummary.registration_valid,
+        nameservers: whoisSummary.nameservers,
         status: Array.isArray(payload?.status) ? payload.status : [],
-        dnssec: secureDnsSigned === true ? "signed" : secureDnsSigned === false ? "unsigned" : null,
+        dnssec: whoisSummary.dnssec,
         source: "rdap.org",
       },
     });
 
-    if (daysToExpiry !== null && daysToExpiry < 0) {
+    if (whoisSummary.days_to_expiry !== null && whoisSummary.days_to_expiry < 0) {
       await insertFinding({
         module: "whois",
         finding_type: "domain_expired",
@@ -1693,29 +1685,29 @@ export async function runSurfaceScanEnrichment(
         description: "Il dominio risulta scaduto secondo i dati RDAP.",
         remediation: "Rinnovare immediatamente il dominio e verificare stato presso il registrar.",
       });
-    } else if (daysToExpiry !== null && daysToExpiry < 30) {
+    } else if (whoisSummary.days_to_expiry !== null && whoisSummary.days_to_expiry < 30) {
       await insertFinding({
         module: "whois",
         finding_type: "domain_expiry_soon_30d",
         severity: "high",
         title: "Domain expires in less than 30 days",
         affected_asset: rootDomain,
-        description: `Scadenza dominio imminente (${daysToExpiry} giorni).`,
+        description: `Scadenza dominio imminente (${whoisSummary.days_to_expiry} giorni).`,
         remediation: "Pianificare rinnovo immediato per evitare interruzioni operative.",
       });
-    } else if (daysToExpiry !== null && daysToExpiry < 90) {
+    } else if (whoisSummary.days_to_expiry !== null && whoisSummary.days_to_expiry < 90) {
       await insertFinding({
         module: "whois",
         finding_type: "domain_expiry_soon_90d",
         severity: "medium",
         title: "Domain expires in less than 90 days",
         affected_asset: rootDomain,
-        description: `Scadenza dominio nei prossimi ${daysToExpiry} giorni.`,
+        description: `Scadenza dominio nei prossimi ${whoisSummary.days_to_expiry} giorni.`,
         remediation: "Programmare rinnovo dominio e verifica contatti amministrativi.",
       });
     }
 
-    if (!registrarName || !expires) {
+    if (!whoisSummary.registrar || !whoisSummary.expires) {
       await insertFinding({
         module: "whois",
         finding_type: "whois_partial_data",
@@ -2100,7 +2092,12 @@ export async function runSurfaceScanEnrichment(
   const runRobotsModule = async () => {
     if (!hostname) return;
     const robotsUrl = `https://${hostname}/robots.txt`;
-    const res = await fetchWithTimeout(robotsUrl, {}, 10000);
+    const safeFetch = await fetchWithSsrfGuard(robotsUrl, {}, {
+      timeoutMs: 10000,
+      maxRedirects: 5,
+      maxResponseBytes: 250000,
+    });
+    const res = safeFetch.response;
     const body = await res.text();
     const disallowPaths = body
       .split("\n")
@@ -2149,12 +2146,21 @@ export async function runSurfaceScanEnrichment(
     let usedUrl = "";
 
     for (const url of urls) {
-      const res = await fetchWithTimeout(url, {}, 10000);
-      if (res.ok) {
-        content = await res.text();
-        usedUrl = url;
-        found = true;
-        break;
+      try {
+        const safeFetch = await fetchWithSsrfGuard(url, {}, {
+          timeoutMs: 10000,
+          maxRedirects: 5,
+          maxResponseBytes: 200000,
+        });
+        const res = safeFetch.response;
+        if (res.ok) {
+          content = await res.text();
+          usedUrl = safeFetch.finalUrl || url;
+          found = true;
+          break;
+        }
+      } catch {
+        // try fallback location
       }
     }
 
@@ -2206,7 +2212,12 @@ export async function runSurfaceScanEnrichment(
   const runSitemapModule = async () => {
     if (!hostname || !rootDomain) return;
     const sitemapUrl = `https://${hostname}/sitemap.xml`;
-    const res = await fetchWithTimeout(sitemapUrl, {}, 10000);
+    const safeFetch = await fetchWithSsrfGuard(sitemapUrl, {}, {
+      timeoutMs: 10000,
+      maxRedirects: 5,
+      maxResponseBytes: 300000,
+    });
+    const res = safeFetch.response;
     if (!res.ok) {
       await insertObservation({
         module: "sitemap",
@@ -2264,11 +2275,16 @@ export async function runSurfaceScanEnrichment(
       }
       visited.add(current);
 
-      const res = await fetchWithTimeout(current, { redirect: "manual" }, 10000);
+      const safeFetch = await fetchWithSsrfGuard(current, { redirect: "manual" }, {
+        timeoutMs: 10000,
+        maxRedirects: 0,
+        maxResponseBytes: 200000,
+      });
+      const res = safeFetch.response;
       const location = res.headers.get("location") || undefined;
-      const currentUrl = new URL(current);
+      const currentUrl = new URL(safeFetch.finalUrl || current);
       chain.push({
-        url: current,
+        url: safeFetch.finalUrl || current,
         status: res.status,
         location,
         protocol: currentUrl.protocol === "https:" ? "https" : "http",
@@ -2419,6 +2435,7 @@ export async function runSurfaceScanEnrichment(
       hostname: hostForCert,
       source: "https-fetch-basic",
       trusted: null,
+      ssl_labs_enabled: isFeatureEnabled("SURFACESCAN_ENABLE_SSL_LABS", false),
     };
 
     let certPayload: Record<string, unknown> | null = null;
@@ -2609,10 +2626,15 @@ export async function runSurfaceScanEnrichment(
     } else {
       try {
         const httpsTarget = hostForCert.includes(":") ? `https://[${hostForCert}]/` : `https://${hostForCert}/`;
-        const res = await fetchWithTimeout(httpsTarget, { redirect: "follow" }, 10000);
+        const safeFetch = await fetchWithSsrfGuard(httpsTarget, {}, {
+          timeoutMs: 10000,
+          maxRedirects: 10,
+          maxResponseBytes: 250000,
+        });
+        const res = safeFetch.response;
         result.source = "https-fetch-basic";
         result.trusted = res.ok;
-        result.finalUrl = res.url || httpsTarget;
+        result.finalUrl = safeFetch.finalUrl || res.url || httpsTarget;
         result.statusCode = res.status;
       } catch (error: any) {
         result.source = "https-fetch-basic";
@@ -3080,6 +3102,7 @@ export async function runSurfaceScanEnrichment(
     if (!hostname) return;
     const targetUrlCandidate = targetUrl;
     const googleApiKey = Deno.env.get("GOOGLE_CLOUD_API_KEY") || Deno.env.get("GOOGLE_API_KEY");
+    const phishTankEnabled = isFeatureEnabled("SURFACESCAN_ENABLE_PHISHTANK", false);
     let safeBrowsingMatches: any[] = [];
 
     if (googleApiKey) {
@@ -3144,34 +3167,36 @@ export async function runSurfaceScanEnrichment(
       source: string;
       details?: Record<string, unknown>;
     } | null = null;
-    try {
-      const form = new URLSearchParams();
-      form.set("url", targetUrlCandidate);
-      form.set("format", "xml");
-      if (phishTankKey) form.set("app_key", phishTankKey);
-      const phishRes = await fetchWithTimeout("https://checkurl.phishtank.com/checkurl/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "SurfaceScan360/1.0 (+https://hicompliance.it)",
-        },
-        body: form.toString(),
-      }, 12000);
-      const xml = await phishRes.text();
-      const inDatabase = /<in_database>\s*true\s*<\/in_database>/i.test(xml);
-      const valid = /<valid>\s*true\s*<\/valid>/i.test(xml);
-      const verified = /<verified>\s*true\s*<\/verified>/i.test(xml);
-      phishTank = {
-        inDatabase,
-        valid,
-        verified,
-        source: "phishtank",
-        details: {
-          status: phishRes.status,
-        },
-      };
-    } catch {
-      phishTank = null;
+    if (phishTankEnabled) {
+      try {
+        const form = new URLSearchParams();
+        form.set("url", targetUrlCandidate);
+        form.set("format", "xml");
+        if (phishTankKey) form.set("app_key", phishTankKey);
+        const phishRes = await fetchWithTimeout("https://checkurl.phishtank.com/checkurl/", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "SurfaceScan360/1.0 (+https://hicompliance.it)",
+          },
+          body: form.toString(),
+        }, 12000);
+        const xml = await phishRes.text();
+        const inDatabase = /<in_database>\s*true\s*<\/in_database>/i.test(xml);
+        const valid = /<valid>\s*true\s*<\/valid>/i.test(xml);
+        const verified = /<verified>\s*true\s*<\/verified>/i.test(xml);
+        phishTank = {
+          inDatabase,
+          valid,
+          verified,
+          source: "phishtank",
+          details: {
+            status: phishRes.status,
+          },
+        };
+      } catch {
+        phishTank = null;
+      }
     }
 
     const internalIndicators: Array<{
@@ -3215,10 +3240,19 @@ export async function runSurfaceScanEnrichment(
     const internalHighConfidence = internalIndicators.filter((entry) => (entry.confidence || 0) >= 90);
     const internalMediumConfidence = internalIndicators.filter((entry) => (entry.confidence || 0) >= 70 && (entry.confidence || 0) < 90);
 
+    const threatSignals = summarizeThreatSignals({
+      safeBrowsingMatches,
+      urlHausListed,
+      phishTank: phishTank
+        ? {
+          inDatabase: phishTank.inDatabase,
+          valid: phishTank.valid,
+          verified: phishTank.verified,
+        }
+        : null,
+    });
     const noThreatMatches =
-      safeBrowsingMatches.length === 0 &&
-      !urlHausListed &&
-      !(phishTank?.inDatabase && (phishTank?.valid || phishTank?.verified)) &&
+      !threatSignals.has_threat_match &&
       internalIndicators.length === 0;
     await insertObservation({
       module: "threats",
@@ -3242,6 +3276,7 @@ export async function runSurfaceScanEnrichment(
             verified: phishTank.verified,
           }
           : {
+            feature_enabled: phishTankEnabled,
             configured: Boolean(phishTankKey),
             checked: false,
           },
@@ -3380,6 +3415,7 @@ export async function runSurfaceScanEnrichment(
   };
 
   const runOpenPortsModule = async () => {
+    const allowCustomNodeTcp = isFeatureEnabled("SURFACESCAN_ENABLE_CUSTOM_NODE_TCP", false);
     const toProfile = (profile: string): "quick" | "full" | "deep" => {
       if (profile === "safe_recon") return "quick";
       if (profile === "domain_exposure" || profile === "ip_exposure") return "full";
@@ -3452,6 +3488,7 @@ export async function runSurfaceScanEnrichment(
           : sourceRaw.includes("node")
             ? "node-tcp"
             : "cache";
+      if (source === "node-tcp" && !allowCustomNodeTcp) continue;
       const key = `${ip}:${parsedPort}/${protocol}`;
       const service = String(raw?.service || raw?.service_name || "").trim() || undefined;
       const product = String(raw?.product || "").trim() || undefined;
@@ -3502,6 +3539,7 @@ export async function runSurfaceScanEnrichment(
       scanProfile: toProfile(job.scan_profile),
       scanStartedAt: job.started_at || null,
       scanCompletedAt: new Date().toISOString(),
+      customNodeTcpEnabled: allowCustomNodeTcp,
     };
 
     await insertObservation({

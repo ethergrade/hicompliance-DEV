@@ -18,9 +18,17 @@ interface StartScanRequest {
   scan_profile?: string;
   authorization_confirmed?: boolean;
   ownership_proof?: string;
+  force_refresh?: boolean;
 }
 
 const MAX_SCANS_PER_USER_PER_HOUR = 200;
+const PROFILE_RATE_LIMITS: Record<string, { tier: "quick" | "full" | "deep"; maxPerHour: number }> = {
+  safe_recon: { tier: "quick", maxPerHour: 20 },
+  domain_exposure: { tier: "full", maxPerHour: 10 },
+  ip_exposure: { tier: "full", maxPerHour: 10 },
+  cve_api_validation: { tier: "deep", maxPerHour: 3 },
+};
+const TARGET_COOLDOWN_MINUTES = 15;
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -42,6 +50,7 @@ serve(async (req: Request) => {
     const customerId = String(body?.customer_id || "").trim();
     const scanProfile = String(body?.scan_profile || "safe_recon").trim();
     const authorizationConfirmed = Boolean(body?.authorization_confirmed);
+    const forceRefresh = Boolean(body?.force_refresh);
 
     if (!target || !customerId) {
       return new Response(
@@ -141,6 +150,65 @@ serve(async (req: Request) => {
       );
     }
 
+    const profileRateLimit = PROFILE_RATE_LIMITS[scanProfile] || PROFILE_RATE_LIMITS.safe_recon;
+    const profileRateRes = await adminClient
+      .from("surface_scan_jobs" as any)
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", customerId)
+      .eq("scan_profile", scanProfile)
+      .gte("created_at", oneHourAgo);
+
+    if ((profileRateRes.count || 0) >= profileRateLimit.maxPerHour) {
+      return new Response(
+        JSON.stringify({
+          error: `Rate limit ${profileRateLimit.tier} raggiunto: massimo ${profileRateLimit.maxPerHour} target/ora per tenant.`,
+          code: `rate_limit_${profileRateLimit.tier}`,
+        }),
+        { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } },
+      );
+    }
+
+    if (!forceRefresh) {
+      const cooldownThreshold = new Date(Date.now() - TARGET_COOLDOWN_MINUTES * 60 * 1000).toISOString();
+      const duplicateRes = await adminClient
+        .from("surface_scan_jobs" as any)
+        .select("id, status, created_at")
+        .eq("organization_id", customerId)
+        .eq("normalized_target", normalized.normalized_target)
+        .eq("scan_profile", scanProfile)
+        .in("status", ["queued", "running", "completed"])
+        .gte("created_at", cooldownThreshold)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (duplicateRes.error) {
+        throw new Error(duplicateRes.error.message || "Unable to validate cooldown");
+      }
+      if (duplicateRes.data?.id) {
+        await adminClient.from("surface_scan_audit_log" as any).insert({
+          scan_job_id: duplicateRes.data.id,
+          user_id: authData.user.id,
+          action: "scan_rejected_cooldown",
+          details: {
+            normalized_target: normalized.normalized_target,
+            scan_profile: scanProfile,
+            cooldown_minutes: TARGET_COOLDOWN_MINUTES,
+            existing_job_id: duplicateRes.data.id,
+            existing_status: duplicateRes.data.status,
+          },
+        });
+        return new Response(
+          JSON.stringify({
+            error: `Cooldown attivo: target già scansionato/accodato negli ultimi ${TARGET_COOLDOWN_MINUTES} minuti. Usa force_refresh=true per bypass.`,
+            code: "target_module_cooldown_active",
+            existing_job_id: duplicateRes.data.id,
+          }),
+          { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } },
+        );
+      }
+    }
+
     // Recover stale running jobs to avoid indefinite PENDING/RUNNING states.
     const staleRunningCutoff = new Date(Date.now() - 45 * 60 * 1000).toISOString();
     const { data: staleRunningJobs } = await adminClient
@@ -238,6 +306,13 @@ serve(async (req: Request) => {
     await dispatchSurfaceScanQueue(adminClient, customerId, {
       initiatedByUserId: authData.user.id,
       maxToStart: 3,
+    });
+
+    console.info("surface_scan_module_start", {
+      scanRunId: jobData.id,
+      tenantId: customerId,
+      moduleKey: "queue_dispatch",
+      target: normalized.normalized_target,
     });
 
     const { data: updatedJob, error: updatedJobError } = await adminClient
