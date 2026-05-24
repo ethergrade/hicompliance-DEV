@@ -332,6 +332,40 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
   const openPortRows = Array.isArray(openPorts.openPorts) ? openPorts.openPorts : [];
   const threats = (observationByModule.threats?.value || {}) as Record<string, any>;
   const iocFreshList = (threats?.ioc_fresh_list || threats?.intelguard || {}) as Record<string, any>;
+  const iocLeaseMinutes = Number(iocFreshList?.lease_minutes || 0);
+  const iocLastRefreshedAt = String(iocFreshList?.last_refreshed_at || '').trim();
+  const iocFreshBadge = useMemo(() => {
+    if (!iocLeaseMinutes || !iocLastRefreshedAt) {
+      return {
+        label: 'N/D',
+        className: 'bg-slate-500/20 text-slate-300 border-slate-500/30',
+      };
+    }
+    const refreshedTs = Date.parse(iocLastRefreshedAt);
+    if (!Number.isFinite(refreshedTs)) {
+      return {
+        label: 'N/D',
+        className: 'bg-slate-500/20 text-slate-300 border-slate-500/30',
+      };
+    }
+    const leaseMs = iocLeaseMinutes * 60 * 1000;
+    const stale = Date.now() - refreshedTs > leaseMs;
+    return stale
+      ? {
+        label: 'Stale',
+        className: 'bg-red-500/20 text-red-300 border-red-500/30',
+      }
+      : {
+        label: 'Fresh',
+        className: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+      };
+  }, [iocLeaseMinutes, iocLastRefreshedAt]);
+  const iocLastRefreshedLabel = useMemo(() => {
+    if (!iocLastRefreshedAt) return '-';
+    const refreshedTs = Date.parse(iocLastRefreshedAt);
+    if (!Number.isFinite(refreshedTs)) return '-';
+    return new Date(refreshedTs).toLocaleString('it-IT');
+  }, [iocLastRefreshedAt]);
   const blocklists = (observationByModule.dns_blocklists?.value || {}) as Record<string, any>;
   const whois = (observationByModule.whois?.value || {}) as Record<string, any>;
   const ssl = (observationByModule.ssl_certificate?.value || {}) as Record<string, any>;
@@ -635,7 +669,9 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                 <div className="flex justify-between"><span>URLHaus</span><Badge variant="outline">{threats?.urlhaus?.listed ? 'Listed' : 'Not listed'}</Badge></div>
                 <div className="flex justify-between"><span>PhishTank</span><Badge variant="outline">{threats?.phishtank?.verified ? 'Phishing found' : 'No phishing'}</Badge></div>
                 <div className="flex justify-between"><span>IOC Fresh List</span><Badge variant="outline">{iocFreshList?.matched ? `Match (${Number(iocFreshList?.matched_count || 0)})` : 'No match'}</Badge></div>
-                <div className="flex justify-between"><span>Lease</span><Badge variant="outline">{iocFreshList?.lease_minutes ? `${iocFreshList.lease_minutes} min` : '-'}</Badge></div>
+                <div className="flex justify-between"><span>Stato feed</span><Badge className={iocFreshBadge.className}>{iocFreshBadge.label}</Badge></div>
+                <div className="flex justify-between"><span>Lease</span><Badge variant="outline">{iocLeaseMinutes ? `${iocLeaseMinutes} min` : '-'}</Badge></div>
+                <div className="flex justify-between"><span>Ultimo refresh</span><Badge variant="outline">{iocLastRefreshedLabel}</Badge></div>
                 <div className="flex justify-between"><span>DNS Blocklist</span><Badge variant="outline">{Number(blocklists?.listed_count || 0) > 0 ? `Listed (${blocklists?.listed_count})` : 'Clean'}</Badge></div>
               </div>
             </div>
