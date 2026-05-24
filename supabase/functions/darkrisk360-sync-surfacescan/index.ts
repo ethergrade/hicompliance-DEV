@@ -17,6 +17,9 @@ import {
   inferRiskDimensions,
 } from '../_shared/darkrisk-scoring.ts';
 
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
+const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+
 type SurfaceAssetRow = {
   id: string;
   asset_type: string | null;
@@ -182,7 +185,7 @@ serve(async (req: Request) => {
 
     const entitlementRes = await adminClient
       .from('darkrisk_entitlements' as any)
-      .select('id, enabled, tier')
+      .select('id, enabled, tier, enable_ai_recommendations')
       .eq('organization_id', customerId)
       .maybeSingle();
 
@@ -194,7 +197,12 @@ serve(async (req: Request) => {
       throw entitlementRes.error;
     }
 
-    const entitlement = entitlementRes.data as { id: string; enabled: boolean; tier: string } | null;
+    const entitlement = entitlementRes.data as {
+      id: string;
+      enabled: boolean;
+      tier: string;
+      enable_ai_recommendations?: boolean | null;
+    } | null;
     if (!entitlement?.enabled) {
       return jsonResponse({ error: 'DarkRisk360 not enabled for customer' }, 403);
     }
@@ -511,6 +519,9 @@ serve(async (req: Request) => {
       }
     }
 
+    let recommendationMode: 'not_requested' | 'generated' | 'failed' | 'disabled' = 'not_requested';
+    let recommendationWarning: string | null = null;
+
     const completedAt = new Date().toISOString();
     await adminClient
       .from('darkrisk_scan_runs' as any)
@@ -530,6 +541,48 @@ serve(async (req: Request) => {
       })
       .eq('id', scanRunId);
 
+    const aiEnabled = entitlement?.enable_ai_recommendations !== false;
+    if (aiEnabled && SUPABASE_URL && SERVICE_ROLE) {
+      try {
+        const recoRes = await fetch(`${SUPABASE_URL}/functions/v1/darkrisk360-generate-recommendations`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${SERVICE_ROLE}`,
+            apikey: SERVICE_ROLE,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            customer_id: customerId,
+            scan_run_id: scanRunId,
+            trigger_type: 'auto_after_sync',
+          }),
+        });
+
+        if (!recoRes.ok) {
+          const text = await recoRes.text();
+          recommendationMode = 'failed';
+          recommendationWarning = `AI recommendation generation failed: ${text.slice(0, 280)}`;
+        } else {
+          recommendationMode = 'generated';
+        }
+      } catch (recoErr: any) {
+        recommendationMode = 'failed';
+        recommendationWarning = normalizeText(recoErr?.message) || 'AI recommendation generation failed';
+      }
+    } else if (!aiEnabled) {
+      recommendationMode = 'disabled';
+    }
+
+    if (recommendationWarning) {
+      await adminClient
+        .from('darkrisk_scan_runs' as any)
+        .update({
+          status: 'completed_with_warnings',
+          warnings: [recommendationWarning],
+        })
+        .eq('id', scanRunId);
+    }
+
     return jsonResponse({
       ok: true,
       customer_id: customerId,
@@ -544,7 +597,9 @@ serve(async (req: Request) => {
         evidence_created: evidenceCreated,
         findings_created: findingsCreated,
         alerts_created: alertsCreated,
+        recommendation_mode: recommendationMode,
       },
+      warning: recommendationWarning,
     });
   } catch (error: any) {
     if (scanRunId) {
