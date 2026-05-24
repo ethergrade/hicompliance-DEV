@@ -24,6 +24,15 @@ export type ExposureStartRequest = {
 
 export type ExposureSummary = {
   job_id: string | null;
+  job_ids?: string[];
+  scope_mode?: 'single_job' | 'scope_latest_per_target';
+  scope_aggregate?: boolean;
+  targets_in_scope?: number;
+  scope_counters?: {
+    in_scope: number;
+    excluded_by_scope: number;
+    excluded_shared_noise: number;
+  };
   status?: string;
   targets_total: number;
   hosts_with_open_ports: number;
@@ -131,11 +140,13 @@ export async function resyncExposureJob(jobId: string) {
 export async function fetchExposureSummary(params: {
   customerId: string;
   jobId?: string;
+  scopeMode?: 'single_job' | 'scope_latest_per_target';
 }): Promise<ExposureSummary> {
   const { data, error } = await supabase.functions.invoke('surface-exposure-summary', {
     body: {
       customer_id: params.customerId,
       job_id: params.jobId || undefined,
+      scope_mode: params.scopeMode || (params.jobId ? 'single_job' : 'scope_latest_per_target'),
     },
   });
   if (error) throw error;
@@ -157,10 +168,17 @@ export async function fetchExposureJobs(customerId: string, limit = 20): Promise
 }
 
 export async function fetchOpenPorts(jobId: string): Promise<ExposureOpenPortRow[]> {
+  return fetchOpenPortsByJobIds([jobId]);
+}
+
+export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<ExposureOpenPortRow[]> {
+  const uniqueJobIds = [...new Set((jobIds || []).map((entry) => String(entry || '').trim()).filter(Boolean))];
+  if (uniqueJobIds.length === 0) return [];
+
   const { data, error } = await supabase
     .from('surface_open_ports' as any)
     .select('id, scan_job_id, host, ip, port, protocol, state, service_name, service_product, service_version, is_web, is_tls, exposure_level, remediation_hint, first_seen_at, last_seen_at')
-    .eq('scan_job_id', jobId)
+    .in('scan_job_id', uniqueJobIds)
     .order('exposure_level', { ascending: false })
     .order('host', { ascending: true })
     .order('port', { ascending: true });
@@ -170,10 +188,17 @@ export async function fetchOpenPorts(jobId: string): Promise<ExposureOpenPortRow
 }
 
 export async function fetchTechnologies(jobId: string): Promise<ExposureTechnologyRow[]> {
+  return fetchTechnologiesByJobIds([jobId]);
+}
+
+export async function fetchTechnologiesByJobIds(jobIds: string[]): Promise<ExposureTechnologyRow[]> {
+  const uniqueJobIds = [...new Set((jobIds || []).map((entry) => String(entry || '').trim()).filter(Boolean))];
+  if (uniqueJobIds.length === 0) return [];
+
   const { data, error } = await supabase
     .from('surface_web_technologies' as any)
     .select('id, scan_job_id, url, host, port, technology_name, technology_version, category, confidence, created_at')
-    .eq('scan_job_id', jobId)
+    .in('scan_job_id', uniqueJobIds)
     .order('technology_name', { ascending: true });
 
   if (error) throw error;
@@ -181,13 +206,19 @@ export async function fetchTechnologies(jobId: string): Promise<ExposureTechnolo
 }
 
 export async function fetchExposureFindings(jobId: string): Promise<ExposureFindingRow[]> {
+  return fetchExposureFindingsByJobIds([jobId]);
+}
+
+export async function fetchExposureFindingsByJobIds(jobIds: string[]): Promise<ExposureFindingRow[]> {
+  const uniqueJobIds = [...new Set((jobIds || []).map((entry) => String(entry || '').trim()).filter(Boolean))];
+  if (uniqueJobIds.length === 0) return [];
+
   const { data, error } = await supabase
     .from('surface_exposure_findings' as any)
     .select('id, scan_job_id, finding_type, title, severity, cvss, cve_ids, affected_host, affected_port, affected_url, description, evidence, recommendation, source, status, created_at')
-    .eq('scan_job_id', jobId)
+    .in('scan_job_id', uniqueJobIds)
     .order('created_at', { ascending: false });
 
   if (error) throw error;
   return (data || []) as ExposureFindingRow[];
 }
-

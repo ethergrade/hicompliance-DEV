@@ -30,6 +30,9 @@ export const ExposureKpiCards: React.FC<ExposureKpiCardsProps> = ({ summary, loa
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Asset scansionati</p>
               <p className="text-2xl font-semibold">{valueOrPlaceholder(summary?.targets_total || 0)}</p>
               <p className="text-xs text-muted-foreground">Host con porte aperte: {valueOrPlaceholder(summary?.hosts_with_open_ports || 0)}</p>
+              <p className="text-xs text-muted-foreground">
+                Scope: in {summary?.scope_counters?.in_scope || 0} · esclusi {summary?.scope_counters?.excluded_by_scope || 0} · noise {summary?.scope_counters?.excluded_shared_noise || 0}
+              </p>
             </div>
             <Globe className="w-5 h-5 text-primary" />
           </div>

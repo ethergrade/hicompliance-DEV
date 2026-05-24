@@ -24,7 +24,6 @@ import {
   Newspaper,
   PieChart,
   ChevronDown,
-  ShieldCheck,
   Bot,
 } from 'lucide-react';
 import {
@@ -65,7 +64,6 @@ const navigation = [
 const hiComplianceModules = [
   { title: 'Assessment', href: '/assessment', icon: ClipboardCheck },
   { title: 'SurfaceScan360', href: '/surface-scan', icon: Globe },
-  { title: 'SurfaceScan Exposure', href: '/surface-scan/exposure', icon: ShieldCheck },
   { title: 'DarkRisk360', href: '/dark-risk', icon: Eye },
   { title: 'Analisi', href: '/analytics', icon: BarChart3 },
   { title: 'Remediation', href: '/remediation', icon: Wrench },

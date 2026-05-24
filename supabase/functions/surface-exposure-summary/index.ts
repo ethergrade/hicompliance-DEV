@@ -1,5 +1,14 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
-import { corsHeaders, makeSupabaseClients, getCallerProfile, assertCustomerAccess } from '../_shared/surface-scan-utils.ts';
+import {
+  corsHeaders,
+  makeSupabaseClients,
+  getCallerProfile,
+  assertCustomerAccess,
+  classifyHostForScope,
+  isIpWithinMonitoredScope,
+  isValidIPv4,
+  splitMonitoredScopeRules,
+} from '../_shared/surface-scan-utils.ts';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -10,10 +19,14 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 type OpenPortSnapshot = {
   host: string;
+  ip?: string | null;
   port: number;
   protocol: string;
   service_name?: string | null;
   exposure_level?: string | null;
+  is_web?: boolean;
+  is_tls?: boolean;
+  last_seen_at?: string | null;
 };
 
 type TechnologySnapshot = {
@@ -21,14 +34,69 @@ type TechnologySnapshot = {
   url: string;
   technology_name: string;
   technology_version?: string | null;
+  created_at?: string | null;
+};
+
+type ScopeCounterState = {
+  in_scope: number;
+  excluded_by_scope: number;
+  excluded_shared_noise: number;
 };
 
 function keyOpenPort(row: OpenPortSnapshot): string {
-  return `${String(row.host || '').toLowerCase()}|${Number(row.port || 0)}|${String(row.protocol || 'tcp').toLowerCase()}`;
+  return `${String(row.host || '').toLowerCase()}|${String(row.ip || '').toLowerCase()}|${Number(row.port || 0)}|${String(row.protocol || 'tcp').toLowerCase()}`;
 }
 
 function keyTech(row: TechnologySnapshot): string {
   return `${String(row.host || '').toLowerCase()}|${String(row.url || '').toLowerCase()}|${String(row.technology_name || '').toLowerCase()}|${String(row.technology_version || '').toLowerCase()}`;
+}
+
+function parseHostnameFromTarget(value: string): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    return new URL(raw).hostname.toLowerCase();
+  } catch {
+    // continue
+  }
+  return raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim().toLowerCase();
+}
+
+function toTimestamp(value: string | null | undefined): number {
+  const ts = Date.parse(String(value || ''));
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function dedupeOpenPorts(rows: OpenPortSnapshot[]): OpenPortSnapshot[] {
+  const map = new Map<string, OpenPortSnapshot>();
+  for (const row of rows || []) {
+    const key = keyOpenPort(row);
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, row);
+      continue;
+    }
+    if (toTimestamp(row.last_seen_at) >= toTimestamp(existing.last_seen_at)) {
+      map.set(key, row);
+    }
+  }
+  return Array.from(map.values());
+}
+
+function dedupeTechnologies(rows: TechnologySnapshot[]): TechnologySnapshot[] {
+  const map = new Map<string, TechnologySnapshot>();
+  for (const row of rows || []) {
+    const key = keyTech(row);
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, row);
+      continue;
+    }
+    if (toTimestamp(row.created_at) >= toTimestamp(existing.created_at)) {
+      map.set(key, row);
+    }
+  }
+  return Array.from(map.values());
 }
 
 function compareExposureSnapshots(previousPorts: OpenPortSnapshot[], currentPorts: OpenPortSnapshot[], previousTech: TechnologySnapshot[], currentTech: TechnologySnapshot[]) {
@@ -67,6 +135,76 @@ function compareExposureSnapshots(previousPorts: OpenPortSnapshot[], currentPort
   };
 }
 
+function trackScopeReason(counters: ScopeCounterState, reason: 'scope_excluded_domain' | 'scope_excluded_ip' | 'scope_excluded_shared_noise' | null) {
+  if (!reason) {
+    counters.in_scope += 1;
+    return;
+  }
+  if (reason === 'scope_excluded_shared_noise') {
+    counters.excluded_shared_noise += 1;
+    return;
+  }
+  counters.excluded_by_scope += 1;
+}
+
+function scopeReasonForTarget(
+  targetValue: string,
+  targetType: string,
+  scopeDomains: string[],
+  ipScopeRules: Array<Record<string, unknown>>,
+): 'scope_excluded_domain' | 'scope_excluded_ip' | 'scope_excluded_shared_noise' | null {
+  const normalizedTarget = String(targetValue || '').trim().toLowerCase();
+  const normalizedType = String(targetType || '').trim().toLowerCase();
+  if (!normalizedTarget) return 'scope_excluded_domain';
+
+  const host = parseHostnameFromTarget(normalizedTarget);
+  const ipLike = normalizedType === 'ip' || normalizedType === 'ipv4' || normalizedType === 'ipv6' || isValidIPv4(host) || host.includes(':');
+
+  if (ipLike) {
+    return isIpWithinMonitoredScope(host || normalizedTarget, ipScopeRules as any)
+      ? null
+      : 'scope_excluded_ip';
+  }
+
+  const hostScope = classifyHostForScope(host || normalizedTarget, scopeDomains);
+  if (hostScope.blocked) return 'scope_excluded_shared_noise';
+  if (!hostScope.inScope) return 'scope_excluded_domain';
+  return null;
+}
+
+function emptySummary(scopeMode: 'single_job' | 'scope_latest_per_target', counters: ScopeCounterState, isAggregate: boolean) {
+  return {
+    job_id: null,
+    job_ids: [],
+    scope_mode: scopeMode,
+    scope_aggregate: isAggregate,
+    targets_in_scope: counters.in_scope,
+    scope_counters: counters,
+    targets_total: counters.in_scope,
+    hosts_with_open_ports: 0,
+    open_ports_total: 0,
+    critical_exposures: 0,
+    web_services: 0,
+    tls_services: 0,
+    top_open_ports: [],
+    technologies: [],
+    findings_by_severity: {
+      critical: 0,
+      high: 0,
+      medium: 0,
+      low: 0,
+      info: 0,
+    },
+    diff: {
+      new_open_ports: [],
+      closed_ports: [],
+      unchanged_ports: [],
+      new_technologies: [],
+      removed_technologies: [],
+    },
+  };
+}
+
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   if (!['GET', 'POST'].includes(req.method)) return jsonResponse({ error: 'Method not allowed' }, 405);
@@ -85,61 +223,111 @@ serve(async (req: Request) => {
     const jobIdInput = String(
       body?.job_id || query.get('job_id') || '',
     ).trim();
+    const scopeModeInput = String(
+      body?.scope_mode || query.get('scope_mode') || '',
+    ).trim().toLowerCase();
+    const scopeMode: 'single_job' | 'scope_latest_per_target' =
+      scopeModeInput === 'single_job' ? 'single_job' : 'scope_latest_per_target';
 
     const caller = await getCallerProfile(adminClient, authData.user.id);
     const customerId = customerIdInput || caller.organizationId || '';
     if (!customerId) return jsonResponse({ error: 'customer_id is required' }, 400);
     assertCustomerAccess(caller, customerId);
 
-    let jobId = jobIdInput;
-    if (!jobId) {
-      const { data: latestJob } = await adminClient
-        .from('surface_scan_jobs' as any)
-        .select('id')
-        .eq('customer_id', customerId)
-        .eq('scan_type', 'exposure_port_technology')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+    const { data: monitoredScopeRows, error: monitoredScopeError } = await adminClient
+      .from('surface_scan_monitored_ips' as any)
+      .select('entry_type, input_value, ip_start, ip_end')
+      .eq('organization_id', customerId);
+    if (monitoredScopeError) throw monitoredScopeError;
+    const { scopeDomains, ipScopeRules } = splitMonitoredScopeRules((monitoredScopeRows || []) as any);
 
-      if (!latestJob?.id) {
-        return jsonResponse({
-          job_id: null,
-          targets_total: 0,
-          hosts_with_open_ports: 0,
-          open_ports_total: 0,
-          critical_exposures: 0,
-          web_services: 0,
-          tls_services: 0,
-          top_open_ports: [],
-          technologies: [],
-          findings_by_severity: {
-            critical: 0,
-            high: 0,
-            medium: 0,
-            low: 0,
-            info: 0,
-          },
-          diff: {
-            new_open_ports: [],
-            closed_ports: [],
-            unchanged_ports: [],
-            new_technologies: [],
-            removed_technologies: [],
-          },
-        });
+    const { data: allJobsRows, error: allJobsError } = await adminClient
+      .from('surface_scan_jobs' as any)
+      .select('id, customer_id, organization_id, created_at, status')
+      .eq('customer_id', customerId)
+      .eq('scan_type', 'exposure_port_technology')
+      .order('created_at', { ascending: false })
+      .limit(500);
+    if (allJobsError) throw allJobsError;
+
+    const allJobs = (allJobsRows || []) as Array<{
+      id: string;
+      customer_id: string | null;
+      organization_id: string | null;
+      created_at: string;
+      status: string;
+    }>;
+
+    const counters: ScopeCounterState = {
+      in_scope: 0,
+      excluded_by_scope: 0,
+      excluded_shared_noise: 0,
+    };
+
+    if (allJobs.length === 0) {
+      return jsonResponse(emptySummary(scopeMode, counters, scopeMode !== 'single_job'));
+    }
+
+    let selectedJobIds: string[] = [];
+    let anchorJobId = '';
+
+    if (scopeMode === 'single_job') {
+      anchorJobId = jobIdInput || String(allJobs[0]?.id || '');
+      if (!anchorJobId) return jsonResponse({ error: 'Job not found' }, 404);
+      selectedJobIds = [anchorJobId];
+    } else {
+      const allJobIds = allJobs.map((row) => String(row.id || '')).filter(Boolean);
+      const { data: targetRows } = await adminClient
+        .from('surface_scan_targets' as any)
+        .select('scan_job_id, target_value, target_type')
+        .in('scan_job_id', allJobIds);
+
+      const latestByTarget = new Map<string, { scan_job_id: string; created_at: string }>();
+      const countedTargets = new Set<string>();
+      for (const row of (targetRows || []) as Array<Record<string, unknown>>) {
+        const scanJobId = String(row?.scan_job_id || '').trim();
+        const targetValue = String(row?.target_value || '').trim().toLowerCase();
+        const targetType = String(row?.target_type || '').trim().toLowerCase();
+        if (!scanJobId || !targetValue) continue;
+        const targetKey = `${targetType || 'target'}|${targetValue}`;
+
+        const reason = scopeReasonForTarget(targetValue, targetType, scopeDomains, ipScopeRules as any);
+        if (!countedTargets.has(targetKey)) {
+          trackScopeReason(counters, reason);
+          countedTargets.add(targetKey);
+        }
+        if (reason) continue;
+
+        const jobMeta = allJobs.find((entry) => String(entry.id) === scanJobId);
+        if (!jobMeta) continue;
+
+        const current = latestByTarget.get(targetKey);
+        const currentTs = current ? Date.parse(current.created_at) : 0;
+        const incomingTs = Date.parse(jobMeta.created_at);
+        if (!current || incomingTs >= currentTs) {
+          latestByTarget.set(targetKey, { scan_job_id: scanJobId, created_at: jobMeta.created_at });
+        }
       }
 
-      jobId = String(latestJob.id);
+      selectedJobIds = [...new Set(Array.from(latestByTarget.values()).map((entry) => entry.scan_job_id))];
+      if (selectedJobIds.length === 0) {
+        return jsonResponse(emptySummary(scopeMode, counters, true));
+      }
+
+      const selectedJobsMeta = allJobs.filter((row) => selectedJobIds.includes(String(row.id)));
+      selectedJobsMeta.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+      anchorJobId = String(selectedJobsMeta[0]?.id || selectedJobIds[0] || '');
     }
+
+    if (!anchorJobId) return jsonResponse({ error: 'Job not found' }, 404);
 
     const { data: job } = await adminClient
       .from('surface_scan_jobs' as any)
       .select('*')
-      .eq('id', jobId)
+      .eq('id', anchorJobId)
       .single();
-
     if (!job) return jsonResponse({ error: 'Job not found' }, 404);
+
     const resolvedCustomerId = String(job.customer_id || job.organization_id || customerId).trim();
     assertCustomerAccess(caller, resolvedCustomerId);
 
@@ -151,23 +339,26 @@ serve(async (req: Request) => {
       sslRes,
       previousJobRes,
     ] = await Promise.all([
-      adminClient.from('surface_scan_targets' as any).select('id').eq('scan_job_id', jobId),
+      adminClient
+        .from('surface_scan_targets' as any)
+        .select('id, target_value, target_type')
+        .in('scan_job_id', selectedJobIds),
       adminClient
         .from('surface_open_ports' as any)
-        .select('host, ip, port, protocol, service_name, service_product, service_version, exposure_level, is_web, is_tls')
-        .eq('scan_job_id', jobId),
+        .select('host, ip, port, protocol, service_name, service_product, service_version, exposure_level, is_web, is_tls, last_seen_at')
+        .in('scan_job_id', selectedJobIds),
       adminClient
         .from('surface_exposure_findings' as any)
         .select('severity')
-        .eq('scan_job_id', jobId),
+        .in('scan_job_id', selectedJobIds),
       adminClient
         .from('surface_web_technologies' as any)
-        .select('url, host, technology_name, technology_version, category')
-        .eq('scan_job_id', jobId),
+        .select('url, host, technology_name, technology_version, category, created_at')
+        .in('scan_job_id', selectedJobIds),
       adminClient
         .from('surface_ssl_results' as any)
         .select('id')
-        .eq('scan_job_id', jobId),
+        .in('scan_job_id', selectedJobIds),
       adminClient
         .from('surface_scan_jobs' as any)
         .select('id')
@@ -179,10 +370,28 @@ serve(async (req: Request) => {
         .maybeSingle(),
     ]);
 
-    const targets = (targetsRes.data || []) as any[];
-    const openPorts = (openPortsRes.data || []) as any[];
+    const targets = (targetsRes.data || []) as Array<Record<string, unknown>>;
+    if (scopeMode === 'single_job') {
+      const countedTargets = new Set<string>();
+      for (const targetRow of targets) {
+        const targetValue = String(targetRow?.target_value || '').trim().toLowerCase();
+        const targetType = String(targetRow?.target_type || '').trim().toLowerCase();
+        const targetKey = `${targetType || 'target'}|${targetValue}`;
+        if (countedTargets.has(targetKey)) continue;
+        const reason = scopeReasonForTarget(
+          targetValue,
+          targetType,
+          scopeDomains,
+          ipScopeRules as any,
+        );
+        trackScopeReason(counters, reason);
+        countedTargets.add(targetKey);
+      }
+    }
+
+    const openPorts = dedupeOpenPorts((openPortsRes.data || []) as OpenPortSnapshot[]);
     const findings = (findingsRes.data || []) as any[];
-    const technologies = (technologiesRes.data || []) as any[];
+    const technologies = dedupeTechnologies((technologiesRes.data || []) as TechnologySnapshot[]);
     const ssl = (sslRes.data || []) as any[];
 
     const hostsWithOpenPorts = new Set(openPorts.map((row) => String(row.host || '').trim().toLowerCase()).filter(Boolean));
@@ -216,31 +425,36 @@ serve(async (req: Request) => {
       removed_technologies: [] as TechnologySnapshot[],
     };
 
-    if (previousJobRes.data?.id) {
+    if (scopeMode === 'single_job' && previousJobRes.data?.id) {
       const previousJobId = String(previousJobRes.data.id);
       const [prevPortsRes, prevTechRes] = await Promise.all([
         adminClient
           .from('surface_open_ports' as any)
-          .select('host, port, protocol, service_name, exposure_level')
+          .select('host, ip, port, protocol, service_name, exposure_level, last_seen_at')
           .eq('scan_job_id', previousJobId),
         adminClient
           .from('surface_web_technologies' as any)
-          .select('host, url, technology_name, technology_version')
+          .select('host, url, technology_name, technology_version, created_at')
           .eq('scan_job_id', previousJobId),
       ]);
 
       diff = compareExposureSnapshots(
-        (prevPortsRes.data || []) as OpenPortSnapshot[],
-        (openPorts || []) as OpenPortSnapshot[],
-        (prevTechRes.data || []) as TechnologySnapshot[],
-        (technologies || []) as TechnologySnapshot[],
+        dedupeOpenPorts((prevPortsRes.data || []) as OpenPortSnapshot[]),
+        openPorts,
+        dedupeTechnologies((prevTechRes.data || []) as TechnologySnapshot[]),
+        technologies,
       );
     }
 
     return jsonResponse({
-      job_id: jobId,
+      job_id: anchorJobId,
+      job_ids: selectedJobIds,
+      scope_mode: scopeMode,
+      scope_aggregate: scopeMode !== 'single_job',
+      targets_in_scope: counters.in_scope,
+      scope_counters: counters,
       status: String(job.status || 'unknown'),
-      targets_total: targets.length,
+      targets_total: counters.in_scope,
       hosts_with_open_ports: hostsWithOpenPorts.size,
       open_ports_total: openPorts.length,
       critical_exposures: findingsBySeverity.critical + findingsBySeverity.high,
@@ -262,4 +476,3 @@ serve(async (req: Request) => {
     return jsonResponse({ error: error?.message || 'Internal error' }, 500);
   }
 });
-

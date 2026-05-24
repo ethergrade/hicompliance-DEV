@@ -14,6 +14,19 @@ export interface SurfaceScanAiReportRow {
   created_at: string;
 }
 
+const ORGANIZATION_SCOPE_REPORT_TITLE = 'SurfaceScan360 Report - Organization Scope';
+
+const isOrganizationScopeReport = (row: SurfaceScanAiReportRow): boolean => {
+  const title = String(row?.title || '').trim();
+  const payloadScope = String(row?.payload?.scan?.scope_mode || '').trim().toLowerCase();
+  const repositoryMode = String(row?.payload?.report_repository?.mode || '').trim().toLowerCase();
+  return (
+    title === ORGANIZATION_SCOPE_REPORT_TITLE
+    || payloadScope === 'organization_scope'
+    || repositoryMode === 'organization_scope_canonical'
+  );
+};
+
 interface UseSurfaceScanReportRepositoryResult {
   reports: SurfaceScanAiReportRow[];
   loading: boolean;
@@ -46,7 +59,15 @@ export const useSurfaceScanReportRepository = (
         .order('created_at', { ascending: false })
         .limit(100);
       if (error) throw error;
-      setReports(((data || []) as SurfaceScanAiReportRow[]).filter((row) => row?.payload));
+      const allRows = ((data || []) as SurfaceScanAiReportRow[]).filter((row) => row?.payload);
+      const canonicalRows = allRows.filter((row) => isOrganizationScopeReport(row));
+      canonicalRows.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+
+      if (canonicalRows.length > 0) {
+        setReports([canonicalRows[0]]);
+      } else {
+        setReports(allRows.slice(0, 20));
+      }
     } catch (error) {
       console.error('Error fetching SurfaceScan report repository:', error);
       toast.error('Impossibile caricare il repository report SurfaceScan');
@@ -105,12 +126,16 @@ export const useSurfaceScanReportRepository = (
 
   const missingCompletedJobs = useMemo(() => {
     const completed = scanJobs.filter((job) => String(job.status).toLowerCase() === 'completed');
-    const reportJobIds = new Set(
-      reports
-        .map((row) => String(row.scan_job_id || '').trim())
-        .filter(Boolean),
-    );
-    return completed.filter((job) => !reportJobIds.has(job.id));
+    const canonical = reports.find((row) => isOrganizationScopeReport(row)) || null;
+    if (!canonical) return completed;
+
+    const reportTs = Date.parse(canonical.created_at);
+    if (!Number.isFinite(reportTs)) return completed;
+    return completed.filter((job) => {
+      const completedTs = Date.parse(String(job.completed_at || job.created_at || ''));
+      if (!Number.isFinite(completedTs)) return true;
+      return completedTs > reportTs;
+    });
   }, [reports, scanJobs]);
 
   const deleteReport = useCallback(
@@ -155,15 +180,9 @@ export const useSurfaceScanReportRepository = (
 
   const generateMissingReports = useCallback(async (): Promise<{ created: number; skipped: number }> => {
     if (missingCompletedJobs.length === 0) return { created: 0, skipped: 0 };
-    let created = 0;
-    let skipped = 0;
-    for (const job of missingCompletedJobs) {
-      const ok = await generateReport({ jobId: job.id, silent: true });
-      if (ok) created += 1;
-      else skipped += 1;
-    }
+    const ok = await generateReport({ silent: true });
     await fetchReports();
-    return { created, skipped };
+    return ok ? { created: 1, skipped: 0 } : { created: 0, skipped: 1 };
   }, [missingCompletedJobs, generateReport, fetchReports]);
 
   return {

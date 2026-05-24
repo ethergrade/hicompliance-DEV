@@ -28,6 +28,14 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useSurfaceScanDiscoveredAssets } from '@/hooks/useSurfaceScanDiscoveredAssets';
+import {
+  classifySurfaceHostForScope,
+  isIpWithinScopeRules,
+  isIpv4,
+  isIpv6,
+  splitMonitoredScopeRules,
+  type SurfaceMonitoredScopeRule,
+} from '@/lib/surfaceScopeGuard';
 
 interface SurfaceScanModuleCardsProps {
   isAdminView?: boolean;
@@ -48,6 +56,7 @@ interface LatestScanRow {
 }
 
 interface ModuleResultRow {
+  scan_job_id: string;
   module_key: string;
   module_label: string;
   status: 'queued' | 'running' | 'success' | 'skipped' | 'error' | 'timeout';
@@ -57,6 +66,7 @@ interface ModuleResultRow {
 }
 
 interface ObservationRow {
+  scan_job_id: string;
   module: string;
   observation_type: string;
   value: Record<string, any>;
@@ -64,6 +74,7 @@ interface ObservationRow {
 }
 
 interface FindingRow {
+  scan_job_id: string;
   module: string | null;
   finding_type: string | null;
   title: string | null;
@@ -72,13 +83,35 @@ interface FindingRow {
   created_at: string;
 }
 
-const statusBadgeClass: Record<string, string> = {
-  success: 'bg-green-500/15 text-green-300 border-green-500/30',
+interface ExposureOpenPortRow {
+  scan_job_id: string;
+  host: string;
+  ip: string | null;
+  port: number;
+  protocol: string;
+  service_name: string | null;
+  service_product: string | null;
+  service_version: string | null;
+  exposure_level: string;
+  is_web: boolean;
+  is_tls: boolean;
+}
+
+type ModuleOutcomeStatus =
+  | 'success_with_data'
+  | 'success_no_data'
+  | 'skipped_prerequisite'
+  | 'error'
+  | 'running'
+  | 'queued';
+
+const statusBadgeClass: Record<ModuleOutcomeStatus, string> = {
+  success_with_data: 'bg-green-500/15 text-green-300 border-green-500/30',
+  success_no_data: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
+  skipped_prerequisite: 'bg-slate-500/25 text-slate-300 border-slate-500/40',
+  error: 'bg-red-500/20 text-red-300 border-red-500/30',
   running: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
   queued: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
-  skipped: 'bg-slate-500/20 text-slate-300 border-slate-500/30',
-  timeout: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
-  error: 'bg-red-500/20 text-red-300 border-red-500/30',
 };
 
 const severityBadgeClass: Record<string, string> = {
@@ -174,24 +207,82 @@ const scoreTone = (score: number): string => {
   return 'bg-red-500/20 text-red-300 border-red-500/30';
 };
 
+const riskLevelFromScore = (score: number): string => {
+  if (score < 40) return 'critico';
+  if (score < 60) return 'high';
+  if (score < 80) return 'medium';
+  return 'low';
+};
+
 const formatRiskLevel = (risk: string | null | undefined): string => {
   const key = String(risk || '').toLowerCase();
   if (key === 'low') return 'Basso';
   if (key === 'medium') return 'Medio';
   if (key === 'high') return 'Alto';
-  if (key === 'critical') return 'Critico';
+  if (key === 'critical' || key === 'critico') return 'Critico';
   return 'N/D';
 };
 
-const statusLabel = (status: string): string => {
-  const key = String(status || '').toLowerCase();
-  if (key === 'success' || key === 'completed') return 'Completato';
-  if (key === 'running') return 'In esecuzione';
-  if (key === 'queued') return 'In coda';
-  if (key === 'timeout') return 'Timeout';
-  if (key === 'error' || key === 'failed') return 'Errore';
-  if (key === 'skipped') return 'Skipped';
-  return 'N/D';
+const statusLabel = (status: ModuleOutcomeStatus): string => {
+  if (status === 'success_with_data') return 'Completato';
+  if (status === 'success_no_data') return 'Completato (nessun dato)';
+  if (status === 'skipped_prerequisite') return 'Prerequisito mancante';
+  if (status === 'error') return 'Errore';
+  if (status === 'running') return 'In esecuzione';
+  return 'In coda';
+};
+
+const outcomeFromJobStatus = (status: string): ModuleOutcomeStatus => {
+  const key = String(status || '').trim().toLowerCase();
+  if (key === 'running') return 'running';
+  if (key === 'queued' || key === 'pending') return 'queued';
+  if (key === 'failed' || key === 'error') return 'error';
+  if (key === 'completed' || key === 'success' || key === 'partial') return 'success_with_data';
+  return 'success_no_data';
+};
+
+const moduleReasonLabel = (reason: string): string => {
+  const key = String(reason || '').toLowerCase();
+  if (key.includes('missing_google_cloud_api_key')) return 'Prerequisito mancante: GOOGLE_API_KEY per Quality.';
+  if (key.includes('feature_flag_disabled')) return 'Modulo disabilitato da feature flag.';
+  if (key.includes('rdap')) return 'RDAP temporaneamente non disponibile per WHOIS.';
+  if (key.includes('server_location_no_ip')) return 'Nessun IP in-scope geolocalizzabile disponibile.';
+  if (key.includes('open_ports_no_data')) return 'Nessun dato porte disponibile da scan classica/exposure.';
+  return 'Dato non disponibile per prerequisito o provider.';
+};
+
+const extractHostFromTarget = (rawTarget: string): string | null => {
+  const raw = String(rawTarget || '').trim();
+  if (!raw) return null;
+
+  try {
+    return new URL(raw).hostname.toLowerCase();
+  } catch {
+    // continue
+  }
+
+  try {
+    if (!raw.includes('://') && /[/:]/.test(raw)) {
+      return new URL(`https://${raw}`).hostname.toLowerCase();
+    }
+  } catch {
+    // continue
+  }
+
+  return raw.toLowerCase().replace(/\.$/, '');
+};
+
+const chunk = <T,>(items: T[], size = 50): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
+};
+
+const isNonEmptyObject = (value: unknown): boolean => {
+  if (!value || typeof value !== 'object') return false;
+  return Object.keys(value as Record<string, unknown>).length > 0;
 };
 
 const severityRank: Record<string, number> = {
@@ -220,9 +311,11 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
   const { subdomains: discoveredSubdomains } = useSurfaceScanDiscoveredAssets();
   const [loading, setLoading] = useState(false);
   const [latestScan, setLatestScan] = useState<LatestScanRow | null>(null);
+  const [latestScopeJobs, setLatestScopeJobs] = useState<LatestScanRow[]>([]);
   const [moduleResults, setModuleResults] = useState<ModuleResultRow[]>([]);
   const [observations, setObservations] = useState<ObservationRow[]>([]);
   const [riskFindings, setRiskFindings] = useState<FindingRow[]>([]);
+  const [exposureOpenPorts, setExposureOpenPorts] = useState<ExposureOpenPortRow[]>([]);
   const [subdomainSearch, setSubdomainSearch] = useState('');
   const [subdomainPage, setSubdomainPage] = useState(1);
   const [rawExpanded, setRawExpanded] = useState(false);
@@ -230,66 +323,135 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
   useEffect(() => {
     if (!organizationId) return;
 
+    const fetchRowsByJobIds = async <T,>(
+      table: string,
+      select: string,
+      jobIds: string[],
+      opts?: { orderBy?: string; ascending?: boolean; limit?: number },
+    ): Promise<T[]> => {
+      const all: T[] = [];
+      for (const group of chunk(jobIds, 40)) {
+        let query: any = supabase.from(table as any).select(select).in('scan_job_id', group);
+        if (opts?.orderBy) {
+          query = query.order(opts.orderBy, { ascending: Boolean(opts.ascending) });
+        }
+        if (opts?.limit) {
+          query = query.limit(opts.limit);
+        }
+        const { data, error } = await query;
+        if (error) throw error;
+        all.push(...((data || []) as T[]));
+      }
+      return all;
+    };
+
     const fetchData = async () => {
       setLoading(true);
       try {
-        const latestJobRes = await supabase
-          .from('surface_scan_jobs' as any)
-          .select('id, raw_target, normalized_target, scan_profile, status, created_at, completed_at, summary')
-          .eq('customer_id', organizationId)
-          .eq('status', 'completed')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        const [scopeRes, jobsRes] = await Promise.all([
+          supabase
+            .from('surface_scan_monitored_ips' as any)
+            .select('entry_type, input_value, ip_start, ip_end')
+            .eq('organization_id', organizationId),
+          supabase
+            .from('surface_scan_jobs' as any)
+            .select('id, raw_target, normalized_target, scan_profile, status, created_at, completed_at, summary')
+            .eq('customer_id', organizationId)
+            .in('status', ['completed', 'partial'])
+            .order('created_at', { ascending: false })
+            .limit(500),
+        ]);
 
-        if (latestJobRes.error) throw latestJobRes.error;
-        const job = (latestJobRes.data || null) as LatestScanRow | null;
-        setLatestScan(job);
+        if (scopeRes.error) throw scopeRes.error;
+        if (jobsRes.error) throw jobsRes.error;
 
-        if (!job?.id) {
+        const scopeRules = (scopeRes.data || []) as SurfaceMonitoredScopeRule[];
+        const { scopeDomains, ipScopeRules } = splitMonitoredScopeRules(scopeRules);
+        const jobs = (jobsRes.data || []) as LatestScanRow[];
+
+        const latestByTarget = new Map<string, LatestScanRow>();
+        for (const job of jobs) {
+          const targetRaw = String(job.normalized_target || job.raw_target || '').trim();
+          if (!targetRaw) continue;
+          const host = extractHostFromTarget(targetRaw);
+          if (host) {
+            if (isIpv4(host) || isIpv6(host)) {
+              if (!isIpWithinScopeRules(host, ipScopeRules)) continue;
+            } else {
+              const classification = classifySurfaceHostForScope(host, scopeDomains);
+              if (classification.blocked) continue;
+            }
+          }
+
+          const key = String(targetRaw).toLowerCase();
+          const existing = latestByTarget.get(key);
+          const currentTs = existing ? Date.parse(existing.created_at) : 0;
+          const incomingTs = Date.parse(job.created_at);
+          if (!existing || incomingTs >= currentTs) {
+            latestByTarget.set(key, job);
+          }
+        }
+
+        const scopeJobs = Array.from(latestByTarget.values()).sort(
+          (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
+        );
+
+        setLatestScopeJobs(scopeJobs);
+        setLatestScan(scopeJobs[0] || null);
+
+        if (scopeJobs.length === 0) {
           setModuleResults([]);
           setObservations([]);
           setRiskFindings([]);
+          setExposureOpenPorts([]);
           return;
         }
 
-        const [moduleRes, obsRes, findingsRes] = await Promise.all([
-          supabase
-            .from('surface_scan_module_results' as any)
-            .select('module_key, module_label, status, severity, duration_ms, completed_at')
-            .eq('scan_job_id', job.id)
-            .in('module_key', moduleOrder),
-          supabase
-            .from('surface_observations' as any)
-            .select('module, observation_type, value, created_at')
-            .eq('scan_job_id', job.id)
-            .in('module', moduleOrder)
-            .order('created_at', { ascending: false })
-            .limit(200),
-          supabase
-            .from('surface_findings' as any)
-            .select('module, finding_type, title, remediation, severity, created_at')
-            .eq('scan_job_id', job.id)
-            .in('severity', ['critical', 'high'])
-            .order('created_at', { ascending: false })
-            .limit(40),
+        const jobIds = scopeJobs.map((job) => String(job.id));
+
+        const [moduleRows, observationRows, findingRows, exposureRows] = await Promise.all([
+          fetchRowsByJobIds<ModuleResultRow>(
+            'surface_scan_module_results',
+            'scan_job_id, module_key, module_label, status, severity, duration_ms, completed_at',
+            jobIds,
+            { orderBy: 'completed_at', ascending: false },
+          ),
+          fetchRowsByJobIds<ObservationRow>(
+            'surface_observations',
+            'scan_job_id, module, observation_type, value, created_at',
+            jobIds,
+            { orderBy: 'created_at', ascending: false },
+          ),
+          fetchRowsByJobIds<FindingRow>(
+            'surface_findings',
+            'scan_job_id, module, finding_type, title, remediation, severity, created_at',
+            jobIds,
+            { orderBy: 'created_at', ascending: false },
+          ),
+          fetchRowsByJobIds<ExposureOpenPortRow>(
+            'surface_open_ports',
+            'scan_job_id, host, ip, port, protocol, service_name, service_product, service_version, exposure_level, is_web, is_tls',
+            jobIds,
+            { orderBy: 'last_seen_at', ascending: false },
+          ),
         ]);
 
-        if (moduleRes.error) throw moduleRes.error;
-        if (obsRes.error) throw obsRes.error;
-        if (findingsRes.error) throw findingsRes.error;
+        const prioritizedFindings = findingRows
+          .filter((entry) => ['critical', 'high'].includes(String(entry.severity || '').toLowerCase()))
+          .sort((a, b) => (severityRank[b.severity] || 0) - (severityRank[a.severity] || 0));
 
-        setModuleResults((moduleRes.data || []) as ModuleResultRow[]);
-        setObservations((obsRes.data || []) as ObservationRow[]);
-        setRiskFindings(((findingsRes.data || []) as FindingRow[]).sort(
-          (a, b) => (severityRank[b.severity] || 0) - (severityRank[a.severity] || 0),
-        ));
+        setModuleResults(moduleRows);
+        setObservations(observationRows);
+        setRiskFindings(prioritizedFindings);
+        setExposureOpenPorts(exposureRows);
       } catch (error) {
         console.error('Error loading SurfaceScan module cards:', error);
         setLatestScan(null);
+        setLatestScopeJobs([]);
         setModuleResults([]);
         setObservations([]);
         setRiskFindings([]);
+        setExposureOpenPorts([]);
       } finally {
         setLoading(false);
       }
@@ -306,18 +468,260 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
     return map;
   }, [observations]);
 
-  const moduleByKey = useMemo(() => {
-    const map: Record<string, ModuleResultRow | undefined> = {};
-    for (const row of moduleResults) map[row.module_key] = row;
-    return map;
-  }, [moduleResults]);
+  const qualityRows = useMemo(
+    () => observations.filter((row) => row.module === 'quality' && row.observation_type.startsWith('quality_summary')),
+    [observations],
+  );
 
-  const scoreBreakdown = useMemo(() => {
-    return (latestScan?.summary?.score_breakdown || null) as Record<string, any> | null;
-  }, [latestScan?.summary]);
+  const qualityCategories = useMemo(() => {
+    const samples = qualityRows
+      .map((row) => row.value?.categories || {})
+      .filter((entry) => entry && typeof entry === 'object') as Array<Record<string, number>>;
+    if (samples.length === 0) return {} as Record<string, number>;
 
-  const overallScore = toPercent(scoreBreakdown?.overallScore ?? latestScan?.summary?.overall_score ?? 0);
-  const riskLevel = String(scoreBreakdown?.riskLevel || latestScan?.summary?.risk_level || '').toLowerCase();
+    const avg = (key: string) => {
+      const vals = samples
+        .map((entry) => Number(entry[key]))
+        .filter((entry) => Number.isFinite(entry));
+      if (vals.length === 0) return 0;
+      return Math.round(vals.reduce((acc, value) => acc + value, 0) / vals.length);
+    };
+
+    return {
+      performance: avg('performance'),
+      accessibility: avg('accessibility'),
+      best_practices: avg('best_practices'),
+      seo: avg('seo'),
+    };
+  }, [qualityRows]);
+
+  const qualityFailedAudits = useMemo(() => {
+    const seen = new Set<string>();
+    const out: Array<{ id: string; title: string }> = [];
+
+    for (const row of qualityRows) {
+      const failed = Array.isArray(row.value?.failed_audits) ? row.value.failed_audits : [];
+      for (const audit of failed) {
+        const id = String(audit?.id || audit?.title || '').trim();
+        const title = String(audit?.title || audit?.id || '').trim();
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        out.push({ id, title: title || id });
+      }
+    }
+
+    return out.slice(0, 6);
+  }, [qualityRows]);
+
+  const latestWhois = useMemo(() => {
+    const whoisRows = observations
+      .filter((row) => row.module === 'whois' && row.observation_type === 'whois_rdap')
+      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+    return whoisRows[0]?.value || {};
+  }, [observations]);
+
+  const whoisCoverage = useMemo(
+    () => observations.filter((row) => row.module === 'whois' && row.observation_type === 'whois_rdap').length,
+    [observations],
+  );
+
+  const whoisUnavailableCount = useMemo(
+    () => observations.filter((row) => row.module === 'whois' && row.observation_type === 'rdap_unavailable').length,
+    [observations],
+  );
+
+  const latestServerLocation = useMemo(() => {
+    const rows = observations
+      .filter((row) => row.module === 'server_location' && row.observation_type === 'server_location')
+      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+    return rows[0]?.value || {};
+  }, [observations]);
+
+  const serverLocationCoverage = useMemo(
+    () => observations.filter((row) => row.module === 'server_location' && row.observation_type === 'server_location').length,
+    [observations],
+  );
+
+  const openPortRows = useMemo(() => {
+    const merged = new Map<string, any>();
+
+    const observedRows = observations
+      .filter((row) => row.module === 'open_ports' && row.observation_type === 'open_ports_summary')
+      .flatMap((row) => (Array.isArray(row.value?.openPorts) ? row.value.openPorts : []));
+
+    for (const entry of observedRows) {
+      const ip = String(entry?.ip || entry?.target || '').trim();
+      const port = Number(entry?.port || 0);
+      const protocol = String(entry?.protocol || 'tcp').toLowerCase();
+      if (!ip || !Number.isFinite(port) || port <= 0) continue;
+      const key = `${ip}|${port}|${protocol}`;
+      if (!merged.has(key)) {
+        merged.set(key, {
+          ip,
+          port,
+          protocol,
+          service: entry?.service || null,
+          product: entry?.product || null,
+          source: entry?.source || 'scan_engine',
+        });
+      }
+    }
+
+    for (const row of exposureOpenPorts) {
+      const ip = String(row.ip || row.host || '').trim();
+      const port = Number(row.port || 0);
+      const protocol = String(row.protocol || 'tcp').toLowerCase();
+      if (!ip || !Number.isFinite(port) || port <= 0) continue;
+      const key = `${ip}|${port}|${protocol}`;
+      if (!merged.has(key)) {
+        merged.set(key, {
+          ip,
+          port,
+          protocol,
+          service: row.service_name || null,
+          product: row.service_product || row.service_version || null,
+          source: 'exposure_pipeline',
+        });
+      }
+    }
+
+    return Array.from(merged.values()).sort((a, b) => {
+      const sevDelta = severityRank[severityForPort(b.port)] - severityRank[severityForPort(a.port)];
+      if (sevDelta !== 0) return sevDelta;
+      return Number(a.port || 0) - Number(b.port || 0);
+    });
+  }, [observations, exposureOpenPorts]);
+
+  const moduleOutcomes = useMemo(() => {
+    const outcomes: Record<string, ModuleOutcomeStatus> = {};
+    const moduleObs = new Map<string, ObservationRow[]>();
+    const moduleRes = new Map<string, ModuleResultRow[]>();
+
+    for (const row of observations) {
+      if (!moduleObs.has(row.module)) moduleObs.set(row.module, []);
+      moduleObs.get(row.module)!.push(row);
+    }
+    for (const row of moduleResults) {
+      if (!moduleRes.has(row.module_key)) moduleRes.set(row.module_key, []);
+      moduleRes.get(row.module_key)!.push(row);
+    }
+
+    for (const moduleKey of moduleOrder) {
+      const rows = moduleRes.get(moduleKey) || [];
+      const obs = moduleObs.get(moduleKey) || [];
+      const hasError = rows.some((entry) => ['error', 'timeout'].includes(entry.status));
+      const hasRunning = rows.some((entry) => entry.status === 'running');
+      const hasQueued = rows.some((entry) => entry.status === 'queued');
+      const hasSuccess = rows.some((entry) => entry.status === 'success');
+      const hasSkipped = rows.some((entry) => entry.status === 'skipped');
+
+      const hasData = (() => {
+        if (moduleKey === 'open_ports') {
+          return openPortRows.length > 0;
+        }
+        if (moduleKey === 'quality') {
+          return Number(qualityCategories.performance || 0) > 0
+            || Number(qualityCategories.accessibility || 0) > 0
+            || Number(qualityCategories.best_practices || 0) > 0
+            || Number(qualityCategories.seo || 0) > 0;
+        }
+        if (moduleKey === 'whois') {
+          return Boolean(latestWhois?.registrar || latestWhois?.expires || latestWhois?.days_to_expiry != null);
+        }
+        if (moduleKey === 'server_location') {
+          return Boolean(latestServerLocation?.city || latestServerLocation?.country || latestServerLocation?.ip);
+        }
+        return obs.some((entry) => {
+          if (['module_skipped', 'module_error', 'module_timeout', 'rdap_unavailable'].includes(entry.observation_type)) {
+            return false;
+          }
+          return isNonEmptyObject(entry.value);
+        });
+      })();
+
+      if (hasError) {
+        outcomes[moduleKey] = 'error';
+        continue;
+      }
+      if (hasRunning) {
+        outcomes[moduleKey] = 'running';
+        continue;
+      }
+      if (hasQueued) {
+        outcomes[moduleKey] = 'queued';
+        continue;
+      }
+
+      const hasPrereqSkip = obs.some((entry) => {
+        if (entry.observation_type !== 'module_skipped') return false;
+        const reason = String(entry.value?.reason || '').toLowerCase();
+        return reason.includes('missing_google_cloud_api_key') || reason.includes('feature_flag_disabled');
+      });
+      const hasRdapUnavailable = moduleKey === 'whois'
+        && obs.some((entry) => entry.observation_type === 'rdap_unavailable');
+      const hasServerLocationNoIp = moduleKey === 'server_location'
+        && !hasData
+        && hasSuccess
+        && obs.length === 0;
+      const hasOpenPortsNoData = moduleKey === 'open_ports'
+        && !hasData
+        && hasSuccess;
+
+      if (hasPrereqSkip || hasRdapUnavailable || hasServerLocationNoIp || hasOpenPortsNoData || (hasSkipped && !hasData)) {
+        outcomes[moduleKey] = 'skipped_prerequisite';
+        continue;
+      }
+
+      if (hasSuccess && hasData) {
+        outcomes[moduleKey] = 'success_with_data';
+      } else if (hasSuccess && !hasData) {
+        outcomes[moduleKey] = 'success_no_data';
+      } else if (hasSkipped) {
+        outcomes[moduleKey] = 'skipped_prerequisite';
+      } else {
+        outcomes[moduleKey] = 'success_no_data';
+      }
+    }
+
+    return outcomes;
+  }, [moduleResults, observations, openPortRows, qualityCategories, latestWhois, latestServerLocation]);
+
+  const moduleSkipReasons = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const row of observations) {
+      if (row.observation_type === 'module_skipped') {
+        const reason = String(row.value?.reason || '').trim().toLowerCase();
+        if (reason && !out[row.module]) out[row.module] = reason;
+      }
+      if (row.module === 'whois' && row.observation_type === 'rdap_unavailable' && !out[row.module]) {
+        out[row.module] = 'rdap_unavailable';
+      }
+    }
+    if (!out.server_location && moduleOutcomes.server_location === 'skipped_prerequisite' && serverLocationCoverage === 0) {
+      out.server_location = 'server_location_no_ip';
+    }
+    if (!out.open_ports && moduleOutcomes.open_ports === 'skipped_prerequisite' && openPortRows.length === 0) {
+      out.open_ports = 'open_ports_no_data';
+    }
+    return out;
+  }, [observations, moduleOutcomes, serverLocationCoverage, openPortRows.length]);
+
+  const scoreSummary = useMemo(() => {
+    const scores = latestScopeJobs
+      .map((entry) => Number(entry.summary?.overall_score))
+      .filter((entry) => Number.isFinite(entry));
+    if (scores.length === 0) {
+      return {
+        overallScore: 0,
+        riskLevel: 'unknown',
+      };
+    }
+    const avgScore = Math.round(scores.reduce((acc, value) => acc + value, 0) / scores.length);
+    return {
+      overallScore: avgScore,
+      riskLevel: riskLevelFromScore(avgScore),
+    };
+  }, [latestScopeJobs]);
 
   const passesValue = (observationByModule.passes?.value || {}) as Record<string, any>;
   const passItems = Array.isArray(passesValue?.passes) ? passesValue.passes : [];
@@ -325,11 +729,6 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
   const httpSecurity = (observationByModule.http_security?.value || {}) as Record<string, any>;
   const httpChecks = (httpSecurity.checks || {}) as Record<string, boolean>;
   const dnssec = (observationByModule.dnssec?.value || {}) as Record<string, any>;
-  const quality = (observationByModule.quality?.value || {}) as Record<string, any>;
-  const qualityCategories = (quality.categories || {}) as Record<string, number>;
-  const qualityFailedAudits = Array.isArray(quality.failed_audits) ? quality.failed_audits : [];
-  const openPorts = (observationByModule.open_ports?.value || {}) as Record<string, any>;
-  const openPortRows = Array.isArray(openPorts.openPorts) ? openPorts.openPorts : [];
   const threats = (observationByModule.threats?.value || {}) as Record<string, any>;
   const iocFreshList = (threats?.ioc_fresh_list || threats?.intelguard || {}) as Record<string, any>;
   const iocLeaseMinutes = Number(iocFreshList?.lease_minutes || 0);
@@ -366,12 +765,11 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
     if (!Number.isFinite(refreshedTs)) return '-';
     return new Date(refreshedTs).toLocaleString('it-IT');
   }, [iocLastRefreshedAt]);
+
   const blocklists = (observationByModule.dns_blocklists?.value || {}) as Record<string, any>;
-  const whois = (observationByModule.whois?.value || {}) as Record<string, any>;
   const ssl = (observationByModule.ssl_certificate?.value || {}) as Record<string, any>;
   const tls = (observationByModule.tls_summary?.value || {}) as Record<string, any>;
   const serverInfo = (observationByModule.server_info?.value || {}) as Record<string, any>;
-  const serverLocation = (observationByModule.server_location?.value || {}) as Record<string, any>;
   const redirects = ((observationByModule.redirects?.value || observationByModule.redirect_chain?.value) || {}) as Record<string, any>;
   const mailConfig = (observationByModule.mail_config?.value || {}) as Record<string, any>;
 
@@ -414,17 +812,17 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const handleAddScope = async (subdomain: string) => {
+  const handleAddScope = async (subdomainValue: string) => {
     try {
-      if (onAddSubdomainToScope) await onAddSubdomainToScope(subdomain);
+      if (onAddSubdomainToScope) await onAddSubdomainToScope(subdomainValue);
     } catch (error) {
       console.error('Error adding subdomain to scope:', error);
     }
   };
 
-  const handleScanSubdomain = async (subdomain: string) => {
+  const handleScanSubdomain = async (subdomainValue: string) => {
     try {
-      if (onScanSubdomain) await onScanSubdomain(subdomain);
+      if (onScanSubdomain) await onScanSubdomain(subdomainValue);
     } catch (error) {
       console.error('Error queueing subdomain scan:', error);
     }
@@ -453,7 +851,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">Nessuna scansione completata disponibile.</p>
+          <p className="text-sm text-muted-foreground">Nessuna scansione in-scope completata disponibile.</p>
         </CardContent>
       </Card>
     );
@@ -465,35 +863,37 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2">
             <Radar className="w-5 h-5 text-primary" />
-            Dettaglio Ultima Scansione
+            Dettaglio Scope Scansioni
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Target: <span className="font-medium text-foreground">{latestScan.raw_target || latestScan.normalized_target}</span>
+            Ultimo target in-scope: <span className="font-medium text-foreground">{latestScan.raw_target || latestScan.normalized_target}</span>
           </p>
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3">
             <div className="rounded-lg border border-border p-3">
-              <p className="text-xs text-muted-foreground">Stato</p>
-              <Badge className={statusBadgeClass[moduleByKey.passes?.status || 'success']}>
-                {statusLabel(latestScan.status)}
-              </Badge>
+              <p className="text-xs text-muted-foreground">Scope targets</p>
+              <p className="text-sm font-medium">{latestScopeJobs.length}</p>
             </div>
             <div className="rounded-lg border border-border p-3">
-              <p className="text-xs text-muted-foreground">Profilo</p>
+              <p className="text-xs text-muted-foreground">Stato ultimo job</p>
+                <Badge className={statusBadgeClass[outcomeFromJobStatus(latestScan.status)]}>
+                  {String(latestScan.status || '').toLowerCase() === 'completed'
+                    ? 'Completato'
+                    : String(latestScan.status || 'N/D')}
+                </Badge>
+              </div>
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-xs text-muted-foreground">Profilo ultimo job</p>
               <p className="text-sm font-medium">{latestScan.scan_profile}</p>
             </div>
             <div className="rounded-lg border border-border p-3">
-              <p className="text-xs text-muted-foreground">Overall score</p>
-              <Badge className={scoreTone(overallScore)}>{overallScore}/100</Badge>
+              <p className="text-xs text-muted-foreground">Overall score scope</p>
+              <Badge className={scoreTone(scoreSummary.overallScore)}>{scoreSummary.overallScore}/100</Badge>
             </div>
             <div className="rounded-lg border border-border p-3">
-              <p className="text-xs text-muted-foreground">Livello rischio</p>
-              <Badge className={scoreTone(overallScore)}>{formatRiskLevel(riskLevel)}</Badge>
-            </div>
-            <div className="rounded-lg border border-border p-3">
-              <p className="text-xs text-muted-foreground">Creata</p>
-              <p className="text-xs text-foreground">{new Date(latestScan.created_at).toLocaleString('it-IT')}</p>
+              <p className="text-xs text-muted-foreground">Livello rischio scope</p>
+              <Badge className={scoreTone(scoreSummary.overallScore)}>{formatRiskLevel(scoreSummary.riskLevel)}</Badge>
             </div>
             <div className="rounded-lg border border-border p-3">
               <p className="text-xs text-muted-foreground">Completata</p>
@@ -510,16 +910,15 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                 <p className="text-sm font-medium">Risk findings prioritari (critical/high)</p>
               </div>
               <div className="space-y-2">
-                {riskFindings.slice(0, 6).map((finding, index) => (
+                {riskFindings.slice(0, 8).map((finding, index) => (
                   <div key={`${finding.finding_type}-${index}`} className="rounded-md border border-border/70 p-2 text-sm">
                     <div className="flex items-center gap-2 flex-wrap">
                       <Badge className={severityBadgeClass[finding.severity]}>{finding.severity}</Badge>
                       <span className="font-medium">{finding.title || finding.finding_type || 'Finding'}</span>
-                      {finding.module ? <span className="text-xs text-muted-foreground">({finding.module})</span> : null}
                     </div>
-                    {finding.remediation ? (
-                      <p className="text-xs text-muted-foreground mt-1">Remediation: {finding.remediation}</p>
-                    ) : null}
+                    {finding.remediation && (
+                      <p className="text-xs text-muted-foreground mt-1">{finding.remediation}</p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -529,14 +928,11 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             <div className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
-                <div className="font-medium flex items-center gap-2"><ShieldCheck className="w-4 h-4" />Passes</div>
-                <Badge className={statusBadgeClass[moduleByKey.passes?.status || 'skipped']}>
-                  {statusLabel(moduleByKey.passes?.status || 'skipped')}
+                <div className="font-medium">Passes</div>
+                <Badge className={statusBadgeClass[moduleOutcomes.passes || 'success_no_data']}>
+                  {statusLabel(moduleOutcomes.passes || 'success_no_data')}
                 </Badge>
               </div>
-              <p className="text-sm">
-                {passesValue.passedCount ?? 0}/{passesValue.totalCount ?? 0} controlli superati
-              </p>
               <div className="space-y-1.5 max-h-40 overflow-auto pr-1">
                 {passItems.map((item: any) => {
                   const passed = Boolean(item?.passed);
@@ -564,8 +960,8 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
             <div className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium flex items-center gap-2"><Shield className="w-4 h-4" />HTTP Security</div>
-                <Badge className={statusBadgeClass[moduleByKey.http_security?.status || 'skipped']}>
-                  {statusLabel(moduleByKey.http_security?.status || 'skipped')}
+                <Badge className={statusBadgeClass[moduleOutcomes.http_security || 'success_no_data']}>
+                  {statusLabel(moduleOutcomes.http_security || 'success_no_data')}
                 </Badge>
               </div>
               <div className="text-xs text-muted-foreground">Score: {toPercent(httpSecurity.score)} / 100 · HTTP {httpSecurity.statusCode ?? '-'}</div>
@@ -590,8 +986,8 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
             <div className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium">DNSSEC</div>
-                <Badge className={statusBadgeClass[moduleByKey.dnssec?.status || 'skipped']}>
-                  {statusLabel(moduleByKey.dnssec?.status || 'skipped')}
+                <Badge className={statusBadgeClass[moduleOutcomes.dnssec || 'success_no_data']}>
+                  {statusLabel(moduleOutcomes.dnssec || 'success_no_data')}
                 </Badge>
               </div>
               <div className="text-xs space-y-1">
@@ -605,10 +1001,11 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
             <div className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium">Quality Summary</div>
-                <Badge className={statusBadgeClass[moduleByKey.quality?.status || 'skipped']}>
-                  {statusLabel(moduleByKey.quality?.status || 'skipped')}
+                <Badge className={statusBadgeClass[moduleOutcomes.quality || 'success_no_data']}>
+                  {statusLabel(moduleOutcomes.quality || 'success_no_data')}
                 </Badge>
               </div>
+              <div className="text-xs text-muted-foreground">Coverage: {qualityRows.length} target</div>
               <div className="space-y-2 text-xs">
                 {[
                   ['Performance', toPercent(qualityCategories.performance)],
@@ -625,18 +1022,21 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
               {qualityFailedAudits.length > 0 && (
                 <div className="space-y-1">
                   <p className="text-xs font-medium">Top audit falliti</p>
-                  {qualityFailedAudits.slice(0, 3).map((audit: any, idx: number) => (
-                    <p key={`${audit?.id || 'audit'}-${idx}`} className="text-xs text-muted-foreground truncate">• {audit?.title || audit?.id}</p>
+                  {qualityFailedAudits.slice(0, 3).map((audit) => (
+                    <p key={audit.id} className="text-xs text-muted-foreground truncate">• {audit.title}</p>
                   ))}
                 </div>
+              )}
+              {moduleOutcomes.quality === 'skipped_prerequisite' && (
+                <p className="text-xs text-amber-300">{moduleReasonLabel(moduleSkipReasons.quality || '')}</p>
               )}
             </div>
 
             <div className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium flex items-center gap-2"><Cable className="w-4 h-4" />Open Ports</div>
-                <Badge className={statusBadgeClass[moduleByKey.open_ports?.status || 'skipped']}>
-                  {statusLabel(moduleByKey.open_ports?.status || 'skipped')}
+                <Badge className={statusBadgeClass[moduleOutcomes.open_ports || 'success_no_data']}>
+                  {statusLabel(moduleOutcomes.open_ports || 'success_no_data')}
                 </Badge>
               </div>
               <p className="text-xs text-muted-foreground">Porte aperte: {openPortRows.length}</p>
@@ -644,7 +1044,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                 {openPortRows.slice(0, 8).map((entry: any, idx: number) => (
                   <div key={`${entry?.ip || 'ip'}-${entry?.port || idx}`} className="rounded border border-border/70 p-2 text-xs space-y-1">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium">{entry?.ip || entry?.target || '-'}:{entry?.port}</span>
+                      <span className="font-medium">{entry?.ip || '-'}:{entry?.port}</span>
                       <Badge className={severityBadgeClass[severityForPort(Number(entry?.port || 0))] || severityBadgeClass.low}>
                         {severityForPort(Number(entry?.port || 0)).toUpperCase()}
                       </Badge>
@@ -655,13 +1055,16 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                 ))}
                 {openPortRows.length === 0 && <p className="text-xs text-muted-foreground">Nessuna porta aperta disponibile.</p>}
               </div>
+              {moduleOutcomes.open_ports === 'skipped_prerequisite' && (
+                <p className="text-xs text-amber-300">{moduleReasonLabel(moduleSkipReasons.open_ports || '')}</p>
+              )}
             </div>
 
             <div className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium">Threats</div>
-                <Badge className={statusBadgeClass[moduleByKey.threats?.status || 'skipped']}>
-                  {statusLabel(moduleByKey.threats?.status || 'skipped')}
+                <Badge className={statusBadgeClass[moduleOutcomes.threats || 'success_no_data']}>
+                  {statusLabel(moduleOutcomes.threats || 'success_no_data')}
                 </Badge>
               </div>
               <div className="space-y-1.5 text-xs">
@@ -679,22 +1082,27 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
             <div className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium flex items-center gap-2"><Globe2 className="w-4 h-4" />Domain WHOIS</div>
-                <Badge className={statusBadgeClass[moduleByKey.whois?.status || 'skipped']}>
-                  {statusLabel(moduleByKey.whois?.status || 'skipped')}
+                <Badge className={statusBadgeClass[moduleOutcomes.whois || 'success_no_data']}>
+                  {statusLabel(moduleOutcomes.whois || 'success_no_data')}
                 </Badge>
               </div>
               <div className="text-xs space-y-1">
-                <div className="flex justify-between"><span>Registrar</span><span>{whois.registrar || '-'}</span></div>
-                <div className="flex justify-between"><span>Scadenza</span><span>{whois.days_to_expiry != null ? `${whois.days_to_expiry} giorni` : '-'}</span></div>
-                <div className="flex justify-between"><span>DNSSEC (RDAP)</span><span>{whois.dnssec || '-'}</span></div>
+                <div className="flex justify-between"><span>Coverage</span><span>{whoisCoverage} target</span></div>
+                <div className="flex justify-between"><span>RDAP unavailable</span><span>{whoisUnavailableCount}</span></div>
+                <div className="flex justify-between"><span>Registrar</span><span>{latestWhois.registrar || '-'}</span></div>
+                <div className="flex justify-between"><span>Scadenza</span><span>{latestWhois.days_to_expiry != null ? `${latestWhois.days_to_expiry} giorni` : '-'}</span></div>
+                <div className="flex justify-between"><span>DNSSEC (RDAP)</span><span>{latestWhois.dnssec || '-'}</span></div>
               </div>
+              {moduleOutcomes.whois === 'skipped_prerequisite' && (
+                <p className="text-xs text-amber-300">{moduleReasonLabel(moduleSkipReasons.whois || '')}</p>
+              )}
             </div>
 
             <div className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium flex items-center gap-2"><Lock className="w-4 h-4" />SSL/TLS</div>
-                <Badge className={statusBadgeClass[moduleByKey.ssl_certificate?.status || 'skipped']}>
-                  {statusLabel(moduleByKey.ssl_certificate?.status || 'skipped')}
+                <Badge className={statusBadgeClass[moduleOutcomes.ssl_certificate || 'success_no_data']}>
+                  {statusLabel(moduleOutcomes.ssl_certificate || 'success_no_data')}
                 </Badge>
               </div>
               <div className="text-xs space-y-1">
@@ -707,8 +1115,8 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
             <div className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium flex items-center gap-2"><Server className="w-4 h-4" />Server Info</div>
-                <Badge className={statusBadgeClass[moduleByKey.server_info?.status || 'skipped']}>
-                  {statusLabel(moduleByKey.server_info?.status || 'skipped')}
+                <Badge className={statusBadgeClass[moduleOutcomes.server_info || 'success_no_data']}>
+                  {statusLabel(moduleOutcomes.server_info || 'success_no_data')}
                 </Badge>
               </div>
               <div className="text-xs text-muted-foreground">
@@ -722,20 +1130,24 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
             <div className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium flex items-center gap-2"><MapPin className="w-4 h-4" />Server Location</div>
-                <Badge className={statusBadgeClass[moduleByKey.server_location?.status || 'skipped']}>
-                  {statusLabel(moduleByKey.server_location?.status || 'skipped')}
+                <Badge className={statusBadgeClass[moduleOutcomes.server_location || 'success_no_data']}>
+                  {statusLabel(moduleOutcomes.server_location || 'success_no_data')}
                 </Badge>
               </div>
+              <div className="text-xs text-muted-foreground">Coverage: {serverLocationCoverage} target</div>
               <div className="text-xs text-muted-foreground">
-                {serverLocation.city || '-'}, {serverLocation.countryCode || serverLocation.country || '-'}
+                {latestServerLocation.city || '-'}, {latestServerLocation.countryCode || latestServerLocation.country || '-'}
               </div>
+              {moduleOutcomes.server_location === 'skipped_prerequisite' && (
+                <p className="text-xs text-amber-300">{moduleReasonLabel(moduleSkipReasons.server_location || '')}</p>
+              )}
             </div>
 
             <div className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium flex items-center gap-2"><MailCheck className="w-4 h-4" />Mail Config</div>
-                <Badge className={statusBadgeClass[moduleByKey.mail_config?.status || 'skipped']}>
-                  {statusLabel(moduleByKey.mail_config?.status || 'skipped')}
+                <Badge className={statusBadgeClass[moduleOutcomes.mail_config || 'success_no_data']}>
+                  {statusLabel(moduleOutcomes.mail_config || 'success_no_data')}
                 </Badge>
               </div>
               <div className="text-xs space-y-1">
@@ -748,8 +1160,8 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
             <div className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium flex items-center gap-2"><Network className="w-4 h-4" />Redirect Chain</div>
-                <Badge className={statusBadgeClass[moduleByKey.redirects?.status || moduleByKey.redirect_chain?.status || 'skipped']}>
-                  {statusLabel(moduleByKey.redirects?.status || moduleByKey.redirect_chain?.status || 'skipped')}
+                <Badge className={statusBadgeClass[moduleOutcomes.redirects || moduleOutcomes.redirect_chain || 'success_no_data']}>
+                  {statusLabel(moduleOutcomes.redirects || moduleOutcomes.redirect_chain || 'success_no_data')}
                 </Badge>
               </div>
               <div className="text-xs space-y-1">
@@ -843,9 +1255,12 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                   {JSON.stringify(
                     {
                       latest_scan: latestScan,
-                      score_breakdown: scoreBreakdown,
-                      modules: moduleResults,
-                      observations,
+                      scope_jobs_total: latestScopeJobs.length,
+                      module_outcomes: moduleOutcomes,
+                      quality_categories: qualityCategories,
+                      open_ports_count: openPortRows.length,
+                      whois_coverage: whoisCoverage,
+                      server_location_coverage: serverLocationCoverage,
                     },
                     null,
                     2,
@@ -857,11 +1272,14 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
 
           {moduleResults.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              {moduleResults.map((row) => (
-                <Badge key={row.module_key} variant="outline" className={severityBadgeClass[row.severity || 'info']}>
-                  {row.module_label}: {row.severity}
-                </Badge>
-              ))}
+              {moduleOrder.map((moduleKey) => {
+                const status = moduleOutcomes[moduleKey] || 'success_no_data';
+                return (
+                  <Badge key={moduleKey} variant="outline" className={statusBadgeClass[status]}>
+                    {moduleKey}: {statusLabel(status)}
+                  </Badge>
+                );
+              })}
             </div>
           )}
         </CardContent>

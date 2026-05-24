@@ -243,8 +243,8 @@ export const SubdomainDumpPanel: React.FC<Props> = ({ isAdmin }) => {
               </Table>
             </div>
             <p className="text-xs text-muted-foreground">
-              Clicca <strong>Monitora</strong> per aggiungere il sottodominio alla lista monitorata: verrà incluso automaticamente
-              nei dump settimanali di Attack Surface, OSINT e validazione CVE attiva.
+              Clicca <strong>Monitora</strong> per aggiungere il sottodominio alla lista monitorata: viene avviata anche
+              una coda di scansione immediata (compatibilmente con cooldown/rate-limit), oltre ai cicli automatici settimanali.
             </p>
           </div>
         )}
