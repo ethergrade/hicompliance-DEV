@@ -21,6 +21,9 @@ import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
 import { AlertConfigDialog } from '@/components/dark-risk/AlertConfigDialog';
 import { useDarkRiskAlerts } from '@/hooks/useDarkRiskAlerts';
 import { useDarkRiskOverview } from '@/hooks/useDarkRiskOverview';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 const severityClasses: Record<string, string> = {
   critical: 'bg-red-500/20 text-red-300 border-red-500/40',
@@ -65,7 +68,9 @@ const formatDelta = (delta: number | null | undefined): string | null => {
 const DarkRisk360: React.FC = () => {
   const { alerts, createAlert, loading: alertsLoading } = useDarkRiskAlerts();
   const { data: overview, isLoading, isError, error, refetch, isFetching } = useDarkRiskOverview();
+  const { organizationId } = useClientOrganization();
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
+  const [syncingScan, setSyncingScan] = useState(false);
 
   const activeAlertsCount = alerts.filter((alert) => alert.is_active).length;
 
@@ -141,6 +146,33 @@ const DarkRisk360: React.FC = () => {
     [overview],
   );
 
+  const handleSyncSurfaceScan = async () => {
+    if (!organizationId) {
+      toast.error('Nessun cliente selezionato');
+      return;
+    }
+
+    setSyncingScan(true);
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke('darkrisk360-sync-surfacescan', {
+        body: {
+          customer_id: organizationId,
+          trigger_type: 'manual',
+        },
+      });
+
+      if (invokeError) throw invokeError;
+      if (data?.error) throw new Error(String(data.error));
+
+      toast.success('Sincronizzazione DarkRisk360 completata');
+      void refetch();
+    } catch (invokeError: any) {
+      toast.error(`Errore sync DarkRisk360: ${String(invokeError?.message || 'errore sconosciuto')}`);
+    } finally {
+      setSyncingScan(false);
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -168,9 +200,13 @@ const DarkRisk360: React.FC = () => {
               <RefreshCw className={`w-4 h-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
               Aggiorna
             </Button>
-            <Button className="bg-primary text-primary-foreground" disabled>
+            <Button
+              className="bg-primary text-primary-foreground"
+              disabled={syncingScan || isFetching}
+              onClick={() => void handleSyncSurfaceScan()}
+            >
               <Eye className="w-4 h-4 mr-2" />
-              Scansione Deep Web
+              {syncingScan ? 'Sincronizzazione...' : 'Scansione Deep Web'}
             </Button>
           </div>
         </div>
