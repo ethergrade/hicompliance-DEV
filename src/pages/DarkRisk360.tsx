@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   AlertTriangle,
@@ -149,6 +150,20 @@ const roadmapBadgeVariant = (status: string): 'default' | 'outline' | 'secondary
   return 'outline';
 };
 
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+
+const parseEmailSelectors = (input: string): string[] => {
+  return Array.from(
+    new Set(
+      String(input || '')
+        .split(/[\n,;\s]+/)
+        .map((token) => String(token || '').trim().toLowerCase())
+        .filter(Boolean)
+        .filter((token) => emailRegex.test(token)),
+    ),
+  ).slice(0, 80);
+};
+
 const normalizeHost = (value: string): string => {
   const text = String(value || '').trim().toLowerCase();
   if (!text || text === '-') return 'n/a';
@@ -191,6 +206,8 @@ const DarkRisk360: React.FC = () => {
     highlightedFindingId: null,
   });
   const [assetTypeFilter, setAssetTypeFilter] = useState<'all' | 'domain' | 'subdomain' | 'ip' | 'url' | 'email' | 'candidate'>('all');
+  const [identityEmailsInput, setIdentityEmailsInput] = useState('');
+  const [identityScanning, setIdentityScanning] = useState(false);
 
   const {
     data: reportSnapshots = [],
@@ -478,6 +495,29 @@ const DarkRisk360: React.FC = () => {
   });
 
   const {
+    data: identityEmailSelectors = [],
+    isLoading: identitySelectorsLoading,
+    refetch: refetchIdentitySelectors,
+  } = useQuery({
+    queryKey: ['darkrisk360-email-selectors', organizationId],
+    enabled: Boolean(organizationId),
+    queryFn: async () => {
+      if (!organizationId) return [];
+      const { data, error: queryError } = await supabase
+        .from('darkrisk_selectors' as any)
+        .select('id, value, normalized_value, status, updated_at')
+        .eq('organization_id', organizationId)
+        .eq('selector_type', 'email')
+        .in('status', ['approved', 'candidate'])
+        .order('updated_at', { ascending: false })
+        .limit(80);
+      if (queryError) throw queryError;
+      return (data || []) as Array<Record<string, any>>;
+    },
+    staleTime: 60_000,
+  });
+
+  const {
     data: roadmap,
     isLoading: roadmapLoading,
     isError: roadmapError,
@@ -663,6 +703,67 @@ const DarkRisk360: React.FC = () => {
     }
   };
 
+  const handleIdentityLeakScan = async () => {
+    if (!organizationId) {
+      toast.error('Nessun cliente selezionato');
+      return;
+    }
+
+    const parsedEmails = parseEmailSelectors(identityEmailsInput);
+    if (parsedEmails.length === 0) {
+      toast.error('Inserisci almeno una email valida (es. user@dominio.it)');
+      return;
+    }
+
+    setIdentityScanning(true);
+    try {
+      const selectorRows = parsedEmails.map((email) => ({
+        organization_id: organizationId,
+        tenant_id: organizationId,
+        selector_type: 'email',
+        value: email,
+        normalized_value: email,
+        source: 'manual',
+        status: 'approved',
+        metadata: {
+          added_from: 'darkrisk_ui_identity',
+          added_at: new Date().toISOString(),
+        },
+      }));
+
+      const { error: selectorError } = await supabase
+        .from('darkrisk_selectors' as any)
+        .upsert(selectorRows as any, {
+          onConflict: 'organization_id,selector_type,normalized_value',
+          ignoreDuplicates: false,
+        });
+      if (selectorError) throw selectorError;
+
+      const { data, error: invokeError } = await supabase.functions.invoke('darkrisk360-sync-surfacescan', {
+        body: {
+          customer_id: organizationId,
+          trigger_type: 'identity_email_manual',
+          identity_emails: parsedEmails,
+        },
+      });
+      if (invokeError) throw invokeError;
+      if (data?.error) throw new Error(String(data.error));
+
+      toast.success(`Analisi identity avviata su ${parsedEmails.length} email`);
+      setIdentityEmailsInput('');
+      void Promise.all([
+        refetch(),
+        refetchIdentitySelectors(),
+        queryClient.invalidateQueries({ queryKey: ['darkrisk360-findings', organizationId] }),
+        queryClient.invalidateQueries({ queryKey: ['darkrisk360-assets', organizationId] }),
+      ]);
+    } catch (scanError: any) {
+      toast.error(`Errore analisi identity: ${String(scanError?.message || 'errore sconosciuto')}`);
+    } finally {
+      setIdentityScanning(false);
+    }
+  };
+
   const openReportAsset = async (report: Record<string, any>, format: 'html' | 'json' | 'pdf') => {
     if (!organizationId) {
       toast.error('Nessun cliente selezionato');
@@ -812,6 +913,35 @@ const DarkRisk360: React.FC = () => {
               </TabsList>
 
               <TabsContent value="overview" className="space-y-4">
+                <Card className="border-border">
+                  <CardHeader className="pb-3">
+                    <CardTitle>Identity Leak Check (Email)</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      Inserisci email aziendali da monitorare per leak e compromissioni identity. Le email vengono incluse automaticamente nei cicli DarkRisk360 successivi.
+                    </p>
+                    <Textarea
+                      value={identityEmailsInput}
+                      onChange={(event) => setIdentityEmailsInput(event.target.value)}
+                      placeholder="es. soc@azienda.it, admin@azienda.it"
+                      className="min-h-[84px]"
+                    />
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Button
+                        onClick={() => void handleIdentityLeakScan()}
+                        disabled={identityScanning || !organizationId}
+                        className="bg-primary text-primary-foreground"
+                      >
+                        {identityScanning ? 'Analisi in corso...' : 'Avvia controllo identity'}
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => setActiveTab('identity')}>
+                        Vai a Identity
+                      </Button>
+                      <Badge variant="outline">Email monitorate: {identityEmailSelectors.length}</Badge>
+                    </div>
+                  </CardContent>
+                </Card>
                 <DarkRiskCoverageMatrix controls={overview.coverage_controls} />
                 <DarkRiskThreatGroups
                   groups={overview.threat_groups}
@@ -1003,19 +1133,73 @@ const DarkRisk360: React.FC = () => {
               </TabsContent>
 
               <TabsContent value="identity">
-                <Card className="border-border">
-                  <CardHeader className="pb-3">
-                    <CardTitle>Identity Exposure</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2 text-sm text-muted-foreground">
-                    <p>Identità impattate: <span className="font-semibold text-foreground">{overview.kpis.impacted_identities.value}</span></p>
-                    {overview.tier === 'extended' ? (
-                      <p>Modalità Estesa attiva: è possibile abilitare workflow avanzati analyst per evidenze sensibili con audit.</p>
-                    ) : (
-                      <p>Modalità Standard: dettagli raw non esposti. Sono mostrati solo indicatori sintetici e raccomandazioni.</p>
-                    )}
-                  </CardContent>
-                </Card>
+                <div className="space-y-4">
+                  <Card className="border-border">
+                    <CardHeader className="pb-3">
+                      <CardTitle>Identity Exposure</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <p className="text-sm text-muted-foreground">
+                        Identità impattate: <span className="font-semibold text-foreground">{overview.kpis.impacted_identities.value}</span>
+                      </p>
+                      {overview.tier === 'extended' ? (
+                        <p className="text-sm text-muted-foreground">Modalità Estesa attiva: workflow analyst e correlazione identity sempre inclusi.</p>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Modalità Standard: viste sintetiche, remediation e raccomandazioni operative.</p>
+                      )}
+
+                      <div className="rounded-lg border border-border/70 bg-muted/20 p-3 space-y-3">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <p className="text-sm font-medium">Controllo mirato leak email</p>
+                          <Badge variant="outline">Analisi identity continua</Badge>
+                        </div>
+                        <Textarea
+                          value={identityEmailsInput}
+                          onChange={(event) => setIdentityEmailsInput(event.target.value)}
+                          placeholder="Inserisci email (una per riga o CSV), es. ceo@azienda.it, it@azienda.it"
+                          className="min-h-[92px]"
+                        />
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Button
+                            onClick={() => void handleIdentityLeakScan()}
+                            disabled={identityScanning || !organizationId}
+                            className="bg-primary text-primary-foreground"
+                          >
+                            {identityScanning ? 'Analisi in corso...' : 'Avvia controllo leak identity'}
+                          </Button>
+                          <p className="text-xs text-muted-foreground">
+                            I selector email approvati entrano automaticamente nei cicli successivi.
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-border">
+                    <CardHeader className="pb-3">
+                      <CardTitle>Email monitorate per Identity</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {identitySelectorsLoading ? (
+                        <p className="text-sm text-muted-foreground">Caricamento selector email...</p>
+                      ) : identityEmailSelectors.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">Nessuna email monitorata. Inserisci un set iniziale per avviare controlli mirati.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {identityEmailSelectors.map((selector) => (
+                            <div key={String(selector.id)} className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-muted/20 px-3 py-2">
+                              <span className="text-sm font-medium">{String(selector.normalized_value || selector.value || '-')}</span>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline">{String(selector.status || 'approved')}</Badge>
+                                <span className="text-xs text-muted-foreground">{formatDateTime(selector.updated_at)}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
               </TabsContent>
 
               <TabsContent value="reports" className="space-y-4">
