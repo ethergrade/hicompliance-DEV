@@ -218,6 +218,11 @@ const buildFallbackAi = (report: SurfaceScan360Report) => {
       { priority: 3, title: 'Hardening configurativo', rationale: 'Controlli web e rete non uniformi aumentano il rischio operativo.', action: 'Allineare baseline di sicurezza su asset pubblici.', severity: 'medium', affected_assets: [] },
       { priority: 4, title: 'Controllo perimetro e sottodomini', rationale: 'La variazione del perimetro modifica il rischio esposto.', action: 'Rieseguire discovery periodica e allineare continuamente lo scope.', severity: 'medium', affected_assets: [] },
       { priority: 5, title: 'Governance e verifica continua', rationale: 'La sicurezza esterna richiede controllo ricorrente.', action: 'Programmare ciclo continuo: analisi, remediation, verifica.', severity: 'low', affected_assets: [] },
+      { priority: 6, title: 'Risoluzione finding ad alta frequenza', rationale: 'Findings ripetuti indicano fragilità strutturali del perimetro esterno.', action: 'Aggregare i finding ricorrenti e pianificare azioni risolutive per classe di problema.', severity: 'medium', affected_assets: [] },
+      { priority: 7, title: 'Riduzione superficie servizi esposti', rationale: 'Servizi non indispensabili aumentano il rischio di attacco opportunistico.', action: 'Disabilitare i servizi non necessari e limitare l’esposizione alle sole sorgenti autorizzate.', severity: 'medium', affected_assets: [] },
+      { priority: 8, title: 'Rafforzamento controlli di accesso', rationale: 'Asset pubblici con controlli deboli possono favorire accessi non autorizzati.', action: 'Applicare policy di accesso restrittive, MFA e segmentazione sui sistemi Internet-facing.', severity: 'medium', affected_assets: [] },
+      { priority: 9, title: 'Controllo continuo del ciclo patch', rationale: 'Il ritardo nel patching incrementa la finestra di esposizione ai threat actor.', action: 'Definire SLA di patching per severità e verificare periodicamente lo stato di applicazione.', severity: 'low', affected_assets: [] },
+      { priority: 10, title: 'Validazione periodica post-remediation', rationale: 'La remediation non verificata può lasciare il rischio residuo invariato.', action: 'Eseguire scansioni di conferma dopo ogni remediation e mantenere storico evidenze.', severity: 'low', affected_assets: [] },
     ],
     correlations: [
       'La severità aggregata riflette la priorità operativa di remediation.',
@@ -935,7 +940,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
 
     if (aiData.top_recommendations?.length) {
       y += 6;
-      sectionTitle(8, 'Priorità operative AI (Top 5)');
+      sectionTitle(8, 'Priorità operative AI (Top 10)');
       aiData.top_recommendations.forEach((r: any) => {
         ensure(40);
         const badgeW = severityBadge(r.severity || 'info');

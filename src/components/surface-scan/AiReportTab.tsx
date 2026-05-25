@@ -183,7 +183,7 @@ export const AiReportTab: React.FC = () => {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Genera un report completo con anagrafica cliente, scope, sottodomini, findings e top-5
+            Genera un report completo con anagrafica cliente, scope, sottodomini, findings e top-10
             raccomandazioni consulenziali. Tutte le sezioni sono paginate per una lettura ordinata e pronte per export PDF.
           </p>
           <div className="flex gap-2">
@@ -303,7 +303,7 @@ export const AiReportTab: React.FC = () => {
 
           {report.ai?.top_recommendations?.length ? (
             <Card>
-              <CardHeader><CardTitle>5. Top 5 raccomandazioni</CardTitle></CardHeader>
+              <CardHeader><CardTitle>5. Top 10 raccomandazioni</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 {report.ai.top_recommendations.map((r, i) => (
                   <div key={i} className="border-l-4 pl-3 py-2" style={{ borderColor: 'hsl(var(--primary))' }}>
