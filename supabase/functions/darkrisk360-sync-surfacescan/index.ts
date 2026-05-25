@@ -35,7 +35,7 @@ const INTELX_API_URL = String(
 ).replace(/\/+$/, '');
 const INTELX_MAX_SELECTORS_PER_RUN = Math.max(
   1,
-  Math.min(10, Number(Deno.env.get('INTELX_MAX_SELECTORS_PER_RUN') || 5)),
+  Math.min(60, Number(Deno.env.get('INTELX_MAX_SELECTORS_PER_RUN') || 20)),
 );
 const INTELX_MAX_RESULTS_PER_SELECTOR = Math.max(
   5,
@@ -122,6 +122,7 @@ type IntelxSelectorDefinition = {
   raw: string;
   normalized: string;
   type: DarkRiskSelectorType;
+  source: 'surfacescan360' | 'manual' | 'existing';
 };
 
 type IntelxQueryTerm = {
@@ -288,6 +289,23 @@ function buildIntelxQueryTerms(
   }
 
   return terms.slice(0, INTELX_MAX_QUERY_TERMS_PER_RUN);
+}
+
+function parseIdentityEmailSelectors(value: unknown): string[] {
+  const normalized = Array.isArray(value)
+    ? value.map((entry) => normalizeText(String(entry || '')).toLowerCase())
+    : String(value || '')
+        .split(/[\n,;\s]+/)
+        .map((entry) => normalizeText(String(entry || '')).toLowerCase());
+
+  const deduped = Array.from(new Set(normalized.filter(Boolean)));
+  const emails: string[] = [];
+  for (const token of deduped) {
+    const validation = validateDarkRiskSelector(token);
+    if (!validation.valid || validation.type !== 'email' || !validation.normalized) continue;
+    emails.push(validation.normalized);
+  }
+  return emails.slice(0, 80);
 }
 
 async function intelxSubmitSearch(term: string): Promise<string | null> {
@@ -507,6 +525,7 @@ serve(async (req: Request) => {
     const requestedCustomerId = normalizeText(body?.customer_id);
     const requestedScanJobId = normalizeText(body?.scan_job_id);
     const triggerType = normalizeText(body?.trigger_type) || 'manual';
+    const manualIdentityEmails = parseIdentityEmailSelectors(body?.identity_emails);
 
     const caller = await getCallerProfile(adminClient, authData.user.id);
     const customerId = requestedCustomerId || caller.organizationId || '';
@@ -738,16 +757,77 @@ serve(async (req: Request) => {
       ...exposureFindings.map((row) => normalizeExposureFinding(row)),
     ];
 
-    const intelxSelectorDefinitions: IntelxSelectorDefinition[] = [];
+    if (manualIdentityEmails.length > 0) {
+      const manualSelectorRows = manualIdentityEmails.map((email) => ({
+        organization_id: customerId,
+        tenant_id: customerId,
+        selector_type: 'email',
+        value: email,
+        normalized_value: email,
+        source: 'manual',
+        status: 'approved',
+        metadata: {
+          discovered_by: 'darkrisk360-sync-surfacescan',
+          input_mode: 'identity_email_manual',
+          source_scan_job_id: scanJob.id,
+        },
+      }));
+      const { error: manualSelectorErr } = await adminClient
+        .from('darkrisk_selectors' as any)
+        .upsert(manualSelectorRows as any, {
+          onConflict: 'organization_id,selector_type,normalized_value',
+          ignoreDuplicates: false,
+        });
+      if (manualSelectorErr) throw manualSelectorErr;
+    }
+
+    const selectorDefinitionsByNormalized = new Map<string, IntelxSelectorDefinition>();
+    const addSelectorDefinition = (
+      raw: string,
+      normalized: string,
+      type: DarkRiskSelectorType,
+      source: 'surfacescan360' | 'manual' | 'existing',
+    ) => {
+      const key = normalizeText(normalized).toLowerCase();
+      if (!key || selectorDefinitionsByNormalized.has(key)) return;
+      selectorDefinitionsByNormalized.set(key, {
+        raw,
+        normalized,
+        type,
+        source,
+      });
+    };
+
     for (const selectorValue of collectIntelxSelectors(assetRows, canonicalFindings, scopeDomains)) {
       const validation = validateDarkRiskSelector(selectorValue);
       if (!validation.valid || !validation.type || !validation.normalized) continue;
-      intelxSelectorDefinitions.push({
-        raw: selectorValue,
-        normalized: validation.normalized,
-        type: validation.type,
-      });
+      addSelectorDefinition(selectorValue, validation.normalized, validation.type, 'surfacescan360');
     }
+
+    for (const email of manualIdentityEmails) {
+      addSelectorDefinition(email, email, 'email', 'manual');
+    }
+
+    const allowedSelectorTypes = Array.from(intelxAllowedSelectorTypes);
+    const existingSelectorsRes = await adminClient
+      .from('darkrisk_selectors' as any)
+      .select('selector_type, value, normalized_value, status')
+      .eq('organization_id', customerId)
+      .in('selector_type', allowedSelectorTypes)
+      .in('status', ['approved', 'candidate'])
+      .limit(600);
+    if (existingSelectorsRes.error) throw existingSelectorsRes.error;
+
+    for (const selectorRow of ((existingSelectorsRes.data || []) as Array<Record<string, any>>)) {
+      const selectorType = normalizeText(String(selectorRow.selector_type || '')) as DarkRiskSelectorType;
+      if (!selectorType || !intelxAllowedSelectorTypes.has(selectorType)) continue;
+      const normalized = normalizeText(String(selectorRow.normalized_value || '')).toLowerCase();
+      if (!normalized) continue;
+      const raw = normalizeText(String(selectorRow.value || normalized));
+      addSelectorDefinition(raw || normalized, normalized, selectorType, 'existing');
+    }
+
+    const intelxSelectorDefinitions = Array.from(selectorDefinitionsByNormalized.values()).slice(0, INTELX_MAX_SELECTORS_PER_RUN);
 
     if (intelxSelectorDefinitions.length > 0) {
       const selectorUpsertRows = intelxSelectorDefinitions.map((selector) => {
@@ -759,11 +839,12 @@ serve(async (req: Request) => {
           selector_type: selector.type,
           value: selector.raw,
           normalized_value: selector.normalized,
-          source: 'surfacescan360',
+          source: selector.source === 'manual' ? 'manual' : 'surfacescan360',
           status: 'approved',
           metadata: {
             discovered_by: 'darkrisk360-sync-surfacescan',
             source_scan_job_id: scanJob.id,
+            selector_source: selector.source,
           },
         };
       });
@@ -793,6 +874,7 @@ serve(async (req: Request) => {
     }
 
     const intelxQueryTerms = buildIntelxQueryTerms(intelxSelectorDefinitions, scopeDomains);
+    const identityEmailSelectorsUsed = intelxSelectorDefinitions.filter((entry) => entry.type === 'email').length;
 
     let recordsCreated = 0;
     let evidenceCreated = 0;
@@ -1248,6 +1330,7 @@ serve(async (req: Request) => {
           assets_synced: assetRows.length,
           intelx: {
             selectors_considered: intelxSelectorDefinitions.length,
+            identity_email_selectors_used: identityEmailSelectorsUsed,
             query_terms_considered: intelxQueryTerms.length,
             searches_run: intelxSearchesRun,
             at_domain_tld_queries: intelxAtDomainQueries,
@@ -1354,6 +1437,7 @@ serve(async (req: Request) => {
           alerts_created: alertsCreated,
           intelx: {
             selectors_considered: intelxSelectorDefinitions.length,
+            identity_email_selectors_used: identityEmailSelectorsUsed,
             query_terms_considered: intelxQueryTerms.length,
             searches_run: intelxSearchesRun,
             at_domain_tld_queries: intelxAtDomainQueries,
@@ -1384,6 +1468,7 @@ serve(async (req: Request) => {
         alerts_created: alertsCreated,
         intelx: {
           selectors_considered: intelxSelectorDefinitions.length,
+          identity_email_selectors_used: identityEmailSelectorsUsed,
           query_terms_considered: intelxQueryTerms.length,
           searches_run: intelxSearchesRun,
           at_domain_tld_queries: intelxAtDomainQueries,
