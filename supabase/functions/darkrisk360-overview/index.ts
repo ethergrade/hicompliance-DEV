@@ -40,6 +40,17 @@ type CoverageControl = {
   source: string;
 };
 
+type IntelxCoverageInfo = {
+  has_run: boolean;
+  run_status: string;
+  selectors_considered: number;
+  query_terms_considered: number;
+  searches_run: number;
+  at_domain_tld_queries: number;
+  phonebook_searches_run: number;
+  last_execution: string | null;
+};
+
 const severityRank: Record<Severity, number> = {
   info: 1,
   low: 2,
@@ -175,6 +186,7 @@ function categoryDescription(category: string): string {
 function buildCoverageControls(
   moduleRows: ModuleResultLite[],
   tier: 'standard' | 'extended',
+  intelxInfo?: IntelxCoverageInfo | null,
 ): CoverageControl[] {
   const mapping: Array<{ key: string; control: string; modules: string[]; source: string }> = [
     { key: 'dns', control: 'DNS', modules: ['dns', 'dnssec', 'dns_blocklists'], source: 'SurfaceScan360' },
@@ -208,15 +220,25 @@ function buildCoverageControls(
       const controlSource = isExtendedOnly && tier !== 'extended'
         ? 'IntelX (solo Estesa)'
         : control.source;
-      const controlStatus = isExtendedOnly && tier !== 'extended'
-        ? ('planned' as CoverageStatus)
-        : ('not_run' as CoverageStatus);
+
+      let controlStatus: CoverageStatus = 'not_run';
+      if (isExtendedOnly && tier !== 'extended') {
+        controlStatus = 'planned';
+      } else if (intelxInfo?.has_run) {
+        if (control.key === 'phonebook') {
+          controlStatus = intelxInfo.phonebook_searches_run > 0 ? 'completed' : 'not_run';
+        } else if (intelxInfo.searches_run > 0) {
+          controlStatus = 'completed';
+        } else if (intelxInfo.run_status === 'running' || intelxInfo.run_status === 'queued') {
+          controlStatus = 'partial';
+        }
+      }
 
       return {
         key: control.key,
         control: control.control,
         status: controlStatus,
-        last_execution: null,
+        last_execution: intelxInfo?.last_execution || null,
         source: controlSource,
       };
     }
@@ -330,6 +352,27 @@ serve(async (req: Request) => {
       ? 'extended'
       : 'standard';
 
+    const latestDarkriskRunRes = await adminClient
+      .from('darkrisk_scan_runs' as any)
+      .select('id, status, created_at, completed_at, stats')
+      .eq('organization_id', customerId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestDarkriskRunRes.error) throw latestDarkriskRunRes.error;
+    const latestDarkriskRun = latestDarkriskRunRes.data as any;
+    const latestDarkriskIntelxStats = latestDarkriskRun?.stats?.intelx || {};
+    const intelxCoverage: IntelxCoverageInfo = {
+      has_run: Boolean(latestDarkriskRun?.id),
+      run_status: String(latestDarkriskRun?.status || '').toLowerCase(),
+      selectors_considered: Number(latestDarkriskIntelxStats?.selectors_considered || 0),
+      query_terms_considered: Number(latestDarkriskIntelxStats?.query_terms_considered || 0),
+      searches_run: Number(latestDarkriskIntelxStats?.searches_run || 0),
+      at_domain_tld_queries: Number(latestDarkriskIntelxStats?.at_domain_tld_queries || 0),
+      phonebook_searches_run: Number(latestDarkriskIntelxStats?.phonebook_searches_run || 0),
+      last_execution: latestDarkriskRun?.completed_at || latestDarkriskRun?.created_at || null,
+    };
+
     const latestJobQuery = adminClient
       .from('surface_scan_jobs' as any)
       .select('id, created_at, completed_at, status, scan_profile, scan_type, summary')
@@ -439,7 +482,7 @@ serve(async (req: Request) => {
     if ((openPortsRes as any).error) throw (openPortsRes as any).error;
 
     const moduleRows = ((moduleRowsRes as any).data || []) as ModuleResultLite[];
-    const coverageControls = buildCoverageControls(moduleRows, darkRiskTier);
+    const coverageControls = buildCoverageControls(moduleRows, darkRiskTier, intelxCoverage);
 
     const latestFindings = [
       ...(((latestFindingsRes as any).data || []) as FindingLite[]),
