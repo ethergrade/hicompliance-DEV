@@ -80,6 +80,10 @@ interface FindingRow {
   title: string | null;
   remediation: string | null;
   severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
+  affected_asset?: string | null;
+  affected_url?: string | null;
+  ip?: string | null;
+  evidence?: Record<string, any> | null;
   created_at: string;
 }
 
@@ -218,6 +222,41 @@ const riskLevelFromScore = (score: number): string => {
   if (score < 60) return 'high';
   if (score < 80) return 'medium';
   return 'low';
+};
+
+const toLabelValue = (value: unknown): string | null => {
+  const text = String(value || '').trim();
+  if (!text || text === '-' || text.toLowerCase() === 'null' || text.toLowerCase() === 'undefined') return null;
+  return text;
+};
+
+const extractFindingTargets = (finding: FindingRow): string[] => {
+  const targets = new Set<string>();
+
+  const add = (value: unknown) => {
+    const parsed = toLabelValue(value);
+    if (parsed) targets.add(parsed);
+  };
+
+  add(finding.ip);
+  add(finding.affected_asset);
+  add(finding.affected_url);
+
+  const evidence = finding.evidence;
+  if (evidence && typeof evidence === 'object') {
+    add((evidence as any).ip);
+    add((evidence as any).target);
+    add((evidence as any).host);
+    add((evidence as any).asset);
+    add((evidence as any).domain);
+
+    const ips = (evidence as any).ips;
+    if (Array.isArray(ips)) {
+      ips.forEach((entry) => add(entry));
+    }
+  }
+
+  return Array.from(targets).slice(0, 6);
 };
 
 const formatRiskLevel = (risk: string | null | undefined): string => {
@@ -480,7 +519,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
           ),
           fetchRowsByJobIds<FindingRow>(
             'surface_findings',
-            'scan_job_id, module, finding_type, title, remediation, severity, created_at',
+            'scan_job_id, module, finding_type, title, remediation, severity, affected_asset, affected_url, ip, evidence, created_at',
             jobIds,
             { orderBy: 'created_at', ascending: false },
           ),
@@ -1100,17 +1139,29 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                 <p className="text-sm font-medium">Risk findings prioritari (critical/high)</p>
               </div>
               <div className="space-y-2">
-                {riskFindings.slice(0, 8).map((finding, index) => (
-                  <div key={`${finding.finding_type}-${index}`} className="rounded-md border border-border/70 p-2 text-sm">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Badge className={severityBadgeClass[finding.severity]}>{finding.severity}</Badge>
-                      <span className="font-medium">{finding.title || finding.finding_type || 'Finding'}</span>
+                {riskFindings.slice(0, 8).map((finding, index) => {
+                  const targets = extractFindingTargets(finding);
+                  return (
+                    <div key={`${finding.finding_type}-${index}`} className="rounded-md border border-border/70 p-2 text-sm">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge className={severityBadgeClass[finding.severity]}>{finding.severity}</Badge>
+                        <span className="font-medium">{finding.title || finding.finding_type || 'Finding'}</span>
+                      </div>
+                      {targets.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          {targets.map((target) => (
+                            <Badge key={`${finding.finding_type}-${index}-${target}`} variant="outline" className="text-[10px]">
+                              {target}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                      {finding.remediation && (
+                        <p className="text-xs text-muted-foreground mt-1">{finding.remediation}</p>
+                      )}
                     </div>
-                    {finding.remediation && (
-                      <p className="text-xs text-muted-foreground mt-1">{finding.remediation}</p>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
