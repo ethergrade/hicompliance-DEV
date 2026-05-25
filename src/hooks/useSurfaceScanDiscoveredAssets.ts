@@ -64,10 +64,11 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
       setLoading(true);
     }
     try {
+      const scopeFilter = `customer_id.eq.${organizationId},organization_id.eq.${organizationId}`;
       const { data, error } = await supabase
         .from('surface_assets' as any)
         .select('asset_type, asset_value, source, ip, raw')
-        .eq('customer_id', organizationId)
+        .or(scopeFilter)
         .in('asset_type', ['subdomain', 'reverse_dns_hostname', 'domain', 'ip'])
         .order('last_seen', { ascending: false })
         .limit(1500);
@@ -105,7 +106,7 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
 
   useEffect(() => {
     if (!organizationId) return;
-    const assetsChannel = supabase
+    const assetsChannelByCustomer = supabase
       .channel(`surface-assets-${organizationId}`)
       .on(
         'postgres_changes',
@@ -114,6 +115,22 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
           schema: 'public',
           table: 'surface_assets',
           filter: `customer_id=eq.${organizationId}`,
+        },
+        (_payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
+          void fetchAssets({ background: true });
+        },
+      )
+      .subscribe();
+
+    const assetsChannelByOrganization = supabase
+      .channel(`surface-assets-org-${organizationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'surface_assets',
+          filter: `organization_id=eq.${organizationId}`,
         },
         (_payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
           void fetchAssets({ background: true });
@@ -138,7 +155,8 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
       .subscribe();
 
     return () => {
-      supabase.removeChannel(assetsChannel);
+      supabase.removeChannel(assetsChannelByCustomer);
+      supabase.removeChannel(assetsChannelByOrganization);
       supabase.removeChannel(scopeChannel);
     };
   }, [organizationId, fetchAssets]);

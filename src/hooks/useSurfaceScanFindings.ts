@@ -115,13 +115,14 @@ export const useSurfaceScanFindings = () => {
     const background = Boolean(options?.background);
     if (!background) setLoading(true);
     try {
+      const scopeFilter = `customer_id.eq.${organizationId},organization_id.eq.${organizationId}`;
       const [findingsRes, scopeRulesRes] = await Promise.all([
         supabase
           .from('surface_findings' as any)
           .select(
             'id, provider, module, finding_type, title, description, severity, affected_asset, affected_url, ip, port, protocol, cve, cwe, cvss, epss, cisa_kev, remediation, evidence, attribution_confidence, status, created_at',
           )
-          .eq('customer_id', organizationId)
+          .or(scopeFilter)
           .order('created_at', { ascending: false })
           .limit(1000),
         supabase
@@ -164,7 +165,7 @@ export const useSurfaceScanFindings = () => {
   useEffect(() => {
     if (!organizationId) return;
 
-    const channel = supabase
+    const channelByCustomer = supabase
       .channel(`surface-findings-${organizationId}`)
       .on(
         'postgres_changes',
@@ -180,8 +181,25 @@ export const useSurfaceScanFindings = () => {
       )
       .subscribe();
 
+    const channelByOrganization = supabase
+      .channel(`surface-findings-org-${organizationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'surface_findings',
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        (_payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
+          void fetchFindings({ background: true });
+        },
+      )
+      .subscribe();
+
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(channelByCustomer);
+      supabase.removeChannel(channelByOrganization);
     };
   }, [organizationId, fetchFindings]);
 

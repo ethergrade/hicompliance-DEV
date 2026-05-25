@@ -16,13 +16,17 @@ import {
 
 interface ExposureChartsProps {
   summary: ExposureSummary | null;
-  openPorts: ExposureOpenPortRow[];
-  technologies: ExposureTechnologyRow[];
+  openPorts?: ExposureOpenPortRow[];
+  technologies?: ExposureTechnologyRow[];
 }
 
 const COLORS = ['#6366F1', '#14B8A6', '#F97316', '#EF4444', '#A855F7', '#22C55E', '#FACC15'];
 
-export const ExposureCharts: React.FC<ExposureChartsProps> = ({ summary, openPorts, technologies }) => {
+export const ExposureCharts: React.FC<ExposureChartsProps> = ({
+  summary,
+  openPorts = [],
+  technologies = [],
+}) => {
   const topPortsData = useMemo(() => {
     if (summary?.top_open_ports?.length) return summary.top_open_ports;
     const map = new Map<number, number>();
@@ -125,4 +129,3 @@ export const ExposureCharts: React.FC<ExposureChartsProps> = ({ summary, openPor
 };
 
 export default ExposureCharts;
-

@@ -155,10 +155,11 @@ export async function fetchExposureSummary(params: {
 }
 
 export async function fetchExposureJobs(customerId: string, limit = 20): Promise<any[]> {
+  const scopeFilter = `customer_id.eq.${customerId},organization_id.eq.${customerId}`;
   const { data, error } = await supabase
     .from('surface_scan_jobs' as any)
     .select('id, created_at, completed_at, status, scan_name, scan_type, scan_profile, summary, config')
-    .eq('customer_id', customerId)
+    .or(scopeFilter)
     .eq('scan_type', 'exposure_port_technology')
     .order('created_at', { ascending: false })
     .limit(limit);
