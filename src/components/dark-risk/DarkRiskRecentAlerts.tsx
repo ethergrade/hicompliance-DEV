@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Eye } from 'lucide-react';
+import { presentDarkRiskSource } from '@/lib/darkrisk/presentation';
 
 type AlertItem = {
   id: string;
@@ -44,7 +45,7 @@ export const DarkRiskRecentAlerts: React.FC<{
       <CardContent>
         {alerts.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Nessun risultato IntelX rilevante per i selector approvati in questa scansione.
+            Nessun risultato aggiuntivo rilevante nel ciclo DarkRisk360 corrente.
           </p>
         ) : (
           <div className="space-y-2">
@@ -56,7 +57,7 @@ export const DarkRiskRecentAlerts: React.FC<{
                   <p className="text-xs text-muted-foreground truncate">
                     {alert.type}
                     {alert.asset ? ` • ${alert.asset}` : ''}
-                    {alert.source ? ` • ${alert.source}` : ''}
+                    {alert.source ? ` • ${presentDarkRiskSource(alert.source)}` : ''}
                   </p>
                 </div>
                 <span className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(alert.time)}</span>

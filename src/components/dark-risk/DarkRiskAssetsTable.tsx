@@ -1,6 +1,7 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { presentDarkRiskSource } from '@/lib/darkrisk/presentation';
 
 export type DarkRiskAssetRow = {
   id: string;
@@ -58,7 +59,7 @@ export const DarkRiskAssetsTable: React.FC<{ rows: DarkRiskAssetRow[]; subtitle?
                     <td className="py-2 pr-3">{row.asset_type}</td>
                     <td className="py-2 pr-3 font-medium">{row.value}</td>
                     <td className="py-2 pr-3"><Badge className={scopeBadgeClass(row.scope_status)}>{row.scope_status}</Badge></td>
-                    <td className="py-2 pr-3">{row.source}</td>
+                    <td className="py-2 pr-3">{presentDarkRiskSource(row.source)}</td>
                     <td className="py-2 pr-3 text-muted-foreground">{formatDateTime(row.first_seen_at)}</td>
                     <td className="py-2 pr-3 text-muted-foreground">{formatDateTime(row.last_seen_at)}</td>
                     <td className="py-2">{row.findings_count}</td>

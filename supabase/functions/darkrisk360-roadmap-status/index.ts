@@ -215,20 +215,20 @@ serve(async (req: Request) => {
     phases.push({
       phase: 4,
       key: 'intelx_client',
-      title: 'Fase 4 - IntelX client backend',
+      title: 'Fase 4 - DarkRisk360 intelligence client backend',
       status: statusFromProgress(p4Progress),
       score: p4Progress,
-      evidence: `Source IntelX: ${sourceIntelx}, moduli registrati: ${moduleResultsCount}.`,
+      evidence: `Source DarkRisk360 intelligence: ${sourceIntelx}, moduli registrati: ${moduleResultsCount}.`,
     });
 
     const p5Progress = Math.min(1, [intelxTaggedFindings > 0, sourceIntelx > 0].filter(Boolean).length / 2);
     phases.push({
       phase: 5,
       key: 'intelx_finding_engine',
-      title: 'Fase 5 - IntelX finding engine',
+      title: 'Fase 5 - DarkRisk360 intelligence finding engine',
       status: statusFromProgress(p5Progress),
       score: p5Progress,
-      evidence: `Finding IntelX-tagged: ${intelxTaggedFindings}.`,
+      evidence: `Finding DarkRisk360 intelligence tagged: ${intelxTaggedFindings}.`,
     });
 
     const p6Progress = Math.min(1, [findingsCount > 0, highRiskFindings > 0, alertsCount > 0].filter(Boolean).length / 3);
