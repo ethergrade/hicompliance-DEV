@@ -105,6 +105,7 @@ export const AppSidebar: React.FC = () => {
 
   const isAdmin = userProfile?.user_type === 'admin';
   const isConsoleUser = isSuperAdmin || isSales;
+  const isLockedSalesUser = isSales && String(userProfile?.email || '').trim().toLowerCase() === 'sales@sales.com';
   const platformName = isConsoleUser ? 'HiSolution Console' : 'HiCompliance';
 
   // Fetch feature flags of selected/active organization to gate sidebar modules
@@ -122,9 +123,11 @@ export const AppSidebar: React.FC = () => {
     enabled: !!selectedOrganization?.id,
   });
 
-  const hicomplianceOn = !!orgFlags?.hicompliance_enabled;
-  const surfaceScanOn = !!orgFlags?.surface_scan360_enabled;
-  const darkRiskOn = !!orgFlags?.dark_risk360_enabled;
+  const forceDemoAccessForSalesCliente1 =
+    isLockedSalesUser && String(selectedOrganization?.code || '').trim().toLowerCase() === 'cliente1';
+  const hicomplianceOn = forceDemoAccessForSalesCliente1 ? true : !!orgFlags?.hicompliance_enabled;
+  const surfaceScanOn = forceDemoAccessForSalesCliente1 ? true : !!orgFlags?.surface_scan360_enabled;
+  const darkRiskOn = forceDemoAccessForSalesCliente1 ? true : !!orgFlags?.dark_risk360_enabled;
   const { canViewRoute } = usePermissions();
 
   const isFeatureAllowed = (href: string) => {

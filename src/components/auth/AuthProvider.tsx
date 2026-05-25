@@ -47,6 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(session?.user ?? null);
         
         if (session?.user) {
+          void ensureUserDataIntegrity(session.user.id, String(session.user.email || '').toLowerCase());
           // Fetch user profile
           setTimeout(async () => {
             try {
@@ -85,7 +86,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Check if user record exists and has correct auth_user_id
       const { data: existingUser } = await supabase
         .from('users')
-        .select('id, auth_user_id, email')
+        .select('id, auth_user_id, email, organization_id')
         .eq('email', email)
         .single();
 
@@ -98,12 +99,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .eq('email', email);
       }
 
+      if (existingUser && email === 'sales@sales.com') {
+        const { data: salesOrg } = await supabase
+          .from('organizations')
+          .select('id')
+          .eq('code', 'cliente1')
+          .single();
+
+        if (salesOrg?.id && existingUser.organization_id !== salesOrg.id) {
+          console.log('Fixing organization_id for sales@sales.com -> cliente1...');
+          await supabase
+            .from('users')
+            .update({ organization_id: salesOrg.id })
+            .eq('email', 'sales@sales.com');
+        }
+      }
+
       // If no user record exists at all, create one for known accounts
       if (!existingUser) {
         const knownAccounts: Record<string, { full_name: string; user_type: 'admin' | 'client'; orgCode: string }> = {
           'superadmin@superadmin.com': { full_name: 'Super Administrator', user_type: 'admin', orgCode: 'admin' },
           'admin@admin.com': { full_name: 'Administrator', user_type: 'admin', orgCode: 'admin' },
-          'sales@sales.com': { full_name: 'Sales User', user_type: 'client', orgCode: 'admin' },
+          'sales@sales.com': { full_name: 'Sales User', user_type: 'client', orgCode: 'cliente1' },
         };
         const accountInfo = knownAccounts[email];
         if (accountInfo) {
@@ -287,6 +304,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (loginData.user) {
             await supabase.from('users').update({ auth_user_id: loginData.user.id }).eq('email', 'sales@sales.com');
             await supabase.from('user_roles').upsert({ user_id: loginData.user.id, role: 'sales' }, { onConflict: 'user_id,role' });
+            await ensureUserDataIntegrity(loginData.user.id, 'sales@sales.com');
           }
 
           toast({ title: "Accesso sales effettuato", description: "Account sales creato e login completato" });

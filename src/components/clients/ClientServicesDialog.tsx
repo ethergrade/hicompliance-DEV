@@ -57,7 +57,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
         .eq('id', organizationId)
         .maybeSingle();
       if (error) throw error;
-      return (data as any) || { hicompliance_enabled: false, irp_extended: false, surface_scan_extended: false, pentest_tools_auto_validation: false, surface_scan360_enabled: false, dark_risk360_enabled: false };
+      return (data as any) || { hicompliance_enabled: false, irp_extended: false, surface_scan_extended: false, pentest_tools_auto_validation: true, surface_scan360_enabled: false, dark_risk360_enabled: false };
     },
     enabled: open && !!organizationId,
   });
@@ -294,7 +294,8 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                   disabled={updateFlagsMutation.isPending}
                   onCheckedChange={(v) => {
                     const patch: any = { surface_scan360_enabled: v };
-                    if (!v) { patch.surface_scan_extended = false; patch.pentest_tools_auto_validation = false; }
+                    if (v) { patch.pentest_tools_auto_validation = true; }
+                    if (!v) { patch.surface_scan_extended = false; }
                     updateFlagsMutation.mutate(patch);
                   }}
                 />
@@ -322,14 +323,10 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                       <ShieldCheck className="w-4 h-4 text-muted-foreground" />
                       <div>
                         <p className="text-sm font-medium">Validazione attiva CVE</p>
-                        <p className="text-xs text-muted-foreground">Auto-scan quando la scansione passiva è cieca o IP è shared hosting</p>
+                        <p className="text-xs text-muted-foreground">Sempre attiva di default su tutti i clienti abilitati SurfaceScan360</p>
                       </div>
                     </div>
-                    <Switch
-                      checked={!!orgFlags?.pentest_tools_auto_validation}
-                      disabled={updateFlagsMutation.isPending}
-                      onCheckedChange={(v) => updateFlagsMutation.mutate({ pentest_tools_auto_validation: v })}
-                    />
+                    <Badge variant="outline" className="text-xs border-green-500/30 text-green-500">Sempre attiva</Badge>
                   </div>
                 </div>
               )}

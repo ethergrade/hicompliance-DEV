@@ -28,6 +28,7 @@ interface ShodanBanner {
 
 const MAX_IPS_PER_RULE = 256;
 const EXPOSURE_SCOPE_AUTOSCAN_TIMEOUT = 30_000;
+const REPORT_SCOPE_REFRESH_TIMEOUT = 45_000;
 
 const sev = (c?: number) => (c == null ? 'low' : c >= 7 ? 'high' : c >= 4 ? 'medium' : 'low');
 const isIp = (v: string) => /^(\d{1,3}\.){3}\d{1,3}$/.test(v);
@@ -403,6 +404,72 @@ async function triggerWeeklyScopeExposureScan(
   }
 }
 
+async function refreshWeeklyScopeRepositoryReport(
+  supabase: any,
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  internalSecret: string | null,
+  orgId: string,
+) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), REPORT_SCOPE_REFRESH_TIMEOUT);
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/surfacescan360-ai-report`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${serviceRoleKey}`,
+        ...(internalSecret ? { 'x-surface-internal-secret': internalSecret } : {}),
+      },
+      body: JSON.stringify({
+        organization_id: orgId,
+        scope_mode: 'organization_scope',
+        trigger_source: 'cron_weekly_repository',
+        force_regenerate: true,
+        created_by: null,
+      }),
+      signal: ctrl.signal,
+    });
+
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.error) {
+      await supabase.from('external_scan_audit_log').insert({
+        organization_id: orgId,
+        actor_email: 'system:cron',
+        action: 'auto_scope_report_failed',
+        details: {
+          http_status: response.status,
+          error: body?.error || 'unknown',
+        },
+      });
+      return;
+    }
+
+    await supabase.from('external_scan_audit_log').insert({
+      organization_id: orgId,
+      scan_job_id: body?.report?.scan?.job_id ?? null,
+      actor_email: 'system:cron',
+      action: 'auto_scope_report_generated',
+      details: {
+        repository_id: body?.repository_id || null,
+        mode: body?.report?.report_repository?.mode || null,
+        generated_at: body?.report?.generated_at || null,
+      },
+    });
+  } catch (error) {
+    await supabase.from('external_scan_audit_log').insert({
+      organization_id: orgId,
+      actor_email: 'system:cron',
+      action: 'auto_scope_report_failed',
+      details: {
+        error: (error as Error)?.message || 'network_error',
+      },
+    });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -482,6 +549,8 @@ Deno.serve(async (req) => {
       await maybeTriggerAutoValidation(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, perRule);
       // Exposure full-scope: avvio automatico settimanale su tutti i domini/IP in scope.
       await triggerWeeklyScopeExposureScan(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, orgRules);
+      // Report repository canonico SurfaceScan360: refresh automatico settimanale.
+      await refreshWeeklyScopeRepositoryReport(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId);
 
     }
 

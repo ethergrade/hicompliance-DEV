@@ -28,6 +28,7 @@ export interface NormalizedTarget {
 
 export interface CallerProfile {
   authUserId: string;
+  email: string;
   userType: string;
   organizationId: string | null;
   canManageAllOrganizations: boolean;
@@ -61,6 +62,8 @@ const IPV4_REGEX =
 
 const BLOCKED_HOSTS = new Set(["localhost"]);
 const BLOCKED_SCHEMES = new Set(["file:", "ftp:", "ws:", "wss:"]);
+const SALES_LOCK_EMAIL = "sales@sales.com";
+const SALES_LOCK_ORG_CODE = "cliente1";
 
 export const isAllowedProfile = (profile: string): profile is ScanProfile =>
   (ALLOWED_PROFILES as readonly string[]).includes(profile);
@@ -496,7 +499,7 @@ export async function getCallerProfile(
 ): Promise<CallerProfile> {
   const { data: userRow, error: userError } = await adminClient
     .from("users")
-    .select("auth_user_id, user_type, organization_id")
+    .select("auth_user_id, email, user_type, organization_id")
     .eq("auth_user_id", authUserId)
     .single();
 
@@ -509,10 +512,24 @@ export async function getCallerProfile(
     adminClient.rpc("has_role", { _user_id: authUserId, _role: "super_admin" }),
   ]);
 
+  let callerOrganizationId = userRow.organization_id;
+  const normalizedEmail = String(userRow.email || "").toLowerCase();
+  if (normalizedEmail === SALES_LOCK_EMAIL) {
+    const { data: salesOrg } = await adminClient
+      .from("organizations")
+      .select("id")
+      .eq("code", SALES_LOCK_ORG_CODE)
+      .maybeSingle();
+    if (salesOrg?.id) {
+      callerOrganizationId = salesOrg.id;
+    }
+  }
+
   return {
     authUserId,
+    email: normalizedEmail,
     userType: userRow.user_type,
-    organizationId: userRow.organization_id,
+    organizationId: callerOrganizationId,
     canManageAllOrganizations: Boolean(manageRes.data),
     isSuperAdmin: Boolean(roleRes.data),
     isAdminLike: userRow.user_type === "admin" || Boolean(roleRes.data),
@@ -523,7 +540,15 @@ export function assertCustomerAccess(
   caller: CallerProfile,
   customerId: string,
 ): void {
-  const canAccess = caller.canManageAllOrganizations || caller.organizationId === customerId;
+  const normalizedCustomerId = String(customerId || "").trim();
+  const callerOrgId = String(caller.organizationId || "").trim();
+  const isLockedSalesUser = caller.email === SALES_LOCK_EMAIL;
+
+  if (isLockedSalesUser && callerOrgId !== normalizedCustomerId) {
+    throw new Error("Accesso cliente non autorizzato");
+  }
+
+  const canAccess = caller.canManageAllOrganizations || callerOrgId === normalizedCustomerId;
   if (!canAccess) {
     throw new Error("Accesso cliente non autorizzato");
   }
