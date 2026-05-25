@@ -45,6 +45,10 @@ const INTELX_REQUEST_INTERVAL_MS = Math.max(
   300,
   Math.min(2000, Number(Deno.env.get('INTELX_REQUEST_INTERVAL_MS') || 1000)),
 );
+const INTELX_MAX_QUERY_TERMS_PER_RUN = Math.max(
+  5,
+  Math.min(120, Number(Deno.env.get('INTELX_MAX_QUERY_TERMS_PER_RUN') || 40)),
+);
 
 type SurfaceAssetRow = {
   id: string;
@@ -52,6 +56,13 @@ type SurfaceAssetRow = {
   asset_value: string | null;
   source: string | null;
   raw: Record<string, unknown> | null;
+};
+
+type ScopeRuleRow = {
+  entry_type: string | null;
+  input_value: string | null;
+  ip_start?: string | null;
+  ip_end?: string | null;
 };
 
 type SurfaceFindingRow = {
@@ -109,6 +120,13 @@ type IntelxSelectorDefinition = {
   type: DarkRiskSelectorType;
 };
 
+type IntelxQueryTerm = {
+  term: string;
+  kind: 'selector' | 'at_domain_tld';
+  selectorNormalized: string | null;
+  linkedAssetNormalized: string | null;
+};
+
 const intelxAllowedSelectorTypes = new Set([
   'email',
   'domain',
@@ -155,6 +173,7 @@ function normalizeIntelxRecordKey(selector: string, record: Record<string, unkno
 function collectIntelxSelectors(
   assetRows: Array<Record<string, unknown>>,
   canonicalFindings: CanonicalFinding[],
+  scopeDomains: string[] = [],
 ): string[] {
   const candidates = new Set<string>();
 
@@ -168,6 +187,11 @@ function collectIntelxSelectors(
     if (asset) candidates.add(asset);
   }
 
+  for (const scopeDomain of scopeDomains) {
+    const normalizedScopeDomain = normalizeText(scopeDomain).toLowerCase();
+    if (normalizedScopeDomain) candidates.add(normalizedScopeDomain);
+  }
+
   const selectors: string[] = [];
   for (const candidate of candidates) {
     const validation = validateDarkRiskSelector(candidate);
@@ -177,6 +201,69 @@ function collectIntelxSelectors(
   }
 
   return [...new Set(selectors)].slice(0, INTELX_MAX_SELECTORS_PER_RUN);
+}
+
+function isDomainLike(value: string): boolean {
+  return /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i.test(value);
+}
+
+function normalizeScopeDomain(value: string): string {
+  return normalizeText(value).toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/\.$/, '');
+}
+
+function buildAtDomainTldTerms(scopeDomains: string[]): string[] {
+  const normalizedDomains = [...new Set(scopeDomains.map((entry) => normalizeScopeDomain(entry)).filter(isDomainLike))];
+  const direct = normalizedDomains.map((domain) => `@${domain}`);
+
+  const tlds = [...new Set(normalizedDomains.map((domain) => domain.split('.').slice(1).join('.')).filter(Boolean))];
+  const bases = [...new Set(normalizedDomains.map((domain) => domain.split('.')[0]).filter(Boolean))];
+  const crossTld: string[] = [];
+  for (const base of bases) {
+    for (const tld of tlds) {
+      crossTld.push(`@${base}.${tld}`);
+    }
+  }
+
+  return [...new Set([...direct, ...crossTld])];
+}
+
+function buildIntelxQueryTerms(
+  selectors: IntelxSelectorDefinition[],
+  scopeDomains: string[],
+): IntelxQueryTerm[] {
+  const terms: IntelxQueryTerm[] = [];
+  const dedupe = new Set<string>();
+
+  for (const selector of selectors) {
+    const term = normalizeText(selector.normalized);
+    if (!term) continue;
+    const key = `selector:${term.toLowerCase()}`;
+    if (dedupe.has(key)) continue;
+    dedupe.add(key);
+    terms.push({
+      term,
+      kind: 'selector',
+      selectorNormalized: selector.normalized,
+      linkedAssetNormalized: selector.normalized,
+    });
+  }
+
+  const atDomainTerms = buildAtDomainTldTerms(scopeDomains);
+  for (const atTerm of atDomainTerms) {
+    const clean = normalizeText(atTerm).toLowerCase();
+    if (!clean) continue;
+    const key = `at_domain_tld:${clean}`;
+    if (dedupe.has(key)) continue;
+    dedupe.add(key);
+    terms.push({
+      term: clean,
+      kind: 'at_domain_tld',
+      selectorNormalized: null,
+      linkedAssetNormalized: clean.replace(/^@/, ''),
+    });
+  }
+
+  return terms.slice(0, INTELX_MAX_QUERY_TERMS_PER_RUN);
 }
 
 async function intelxSubmitSearch(term: string): Promise<string | null> {
@@ -487,7 +574,7 @@ serve(async (req: Request) => {
         },
       });
 
-    const [assetsRes, findingsRes, exposureFindingsRes] = await Promise.all([
+    const [assetsRes, findingsRes, exposureFindingsRes, scopeRulesRes] = await Promise.all([
       adminClient
         .from('surface_assets' as any)
         .select('id, asset_type, asset_value, source, raw')
@@ -500,17 +587,76 @@ serve(async (req: Request) => {
         .from('surface_exposure_findings' as any)
         .select('id, finding_type, title, description, severity, source, affected_host, affected_url, status, evidence, raw, created_at')
         .eq('scan_job_id', scanJob.id),
+      adminClient
+        .from('surface_scan_monitored_ips' as any)
+        .select('entry_type, input_value, ip_start, ip_end')
+        .eq('organization_id', customerId),
     ]);
 
     if (assetsRes.error) throw assetsRes.error;
     if (findingsRes.error) throw findingsRes.error;
     if (exposureFindingsRes.error) throw exposureFindingsRes.error;
+    if (scopeRulesRes.error) throw scopeRulesRes.error;
 
     const assets = (assetsRes.data || []) as SurfaceAssetRow[];
     const surfaceFindings = (findingsRes.data || []) as SurfaceFindingRow[];
     const exposureFindings = (exposureFindingsRes.data || []) as ExposureFindingRow[];
+    const scopeRules = (scopeRulesRes.data || []) as ScopeRuleRow[];
+    const scopeDomains = Array.from(
+      new Set(
+        scopeRules
+          .filter((row) => String(row.entry_type || '').toLowerCase() === 'domain')
+          .map((row) => normalizeScopeDomain(String(row.input_value || '')))
+          .filter(isDomainLike),
+      ),
+    );
+    const scopeIps = Array.from(
+      new Set(
+        scopeRules
+          .filter((row) => String(row.entry_type || '').toLowerCase() === 'single')
+          .map((row) => normalizeText(String(row.input_value || '')))
+          .filter((value) => Boolean(value)),
+      ),
+    );
 
-    const assetRows = assets
+    const scopeAssetRows: Array<Record<string, unknown>> = [
+      ...scopeDomains.map((domain) => ({
+        organization_id: customerId,
+        tenant_id: customerId,
+        asset_type: 'domain',
+        value: domain,
+        normalized_value: normalizeAssetValue(domain),
+        source: 'manual',
+        scope_status: 'approved',
+        first_seen_at: new Date().toISOString(),
+        last_seen_at: new Date().toISOString(),
+        metadata: {
+          discovered_by: 'darkrisk360-sync-surfacescan',
+          source_scope_rule: 'domain',
+          source_scan_job_id: scanJob.id,
+        },
+      })),
+      ...scopeIps.map((ip) => ({
+        organization_id: customerId,
+        tenant_id: customerId,
+        asset_type: 'ip',
+        value: ip,
+        normalized_value: normalizeAssetValue(ip),
+        source: 'manual',
+        scope_status: 'approved',
+        first_seen_at: new Date().toISOString(),
+        last_seen_at: new Date().toISOString(),
+        metadata: {
+          discovered_by: 'darkrisk360-sync-surfacescan',
+          source_scope_rule: 'single',
+          source_scan_job_id: scanJob.id,
+        },
+      })),
+    ];
+
+    const assetRows = [
+      ...scopeAssetRows,
+      ...assets
       .map((asset) => {
         const value = normalizeText(asset.asset_value);
         if (!value) return null;
@@ -534,7 +680,8 @@ serve(async (req: Request) => {
           },
         };
       })
-      .filter(Boolean) as Array<Record<string, unknown>>;
+      .filter(Boolean) as Array<Record<string, unknown>>,
+    ];
 
     if (assetRows.length > 0) {
       const { error: assetsUpsertErr } = await adminClient
@@ -568,7 +715,7 @@ serve(async (req: Request) => {
     ];
 
     const intelxSelectorDefinitions: IntelxSelectorDefinition[] = [];
-    for (const selectorValue of collectIntelxSelectors(assetRows, canonicalFindings)) {
+    for (const selectorValue of collectIntelxSelectors(assetRows, canonicalFindings, scopeDomains)) {
       const validation = validateDarkRiskSelector(selectorValue);
       if (!validation.valid || !validation.type || !validation.normalized) continue;
       intelxSelectorDefinitions.push({
@@ -621,6 +768,8 @@ serve(async (req: Request) => {
       selectorByNormalized.set(String(row.normalized_value), String(row.id));
     }
 
+    const intelxQueryTerms = buildIntelxQueryTerms(intelxSelectorDefinitions, scopeDomains);
+
     let recordsCreated = 0;
     let evidenceCreated = 0;
     let findingsCreated = 0;
@@ -630,6 +779,7 @@ serve(async (req: Request) => {
     let intelxFindingsCreated = 0;
     let intelxAlertsCreated = 0;
     let intelxSearchesRun = 0;
+    let intelxAtDomainQueries = 0;
     const intelxWarnings: string[] = [];
 
     for (const finding of canonicalFindings) {
@@ -818,21 +968,25 @@ serve(async (req: Request) => {
     }
 
     if (isIntelxConfigured()) {
-      for (const selector of intelxSelectorDefinitions) {
+      for (const queryTerm of intelxQueryTerms) {
         try {
           await wait(INTELX_REQUEST_INTERVAL_MS);
-          const records = await runIntelxSearch(selector.normalized);
+          const records = await runIntelxSearch(queryTerm.term);
           intelxSearchesRun += 1;
+          if (queryTerm.kind === 'at_domain_tld') intelxAtDomainQueries += 1;
           if (records.length === 0) continue;
 
-          const selectorId = selectorByNormalized.get(selector.normalized) || null;
-          const assetRef = assetByNormalized.get(normalizeAssetValue(selector.normalized));
+          const selectorId = queryTerm.selectorNormalized
+            ? selectorByNormalized.get(queryTerm.selectorNormalized) || null
+            : null;
+          const linkedAssetKey = normalizeAssetValue(queryTerm.linkedAssetNormalized || queryTerm.term.replace(/^@/, ''));
+          const assetRef = linkedAssetKey ? assetByNormalized.get(linkedAssetKey) : undefined;
           const linkedAssetId = assetRef?.id || null;
 
           for (const record of records) {
-            const sourceRecordKey = normalizeIntelxRecordKey(selector.normalized, record);
-            const title = normalizeText(String(record?.name || '')) || `IntelX signal on ${selector.normalized}`;
-            const description = normalizeText(String(record?.description || '')) || `Segnale exposure rilevato su selector ${selector.normalized}.`;
+            const sourceRecordKey = normalizeIntelxRecordKey(queryTerm.term, record);
+            const title = normalizeText(String(record?.name || '')) || `IntelX signal on ${queryTerm.term}`;
+            const description = normalizeText(String(record?.description || '')) || `Segnale exposure rilevato su query ${queryTerm.term}.`;
             const previewText = maskPotentialSecrets(`${title}\n${description}`.slice(0, 1400));
             const observedAtCandidate = normalizeText(String(record?.date || record?.added || ''));
             const observedAt = Number.isFinite(Date.parse(observedAtCandidate))
@@ -840,7 +994,7 @@ serve(async (req: Request) => {
               : new Date().toISOString();
             const xscore = Number(record?.xscore);
             const severity = severityFromIntelxScore(Number.isFinite(xscore) ? xscore : null);
-            const findingType = intelxFindingTypeFromRecord(record, selector.normalized);
+            const findingType = intelxFindingTypeFromRecord(record, queryTerm.term);
             const compromiseType = inferCompromiseType({
               findingType,
               title,
@@ -861,7 +1015,7 @@ serve(async (req: Request) => {
               confidence,
               freshnessDays: daysSince(observedAt),
               recurrenceCount: 1,
-              affectedAssetCriticality: inferAssetCriticality(selector.normalized),
+              affectedAssetCriticality: inferAssetCriticality(queryTerm.linkedAssetNormalized || queryTerm.term),
               isDirectCompromise: compromiseType === 'direct',
               isThirdPartyOnly: compromiseType === 'indirect',
             });
@@ -888,7 +1042,9 @@ serve(async (req: Request) => {
                 title: maskPotentialSecrets(title),
                 description: maskPotentialSecrets(description),
                 raw_metadata: {
-                  selector: selector.normalized,
+                  selector: queryTerm.selectorNormalized || null,
+                  query_term: queryTerm.term,
+                  query_kind: queryTerm.kind,
                   record: {
                     systemid: record?.systemid || null,
                     storageid: record?.storageid || null,
@@ -923,7 +1079,7 @@ serve(async (req: Request) => {
                 selector_id: selectorId,
                 title: maskPotentialSecrets(title),
                 summary: maskPotentialSecrets(description),
-                masked_value: maskPotentialSecrets(selector.normalized),
+                masked_value: maskPotentialSecrets(queryTerm.term),
                 severity_hint: severity,
                 confidence,
                 observed_at: observedAt,
@@ -936,6 +1092,7 @@ serve(async (req: Request) => {
                   mediah: normalizeText(String(record?.mediah || '')) || null,
                   typeh: normalizeText(String(record?.typeh || '')) || null,
                   xscore: Number.isFinite(xscore) ? xscore : null,
+                  query_kind: queryTerm.kind,
                 },
               })
               .select('id')
@@ -971,7 +1128,9 @@ serve(async (req: Request) => {
                   compromise_type: compromiseType,
                   third_party_involved: compromiseType === 'indirect',
                   requires_validation: compromiseType !== 'misconfiguration',
-                  selector: selector.normalized,
+                  selector: queryTerm.selectorNormalized || null,
+                  query_term: queryTerm.term,
+                  query_kind: queryTerm.kind,
                   category_hint: classifyThreatCategoryText(`${title} ${findingType} intelx`),
                 },
               })
@@ -996,7 +1155,8 @@ serve(async (req: Request) => {
                   occurred_at: observedAt,
                   metadata: {
                     source: 'intelx',
-                    selector: selector.normalized,
+                    selector: queryTerm.selectorNormalized || null,
+                    query_term: queryTerm.term,
                     source_scan_job_id: scanJob.id,
                   },
                 });
@@ -1007,7 +1167,7 @@ serve(async (req: Request) => {
             }
           }
         } catch (intelxErr: any) {
-          intelxWarnings.push(maskPotentialSecrets(normalizeText(intelxErr?.message) || `IntelX failed on ${selector.normalized}`));
+          intelxWarnings.push(maskPotentialSecrets(normalizeText(intelxErr?.message) || `IntelX failed on ${queryTerm.term}`));
         }
       }
     } else {
@@ -1041,7 +1201,9 @@ serve(async (req: Request) => {
           assets_synced: assetRows.length,
           intelx: {
             selectors_considered: intelxSelectorDefinitions.length,
+            query_terms_considered: intelxQueryTerms.length,
             searches_run: intelxSearchesRun,
+            at_domain_tld_queries: intelxAtDomainQueries,
             source_records_created: intelxRecordsCreated,
             evidence_created: intelxEvidenceCreated,
             findings_created: intelxFindingsCreated,
@@ -1145,7 +1307,9 @@ serve(async (req: Request) => {
           alerts_created: alertsCreated,
           intelx: {
             selectors_considered: intelxSelectorDefinitions.length,
+            query_terms_considered: intelxQueryTerms.length,
             searches_run: intelxSearchesRun,
+            at_domain_tld_queries: intelxAtDomainQueries,
             source_records_created: intelxRecordsCreated,
             evidence_created: intelxEvidenceCreated,
             findings_created: intelxFindingsCreated,
@@ -1173,7 +1337,9 @@ serve(async (req: Request) => {
         alerts_created: alertsCreated,
         intelx: {
           selectors_considered: intelxSelectorDefinitions.length,
+          query_terms_considered: intelxQueryTerms.length,
           searches_run: intelxSearchesRun,
+          at_domain_tld_queries: intelxAtDomainQueries,
           source_records_created: intelxRecordsCreated,
           evidence_created: intelxEvidenceCreated,
           findings_created: intelxFindingsCreated,
