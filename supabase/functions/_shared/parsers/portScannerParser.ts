@@ -33,16 +33,33 @@ function remediationHint(port: NormalizedOpenPort): string {
   return 'Verificare se il servizio è necessario e applicare principio di minima esposizione.';
 }
 
-export function normalizePortScannerOutput(output: unknown): NormalizedOpenPort[] {
+type NormalizePortScannerOptions = {
+  targetHost?: string;
+};
+
+const normalizeHostInput = (value: unknown): string =>
+  String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+
+const isIpLike = (value: string): boolean =>
+  /^(\d{1,3}\.){3}\d{1,3}$/.test(value) || value.includes(':');
+
+export function normalizePortScannerOutput(
+  output: unknown,
+  options: NormalizePortScannerOptions = {},
+): NormalizedOpenPort[] {
   const root = (output && typeof output === 'object' ? output : {}) as Record<string, unknown>;
   const outputData = (root.output_data && typeof root.output_data === 'object'
     ? root.output_data
     : (root.data && typeof root.data === 'object' ? (root.data as any).output_data : {})) as Record<string, unknown>;
 
-  const hostnames = Array.isArray(outputData.hostnames) ? outputData.hostnames : [];
-  const host = String(hostnames[0] || outputData.host || outputData.hostname || '').trim().toLowerCase();
+  const providerHosts = (Array.isArray(outputData.hostnames) ? outputData.hostnames : [])
+    .map((entry) => normalizeHostInput(entry))
+    .filter(Boolean);
+  const targetHost = normalizeHostInput(options.targetHost || '');
+  const providerHost = normalizeHostInput(providerHosts[0] || outputData.host || outputData.hostname || '');
   const ip = String(outputData.ip_address || outputData.ip || '').trim();
   const osGuess = String((outputData.os as any)?.name || (outputData.os as any)?.vendor || '').trim();
+  const preferredHost = targetHost && !isIpLike(targetHost) ? targetHost : (providerHost || ip || 'unknown-host');
 
   const ports = Array.isArray(outputData.ports)
     ? outputData.ports
@@ -65,8 +82,10 @@ export function normalizePortScannerOutput(output: unknown): NormalizedOpenPort[
     const serviceExtraInfo = String(row.service_extrainfo || row.extra_info || '').trim();
 
     const normalized: NormalizedOpenPort = {
-      host: host || ip || 'unknown-host',
+      host: preferredHost,
       ip: ip || undefined,
+      target_host: targetHost || undefined,
+      provider_hosts: providerHosts.slice(0, 10),
       port: Math.round(port),
       protocol,
       state: state || 'open',

@@ -1,6 +1,25 @@
 import { PentestToolsApiError, PentestToolsClient } from './pentestToolsClient.ts';
 
 const DEFAULT_MAX_PARALLEL = 5;
+const STALE_QUEUED_MINUTES = 6 * 60;
+const STALE_RETRY_OVERDUE_MINUTES = 30;
+const RETRY_CAP_FOR_STALE = 1;
+
+const PHASE_PRIORITY: Record<string, number> = {
+  port_scan: 10,
+  subdomain_discovery: 20,
+  ssl_scan: 30,
+  website_recon: 40,
+  network_scan: 50,
+};
+
+const PHASE_TIMEOUT_MINUTES: Record<string, number> = {
+  port_scan: 45,
+  subdomain_discovery: 40,
+  ssl_scan: 35,
+  website_recon: 35,
+  network_scan: 55,
+};
 
 function toInt(value: unknown, fallback: number): number {
   const parsed = Number(value);
@@ -26,6 +45,113 @@ export function computeRetryDelayMinutes(retryCount: number): number {
 
 export function nextRetryIsoFromMinutes(minutes: number): string {
   return new Date(Date.now() + minutes * 60_000).toISOString();
+}
+
+export function getPhasePriority(phase: string): number {
+  return PHASE_PRIORITY[String(phase || '').toLowerCase()] ?? 90;
+}
+
+export function getPhaseTimeoutMinutes(phase: string): number {
+  return PHASE_TIMEOUT_MINUTES[String(phase || '').toLowerCase()] ?? 45;
+}
+
+function toTs(value: unknown): number {
+  const ts = Date.parse(String(value || ''));
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function staleRecoveryRawPayload(row: any, reason: string) {
+  const currentRaw = row?.raw_output && typeof row.raw_output === 'object' ? row.raw_output : {};
+  return {
+    ...currentRaw,
+    _stale_recovery: {
+      reason,
+      recovered_at: new Date().toISOString(),
+      previous_status: String(row?.status || ''),
+      previous_remote_scan_id: row?.remote_scan_id ?? null,
+      previous_retry_count: Number(row?.retry_count || 0),
+    },
+  };
+}
+
+export async function recoverStaleScansForJob(
+  adminClient: any,
+  scanJobId: string,
+): Promise<{
+  recoveredToRetry: number;
+  failedStale: number;
+}> {
+  const nowMs = Date.now();
+  const { data: rows } = await adminClient
+    .from('pentest_tools_scans' as any)
+    .select('id, phase, status, retry_count, remote_scan_id, next_retry_at, started_at, created_at, updated_at, raw_output')
+    .eq('scan_job_id', scanJobId)
+    .in('status', ['running', 'waiting', 'queued', 'retry']);
+
+  const tasks = (rows || []) as any[];
+  if (tasks.length === 0) return { recoveredToRetry: 0, failedStale: 0 };
+
+  let recoveredToRetry = 0;
+  let failedStale = 0;
+
+  for (const row of tasks) {
+    const status = String(row?.status || '').toLowerCase();
+    const retryCount = Number(row?.retry_count || 0);
+    const updatedTs = toTs(row?.updated_at) || toTs(row?.created_at);
+    const startedTs = toTs(row?.started_at) || updatedTs;
+    const nextRetryTs = toTs(row?.next_retry_at);
+    const phaseTimeoutMs = getPhaseTimeoutMinutes(String(row?.phase || '')) * 60_000;
+
+    const isRunningLike = status === 'running' || status === 'waiting';
+    const isStaleRunning = isRunningLike && startedTs > 0 && nowMs - startedTs > phaseTimeoutMs;
+    const isQueuedLike = status === 'queued' || status === 'retry';
+    const isRetryOverdue = status === 'retry'
+      && nextRetryTs > 0
+      && nowMs - nextRetryTs > STALE_RETRY_OVERDUE_MINUTES * 60_000;
+    const isStaleQueued = isQueuedLike
+      && (
+        (updatedTs > 0 && nowMs - updatedTs > STALE_QUEUED_MINUTES * 60_000)
+        || isRetryOverdue
+      );
+
+    if (!isStaleRunning && !isStaleQueued) continue;
+
+    const reason = isStaleRunning
+      ? 'stale_running_timeout'
+      : (isRetryOverdue ? 'stale_retry_overdue' : 'stale_queued_timeout');
+    const rawPayload = staleRecoveryRawPayload(row, reason);
+
+    if (retryCount < RETRY_CAP_FOR_STALE) {
+      const retryAt = nextRetryIsoFromMinutes(1);
+      await adminClient
+        .from('pentest_tools_scans' as any)
+        .update({
+          status: 'retry',
+          retry_count: retryCount + 1,
+          next_retry_at: retryAt,
+          error_message: `Auto-recovery: ${reason}`,
+          updated_at: new Date().toISOString(),
+          raw_output: rawPayload,
+        })
+        .eq('id', row.id);
+      recoveredToRetry += 1;
+      continue;
+    }
+
+    await adminClient
+      .from('pentest_tools_scans' as any)
+      .update({
+        status: 'failed',
+        finished_at: new Date().toISOString(),
+        error_message: `Auto-failed after stale recovery: ${reason}`,
+        updated_at: new Date().toISOString(),
+        raw_output: rawPayload,
+      })
+      .eq('id', row.id);
+    failedStale += 1;
+  }
+
+  return { recoveredToRetry, failedStale };
 }
 
 export async function countActiveScansForJob(adminClient: any, scanJobId: string): Promise<number> {
@@ -56,9 +182,15 @@ export async function startQueuedScansForJob(adminClient: any, scanJobId: string
     .in('status', ['queued', 'retry'])
     .or(`next_retry_at.is.null,next_retry_at.lte.${nowIso}`)
     .order('created_at', { ascending: true })
-    .limit(remainingSlots);
+    .limit(Math.max(remainingSlots * 6, 30));
 
-  const rows = (queuedRows || []) as any[];
+  const rows = ((queuedRows || []) as any[])
+    .sort((a, b) => {
+      const phaseDelta = getPhasePriority(String(a?.phase || '')) - getPhasePriority(String(b?.phase || ''));
+      if (phaseDelta !== 0) return phaseDelta;
+      return toTs(a?.created_at) - toTs(b?.created_at);
+    })
+    .slice(0, remainingSlots);
   if (rows.length === 0) return { started: 0, deferred: 0, failed: 0 };
 
   const client = new PentestToolsClient();
@@ -140,4 +272,3 @@ export async function startQueuedScansForJob(adminClient: any, scanJobId: string
 
   return { started, deferred, failed };
 }
-

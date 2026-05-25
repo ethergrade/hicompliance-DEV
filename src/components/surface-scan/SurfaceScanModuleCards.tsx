@@ -112,6 +112,10 @@ interface ScopeTargetRow {
   targetKey: string;
   label: string;
   status: string;
+  liveStatus: string;
+  liveJobId: string | null;
+  liveCreatedAt: string | null;
+  snapshotSource: 'live' | 'last_good';
   profile: string;
   score: number | null;
   riskLevel: string;
@@ -291,11 +295,36 @@ const statusLabel = (status: ModuleOutcomeStatus): string => {
 
 const outcomeFromJobStatus = (status: string): ModuleOutcomeStatus => {
   const key = String(status || '').trim().toLowerCase();
-  if (key === 'running') return 'running';
+  if (key === 'running' || key === 'waiting') return 'running';
+  if (key === 'retry') return 'queued';
   if (key === 'queued' || key === 'pending') return 'queued';
+  if (key === 'not_scanned') return 'queued';
   if (key === 'failed' || key === 'error') return 'error';
   if (key === 'completed' || key === 'success' || key === 'partial') return 'success_with_data';
   return 'success_no_data';
+};
+
+const scanStatusLabel = (status: string): string => {
+  const key = String(status || '').trim().toLowerCase();
+  if (key === 'completed' || key === 'success' || key === 'partial') return 'Completato';
+  if (key === 'running') return 'In esecuzione';
+  if (key === 'waiting') return 'In attesa provider';
+  if (key === 'retry') return 'Recovery retry';
+  if (key === 'queued' || key === 'pending') return 'In coda';
+  if (key === 'failed' || key === 'error') return 'Fallito';
+  if (key === 'not_scanned') return 'Da avviare';
+  return 'N/D';
+};
+
+const scopeLiveReasonLabel = (row: ScopeTargetRow): string => {
+  const live = String(row.liveStatus || '').toLowerCase();
+  if (live === 'not_scanned') return 'pending scan';
+  if (live === 'queued' || live === 'pending') return 'pending scan';
+  if (live === 'running' || live === 'waiting') return 'waiting provider';
+  if (live === 'retry') return 'recovered retry';
+  if (live === 'failed' || live === 'error') return row.snapshotSource === 'last_good' ? 'failed after retry' : 'failed';
+  if (row.snapshotSource === 'last_good') return 'last good snapshot';
+  return 'completed';
 };
 
 const moduleReasonLabel = (reason: string): string => {
@@ -375,6 +404,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
   const [loading, setLoading] = useState(false);
   const [latestScan, setLatestScan] = useState<LatestScanRow | null>(null);
   const [latestScopeJobs, setLatestScopeJobs] = useState<LatestScanRow[]>([]);
+  const [latestLiveScopeJobs, setLatestLiveScopeJobs] = useState<Record<string, LatestScanRow>>({});
   const [configuredScopeTargets, setConfiguredScopeTargets] = useState<ConfiguredScopeTarget[]>([]);
   const [moduleResults, setModuleResults] = useState<ModuleResultRow[]>([]);
   const [observations, setObservations] = useState<ObservationRow[]>([]);
@@ -477,7 +507,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
         }
         setConfiguredScopeTargets(Array.from(configuredTargetsMap.values()));
 
-        const latestByTarget = new Map<string, LatestScanRow>();
+        const groupedByTarget = new Map<string, LatestScanRow[]>();
         for (const job of jobs) {
           const targetRaw = String(job.normalized_target || job.raw_target || '').trim();
           if (!targetRaw) continue;
@@ -492,22 +522,39 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
           }
 
           const key = scopeTargetKeyFromTarget(targetRaw);
-          const existing = latestByTarget.get(key);
-          const currentTs = existing ? Date.parse(existing.created_at) : 0;
-          const incomingTs = Date.parse(job.created_at);
-          if (!existing || incomingTs >= currentTs) {
-            latestByTarget.set(key, job);
-          }
+          if (!groupedByTarget.has(key)) groupedByTarget.set(key, []);
+          groupedByTarget.get(key)!.push(job);
         }
 
-        const scopeJobs = Array.from(latestByTarget.values()).sort(
+        const liveByTarget: Record<string, LatestScanRow> = {};
+        const selectedByTarget = new Map<string, LatestScanRow>();
+
+        for (const [targetKey, targetJobs] of groupedByTarget.entries()) {
+          const sorted = [...targetJobs].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+          const liveJob = sorted[0];
+          if (liveJob) liveByTarget[targetKey] = liveJob;
+
+          const completedWithScore = sorted.find((entry) => {
+            const status = String(entry.status || '').toLowerCase();
+            if (!['completed', 'partial', 'success'].includes(status)) return false;
+            const score = Number(entry.summary?.overall_score);
+            return Number.isFinite(score);
+          });
+          const completedAny = sorted.find((entry) => ['completed', 'partial', 'success'].includes(String(entry.status || '').toLowerCase()));
+          selectedByTarget.set(targetKey, completedWithScore || completedAny || liveJob);
+        }
+
+        const scopeJobs = Array.from(selectedByTarget.values()).sort(
           (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
         );
 
+        setLatestLiveScopeJobs(liveByTarget);
         setLatestScopeJobs(scopeJobs);
-        setLatestScan(scopeJobs[0] || null);
+        const latestLive = Object.values(liveByTarget).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
+        setLatestScan(latestLive || scopeJobs[0] || null);
 
         if (scopeJobs.length === 0) {
+          setLatestLiveScopeJobs({});
           setModuleResults([]);
           setObservations([]);
           setRiskFindings([]);
@@ -556,6 +603,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
         console.error('Error loading SurfaceScan module cards:', error);
         setLatestScan(null);
         setLatestScopeJobs([]);
+        setLatestLiveScopeJobs({});
         setConfiguredScopeTargets([]);
         setModuleResults([]);
         setObservations([]);
@@ -574,6 +622,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
       const rawLabel = String(job.raw_target || job.normalized_target || '-').trim();
       const canonicalLabel = extractHostFromTarget(rawLabel) || rawLabel;
       const targetKey = scopeTargetKeyFromTarget(canonicalLabel);
+      const liveJob = latestLiveScopeJobs[targetKey];
       const score = Number(job.summary?.overall_score);
       const hasScore = Number.isFinite(score);
       const riskFromSummary = String(job.summary?.risk_level || '').toLowerCase();
@@ -583,8 +632,12 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
         id: job.id,
         targetKey,
         label: canonicalLabel,
-        status: String(job.status || '').toLowerCase() || 'n/d',
-        profile: String(job.scan_profile || '-'),
+        status: String(liveJob?.status || job.status || '').toLowerCase() || 'n/d',
+        liveStatus: String(liveJob?.status || job.status || '').toLowerCase() || 'n/d',
+        liveJobId: liveJob?.id ? String(liveJob.id) : String(job.id),
+        liveCreatedAt: liveJob?.created_at || job.created_at || null,
+        snapshotSource: liveJob?.id && String(liveJob.id) !== String(job.id) ? 'last_good' : 'live',
+        profile: String(liveJob?.scan_profile || job.scan_profile || '-'),
         score: hasScore ? Math.round(score) : null,
         riskLevel,
         completedAt: job.completed_at,
@@ -608,6 +661,10 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
         targetKey,
         label: target.label,
         status: 'not_scanned',
+        liveStatus: 'not_scanned',
+        liveJobId: null,
+        liveCreatedAt: null,
+        snapshotSource: 'live',
         profile: target.type === 'domain' ? 'domain_exposure' : target.type === 'ip' ? 'ip_exposure' : 'scope_rule',
         score: null,
         riskLevel: 'unknown',
@@ -617,7 +674,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
     });
 
     return configuredRows.sort((a, b) => a.label.localeCompare(b.label));
-  }, [latestScopeJobs, configuredScopeTargets]);
+  }, [latestScopeJobs, latestLiveScopeJobs, configuredScopeTargets]);
 
   useEffect(() => {
     if (scopeTargetRows.length === 0) {
@@ -942,7 +999,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
     };
 
     for (const row of scopeTargetRows) {
-      const status = String(row.status || '').toLowerCase();
+      const status = String(row.liveStatus || row.status || '').toLowerCase();
       if (status === 'not_scanned') {
         counters.notScanned += 1;
         continue;
@@ -950,7 +1007,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
 
       counters.scanned += 1;
       if (status === 'running' || status === 'waiting') counters.running += 1;
-      else if (status === 'queued' || status === 'pending') counters.queued += 1;
+      else if (status === 'queued' || status === 'pending' || status === 'retry') counters.queued += 1;
       else if (status === 'failed' || status === 'error') counters.errors += 1;
     }
 
@@ -1157,9 +1214,12 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                   {selectedScopeTargetRow?.status === 'not_scanned' ? (
                     <Badge variant="outline">Non scansionato</Badge>
                   ) : (
-                    <Badge className={statusBadgeClass[outcomeFromJobStatus(String(selectedScopeTargetRow?.status || ''))]}>
-                      {selectedScopeTargetRow?.status === 'completed' ? 'Completato' : selectedScopeTargetRow?.status || 'n/d'}
+                    <Badge className={statusBadgeClass[outcomeFromJobStatus(String(selectedScopeTargetRow?.liveStatus || selectedScopeTargetRow?.status || ''))]}>
+                      {scanStatusLabel(String(selectedScopeTargetRow?.liveStatus || selectedScopeTargetRow?.status || ''))}
                     </Badge>
+                  )}
+                  {selectedScopeTargetRow?.snapshotSource === 'last_good' && (
+                    <Badge variant="secondary">Dati da ultimo snapshot valido</Badge>
                   )}
                 </div>
               </div>
@@ -1194,8 +1254,8 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                     {entry.status === 'not_scanned' ? (
                       <Badge variant="outline">Non scansionato</Badge>
                     ) : (
-                      <Badge className={statusBadgeClass[outcomeFromJobStatus(entry.status)]}>
-                        {entry.status === 'completed' ? 'Completato' : entry.status}
+                      <Badge className={statusBadgeClass[outcomeFromJobStatus(entry.liveStatus || entry.status)]}>
+                        {scanStatusLabel(entry.liveStatus || entry.status)}
                       </Badge>
                     )}
                   </div>
@@ -1209,7 +1269,13 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                     <Badge variant="outline">{formatRiskLevel(entry.riskLevel)}</Badge>
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    Ultimo update: {entry.completedAt ? new Date(entry.completedAt).toLocaleString('it-IT') : '-'}
+                    Live: {entry.liveCreatedAt ? new Date(entry.liveCreatedAt).toLocaleString('it-IT') : '-'}
+                    {entry.snapshotSource === 'last_good' && entry.completedAt
+                      ? ` · Snapshot dati: ${new Date(entry.completedAt).toLocaleString('it-IT')}`
+                      : ''}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground/90">
+                    Stato: {scopeLiveReasonLabel(entry)}
                   </p>
                 </button>
               );

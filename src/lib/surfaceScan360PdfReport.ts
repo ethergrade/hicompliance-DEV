@@ -162,6 +162,15 @@ const isJunkSummary = (s: any): boolean => {
   return false;
 };
 
+const isGenericEvidenceText = (value: string): boolean => {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text) return true;
+  return text.includes('evidenza tecnica disponibile')
+    || text.includes('evidenza tecnica acquisita')
+    || text.includes('nessuna evidenza disponibile')
+    || text.includes('status, scan_id, tool_id');
+};
+
 const summarizeIntel = (provider: string, target: string, summary: any): string => {
   if (summary == null) return 'Nessun dato';
   if (typeof summary === 'string') return redactReportWords(summary);
@@ -263,7 +272,23 @@ const summarizeIntel = (provider: string, target: string, summary: any): string 
     return redactReportWords(parts.join(' · '));
   }
   if (keys.length > 0) {
-    return redactReportWords(`Evidenza tecnica acquisita (${keys.slice(0, 5).join(', ')})`);
+    const scalarPairs = keys
+      .slice(0, 12)
+      .map((key) => {
+        const raw = (summary as any)?.[key];
+        if (raw == null) return null;
+        if (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean') {
+          const value = String(raw).trim();
+          if (!value) return null;
+          return `${key}: ${value}`;
+        }
+        return null;
+      })
+      .filter(Boolean) as string[];
+    if (scalarPairs.length > 0) {
+      return redactReportWords(`Dati tecnici: ${scalarPairs.slice(0, 5).join(' · ')}`);
+    }
+    return redactReportWords(`Dati tecnici disponibili: ${keys.slice(0, 5).join(', ')}`);
   }
   return 'Nessuna evidenza tecnica disponibile.';
 };
@@ -879,7 +904,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   sectionTitle(5, 'Evidenze esterne');
   const intel = (report.intel || [])
     .map((i: any) => {
-      if (i && typeof i === 'object' && i.summary_text) {
+      if (i && typeof i === 'object' && i.summary_text && !isGenericEvidenceText(String(i.summary_text))) {
         return {
           group: String(i.category || 'Evidenze esterne'),
           target: String(i.target || 'n/d'),

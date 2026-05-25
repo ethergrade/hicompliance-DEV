@@ -30,6 +30,7 @@ import {
   getPollIntervalSeconds,
   nextRetryIsoFromMinutes,
   computeRetryDelayMinutes,
+  recoverStaleScansForJob,
   startQueuedScansForJob,
 } from '../_shared/exposureQueue.ts';
 
@@ -143,6 +144,7 @@ async function persistOpenPortRows(adminClient: any, args: {
   customerId: string;
   targetId: string | null;
   sourceScanId: string;
+  targetHost: string;
   openPorts: ReturnType<typeof normalizePortScannerOutput>;
 }) {
   const dedupe = new Map<string, any>();
@@ -173,7 +175,11 @@ async function persistOpenPortRows(adminClient: any, args: {
       remediation_hint: port.remediation_hint || null,
       source_scan_id: args.sourceScanId,
       last_seen_at: new Date().toISOString(),
-      raw: port.raw || {},
+      raw: {
+        ...(port.raw || {}),
+        scope_target_host: args.targetHost || null,
+        provider_hosts: Array.isArray((port as any).provider_hosts) ? (port as any).provider_hosts : [],
+      },
     };
     dedupe.set(key, row);
   }
@@ -648,7 +654,8 @@ async function processFinishedTask(adminClient: any, pentestClient: PentestTools
   }
 
   if (scanTask.phase === 'port_scan' && output) {
-    const openPorts = normalizePortScannerOutput(output);
+    const targetHost = hostFromTargetValue(String(scanTask.target_name || '')) || String(scanTask.target_name || '').trim().toLowerCase();
+    const openPorts = normalizePortScannerOutput(output, { targetHost });
 
     await persistOpenPortRows(adminClient, {
       scanJobId,
@@ -657,6 +664,7 @@ async function processFinishedTask(adminClient: any, pentestClient: PentestTools
       customerId: scanTask.customer_id,
       targetId: scanTask.target_id ? String(scanTask.target_id) : null,
       sourceScanId: scanTask.id,
+      targetHost,
       openPorts,
     });
 
@@ -860,7 +868,6 @@ async function finalizeJobStatuses(adminClient: any, scanJobIds: string[]) {
         .from('surface_scan_jobs' as any)
         .update({
           status: 'running',
-          started_at: new Date().toISOString(),
           completed_at: null,
         })
         .eq('id', scanJobId);
@@ -930,11 +937,28 @@ serve(async (req: Request) => {
       .limit(40);
 
     const touchedJobIds = new Set<string>();
+    const recoveryStats = {
+      recovered_to_retry: 0,
+      failed_stale: 0,
+    };
 
     for (const job of queuedJobs || []) {
       const jobId = String((job as any).id || '');
       if (!jobId) continue;
       touchedJobIds.add(jobId);
+      const recovery = await recoverStaleScansForJob(adminClient, jobId);
+      recoveryStats.recovered_to_retry += recovery.recoveredToRetry;
+      recoveryStats.failed_stale += recovery.failedStale;
+      if (recovery.recoveredToRetry > 0 || recovery.failedStale > 0) {
+        await adminClient.from('surface_scan_audit_log' as any).insert({
+          scan_job_id: jobId,
+          action: 'ptools_poll_stale_recovery',
+          details: {
+            recovered_to_retry: recovery.recoveredToRetry,
+            failed_stale: recovery.failedStale,
+          },
+        });
+      }
       await startQueuedScansForJob(adminClient, jobId);
     }
 
@@ -946,6 +970,10 @@ serve(async (req: Request) => {
       .limit(MAX_POLL_TASKS);
 
     const processed: Array<Record<string, unknown>> = [];
+    const processingStats = {
+      retry_scheduled: 0,
+      failed_after_retry: 0,
+    };
 
     for (const task of (runningTasks || []) as any[]) {
       const scanTaskId = String(task.id || '');
@@ -956,14 +984,26 @@ serve(async (req: Request) => {
       const remoteScanId = Number(task.remote_scan_id || 0);
       if (!Number.isFinite(remoteScanId) || remoteScanId <= 0) {
         const retryCount = Number(task.retry_count || 0);
-        const retryAt = nextRetryIsoFromMinutes(computeRetryDelayMinutes(retryCount));
-        await adminClient.from('pentest_tools_scans' as any).update({
-          status: 'retry',
-          retry_count: retryCount + 1,
-          next_retry_at: retryAt,
-          error_message: 'Missing remote scan id, retry scheduled',
-        }).eq('id', scanTaskId);
-        processed.push({ task_id: scanTaskId, status: 'retry_missing_remote_id' });
+        if (retryCount < 1) {
+          const retryAt = nextRetryIsoFromMinutes(computeRetryDelayMinutes(retryCount));
+          await adminClient.from('pentest_tools_scans' as any).update({
+            status: 'retry',
+            retry_count: retryCount + 1,
+            next_retry_at: retryAt,
+            error_message: 'Missing remote scan id, retry scheduled',
+          }).eq('id', scanTaskId);
+          processingStats.retry_scheduled += 1;
+          processed.push({ task_id: scanTaskId, status: 'retry_missing_remote_id' });
+        } else {
+          await adminClient.from('pentest_tools_scans' as any).update({
+            status: 'failed',
+            finished_at: new Date().toISOString(),
+            error_message: 'Missing remote scan id after recovery retry',
+            updated_at: new Date().toISOString(),
+          }).eq('id', scanTaskId);
+          processingStats.failed_after_retry += 1;
+          processed.push({ task_id: scanTaskId, status: 'failed_missing_remote_id' });
+        }
         continue;
       }
 
@@ -1023,6 +1063,7 @@ serve(async (req: Request) => {
             error_message: error?.message ? String(error.message).slice(0, 4000) : 'Polling error, retry scheduled',
             updated_at: new Date().toISOString(),
           }).eq('id', scanTaskId);
+          processingStats.retry_scheduled += 1;
           processed.push({ task_id: scanTaskId, status: 'retry', error: error?.message || 'poll error' });
         } else {
           await adminClient.from('pentest_tools_scans' as any).update({
@@ -1031,6 +1072,7 @@ serve(async (req: Request) => {
             finished_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           }).eq('id', scanTaskId);
+          processingStats.failed_after_retry += 1;
           processed.push({ task_id: scanTaskId, status: 'failed_after_retries', error: error?.message || 'poll error' });
         }
       }
@@ -1047,6 +1089,8 @@ serve(async (req: Request) => {
       poll_interval_seconds: getPollIntervalSeconds(),
       parallel_limit: getMaxParallelScans(),
       touched_jobs: Array.from(touchedJobIds),
+      recovery: recoveryStats,
+      processing: processingStats,
       processed_count: processed.length,
       processed,
     });
