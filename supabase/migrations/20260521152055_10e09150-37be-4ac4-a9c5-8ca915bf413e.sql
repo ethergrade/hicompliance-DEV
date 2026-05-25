@@ -37,6 +37,7 @@ CREATE INDEX IF NOT EXISTS idx_cve_intel_refreshed ON public.cve_intel_cache(ref
 
 ALTER TABLE public.cve_intel_cache ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Authenticated can read cve intel" ON public.cve_intel_cache;
 CREATE POLICY "Authenticated can read cve intel"
   ON public.cve_intel_cache FOR SELECT TO authenticated USING (true);
 
@@ -58,6 +59,7 @@ CREATE INDEX IF NOT EXISTS idx_cve_queue_status ON public.cve_enrichment_queue(s
 
 ALTER TABLE public.cve_enrichment_queue ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Authenticated can read queue" ON public.cve_enrichment_queue;
 CREATE POLICY "Authenticated can read queue"
   ON public.cve_enrichment_queue FOR SELECT TO authenticated USING (true);
 
@@ -81,6 +83,7 @@ CREATE INDEX IF NOT EXISTS idx_kev_date ON public.cisa_kev_catalog(date_added DE
 
 ALTER TABLE public.cisa_kev_catalog ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Authenticated can read kev catalog" ON public.cisa_kev_catalog;
 CREATE POLICY "Authenticated can read kev catalog"
   ON public.cisa_kev_catalog FOR SELECT TO authenticated USING (true);
 

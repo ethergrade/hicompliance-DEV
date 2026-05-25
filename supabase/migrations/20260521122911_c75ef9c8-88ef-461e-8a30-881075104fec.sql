@@ -1,6 +1,6 @@
 -- Engine OSINT SurfaceScan360 — Fase 1
 
-CREATE TABLE public.surface_scan_jobs (
+CREATE TABLE IF NOT EXISTS public.surface_scan_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id uuid NOT NULL,
   requested_by uuid,
@@ -22,10 +22,10 @@ CREATE TABLE public.surface_scan_jobs (
   error_message text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_ssj_org_created ON public.surface_scan_jobs(organization_id, created_at DESC);
-CREATE INDEX idx_ssj_status ON public.surface_scan_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_ssj_org_created ON public.surface_scan_jobs(organization_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ssj_status ON public.surface_scan_jobs(status);
 
-CREATE TABLE public.surface_assets (
+CREATE TABLE IF NOT EXISTS public.surface_assets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id uuid NOT NULL,
   scan_job_id uuid NOT NULL REFERENCES public.surface_scan_jobs(id) ON DELETE CASCADE,
@@ -40,9 +40,9 @@ CREATE TABLE public.surface_assets (
   last_seen timestamptz NOT NULL DEFAULT now(),
   raw jsonb
 );
-CREATE INDEX idx_sa_org_job ON public.surface_assets(organization_id, scan_job_id);
+CREATE INDEX IF NOT EXISTS idx_sa_org_job ON public.surface_assets(organization_id, scan_job_id);
 
-CREATE TABLE public.surface_observations (
+CREATE TABLE IF NOT EXISTS public.surface_observations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id uuid NOT NULL,
   scan_job_id uuid NOT NULL REFERENCES public.surface_scan_jobs(id) ON DELETE CASCADE,
@@ -55,10 +55,10 @@ CREATE TABLE public.surface_observations (
   confidence text NOT NULL DEFAULT 'medium',
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_so_org_job ON public.surface_observations(organization_id, scan_job_id);
-CREATE INDEX idx_so_module ON public.surface_observations(module);
+CREATE INDEX IF NOT EXISTS idx_so_org_job ON public.surface_observations(organization_id, scan_job_id);
+CREATE INDEX IF NOT EXISTS idx_so_module ON public.surface_observations(module);
 
-CREATE TABLE public.surface_findings (
+CREATE TABLE IF NOT EXISTS public.surface_findings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id uuid NOT NULL,
   scan_job_id uuid NOT NULL REFERENCES public.surface_scan_jobs(id) ON DELETE CASCADE,
@@ -84,10 +84,10 @@ CREATE TABLE public.surface_findings (
   status text NOT NULL DEFAULT 'open',
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_sf_org_job ON public.surface_findings(organization_id, scan_job_id);
-CREATE INDEX idx_sf_severity ON public.surface_findings(severity);
+CREATE INDEX IF NOT EXISTS idx_sf_org_job ON public.surface_findings(organization_id, scan_job_id);
+CREATE INDEX IF NOT EXISTS idx_sf_severity ON public.surface_findings(severity);
 
-CREATE TABLE public.surface_external_intel (
+CREATE TABLE IF NOT EXISTS public.surface_external_intel (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id uuid NOT NULL,
   scan_job_id uuid NOT NULL REFERENCES public.surface_scan_jobs(id) ON DELETE CASCADE,
@@ -99,9 +99,9 @@ CREATE TABLE public.surface_external_intel (
   confidence text NOT NULL DEFAULT 'medium',
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_sei_org_job ON public.surface_external_intel(organization_id, scan_job_id);
+CREATE INDEX IF NOT EXISTS idx_sei_org_job ON public.surface_external_intel(organization_id, scan_job_id);
 
-CREATE TABLE public.surface_scan_audit_log (
+CREATE TABLE IF NOT EXISTS public.surface_scan_audit_log (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id uuid,
   scan_job_id uuid,
@@ -111,7 +111,7 @@ CREATE TABLE public.surface_scan_audit_log (
   details jsonb,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_ssal_org_created ON public.surface_scan_audit_log(organization_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ssal_org_created ON public.surface_scan_audit_log(organization_id, created_at DESC);
 
 -- RLS
 ALTER TABLE public.surface_scan_jobs ENABLE ROW LEVEL SECURITY;
@@ -122,45 +122,61 @@ ALTER TABLE public.surface_external_intel ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.surface_scan_audit_log ENABLE ROW LEVEL SECURITY;
 
 -- surface_scan_jobs
+DROP POLICY IF EXISTS "Users view own org scan jobs" ON public.surface_scan_jobs;
 CREATE POLICY "Users view own org scan jobs" ON public.surface_scan_jobs FOR SELECT
 USING (organization_id IN (SELECT organization_id FROM public.users WHERE auth_user_id = auth.uid()));
+DROP POLICY IF EXISTS "Sales view all scan jobs" ON public.surface_scan_jobs;
 CREATE POLICY "Sales view all scan jobs" ON public.surface_scan_jobs FOR SELECT
 USING (can_manage_all_organizations(auth.uid()));
+DROP POLICY IF EXISTS "Admins insert own org scan jobs" ON public.surface_scan_jobs;
 CREATE POLICY "Admins insert own org scan jobs" ON public.surface_scan_jobs FOR INSERT
 WITH CHECK (organization_id IN (SELECT organization_id FROM public.users WHERE auth_user_id = auth.uid() AND user_type = 'admin'::user_type));
+DROP POLICY IF EXISTS "Sales manage all scan jobs" ON public.surface_scan_jobs;
 CREATE POLICY "Sales manage all scan jobs" ON public.surface_scan_jobs FOR ALL
 USING (can_manage_all_organizations(auth.uid()));
 
 -- surface_assets
+DROP POLICY IF EXISTS "Users view own org assets" ON public.surface_assets;
 CREATE POLICY "Users view own org assets" ON public.surface_assets FOR SELECT
 USING (organization_id IN (SELECT organization_id FROM public.users WHERE auth_user_id = auth.uid()));
+DROP POLICY IF EXISTS "Sales manage all assets" ON public.surface_assets;
 CREATE POLICY "Sales manage all assets" ON public.surface_assets FOR ALL
 USING (can_manage_all_organizations(auth.uid()));
 
 -- surface_observations
+DROP POLICY IF EXISTS "Users view own org observations" ON public.surface_observations;
 CREATE POLICY "Users view own org observations" ON public.surface_observations FOR SELECT
 USING (organization_id IN (SELECT organization_id FROM public.users WHERE auth_user_id = auth.uid()));
+DROP POLICY IF EXISTS "Sales manage all observations" ON public.surface_observations;
 CREATE POLICY "Sales manage all observations" ON public.surface_observations FOR ALL
 USING (can_manage_all_organizations(auth.uid()));
 
 -- surface_findings
+DROP POLICY IF EXISTS "Users view own org sf" ON public.surface_findings;
 CREATE POLICY "Users view own org sf" ON public.surface_findings FOR SELECT
 USING (organization_id IN (SELECT organization_id FROM public.users WHERE auth_user_id = auth.uid()));
+DROP POLICY IF EXISTS "Admins update own org sf" ON public.surface_findings;
 CREATE POLICY "Admins update own org sf" ON public.surface_findings FOR UPDATE
 USING (organization_id IN (SELECT organization_id FROM public.users WHERE auth_user_id = auth.uid() AND user_type = 'admin'::user_type));
+DROP POLICY IF EXISTS "Sales manage all sf" ON public.surface_findings;
 CREATE POLICY "Sales manage all sf" ON public.surface_findings FOR ALL
 USING (can_manage_all_organizations(auth.uid()));
 
 -- surface_external_intel
+DROP POLICY IF EXISTS "Users view own org sei" ON public.surface_external_intel;
 CREATE POLICY "Users view own org sei" ON public.surface_external_intel FOR SELECT
 USING (organization_id IN (SELECT organization_id FROM public.users WHERE auth_user_id = auth.uid()));
+DROP POLICY IF EXISTS "Sales manage all sei" ON public.surface_external_intel;
 CREATE POLICY "Sales manage all sei" ON public.surface_external_intel FOR ALL
 USING (can_manage_all_organizations(auth.uid()));
 
 -- surface_scan_audit_log
+DROP POLICY IF EXISTS "Users view own org audit" ON public.surface_scan_audit_log;
 CREATE POLICY "Users view own org audit" ON public.surface_scan_audit_log FOR SELECT
 USING (organization_id IN (SELECT organization_id FROM public.users WHERE auth_user_id = auth.uid()));
+DROP POLICY IF EXISTS "Sales view all audit" ON public.surface_scan_audit_log;
 CREATE POLICY "Sales view all audit" ON public.surface_scan_audit_log FOR SELECT
 USING (can_manage_all_organizations(auth.uid()));
+DROP POLICY IF EXISTS "Service inserts audit" ON public.surface_scan_audit_log;
 CREATE POLICY "Service inserts audit" ON public.surface_scan_audit_log FOR INSERT
 WITH CHECK (true);
