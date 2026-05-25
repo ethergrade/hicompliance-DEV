@@ -74,8 +74,8 @@ export const OpenPortsTable: React.FC<OpenPortsTableProps> = ({ rows, loading = 
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Host</TableHead>
-              <TableHead>IP</TableHead>
+              <TableHead>Dominio/Subdominio</TableHead>
+              <TableHead>IP correlato</TableHead>
               <TableHead>Porta</TableHead>
               <TableHead>Protocollo</TableHead>
               <TableHead>Servizio</TableHead>
@@ -138,4 +138,3 @@ export const OpenPortsTable: React.FC<OpenPortsTableProps> = ({ rows, loading = 
 };
 
 export default OpenPortsTable;
-

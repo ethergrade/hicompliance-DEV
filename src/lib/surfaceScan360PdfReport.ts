@@ -555,7 +555,32 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     const raw = String(value || '').trim().toLowerCase();
     if (!raw) return '';
     if (IPV4_RX.test(raw) || IPV6_RX.test(raw)) return raw;
+    const foundV4 = raw.match(/(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}/);
+    if (foundV4?.[0]) return foundV4[0].toLowerCase();
+    const foundV6 = raw.match(/(?:[a-f0-9]{1,4}:){2,}[a-f0-9:]{1,}/i);
+    if (foundV6?.[0]) return foundV6[0].toLowerCase();
     return '';
+  };
+  const sanitizePortHost = (value: unknown): string => {
+    const raw = String(value || '')
+      .replace(/\b(?:shodan|urlscan|web\s*-?\s*check|pentest\s*-?\s*tools?)\b/gi, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    if (!raw) return '';
+    const asUrl = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    try {
+      const parsed = new URL(asUrl);
+      return normalizeHost(parsed.hostname || '');
+    } catch {
+      // fallback below
+    }
+    const token = raw
+      .replace(/^https?:\/\//i, '')
+      .replace(/\/.*$/, '')
+      .split(/[\s|,;]+/)
+      .map((entry) => entry.trim())
+      .find(Boolean);
+    return normalizeHost(token || '');
   };
   const normalizePort = (value: unknown): number | null => {
     const parsed = Number(value);
@@ -601,8 +626,12 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     const port = normalizePort(input.port);
     if (!port) return;
     const hostRaw = String(input.host || s.target || '').trim();
-    const host = hostRaw ? normalizeHost(hostRaw) || hostRaw.toLowerCase() : 'n/d';
-    const ip = normalizeIp(input.ip) || (normalizeIp(host) ? normalizeIp(host) : '');
+    const hostSanitized = sanitizePortHost(hostRaw);
+    const ipFromHost = normalizeIp(hostRaw);
+    const ip = normalizeIp(input.ip) || ipFromHost || (normalizeIp(hostSanitized) ? normalizeIp(hostSanitized) : '');
+    const host = hostSanitized && !normalizeIp(hostSanitized)
+      ? hostSanitized
+      : (normalizeHost(String(s.target || '')) || 'n/d');
     const protocol = String(input.protocol || 'tcp').trim().toLowerCase() || 'tcp';
     const key = `${host}|${ip}|${port}|${protocol}`;
     if (!portEvidenceMap.has(key)) {
@@ -670,7 +699,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
           ip,
           port: entry?.port,
           protocol: entry?.transport || entry?.protocol,
-          service: entry?.product || entry?.service || entry?._shodan?.module || '',
+          service: entry?.product || entry?.service || '',
           severity: obs?.severity || 'info',
         });
       });
@@ -737,7 +766,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
       ];
     });
     drawTable(
-      ['Host / Dominio', 'IP', 'Porta / Proto', 'Servizio', 'Sev', 'CVE'],
+      ['Dominio / Subdominio', 'IP correlato', 'Porta / Proto', 'Servizio', 'Sev', 'CVE'],
       rows,
       [120, 88, 72, 120, 45, 70],
     );

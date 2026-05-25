@@ -129,9 +129,9 @@ const findingCves = (row: SurfaceFindingRow): string[] => {
 const sourceFamily = (row: SurfaceFindingRow): string => {
   const provider = String(row.provider || '').toLowerCase();
   const module = String(row.module || '').toLowerCase();
-  if (provider.includes('pentest')) return 'Pentest-Tools';
-  if (provider.includes('shodan')) return 'Shodan';
-  if (provider.includes('urlscan')) return 'urlscan';
+  if (provider.includes('pentest')) return 'Exposure Intel';
+  if (provider.includes('shodan')) return 'OSINT Intel';
+  if (provider.includes('urlscan')) return 'OSINT Intel';
   if (provider.includes('internal') || provider.includes('surface_scan') || module) return 'OSINT Intel';
   return 'Internal';
 };

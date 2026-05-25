@@ -1,5 +1,59 @@
 import { supabase } from '@/integrations/supabase/client';
 
+const IPV4_RX = /\b(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}\b/;
+const IPV6_RX = /\b(?:[a-f0-9]{1,4}:){2,}[a-f0-9:]{1,}\b/i;
+
+const stripProviderNoise = (value: string): string => {
+  const cleaned = String(value || '')
+    .replace(/\b(?:shodan|urlscan|web\s*-?\s*check|pentest\s*-?\s*tools?)\b/gi, ' ')
+    .replace(/[:;,]\s*\d+\s*(?:porte?|services?|servizi?)\b.*$/i, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return cleaned;
+};
+
+const extractIp = (value: string): string => {
+  const raw = String(value || '').trim();
+  const v4 = raw.match(IPV4_RX);
+  if (v4?.[0]) return v4[0];
+  const v6 = raw.match(IPV6_RX);
+  if (v6?.[0]) return v6[0].replace(/^\[|\]$/g, '');
+  return '';
+};
+
+const normalizeHost = (value: string): string => {
+  const raw = stripProviderNoise(String(value || '').trim());
+  if (!raw) return '';
+  const asUrl = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const parsed = new URL(asUrl);
+    return String(parsed.hostname || '').trim().toLowerCase();
+  } catch {
+    // fallback sotto
+  }
+
+  const token = raw
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/.*$/, '')
+    .split(/[\s|,;]+/)
+    .map((entry) => entry.trim())
+    .find(Boolean);
+  return String(token || '').replace(/^\[|\]$/g, '').toLowerCase();
+};
+
+const isIpLike = (value: string): boolean => Boolean(extractIp(value));
+
+const hostFromTarget = (value: string): string => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    return String(parsed.hostname || '').trim().toLowerCase();
+  } catch {
+    return String(raw).replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim().toLowerCase();
+  }
+};
+
 export type ExposureStartRequest = {
   tenant_id: string;
   customer_id: string;
@@ -178,14 +232,54 @@ export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<Exposure
 
   const { data, error } = await supabase
     .from('surface_open_ports' as any)
-    .select('id, scan_job_id, host, ip, port, protocol, state, service_name, service_product, service_version, is_web, is_tls, exposure_level, remediation_hint, first_seen_at, last_seen_at')
+    .select('id, scan_job_id, target_id, host, ip, port, protocol, state, service_name, service_product, service_version, is_web, is_tls, exposure_level, remediation_hint, first_seen_at, last_seen_at')
     .in('scan_job_id', uniqueJobIds)
     .order('exposure_level', { ascending: false })
     .order('host', { ascending: true })
     .order('port', { ascending: true });
 
   if (error) throw error;
-  return (data || []) as ExposureOpenPortRow[];
+
+  const rows = (data || []) as Array<ExposureOpenPortRow & { target_id?: string | null }>;
+  const targetIds = [...new Set(rows.map((row) => String(row.target_id || '').trim()).filter(Boolean))];
+  const targetMap = new Map<string, { target_value: string; target_type: string }>();
+
+  if (targetIds.length > 0) {
+    const { data: targets, error: targetsError } = await supabase
+      .from('surface_scan_targets' as any)
+      .select('id, target_value, target_type')
+      .in('id', targetIds);
+    if (targetsError) throw targetsError;
+    for (const row of (targets || []) as Array<Record<string, unknown>>) {
+      targetMap.set(String(row.id || ''), {
+        target_value: String(row.target_value || ''),
+        target_type: String(row.target_type || ''),
+      });
+    }
+  }
+
+  return rows.map((row) => {
+    const target = targetMap.get(String((row as any).target_id || ''));
+    const targetHost = target ? hostFromTarget(target.target_value) : '';
+
+    const rawHost = String(row.host || '').trim();
+    const rawIp = String(row.ip || '').trim();
+
+    const inferredIp = extractIp(rawIp) || extractIp(rawHost) || extractIp(target?.target_value || '');
+    let normalizedHost = normalizeHost(rawHost);
+
+    if (!normalizedHost && targetHost) normalizedHost = targetHost;
+    if (normalizedHost && isIpLike(normalizedHost) && targetHost && !isIpLike(targetHost)) {
+      normalizedHost = targetHost;
+    }
+    if (!normalizedHost && inferredIp) normalizedHost = inferredIp;
+
+    return {
+      ...row,
+      host: normalizedHost || '-',
+      ip: inferredIp || null,
+    } as ExposureOpenPortRow;
+  });
 }
 
 export async function fetchTechnologies(jobId: string): Promise<ExposureTechnologyRow[]> {

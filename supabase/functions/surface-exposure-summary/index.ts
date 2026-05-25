@@ -284,6 +284,7 @@ serve(async (req: Request) => {
         .in('scan_job_id', allJobIds);
 
       const latestByTarget = new Map<string, { scan_job_id: string; created_at: string }>();
+      const jobsById = new Map(allJobs.map((entry) => [String(entry.id), entry]));
       const countedTargets = new Set<string>();
       for (const row of (targetRows || []) as Array<Record<string, unknown>>) {
         const scanJobId = String(row?.scan_job_id || '').trim();
@@ -299,7 +300,7 @@ serve(async (req: Request) => {
         }
         if (reason) continue;
 
-        const jobMeta = allJobs.find((entry) => String(entry.id) === scanJobId);
+        const jobMeta = jobsById.get(scanJobId);
         if (!jobMeta) continue;
 
         const current = latestByTarget.get(targetKey);
@@ -311,6 +312,21 @@ serve(async (req: Request) => {
       }
 
       selectedJobIds = [...new Set(Array.from(latestByTarget.values()).map((entry) => entry.scan_job_id))];
+
+      // Fallback resiliente: se i target non sono presenti/coerenti, usa gli ultimi job exposure
+      // per evitare dashboard vuota anche con dati porte/tecnologie già persistiti.
+      if (selectedJobIds.length === 0) {
+        selectedJobIds = allJobs
+          .filter((row) => ['completed', 'running', 'queued', 'waiting'].includes(String(row.status || '').toLowerCase()))
+          .map((row) => String(row.id || ''))
+          .filter(Boolean)
+          .slice(0, 120);
+
+        if (countedTargets.size === 0) {
+          counters.in_scope = Math.max(counters.in_scope, scopeDomains.length + ipScopeRules.length);
+        }
+      }
+
       if (selectedJobIds.length === 0) {
         return jsonResponse(emptySummary(scopeMode, counters, true));
       }
