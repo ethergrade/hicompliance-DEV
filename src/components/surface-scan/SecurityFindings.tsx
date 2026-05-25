@@ -129,6 +129,7 @@ const findingCves = (row: SurfaceFindingRow): string[] => {
 const sourceFamily = (row: SurfaceFindingRow): string => {
   const provider = String(row.provider || '').toLowerCase();
   const module = String(row.module || '').toLowerCase();
+  if (provider.includes('surface_report') || module.includes('cve_catalog')) return 'CVE Catalog';
   if (provider.includes('pentest')) return 'Exposure Intel';
   if (provider.includes('shodan')) return 'OSINT Intel';
   if (provider.includes('urlscan')) return 'OSINT Intel';
