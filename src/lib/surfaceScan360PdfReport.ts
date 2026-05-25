@@ -72,6 +72,8 @@ const DARK = { r: 17, g: 24, b: 39 };
 const MUTED = { r: 110, g: 118, b: 130 };
 const LIGHT_BG = { r: 243, g: 246, b: 251 };
 const BORDER = { r: 215, g: 222, b: 232 };
+const SURFACESCAN_BRAND_TITLE_HICOMPLIANCE = 'HICOMPLIANCE · SURFACESCAN360';
+const SURFACESCAN_BRAND_TITLE_HICONSOLE = 'HiConsole - SURFACESCAN360';
 
 const sevColor = (s?: string): [number, number, number] => {
   switch ((s || '').toLowerCase()) {
@@ -96,6 +98,30 @@ const PROVIDER_LABELS: Record<string, string> = {
   security_headers: 'Controlli HTTP di sicurezza',
 };
 const providerLabel = (p: string) => PROVIDER_LABELS[p] || 'Evidenze esterne';
+
+const hasHiComplianceBrand = (report: SurfaceScan360Report): boolean => {
+  const org = report?.organization || {};
+  if (typeof org.hicompliance_enabled === 'boolean') return org.hicompliance_enabled;
+  if (typeof org.has_hicompliance === 'boolean') return org.has_hicompliance;
+  return false;
+};
+
+const getSurfaceScanBrandTitle = (report: SurfaceScan360Report): string =>
+{
+  const raw = String((report?.organization as any)?.report_brand_title || '').trim();
+  if (raw === SURFACESCAN_BRAND_TITLE_HICOMPLIANCE || raw === SURFACESCAN_BRAND_TITLE_HICONSOLE) return raw;
+  return hasHiComplianceBrand(report) ? SURFACESCAN_BRAND_TITLE_HICOMPLIANCE : SURFACESCAN_BRAND_TITLE_HICONSOLE;
+};
+
+const drawHiSolutionLogo = (doc: jsPDF, x: number, y: number): void => {
+  // Lightweight vector mark to keep PDF size low and avoid external image loading.
+  doc.setFillColor(BRAND.r, BRAND.g, BRAND.b);
+  doc.roundedRect(x, y, 18, 18, 4, 4, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('Hi', x + 5, y + 12.5);
+};
 
 const redactReportWords = (value: string) => {
   const tokens = [
@@ -379,18 +405,24 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   doc.setFillColor(BRAND.r, BRAND.g, BRAND.b);
   doc.rect(0, 175, w, 5, 'F');
   doc.setTextColor(255, 255, 255);
+  drawHiSolutionLogo(doc, margin, 26);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(180, 200, 230);
+  doc.text('HiSolution', margin + 24, 39);
+  doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.text('HICOMPLIANCE · SURFACESCAN360', margin, 50);
+  doc.text(getSurfaceScanBrandTitle(report), margin, 58);
   doc.setFontSize(24);
-  doc.text('Report Attack Surface', margin, 90);
+  doc.text('Report Attack Surface', margin, 96);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(12);
   const o = report.organization || {};
-  doc.text(o.legal_name || o.name || 'Cliente', margin, 115);
+  doc.text(o.legal_name || o.name || 'Cliente', margin, 121);
   doc.setFontSize(10);
   doc.setTextColor(180, 200, 230);
-  doc.text(`Generato: ${new Date(report.generated_at).toLocaleString('it-IT')}`, margin, 140);
+  doc.text(`Generato: ${new Date(report.generated_at).toLocaleString('it-IT')}`, margin, 146);
   if (aiData?.risk_score != null) {
     const score = aiData.risk_score;
     const level = aiData.risk_level || '';

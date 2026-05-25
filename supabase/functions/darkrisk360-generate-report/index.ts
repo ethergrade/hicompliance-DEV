@@ -111,11 +111,13 @@ type DarkRiskReportJson = {
   document_metadata: {
     product_name: string;
     document_type: string;
+    report_title: string;
     status: string;
     version: string;
     owner: string;
     reviewed_by?: string[];
     customer_name: string;
+    hicompliance_enabled?: boolean;
   };
   scope: {
     authorized_assets: string[];
@@ -149,6 +151,8 @@ const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const INTERNAL_SECRET = Deno.env.get('DARKRISK360_INTERNAL_SECRET') || '';
 const REPORT_SCHEMA_VERSION = '1.0.0';
 const REPORT_NOTICE = 'Il presente documento contiene informazioni riservate. Non distribuire a soggetti non autorizzati. Le evidenze sensibili sono mascherate salvo diversa autorizzazione.';
+const DARKRISK_BRAND_TITLE_HICOMPLIANCE = 'HICOMPLIANCE · DARKRISK360';
+const DARKRISK_BRAND_TITLE_HICONSOLE = 'HiConsole - DARKRISK360';
 
 const severityRank: Record<Severity, number> = {
   info: 1,
@@ -348,12 +352,15 @@ function buildReportHtml(report: DarkRiskReportJson): string {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>DarkRisk360 Report ${escapeHtml(report.document_metadata.customer_name)}</title>
+<title>${escapeHtml(report.document_metadata.report_title)} ${escapeHtml(report.document_metadata.customer_name)}</title>
 <style>
   body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
   h1, h2, h3 { margin-bottom: 8px; color: #0f172a; }
   p { line-height: 1.5; }
   .notice { background: #fef3c7; border: 1px solid #f59e0b; padding: 10px; border-radius: 8px; margin-bottom: 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .brand-logo { width: 22px; height: 22px; border-radius: 6px; background: #3b82f6; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; }
+  .brand-text { font-size: 13px; color: #475569; }
   .meta { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 16px; margin-bottom: 16px; }
   table { width: 100%; border-collapse: collapse; margin: 12px 0 18px; }
   th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; font-size: 12px; vertical-align: top; }
@@ -363,7 +370,11 @@ function buildReportHtml(report: DarkRiskReportJson): string {
 </style>
 </head>
 <body>
-  <h1>DarkRisk360 Intelligence Report</h1>
+  <div class="brand">
+    <span class="brand-logo">Hi</span>
+    <span class="brand-text">HiSolution</span>
+  </div>
+  <h1>${escapeHtml(report.document_metadata.report_title)}</h1>
   <div class="notice">${escapeHtml(REPORT_NOTICE)}</div>
 
   <div class="meta">
@@ -549,7 +560,7 @@ serve(async (req: Request) => {
     const [orgRes, assetsRes, selectorsRes, findingsRes, sourceRes] = await Promise.all([
       adminClient
         .from('organizations' as any)
-        .select('id, name')
+        .select('id, name, hicompliance_enabled')
         .eq('id', customerId)
         .maybeSingle(),
       adminClient
@@ -769,6 +780,8 @@ serve(async (req: Request) => {
     ];
 
     const customerName = safeText(String(orgRes.data?.name || customerId), 120);
+    const hasHiCompliance = Boolean((orgRes.data as any)?.hicompliance_enabled);
+    const reportBrandTitle = hasHiCompliance ? DARKRISK_BRAND_TITLE_HICOMPLIANCE : DARKRISK_BRAND_TITLE_HICONSOLE;
     const generatedAt = new Date().toISOString();
     const reportId = crypto.randomUUID();
 
@@ -783,10 +796,12 @@ serve(async (req: Request) => {
       document_metadata: {
         product_name: 'DarkRisk360',
         document_type: tier === 'extended' ? 'DarkRisk360 DTI Extended' : 'DarkRisk360 Standard Snapshot',
+        report_title: reportBrandTitle,
         status: 'final',
         version: REPORT_SCHEMA_VERSION,
         owner: 'HiSolution',
         customer_name: customerName,
+        hicompliance_enabled: hasHiCompliance,
       },
       scope: {
         authorized_assets: Array.from(new Set(scopeAuthorizedAssets)),
@@ -878,7 +893,7 @@ serve(async (req: Request) => {
         tenant_id: customerId,
         scan_run_id: scanRun.id,
         tier,
-        title: `DarkRisk360 Report - ${customerName} - ${new Date(generatedAt).toLocaleDateString('it-IT')}`,
+        title: `${reportBrandTitle} - ${customerName} - ${new Date(generatedAt).toLocaleDateString('it-IT')}`,
         classification: requestedClassification,
         status: 'completed',
         report_json: reportJson,
