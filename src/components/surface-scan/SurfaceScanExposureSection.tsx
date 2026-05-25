@@ -235,6 +235,14 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       if (effectiveJobIds.length === 0 && summaryData.job_id) {
         effectiveJobIds.push(String(summaryData.job_id));
       }
+      if (effectiveJobIds.length === 0) {
+        for (const job of jobsData) {
+          const id = String(job?.id || '').trim();
+          if (!id) continue;
+          effectiveJobIds.push(id);
+          if (effectiveJobIds.length >= 120) break;
+        }
+      }
 
       const [portsData, techData, findingsData] = await Promise.all([
         fetchOpenPortsByJobIds(effectiveJobIds),

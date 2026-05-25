@@ -40,6 +40,8 @@ const TECHNOLOGY_TOKENS: RegExp[] = [
 ];
 const CVE_REGEX = /\bCVE-\d{4}-\d{4,7}\b/gi;
 const IPV4_REGEX = /^(?:\d{1,3}\.){3}\d{1,3}$/;
+const IPV4_LOOSE_REGEX = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
+const IPV6_LOOSE_REGEX = /\b(?:[a-f0-9]{1,4}:){2,}[a-f0-9:]{1,}\b/i;
 const PARENS_CONTENT_REGEX = /^\((.*)\)$/;
 const ORGANIZATION_SCOPE_REPORT_TITLE = 'SurfaceScan360 Report - Organization Scope';
 
@@ -51,7 +53,10 @@ function isIpv4(value: string): boolean {
 }
 
 function parseHostname(value: string): string | null {
-  const raw = String(value || '').trim();
+  const raw = String(value || '')
+    .replace(/\b(?:shodan|urlscan|web\s*-?\s*check|pentest\s*-?\s*tools?)\b/gi, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
   if (!raw) return null;
   try {
     if (/^https?:\/\//i.test(raw)) {
@@ -64,6 +69,16 @@ function parseHostname(value: string): string | null {
   }
   const cleaned = raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim().toLowerCase();
   if (!cleaned || isIpv4(cleaned)) return null;
+  if (cleaned.includes(' ')) {
+    const tokens = cleaned
+      .split(/[\s|,;]+/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    for (const token of tokens) {
+      if (!token || isIpv4(token) || token.includes(':')) continue;
+      if (token.includes('.')) return token;
+    }
+  }
   if (!cleaned.includes('.')) return null;
   return cleaned;
 }
@@ -242,9 +257,16 @@ function getScopeReasonFromFinding(
 }
 
 function normalizeAssetLabel(value: string): string {
-  const raw = String(value || '').trim();
+  const raw = String(value || '')
+    .replace(/\b(?:shodan|urlscan|web\s*-?\s*check|pentest\s*-?\s*tools?)\b/gi, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
   if (!raw) return '';
   if (isIpv4(raw)) return raw;
+  const looseIpv4 = raw.match(IPV4_LOOSE_REGEX);
+  if (looseIpv4?.[0]) return looseIpv4[0];
+  const looseIpv6 = raw.match(IPV6_LOOSE_REGEX);
+  if (looseIpv6?.[0]) return looseIpv6[0];
   const host = parseHostname(raw);
   if (host) return host;
   return raw.replace(/^https?:\/\//i, '').replace(/\/+$/, '').trim().toLowerCase();
