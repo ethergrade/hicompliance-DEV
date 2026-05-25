@@ -43,7 +43,9 @@ const IPV4_REGEX = /^(?:\d{1,3}\.){3}\d{1,3}$/;
 const IPV4_LOOSE_REGEX = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
 const IPV6_LOOSE_REGEX = /\b(?:[a-f0-9]{1,4}:){2,}[a-f0-9:]{1,}\b/i;
 const PARENS_CONTENT_REGEX = /^\((.*)\)$/;
-const ORGANIZATION_SCOPE_REPORT_TITLE = 'SurfaceScan360 Report - Organization Scope';
+const SURFACESCAN_BRAND_TITLE_HICOMPLIANCE = 'HICOMPLIANCE · SURFACESCAN360';
+const SURFACESCAN_BRAND_TITLE_HICONSOLE = 'HiConsole - SURFACESCAN360';
+const SURFACESCAN_LEGACY_SCOPE_TITLE = 'SurfaceScan360 Report - Organization Scope';
 const TOP_RECOMMENDATIONS_LIMIT = 10;
 
 function isIpv4(value: string): boolean {
@@ -82,6 +84,10 @@ function parseHostname(value: string): string | null {
   }
   if (!cleaned.includes('.')) return null;
   return cleaned;
+}
+
+function surfaceScanBrandTitle(hicomplianceEnabled: boolean): string {
+  return hicomplianceEnabled ? SURFACESCAN_BRAND_TITLE_HICOMPLIANCE : SURFACESCAN_BRAND_TITLE_HICONSOLE;
 }
 
 function isIpv6(value: string): boolean {
@@ -1027,7 +1033,11 @@ Deno.serve(async (req) => {
             .from('surface_scan_ai_reports')
             .select('id, payload, created_at, title')
             .eq('organization_id', organization_id)
-            .eq('title', ORGANIZATION_SCOPE_REPORT_TITLE)
+            .in('title', [
+              SURFACESCAN_BRAND_TITLE_HICOMPLIANCE,
+              SURFACESCAN_BRAND_TITLE_HICONSOLE,
+              SURFACESCAN_LEGACY_SCOPE_TITLE,
+            ])
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle()
@@ -1072,7 +1082,7 @@ Deno.serve(async (req) => {
       rawSslAll,
     ] = await Promise.all([
       supabase.from('organization_profiles').select('*').eq('organization_id', organization_id).maybeSingle(),
-      supabase.from('organizations').select('id, name').eq('id', organization_id).maybeSingle(),
+      supabase.from('organizations').select('id, name, hicompliance_enabled').eq('id', organization_id).maybeSingle(),
       supabase.from('surface_scan_monitored_ips').select('entry_type, input_value, ip_start, ip_end, discovered_via, discovered_from').eq('organization_id', organization_id),
       supabase.from('subdomain_dumps').select('id, root_domain, depth_limit, total_discovered, total_returned, truncated, sources, results, created_at').eq('organization_id', organization_id).order('created_at', { ascending: false }).limit(50),
       fetchRowsByJobIds(
@@ -1919,6 +1929,9 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       };
     });
 
+    const reportBrandTitle = surfaceScanBrandTitle(Boolean(org?.hicompliance_enabled));
+    const reportRepositoryTitle = isOrganizationScope ? reportBrandTitle : `${reportBrandTitle} - ${scopeTargetLabel}`;
+
     const reportPayload = {
       generated_at: new Date().toISOString(),
       report_repository: {
@@ -1931,6 +1944,9 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       organization: {
         id: organization_id,
         name: org?.name,
+        hicompliance_enabled: Boolean(org?.hicompliance_enabled),
+        has_hicompliance: Boolean(org?.hicompliance_enabled),
+        report_brand_title: reportBrandTitle,
         legal_name: profile?.legal_name,
         vat_number: profile?.vat_number,
         fiscal_code: profile?.fiscal_code,
@@ -1982,7 +1998,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
         const { data: updated } = await supabase
           .from('surface_scan_ai_reports')
           .update({
-            title: ORGANIZATION_SCOPE_REPORT_TITLE,
+            title: reportRepositoryTitle,
             payload: reportPayload as any,
             scan_job_id: anchorJob.id,
             created_by: actorUserId,
@@ -1998,7 +2014,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
           .insert({
             organization_id,
             scan_job_id: anchorJob.id,
-            title: ORGANIZATION_SCOPE_REPORT_TITLE,
+            title: reportRepositoryTitle,
             payload: reportPayload as any,
             created_by: actorUserId,
           })
@@ -2009,7 +2025,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
         const { data: updated } = await supabase
           .from('surface_scan_ai_reports')
           .update({
-            title: `Report AI - ${scopeTargetLabel}`,
+            title: reportRepositoryTitle,
             payload: reportPayload as any,
             created_by: actorUserId,
             created_at: new Date().toISOString(),
@@ -2024,7 +2040,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
           .insert({
             organization_id,
             scan_job_id: anchorJob.id,
-            title: `Report AI - ${scopeTargetLabel}`,
+            title: reportRepositoryTitle,
             payload: reportPayload as any,
             created_by: actorUserId,
           })
