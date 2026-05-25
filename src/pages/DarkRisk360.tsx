@@ -25,6 +25,8 @@ import {
   Download,
   ExternalLink,
   Building2,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
@@ -41,6 +43,7 @@ import { useDarkRiskOverview } from '@/hooks/useDarkRiskOverview';
 import { useDarkRiskQaStatus } from '@/hooks/useDarkRiskQaStatus';
 import { useDarkRiskRoadmapStatus } from '@/hooks/useDarkRiskRoadmapStatus';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { useSurfaceScanMonitoredIps } from '@/hooks/useSurfaceScanMonitoredIps';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { presentDarkRiskFindingType, presentDarkRiskSource } from '@/lib/darkrisk/presentation';
@@ -183,6 +186,15 @@ const normalizeHost = (value: string): string => {
   return text.replace(/^@/, '');
 };
 
+const presentScopeEntryType = (entryType: string): string => {
+  const normalized = String(entryType || '').toLowerCase();
+  if (normalized === 'domain') return 'Dominio';
+  if (normalized === 'single') return 'IP';
+  if (normalized === 'range') return 'Range';
+  if (normalized === 'cidr') return 'CIDR';
+  return normalized || 'n/d';
+};
+
 const extractSensitiveTags = (input: unknown): string[] => {
   if (!input || typeof input !== 'object') return [];
   const tags = (input as any)?.tags;
@@ -212,6 +224,17 @@ const DarkRisk360: React.FC = () => {
   const [identityEmailsInput, setIdentityEmailsInput] = useState('');
   const [identityScanning, setIdentityScanning] = useState(false);
   const [exportingReportId, setExportingReportId] = useState<string | null>(null);
+  const [scopeInput, setScopeInput] = useState('');
+  const [addingScope, setAddingScope] = useState(false);
+
+  const {
+    rules: scopeRules,
+    loading: scopeLoading,
+    saving: scopeSaving,
+    isAdmin: isScopeAdmin,
+    addRule: addScopeRule,
+    removeRule: removeScopeRule,
+  } = useSurfaceScanMonitoredIps();
 
   const {
     data: reportSnapshots = [],
@@ -768,6 +791,37 @@ const DarkRisk360: React.FC = () => {
     }
   };
 
+  const handleAddScopeRule = async () => {
+    if (!scopeInput.trim()) {
+      toast.error('Inserisci un dominio o IP in scope');
+      return;
+    }
+    setAddingScope(true);
+    try {
+      const ok = await addScopeRule(scopeInput.trim(), {
+        discovered_via: 'manual',
+        silent: false,
+        auto_queue_scan: true,
+      });
+      if (ok) {
+        setScopeInput('');
+        void Promise.all([
+          refetch(),
+          queryClient.invalidateQueries({ queryKey: ['darkrisk360-assets', organizationId] }),
+        ]);
+      }
+    } finally {
+      setAddingScope(false);
+    }
+  };
+
+  const handleRemoveScopeRule = async (ruleId: string) => {
+    const ok = await removeScopeRule(ruleId);
+    if (ok) {
+      void refetch();
+    }
+  };
+
   const openReportAsset = async (report: Record<string, any>, format: 'html' | 'json' | 'pdf') => {
     if (!organizationId) {
       toast.error('Nessun cliente selezionato');
@@ -989,6 +1043,74 @@ const DarkRisk360: React.FC = () => {
                       </Button>
                       <Badge variant="outline">Email monitorate: {identityEmailSelectors.length}</Badge>
                     </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-border">
+                  <CardHeader className="pb-3">
+                    <CardTitle>Scope DarkRisk360</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      Inserisci domini/IP direttamente da DarkRisk360: il sistema propaga lo scope, mette in coda i controlli predefiniti e sincronizza automaticamente i moduli attivi del cliente.
+                    </p>
+                    <div className="flex flex-col gap-2 md:flex-row">
+                      <Input
+                        value={scopeInput}
+                        onChange={(event) => setScopeInput(event.target.value)}
+                        placeholder="es. panapesca.it oppure 203.0.113.10"
+                        disabled={!organizationId || !isScopeAdmin || scopeSaving || addingScope}
+                      />
+                      <Button
+                        onClick={() => void handleAddScopeRule()}
+                        disabled={!organizationId || !isScopeAdmin || scopeSaving || addingScope || !scopeInput.trim()}
+                        className="bg-primary text-primary-foreground"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        {addingScope || scopeSaving ? 'Aggiunta...' : 'Aggiungi scope'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => void handleSyncSurfaceScan()}
+                        disabled={!organizationId || syncingScan}
+                      >
+                        <RefreshCw className={`w-4 h-4 mr-2 ${syncingScan ? 'animate-spin' : ''}`} />
+                        {syncingScan ? 'Riesecuzione...' : 'Riesegui controlli default'}
+                      </Button>
+                    </div>
+                    {!isScopeAdmin && (
+                      <p className="text-xs text-amber-300">Solo admin possono modificare lo scope.</p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline">Regole scope: {scopeRules.length}</Badge>
+                      <Badge variant="secondary">Queue automatica attiva</Badge>
+                      {scopeLoading && <Badge variant="outline">Caricamento scope...</Badge>}
+                    </div>
+                    {scopeRules.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {scopeRules.slice(0, 12).map((rule) => (
+                          <div key={rule.id} className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{rule.input_value}</p>
+                              <p className="text-xs text-muted-foreground">{presentScopeEntryType(rule.entry_type)}</p>
+                            </div>
+                            {isScopeAdmin && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 text-muted-foreground hover:text-red-300"
+                                onClick={() => void handleRemoveScopeRule(rule.id)}
+                                disabled={scopeSaving}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Nessuna regola scope configurata su questo cliente.</p>
+                    )}
                   </CardContent>
                 </Card>
                 <DarkRiskCoverageMatrix controls={overview.coverage_controls} />
