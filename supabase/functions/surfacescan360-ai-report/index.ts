@@ -363,6 +363,43 @@ function toTextSummary(value: unknown): string {
   const obj = value as Record<string, unknown>;
   const parts: string[] = [];
   const asArray = (k: string) => (Array.isArray(obj[k]) ? (obj[k] as unknown[]) : []);
+  const asString = (k: string) => String(obj[k] ?? '').trim();
+  const boolText = (input: unknown) => (input ? 'sì' : 'no');
+
+  const status = asString('status') || asString('state');
+  if (status) parts.push(`Stato: ${status}`);
+  const scanId = asString('scan_id');
+  if (scanId) parts.push(`Scan ID: ${scanId}`);
+  const toolId = asString('tool_id');
+  if (toolId) parts.push(`Controllo ID: ${toolId}`);
+  const outputType = asString('output_type');
+  if (outputType) parts.push(`Output: ${outputType}`);
+  if (obj['progress'] != null && String(obj['progress']).trim() !== '') {
+    const progress = Number(obj['progress']);
+    parts.push(
+      Number.isFinite(progress)
+        ? `Progresso: ${Math.max(0, Math.min(100, Math.round(progress)))}%`
+        : `Progresso: ${String(obj['progress'])}`,
+    );
+  }
+  if (obj['output_collected'] != null) {
+    parts.push(`Output raccolto: ${boolText(obj['output_collected'])}`);
+  }
+  const label = asString('label');
+  if (label) parts.push(`Etichetta: ${label}`);
+
+  const ip = asString('ip') || asString('ip_address') || asString('host_ip');
+  if (ip) parts.push(`IP: ${ip}`);
+  const host = asString('host') || asString('hostname') || asString('domain') || asString('target');
+  if (host) parts.push(`Host: ${host}`);
+  const asn = asString('asn');
+  if (asn) parts.push(`ASN: ${asn}`);
+  const org = asString('org');
+  if (org) parts.push(`Rete: ${org}`);
+  const city = asString('city');
+  const country = asString('country');
+  if (city || country) parts.push(`Posizione: ${[city, country].filter(Boolean).join(', ')}`);
+
   const ports = [...asArray('ports'), ...asArray('open_ports')]
     .map((p) => Number(p))
     .filter((p) => Number.isFinite(p));
@@ -375,6 +412,51 @@ function toTextSummary(value: unknown): string {
   if (hostnames.length > 0) {
     parts.push(`Host correlati: ${hostnames.slice(0, 5).join(', ')}`);
   }
+  if (Array.isArray(obj['data'])) {
+    const rows = (obj['data'] as unknown[])
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object') return '';
+        const row = entry as Record<string, unknown>;
+        const port = String(row.port ?? '').trim();
+        const transport = String(row.transport ?? row.protocol ?? '').trim().toLowerCase();
+        const service = String(row.service ?? row.product ?? '').trim();
+        const version = String(row.version ?? '').trim();
+        const portProto = [port, transport].filter(Boolean).join('/');
+        const details = [service, version].filter(Boolean).join(' ');
+        return [portProto, details].filter(Boolean).join(' ');
+      })
+      .filter(Boolean);
+    if (rows.length > 0) {
+      parts.push(`Servizi osservati: ${rows.slice(0, 6).join(' | ')}`);
+    }
+  }
+
+  if (obj['has_mx'] != null) parts.push(`MX presenti: ${boolText(obj['has_mx'])}`);
+  if (obj['has_spf'] != null) parts.push(`SPF presente: ${boolText(obj['has_spf'])}`);
+  if (obj['has_dmarc'] != null) parts.push(`DMARC presente: ${boolText(obj['has_dmarc'])}`);
+  if (obj['has_bimi'] != null) parts.push(`BIMI presente: ${boolText(obj['has_bimi'])}`);
+  if (obj['has_dkim'] != null) parts.push(`DKIM presente: ${boolText(obj['has_dkim'])}`);
+
+  const spfRecords = asArray('spf_records').map((entry) => String(entry || '').trim()).filter(Boolean);
+  if (spfRecords.length > 0) parts.push(`SPF: ${spfRecords.slice(0, 2).join(' ; ')}`);
+  const dmarcRecords = asArray('dmarc_records').map((entry) => String(entry || '').trim()).filter(Boolean);
+  if (dmarcRecords.length > 0) parts.push(`DMARC: ${dmarcRecords.slice(0, 2).join(' ; ')}`);
+  const dkimSelectors = asArray('dkim_selectors_found').map((entry) => String(entry || '').trim()).filter(Boolean);
+  if (dkimSelectors.length > 0) parts.push(`Selector DKIM trovati: ${dkimSelectors.slice(0, 6).join(', ')}`);
+
+  const performance = Number(obj['performance']);
+  const accessibility = Number(obj['accessibility']);
+  const bestPractices = Number(obj['best_practices']);
+  const seo = Number(obj['seo']);
+  if (Number.isFinite(performance) || Number.isFinite(accessibility) || Number.isFinite(bestPractices) || Number.isFinite(seo)) {
+    const q: string[] = [];
+    if (Number.isFinite(performance)) q.push(`Performance ${Math.round(performance)}`);
+    if (Number.isFinite(accessibility)) q.push(`Accessibility ${Math.round(accessibility)}`);
+    if (Number.isFinite(bestPractices)) q.push(`Best practices ${Math.round(bestPractices)}`);
+    if (Number.isFinite(seo)) q.push(`SEO ${Math.round(seo)}`);
+    if (q.length > 0) parts.push(`Quality: ${q.join(' · ')}`);
+  }
+
   if (obj['type']) {
     parts.push(`Contesto: ${String(obj['type'])}`);
   }
@@ -385,7 +467,7 @@ function toTextSummary(value: unknown): string {
     parts.push(`Risultati storici trovati: ${String(obj['total'])}`);
   }
   if (parts.length === 0) {
-    parts.push('Evidenza disponibile nel dettaglio tecnico della scansione.');
+    parts.push('Nessun campo tecnico valorizzato nel payload corrente.');
   }
   return redactTechnologyMentions(parts.join(' · '));
 }
@@ -1936,10 +2018,11 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       generated_at: new Date().toISOString(),
       report_repository: {
         trigger_source: triggerSource,
-        auto_generated: triggerSource === 'auto_on_complete',
+        auto_generated: triggerSource === 'auto_on_complete' || triggerSource === 'cron_weekly_repository',
         generated_by_user_id: actorUserId,
         generated_via: isInternalCall ? 'internal_call' : 'manual_call',
         mode: isOrganizationScope ? 'organization_scope_canonical' : 'single_job',
+        pdf_compression: 'optimized',
       },
       organization: {
         id: organization_id,

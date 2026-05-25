@@ -165,6 +165,11 @@ const isJunkSummary = (s: any): boolean => {
 const summarizeIntel = (provider: string, target: string, summary: any): string => {
   if (summary == null) return 'Nessun dato';
   if (typeof summary === 'string') return redactReportWords(summary);
+  if (typeof summary !== 'object') return redactReportWords(String(summary));
+
+  const read = (key: string) => String(summary?.[key] ?? '').trim();
+  const boolText = (value: any) => (value ? 'sì' : 'no');
+
   if (provider === 'urlscan' && Array.isArray(summary.recent)) {
     if (summary.recent.length === 0) return `Nessuna scansione pubblica nota per ${target}`;
     const r = summary.recent[0];
@@ -189,24 +194,78 @@ const summarizeIntel = (provider: string, target: string, summary: any): string 
     if (banners.length) parts.push(`banner tecnici: ${banners.length}`);
     if (summary.org) parts.push(`operatore rete: ${summary.org}`);
     if (summary.asn) parts.push(`ASN: ${summary.asn}`);
-    return redactReportWords(parts.join(' · ') || 'Evidenza tecnica disponibile.');
+    return redactReportWords(parts.join(' · ') || 'Nessuna esposizione pubblica confermata.');
   }
-  const keys = typeof summary === 'object' && summary ? Object.keys(summary) : [];
+
+  const parts: string[] = [];
+  const status = read('status') || read('state');
+  if (status) parts.push(`Stato: ${status}`);
+  const scanId = read('scan_id');
+  if (scanId) parts.push(`Scan ID: ${scanId}`);
+  const toolId = read('tool_id');
+  if (toolId) parts.push(`Controllo ID: ${toolId}`);
+  const outputType = read('output_type');
+  if (outputType) parts.push(`Output: ${outputType}`);
+  if (summary?.progress != null && String(summary.progress).trim() !== '') {
+    const progress = Number(summary.progress);
+    parts.push(Number.isFinite(progress) ? `Progresso: ${Math.round(progress)}%` : `Progresso: ${String(summary.progress)}`);
+  }
+  if (summary?.output_collected != null) parts.push(`Output raccolto: ${boolText(summary.output_collected)}`);
+  const label = read('label');
+  if (label) parts.push(`Etichetta: ${label}`);
+  const ip = read('ip') || read('ip_address') || read('host_ip');
+  if (ip) parts.push(`IP: ${ip}`);
+  const host = read('host') || read('hostname') || read('domain');
+  if (host) parts.push(`Host: ${host}`);
+  const asn = read('asn');
+  if (asn) parts.push(`ASN: ${asn}`);
+  const org = read('org');
+  if (org) parts.push(`Rete: ${org}`);
+
+  if (summary?.has_mx != null) parts.push(`MX presenti: ${boolText(summary.has_mx)}`);
+  if (summary?.has_spf != null) parts.push(`SPF presente: ${boolText(summary.has_spf)}`);
+  if (summary?.has_dmarc != null) parts.push(`DMARC presente: ${boolText(summary.has_dmarc)}`);
+  if (summary?.has_bimi != null) parts.push(`BIMI presente: ${boolText(summary.has_bimi)}`);
+  const spfRecords = Array.isArray(summary?.spf_records) ? summary.spf_records.filter(Boolean) : [];
+  if (spfRecords.length) parts.push(`SPF: ${spfRecords.slice(0, 2).join(' ; ')}`);
+  const dmarcRecords = Array.isArray(summary?.dmarc_records) ? summary.dmarc_records.filter(Boolean) : [];
+  if (dmarcRecords.length) parts.push(`DMARC: ${dmarcRecords.slice(0, 2).join(' ; ')}`);
+  const dkimSelectors = Array.isArray(summary?.dkim_selectors_found) ? summary.dkim_selectors_found.filter(Boolean) : [];
+  if (dkimSelectors.length) parts.push(`Selector DKIM: ${dkimSelectors.slice(0, 6).join(', ')}`);
+
+  const ports = [...(Array.isArray(summary?.ports) ? summary.ports : []), ...(Array.isArray(summary?.open_ports) ? summary.open_ports : [])]
+    .map((port) => Number(port))
+    .filter((port) => Number.isFinite(port));
+  if (ports.length > 0) {
+    parts.push(`Porte esposte: ${Array.from(new Set(ports)).slice(0, 20).join(', ')}`);
+  }
+
+  if (Array.isArray(summary?.data) && summary.data.length > 0) {
+    const serviceRows = summary.data
+      .map((entry: any) => {
+        const port = String(entry?.port ?? '').trim();
+        const proto = String(entry?.transport ?? entry?.protocol ?? '').trim().toLowerCase();
+        const service = String(entry?.service ?? entry?.product ?? '').trim();
+        const version = String(entry?.version ?? '').trim();
+        const left = [port, proto].filter(Boolean).join('/');
+        const right = [service, version].filter(Boolean).join(' ');
+        return [left, right].filter(Boolean).join(' ');
+      })
+      .filter(Boolean);
+    if (serviceRows.length > 0) parts.push(`Servizi osservati: ${serviceRows.slice(0, 6).join(' | ')}`);
+  }
+
+  const keys = summary ? Object.keys(summary) : [];
   if (Array.isArray((summary as any)?.detected)) {
     return `Pattern applicativi rilevati: ${(summary as any).detected.length}`;
   }
-  if (Array.isArray((summary as any)?.ports) || Array.isArray((summary as any)?.open_ports)) {
-    const portCount = Array.isArray((summary as any)?.ports)
-      ? (summary as any).ports.length
-      : Array.isArray((summary as any)?.open_ports)
-        ? (summary as any).open_ports.length
-        : 0;
-    return `Porte esposte rilevate: ${portCount}`;
+  if (parts.length > 0) {
+    return redactReportWords(parts.join(' · '));
   }
   if (keys.length > 0) {
-    return `Evidenza tecnica disponibile (${keys.slice(0, 5).join(', ')})`;
+    return redactReportWords(`Evidenza tecnica acquisita (${keys.slice(0, 5).join(', ')})`);
   }
-  return 'Evidenza tecnica disponibile.';
+  return 'Nessuna evidenza tecnica disponibile.';
 };
 
 const computeFallbackRisk = (report: SurfaceScan360Report): { score: number; level: string } => {

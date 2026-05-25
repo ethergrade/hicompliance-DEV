@@ -134,6 +134,7 @@
         "npm:lucide-react@0.462",
         "npm:next-themes@0.3",
         "npm:pizzip@^3.2.0",
+        "npm:playwright@^1.55.0",
         "npm:postcss@^8.4.47",
         "npm:react-day-picker@^8.10.1",
         "npm:react-dom@^18.3.1",

@@ -21,15 +21,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
 import { toast } from 'sonner';
 import {
   Globe,
   Shield,
   AlertTriangle,
   Eye,
-  Download,
   Plus,
   Trash2,
   Search,
@@ -174,10 +171,8 @@ interface ReverseAssetRow {
 }
 
 const SurfaceScan360: React.FC = () => {
-  const exportContainerRef = useRef<HTMLDivElement>(null);
   const dependencyMapRef = useRef<HTMLDivElement>(null);
   const exposureSectionRef = useRef<HTMLDivElement>(null);
-  const [exportingPdf, setExportingPdf] = useState(false);
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
   const [newMonitoredIpInput, setNewMonitoredIpInput] = useState('');
   const [ownershipProof, setOwnershipProof] = useState('');
@@ -557,57 +552,6 @@ const SurfaceScan360: React.FC = () => {
     setAssetPage(1);
   }, [assetSearch, ipScopeRules.length, scanDiscovery.discoveredIps.length]);
 
-  const handleExportPdf = async () => {
-    if (!exportContainerRef.current) return;
-
-    setExportingPdf(true);
-
-    try {
-      const target = exportContainerRef.current;
-      const canvas = await html2canvas(target, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#0b1120',
-        windowWidth: target.scrollWidth,
-        windowHeight: target.scrollHeight,
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const margin = 8;
-      const printableWidth = pageWidth - margin * 2;
-      const printableHeight = pageHeight - margin * 2;
-
-      const imgWidth = printableWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-      let heightLeft = imgHeight;
-      let position = margin;
-
-      pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight, '', 'FAST');
-      heightLeft -= printableHeight;
-
-      while (heightLeft > 0) {
-        position = margin - (imgHeight - heightLeft);
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight, '', 'FAST');
-        heightLeft -= printableHeight;
-      }
-
-      const fileName = `surfacescan360-report-${new Date().toISOString().slice(0, 10)}.pdf`;
-      pdf.save(fileName);
-      toast.success('Export PDF completato');
-    } catch (error) {
-      console.error('SurfaceScan360 PDF export error:', error);
-      toast.error("Errore durante l'export PDF");
-    } finally {
-      setExportingPdf(false);
-    }
-  };
-
   const parseScopeMixedEntries = (raw: string): string[] => {
     return Array.from(
       new Set(
@@ -680,7 +624,7 @@ const SurfaceScan360: React.FC = () => {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6" ref={exportContainerRef}>
+      <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-foreground">SurfaceScan360</h1>
@@ -691,10 +635,6 @@ const SurfaceScan360: React.FC = () => {
           <div className="flex items-center gap-2">
             <Button variant="secondary" onClick={scrollToExposureSection}>
               Ports &amp; Technologies
-            </Button>
-            <Button variant="outline" onClick={handleExportPdf} disabled={exportingPdf}>
-              <Download className="w-4 h-4 mr-2" />
-              {exportingPdf ? 'Esportazione...' : 'Esporta PDF'}
             </Button>
           </div>
         </div>
