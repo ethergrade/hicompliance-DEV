@@ -1,4 +1,4 @@
-// Genera report SurfaceScan360 con sintesi e top-5 raccomandazioni via OpenAI gpt-4o-mini.
+// Genera report SurfaceScan360 con sintesi e top-10 raccomandazioni via OpenAI gpt-4o-mini.
 // Body: { job_id?: string, scan_job_id?: string, organization_id?: string, trigger_source?: "manual"|"auto_on_complete", force_regenerate?: boolean }
 // Se job_id non fornito, usa l'ultimo job completato dell'organizzazione.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -44,6 +44,7 @@ const IPV4_LOOSE_REGEX = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
 const IPV6_LOOSE_REGEX = /\b(?:[a-f0-9]{1,4}:){2,}[a-f0-9:]{1,}\b/i;
 const PARENS_CONTENT_REGEX = /^\((.*)\)$/;
 const ORGANIZATION_SCOPE_REPORT_TITLE = 'SurfaceScan360 Report - Organization Scope';
+const TOP_RECOMMENDATIONS_LIMIT = 10;
 
 function isIpv4(value: string): boolean {
   const v = String(value || '').trim();
@@ -544,15 +545,34 @@ function buildConsultingRecommendations(input: {
   const monitoredScope = input.monitoredScope || [];
   const discoveredSubdomains = input.discoveredSubdomains || [];
   const byType = new Set(findings.map((f: any) => String(f.finding_type || '').toLowerCase()));
+  const criticalFindings = findings.filter((f: any) => String(f.severity || '').trim().toLowerCase() === 'critical');
   const affectedAssets = Array.from(
     new Set(
       findings
         .map((f: any) => String(f.affected_asset || f.affected_url || '').trim())
         .filter(Boolean),
     ),
-  ).slice(0, 6);
+  ).slice(0, TOP_RECOMMENDATIONS_LIMIT);
+  const criticalAssets = Array.from(
+    new Set(
+      criticalFindings
+        .map((f: any) => String(f.affected_asset || f.affected_url || '').trim())
+        .filter(Boolean),
+    ),
+  ).slice(0, TOP_RECOMMENDATIONS_LIMIT);
 
   const out: Array<{ priority: number; title: string; rationale: string; action: string; affected_assets: string[]; severity: string }> = [];
+
+  if (criticalFindings.length > 0) {
+    out.push({
+      priority: 1,
+      title: 'Gestire immediatamente i finding critici',
+      rationale: `Sono presenti ${criticalFindings.length} finding critici che richiedono una risposta operativa prioritaria e verificabile.`,
+      action: 'Avviare remediation immediata sui sistemi coinvolti, applicare misure compensative temporanee e validare la chiusura con riesecuzione della scansione.',
+      affected_assets: criticalAssets.length > 0 ? criticalAssets : affectedAssets,
+      severity: 'critical',
+    });
+  }
 
   out.push({
     priority: 1,
@@ -606,7 +626,7 @@ function buildConsultingRecommendations(input: {
     title: 'Governare scope e discovery continuativa',
     rationale: 'L’efficacia del monitoraggio dipende da uno scope aggiornato e dalla visibilità dei sottodomini.',
     action: `Mantenere allineato lo scope (${monitoredScope.length} regole attive), verificare i sottodomini scoperti (${discoveredSubdomains.length}) e programmare riesecuzioni periodiche.`,
-    affected_assets: assets.slice(0, 5).map((a: any) => String(a.asset_value || a.hostname || a.ip || '').trim()).filter(Boolean),
+    affected_assets: assets.slice(0, TOP_RECOMMENDATIONS_LIMIT).map((a: any) => String(a.asset_value || a.hostname || a.ip || '').trim()).filter(Boolean),
     severity: 'low',
   });
 
@@ -618,7 +638,7 @@ function buildConsultingRecommendations(input: {
     seen.add(key);
     unique.push(entry);
   }
-  return unique.slice(0, 5).map((entry, index) => ({ ...entry, priority: index + 1 }));
+  return unique.slice(0, TOP_RECOMMENDATIONS_LIMIT).map((entry, index) => ({ ...entry, priority: index + 1 }));
 }
 
 function buildOperationalPrioritiesByAsset(input: {
@@ -644,7 +664,7 @@ function buildOperationalPrioritiesByAsset(input: {
     return scoreB - scoreA;
   });
 
-  const selected = rows.filter((row) => row.findings_total > 0 || row.open_ports_count > 0 || row.cve_count > 0).slice(0, 5);
+  const selected = rows.filter((row) => row.findings_total > 0 || row.open_ports_count > 0 || row.cve_count > 0).slice(0, TOP_RECOMMENDATIONS_LIMIT);
   const out = selected.map((row, index) => {
     const hasCve = row.cve_count > 0;
     const hasOpenPorts = row.open_ports_count > 0;
@@ -682,7 +702,7 @@ function buildOperationalPrioritiesByAsset(input: {
     };
   });
 
-  while (out.length < 5) {
+  while (out.length < TOP_RECOMMENDATIONS_LIMIT) {
     const fallback = input.fallbackAssets[out.length] || input.fallbackAssets[0] || 'perimetro monitorato';
     out.push({
       priority: out.length + 1,
@@ -694,7 +714,7 @@ function buildOperationalPrioritiesByAsset(input: {
     });
   }
 
-  return out.slice(0, 5).map((item, idx) => ({ ...item, priority: idx + 1 }));
+  return out.slice(0, TOP_RECOMMENDATIONS_LIMIT).map((item, idx) => ({ ...item, priority: idx + 1 }));
 }
 
 function buildFallbackAiReport(input: {
@@ -741,7 +761,7 @@ function buildFallbackAiReport(input: {
   };
 }
 
-function sanitizeAiReport(report: any, fallback: any): any {
+function sanitizeAiReport(report: any, fallback: any, sevCount: Record<string, number> = {}): any {
   const safe = report && typeof report === 'object' ? { ...report } : {};
   const normalized = {
     executive_summary: redactTechnologyMentions(String(safe.executive_summary || fallback.executive_summary || '')),
@@ -753,8 +773,9 @@ function sanitizeAiReport(report: any, fallback: any): any {
   };
   normalized.risk_score = Math.max(0, Math.min(100, normalized.risk_score));
   normalized.risk_level = normalizeRiskLevelFromScore(normalized.risk_score);
+  const criticalCount = Number(sevCount.critical || 0);
   normalized.top_recommendations = (normalized.top_recommendations || [])
-    .slice(0, 5)
+    .slice(0, TOP_RECOMMENDATIONS_LIMIT)
     .map((item: any, idx: number) => ({
       priority: idx + 1,
       title: redactTechnologyMentions(String(item?.title || `Raccomandazione ${idx + 1}`)),
@@ -763,7 +784,20 @@ function sanitizeAiReport(report: any, fallback: any): any {
       affected_assets: Array.isArray(item?.affected_assets) ? item.affected_assets.slice(0, 10) : [],
       severity: String(item?.severity || 'medium').toLowerCase(),
     }));
-  while (normalized.top_recommendations.length < 5) {
+  if (
+    criticalCount > 0 &&
+    !normalized.top_recommendations.some((item: any) => String(item?.severity || '').toLowerCase() === 'critical')
+  ) {
+    normalized.top_recommendations.unshift({
+      priority: 1,
+      title: 'Gestire immediatamente i finding critici',
+      rationale: `Sono presenti ${criticalCount} finding critici che richiedono mitigazioni immediate e tracciate.`,
+      action: 'Aprire piano di remediation urgente, applicare workaround temporanei e rieseguire scansione di validazione entro la finestra concordata.',
+      affected_assets: [],
+      severity: 'critical',
+    });
+  }
+  while (normalized.top_recommendations.length < TOP_RECOMMENDATIONS_LIMIT) {
     normalized.top_recommendations.push(
       fallback.top_recommendations[normalized.top_recommendations.length] || {
         priority: normalized.top_recommendations.length + 1,
@@ -775,6 +809,9 @@ function sanitizeAiReport(report: any, fallback: any): any {
       },
     );
   }
+  normalized.top_recommendations = normalized.top_recommendations
+    .slice(0, TOP_RECOMMENDATIONS_LIMIT)
+    .map((item: any, idx: number) => ({ ...item, priority: idx + 1 }));
   normalized.correlations = (normalized.correlations || [])
     .slice(0, 5)
     .map((item: any) => redactTechnologyMentions(String(item || '')))
@@ -1659,7 +1696,7 @@ Produci un report STRUTTURATO in italiano, formato JSON con campi:
   "executive_summary": "string (max 6 frasi, no emoji, no liste, severità con [CRITICO]/[ALTO]/[MEDIO]/[BASSO])",
   "risk_score": number (0-100, 100=ottimo),
   "risk_level": "Critico"|"Alto"|"Medio"|"Basso",
-  "top_recommendations": [ { "priority": 1-5, "title": "string", "rationale": "string", "action": "string", "affected_assets": ["..."], "severity": "critical|high|medium|low|info" } ] (esattamente 5 elementi, ordinati per priorità),
+  "top_recommendations": [ { "priority": 1-10, "title": "string", "rationale": "string", "action": "string", "affected_assets": ["..."], "severity": "critical|high|medium|low|info" } ] (esattamente 10 elementi, ordinati per priorità),
   "correlations": [ "string (correlazioni tra findings/intel/asset, max 5 bullet)" ],
   "compliance_notes": "string (riferimenti NIS2/GDPR se rilevanti, max 4 frasi)"
 }
@@ -1727,7 +1764,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
     } catch (e) {
       aiError = (e as Error).message;
     }
-    aiReport = sanitizeAiReport(aiReport, fallbackAiReport);
+    aiReport = sanitizeAiReport(aiReport, fallbackAiReport, sevCount);
     aiError = null;
 
     // ---- Auto-genera azioni di remediation per CVE KEV (se non esistono già) ----
