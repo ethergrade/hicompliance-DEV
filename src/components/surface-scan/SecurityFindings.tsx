@@ -364,7 +364,7 @@ const SecurityFindings: React.FC = () => {
               Security Findings & Vulnerabilita
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Finding reali da Shodan, OSINT/WebCheck e Pentest-Tools con severity, CVE/CVSS/EPSS, CWE/OWASP e remediation
+              Finding reali da motori OSINT ed exposure con severity, CVE/CVSS/EPSS, CWE/OWASP e remediation
             </p>
           </div>
           <Button variant="outline" disabled>
