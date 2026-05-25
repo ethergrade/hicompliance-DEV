@@ -23,6 +23,10 @@ const INTERNAL_CRON_SECRET = String(
   || Deno.env.get('SURFACESCAN_INTERNAL_SECRET')
   || '',
 ).trim();
+const DARKRISK_INTERNAL_SECRET = String(
+  Deno.env.get('DARKRISK360_INTERNAL_SECRET')
+  || '',
+).trim();
 
 function extractBearerToken(req: Request): string {
   const auth = String(req.headers.get('authorization') || '');
@@ -47,12 +51,20 @@ serve(async (req: Request) => {
     const cronSecretHeader = String(
       req.headers.get('x-surface-internal-secret')
       || req.headers.get('x-cron-secret')
+      || req.headers.get('x-darkrisk-internal-secret')
+      || req.headers.get('x-darkrisk360-internal')
       || '',
     ).trim();
-    const isServiceRoleInvocation =
+    const isServiceRoleToken =
       Boolean(SERVICE_ROLE_KEY)
-      && bearerToken === SERVICE_ROLE_KEY
-      && (!INTERNAL_CRON_SECRET || cronSecretHeader === INTERNAL_CRON_SECRET);
+      && bearerToken === SERVICE_ROLE_KEY;
+    const isInternalSecretInvocation =
+      Boolean(cronSecretHeader)
+      && (
+        (Boolean(INTERNAL_CRON_SECRET) && cronSecretHeader === INTERNAL_CRON_SECRET)
+        || (Boolean(DARKRISK_INTERNAL_SECRET) && cronSecretHeader === DARKRISK_INTERNAL_SECRET)
+      );
+    const isServiceRoleInvocation = isServiceRoleToken || isInternalSecretInvocation;
 
     const raw = (await req.json()) as Partial<SurfacePortTechScanRequest>;
     const input = resolveRequestDefaults(raw || {});

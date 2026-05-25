@@ -95,6 +95,37 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
     }
   }, [toast]);
 
+  const triggerDarkRiskScopeSync = useCallback(async (args: {
+    organizationId: string;
+    triggerType: string;
+    silent?: boolean;
+  }) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('darkrisk360-sync-surfacescan', {
+        body: {
+          customer_id: args.organizationId,
+          trigger_type: args.triggerType,
+          auto_scope_scan: true,
+          force_scope_refresh: false,
+        },
+      });
+
+      if (error || data?.error) {
+        console.warn('DarkRisk auto scope sync failed:', error || data);
+        return;
+      }
+
+      if (!args.silent) {
+        toast({
+          title: 'DarkRisk360 sincronizzato',
+          description: 'Scope propagato e controlli DarkRisk avviati',
+        });
+      }
+    } catch (syncError) {
+      console.warn('DarkRisk auto scope sync error:', syncError);
+    }
+  }, [toast]);
+
   const fetchRules = useCallback(async () => {
     if (isClientLoading || !organizationId) return;
 
@@ -202,7 +233,18 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
         });
       }
 
-      const shouldAutoQueue = opts.auto_queue_scan !== false;
+      const { data: orgFlagsData, error: orgFlagsError } = await supabase
+        .from('organizations' as any)
+        .select('surface_scan360_enabled, dark_risk360_enabled')
+        .eq('id', organizationId)
+        .maybeSingle();
+      if (orgFlagsError) {
+        console.warn('Unable to read organization flags for scope auto-flow:', orgFlagsError);
+      }
+      const surfaceEnabled = orgFlagsData?.surface_scan360_enabled !== false;
+      const darkRiskEnabled = Boolean(orgFlagsData?.dark_risk360_enabled);
+
+      const shouldAutoQueue = opts.auto_queue_scan !== false && surfaceEnabled;
       if (shouldAutoQueue) {
         if (parsed.entryType === 'domain') {
           void queueScopeRuleScan({
@@ -221,6 +263,18 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
             discoveredVia: opts.discovered_via || 'manual',
           });
         }
+      }
+
+      const shouldSyncDarkRisk =
+        darkRiskEnabled
+        && opts.auto_queue_scan !== false
+        && String(opts.discovered_via || 'manual') !== 'subdomain_dump';
+      if (shouldSyncDarkRisk) {
+        void triggerDarkRiskScopeSync({
+          organizationId,
+          triggerType: 'scope_rule_added_auto',
+          silent: opts.silent,
+        });
       }
 
       await fetchRules();

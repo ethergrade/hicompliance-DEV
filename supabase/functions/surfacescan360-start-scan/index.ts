@@ -19,6 +19,7 @@ interface StartScanRequest {
   authorization_confirmed?: boolean;
   ownership_proof?: string;
   force_refresh?: boolean;
+  requested_by?: string | null;
 }
 
 const MAX_SCANS_PER_USER_PER_HOUR = 200;
@@ -29,11 +30,23 @@ const PROFILE_RATE_LIMITS: Record<string, { tier: "quick" | "full" | "deep"; max
   cve_api_validation: { tier: "deep", maxPerHour: 3 },
 };
 const TARGET_COOLDOWN_MINUTES = 15;
+const SERVICE_ROLE_KEY = String(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+const INTERNAL_CRON_SECRET = String(
+  Deno.env.get("SURFACESCAN_CRON_INTERNAL_SECRET")
+  || Deno.env.get("SURFACESCAN_INTERNAL_SECRET")
+  || "",
+).trim();
 const DEFAULT_SCAN_PROFILE = (() => {
   const configured = String(Deno.env.get("SURFACESCAN_DEFAULT_SCAN_PROFILE") || "").trim().toLowerCase();
   if (isAllowedProfile(configured)) return configured;
   return "domain_exposure";
 })();
+
+function extractBearerToken(req: Request): string {
+  const auth = String(req.headers.get("authorization") || "");
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  return String(match?.[1] || "").trim();
+}
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -42,12 +55,33 @@ serve(async (req: Request) => {
 
   try {
     const { userClient, adminClient } = makeSupabaseClients(req);
-    const { data: authData, error: authError } = await userClient.auth.getUser();
-    if (authError || !authData.user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      });
+    const bearerToken = extractBearerToken(req);
+    const cronSecretHeader = String(
+      req.headers.get("x-surface-internal-secret")
+      || req.headers.get("x-cron-secret")
+      || "",
+    ).trim();
+    const isServiceRoleToken =
+      Boolean(SERVICE_ROLE_KEY)
+      && bearerToken === SERVICE_ROLE_KEY;
+    const isInternalSecretInvocation =
+      Boolean(INTERNAL_CRON_SECRET)
+      && cronSecretHeader === INTERNAL_CRON_SECRET;
+    const isServiceRoleInvocation = isServiceRoleToken || isInternalSecretInvocation;
+
+    let actorUserId: string | null = null;
+    let caller: Awaited<ReturnType<typeof getCallerProfile>> | null = null;
+
+    if (!isServiceRoleInvocation) {
+      const { data: authData, error: authError } = await userClient.auth.getUser();
+      if (authError || !authData.user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        });
+      }
+      actorUserId = authData.user.id;
+      caller = await getCallerProfile(adminClient, authData.user.id);
     }
 
     const body = (await req.json()) as StartScanRequest;
@@ -79,18 +113,19 @@ serve(async (req: Request) => {
       );
     }
 
-    const caller = await getCallerProfile(adminClient, authData.user.id);
-    assertCustomerAccess(caller, customerId);
+    if (!isServiceRoleInvocation && caller) {
+      assertCustomerAccess(caller, customerId);
+    }
 
     // Admin-only scan start in v1
-    if (!caller.isAdminLike) {
+    if (!isServiceRoleInvocation && !caller?.isAdminLike) {
       return new Response(
         JSON.stringify({ error: "Only admin users can start scans in v1" }),
         { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } },
       );
     }
 
-    if (scanProfile === "cve_api_validation" && !caller.isAdminLike) {
+    if (!isServiceRoleInvocation && scanProfile === "cve_api_validation" && !caller?.isAdminLike) {
       return new Response(
         JSON.stringify({ error: "cve_api_validation is admin-only" }),
         { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } },
@@ -110,7 +145,7 @@ serve(async (req: Request) => {
     if (!scopeDecision.allowed) {
       await adminClient.from("surface_scan_audit_log" as any).insert({
         scan_job_id: null,
-        user_id: authData.user.id,
+        user_id: actorUserId,
         action: "scan_rejected_scope_guard",
         details: {
           code: scopeDecision.code,
@@ -142,17 +177,19 @@ serve(async (req: Request) => {
 
     // Batch-friendly rate limit for queue mode.
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const rateRes = await adminClient
-      .from("surface_scan_jobs" as any)
-      .select("id", { count: "exact", head: true })
-      .eq("requested_by", authData.user.id)
-      .gte("created_at", oneHourAgo);
+    if (actorUserId) {
+      const rateRes = await adminClient
+        .from("surface_scan_jobs" as any)
+        .select("id", { count: "exact", head: true })
+        .eq("requested_by", actorUserId)
+        .gte("created_at", oneHourAgo);
 
-    if ((rateRes.count || 0) >= MAX_SCANS_PER_USER_PER_HOUR) {
-      return new Response(
-        JSON.stringify({ error: "Rate limit reached. Retry later." }),
-        { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } },
-      );
+      if ((rateRes.count || 0) >= MAX_SCANS_PER_USER_PER_HOUR) {
+        return new Response(
+          JSON.stringify({ error: "Rate limit reached. Retry later." }),
+          { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } },
+        );
+      }
     }
 
     const profileRateLimit = PROFILE_RATE_LIMITS[scanProfile] || PROFILE_RATE_LIMITS.safe_recon;
@@ -193,7 +230,7 @@ serve(async (req: Request) => {
       if (duplicateRes.data?.id) {
         await adminClient.from("surface_scan_audit_log" as any).insert({
           scan_job_id: duplicateRes.data.id,
-          user_id: authData.user.id,
+          user_id: actorUserId,
           action: "scan_rejected_cooldown",
           details: {
             normalized_target: normalized.normalized_target,
@@ -238,10 +275,10 @@ serve(async (req: Request) => {
           .in("id", staleIds);
 
         await adminClient.from("surface_scan_audit_log" as any).insert(
-          staleIds.map((id: string) => ({
-            scan_job_id: id,
-            user_id: authData.user.id,
-            action: "scan_auto_failed_timeout",
+            staleIds.map((id: string) => ({
+              scan_job_id: id,
+              user_id: actorUserId,
+              action: "scan_auto_failed_timeout",
             details: { reason: "running_timeout_45m" },
           })),
         );
@@ -279,7 +316,7 @@ serve(async (req: Request) => {
         organization_id: customerId,
         tenant_id: customerId,
         customer_id: customerId,
-        requested_by: authData.user.id,
+        requested_by: actorUserId || body.requested_by || null,
         raw_target: normalized.raw_target,
         normalized_target: normalized.normalized_target,
         target_type: normalized.target_type,
@@ -299,7 +336,7 @@ serve(async (req: Request) => {
 
     await adminClient.from("surface_scan_audit_log" as any).insert({
       scan_job_id: jobData.id,
-      user_id: authData.user.id,
+      user_id: actorUserId,
       action: "scan_created",
       details: {
         target: normalized.normalized_target,
@@ -309,7 +346,7 @@ serve(async (req: Request) => {
     });
 
     await dispatchSurfaceScanQueue(adminClient, customerId, {
-      initiatedByUserId: authData.user.id,
+      initiatedByUserId: actorUserId,
       maxToStart: 3,
     });
 

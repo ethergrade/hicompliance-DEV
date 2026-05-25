@@ -1,9 +1,12 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import {
   assertCustomerAccess,
+  classifyTargetScope,
   corsHeaders,
   getCallerProfile,
   makeSupabaseClients,
+  normalizeTargetInput,
+  splitMonitoredScopeRules,
 } from '../_shared/surface-scan-utils.ts';
 import {
   mapSurfaceSeverity,
@@ -27,6 +30,14 @@ import {
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+const INTERNAL_FUNCTIONS_API_KEY = String(
+  Deno.env.get('SUPABASE_ANON_KEY')
+  || Deno.env.get('SUPABASE_PUBLISHABLE_KEY')
+  || Deno.env.get('SUPABASE_PUBLISHABLE_KEYS')
+  || SERVICE_ROLE
+  || '',
+).trim();
+const DARKRISK_INTERNAL_SECRET = String(Deno.env.get('DARKRISK360_INTERNAL_SECRET') || '').trim();
 const INTELX_API_KEY = Deno.env.get('INTELX_API_KEY') || '';
 const INTELX_API_URL = String(
   Deno.env.get('INTELX_API_URL') ||
@@ -53,6 +64,29 @@ const INTELX_MAX_QUERY_TERMS_PER_RUN = Math.max(
   5,
   Math.min(120, Number(Deno.env.get('INTELX_MAX_QUERY_TERMS_PER_RUN') || 40)),
 );
+const SURFACESCAN_INTERNAL_SECRET = String(
+  Deno.env.get('SURFACESCAN_CRON_INTERNAL_SECRET')
+  || Deno.env.get('SURFACESCAN_INTERNAL_SECRET')
+  || '',
+).trim();
+const SURFACESCAN_SCOPE_AUTOSTART_TIMEOUT_MS = Math.max(
+  10_000,
+  Math.min(90_000, Number(Deno.env.get('SURFACESCAN_SCOPE_AUTOSTART_TIMEOUT_MS') || 35_000)),
+);
+const DARKRISK_RUNNING_GUARD_MINUTES = Math.max(
+  1,
+  Math.min(30, Number(Deno.env.get('DARKRISK_RUNNING_GUARD_MINUTES') || 4)),
+);
+const DARKRISK_STALE_RUN_MINUTES = Math.max(
+  5,
+  Math.min(180, Number(Deno.env.get('DARKRISK_STALE_RUN_MINUTES') || 20)),
+);
+
+function extractBearerToken(req: Request): string {
+  const auth = String(req.headers.get('authorization') || '');
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  return String(match?.[1] || '').trim();
+}
 
 type SurfaceAssetRow = {
   id: string;
@@ -465,6 +499,34 @@ function resolveAssetType(value: string): string {
   return 'host';
 }
 
+const allowedDarkRiskAssetTypes = new Set([
+  'domain',
+  'subdomain',
+  'url',
+  'ip',
+  'cidr',
+  'email',
+  'mx',
+  'ns',
+  'host',
+  'service',
+  'certificate',
+  'unknown',
+]);
+
+function normalizeDarkRiskAssetType(rawType: string | null | undefined, normalizedValue: string): string {
+  const candidate = normalizeText(rawType).toLowerCase().replace(/\s+/g, '_');
+  if (candidate && allowedDarkRiskAssetTypes.has(candidate)) return candidate;
+
+  if (candidate === 'mx_host' || candidate === 'mx_record') return 'mx';
+  if (candidate === 'ns_host' || candidate === 'ns_record') return 'ns';
+  if (candidate === 'tls' || candidate === 'ssl' || candidate === 'x509' || candidate === 'cert') return 'certificate';
+  if (candidate.includes('port') || candidate.includes('service') || candidate.includes('tech')) return 'service';
+  if (candidate === 'ipv4' || candidate === 'ipv6' || candidate === 'a_record' || candidate === 'aaaa_record') return 'ip';
+
+  return resolveAssetType(normalizedValue);
+}
+
 function normalizeSurfaceFinding(row: SurfaceFindingRow): CanonicalFinding {
   const affected = normalizeText(row.affected_asset) || normalizeText(row.affected_url);
   return {
@@ -518,19 +580,49 @@ serve(async (req: Request) => {
 
   try {
     const { userClient, adminClient } = makeSupabaseClients(req);
-    const { data: authData, error: authError } = await userClient.auth.getUser();
-    if (authError || !authData.user) return jsonResponse({ error: 'Unauthorized' }, 401);
-
     const body = await req.json().catch(() => ({}));
+    const bearerToken = extractBearerToken(req);
+    const relayAuthorization = String(
+      req.headers.get('authorization')
+      || (INTERNAL_FUNCTIONS_API_KEY ? `Bearer ${INTERNAL_FUNCTIONS_API_KEY}` : ''),
+    ).trim();
+    const relayApiKey = String(
+      req.headers.get('apikey')
+      || INTERNAL_FUNCTIONS_API_KEY
+      || '',
+    ).trim();
+    const internalHeaderSecret = String(
+      req.headers.get('x-darkrisk-internal-secret')
+      || req.headers.get('x-darkrisk360-internal')
+      || '',
+    ).trim();
+    const isServiceRoleInvocation = Boolean(SERVICE_ROLE && bearerToken && bearerToken === SERVICE_ROLE);
+    const isInternalSecretInvocation = Boolean(
+      DARKRISK_INTERNAL_SECRET
+      && internalHeaderSecret
+      && internalHeaderSecret === DARKRISK_INTERNAL_SECRET,
+    );
+
+    let actorUserId = normalizeText((body as any)?.requested_by) || null;
+    let caller: Awaited<ReturnType<typeof getCallerProfile>> | null = null;
+
+    if (!isServiceRoleInvocation && !isInternalSecretInvocation) {
+      const { data: authData, error: authError } = await userClient.auth.getUser();
+      if (authError || !authData.user) return jsonResponse({ error: 'Unauthorized' }, 401);
+      actorUserId = authData.user.id;
+      caller = await getCallerProfile(adminClient, authData.user.id);
+    }
+
     const requestedCustomerId = normalizeText(body?.customer_id);
     const requestedScanJobId = normalizeText(body?.scan_job_id);
     const triggerType = normalizeText(body?.trigger_type) || 'manual';
     const manualIdentityEmails = parseIdentityEmailSelectors(body?.identity_emails);
 
-    const caller = await getCallerProfile(adminClient, authData.user.id);
-    const customerId = requestedCustomerId || caller.organizationId || '';
+    const customerId = requestedCustomerId || caller?.organizationId || '';
     if (!customerId) return jsonResponse({ error: 'customer_id is required' }, 400);
-    assertCustomerAccess(caller, customerId);
+    if (caller) {
+      assertCustomerAccess(caller, customerId);
+    }
 
     const entitlementRes = await adminClient
       .from('darkrisk_entitlements' as any)
@@ -556,29 +648,235 @@ serve(async (req: Request) => {
       return jsonResponse({ error: 'DarkRisk360 not enabled for customer' }, 403);
     }
 
-    const scanJobQuery = adminClient
-      .from('surface_scan_jobs' as any)
-      .select('id, customer_id, organization_id, status, created_at, completed_at, scan_profile')
-      .or(`customer_id.eq.${customerId},organization_id.eq.${customerId}`)
-      .order('created_at', { ascending: false })
-      .limit(1);
+    const autoScopeScan = body?.auto_scope_scan !== false;
+    const forceScopeRefresh = body?.force_scope_refresh === undefined
+      ? triggerType === 'manual'
+      : Boolean(body?.force_scope_refresh);
+    const allowParallelRuns = Boolean(body?.allow_parallel_runs);
 
-    const scanJobRes = requestedScanJobId
+    const nowIso = new Date().toISOString();
+    const staleThresholdIso = new Date(Date.now() - DARKRISK_STALE_RUN_MINUTES * 60_000).toISOString();
+    const guardThresholdIso = new Date(Date.now() - DARKRISK_RUNNING_GUARD_MINUTES * 60_000).toISOString();
+
+    // Recover stuck runs to keep UI/status coherent.
+    await adminClient
+      .from('darkrisk_scan_runs' as any)
+      .update({
+        status: 'failed',
+        completed_at: nowIso,
+        warnings: ['Run chiuso automaticamente: timeout/stale run guard.'],
+      })
+      .eq('organization_id', customerId)
+      .eq('status', 'running')
+      .lt('started_at', staleThresholdIso);
+
+    if (!allowParallelRuns) {
+      const runningGuardRes = await adminClient
+        .from('darkrisk_scan_runs' as any)
+        .select('id, started_at')
+        .eq('organization_id', customerId)
+        .eq('status', 'running')
+        .gte('started_at', guardThresholdIso)
+        .order('started_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (runningGuardRes.error) throw runningGuardRes.error;
+      if (runningGuardRes.data?.id) {
+        return jsonResponse({
+          ok: true,
+          reused_running_scan_run_id: String(runningGuardRes.data.id),
+          customer_id: customerId,
+          status: 'running',
+          message: 'Scan DarkRisk360 già in esecuzione: riutilizzato run recente.',
+        });
+      }
+    }
+
+    const [orgFlagsRes, scopeRulesRes] = await Promise.all([
+      adminClient
+        .from('organizations' as any)
+        .select('surface_scan360_enabled, dark_risk360_enabled')
+        .eq('id', customerId)
+        .maybeSingle(),
+      adminClient
+        .from('surface_scan_monitored_ips' as any)
+        .select('entry_type, input_value, ip_start, ip_end')
+        .eq('organization_id', customerId),
+    ]);
+    if (orgFlagsRes.error) throw orgFlagsRes.error;
+    if (scopeRulesRes.error) throw scopeRulesRes.error;
+
+    const orgFlags = (orgFlagsRes.data || {}) as {
+      surface_scan360_enabled?: boolean;
+      dark_risk360_enabled?: boolean;
+    };
+    const scopeRules = (scopeRulesRes.data || []) as ScopeRuleRow[];
+    const { scopeDomains, ipScopeRules } = splitMonitoredScopeRules((scopeRules || []) as any[]);
+    const scopeIps = Array.from(
+      new Set(
+        scopeRules
+          .filter((row) => String(row.entry_type || '').toLowerCase() === 'single')
+          .map((row) => normalizeText(String(row.input_value || '')))
+          .filter((value) => Boolean(value)),
+      ),
+    );
+
+    let autoClassicQueued = 0;
+    let autoClassicFailed = 0;
+    let autoExposureStarted = false;
+    let autoExposureError: string | null = null;
+
+    const shouldAutoQueueScope =
+      autoScopeScan
+      && Boolean(orgFlags.surface_scan360_enabled)
+      && Boolean(SUPABASE_URL && SERVICE_ROLE)
+      && (scopeDomains.length > 0 || scopeIps.length > 0);
+
+    if (shouldAutoQueueScope) {
+      const scopeTargets = [
+        ...scopeDomains.map((domain) => ({ target: domain, profile: 'domain_exposure' })),
+        ...scopeIps.map((ip) => ({ target: ip, profile: 'ip_exposure' })),
+      ].slice(0, 120);
+
+      for (const item of scopeTargets) {
+        const ctrl = new AbortController();
+        const timeout = setTimeout(() => ctrl.abort(), SURFACESCAN_SCOPE_AUTOSTART_TIMEOUT_MS);
+        try {
+          const startRes = await fetch(`${SUPABASE_URL}/functions/v1/surfacescan360-start-scan`, {
+            method: 'POST',
+            headers: {
+              Authorization: relayAuthorization,
+              apikey: relayApiKey,
+              'Content-Type': 'application/json',
+              ...(SURFACESCAN_INTERNAL_SECRET ? { 'x-surface-internal-secret': SURFACESCAN_INTERNAL_SECRET } : {}),
+            },
+            body: JSON.stringify({
+              target: item.target,
+              customer_id: customerId,
+              scan_profile: item.profile,
+              authorization_confirmed: true,
+              ownership_proof: `darkrisk360:auto_scope:${triggerType}`,
+              force_refresh: forceScopeRefresh,
+              requested_by: actorUserId,
+            }),
+            signal: ctrl.signal,
+          });
+          const startPayload = await startRes.json().catch(() => ({}));
+          if (!startRes.ok || startPayload?.error) {
+            autoClassicFailed += 1;
+          } else {
+            autoClassicQueued += 1;
+          }
+        } catch {
+          autoClassicFailed += 1;
+        } finally {
+          clearTimeout(timeout);
+        }
+      }
+
+      const exposureCtrl = new AbortController();
+      const exposureTimeout = setTimeout(() => exposureCtrl.abort(), SURFACESCAN_SCOPE_AUTOSTART_TIMEOUT_MS);
+      try {
+        const exposureRes = await fetch(`${SUPABASE_URL}/functions/v1/ptools-start-exposure-scan`, {
+          method: 'POST',
+          headers: {
+            Authorization: relayAuthorization,
+            apikey: relayApiKey,
+            'Content-Type': 'application/json',
+            ...(SURFACESCAN_INTERNAL_SECRET ? { 'x-surface-internal-secret': SURFACESCAN_INTERNAL_SECRET } : {}),
+            ...(DARKRISK_INTERNAL_SECRET ? { 'x-darkrisk-internal-secret': DARKRISK_INTERNAL_SECRET } : {}),
+          },
+          body: JSON.stringify({
+            tenant_id: customerId,
+            customer_id: customerId,
+            scan_name: `DarkRisk360 Scope Auto · ${new Date().toISOString().slice(0, 16)}`,
+            root_domains: scopeDomains,
+            subdomains: [],
+            public_ips: scopeIps,
+            include_subdomain_discovery: true,
+            include_port_scan: true,
+            include_web_technology_detection: true,
+            include_ssl_scan: true,
+            include_network_vuln_scan: true,
+            scan_depth: 'custom',
+            protocol: 'tcp',
+            custom_ports: 'top1000',
+            check_alive: true,
+            detect_service_version: true,
+            detect_os: true,
+            traceroute: true,
+          }),
+          signal: exposureCtrl.signal,
+        });
+        const exposurePayload = await exposureRes.json().catch(() => ({}));
+        if (!exposureRes.ok || exposurePayload?.error) {
+          autoExposureError = normalizeText(
+            exposurePayload?.error || `HTTP_${exposureRes.status}_ptools_start_exposure`,
+          ) || 'ptools_start_exposure_failed';
+        } else {
+          autoExposureStarted = true;
+        }
+      } catch (exposureErr: any) {
+        autoExposureError = normalizeText(exposureErr?.message) || 'ptools_start_exposure_failed';
+      } finally {
+        clearTimeout(exposureTimeout);
+      }
+    }
+
+    const completedScopeJobsRes = await adminClient
+      .from('surface_scan_jobs' as any)
+      .select('id, organization_id, status, created_at, completed_at, scan_profile, scan_type, raw_target, normalized_target, hostname, target_type')
+      .eq('organization_id', customerId)
+      .eq('status', 'completed')
+      .order('created_at', { ascending: false })
+      .limit(800);
+    if (completedScopeJobsRes.error) throw completedScopeJobsRes.error;
+
+    const latestByScopeTarget = new Map<string, any>();
+    for (const row of (completedScopeJobsRes.data || []) as Array<Record<string, any>>) {
+      const candidateTarget = normalizeText(String(row.normalized_target || row.raw_target || row.hostname || ''));
+      if (!candidateTarget) continue;
+      try {
+        const normalizedTarget = normalizeTargetInput(candidateTarget);
+        const scopeDecision = classifyTargetScope(normalizedTarget, scopeDomains, ipScopeRules as any);
+        if (!scopeDecision.allowed) continue;
+        const targetKey = `${normalizedTarget.target_type}|${normalizedTarget.normalized_target}`;
+        if (!latestByScopeTarget.has(targetKey)) {
+          latestByScopeTarget.set(targetKey, row);
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    const scopeJobs = Array.from(latestByScopeTarget.values()).sort(
+      (a, b) => Date.parse(String(b.created_at || 0)) - Date.parse(String(a.created_at || 0)),
+    );
+    const scopeJobIds = scopeJobs.map((row) => String(row.id)).filter(Boolean);
+
+    const fallbackScanJobRes = requestedScanJobId
       ? await adminClient
           .from('surface_scan_jobs' as any)
-          .select('id, customer_id, organization_id, status, created_at, completed_at, scan_profile')
+          .select('id, organization_id, status, created_at, completed_at, scan_profile, scan_type, raw_target, normalized_target, hostname, target_type')
           .eq('id', requestedScanJobId)
           .maybeSingle()
-      : await scanJobQuery.maybeSingle();
+      : await adminClient
+          .from('surface_scan_jobs' as any)
+          .select('id, organization_id, status, created_at, completed_at, scan_profile, scan_type, raw_target, normalized_target, hostname, target_type')
+          .eq('organization_id', customerId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+    if (fallbackScanJobRes.error) throw fallbackScanJobRes.error;
 
-    if (scanJobRes.error) throw scanJobRes.error;
-    const scanJob = scanJobRes.data as any;
-    if (!scanJob) return jsonResponse({ error: 'No SurfaceScan360 job found for customer' }, 404);
-
-    const scanOwner = normalizeText(scanJob.customer_id || scanJob.organization_id);
-    if (scanOwner !== customerId) {
-      return jsonResponse({ error: 'scan_job_id not in selected customer scope' }, 403);
-    }
+    const scanJob = (scopeJobs[0] || fallbackScanJobRes.data || null) as any;
+    const sourceScanJobId = scanJob?.id ? String(scanJob.id) : null;
+    const dataJobIds = scopeJobIds.length > 0
+      ? scopeJobIds
+      : sourceScanJobId
+        ? [sourceScanJobId]
+        : [];
 
     const { data: scanRunData, error: scanRunErr } = await adminClient
       .from('darkrisk_scan_runs' as any)
@@ -588,8 +886,8 @@ serve(async (req: Request) => {
         tier: String(entitlement.tier || 'standard').toLowerCase() === 'extended' ? 'extended' : 'standard',
         status: 'running',
         trigger_type: triggerType,
-        requested_by: authData.user.id,
-        surface_scan_job_id: scanJob.id,
+        requested_by: actorUserId,
+        surface_scan_job_id: sourceScanJobId,
         started_at: new Date().toISOString(),
         sources: ['surfacescan360'],
         stats: {},
@@ -605,65 +903,61 @@ serve(async (req: Request) => {
       .insert({
         organization_id: customerId,
         tenant_id: customerId,
-        actor_id: authData.user.id,
+        actor_id: actorUserId,
         action: 'darkrisk_scan_started',
         entity_type: 'darkrisk_scan_run',
         entity_id: scanRunId,
         reason: triggerType,
         metadata: {
           source: 'surfacescan360',
-          surface_scan_job_id: scanJob.id,
+          surface_scan_job_id: sourceScanJobId,
+          scope_jobs_used: dataJobIds.length,
+          auto_scope_queue: {
+            enabled: shouldAutoQueueScope,
+            queued_classic: autoClassicQueued,
+            failed_classic: autoClassicFailed,
+            exposure_started: autoExposureStarted,
+            exposure_error: autoExposureError,
+            surface_internal_secret_configured: Boolean(SURFACESCAN_INTERNAL_SECRET),
+            darkrisk_internal_secret_configured: Boolean(DARKRISK_INTERNAL_SECRET),
+            internal_functions_key_kind: INTERNAL_FUNCTIONS_API_KEY.startsWith('eyJ') ? 'jwt' : 'opaque',
+          },
           started_at: startedAt,
         },
       });
 
-    const [assetsRes, findingsRes, exposureFindingsRes, scopeRulesRes] = await Promise.all([
-      adminClient
-        .from('surface_assets' as any)
-        .select('id, asset_type, asset_value, source, raw')
-        .eq('scan_job_id', scanJob.id),
-      adminClient
-        .from('surface_findings' as any)
-        .select('id, finding_type, title, description, severity, module, affected_asset, affected_url, status, evidence, created_at')
-        .eq('scan_job_id', scanJob.id),
-      adminClient
-        .from('surface_exposure_findings' as any)
-        .select('id, finding_type, title, description, severity, source, affected_host, affected_url, status, evidence, raw, created_at')
-        .eq('scan_job_id', scanJob.id),
-      adminClient
-        .from('surface_scan_monitored_ips' as any)
-        .select('entry_type, input_value, ip_start, ip_end')
-        .eq('organization_id', customerId),
-    ]);
+    const [assetsRes, findingsRes, exposureFindingsRes] = dataJobIds.length > 0
+      ? await Promise.all([
+          adminClient
+            .from('surface_assets' as any)
+            .select('id, asset_type, asset_value, source, raw')
+            .in('scan_job_id', dataJobIds),
+          adminClient
+            .from('surface_findings' as any)
+            .select('id, finding_type, title, description, severity, module, affected_asset, affected_url, status, evidence, created_at')
+            .in('scan_job_id', dataJobIds),
+          adminClient
+            .from('surface_exposure_findings' as any)
+            .select('id, finding_type, title, description, severity, source, affected_host, affected_url, status, evidence, raw, created_at')
+            .in('scan_job_id', dataJobIds),
+        ])
+      : [
+          { data: [], error: null } as any,
+          { data: [], error: null } as any,
+          { data: [], error: null } as any,
+        ];
 
     if (assetsRes.error) throw assetsRes.error;
     if (findingsRes.error) throw findingsRes.error;
     if (exposureFindingsRes.error) throw exposureFindingsRes.error;
-    if (scopeRulesRes.error) throw scopeRulesRes.error;
 
     const assets = (assetsRes.data || []) as SurfaceAssetRow[];
     const surfaceFindings = (findingsRes.data || []) as SurfaceFindingRow[];
     const exposureFindings = (exposureFindingsRes.data || []) as ExposureFindingRow[];
-    const scopeRules = (scopeRulesRes.data || []) as ScopeRuleRow[];
-    const scopeDomains = Array.from(
-      new Set(
-        scopeRules
-          .filter((row) => String(row.entry_type || '').toLowerCase() === 'domain')
-          .map((row) => normalizeScopeDomain(String(row.input_value || '')))
-          .filter(isDomainLike),
-      ),
-    );
-    const scopeIps = Array.from(
-      new Set(
-        scopeRules
-          .filter((row) => String(row.entry_type || '').toLowerCase() === 'single')
-          .map((row) => normalizeText(String(row.input_value || '')))
-          .filter((value) => Boolean(value)),
-      ),
-    );
+    const normalizedScopeDomains = Array.from(new Set(scopeDomains.map((entry) => normalizeScopeDomain(entry)).filter(isDomainLike)));
 
     const scopeAssetRows: Array<Record<string, unknown>> = [
-      ...scopeDomains.map((domain) => ({
+      ...normalizedScopeDomains.map((domain) => ({
         organization_id: customerId,
         tenant_id: customerId,
         asset_type: 'domain',
@@ -676,7 +970,7 @@ serve(async (req: Request) => {
         metadata: {
           discovered_by: 'darkrisk360-sync-surfacescan',
           source_scope_rule: 'domain',
-          source_scan_job_id: scanJob.id,
+          source_scan_job_id: sourceScanJobId,
         },
       })),
       ...scopeIps.map((ip) => ({
@@ -692,19 +986,19 @@ serve(async (req: Request) => {
         metadata: {
           discovered_by: 'darkrisk360-sync-surfacescan',
           source_scope_rule: 'single',
-          source_scan_job_id: scanJob.id,
+          source_scan_job_id: sourceScanJobId,
         },
       })),
     ];
 
-    const assetRows = [
+    const assetRowsRaw = [
       ...scopeAssetRows,
       ...assets
       .map((asset) => {
         const value = normalizeText(asset.asset_value);
         if (!value) return null;
         const normalizedValue = normalizeAssetValue(value);
-        const assetType = normalizeText(asset.asset_type) || resolveAssetType(normalizedValue);
+        const assetType = normalizeDarkRiskAssetType(asset.asset_type, normalizedValue);
 
         return {
           organization_id: customerId,
@@ -725,6 +1019,17 @@ serve(async (req: Request) => {
       })
       .filter(Boolean) as Array<Record<string, unknown>>,
     ];
+
+    const dedupedAssetRowsMap = new Map<string, Record<string, unknown>>();
+    for (const row of assetRowsRaw) {
+      const org = String(row.organization_id || customerId);
+      const type = String(row.asset_type || 'unknown');
+      const normalized = String(row.normalized_value || '');
+      if (!normalized) continue;
+      const dedupKey = `${org}|${type}|${normalized}`;
+      dedupedAssetRowsMap.set(dedupKey, row);
+    }
+    const assetRows = Array.from(dedupedAssetRowsMap.values());
 
     if (assetRows.length > 0) {
       const { error: assetsUpsertErr } = await adminClient
@@ -769,7 +1074,7 @@ serve(async (req: Request) => {
         metadata: {
           discovered_by: 'darkrisk360-sync-surfacescan',
           input_mode: 'identity_email_manual',
-          source_scan_job_id: scanJob.id,
+          source_scan_job_id: sourceScanJobId,
         },
       }));
       const { error: manualSelectorErr } = await adminClient
@@ -843,7 +1148,7 @@ serve(async (req: Request) => {
           status: 'approved',
           metadata: {
             discovered_by: 'darkrisk360-sync-surfacescan',
-            source_scan_job_id: scanJob.id,
+            source_scan_job_id: sourceScanJobId,
             selector_source: selector.source,
           },
         };
@@ -929,7 +1234,7 @@ serve(async (req: Request) => {
         }
       }
 
-      const sourceRecordKey = `${scanJob.id}:${finding.origin}:${finding.source_id}`;
+      const sourceRecordKey = `${sourceScanJobId || 'scope_only'}:${finding.origin}:${finding.source_id}`;
       const { data: sourceRecord, error: sourceRecordErr } = await adminClient
         .from('darkrisk_source_records' as any)
         .insert({
@@ -1040,8 +1345,8 @@ serve(async (req: Request) => {
           evidence_ids: [evidence.id],
           first_seen_at: finding.created_at || new Date().toISOString(),
           last_seen_at: new Date().toISOString(),
-          metadata: {
-                source_scan_job_id: scanJob.id,
+              metadata: {
+                source_scan_job_id: sourceScanJobId,
                 source_origin: finding.origin,
                 source_finding_id: finding.source_id,
                 source_module: finding.module,
@@ -1075,7 +1380,7 @@ serve(async (req: Request) => {
             occurred_at: finding.created_at || new Date().toISOString(),
             metadata: {
               source: 'surfacescan360',
-                  source_scan_job_id: scanJob.id,
+                  source_scan_job_id: sourceScanJobId,
                   module: finding.module,
                 },
               });
@@ -1248,7 +1553,7 @@ serve(async (req: Request) => {
                 first_seen_at: observedAt,
                 last_seen_at: new Date().toISOString(),
                 metadata: {
-                  source_scan_job_id: scanJob.id,
+                  source_scan_job_id: sourceScanJobId,
                   source_origin: 'intelx',
                   source_module: 'intelx',
                   source_record_key: sourceRecordKey,
@@ -1286,7 +1591,7 @@ serve(async (req: Request) => {
                     source: 'intelx',
                     selector: queryTerm.selectorNormalized || null,
                     query_term: queryTerm.term,
-                    source_scan_job_id: scanJob.id,
+                    source_scan_job_id: sourceScanJobId,
                   },
                 });
               if (!alertErr) {
@@ -1321,7 +1626,7 @@ serve(async (req: Request) => {
         sources: Array.from(scanSources),
         warnings: intelxWarnings,
         stats: {
-          surface_scan_job_id: scanJob.id,
+          surface_scan_job_id: sourceScanJobId,
           sources: Array.from(scanSources),
           source_records_created: recordsCreated,
           evidence_created: evidenceCreated,
@@ -1349,9 +1654,10 @@ serve(async (req: Request) => {
         const recoRes = await fetch(`${SUPABASE_URL}/functions/v1/darkrisk360-generate-recommendations`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${SERVICE_ROLE}`,
-            apikey: SERVICE_ROLE,
+            Authorization: relayAuthorization,
+            apikey: relayApiKey,
             'Content-Type': 'application/json',
+            ...(DARKRISK_INTERNAL_SECRET ? { 'x-darkrisk-internal-secret': DARKRISK_INTERNAL_SECRET } : {}),
           },
           body: JSON.stringify({
             customer_id: customerId,
@@ -1380,9 +1686,10 @@ serve(async (req: Request) => {
         const reportRes = await fetch(`${SUPABASE_URL}/functions/v1/darkrisk360-generate-report`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${SERVICE_ROLE}`,
-            apikey: SERVICE_ROLE,
+            Authorization: relayAuthorization,
+            apikey: relayApiKey,
             'Content-Type': 'application/json',
+            ...(DARKRISK_INTERNAL_SECRET ? { 'x-darkrisk-internal-secret': DARKRISK_INTERNAL_SECRET } : {}),
           },
           body: JSON.stringify({
             customer_id: customerId,
@@ -1422,14 +1729,14 @@ serve(async (req: Request) => {
       .insert({
         organization_id: customerId,
         tenant_id: customerId,
-        actor_id: authData.user.id,
+        actor_id: actorUserId,
         action: allWarnings.length > 0 ? 'darkrisk_scan_completed_with_warnings' : 'darkrisk_scan_completed',
         entity_type: 'darkrisk_scan_run',
         entity_id: scanRunId,
         reason: triggerType,
         metadata: {
           source: Array.from(scanSources),
-          surface_scan_job_id: scanJob.id,
+          surface_scan_job_id: sourceScanJobId,
           assets_synced: assetRows.length,
           source_records_created: recordsCreated,
           evidence_created: evidenceCreated,
