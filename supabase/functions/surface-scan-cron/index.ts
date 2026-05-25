@@ -7,7 +7,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 interface MonitoredRule {
   id: string;
   organization_id: string;
-  entry_type: 'single' | 'range' | 'cidr';
+  entry_type: 'single' | 'range' | 'cidr' | 'domain';
   input_value: string;
   ip_start: string;
   ip_end: string;
@@ -27,6 +27,7 @@ interface ShodanBanner {
 }
 
 const MAX_IPS_PER_RULE = 256;
+const EXPOSURE_SCOPE_AUTOSCAN_TIMEOUT = 30_000;
 
 const sev = (c?: number) => (c == null ? 'low' : c >= 7 ? 'high' : c >= 4 ? 'medium' : 'low');
 const isIp = (v: string) => /^(\d{1,3}\.){3}\d{1,3}$/.test(v);
@@ -272,6 +273,136 @@ async function maybeTriggerAutoValidation(
   }
 }
 
+function splitScopeTargetsForExposure(rules: MonitoredRule[]): { domains: string[]; publicIps: string[] } {
+  const domains = new Set<string>();
+  const publicIps = new Set<string>();
+  for (const rule of rules) {
+    const entryType = String(rule.entry_type || '').toLowerCase();
+    const input = String(rule.input_value || '').trim().toLowerCase();
+    if (!input) continue;
+    if (entryType === 'domain') {
+      domains.add(input);
+      continue;
+    }
+    if (entryType === 'single' && isIp(input)) {
+      publicIps.add(input);
+    }
+  }
+  return { domains: Array.from(domains), publicIps: Array.from(publicIps) };
+}
+
+async function triggerWeeklyScopeExposureScan(
+  supabase: any,
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  internalSecret: string | null,
+  orgId: string,
+  rules: MonitoredRule[],
+) {
+  const { domains, publicIps } = splitScopeTargetsForExposure(rules);
+  if (domains.length === 0 && publicIps.length === 0) {
+    await supabase.from('external_scan_audit_log').insert({
+      organization_id: orgId,
+      actor_email: 'system:cron',
+      action: 'auto_scope_exposure_skipped',
+      details: { reason: 'no_supported_scope_targets' },
+    });
+    return;
+  }
+
+  const { count: activeExposureJobs } = await supabase
+    .from('surface_scan_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('organization_id', orgId)
+    .eq('scan_type', 'exposure_port_technology')
+    .in('status', ['queued', 'pending', 'running']);
+
+  if ((activeExposureJobs || 0) > 0) {
+    await supabase.from('external_scan_audit_log').insert({
+      organization_id: orgId,
+      actor_email: 'system:cron',
+      action: 'auto_scope_exposure_skipped',
+      details: { reason: 'active_exposure_job_exists', active_jobs: activeExposureJobs || 0 },
+    });
+    return;
+  }
+
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), EXPOSURE_SCOPE_AUTOSCAN_TIMEOUT);
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/ptools-start-exposure-scan`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${serviceRoleKey}`,
+        ...(internalSecret ? { 'x-surface-internal-secret': internalSecret } : {}),
+      },
+      body: JSON.stringify({
+        tenant_id: orgId,
+        customer_id: orgId,
+        scan_name: `Exposure Weekly Scope Auto · ${new Date().toISOString().slice(0, 16)}`,
+        root_domains: domains,
+        subdomains: [],
+        public_ips: publicIps,
+        include_subdomain_discovery: true,
+        include_port_scan: true,
+        include_web_technology_detection: true,
+        include_ssl_scan: true,
+        include_network_vuln_scan: true,
+        scan_depth: 'custom',
+        protocol: 'tcp',
+        custom_ports: 'top1000',
+        check_alive: true,
+        detect_service_version: true,
+        detect_os: true,
+        traceroute: true,
+      }),
+      signal: ctrl.signal,
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body?.job_id) {
+      await supabase.from('external_scan_audit_log').insert({
+        organization_id: orgId,
+        actor_email: 'system:cron',
+        action: 'auto_scope_exposure_failed',
+        details: {
+          http_status: response.status,
+          error: body?.error || 'unknown',
+          domains_count: domains.length,
+          public_ips_count: publicIps.length,
+        },
+      });
+      return;
+    }
+
+    await supabase.from('external_scan_audit_log').insert({
+      organization_id: orgId,
+      scan_job_id: body.job_id,
+      actor_email: 'system:cron',
+      action: 'auto_scope_exposure_started',
+      details: {
+        job_id: body.job_id,
+        domains_count: domains.length,
+        public_ips_count: publicIps.length,
+        queue_total: Number(body?.queue?.total || 0),
+      },
+    });
+  } catch (error) {
+    await supabase.from('external_scan_audit_log').insert({
+      organization_id: orgId,
+      actor_email: 'system:cron',
+      action: 'auto_scope_exposure_failed',
+      details: {
+        error: (error as Error)?.message || 'network_error',
+        domains_count: domains.length,
+        public_ips_count: publicIps.length,
+      },
+    });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -349,6 +480,8 @@ Deno.serve(async (req) => {
 
       // Pentest-Tools validation: SEMPRE attiva per ogni scansione
       await maybeTriggerAutoValidation(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, perRule);
+      // Exposure full-scope: avvio automatico settimanale su tutti i domini/IP in scope.
+      await triggerWeeklyScopeExposureScan(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, orgRules);
 
     }
 

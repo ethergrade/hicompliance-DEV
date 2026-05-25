@@ -97,6 +97,12 @@ interface ExposureOpenPortRow {
   is_tls: boolean;
 }
 
+interface ConfiguredScopeTarget {
+  key: string;
+  label: string;
+  type: 'domain' | 'ip' | 'range' | 'cidr' | 'other';
+}
+
 type ModuleOutcomeStatus =
   | 'success_with_data'
   | 'success_no_data'
@@ -272,6 +278,12 @@ const extractHostFromTarget = (rawTarget: string): string | null => {
   return raw.toLowerCase().replace(/\.$/, '');
 };
 
+const scopeTargetKeyFromTarget = (rawTarget: string): string => {
+  const host = extractHostFromTarget(rawTarget);
+  if (host) return host;
+  return String(rawTarget || '').trim().toLowerCase();
+};
+
 const chunk = <T,>(items: T[], size = 50): T[][] => {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) {
@@ -312,6 +324,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
   const [loading, setLoading] = useState(false);
   const [latestScan, setLatestScan] = useState<LatestScanRow | null>(null);
   const [latestScopeJobs, setLatestScopeJobs] = useState<LatestScanRow[]>([]);
+  const [configuredScopeTargets, setConfiguredScopeTargets] = useState<ConfiguredScopeTarget[]>([]);
   const [moduleResults, setModuleResults] = useState<ModuleResultRow[]>([]);
   const [observations, setObservations] = useState<ObservationRow[]>([]);
   const [riskFindings, setRiskFindings] = useState<FindingRow[]>([]);
@@ -319,6 +332,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
   const [subdomainSearch, setSubdomainSearch] = useState('');
   const [subdomainPage, setSubdomainPage] = useState(1);
   const [rawExpanded, setRawExpanded] = useState(false);
+  const [scopeTargetSearch, setScopeTargetSearch] = useState('');
 
   useEffect(() => {
     if (!organizationId) return;
@@ -358,7 +372,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
             .from('surface_scan_jobs' as any)
             .select('id, raw_target, normalized_target, scan_profile, status, created_at, completed_at, summary')
             .or(scopeFilter)
-            .in('status', ['completed', 'partial'])
+            .in('status', ['completed', 'partial', 'queued', 'pending', 'running', 'failed'])
             .order('created_at', { ascending: false })
             .limit(500),
         ]);
@@ -369,6 +383,47 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
         const scopeRules = (scopeRes.data || []) as SurfaceMonitoredScopeRule[];
         const { scopeDomains, ipScopeRules } = splitMonitoredScopeRules(scopeRules);
         const jobs = (jobsRes.data || []) as LatestScanRow[];
+
+        const configuredTargetsMap = new Map<string, ConfiguredScopeTarget>();
+        for (const rule of scopeRules) {
+          const entryType = String(rule.entry_type || '').toLowerCase();
+          const inputValue = String(rule.input_value || '').trim();
+          if (!inputValue) continue;
+          if (entryType === 'domain') {
+            const normalized = inputValue.toLowerCase();
+            configuredTargetsMap.set(`domain|${normalized}`, {
+              key: `domain|${normalized}`,
+              label: normalized,
+              type: 'domain',
+            });
+            continue;
+          }
+          if (entryType === 'single') {
+            configuredTargetsMap.set(`ip|${inputValue}`, {
+              key: `ip|${inputValue}`,
+              label: inputValue,
+              type: 'ip',
+            });
+            continue;
+          }
+          if (entryType === 'range') {
+            configuredTargetsMap.set(`range|${inputValue}`, {
+              key: `range|${inputValue}`,
+              label: inputValue,
+              type: 'range',
+            });
+            continue;
+          }
+          if (entryType === 'cidr') {
+            configuredTargetsMap.set(`cidr|${inputValue}`, {
+              key: `cidr|${inputValue}`,
+              label: inputValue,
+              type: 'cidr',
+            });
+            continue;
+          }
+        }
+        setConfiguredScopeTargets(Array.from(configuredTargetsMap.values()));
 
         const latestByTarget = new Map<string, LatestScanRow>();
         for (const job of jobs) {
@@ -384,7 +439,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
             }
           }
 
-          const key = String(targetRaw).toLowerCase();
+          const key = scopeTargetKeyFromTarget(targetRaw);
           const existing = latestByTarget.get(key);
           const currentTs = existing ? Date.parse(existing.created_at) : 0;
           const incomingTs = Date.parse(job.created_at);
@@ -449,6 +504,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
         console.error('Error loading SurfaceScan module cards:', error);
         setLatestScan(null);
         setLatestScopeJobs([]);
+        setConfiguredScopeTargets([]);
         setModuleResults([]);
         setObservations([]);
         setRiskFindings([]);
@@ -724,6 +780,84 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
     };
   }, [latestScopeJobs]);
 
+  const scopeTargetRows = useMemo(() => {
+    const scannedRows = latestScopeJobs.map((job) => {
+      const rawLabel = String(job.raw_target || job.normalized_target || '-').trim();
+      const canonicalLabel = extractHostFromTarget(rawLabel) || rawLabel;
+      const score = Number(job.summary?.overall_score);
+      const hasScore = Number.isFinite(score);
+      const riskFromSummary = String(job.summary?.risk_level || '').toLowerCase();
+      const computedRisk = hasScore ? riskLevelFromScore(score) : 'unknown';
+      const riskLevel = riskFromSummary || computedRisk;
+      return {
+        id: job.id,
+        label: canonicalLabel,
+        status: String(job.status || '').toLowerCase() || 'n/d',
+        profile: String(job.scan_profile || '-'),
+        score: hasScore ? Math.round(score) : null,
+        riskLevel,
+        completedAt: job.completed_at,
+      };
+    });
+    const scannedByLabel = new Map(
+      scannedRows.map((entry) => [scopeTargetKeyFromTarget(String(entry.label || '')), entry] as const),
+    );
+
+    if (configuredScopeTargets.length === 0) return scannedRows;
+
+    const configuredRows = configuredScopeTargets.map((target) => {
+      const scanned = scannedByLabel.get(scopeTargetKeyFromTarget(String(target.label || '')));
+      if (scanned) {
+        return scanned;
+      }
+      return {
+        id: target.key,
+        label: target.label,
+        status: 'not_scanned',
+        profile: target.type === 'domain' ? 'domain_exposure' : target.type === 'ip' ? 'ip_exposure' : 'scope_rule',
+        score: null as number | null,
+        riskLevel: 'unknown',
+        completedAt: null as string | null,
+      };
+    });
+
+    return configuredRows.sort((a, b) => a.label.localeCompare(b.label));
+  }, [latestScopeJobs, configuredScopeTargets]);
+
+  const filteredScopeTargetRows = useMemo(() => {
+    const term = scopeTargetSearch.trim().toLowerCase();
+    if (!term) return scopeTargetRows;
+    return scopeTargetRows.filter((entry) => {
+      const text = `${entry.label} ${entry.profile} ${entry.status}`.toLowerCase();
+      return text.includes(term);
+    });
+  }, [scopeTargetRows, scopeTargetSearch]);
+
+  const scopeStatusCounters = useMemo(() => {
+    const counters = {
+      scanned: 0,
+      running: 0,
+      queued: 0,
+      notScanned: 0,
+      errors: 0,
+    };
+
+    for (const row of scopeTargetRows) {
+      const status = String(row.status || '').toLowerCase();
+      if (status === 'not_scanned') {
+        counters.notScanned += 1;
+        continue;
+      }
+
+      counters.scanned += 1;
+      if (status === 'running' || status === 'waiting') counters.running += 1;
+      else if (status === 'queued' || status === 'pending') counters.queued += 1;
+      else if (status === 'failed' || status === 'error') counters.errors += 1;
+    }
+
+    return counters;
+  }, [scopeTargetRows]);
+
   const passesValue = (observationByModule.passes?.value || {}) as Record<string, any>;
   const passItems = Array.isArray(passesValue?.passes) ? passesValue.passes : [];
 
@@ -842,7 +976,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
     );
   }
 
-  if (!latestScan?.id) {
+  if (!latestScan?.id && configuredScopeTargets.length === 0) {
     return (
       <Card className="border-border">
         <CardHeader>
@@ -852,7 +986,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">Nessuna scansione in-scope completata disponibile.</p>
+          <p className="text-sm text-muted-foreground">Nessuna regola in scope o scansione disponibile.</p>
         </CardContent>
       </Card>
     );
@@ -867,41 +1001,96 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
             Dettaglio Scope Scansioni
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Ultimo target in-scope: <span className="font-medium text-foreground">{latestScan.raw_target || latestScan.normalized_target}</span>
+            Vista unificata dei target in scope con stato automatico scansioni, senza interventi manuali.
           </p>
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3">
             <div className="rounded-lg border border-border p-3">
               <p className="text-xs text-muted-foreground">Scope targets</p>
-              <p className="text-sm font-medium">{latestScopeJobs.length}</p>
+              <p className="text-sm font-medium">{scopeTargetRows.length}</p>
             </div>
             <div className="rounded-lg border border-border p-3">
-              <p className="text-xs text-muted-foreground">Stato ultimo job</p>
-                <Badge className={statusBadgeClass[outcomeFromJobStatus(latestScan.status)]}>
-                  {String(latestScan.status || '').toLowerCase() === 'completed'
-                    ? 'Completato'
-                    : String(latestScan.status || 'N/D')}
-                </Badge>
+              <p className="text-xs text-muted-foreground">Scansionati</p>
+              <p className="text-sm font-medium">{scopeStatusCounters.scanned}</p>
               </div>
             <div className="rounded-lg border border-border p-3">
-              <p className="text-xs text-muted-foreground">Profilo ultimo job</p>
-              <p className="text-sm font-medium">{latestScan.scan_profile}</p>
+              <p className="text-xs text-muted-foreground">In corso / In coda</p>
+              <p className="text-sm font-medium">
+                {scopeStatusCounters.running} / {scopeStatusCounters.queued}
+              </p>
             </div>
             <div className="rounded-lg border border-border p-3">
-              <p className="text-xs text-muted-foreground">Overall score scope</p>
+              <p className="text-xs text-muted-foreground">Da avviare</p>
+              <p className="text-sm font-medium">{scopeStatusCounters.notScanned}</p>
+            </div>
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-xs text-muted-foreground">Score medio scope</p>
               <Badge className={scoreTone(scoreSummary.overallScore)}>{scoreSummary.overallScore}/100</Badge>
             </div>
             <div className="rounded-lg border border-border p-3">
-              <p className="text-xs text-muted-foreground">Livello rischio scope</p>
-              <Badge className={scoreTone(scoreSummary.overallScore)}>{formatRiskLevel(scoreSummary.riskLevel)}</Badge>
-            </div>
-            <div className="rounded-lg border border-border p-3">
-              <p className="text-xs text-muted-foreground">Completata</p>
+              <p className="text-xs text-muted-foreground">Ultimo aggiornamento scope</p>
               <p className="text-xs text-foreground">
-                {latestScan.completed_at ? new Date(latestScan.completed_at).toLocaleString('it-IT') : '-'}
+                {latestScan?.completed_at ? new Date(latestScan.completed_at).toLocaleString('it-IT') : '-'}
               </p>
             </div>
+          </div>
+
+          <div className="rounded-xl border border-border/80 bg-card/40 p-4 space-y-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Panoramica Completa Target In Scope</p>
+                <p className="text-xs text-muted-foreground">
+                  Tutti i domini/IP in-scope con ultimo stato scansione, profilo e rischio.
+                </p>
+              </div>
+              <Badge variant="secondary">{filteredScopeTargetRows.length} target visibili</Badge>
+            </div>
+
+            <div className="relative max-w-md">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={scopeTargetSearch}
+                onChange={(event) => setScopeTargetSearch(event.target.value)}
+                placeholder="Cerca target in scope..."
+                className="pl-9"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {filteredScopeTargetRows.map((entry) => (
+                <div key={entry.id} className="rounded-lg border border-border/70 bg-background/30 p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm font-medium break-all leading-tight">{entry.label}</p>
+                    {entry.status === 'not_scanned' ? (
+                      <Badge variant="outline">Non scansionato</Badge>
+                    ) : (
+                      <Badge className={statusBadgeClass[outcomeFromJobStatus(entry.status)]}>
+                        {entry.status === 'completed' ? 'Completato' : entry.status}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <Badge variant="outline">{entry.profile}</Badge>
+                    {entry.score != null ? (
+                      <Badge className={scoreTone(entry.score)}>{entry.score}/100</Badge>
+                    ) : (
+                      <Badge variant="outline">Score N/D</Badge>
+                    )}
+                    <Badge variant="outline">{formatRiskLevel(entry.riskLevel)}</Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Ultimo update: {entry.completedAt ? new Date(entry.completedAt).toLocaleString('it-IT') : '-'}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {filteredScopeTargetRows.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Nessun target trovato con questo filtro.
+              </p>
+            )}
           </div>
 
           {riskFindings.length > 0 && (
