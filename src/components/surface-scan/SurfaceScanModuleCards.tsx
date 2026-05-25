@@ -865,7 +865,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
         && !hasData
         && hasSuccess;
 
-      if (hasPrereqSkip || hasRdapUnavailable || hasServerLocationNoIp || hasOpenPortsNoData || (hasSkipped && !hasData)) {
+      if (hasPrereqSkip) {
         outcomes[moduleKey] = 'skipped_prerequisite';
         continue;
       }
@@ -874,8 +874,10 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
         outcomes[moduleKey] = 'success_with_data';
       } else if (hasSuccess && !hasData) {
         outcomes[moduleKey] = 'success_no_data';
+      } else if (hasRdapUnavailable || hasServerLocationNoIp || hasOpenPortsNoData) {
+        outcomes[moduleKey] = 'success_no_data';
       } else if (hasSkipped) {
-        outcomes[moduleKey] = 'skipped_prerequisite';
+        outcomes[moduleKey] = 'success_no_data';
       } else {
         outcomes[moduleKey] = 'success_no_data';
       }
@@ -1423,6 +1425,9 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                 <div className="flex justify-between"><span>Scadenza</span><span>{latestWhois.days_to_expiry != null ? `${latestWhois.days_to_expiry} giorni` : '-'}</span></div>
                 <div className="flex justify-between"><span>DNSSEC (RDAP)</span><span>{latestWhois.dnssec || '-'}</span></div>
               </div>
+              {whoisUnavailableCount > 0 && moduleOutcomes.whois !== 'skipped_prerequisite' && (
+                <p className="text-xs text-amber-300">RDAP temporaneamente non disponibile per WHOIS.</p>
+              )}
               {moduleOutcomes.whois === 'skipped_prerequisite' && (
                 <p className="text-xs text-amber-300">{moduleReasonLabel(moduleSkipReasons.whois || '')}</p>
               )}
@@ -1468,6 +1473,9 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
               <div className="text-xs text-muted-foreground">
                 {latestServerLocation.city || '-'}, {latestServerLocation.countryCode || latestServerLocation.country || '-'}
               </div>
+              {serverLocationCoverage === 0 && moduleOutcomes.server_location !== 'skipped_prerequisite' && (
+                <p className="text-xs text-amber-300">Nessun IP in-scope geolocalizzabile disponibile.</p>
+              )}
               {moduleOutcomes.server_location === 'skipped_prerequisite' && (
                 <p className="text-xs text-amber-300">{moduleReasonLabel(moduleSkipReasons.server_location || '')}</p>
               )}
