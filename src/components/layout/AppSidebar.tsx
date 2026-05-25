@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   Shield,
+  ShieldCheck,
   Users,
   Settings,
   BarChart3,
