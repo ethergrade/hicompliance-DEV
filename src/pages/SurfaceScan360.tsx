@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Pagination,
   PaginationContent,
@@ -14,7 +13,6 @@ import {
   PaginationPrevious,
 } from '@/components/ui/pagination';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Table,
   TableBody,
@@ -161,13 +159,6 @@ const SCAN_PROFILES: SurfaceScanProfile[] = [
   'cve_api_validation',
 ];
 
-const profileLabel = (profile: SurfaceScanProfile): string => {
-  if (profile === 'safe_recon') return 'Safe Recon';
-  if (profile === 'domain_exposure') return 'Domain Exposure';
-  if (profile === 'ip_exposure') return 'IP Exposure';
-  return 'CVE API Validation';
-};
-
 const hostingLabel = (context: string | null): string => {
   if (context === 'excluded_noise') return 'Fuori scope (PTR/shared)';
   if (context === 'excluded_scope') return 'Fuori scope (scope guard)';
@@ -189,12 +180,7 @@ const SurfaceScan360: React.FC = () => {
   const [exportingPdf, setExportingPdf] = useState(false);
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
   const [newMonitoredIpInput, setNewMonitoredIpInput] = useState('');
-  const [scanTargetInput, setScanTargetInput] = useState('');
-  const [selectedProfiles, setSelectedProfiles] = useState<SurfaceScanProfile[]>([...SCAN_PROFILES]);
-  const [authorizationConfirmed, setAuthorizationConfirmed] = useState(true);
   const [ownershipProof, setOwnershipProof] = useState('');
-  const [queueRescanExisting, setQueueRescanExisting] = useState(false);
-  const [rescanLimit, setRescanLimit] = useState('');
   const [assetSearch, setAssetSearch] = useState('');
   const [assetPage, setAssetPage] = useState(1);
   const [isDiscoveryCollapsed, setIsDiscoveryCollapsed] = useState(true);
@@ -208,7 +194,7 @@ const SurfaceScan360: React.FC = () => {
   const { alerts, createAlert } = useSurfaceScanAlerts();
   const activeAlertsCount = alerts.filter((a) => a.is_active).length;
 
-  const { jobs: scanJobs, startingScan, startScanQueue, activeJobsCount, isAdmin } = useSurfaceScanEngine();
+  const { jobs: scanJobs, startScanQueue, isAdmin } = useSurfaceScanEngine();
   const {
     subdomains: discoveredSubdomains,
     ips: discoveredIps,
@@ -622,48 +608,50 @@ const SurfaceScan360: React.FC = () => {
     }
   };
 
+  const parseScopeMixedEntries = (raw: string): string[] => {
+    return Array.from(
+      new Set(
+        String(raw || '')
+          .split(/[,\n;|]+/g)
+          .map((token) => token.trim())
+          .filter(Boolean),
+      ),
+    );
+  };
+
   const handleAddMonitoredIpRule = async () => {
-    const success = await addMonitoredIpRule(newMonitoredIpInput);
-    if (success) {
+    const entries = parseScopeMixedEntries(newMonitoredIpInput);
+    if (entries.length === 0) {
+      toast.error('Inserisci almeno un dominio/IP/range/CIDR');
+      return;
+    }
+
+    let successCount = 0;
+    const failedEntries: string[] = [];
+
+    for (const entry of entries) {
+      const success = await addMonitoredIpRule(entry, { silent: true });
+      if (success) {
+        successCount += 1;
+      } else {
+        failedEntries.push(entry);
+      }
+    }
+
+    if (successCount > 0) {
+      toast.success(`Scope aggiornato: ${successCount} regole aggiunte`);
       setNewMonitoredIpInput('');
+    }
+
+    if (failedEntries.length > 0) {
+      toast.error(
+        `Regole non aggiunte: ${failedEntries.slice(0, 3).join(', ')}${failedEntries.length > 3 ? ' ...' : ''}`,
+      );
     }
   };
 
   const handleRemoveMonitoredIpRule = async (ruleId: string) => {
     await removeMonitoredIpRule(ruleId);
-  };
-
-  const toggleProfile = (profile: SurfaceScanProfile) => {
-    setSelectedProfiles((prev) => {
-      if (prev.includes(profile)) {
-        return prev.filter((entry) => entry !== profile);
-      }
-      return [...prev, profile];
-    });
-  };
-
-  const handleStartScan = async () => {
-    const manualTarget = scanTargetInput.trim();
-    const includeRescan = queueRescanExisting;
-    const parsedRescanLimit = Number.parseInt((rescanLimit || '').trim(), 10);
-    const effectiveRescanLimit =
-      Number.isFinite(parsedRescanLimit) && parsedRescanLimit > 0
-        ? Math.min(2000, parsedRescanLimit)
-        : rescanTargets.length;
-    const reTargets = includeRescan ? rescanTargets.slice(0, effectiveRescanLimit) : [];
-
-    const targets = [...new Set([manualTarget, ...reTargets].filter(Boolean))];
-    if (targets.length === 0) {
-      toast.error('Inserisci un target o abilita re-scan asset esistenti');
-      return;
-    }
-
-    await startScanQueue({
-      targets,
-      scan_profiles: selectedProfiles,
-      authorization_confirmed: authorizationConfirmed,
-      ownership_proof: ownershipProof,
-    });
   };
 
   const handleAddSubdomainToScope = async (subdomain: string) => {
@@ -681,7 +669,7 @@ const SurfaceScan360: React.FC = () => {
     if (!isAdmin) return;
     const target = String(subdomain || '').trim().toLowerCase();
     if (!target) return;
-    const scanProfiles = selectedProfiles.length > 0 ? selectedProfiles : ['domain_exposure'];
+    const scanProfiles = [...SCAN_PROFILES];
     await startScanQueue({
       targets: [target],
       scan_profiles: scanProfiles,
@@ -711,111 +699,6 @@ const SurfaceScan360: React.FC = () => {
           </div>
         </div>
 
-        {isAdmin && (
-          <Card className="border-border">
-            <CardHeader>
-              <CardTitle>Start Scan (Admin)</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Seleziona profili multipli, crea una coda di scansione e rilancia anche asset già scansionati.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Input
-                placeholder="Target primario: dominio, subdominio, URL, IPv4 o IPv6"
-                value={scanTargetInput}
-                onChange={(event) => setScanTargetInput(event.target.value)}
-              />
-
-              <div className="rounded-md border border-border p-3 space-y-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium">Profili scansione</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setSelectedProfiles(SCAN_PROFILES)}
-                  >
-                    Seleziona tutti
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setSelectedProfiles([])}
-                  >
-                    Pulisci
-                  </Button>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {SCAN_PROFILES.map((profile) => (
-                    <label key={profile} className="flex items-center gap-2 text-sm rounded-md border border-border px-2 py-2">
-                      <Checkbox
-                        checked={selectedProfiles.includes(profile)}
-                        onCheckedChange={() => toggleProfile(profile)}
-                      />
-                      <span>{profileLabel(profile)}</span>
-                      <span className="text-xs text-muted-foreground">({profile})</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="flex items-center justify-between px-3 py-2 rounded-md border border-border">
-                  <span className="text-sm">Autorizzazione confermata</span>
-                  <Switch checked={authorizationConfirmed} onCheckedChange={setAuthorizationConfirmed} />
-                </div>
-                <div className="flex items-center justify-between px-3 py-2 rounded-md border border-border">
-                  <span className="text-sm">Riscansiona anche asset già fatti</span>
-                  <Switch checked={queueRescanExisting} onCheckedChange={setQueueRescanExisting} />
-                </div>
-              </div>
-
-              {queueRescanExisting && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <Input
-                    type="number"
-                    min={1}
-                    max={2000}
-                    value={rescanLimit}
-                    onChange={(event) => setRescanLimit(event.target.value)}
-                    placeholder="Limite asset da re-scan (vuoto = tutti)"
-                  />
-                  <div className="text-xs text-muted-foreground flex items-center">
-                    Target storici disponibili: {rescanTargets.length} • in coda: {(() => {
-                      const parsedLimit = Number.parseInt((rescanLimit || '').trim(), 10);
-                      if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) return rescanTargets.length;
-                      return Math.min(2000, parsedLimit, rescanTargets.length);
-                    })()}
-                  </div>
-                </div>
-              )}
-
-              <Textarea
-                placeholder="Ownership proof (consigliato per scansioni IP/CVE validation)"
-                value={ownershipProof}
-                onChange={(event) => setOwnershipProof(event.target.value)}
-                rows={2}
-              />
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-xs text-muted-foreground">
-                  Job attivi: {activeJobsCount} • Target storici: {rescanTargets.length}
-                </div>
-                <Button
-                  onClick={handleStartScan}
-                  disabled={
-                    startingScan ||
-                    !authorizationConfirmed ||
-                    (!scanTargetInput.trim() && !queueRescanExisting)
-                  }
-                >
-                  {startingScan ? 'Creazione coda...' : 'Avvia coda scansioni'}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
         {isAdminUser && (
           <Card className="border-primary/30 bg-primary/5">
             <CardHeader>
@@ -825,9 +708,15 @@ const SurfaceScan360: React.FC = () => {
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground space-y-1">
+                <div className="font-medium text-foreground">Legenda input scope (misto supportato)</div>
+                <div>Separatore lista: `,` `;` `|` oppure a capo.</div>
+                <div>Esempio: `panapesca.it, 203.0.113.10, 203.0.113.10-203.0.113.20, 203.0.113.0/24`</div>
+                <div>Tipi supportati: dominio, IP singolo, range IP, CIDR.</div>
+              </div>
               <div className="flex flex-col md:flex-row gap-2">
                 <Input
-                  placeholder="Es. 203.0.113.10 | 203.0.113.10-203.0.113.20 | 203.0.113.0/24"
+                  placeholder="Es. panapesca.it, 203.0.113.10, 203.0.113.10-203.0.113.20, 203.0.113.0/24"
                   value={newMonitoredIpInput}
                   onChange={(event) => setNewMonitoredIpInput(event.target.value)}
                   disabled={monitoredIpRulesSaving}
