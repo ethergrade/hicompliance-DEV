@@ -38,6 +38,9 @@ verify_jwt = false
  [functions.ptools-start-exposure-scan]
  verify_jwt = false
 
+ [functions.ptools-poll-scans]
+ verify_jwt = false
+
  [functions.darkrisk360-sync-surfacescan]
  verify_jwt = false
 

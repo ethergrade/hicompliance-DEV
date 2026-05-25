@@ -121,6 +121,11 @@ function isTerminalGoodStatus(status: string): boolean {
   return key === 'completed' || key === 'partial' || key === 'success';
 }
 
+function isTerminalStatus(status: string): boolean {
+  const key = String(status || '').toLowerCase();
+  return ['completed', 'partial', 'success', 'failed', 'stopped', 'aborted', 'timed out'].includes(key);
+}
+
 function hasExposureData(summary: Record<string, unknown> | null | undefined): boolean {
   if (!summary || typeof summary !== 'object') return false;
   const openPorts = Number((summary as any).open_ports_total || 0);
@@ -445,6 +450,7 @@ serve(async (req: Request) => {
     let anchorJobId = '';
     let targetSnapshots: TargetSnapshot[] = [];
     let liveJobIds: string[] = [];
+    const jobDataPresence = new Map<string, number>();
 
     if (scopeMode === 'single_job') {
       anchorJobId = jobIdInput || String(allJobs[0]?.id || '');
@@ -452,6 +458,28 @@ serve(async (req: Request) => {
       selectedJobIds = [anchorJobId];
     } else {
       const allJobIds = allJobs.map((row) => String(row.id || '')).filter(Boolean);
+      const [portDataRes, techDataRes] = await Promise.all([
+        adminClient
+          .from('surface_open_ports' as any)
+          .select('scan_job_id')
+          .in('scan_job_id', allJobIds),
+        adminClient
+          .from('surface_web_technologies' as any)
+          .select('scan_job_id')
+          .in('scan_job_id', allJobIds),
+      ]);
+
+      for (const row of (portDataRes.data || []) as Array<Record<string, unknown>>) {
+        const key = String(row?.scan_job_id || '').trim();
+        if (!key) continue;
+        jobDataPresence.set(key, (jobDataPresence.get(key) || 0) + 1);
+      }
+      for (const row of (techDataRes.data || []) as Array<Record<string, unknown>>) {
+        const key = String(row?.scan_job_id || '').trim();
+        if (!key) continue;
+        jobDataPresence.set(key, (jobDataPresence.get(key) || 0) + 1);
+      }
+
       const { data: targetRows } = await adminClient
         .from('surface_scan_targets' as any)
         .select('scan_job_id, target_value, target_type')
@@ -496,9 +524,17 @@ serve(async (req: Request) => {
       for (const [targetKey, payload] of groupedTargets.entries()) {
         const jobs = payload.jobs.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
         const live = jobs[0] || null;
-        const completedWithData = jobs.find((entry) => isTerminalGoodStatus(entry.status) && hasExposureData(entry.summary));
+        const completedWithData = jobs.find((entry) =>
+          isTerminalGoodStatus(entry.status)
+          && (hasExposureData(entry.summary) || (jobDataPresence.get(String(entry.id || '')) || 0) > 0),
+        );
+        const failedWithData = jobs.find((entry) =>
+          String(entry.status || '').toLowerCase() === 'failed'
+          && (hasExposureData(entry.summary) || (jobDataPresence.get(String(entry.id || '')) || 0) > 0),
+        );
         const completedAny = jobs.find((entry) => isTerminalGoodStatus(entry.status));
-        const lastGood = completedWithData || completedAny || null;
+        const terminalAny = jobs.find((entry) => isTerminalStatus(entry.status));
+        const lastGood = completedWithData || failedWithData || completedAny || terminalAny || null;
         const dataJob = lastGood || live;
 
         if (dataJob?.id) selectedIdsSet.add(String(dataJob.id));
@@ -533,7 +569,14 @@ serve(async (req: Request) => {
       // per evitare dashboard vuota anche con dati porte/tecnologie già persistiti.
       if (selectedJobIds.length === 0) {
         selectedJobIds = allJobs
-          .filter((row) => ['completed', 'running', 'queued', 'waiting'].includes(String(row.status || '').toLowerCase()))
+          .filter((row) => {
+            const status = String(row.status || '').toLowerCase();
+            if (['completed', 'running', 'queued', 'waiting'].includes(status)) return true;
+            return status === 'failed' && (
+              hasExposureData(row.summary || null)
+              || (jobDataPresence.get(String(row.id || '')) || 0) > 0
+            );
+          })
           .map((row) => String(row.id || ''))
           .filter(Boolean)
           .slice(0, 120);

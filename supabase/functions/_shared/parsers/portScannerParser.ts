@@ -40,9 +40,6 @@ type NormalizePortScannerOptions = {
 const normalizeHostInput = (value: unknown): string =>
   String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
 
-const isIpLike = (value: string): boolean =>
-  /^(\d{1,3}\.){3}\d{1,3}$/.test(value) || value.includes(':');
-
 export function normalizePortScannerOutput(
   output: unknown,
   options: NormalizePortScannerOptions = {},
@@ -59,7 +56,9 @@ export function normalizePortScannerOutput(
   const providerHost = normalizeHostInput(providerHosts[0] || outputData.host || outputData.hostname || '');
   const ip = String(outputData.ip_address || outputData.ip || '').trim();
   const osGuess = String((outputData.os as any)?.name || (outputData.os as any)?.vendor || '').trim();
-  const preferredHost = targetHost && !isIpLike(targetHost) ? targetHost : (providerHost || ip || 'unknown-host');
+  // Target-first attribution: keep scope target as primary host identity.
+  // Provider/reverse hostnames are stored only as evidence.
+  const preferredHost = targetHost || providerHost || ip || 'unknown-host';
 
   const ports = Array.isArray(outputData.ports)
     ? outputData.ports

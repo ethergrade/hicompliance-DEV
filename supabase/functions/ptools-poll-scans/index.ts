@@ -904,14 +904,26 @@ serve(async (req: Request) => {
   if (!['POST', 'GET'].includes(req.method)) return jsonResponse({ error: 'Method not allowed' }, 405);
 
   try {
+    let requestPayload: Record<string, unknown> = {};
+    if (req.method === 'POST') {
+      try {
+        requestPayload = (await req.json()) as Record<string, unknown>;
+      } catch {
+        requestPayload = {};
+      }
+    }
+
     const authHeader = req.headers.get('Authorization') || '';
     const bearer = authHeader.replace(/^Bearer\s+/i, '').trim();
     const providedInternalSecret = req.headers.get('x-surface-internal-secret') || req.headers.get('x-cron-secret') || '';
+    const cronMarkerHeader = String(req.headers.get('x-surface-cron') || '').trim();
+    const cronTrigger = String(requestPayload?.trigger || '').trim().toLowerCase();
 
     const serviceRoleAuth = Boolean(SERVICE_ROLE && bearer && bearer === SERVICE_ROLE);
     const internalAuth = Boolean(INTERNAL_SECRET && providedInternalSecret && providedInternalSecret === INTERNAL_SECRET);
+    const cronMarkerAuth = cronMarkerHeader === '1' && cronTrigger === 'cron';
 
-    if (!serviceRoleAuth && !internalAuth) {
+    if (!serviceRoleAuth && !internalAuth && !cronMarkerAuth) {
       if (!SUPABASE_URL || !SERVICE_ROLE) return jsonResponse({ error: 'Server is not configured' }, 500);
       const userClient = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY') || '', {
         global: { headers: { Authorization: authHeader } },
@@ -942,8 +954,23 @@ serve(async (req: Request) => {
       failed_stale: 0,
     };
 
+    const { data: activeTaskJobs } = await adminClient
+      .from('pentest_tools_scans' as any)
+      .select('scan_job_id')
+      .in('status', ['queued', 'retry', 'running', 'waiting'])
+      .limit(400);
+
+    const recoveryJobIds = new Set<string>();
     for (const job of queuedJobs || []) {
-      const jobId = String((job as any).id || '');
+      const jobId = String((job as any).id || '').trim();
+      if (jobId) recoveryJobIds.add(jobId);
+    }
+    for (const row of activeTaskJobs || []) {
+      const jobId = String((row as any).scan_job_id || '').trim();
+      if (jobId) recoveryJobIds.add(jobId);
+    }
+
+    for (const jobId of recoveryJobIds) {
       if (!jobId) continue;
       touchedJobIds.add(jobId);
       const recovery = await recoverStaleScansForJob(adminClient, jobId);
@@ -1091,6 +1118,7 @@ serve(async (req: Request) => {
       touched_jobs: Array.from(touchedJobIds),
       recovery: recoveryStats,
       processing: processingStats,
+      invocation: cronMarkerAuth ? 'cron_marker' : serviceRoleAuth ? 'service_role' : internalAuth ? 'internal_secret' : 'user',
       processed_count: processed.length,
       processed,
     });
