@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronRight, Loader2, Play, RefreshCw, RotateCw, ShieldAlert } from 'lucide-react';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { supabase } from '@/integrations/supabase/client';
 import {
   fetchExposureFindingsByJobIds,
   fetchExposureJobs,
@@ -34,12 +35,6 @@ interface SurfaceScanExposureSectionProps {
   isAdmin: boolean;
 }
 
-const csvToList = (value: string): string[] =>
-  String(value || '')
-    .split(/[\n,;\s]+/)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-
 const statusLabel = (status: string): string => {
   const key = String(status || '').toLowerCase();
   if (key === 'completed') return 'Completata';
@@ -61,6 +56,27 @@ const statusProgress = (status: string): number => {
 const toTimestamp = (value: string | null | undefined): number => {
   const ts = Date.parse(String(value || ''));
   return Number.isFinite(ts) ? ts : 0;
+};
+
+const normalizeScopeDomain = (value: string): string =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/.*$/, '')
+    .replace(/\.$/, '');
+
+const normalizeScopeIp = (value: string): string => String(value || '').trim();
+
+const targetMatchKey = (value: string): string => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw.includes('://') ? raw : `https://${raw}`);
+    return String(parsed.hostname || raw).trim().toLowerCase();
+  } catch {
+    return raw.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  }
 };
 
 const dedupeOpenPortsRows = (rows: ExposureOpenPortRow[]): ExposureOpenPortRow[] => {
@@ -145,20 +161,25 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
   const [isSectionCollapsed, setIsSectionCollapsed] = useState(false);
 
   const [scanName, setScanName] = useState('Exposure Full Scan');
-  const [rootDomainsInput, setRootDomainsInput] = useState('');
-  const [subdomainsInput, setSubdomainsInput] = useState('');
-  const [publicIpsInput, setPublicIpsInput] = useState('');
   const [customPorts, setCustomPorts] = useState('top1000');
+  const [scopeDomains, setScopeDomains] = useState<string[]>([]);
+  const [scopePublicIps, setScopePublicIps] = useState<string[]>([]);
+  const autoStartAttemptedRef = useRef(false);
 
-  const [includeSubDiscovery, setIncludeSubDiscovery] = useState(true);
-  const [includePortScan, setIncludePortScan] = useState(true);
-  const [includeWebTech, setIncludeWebTech] = useState(true);
-  const [includeSsl, setIncludeSsl] = useState(true);
-  const [includeNetworkVuln, setIncludeNetworkVuln] = useState(false);
-  const [detectOs, setDetectOs] = useState(true);
-  const [detectServiceVersion, setDetectServiceVersion] = useState(true);
-  const [checkAlive, setCheckAlive] = useState(true);
-  const [traceroute, setTraceroute] = useState(false);
+  const fullControls = useMemo(
+    () => ({
+      includeSubDiscovery: true,
+      includePortScan: true,
+      includeWebTech: true,
+      includeSsl: true,
+      includeNetworkVuln: true,
+      detectOs: true,
+      detectServiceVersion: true,
+      checkAlive: true,
+      traceroute: true,
+    }),
+    [],
+  );
 
   const selectedJob = useMemo(
     () => jobs.find((job) => String(job.id) === String(selectedJobId)) || null,
@@ -169,13 +190,41 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
     if (!organizationId) return;
     setLoading(true);
     try {
-      const [jobsData, summaryData] = await Promise.all([
+      const [jobsData, summaryData, scopeDomainsRes] = await Promise.all([
         fetchExposureJobs(organizationId, 50),
         fetchExposureSummary({
           customerId: organizationId,
           scopeMode: 'scope_latest_per_target',
         }),
+        supabase
+          .from('surface_scan_monitored_ips' as any)
+          .select('entry_type, input_value')
+          .eq('organization_id', organizationId)
+          .order('input_value', { ascending: true }),
       ]);
+
+      if (scopeDomainsRes.error) throw scopeDomainsRes.error;
+
+      const monitoredRules = (scopeDomainsRes.data || []) as Array<{ entry_type: string; input_value: string }>;
+      const normalizedScopeDomains = Array.from(
+        new Set(
+          monitoredRules
+            .filter((entry) => String(entry.entry_type || '').toLowerCase() === 'domain')
+            .map((entry) => normalizeScopeDomain(entry.input_value))
+            .filter(Boolean),
+        ),
+      ).sort((a, b) => a.localeCompare(b));
+      const normalizedScopePublicIps = Array.from(
+        new Set(
+          monitoredRules
+            .filter((entry) => String(entry.entry_type || '').toLowerCase() === 'single')
+            .map((entry) => String(entry.input_value || '').trim())
+            .filter(Boolean),
+        ),
+      ).sort((a, b) => a.localeCompare(b));
+
+      setScopeDomains(normalizedScopeDomains);
+      setScopePublicIps(normalizedScopePublicIps);
 
       setJobs(jobsData);
       const fallbackSelected = String(jobsData[0]?.id || '');
@@ -209,58 +258,141 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
     void refreshData();
   }, [refreshData]);
 
+  const runExposureScan = useCallback(
+    async (payload: ExposureStartRequest, options?: { auto?: boolean }) => {
+      setStartingScan(true);
+      try {
+        const result = await startExposureScan(payload);
+        setSelectedJobId(String(result?.job_id || ''));
+        toast.success(options?.auto ? 'Scansione scope avviata automaticamente' : 'Scansione exposure avviata', {
+          description: `Job ${result?.job_id || '-'} • Queue: ${result?.queue?.total || 0}`,
+        });
+
+        // Kick immediato del poll per evitare job in coda senza avvio motori.
+        try {
+          await triggerExposurePoll();
+        } catch (pollError) {
+          console.warn('Immediate exposure poll failed:', pollError);
+        }
+
+        await refreshData();
+        return result;
+      } catch (error: any) {
+        if (options?.auto) {
+          autoStartAttemptedRef.current = false;
+        }
+        toast.error(options?.auto ? 'Auto-avvio scope non riuscito' : 'Avvio scansione non riuscito', {
+          description: error?.message || 'Errore durante avvio',
+        });
+        throw error;
+      } finally {
+        setStartingScan(false);
+      }
+    },
+    [refreshData],
+  );
+
   const handleStartScan = async () => {
     if (!organizationId) {
       toast.error('Cliente non selezionato');
       return;
     }
 
-    const rootDomains = csvToList(rootDomainsInput);
-    const subdomains = csvToList(subdomainsInput);
-    const publicIps = csvToList(publicIpsInput);
-
-    if (rootDomains.length === 0 && subdomains.length === 0 && publicIps.length === 0) {
-      toast.error('Inserisci almeno un dominio/sottodominio/IP pubblico');
+    const normalizedDomains = Array.from(new Set(scopeDomains.map(normalizeScopeDomain).filter(Boolean)));
+    const normalizedIps = Array.from(new Set(scopePublicIps.map(normalizeScopeIp).filter(Boolean)));
+    if (normalizedDomains.length === 0 && normalizedIps.length === 0) {
+      toast.error('Nessun target disponibile nello scope monitorato');
       return;
     }
 
     const payload: ExposureStartRequest = {
       tenant_id: organizationId,
       customer_id: organizationId,
-      scan_name: scanName.trim() || 'Exposure Full Scan',
-      root_domains: rootDomains,
-      subdomains,
-      public_ips: publicIps,
-      include_subdomain_discovery: includeSubDiscovery,
-      include_port_scan: includePortScan,
-      include_web_technology_detection: includeWebTech,
-      include_ssl_scan: includeSsl,
-      include_network_vuln_scan: includeNetworkVuln,
+      scan_name: scanName.trim() || `Exposure Full Scan · Scope ${new Date().toISOString().slice(0, 16)}`,
+      root_domains: normalizedDomains,
+      subdomains: [],
+      public_ips: normalizedIps,
+      include_subdomain_discovery: fullControls.includeSubDiscovery,
+      include_port_scan: fullControls.includePortScan,
+      include_web_technology_detection: fullControls.includeWebTech,
+      include_ssl_scan: fullControls.includeSsl,
+      include_network_vuln_scan: fullControls.includeNetworkVuln,
       scan_depth: 'custom',
       protocol: 'tcp',
       custom_ports: customPorts,
-      check_alive: checkAlive,
-      detect_service_version: detectServiceVersion,
-      detect_os: detectOs,
-      traceroute,
+      check_alive: fullControls.checkAlive,
+      detect_service_version: fullControls.detectServiceVersion,
+      detect_os: fullControls.detectOs,
+      traceroute: fullControls.traceroute,
+    };
+    await runExposureScan(payload);
+  };
+
+  useEffect(() => {
+    if (!isAdmin || !organizationId) return;
+    if (autoStartAttemptedRef.current) return;
+    if (loading || startingScan) return;
+
+    const scopeHasTargets = scopeDomains.length > 0 || scopePublicIps.length > 0;
+    if (!scopeHasTargets) return;
+
+    const hasActiveJob = jobs.some((job) => {
+      const status = String(job?.status || '').toLowerCase();
+      return status === 'queued' || status === 'running' || status === 'waiting';
+    });
+    if (hasActiveJob) return;
+
+    const latestJobTs = toTimestamp(jobs[0]?.created_at);
+    const isStale = !latestJobTs || (Date.now() - latestJobTs) > 1000 * 60 * 60 * 12;
+    const scannedTargetKeys = new Set(
+      jobs
+        .map((job) => targetMatchKey(String(job?.normalized_target || job?.raw_target || '')))
+        .filter(Boolean),
+    );
+    const scopeTargetKeys = new Set([
+      ...scopeDomains.map(targetMatchKey),
+      ...scopePublicIps.map(targetMatchKey),
+    ]);
+    const missingScopeTargets = Array.from(scopeTargetKeys).filter((key) => !scannedTargetKeys.has(key));
+    const shouldAutoStart = jobs.length === 0 || isStale || missingScopeTargets.length > 0;
+    if (!shouldAutoStart) return;
+
+    autoStartAttemptedRef.current = true;
+
+    const payload: ExposureStartRequest = {
+      tenant_id: organizationId,
+      customer_id: organizationId,
+      scan_name: `Exposure Scope Auto · ${new Date().toISOString().slice(0, 16)}`,
+      root_domains: scopeDomains,
+      subdomains: [],
+      public_ips: scopePublicIps,
+      include_subdomain_discovery: fullControls.includeSubDiscovery,
+      include_port_scan: fullControls.includePortScan,
+      include_web_technology_detection: fullControls.includeWebTech,
+      include_ssl_scan: fullControls.includeSsl,
+      include_network_vuln_scan: fullControls.includeNetworkVuln,
+      scan_depth: 'custom',
+      protocol: 'tcp',
+      custom_ports: customPorts,
+      check_alive: fullControls.checkAlive,
+      detect_service_version: fullControls.detectServiceVersion,
+      detect_os: fullControls.detectOs,
+      traceroute: fullControls.traceroute,
     };
 
-    setStartingScan(true);
-    try {
-      const result = await startExposureScan(payload);
-      toast.success('Scansione exposure avviata', {
-        description: `Job ${result?.job_id || '-'} • Queue: ${result?.queue?.total || 0}`,
-      });
-      setSelectedJobId(String(result?.job_id || ''));
-      await refreshData();
-    } catch (error: any) {
-      toast.error('Avvio scansione non riuscito', {
-        description: error?.message || 'Errore durante avvio',
-      });
-    } finally {
-      setStartingScan(false);
-    }
-  };
+    void runExposureScan(payload, { auto: true });
+  }, [
+    isAdmin,
+    organizationId,
+    loading,
+    startingScan,
+    scopeDomains,
+    scopePublicIps,
+    jobs,
+    fullControls,
+    customPorts,
+    runExposureScan,
+  ]);
 
   const handlePoll = async () => {
     setPolling(true);
@@ -357,38 +489,45 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
                       <Label>Profilo porte (custom_ports)</Label>
                       <Input value={customPorts} onChange={(event) => setCustomPorts(event.target.value)} placeholder="top1000 oppure 22,80,443,8443" />
                     </div>
-                    <div className="space-y-2">
-                      <Label>Root domains (CSV)</Label>
-                      <Input value={rootDomainsInput} onChange={(event) => setRootDomainsInput(event.target.value)} placeholder="example.com, azienda.it" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Subdomains (CSV)</Label>
-                      <Input value={subdomainsInput} onChange={(event) => setSubdomainsInput(event.target.value)} placeholder="api.example.com, vpn.example.com" />
-                    </div>
                     <div className="space-y-2 md:col-span-2">
-                      <Label>Public IPs (CSV)</Label>
-                      <Input value={publicIpsInput} onChange={(event) => setPublicIpsInput(event.target.value)} placeholder="203.0.113.10, 203.0.113.20" />
+                      <Label>Target in scope (auto)</Label>
+                      <div className="rounded-md border border-border p-2 space-y-2">
+                        <div className="flex flex-wrap gap-1.5">
+                          {scopeDomains.map((domain) => (
+                            <Badge key={`scope-domain-${domain}`} variant="secondary">{domain}</Badge>
+                          ))}
+                          {scopePublicIps.map((ip) => (
+                            <Badge key={`scope-ip-${ip}`} variant="outline">{ip}</Badge>
+                          ))}
+                          {scopeDomains.length === 0 && scopePublicIps.length === 0 && (
+                            <span className="text-xs text-muted-foreground">Nessun target in scope.</span>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        La scansione include sempre tutti i domini e IP in scope con controlli completi.
+                      </p>
                     </div>
                   </div>
 
                   <Separator />
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-                    <label className="flex items-center gap-2"><Checkbox checked={includeSubDiscovery} onCheckedChange={(v) => setIncludeSubDiscovery(Boolean(v))} />Subdomain discovery</label>
-                    <label className="flex items-center gap-2"><Checkbox checked={includePortScan} onCheckedChange={(v) => setIncludePortScan(Boolean(v))} />Port scan</label>
-                    <label className="flex items-center gap-2"><Checkbox checked={includeWebTech} onCheckedChange={(v) => setIncludeWebTech(Boolean(v))} />Web technologies</label>
-                    <label className="flex items-center gap-2"><Checkbox checked={includeSsl} onCheckedChange={(v) => setIncludeSsl(Boolean(v))} />SSL/TLS</label>
-                    <label className="flex items-center gap-2"><Checkbox checked={includeNetworkVuln} onCheckedChange={(v) => setIncludeNetworkVuln(Boolean(v))} />Network vulnerability scan</label>
-                    <label className="flex items-center gap-2"><Checkbox checked={detectOs} onCheckedChange={(v) => setDetectOs(Boolean(v))} />OS detection</label>
-                    <label className="flex items-center gap-2"><Checkbox checked={detectServiceVersion} onCheckedChange={(v) => setDetectServiceVersion(Boolean(v))} />Service version</label>
-                    <label className="flex items-center gap-2"><Checkbox checked={checkAlive} onCheckedChange={(v) => setCheckAlive(Boolean(v))} />Check alive</label>
-                    <label className="flex items-center gap-2"><Checkbox checked={traceroute} onCheckedChange={(v) => setTraceroute(Boolean(v))} />Traceroute</label>
+                    <label className="flex items-center gap-2"><Checkbox checked={fullControls.includeSubDiscovery} disabled />Subdomain discovery</label>
+                    <label className="flex items-center gap-2"><Checkbox checked={fullControls.includePortScan} disabled />Port scan</label>
+                    <label className="flex items-center gap-2"><Checkbox checked={fullControls.includeWebTech} disabled />Web technologies</label>
+                    <label className="flex items-center gap-2"><Checkbox checked={fullControls.includeSsl} disabled />SSL/TLS</label>
+                    <label className="flex items-center gap-2"><Checkbox checked={fullControls.includeNetworkVuln} disabled />Network vulnerability scan</label>
+                    <label className="flex items-center gap-2"><Checkbox checked={fullControls.detectOs} disabled />OS detection</label>
+                    <label className="flex items-center gap-2"><Checkbox checked={fullControls.detectServiceVersion} disabled />Service version</label>
+                    <label className="flex items-center gap-2"><Checkbox checked={fullControls.checkAlive} disabled />Check alive</label>
+                    <label className="flex items-center gap-2"><Checkbox checked={fullControls.traceroute} disabled />Traceroute</label>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <Button onClick={handleStartScan} disabled={startingScan}>
+                    <Button onClick={handleStartScan} disabled={startingScan || (scopeDomains.length === 0 && scopePublicIps.length === 0)}>
                       {startingScan ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
-                      Avvia scansione exposure
+                      Avvia scansione scope completa
                     </Button>
                     <Button variant="outline" onClick={handlePoll} disabled={polling}>
                       {polling ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RotateCw className="w-4 h-4 mr-2" />}
@@ -406,6 +545,12 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
                       <Badge variant="outline">Stato: {statusLabel(String(selectedJob.status || ''))}</Badge>
                       <Badge variant="outline">Progress: {statusProgress(String(selectedJob.status || ''))}%</Badge>
                     </div>
+                  )}
+
+                  {scopeDomains.length === 0 && (
+                    <p className="text-xs text-amber-300">
+                      Nessun dominio disponibile nello scope monitorato: aggiungi prima una regola di tipo dominio.
+                    </p>
                   )}
                 </CardContent>
               )}

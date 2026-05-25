@@ -17,6 +17,19 @@ import {
 } from '../_shared/pentestToolsParamMapper.ts';
 import { startQueuedScansForJob } from '../_shared/exposureQueue.ts';
 
+const SERVICE_ROLE_KEY = String(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '').trim();
+const INTERNAL_CRON_SECRET = String(
+  Deno.env.get('SURFACESCAN_CRON_INTERNAL_SECRET')
+  || Deno.env.get('SURFACESCAN_INTERNAL_SECRET')
+  || '',
+).trim();
+
+function extractBearerToken(req: Request): string {
+  const auth = String(req.headers.get('authorization') || '');
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  return String(match?.[1] || '').trim();
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -30,11 +43,37 @@ serve(async (req: Request) => {
 
   try {
     const { userClient, adminClient } = makeSupabaseClients(req);
-    const { data: authData, error: authError } = await userClient.auth.getUser();
-    if (authError || !authData.user) return jsonResponse({ error: 'Unauthorized' }, 401);
+    const bearerToken = extractBearerToken(req);
+    const cronSecretHeader = String(
+      req.headers.get('x-surface-internal-secret')
+      || req.headers.get('x-cron-secret')
+      || '',
+    ).trim();
+    const isServiceRoleInvocation =
+      Boolean(SERVICE_ROLE_KEY)
+      && bearerToken === SERVICE_ROLE_KEY
+      && (!INTERNAL_CRON_SECRET || cronSecretHeader === INTERNAL_CRON_SECRET);
 
     const raw = (await req.json()) as Partial<SurfacePortTechScanRequest>;
     const input = resolveRequestDefaults(raw || {});
+
+    let requestedByUserId: string | null = null;
+    let callerProfile: Awaited<ReturnType<typeof getCallerProfile>> | null = null;
+
+    if (!isServiceRoleInvocation) {
+      const { data: authData, error: authError } = await userClient.auth.getUser();
+      if (authError || !authData.user) return jsonResponse({ error: 'Unauthorized' }, 401);
+
+      callerProfile = await getCallerProfile(adminClient, authData.user.id);
+      if (!callerProfile.isAdminLike) {
+        return jsonResponse({ error: 'Only admin users can start exposure scans' }, 403);
+      }
+      requestedByUserId = authData.user.id;
+    } else {
+      if (!input.customer_id) {
+        return jsonResponse({ error: 'customer_id is required for internal cron invocation' }, 400);
+      }
+    }
 
     if (!input.customer_id) {
       return jsonResponse({ error: 'customer_id is required' }, 400);
@@ -42,11 +81,8 @@ serve(async (req: Request) => {
     if (!input.tenant_id) {
       input.tenant_id = input.customer_id;
     }
-
-    const caller = await getCallerProfile(adminClient, authData.user.id);
-    assertCustomerAccess(caller, input.customer_id);
-    if (!caller.isAdminLike) {
-      return jsonResponse({ error: 'Only admin users can start exposure scans' }, 403);
+    if (!isServiceRoleInvocation && callerProfile) {
+      assertCustomerAccess(callerProfile, input.customer_id);
     }
 
     const { targets, rejected } = normalizeTargets(input);
@@ -65,7 +101,7 @@ serve(async (req: Request) => {
         organization_id: input.customer_id,
         tenant_id: input.tenant_id,
         customer_id: input.customer_id,
-        requested_by: authData.user.id,
+        requested_by: requestedByUserId,
         raw_target: primary.value,
         normalized_target: primary.value,
         target_type: primary.type,
@@ -210,7 +246,7 @@ serve(async (req: Request) => {
     await adminClient.from('surface_scan_audit_log' as any).insert({
       organization_id: input.customer_id,
       scan_job_id: job.id,
-      user_id: authData.user.id,
+      user_id: requestedByUserId,
       action: 'ptools_exposure_scan_started',
       details: {
         scan_name: input.scan_name,
@@ -218,6 +254,7 @@ serve(async (req: Request) => {
         rejected_total: rejected.length,
         queue_total: queueRows.length,
         queue_started: kicked.started,
+        triggered_by: isServiceRoleInvocation ? 'cron' : 'manual',
       },
     });
 
@@ -237,4 +274,3 @@ serve(async (req: Request) => {
     return jsonResponse({ error: error?.message || 'Internal error' }, 500);
   }
 });
-

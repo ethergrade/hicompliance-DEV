@@ -197,7 +197,7 @@ const SurfaceScan360: React.FC = () => {
   const [rescanLimit, setRescanLimit] = useState('');
   const [assetSearch, setAssetSearch] = useState('');
   const [assetPage, setAssetPage] = useState(1);
-  const [isDiscoveryCollapsed, setIsDiscoveryCollapsed] = useState(false);
+  const [isDiscoveryCollapsed, setIsDiscoveryCollapsed] = useState(true);
   const [isLiveResultsCollapsed, setIsLiveResultsCollapsed] = useState(true);
   const [showScopeDiagnostics, setShowScopeDiagnostics] = useState(false);
   const [reverseDnsMap, setReverseDnsMap] = useState<Record<string, string[]>>({});
