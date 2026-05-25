@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import type { SurfaceScanJob } from '@/hooks/useSurfaceScanEngine';
 import { useSurfaceScanReportRepository } from '@/hooks/useSurfaceScanReportRepository';
 import { generateSurfaceScan360Pdf, type SurfaceScan360Report } from '@/lib/surfaceScan360PdfReport';
+import { generateSurfaceScan360Docx } from '@/lib/surfaceScan360DocxReport';
 
 interface SurfaceScanReportRepositoryProps {
   scanJobs: SurfaceScanJob[];
@@ -51,6 +52,15 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
     }
   };
 
+  const downloadDocx = async (payload: SurfaceScan360Report) => {
+    try {
+      await generateSurfaceScan360Docx(payload);
+    } catch (error) {
+      console.error('Error exporting SurfaceScan report DOCX:', error);
+      toast.error('Export DOCX non riuscito');
+    }
+  };
+
   const handleGenerateMissing = async () => {
     const result = await generateMissingReports();
     if (result.created === 0 && result.skipped === 0) {
@@ -78,7 +88,7 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
               Repository Report SurfaceScan360
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Report persistente canonico su scope organizzazione, aggiornato a completamento scansioni e disponibile per export PDF.
+              Report persistente canonico su scope organizzazione, aggiornato a completamento scansioni e disponibile per export PDF e DOCX.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -185,6 +195,15 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
                           >
                             <Download className="w-4 h-4 mr-2" />
                             PDF
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => void downloadDocx(payload)}
+                            disabled={deletingReportId === row.id}
+                          >
+                            <Download className="w-4 h-4 mr-2" />
+                            DOCX
                           </Button>
                           {row.scan_job_id && (
                             <Button

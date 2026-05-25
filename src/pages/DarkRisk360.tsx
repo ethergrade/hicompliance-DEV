@@ -45,6 +45,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { presentDarkRiskFindingType, presentDarkRiskSource } from '@/lib/darkrisk/presentation';
 import { detectSensitiveIndicators } from '@/lib/darkrisk/sensitiveDetection';
+import { generateSurfaceScan360Pdf } from '@/lib/surfaceScan360PdfReport';
+import { generateSurfaceScan360Docx } from '@/lib/surfaceScan360DocxReport';
+import { adaptDarkRiskReportToSurfaceScanTemplate } from '@/lib/darkrisk/darkriskReportExportAdapter';
 
 type DashboardTab = 'overview' | 'roadmap' | 'findings' | 'assets' | 'surface' | 'identity' | 'reports';
 
@@ -208,6 +211,7 @@ const DarkRisk360: React.FC = () => {
   const [assetTypeFilter, setAssetTypeFilter] = useState<'all' | 'domain' | 'subdomain' | 'ip' | 'url' | 'email' | 'candidate'>('all');
   const [identityEmailsInput, setIdentityEmailsInput] = useState('');
   const [identityScanning, setIdentityScanning] = useState(false);
+  const [exportingReportId, setExportingReportId] = useState<string | null>(null);
 
   const {
     data: reportSnapshots = [],
@@ -792,6 +796,51 @@ const DarkRisk360: React.FC = () => {
     window.open(String(data.signed_url), '_blank', 'noopener,noreferrer');
   };
 
+  const loadReportJsonSnapshot = async (report: Record<string, any>) => {
+    if (!organizationId) throw new Error('Nessun cliente selezionato');
+
+    if (report?.report_json && typeof report.report_json === 'object') {
+      return report.report_json;
+    }
+
+    const { data, error: invokeError } = await supabase.functions.invoke('darkrisk360-report-access', {
+      body: {
+        customer_id: organizationId,
+        report_id: String(report?.id || ''),
+        format: 'json',
+        reason: 'manual_export_surface_template',
+      },
+    });
+    if (invokeError) throw invokeError;
+    if (!data?.ok || !data?.signed_url) {
+      throw new Error(String(data?.error || 'Export JSON non disponibile'));
+    }
+
+    const response = await fetch(String(data.signed_url));
+    if (!response.ok) {
+      throw new Error(`Download JSON fallito (${response.status})`);
+    }
+    return await response.json();
+  };
+
+  const exportDarkRiskWithSurfaceTemplate = async (report: Record<string, any>, format: 'pdf' | 'docx') => {
+    try {
+      setExportingReportId(String(report?.id || ''));
+      const reportJson = await loadReportJsonSnapshot(report);
+      const adapted = adaptDarkRiskReportToSurfaceScanTemplate(reportJson);
+      if (format === 'pdf') {
+        generateSurfaceScan360Pdf(adapted);
+      } else {
+        await generateSurfaceScan360Docx(adapted);
+      }
+      toast.success(`Export ${format.toUpperCase()} completato`);
+    } catch (exportError: any) {
+      toast.error(`Export ${format.toUpperCase()} non riuscito: ${String(exportError?.message || 'errore sconosciuto')}`);
+    } finally {
+      setExportingReportId(null);
+    }
+  };
+
   const openCategoryDetail = (category: string) => {
     setActiveTab('findings');
     setFindingFilter((prev) => ({ ...prev, category, highlightedFindingId: null }));
@@ -1206,7 +1255,12 @@ const DarkRisk360: React.FC = () => {
                 <Card className="border-border">
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between gap-3">
-                      <CardTitle>Repository Report DarkRisk360</CardTitle>
+                      <div>
+                        <CardTitle>Repository Report DarkRisk360</CardTitle>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Export unificato con template SurfaceScan360: PDF e DOCX disponibili per ogni snapshot.
+                        </p>
+                      </div>
                       <Button
                         variant="outline"
                         size="sm"
@@ -1236,6 +1290,24 @@ const DarkRisk360: React.FC = () => {
                               </p>
                             </div>
                             <Badge variant="outline">{String(report.status || 'completed')}</Badge>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={exportingReportId === String(report.id)}
+                              onClick={() => void exportDarkRiskWithSurfaceTemplate(report, 'pdf')}
+                            >
+                              <Download className="w-4 h-4 mr-2" />
+                              PDF
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={exportingReportId === String(report.id)}
+                              onClick={() => void exportDarkRiskWithSurfaceTemplate(report, 'docx')}
+                            >
+                              <Download className="w-4 h-4 mr-2" />
+                              DOCX
+                            </Button>
                             <Button variant="outline" size="sm" onClick={() => void openReportAsset(report, 'json')}>
                               <Download className="w-4 h-4 mr-2" />
                               JSON

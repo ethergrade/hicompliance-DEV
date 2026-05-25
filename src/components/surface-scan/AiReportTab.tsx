@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { generateSurfaceScan360Pdf } from '@/lib/surfaceScan360PdfReport';
+import { generateSurfaceScan360Docx } from '@/lib/surfaceScan360DocxReport';
 
 interface AiReport {
   generated_at: string;
@@ -172,6 +173,16 @@ export const AiReportTab: React.FC = () => {
     generateSurfaceScan360Pdf(report as any);
   };
 
+  const downloadDocx = async () => {
+    if (!report) return;
+    try {
+      await generateSurfaceScan360Docx(report as any);
+    } catch (error) {
+      console.error('Error exporting SurfaceScan report DOCX:', error);
+      toast.error('Export DOCX non riuscito');
+    }
+  };
+
   const o = report?.organization || {};
   const s = report?.scan || {};
 
@@ -184,7 +195,7 @@ export const AiReportTab: React.FC = () => {
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
             Genera un report completo con anagrafica cliente, scope, sottodomini, findings e top-10
-            raccomandazioni consulenziali. Tutte le sezioni sono paginate per una lettura ordinata e pronte per export PDF.
+            raccomandazioni consulenziali. Tutte le sezioni sono paginate per una lettura ordinata e pronte per export PDF e DOCX.
           </p>
           <div className="flex gap-2">
             <Button onClick={generate} disabled={loading}>
@@ -192,9 +203,14 @@ export const AiReportTab: React.FC = () => {
               Genera report AI
             </Button>
             {report && (
-              <Button variant="outline" onClick={downloadPdf}>
-                <Download className="w-4 h-4 mr-2" /> Scarica PDF
-              </Button>
+              <>
+                <Button variant="outline" onClick={downloadPdf}>
+                  <Download className="w-4 h-4 mr-2" /> Scarica PDF
+                </Button>
+                <Button variant="outline" onClick={() => void downloadDocx()}>
+                  <Download className="w-4 h-4 mr-2" /> Scarica DOCX
+                </Button>
+              </>
             )}
           </div>
         </CardContent>
