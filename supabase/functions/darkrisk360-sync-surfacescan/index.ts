@@ -17,6 +17,10 @@ import {
   inferRiskDimensions,
 } from '../_shared/darkrisk-scoring.ts';
 import {
+  detectSensitiveIndicators,
+  hasSensitiveIndicators,
+} from '../_shared/darkrisk-sensitive-detection.ts';
+import {
   type DarkRiskSelectorType,
   validateDarkRiskSelector,
 } from '../_shared/darkrisk-selector-validation.ts';
@@ -151,6 +155,26 @@ function severityFromIntelxScore(score: number | null): 'info' | 'low' | 'medium
   if (score >= 50) return 'medium';
   if (score >= 30) return 'low';
   return 'info';
+}
+
+const severityRank: Record<'info' | 'low' | 'medium' | 'high' | 'critical', number> = {
+  info: 1,
+  low: 2,
+  medium: 3,
+  high: 4,
+  critical: 5,
+};
+
+function boostSeverityForSensitiveData(
+  severity: 'info' | 'low' | 'medium' | 'high' | 'critical',
+  indicators: ReturnType<typeof detectSensitiveIndicators>,
+): 'info' | 'low' | 'medium' | 'high' | 'critical' {
+  let minSeverity: 'info' | 'low' | 'medium' | 'high' | 'critical' = 'info';
+  if (indicators.credit_cards > 0 || indicators.passwords > 0) minSeverity = 'high';
+  else if (indicators.addresses > 0 || indicators.phone_numbers > 0) minSeverity = 'medium';
+  else if (indicators.domains > 0) minSeverity = 'low';
+
+  return severityRank[severity] >= severityRank[minSeverity] ? severity : minSeverity;
 }
 
 function intelxFindingTypeFromRecord(record: Record<string, unknown>, selector: string): string {
@@ -846,6 +870,10 @@ serve(async (req: Request) => {
       if (sourceRecordErr || !sourceRecord?.id) throw sourceRecordErr || new Error('source record insert failed');
       recordsCreated += 1;
 
+      const sensitiveIndicators = detectSensitiveIndicators(
+        `${finding.title}\n${finding.description}\n${finding.affected_asset}\n${JSON.stringify(finding.payload || {})}`.slice(0, 4000),
+      );
+
       const { data: evidence, error: evidenceErr } = await adminClient
         .from('darkrisk_evidence' as any)
         .insert({
@@ -865,12 +893,13 @@ serve(async (req: Request) => {
           first_seen_at: finding.created_at || new Date().toISOString(),
           last_seen_at: new Date().toISOString(),
           visibility: 'customer',
-          contains_sensitive_data: false,
+          contains_sensitive_data: hasSensitiveIndicators(sensitiveIndicators),
           metadata: {
             origin: finding.origin,
             source_id: finding.source_id,
             module: finding.module,
             status: finding.status,
+            sensitive_indicators: sensitiveIndicators,
           },
         })
         .select('id')
@@ -897,6 +926,10 @@ serve(async (req: Request) => {
         confidence,
         freshnessDays,
       });
+      if (hasSensitiveIndicators(sensitiveIndicators)) {
+        riskDimensions.identity_exposure = Math.min(100, (Number(riskDimensions.identity_exposure || 0) + 20));
+        riskDimensions.surface_posture = Math.min(100, (Number(riskDimensions.surface_posture || 0) + 10));
+      }
       const riskScore = calculateFindingRiskScore({
         severity: finding.severity,
         confidence,
@@ -935,6 +968,8 @@ serve(async (req: Request) => {
                 requires_validation: compromiseType !== 'misconfiguration',
                 recurrence_count: recurrenceCount,
                 category_hint: classifyThreatCategoryText(`${finding.title} ${finding.finding_type} ${finding.module}`),
+                sensitive_indicators: sensitiveIndicators,
+                sensitive_data_detected: hasSensitiveIndicators(sensitiveIndicators),
               },
             })
             .select('id')
@@ -993,7 +1028,11 @@ serve(async (req: Request) => {
               ? new Date(observedAtCandidate).toISOString()
               : new Date().toISOString();
             const xscore = Number(record?.xscore);
-            const severity = severityFromIntelxScore(Number.isFinite(xscore) ? xscore : null);
+            const sensitiveIndicators = detectSensitiveIndicators(
+              `${title}\n${description}\n${queryTerm.term}\n${JSON.stringify(record || {})}`.slice(0, 6000),
+            );
+            const severityBase = severityFromIntelxScore(Number.isFinite(xscore) ? xscore : null);
+            const severity = boostSeverityForSensitiveData(severityBase, sensitiveIndicators);
             const findingType = intelxFindingTypeFromRecord(record, queryTerm.term);
             const compromiseType = inferCompromiseType({
               findingType,
@@ -1010,6 +1049,10 @@ serve(async (req: Request) => {
               confidence,
               freshnessDays: daysSince(observedAt),
             });
+            if (hasSensitiveIndicators(sensitiveIndicators)) {
+              riskDimensions.identity_exposure = Math.min(100, (Number(riskDimensions.identity_exposure || 0) + 30));
+              riskDimensions.surface_posture = Math.min(100, (Number(riskDimensions.surface_posture || 0) + 10));
+            }
             const riskScore = calculateFindingRiskScore({
               severity,
               confidence,
@@ -1045,6 +1088,7 @@ serve(async (req: Request) => {
                   selector: queryTerm.selectorNormalized || null,
                   query_term: queryTerm.term,
                   query_kind: queryTerm.kind,
+                  sensitive_indicators: sensitiveIndicators,
                   record: {
                     systemid: record?.systemid || null,
                     storageid: record?.storageid || null,
@@ -1086,13 +1130,14 @@ serve(async (req: Request) => {
                 first_seen_at: observedAt,
                 last_seen_at: new Date().toISOString(),
                 visibility: 'customer',
-                contains_sensitive_data: false,
+                contains_sensitive_data: hasSensitiveIndicators(sensitiveIndicators),
                 metadata: {
                   bucket: normalizeText(String(record?.bucket || '')) || null,
                   mediah: normalizeText(String(record?.mediah || '')) || null,
                   typeh: normalizeText(String(record?.typeh || '')) || null,
                   xscore: Number.isFinite(xscore) ? xscore : null,
                   query_kind: queryTerm.kind,
+                  sensitive_indicators: sensitiveIndicators,
                 },
               })
               .select('id')
@@ -1132,6 +1177,8 @@ serve(async (req: Request) => {
                   query_term: queryTerm.term,
                   query_kind: queryTerm.kind,
                   category_hint: classifyThreatCategoryText(`${title} ${findingType} intelx`),
+                  sensitive_indicators: sensitiveIndicators,
+                  sensitive_data_detected: hasSensitiveIndicators(sensitiveIndicators),
                 },
               })
               .select('id')

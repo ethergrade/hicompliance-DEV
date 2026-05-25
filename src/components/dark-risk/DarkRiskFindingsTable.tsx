@@ -16,6 +16,10 @@ export type DarkRiskFindingRow = {
   last_seen_at: string;
   source: string;
   compromise_type: string;
+  category?: string;
+  site?: string;
+  scope_status?: string;
+  sensitive_tags?: string[];
 };
 
 const severityClasses: Record<DarkRiskFindingRow['severity'], string> = {
@@ -31,6 +35,14 @@ const formatDateTime = (value: string | null | undefined): string => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return '-';
   return parsed.toLocaleString('it-IT');
+};
+
+const scopeClass = (scopeStatus: string | undefined): string => {
+  const normalized = String(scopeStatus || '').toLowerCase();
+  if (normalized === 'approved') return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+  if (normalized === 'candidate') return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+  if (normalized === 'excluded') return 'bg-red-500/20 text-red-300 border-red-500/40';
+  return 'bg-slate-500/20 text-slate-300 border-slate-500/40';
 };
 
 export const DarkRiskFindingsTable: React.FC<{
@@ -51,13 +63,16 @@ export const DarkRiskFindingsTable: React.FC<{
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-sm">
+            <table className="w-full min-w-[1160px] text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground">
                   <th className="py-2 pr-3">Severity</th>
                   <th className="py-2 pr-3">Risk</th>
                   <th className="py-2 pr-3">Titolo</th>
                   <th className="py-2 pr-3">Asset</th>
+                  <th className="py-2 pr-3">Sito</th>
+                  <th className="py-2 pr-3">Scope</th>
+                  <th className="py-2 pr-3">Categoria</th>
                   <th className="py-2 pr-3">Tipo</th>
                   <th className="py-2 pr-3">Confidence</th>
                   <th className="py-2 pr-3">Stato</th>
@@ -74,8 +89,22 @@ export const DarkRiskFindingsTable: React.FC<{
                     <td className="py-2 pr-3">
                       <p className="font-medium">{row.title}</p>
                       <p className="text-xs text-muted-foreground">{row.compromise_type}</p>
+                      {(row.sensitive_tags || []).length > 0 ? (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {row.sensitive_tags?.map((tag) => (
+                            <Badge key={`${row.id}-${tag}`} variant="outline" className="text-[10px]">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="py-2 pr-3">{row.asset}</td>
+                    <td className="py-2 pr-3">{row.site || '-'}</td>
+                    <td className="py-2 pr-3">
+                      <Badge className={scopeClass(row.scope_status)}>{row.scope_status || 'unknown'}</Badge>
+                    </td>
+                    <td className="py-2 pr-3">{row.category || '-'}</td>
                     <td className="py-2 pr-3">{presentDarkRiskFindingType(row.finding_type)}</td>
                     <td className="py-2 pr-3">{row.confidence}</td>
                     <td className="py-2 pr-3">{row.status}</td>

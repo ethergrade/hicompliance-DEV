@@ -33,6 +33,7 @@ import { DarkRiskCoverageMatrix } from '@/components/dark-risk/DarkRiskCoverageM
 import { DarkRiskThreatGroups } from '@/components/dark-risk/DarkRiskThreatGroups';
 import { DarkRiskRecentAlerts } from '@/components/dark-risk/DarkRiskRecentAlerts';
 import { DarkRiskFindingsTable, type DarkRiskFindingRow } from '@/components/dark-risk/DarkRiskFindingsTable';
+import { DarkRiskFindingsAnalytics } from '@/components/dark-risk/DarkRiskFindingsAnalytics';
 import { DarkRiskAssetsTable, type DarkRiskAssetRow } from '@/components/dark-risk/DarkRiskAssetsTable';
 import { useDarkRiskAlerts } from '@/hooks/useDarkRiskAlerts';
 import { useDarkRiskOverview } from '@/hooks/useDarkRiskOverview';
@@ -42,6 +43,7 @@ import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { presentDarkRiskFindingType, presentDarkRiskSource } from '@/lib/darkrisk/presentation';
+import { detectSensitiveIndicators } from '@/lib/darkrisk/sensitiveDetection';
 
 type DashboardTab = 'overview' | 'roadmap' | 'findings' | 'assets' | 'surface' | 'identity' | 'reports';
 
@@ -54,6 +56,14 @@ type FindingFilterState = {
 
 type DarkRiskFindingRowExtended = DarkRiskFindingRow & {
   category: string;
+};
+
+const sensitiveTagLabels: Record<string, string> = {
+  domains: 'domini',
+  passwords: 'password',
+  addresses: 'indirizzi',
+  credit_cards: 'carte',
+  phone_numbers: 'telefoni',
 };
 
 const severityOrder: Array<FindingFilterState['severity']> = ['all', 'critical', 'high', 'medium', 'low', 'info'];
@@ -139,6 +149,32 @@ const roadmapBadgeVariant = (status: string): 'default' | 'outline' | 'secondary
   return 'outline';
 };
 
+const normalizeHost = (value: string): string => {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text || text === '-') return 'n/a';
+
+  if (/^https?:\/\//i.test(text)) {
+    try {
+      const url = new URL(text);
+      return url.hostname || text;
+    } catch {
+      return text;
+    }
+  }
+
+  return text.replace(/^@/, '');
+};
+
+const extractSensitiveTags = (input: unknown): string[] => {
+  if (!input || typeof input !== 'object') return [];
+  const tags = (input as any)?.tags;
+  if (!Array.isArray(tags)) return [];
+  return tags
+    .map((tag) => String(tag || '').trim())
+    .filter(Boolean)
+    .slice(0, 8);
+};
+
 const DarkRisk360: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -188,7 +224,7 @@ const DarkRisk360: React.FC = () => {
 
       const { data: findingsData, error: findingsError } = await supabase
         .from('darkrisk_findings' as any)
-        .select('id, title, finding_type, severity, confidence, status, risk_score, first_seen_at, last_seen_at, metadata, affected_asset_id')
+        .select('id, title, finding_type, severity, confidence, status, risk_score, first_seen_at, last_seen_at, metadata, affected_asset_id, evidence_ids, description')
         .eq('organization_id', organizationId)
         .order('risk_score', { ascending: false })
         .limit(400);
@@ -232,13 +268,15 @@ const DarkRisk360: React.FC = () => {
           const source = presentDarkRiskSource(String(row.module || 'surface_scan_engine'));
           const findingType = presentDarkRiskFindingType(String(row.finding_type || 'surface_finding'));
           const title = String(row.title || findingType);
+          const assetValue = String(row.affected_asset || row.affected_url || '-');
+          const sensitive = detectSensitiveIndicators(`${title}\n${assetValue}`);
           const category = classifyThreatCategory(title, findingType, source);
           return {
             id: `surface-${String(row.id)}`,
             severity: String(row.severity || 'info') as DarkRiskFindingRow['severity'],
             risk_score: riskScoreFromSeverity(String(row.severity || 'info')),
             title,
-            asset: String(row.affected_asset || row.affected_url || '-'),
+            asset: assetValue,
             finding_type: findingType,
             confidence: 'medium' as DarkRiskFindingRow['confidence'],
             status: String(row.status || 'new'),
@@ -247,6 +285,9 @@ const DarkRisk360: React.FC = () => {
             source,
             compromise_type: 'misconfiguration',
             category,
+            site: normalizeHost(assetValue),
+            scope_status: 'approved',
+            sensitive_tags: sensitive.tags.map((tag) => sensitiveTagLabels[tag] || tag),
           } satisfies DarkRiskFindingRowExtended;
         });
 
@@ -254,13 +295,15 @@ const DarkRisk360: React.FC = () => {
           const source = presentDarkRiskSource(String(row.source || 'surface_exposure_engine'));
           const findingType = presentDarkRiskFindingType(String(row.finding_type || 'surface_exposure_finding'));
           const title = String(row.title || findingType);
+          const assetValue = String(row.affected_host || row.affected_url || '-');
+          const sensitive = detectSensitiveIndicators(`${title}\n${assetValue}\n${String(row.evidence || '')}`);
           const category = classifyThreatCategory(title, findingType, source);
           return {
             id: `exposure-${String(row.id)}`,
             severity: String(row.severity || 'info') as DarkRiskFindingRow['severity'],
             risk_score: riskScoreFromSeverity(String(row.severity || 'info')),
             title,
-            asset: String(row.affected_host || row.affected_url || '-'),
+            asset: assetValue,
             finding_type: findingType,
             confidence: 'medium' as DarkRiskFindingRow['confidence'],
             status: String(row.status || 'new'),
@@ -269,6 +312,9 @@ const DarkRisk360: React.FC = () => {
             source,
             compromise_type: 'misconfiguration',
             category,
+            site: normalizeHost(assetValue),
+            scope_status: 'approved',
+            sensitive_tags: sensitive.tags.map((tag) => sensitiveTagLabels[tag] || tag),
           } satisfies DarkRiskFindingRowExtended;
         });
 
@@ -283,18 +329,44 @@ const DarkRisk360: React.FC = () => {
         ),
       );
 
-      const assetsMap = new Map<string, string>();
+      const assetsMap = new Map<string, { value: string; scope_status: string }>();
       if (assetIds.length > 0) {
         const { data: assetsData, error: assetsError } = await supabase
           .from('darkrisk_assets' as any)
-          .select('id, normalized_value, value')
+          .select('id, normalized_value, value, scope_status')
           .eq('organization_id', organizationId)
           .in('id', assetIds);
 
         if (assetsError) throw assetsError;
 
         for (const asset of (assetsData || []) as Array<Record<string, any>>) {
-          assetsMap.set(String(asset.id), String(asset.normalized_value || asset.value || '-'));
+          assetsMap.set(String(asset.id), {
+            value: String(asset.normalized_value || asset.value || '-'),
+            scope_status: String(asset.scope_status || 'approved'),
+          });
+        }
+      }
+
+      const evidenceIds = Array.from(
+        new Set(
+          findings.flatMap((finding) => {
+            const raw = Array.isArray(finding.evidence_ids) ? finding.evidence_ids : [];
+            return raw.map((entry) => String(entry || '').trim()).filter(Boolean);
+          }),
+        ),
+      );
+
+      const evidenceMap = new Map<string, Record<string, any>>();
+      if (evidenceIds.length > 0) {
+        const { data: evidenceData, error: evidenceError } = await supabase
+          .from('darkrisk_evidence' as any)
+          .select('id, metadata, summary, title, masked_value, contains_sensitive_data')
+          .eq('organization_id', organizationId)
+          .in('id', evidenceIds);
+
+        if (evidenceError) throw evidenceError;
+        for (const row of (evidenceData || []) as Array<Record<string, any>>) {
+          evidenceMap.set(String(row.id), row);
         }
       }
 
@@ -308,13 +380,39 @@ const DarkRisk360: React.FC = () => {
         const title = String(finding.title || findingType);
         const categoryHint = String(finding?.metadata?.category_hint || '').trim();
         const category = categoryHint || classifyThreatCategory(title, findingType, source);
+        const assetData = assetsMap.get(String(finding.affected_asset_id || ''));
+        const assetValue = assetData?.value || '-';
+        const scopeStatus = assetData?.scope_status || String(finding?.metadata?.scope_status || 'unknown');
+
+        const findingSensitiveTags = extractSensitiveTags(finding?.metadata?.sensitive_indicators);
+        const evidenceRows = (Array.isArray(finding.evidence_ids) ? finding.evidence_ids : [])
+          .map((id: unknown) => evidenceMap.get(String(id || '').trim()))
+          .filter(Boolean) as Array<Record<string, any>>;
+
+        const evidenceSensitiveTags = evidenceRows.flatMap((evidenceRow) =>
+          extractSensitiveTags(evidenceRow?.metadata?.sensitive_indicators),
+        );
+
+        const fallbackSensitive = detectSensitiveIndicators(
+          `${title}\n${String(finding.description || '')}\n${assetValue}\n${evidenceRows.map((row) => `${String(row.title || '')}\n${String(row.summary || '')}\n${String(row.masked_value || '')}`).join('\n')}`.slice(0, 7000),
+        );
+
+        const sensitiveTags = Array.from(
+          new Set(
+            [
+              ...findingSensitiveTags,
+              ...evidenceSensitiveTags,
+              ...(Array.isArray(fallbackSensitive.tags) ? fallbackSensitive.tags : []),
+            ].map((tag) => sensitiveTagLabels[String(tag)] || String(tag)),
+          ),
+        ).filter(Boolean);
 
         return {
           id: String(finding.id),
           severity: String(finding.severity || 'info') as DarkRiskFindingRow['severity'],
           risk_score: Number(finding.risk_score || 0),
           title,
-          asset: assetsMap.get(String(finding.affected_asset_id || '')) || '-',
+          asset: assetValue,
           finding_type: findingType,
           confidence: String(finding.confidence || 'medium') as DarkRiskFindingRow['confidence'],
           status: String(finding.status || 'new'),
@@ -323,6 +421,9 @@ const DarkRisk360: React.FC = () => {
           source,
           compromise_type: String(finding?.metadata?.compromise_type || 'unknown'),
           category,
+          site: normalizeHost(assetValue),
+          scope_status: scopeStatus,
+          sensitive_tags: sensitiveTags,
         };
       });
     },
@@ -844,6 +945,15 @@ const DarkRisk360: React.FC = () => {
                     ) : null}
                   </CardContent>
                 </Card>
+                <DarkRiskFindingsAnalytics
+                  rows={filteredFindings.map((row) => ({
+                    id: row.id,
+                    site: row.site || normalizeHost(row.asset),
+                    scope_status: row.scope_status || 'unknown',
+                    category: row.category || 'Minacce rilevate',
+                    sensitive_tags: row.sensitive_tags || [],
+                  }))}
+                />
                 <DarkRiskFindingsTable
                   rows={filteredFindings}
                   subtitle={findingsLoading ? 'Caricamento finding in corso...' : `${filteredFindings.length} finding filtrati`}
