@@ -292,7 +292,7 @@ async function intelxSubmitSearch(term: string): Promise<string | null> {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`IntelX search submit failed (${response.status}): ${errorText.slice(0, 180)}`);
+    throw new Error(`DarkRisk360 intelligence search submit failed (${response.status}): ${errorText.slice(0, 180)}`);
   }
 
   const data = (await response.json()) as IntelxSearchResponse;
@@ -315,7 +315,7 @@ async function intelxFetchSearchResult(searchId: string): Promise<IntelxSearchRe
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`IntelX search result failed (${response.status}): ${errorText.slice(0, 180)}`);
+    throw new Error(`DarkRisk360 intelligence search result failed (${response.status}): ${errorText.slice(0, 180)}`);
   }
   return (await response.json()) as IntelxSearchResponse;
 }
@@ -985,7 +985,7 @@ serve(async (req: Request) => {
 
           for (const record of records) {
             const sourceRecordKey = normalizeIntelxRecordKey(queryTerm.term, record);
-            const title = normalizeText(String(record?.name || '')) || `IntelX signal on ${queryTerm.term}`;
+            const title = normalizeText(String(record?.name || '')) || `DarkRisk360 signal on ${queryTerm.term}`;
             const description = normalizeText(String(record?.description || '')) || `Segnale exposure rilevato su query ${queryTerm.term}.`;
             const previewText = maskPotentialSecrets(`${title}\n${description}`.slice(0, 1400));
             const observedAtCandidate = normalizeText(String(record?.date || record?.added || ''));
@@ -1062,7 +1062,7 @@ serve(async (req: Request) => {
               })
               .select('id')
               .single();
-            if (sourceRecordErr || !sourceRecord?.id) throw sourceRecordErr || new Error('intelx source record insert failed');
+            if (sourceRecordErr || !sourceRecord?.id) throw sourceRecordErr || new Error('darkrisk360 source record insert failed');
             recordsCreated += 1;
             intelxRecordsCreated += 1;
 
@@ -1097,7 +1097,7 @@ serve(async (req: Request) => {
               })
               .select('id')
               .single();
-            if (evidenceErr || !evidence?.id) throw evidenceErr || new Error('intelx evidence insert failed');
+            if (evidenceErr || !evidence?.id) throw evidenceErr || new Error('darkrisk360 evidence insert failed');
             evidenceCreated += 1;
             intelxEvidenceCreated += 1;
 
@@ -1136,7 +1136,7 @@ serve(async (req: Request) => {
               })
               .select('id')
               .single();
-            if (findingErr || !darkFinding?.id) throw findingErr || new Error('intelx finding insert failed');
+            if (findingErr || !darkFinding?.id) throw findingErr || new Error('darkrisk360 finding insert failed');
             findingsCreated += 1;
             intelxFindingsCreated += 1;
 
@@ -1167,11 +1167,11 @@ serve(async (req: Request) => {
             }
           }
         } catch (intelxErr: any) {
-          intelxWarnings.push(maskPotentialSecrets(normalizeText(intelxErr?.message) || `IntelX failed on ${queryTerm.term}`));
+          intelxWarnings.push(maskPotentialSecrets(normalizeText(intelxErr?.message) || `DarkRisk360 intelligence failed on ${queryTerm.term}`));
         }
       }
     } else {
-      intelxWarnings.push('IntelX non configurato: impostare INTELX_API_KEY in Edge Function secrets.');
+      intelxWarnings.push('DarkRisk360 intelligence non configurata: impostare la chiave provider nelle Edge Function secrets.');
     }
 
     let recommendationMode: 'not_requested' | 'generated' | 'failed' | 'disabled' = 'not_requested';

@@ -41,6 +41,7 @@ import { useDarkRiskRoadmapStatus } from '@/hooks/useDarkRiskRoadmapStatus';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { presentDarkRiskFindingType, presentDarkRiskSource } from '@/lib/darkrisk/presentation';
 
 type DashboardTab = 'overview' | 'roadmap' | 'findings' | 'assets' | 'surface' | 'identity' | 'reports';
 
@@ -228,8 +229,8 @@ const DarkRisk360: React.FC = () => {
         if (exposureRes.error) throw exposureRes.error;
 
         const fallbackSurfaceRows = ((surfaceRes.data || []) as Array<Record<string, any>>).map((row) => {
-          const source = String(row.module || 'surface_scan_engine');
-          const findingType = String(row.finding_type || 'surface_finding');
+          const source = presentDarkRiskSource(String(row.module || 'surface_scan_engine'));
+          const findingType = presentDarkRiskFindingType(String(row.finding_type || 'surface_finding'));
           const title = String(row.title || findingType);
           const category = classifyThreatCategory(title, findingType, source);
           return {
@@ -250,8 +251,8 @@ const DarkRisk360: React.FC = () => {
         });
 
         const fallbackExposureRows = ((exposureRes.data || []) as Array<Record<string, any>>).map((row) => {
-          const source = String(row.source || 'surface_exposure_engine');
-          const findingType = String(row.finding_type || 'surface_exposure_finding');
+          const source = presentDarkRiskSource(String(row.source || 'surface_exposure_engine'));
+          const findingType = presentDarkRiskFindingType(String(row.finding_type || 'surface_exposure_finding'));
           const title = String(row.title || findingType);
           const category = classifyThreatCategory(title, findingType, source);
           return {
@@ -298,12 +299,12 @@ const DarkRisk360: React.FC = () => {
       }
 
       return findings.map((finding) => {
-        const source = String(
+        const source = presentDarkRiskSource(String(
           finding?.metadata?.source_module ||
           finding?.metadata?.source_origin ||
           'surface_scan_engine',
-        );
-        const findingType = String(finding.finding_type || 'unknown');
+        ));
+        const findingType = presentDarkRiskFindingType(String(finding.finding_type || 'unknown'));
         const title = String(finding.title || findingType);
         const categoryHint = String(finding?.metadata?.category_hint || '').trim();
         const category = categoryHint || classifyThreatCategory(title, findingType, source);

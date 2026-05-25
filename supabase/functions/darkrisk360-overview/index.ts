@@ -51,6 +51,12 @@ type IntelxCoverageInfo = {
   last_execution: string | null;
 };
 
+function presentDarkRiskLabel(value: string | null | undefined): string {
+  const text = String(value || '').trim();
+  if (!text) return 'DarkRisk360';
+  return text.replace(/intelligence\s*x|intelx/gi, 'DarkRisk360');
+}
+
 const severityRank: Record<Severity, number> = {
   info: 1,
   low: 2,
@@ -142,7 +148,7 @@ function riskFromFindings(findings: FindingLite[]): { score: number; level: 'Bas
 function classifyThreatCategory(finding: FindingLite): string {
   const sourceText = [
     finding.module || '',
-    finding.finding_type || '',
+    String(finding.finding_type || '').replace(/^intelx_/i, 'darkrisk_'),
     finding.title || '',
     finding.source || '',
   ]
@@ -193,9 +199,9 @@ function buildCoverageControls(
     { key: 'whois', control: 'WHOIS/RDAP', modules: ['whois'], source: 'SurfaceScan360' },
     { key: 'email_security', control: 'Email security', modules: ['mail_security', 'mail_config'], source: 'SurfaceScan360' },
     { key: 'ports_services', control: 'Porte e servizi', modules: ['open_ports', 'shodan', 'pentest_tools'], source: 'SurfaceScan360' },
-    { key: 'intelx_domain', control: 'Intelligence X dominio', modules: [], source: 'IntelX' },
-    { key: 'intelx_selectors', control: 'Intelligence X selector', modules: [], source: 'IntelX' },
-    { key: 'phonebook', control: 'Phonebook', modules: [], source: 'IntelX' },
+    { key: 'intelx_domain', control: 'DarkRisk360 dominio', modules: [], source: 'DarkRisk360' },
+    { key: 'intelx_selectors', control: 'DarkRisk360 selector', modules: [], source: 'DarkRisk360' },
+    { key: 'phonebook', control: 'Phonebook', modules: [], source: 'DarkRisk360' },
   ];
 
   const rowsByModule = new Map<string, ModuleResultLite>();
@@ -218,8 +224,8 @@ function buildCoverageControls(
     if (control.modules.length === 0) {
       const isExtendedOnly = control.key === 'phonebook';
       const controlSource = isExtendedOnly && tier !== 'extended'
-        ? 'IntelX (solo Estesa)'
-        : control.source;
+        ? 'DarkRisk360 (solo Estesa)'
+        : presentDarkRiskLabel(control.source);
 
       let controlStatus: CoverageStatus = 'not_run';
       if (isExtendedOnly && tier !== 'extended') {
@@ -278,7 +284,7 @@ function buildCoverageControls(
       control: control.control,
       status,
       last_execution: lastExecution,
-      source: control.source,
+      source: presentDarkRiskLabel(control.source),
     };
   });
 }
@@ -542,7 +548,7 @@ serve(async (req: Request) => {
           time: finding.created_at,
           status: String(finding.status || 'open').toLowerCase(),
           confidence: String(finding.attribution_confidence || 'medium').toLowerCase(),
-          source: String(finding.module || finding.source || 'surface_scan_engine'),
+          source: presentDarkRiskLabel(String(finding.module || finding.source || 'surface_scan_engine')),
           finding_id: finding.id,
         };
       });

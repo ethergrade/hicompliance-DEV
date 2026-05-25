@@ -319,7 +319,7 @@ function inferCompromiseType(metadata: Record<string, unknown> | null | undefine
 
 function buildCoverageNote(coverage: RecommendationInput['coverage']): string {
   const limitations = coverage.limitations.length ? ` Limitazioni: ${coverage.limitations.join('; ')}.` : '';
-  return `Copertura: ${coverage.domains_count} domini, ${coverage.selectors_count} selector, ${coverage.surfacescan_assets_count} asset SurfaceScan, ${coverage.intelx_queries_count} query IntelX.${limitations}`;
+  return `Copertura: ${coverage.domains_count} domini, ${coverage.selectors_count} selector, ${coverage.surfacescan_assets_count} asset SurfaceScan, ${coverage.intelx_queries_count} query DarkRisk360.${limitations}`;
 }
 
 function buildDeterministicOutput(input: RecommendationInput): RecommendationOutput {
@@ -637,7 +637,7 @@ async function loadRecommendationInput(adminClient: any, params: {
     limitations.push('Tier standard: dettaglio tecnico ridotto e nessuna esposizione raw evidence.');
   }
   if (intelxCount === 0) {
-    limitations.push('Nessuna evidenza IntelX nel run corrente.');
+    limitations.push('Nessuna evidenza DarkRisk360 nel run corrente.');
   }
 
   const input: RecommendationInput = {

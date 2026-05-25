@@ -131,7 +131,7 @@ type DarkRiskReportJson = {
   };
   coverage: {
     surfacescan360: Record<string, unknown>;
-    intelx: Record<string, unknown>;
+    darkrisk360: Record<string, unknown>;
     openai: Record<string, unknown>;
   };
   findings: ReportFinding[];
@@ -185,8 +185,8 @@ const extendedSections = [
   'Porte, servizi, TLS e tecnologie',
   'CVE e posture SurfaceScan360',
   'Contesto Domain Threat Intelligence',
-  'Intelligence X results per data source',
-  'Intelligence X results per file type',
+  'DarkRisk360 intelligence results per data source',
+  'DarkRisk360 intelligence results per file type',
   'Identity exposure e credential risk',
   'Stealer log e compromissioni indirette',
   'Risk assessment',
@@ -212,6 +212,18 @@ function clampText(value: string, max = 1200): string {
 
 function safeText(value: string, max = 1200): string {
   return clampText(maskPotentialSecrets(value), max);
+}
+
+function presentDarkRiskLabel(value: string | null | undefined): string {
+  const normalized = String(value || '').trim();
+  if (!normalized) return 'DarkRisk360';
+  return normalized.replace(/intelligence\s*x|intelx/gi, 'DarkRisk360');
+}
+
+function presentFindingType(value: string | null | undefined): string {
+  const normalized = String(value || '').trim();
+  if (!normalized) return 'darkrisk_signal';
+  return presentDarkRiskLabel(normalized.replace(/^intelx_/i, 'darkrisk_'));
 }
 
 function toArray<T = string>(value: unknown): T[] {
@@ -645,7 +657,7 @@ serve(async (req: Request) => {
       const base: ReportFinding = {
         id: finding.id,
         title: safeText(String(finding.title || finding.finding_type || 'Finding'), 180),
-        type: safeText(String(finding.finding_type || 'unknown'), 80),
+        type: safeText(presentFindingType(String(finding.finding_type || 'unknown')), 80),
         severity: normalizedSeverity,
         confidence: normalizeConfidence(finding.confidence),
         risk_score: Number(finding.risk_score || 0),
@@ -655,7 +667,7 @@ serve(async (req: Request) => {
           : undefined,
         first_seen_at: isoOrNow(finding.first_seen_at || finding.created_at),
         last_seen_at: isoOrNow(finding.last_seen_at || finding.created_at),
-        source_names: Array.from(new Set(sourceRows.map((row) => safeText(String(row.source || 'unknown'), 32)))),
+        source_names: Array.from(new Set(sourceRows.map((row) => safeText(presentDarkRiskLabel(String(row.source || 'unknown')), 32)))),
         evidence_summary: evidenceSummary,
         interpretation: '',
         status: safeText(String(finding.status || 'new'), 32),
@@ -717,10 +729,10 @@ serve(async (req: Request) => {
     const byFindingTypeCounts = new Map<string, number>();
 
     for (const source of sourceRows) {
-      const sourceKey = safeText(String(source.source || 'unknown'), 40);
+      const sourceKey = safeText(presentDarkRiskLabel(String(source.source || 'unknown')), 40);
       bySourceCounts.set(sourceKey, (bySourceCounts.get(sourceKey) || 0) + 1);
 
-      const typeKey = safeText(String(source.source_media || source.source_type || 'unknown'), 40);
+      const typeKey = safeText(presentDarkRiskLabel(String(source.source_media || source.source_type || 'unknown')), 40);
       byTypeCounts.set(typeKey, (byTypeCounts.get(typeKey) || 0) + 1);
     }
 
@@ -728,7 +740,7 @@ serve(async (req: Request) => {
       const severity = safeText(String(finding.severity || 'info'), 20);
       bySeverityCounts.set(severity, (bySeverityCounts.get(severity) || 0) + 1);
 
-      const findingType = safeText(String(finding.type || 'unknown'), 80);
+      const findingType = safeText(presentFindingType(String(finding.type || 'unknown')), 80);
       byFindingTypeCounts.set(findingType, (byFindingTypeCounts.get(findingType) || 0) + 1);
     }
 
@@ -747,7 +759,7 @@ serve(async (req: Request) => {
       .map((asset) => safeText(String(asset.normalized_value || asset.value || ''), 160))
       .filter(Boolean);
 
-    const runWarnings = toArray<string>((scanRun.warnings as unknown) || []).map((entry) => safeText(String(entry), 200));
+    const runWarnings = toArray<string>((scanRun.warnings as unknown) || []).map((entry) => safeText(presentDarkRiskLabel(String(entry)), 200));
     const scopeLimitations = [
       'Report generato da snapshot persistito: nessuna chiamata live ai provider durante la generazione.',
       tier === 'standard'
@@ -797,7 +809,7 @@ serve(async (req: Request) => {
           sources: sourceRows.filter((row) => String(row.source || '').toLowerCase() === 'surfacescan360').length,
           controls_coverage_hint: scanRun?.stats?.controls_coverage || null,
         },
-        intelx: {
+        darkrisk360: {
           records: sourceRows.filter((row) => String(row.source || '').toLowerCase() === 'intelx').length,
           selectors_monitored: selectors.length,
         },

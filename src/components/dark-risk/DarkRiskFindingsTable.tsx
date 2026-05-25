@@ -1,6 +1,7 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { presentDarkRiskFindingType, presentDarkRiskSource } from '@/lib/darkrisk/presentation';
 
 export type DarkRiskFindingRow = {
   id: string;
@@ -75,12 +76,12 @@ export const DarkRiskFindingsTable: React.FC<{
                       <p className="text-xs text-muted-foreground">{row.compromise_type}</p>
                     </td>
                     <td className="py-2 pr-3">{row.asset}</td>
-                    <td className="py-2 pr-3">{row.finding_type}</td>
+                    <td className="py-2 pr-3">{presentDarkRiskFindingType(row.finding_type)}</td>
                     <td className="py-2 pr-3">{row.confidence}</td>
                     <td className="py-2 pr-3">{row.status}</td>
                     <td className="py-2 pr-3 text-muted-foreground">{formatDateTime(row.first_seen_at)}</td>
                     <td className="py-2 pr-3 text-muted-foreground">{formatDateTime(row.last_seen_at)}</td>
-                    <td className="py-2">{row.source}</td>
+                    <td className="py-2">{presentDarkRiskSource(row.source)}</td>
                   </tr>
                 ))}
               </tbody>
