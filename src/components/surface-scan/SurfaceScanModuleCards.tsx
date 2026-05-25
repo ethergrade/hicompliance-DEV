@@ -107,6 +107,18 @@ interface ConfiguredScopeTarget {
   type: 'domain' | 'ip' | 'range' | 'cidr' | 'other';
 }
 
+interface ScopeTargetRow {
+  id: string;
+  targetKey: string;
+  label: string;
+  status: string;
+  profile: string;
+  score: number | null;
+  riskLevel: string;
+  completedAt: string | null;
+  jobId: string | null;
+}
+
 type ModuleOutcomeStatus =
   | 'success_with_data'
   | 'success_no_data'
@@ -372,6 +384,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
   const [subdomainPage, setSubdomainPage] = useState(1);
   const [rawExpanded, setRawExpanded] = useState(false);
   const [scopeTargetSearch, setScopeTargetSearch] = useState('');
+  const [selectedScopeTargetKey, setSelectedScopeTargetKey] = useState('');
 
   useEffect(() => {
     if (!organizationId) return;
@@ -556,17 +569,106 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
     void fetchData();
   }, [organizationId]);
 
+  const scopeTargetRows = useMemo<ScopeTargetRow[]>(() => {
+    const scannedRows = latestScopeJobs.map((job) => {
+      const rawLabel = String(job.raw_target || job.normalized_target || '-').trim();
+      const canonicalLabel = extractHostFromTarget(rawLabel) || rawLabel;
+      const targetKey = scopeTargetKeyFromTarget(canonicalLabel);
+      const score = Number(job.summary?.overall_score);
+      const hasScore = Number.isFinite(score);
+      const riskFromSummary = String(job.summary?.risk_level || '').toLowerCase();
+      const computedRisk = hasScore ? riskLevelFromScore(score) : 'unknown';
+      const riskLevel = riskFromSummary || computedRisk;
+      return {
+        id: job.id,
+        targetKey,
+        label: canonicalLabel,
+        status: String(job.status || '').toLowerCase() || 'n/d',
+        profile: String(job.scan_profile || '-'),
+        score: hasScore ? Math.round(score) : null,
+        riskLevel,
+        completedAt: job.completed_at,
+        jobId: job.id,
+      };
+    });
+    const scannedByLabel = new Map(
+      scannedRows.map((entry) => [entry.targetKey, entry] as const),
+    );
+
+    if (configuredScopeTargets.length === 0) return scannedRows;
+
+    const configuredRows = configuredScopeTargets.map((target) => {
+      const targetKey = scopeTargetKeyFromTarget(String(target.label || ''));
+      const scanned = scannedByLabel.get(targetKey);
+      if (scanned) {
+        return scanned;
+      }
+      return {
+        id: target.key,
+        targetKey,
+        label: target.label,
+        status: 'not_scanned',
+        profile: target.type === 'domain' ? 'domain_exposure' : target.type === 'ip' ? 'ip_exposure' : 'scope_rule',
+        score: null,
+        riskLevel: 'unknown',
+        completedAt: null,
+        jobId: null,
+      };
+    });
+
+    return configuredRows.sort((a, b) => a.label.localeCompare(b.label));
+  }, [latestScopeJobs, configuredScopeTargets]);
+
+  useEffect(() => {
+    if (scopeTargetRows.length === 0) {
+      setSelectedScopeTargetKey('');
+      return;
+    }
+    setSelectedScopeTargetKey((prev) => {
+      if (prev && scopeTargetRows.some((row) => row.targetKey === prev)) return prev;
+      const preferred = scopeTargetRows.find((row) => row.jobId) || scopeTargetRows[0];
+      return preferred.targetKey;
+    });
+  }, [scopeTargetRows]);
+
+  const selectedScopeTargetRow = useMemo<ScopeTargetRow | null>(() => {
+    if (scopeTargetRows.length === 0) return null;
+    return scopeTargetRows.find((row) => row.targetKey === selectedScopeTargetKey) || scopeTargetRows[0];
+  }, [scopeTargetRows, selectedScopeTargetKey]);
+
+  const selectedScopeJobId = selectedScopeTargetRow?.jobId || null;
+
+  const selectedModuleResults = useMemo(
+    () => (selectedScopeJobId ? moduleResults.filter((row) => String(row.scan_job_id) === selectedScopeJobId) : []),
+    [moduleResults, selectedScopeJobId],
+  );
+
+  const selectedObservations = useMemo(
+    () => (selectedScopeJobId ? observations.filter((row) => String(row.scan_job_id) === selectedScopeJobId) : []),
+    [observations, selectedScopeJobId],
+  );
+
+  const selectedRiskFindings = useMemo(
+    () => (selectedScopeJobId ? riskFindings.filter((row) => String(row.scan_job_id) === selectedScopeJobId) : []),
+    [riskFindings, selectedScopeJobId],
+  );
+
+  const selectedExposureOpenPorts = useMemo(
+    () => (selectedScopeJobId ? exposureOpenPorts.filter((row) => String(row.scan_job_id) === selectedScopeJobId) : []),
+    [exposureOpenPorts, selectedScopeJobId],
+  );
+
   const observationByModule = useMemo(() => {
     const map: Record<string, ObservationRow | undefined> = {};
-    for (const row of observations) {
+    for (const row of selectedObservations) {
       if (!map[row.module]) map[row.module] = row;
     }
     return map;
-  }, [observations]);
+  }, [selectedObservations]);
 
   const qualityRows = useMemo(
-    () => observations.filter((row) => row.module === 'quality' && row.observation_type.startsWith('quality_summary')),
-    [observations],
+    () => selectedObservations.filter((row) => row.module === 'quality' && row.observation_type.startsWith('quality_summary')),
+    [selectedObservations],
   );
 
   const qualityCategories = useMemo(() => {
@@ -610,38 +712,38 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
   }, [qualityRows]);
 
   const latestWhois = useMemo(() => {
-    const whoisRows = observations
+    const whoisRows = selectedObservations
       .filter((row) => row.module === 'whois' && row.observation_type === 'whois_rdap')
       .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
     return whoisRows[0]?.value || {};
-  }, [observations]);
+  }, [selectedObservations]);
 
   const whoisCoverage = useMemo(
-    () => observations.filter((row) => row.module === 'whois' && row.observation_type === 'whois_rdap').length,
-    [observations],
+    () => selectedObservations.filter((row) => row.module === 'whois' && row.observation_type === 'whois_rdap').length,
+    [selectedObservations],
   );
 
   const whoisUnavailableCount = useMemo(
-    () => observations.filter((row) => row.module === 'whois' && row.observation_type === 'rdap_unavailable').length,
-    [observations],
+    () => selectedObservations.filter((row) => row.module === 'whois' && row.observation_type === 'rdap_unavailable').length,
+    [selectedObservations],
   );
 
   const latestServerLocation = useMemo(() => {
-    const rows = observations
+    const rows = selectedObservations
       .filter((row) => row.module === 'server_location' && row.observation_type === 'server_location')
       .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
     return rows[0]?.value || {};
-  }, [observations]);
+  }, [selectedObservations]);
 
   const serverLocationCoverage = useMemo(
-    () => observations.filter((row) => row.module === 'server_location' && row.observation_type === 'server_location').length,
-    [observations],
+    () => selectedObservations.filter((row) => row.module === 'server_location' && row.observation_type === 'server_location').length,
+    [selectedObservations],
   );
 
   const openPortRows = useMemo(() => {
     const merged = new Map<string, any>();
 
-    const observedRows = observations
+    const observedRows = selectedObservations
       .filter((row) => row.module === 'open_ports' && row.observation_type === 'open_ports_summary')
       .flatMap((row) => (Array.isArray(row.value?.openPorts) ? row.value.openPorts : []));
 
@@ -663,7 +765,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
       }
     }
 
-    for (const row of exposureOpenPorts) {
+    for (const row of selectedExposureOpenPorts) {
       const ip = String(row.ip || row.host || '').trim();
       const port = Number(row.port || 0);
       const protocol = String(row.protocol || 'tcp').toLowerCase();
@@ -686,18 +788,18 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
       if (sevDelta !== 0) return sevDelta;
       return Number(a.port || 0) - Number(b.port || 0);
     });
-  }, [observations, exposureOpenPorts]);
+  }, [selectedObservations, selectedExposureOpenPorts]);
 
   const moduleOutcomes = useMemo(() => {
     const outcomes: Record<string, ModuleOutcomeStatus> = {};
     const moduleObs = new Map<string, ObservationRow[]>();
     const moduleRes = new Map<string, ModuleResultRow[]>();
 
-    for (const row of observations) {
+    for (const row of selectedObservations) {
       if (!moduleObs.has(row.module)) moduleObs.set(row.module, []);
       moduleObs.get(row.module)!.push(row);
     }
-    for (const row of moduleResults) {
+    for (const row of selectedModuleResults) {
       if (!moduleRes.has(row.module_key)) moduleRes.set(row.module_key, []);
       moduleRes.get(row.module_key)!.push(row);
     }
@@ -780,11 +882,11 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
     }
 
     return outcomes;
-  }, [moduleResults, observations, openPortRows, qualityCategories, latestWhois, latestServerLocation]);
+  }, [selectedModuleResults, selectedObservations, openPortRows, qualityCategories, latestWhois, latestServerLocation]);
 
   const moduleSkipReasons = useMemo(() => {
     const out: Record<string, string> = {};
-    for (const row of observations) {
+    for (const row of selectedObservations) {
       if (row.observation_type === 'module_skipped') {
         const reason = String(row.value?.reason || '').trim().toLowerCase();
         if (reason && !out[row.module]) out[row.module] = reason;
@@ -800,7 +902,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
       out.open_ports = 'open_ports_no_data';
     }
     return out;
-  }, [observations, moduleOutcomes, serverLocationCoverage, openPortRows.length]);
+  }, [selectedObservations, moduleOutcomes, serverLocationCoverage, openPortRows.length]);
 
   const scoreSummary = useMemo(() => {
     const scores = latestScopeJobs
@@ -818,50 +920,6 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
       riskLevel: riskLevelFromScore(avgScore),
     };
   }, [latestScopeJobs]);
-
-  const scopeTargetRows = useMemo(() => {
-    const scannedRows = latestScopeJobs.map((job) => {
-      const rawLabel = String(job.raw_target || job.normalized_target || '-').trim();
-      const canonicalLabel = extractHostFromTarget(rawLabel) || rawLabel;
-      const score = Number(job.summary?.overall_score);
-      const hasScore = Number.isFinite(score);
-      const riskFromSummary = String(job.summary?.risk_level || '').toLowerCase();
-      const computedRisk = hasScore ? riskLevelFromScore(score) : 'unknown';
-      const riskLevel = riskFromSummary || computedRisk;
-      return {
-        id: job.id,
-        label: canonicalLabel,
-        status: String(job.status || '').toLowerCase() || 'n/d',
-        profile: String(job.scan_profile || '-'),
-        score: hasScore ? Math.round(score) : null,
-        riskLevel,
-        completedAt: job.completed_at,
-      };
-    });
-    const scannedByLabel = new Map(
-      scannedRows.map((entry) => [scopeTargetKeyFromTarget(String(entry.label || '')), entry] as const),
-    );
-
-    if (configuredScopeTargets.length === 0) return scannedRows;
-
-    const configuredRows = configuredScopeTargets.map((target) => {
-      const scanned = scannedByLabel.get(scopeTargetKeyFromTarget(String(target.label || '')));
-      if (scanned) {
-        return scanned;
-      }
-      return {
-        id: target.key,
-        label: target.label,
-        status: 'not_scanned',
-        profile: target.type === 'domain' ? 'domain_exposure' : target.type === 'ip' ? 'ip_exposure' : 'scope_rule',
-        score: null as number | null,
-        riskLevel: 'unknown',
-        completedAt: null as string | null,
-      };
-    });
-
-    return configuredRows.sort((a, b) => a.label.localeCompare(b.label));
-  }, [latestScopeJobs, configuredScopeTargets]);
 
   const filteredScopeTargetRows = useMemo(() => {
     const term = scopeTargetSearch.trim().toLowerCase();
@@ -1086,6 +1144,25 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
               <Badge variant="secondary">{filteredScopeTargetRows.length} target visibili</Badge>
             </div>
 
+            <div className="rounded-lg border border-primary/40 bg-primary/5 p-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <p className="text-xs text-muted-foreground">Target attivo per i controlli modulo</p>
+                  <p className="text-sm font-semibold text-foreground break-all">{selectedScopeTargetRow?.label || '-'}</p>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <Badge variant="outline">{selectedScopeTargetRow?.profile || 'n/d'}</Badge>
+                  {selectedScopeTargetRow?.status === 'not_scanned' ? (
+                    <Badge variant="outline">Non scansionato</Badge>
+                  ) : (
+                    <Badge className={statusBadgeClass[outcomeFromJobStatus(String(selectedScopeTargetRow?.status || ''))]}>
+                      {selectedScopeTargetRow?.status === 'completed' ? 'Completato' : selectedScopeTargetRow?.status || 'n/d'}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            </div>
+
             <div className="relative max-w-md">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -1097,8 +1174,19 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-              {filteredScopeTargetRows.map((entry) => (
-                <div key={entry.id} className="rounded-lg border border-border/70 bg-background/30 p-3 space-y-2">
+              {filteredScopeTargetRows.map((entry) => {
+                const isSelected = selectedScopeTargetKey === entry.targetKey;
+                return (
+                <button
+                  key={entry.id}
+                  type="button"
+                  onClick={() => setSelectedScopeTargetKey(entry.targetKey)}
+                  className={`rounded-lg border p-3 space-y-2 text-left transition-colors ${
+                    isSelected
+                      ? 'border-primary/70 bg-primary/10 ring-1 ring-primary/30'
+                      : 'border-border/70 bg-background/30 hover:bg-muted/30'
+                  }`}
+                >
                   <div className="flex items-start justify-between gap-2">
                     <p className="text-sm font-medium break-all leading-tight">{entry.label}</p>
                     {entry.status === 'not_scanned' ? (
@@ -1121,8 +1209,9 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                   <p className="text-[11px] text-muted-foreground">
                     Ultimo update: {entry.completedAt ? new Date(entry.completedAt).toLocaleString('it-IT') : '-'}
                   </p>
-                </div>
-              ))}
+                </button>
+              );
+              })}
             </div>
 
             {filteredScopeTargetRows.length === 0 && (
@@ -1132,14 +1221,14 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
             )}
           </div>
 
-          {riskFindings.length > 0 && (
+          {selectedRiskFindings.length > 0 && (
             <div className="rounded-lg border border-border p-3 space-y-2">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-orange-400" />
-                <p className="text-sm font-medium">Risk findings prioritari (critical/high)</p>
+                <p className="text-sm font-medium">Risk findings prioritari (critical/high) · target attivo</p>
               </div>
               <div className="space-y-2">
-                {riskFindings.slice(0, 8).map((finding, index) => {
+                {selectedRiskFindings.slice(0, 8).map((finding, index) => {
                   const targets = extractFindingTargets(finding);
                   return (
                     <div key={`${finding.finding_type}-${index}`} className="rounded-md border border-border/70 p-2 text-sm">
@@ -1496,6 +1585,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                   {JSON.stringify(
                     {
                       latest_scan: latestScan,
+                      selected_target: selectedScopeTargetRow,
                       scope_jobs_total: latestScopeJobs.length,
                       module_outcomes: moduleOutcomes,
                       quality_categories: qualityCategories,
@@ -1511,7 +1601,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
             </div>
           )}
 
-          {moduleResults.length > 0 && (
+          {selectedModuleResults.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {moduleOrder.map((moduleKey) => {
                 const status = moduleOutcomes[moduleKey] || 'success_no_data';
