@@ -29,6 +29,24 @@ type OpenPortSnapshot = {
   last_seen_at?: string | null;
 };
 
+type ClassicPortFindingRow = {
+  port?: number | null;
+  protocol?: string | null;
+  severity?: string | null;
+  finding_type?: string | null;
+  title?: string | null;
+  affected_asset?: string | null;
+  affected_url?: string | null;
+  ip?: string | null;
+  evidence?: Record<string, unknown> | null;
+  created_at?: string | null;
+};
+
+type ClassicPortObservationRow = {
+  value?: Record<string, unknown> | null;
+  created_at?: string | null;
+};
+
 type TechnologySnapshot = {
   host: string;
   url: string;
@@ -41,6 +59,37 @@ type ScopeCounterState = {
   in_scope: number;
   excluded_by_scope: number;
   excluded_shared_noise: number;
+};
+
+type ExposureJobMeta = {
+  id: string;
+  customer_id: string | null;
+  organization_id: string | null;
+  created_at: string;
+  completed_at: string | null;
+  status: string;
+  scan_profile: string | null;
+  summary: Record<string, unknown> | null;
+};
+
+type TargetSnapshot = {
+  target_key: string;
+  target_value: string;
+  target_type: string;
+  snapshot_source: 'live' | 'last_good';
+  live: {
+    job_id: string | null;
+    status: string | null;
+    created_at: string | null;
+    scan_profile: string | null;
+  };
+  last_good: {
+    job_id: string | null;
+    status: string | null;
+    created_at: string | null;
+    completed_at: string | null;
+    scan_profile: string | null;
+  };
 };
 
 function keyOpenPort(row: OpenPortSnapshot): string {
@@ -67,6 +116,19 @@ function toTimestamp(value: string | null | undefined): number {
   return Number.isFinite(ts) ? ts : 0;
 }
 
+function isTerminalGoodStatus(status: string): boolean {
+  const key = String(status || '').toLowerCase();
+  return key === 'completed' || key === 'partial' || key === 'success';
+}
+
+function hasExposureData(summary: Record<string, unknown> | null | undefined): boolean {
+  if (!summary || typeof summary !== 'object') return false;
+  const openPorts = Number((summary as any).open_ports_total || 0);
+  const findings = Number((summary as any).findings_total || 0);
+  const tech = Number((summary as any).technologies_total || 0);
+  return Number.isFinite(openPorts + findings + tech) && (openPorts > 0 || findings > 0 || tech > 0);
+}
+
 function dedupeOpenPorts(rows: OpenPortSnapshot[]): OpenPortSnapshot[] {
   const map = new Map<string, OpenPortSnapshot>();
   for (const row of rows || []) {
@@ -81,6 +143,120 @@ function dedupeOpenPorts(rows: OpenPortSnapshot[]): OpenPortSnapshot[] {
     }
   }
   return Array.from(map.values());
+}
+
+function normalizePortNumber(value: unknown): number | null {
+  const port = Number(value);
+  if (!Number.isFinite(port) || port <= 0 || port > 65535) return null;
+  return Math.round(port);
+}
+
+function normalizeSeverityValue(value: unknown): string {
+  const key = String(value || '').toLowerCase().trim();
+  if (['critical', 'high', 'medium', 'low', 'info'].includes(key)) return key;
+  return 'info';
+}
+
+function isLikelyWebPort(port: number, serviceName?: string | null): boolean {
+  const service = String(serviceName || '').toLowerCase();
+  return [80, 443, 8000, 8080, 8081, 8443, 8888, 9443].includes(port) || /http|www|proxy/.test(service);
+}
+
+function isLikelyTlsPort(port: number, serviceName?: string | null): boolean {
+  const service = String(serviceName || '').toLowerCase();
+  return [443, 465, 636, 853, 989, 990, 993, 995, 8443, 9443].includes(port) || /tls|ssl|https/.test(service);
+}
+
+function toOpenPortFromClassicFinding(row: ClassicPortFindingRow): OpenPortSnapshot | null {
+  const evidence = (row?.evidence && typeof row.evidence === 'object')
+    ? (row.evidence as Record<string, unknown>)
+    : {};
+
+  const port = normalizePortNumber(row?.port ?? evidence?.port ?? (evidence as any)?.raw?.port ?? (evidence as any)?.raw?.number);
+  if (!port) return null;
+
+  const protocol = String(row?.protocol || evidence?.protocol || (evidence as any)?.transport || 'tcp').trim().toLowerCase() || 'tcp';
+  const hostRaw = String(
+    row?.affected_asset
+    || row?.affected_url
+    || evidence?.scope_target_host
+    || evidence?.host
+    || evidence?.hostname
+    || evidence?.domain
+    || '',
+  ).trim();
+  const host = parseHostnameFromTarget(hostRaw) || parseHostnameFromTarget(String(evidence?.target || '')) || 'n/d';
+
+  const ip = String(row?.ip || evidence?.ip || (evidence as any)?.raw?.ip_address || '').trim() || null;
+  const service = String(evidence?.service || evidence?.product || row?.title || '').trim();
+
+  return {
+    host,
+    ip,
+    port,
+    protocol,
+    service_name: service || null,
+    exposure_level: normalizeSeverityValue(row?.severity),
+    is_web: isLikelyWebPort(port, service || null),
+    is_tls: isLikelyTlsPort(port, service || null),
+    last_seen_at: row?.created_at || null,
+  };
+}
+
+function toOpenPortsFromClassicObservation(row: ClassicPortObservationRow): OpenPortSnapshot[] {
+  const value = (row?.value && typeof row.value === 'object') ? (row.value as Record<string, unknown>) : {};
+  const host = parseHostnameFromTarget(
+    String(value?.scope_target_host || value?.host || value?.hostname || value?.domain || value?.target || ''),
+  ) || 'n/d';
+  const baseIp = String(value?.ip || value?.ip_address || '').trim() || null;
+  const severity = normalizeSeverityValue(value?.severity || 'info');
+
+  const out: OpenPortSnapshot[] = [];
+  const addRow = (entry: Record<string, unknown>) => {
+    const port = normalizePortNumber(entry?.port ?? entry?.number);
+    if (!port) return;
+    const protocol = String(entry?.protocol || entry?.transport || 'tcp').toLowerCase().trim() || 'tcp';
+    const service = String(entry?.service || entry?.product || '').trim();
+    const ip = String(entry?.ip || entry?.ip_address || baseIp || '').trim() || null;
+    out.push({
+      host,
+      ip,
+      port,
+      protocol,
+      service_name: service || null,
+      exposure_level: normalizeSeverityValue(entry?.severity || severity),
+      is_web: isLikelyWebPort(port, service || null),
+      is_tls: isLikelyTlsPort(port, service || null),
+      last_seen_at: row?.created_at || null,
+    });
+  };
+
+  const openPorts = Array.isArray((value as any)?.open_ports) ? (value as any).open_ports : [];
+  for (const entry of openPorts) {
+    if (typeof entry === 'number' || typeof entry === 'string') {
+      const port = normalizePortNumber(entry);
+      if (!port) continue;
+      out.push({
+        host,
+        ip: baseIp,
+        port,
+        protocol: 'tcp',
+        exposure_level: severity,
+        is_web: isLikelyWebPort(port),
+        is_tls: isLikelyTlsPort(port),
+        last_seen_at: row?.created_at || null,
+      });
+      continue;
+    }
+    if (entry && typeof entry === 'object') addRow(entry as Record<string, unknown>);
+  }
+
+  const dataRows = Array.isArray((value as any)?.data) ? (value as any).data : [];
+  for (const entry of dataRows) {
+    if (entry && typeof entry === 'object') addRow(entry as Record<string, unknown>);
+  }
+
+  return out;
 }
 
 function dedupeTechnologies(rows: TechnologySnapshot[]): TechnologySnapshot[] {
@@ -176,6 +352,8 @@ function emptySummary(scopeMode: 'single_job' | 'scope_latest_per_target', count
   return {
     job_id: null,
     job_ids: [],
+    live_job_ids: [],
+    target_snapshots: [],
     scope_mode: scopeMode,
     scope_aggregate: isAggregate,
     targets_in_scope: counters.in_scope,
@@ -244,20 +422,14 @@ serve(async (req: Request) => {
     const jobScopeFilter = `customer_id.eq.${customerId},organization_id.eq.${customerId}`;
     const { data: allJobsRows, error: allJobsError } = await adminClient
       .from('surface_scan_jobs' as any)
-      .select('id, customer_id, organization_id, created_at, status')
+      .select('id, customer_id, organization_id, created_at, completed_at, status, scan_profile, summary')
       .or(jobScopeFilter)
       .eq('scan_type', 'exposure_port_technology')
       .order('created_at', { ascending: false })
       .limit(500);
     if (allJobsError) throw allJobsError;
 
-    const allJobs = (allJobsRows || []) as Array<{
-      id: string;
-      customer_id: string | null;
-      organization_id: string | null;
-      created_at: string;
-      status: string;
-    }>;
+    const allJobs = (allJobsRows || []) as ExposureJobMeta[];
 
     const counters: ScopeCounterState = {
       in_scope: 0,
@@ -271,6 +443,8 @@ serve(async (req: Request) => {
 
     let selectedJobIds: string[] = [];
     let anchorJobId = '';
+    let targetSnapshots: TargetSnapshot[] = [];
+    let liveJobIds: string[] = [];
 
     if (scopeMode === 'single_job') {
       anchorJobId = jobIdInput || String(allJobs[0]?.id || '');
@@ -283,9 +457,14 @@ serve(async (req: Request) => {
         .select('scan_job_id, target_value, target_type')
         .in('scan_job_id', allJobIds);
 
-      const latestByTarget = new Map<string, { scan_job_id: string; created_at: string }>();
       const jobsById = new Map(allJobs.map((entry) => [String(entry.id), entry]));
       const countedTargets = new Set<string>();
+      const groupedTargets = new Map<string, {
+        target_value: string;
+        target_type: string;
+        jobs: ExposureJobMeta[];
+      }>();
+
       for (const row of (targetRows || []) as Array<Record<string, unknown>>) {
         const scanJobId = String(row?.scan_job_id || '').trim();
         const targetValue = String(row?.target_value || '').trim().toLowerCase();
@@ -302,16 +481,53 @@ serve(async (req: Request) => {
 
         const jobMeta = jobsById.get(scanJobId);
         if (!jobMeta) continue;
-
-        const current = latestByTarget.get(targetKey);
-        const currentTs = current ? Date.parse(current.created_at) : 0;
-        const incomingTs = Date.parse(jobMeta.created_at);
-        if (!current || incomingTs >= currentTs) {
-          latestByTarget.set(targetKey, { scan_job_id: scanJobId, created_at: jobMeta.created_at });
+        if (!groupedTargets.has(targetKey)) {
+          groupedTargets.set(targetKey, {
+            target_value: targetValue,
+            target_type: targetType || 'target',
+            jobs: [],
+          });
         }
+        groupedTargets.get(targetKey)!.jobs.push(jobMeta);
       }
 
-      selectedJobIds = [...new Set(Array.from(latestByTarget.values()).map((entry) => entry.scan_job_id))];
+      const selectedIdsSet = new Set<string>();
+      const liveIdsSet = new Set<string>();
+      for (const [targetKey, payload] of groupedTargets.entries()) {
+        const jobs = payload.jobs.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+        const live = jobs[0] || null;
+        const completedWithData = jobs.find((entry) => isTerminalGoodStatus(entry.status) && hasExposureData(entry.summary));
+        const completedAny = jobs.find((entry) => isTerminalGoodStatus(entry.status));
+        const lastGood = completedWithData || completedAny || null;
+        const dataJob = lastGood || live;
+
+        if (dataJob?.id) selectedIdsSet.add(String(dataJob.id));
+        if (live?.id) liveIdsSet.add(String(live.id));
+
+        targetSnapshots.push({
+          target_key: targetKey,
+          target_value: payload.target_value,
+          target_type: payload.target_type,
+          snapshot_source: dataJob?.id && live?.id && String(dataJob.id) !== String(live.id) ? 'last_good' : 'live',
+          live: {
+            job_id: live?.id ? String(live.id) : null,
+            status: live?.status ? String(live.status) : null,
+            created_at: live?.created_at ? String(live.created_at) : null,
+            scan_profile: live?.scan_profile ? String(live.scan_profile) : null,
+          },
+          last_good: {
+            job_id: lastGood?.id ? String(lastGood.id) : null,
+            status: lastGood?.status ? String(lastGood.status) : null,
+            created_at: lastGood?.created_at ? String(lastGood.created_at) : null,
+            completed_at: lastGood?.completed_at ? String(lastGood.completed_at) : null,
+            scan_profile: lastGood?.scan_profile ? String(lastGood.scan_profile) : null,
+          },
+        });
+      }
+
+      selectedJobIds = Array.from(selectedIdsSet);
+      liveJobIds = Array.from(liveIdsSet);
+      targetSnapshots = targetSnapshots.sort((a, b) => a.target_value.localeCompare(b.target_value));
 
       // Fallback resiliente: se i target non sono presenti/coerenti, usa gli ultimi job exposure
       // per evitare dashboard vuota anche con dati porte/tecnologie già persistiti.
@@ -352,6 +568,8 @@ serve(async (req: Request) => {
       targetsRes,
       openPortsRes,
       findingsRes,
+      classicPortFindingsRes,
+      classicPortObservationsRes,
       technologiesRes,
       sslRes,
       previousJobRes,
@@ -368,6 +586,17 @@ serve(async (req: Request) => {
         .from('surface_exposure_findings' as any)
         .select('severity')
         .in('scan_job_id', selectedJobIds),
+      adminClient
+        .from('surface_findings' as any)
+        .select('port, protocol, severity, finding_type, title, affected_asset, affected_url, ip, evidence, created_at')
+        .in('scan_job_id', selectedJobIds)
+        .in('finding_type', ['open_port_exposed', 'service_fingerprint_exposed', 'sensitive_port_exposed']),
+      adminClient
+        .from('surface_observations' as any)
+        .select('value, created_at')
+        .in('scan_job_id', selectedJobIds)
+        .eq('module', 'open_ports')
+        .in('observation_type', ['open_ports', 'open_ports_summary']),
       adminClient
         .from('surface_web_technologies' as any)
         .select('url, host, technology_name, technology_version, category, created_at')
@@ -406,7 +635,14 @@ serve(async (req: Request) => {
       }
     }
 
-    const openPorts = dedupeOpenPorts((openPortsRes.data || []) as OpenPortSnapshot[]);
+    const exposureOpenPorts = dedupeOpenPorts((openPortsRes.data || []) as OpenPortSnapshot[]);
+    const classicPortFindings = (classicPortFindingsRes.data || []) as ClassicPortFindingRow[];
+    const classicPortObservations = (classicPortObservationsRes.data || []) as ClassicPortObservationRow[];
+    const classicOpenPorts = classicPortFindings
+      .map((row) => toOpenPortFromClassicFinding(row))
+      .filter(Boolean) as OpenPortSnapshot[];
+    const observationOpenPorts = classicPortObservations.flatMap((row) => toOpenPortsFromClassicObservation(row));
+    const openPorts = dedupeOpenPorts([...exposureOpenPorts, ...classicOpenPorts, ...observationOpenPorts]);
     const findings = (findingsRes.data || []) as any[];
     const technologies = dedupeTechnologies((technologiesRes.data || []) as TechnologySnapshot[]);
     const ssl = (sslRes.data || []) as any[];
@@ -466,6 +702,8 @@ serve(async (req: Request) => {
     return jsonResponse({
       job_id: anchorJobId,
       job_ids: selectedJobIds,
+      live_job_ids: liveJobIds,
+      target_snapshots: targetSnapshots,
       scope_mode: scopeMode,
       scope_aggregate: scopeMode !== 'single_job',
       targets_in_scope: counters.in_scope,

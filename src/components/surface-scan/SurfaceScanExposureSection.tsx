@@ -159,6 +159,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
   const [findings, setFindings] = useState<ExposureFindingRow[]>([]);
   const [isControlsCollapsed, setIsControlsCollapsed] = useState(true);
   const [isSectionCollapsed, setIsSectionCollapsed] = useState(false);
+  const [targetSnapshots, setTargetSnapshots] = useState<ExposureSummary['target_snapshots']>([]);
 
   const [scanName, setScanName] = useState('Exposure Full Scan');
   const [customPorts, setCustomPorts] = useState('top1000');
@@ -230,6 +231,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       const fallbackSelected = String(jobsData[0]?.id || '');
       setSelectedJobId((prev) => prev || fallbackSelected);
       setSummary(summaryData);
+      setTargetSnapshots(summaryData.target_snapshots || []);
 
       const effectiveJobIds = (summaryData.job_ids || []).map((entry) => String(entry || '').trim()).filter(Boolean);
       if (effectiveJobIds.length === 0 && summaryData.job_id) {
@@ -469,6 +471,23 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       {!isSectionCollapsed && (
         <CardContent className="space-y-5">
           <ExposureKpiCards summary={summary} />
+          {targetSnapshots && targetSnapshots.length > 0 && (
+            <div className="rounded-lg border border-border p-3 text-xs text-muted-foreground">
+              {(() => {
+                const liveRunning = targetSnapshots.filter((entry) => ['running', 'waiting'].includes(String(entry.live?.status || '').toLowerCase())).length;
+                const liveQueued = targetSnapshots.filter((entry) => ['queued', 'pending'].includes(String(entry.live?.status || '').toLowerCase())).length;
+                const lastGood = targetSnapshots.filter((entry) => entry.snapshot_source === 'last_good').length;
+                return (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline">Target scope: {targetSnapshots.length}</Badge>
+                    <Badge variant="outline">Live running: {liveRunning}</Badge>
+                    <Badge variant="outline">Live queued: {liveQueued}</Badge>
+                    <Badge variant="secondary">Last-good fallback: {lastGood}</Badge>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
           <ExposureCharts summary={summary} openPorts={openPorts} technologies={technologies} />
 
           {isAdmin && (

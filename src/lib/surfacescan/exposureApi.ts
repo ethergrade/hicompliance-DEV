@@ -54,6 +54,33 @@ const hostFromTarget = (value: string): string => {
   }
 };
 
+const normalizePortNumber = (value: unknown): number | null => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 65535) return null;
+  return Math.round(parsed);
+};
+
+const normalizeExposureLevel = (value: unknown): string => {
+  const key = String(value || '').toLowerCase().trim();
+  if (['critical', 'high', 'medium', 'low', 'info'].includes(key)) return key;
+  return 'info';
+};
+
+const isWebPortLike = (port: number, service?: string | null): boolean =>
+  [80, 443, 8000, 8080, 8081, 8443, 8888, 9443].includes(port)
+  || /http|www|proxy/i.test(String(service || ''));
+
+const isTlsPortLike = (port: number, service?: string | null): boolean =>
+  [443, 465, 636, 853, 989, 990, 993, 995, 8443, 9443].includes(port)
+  || /tls|ssl|https/i.test(String(service || ''));
+
+const sortPortRows = (rows: ExposureOpenPortRow[]): ExposureOpenPortRow[] =>
+  [...rows].sort((a, b) => {
+    const hostDelta = String(a.host || '').localeCompare(String(b.host || ''));
+    if (hostDelta !== 0) return hostDelta;
+    return Number(a.port || 0) - Number(b.port || 0);
+  });
+
 export type ExposureStartRequest = {
   tenant_id: string;
   customer_id: string;
@@ -79,6 +106,26 @@ export type ExposureStartRequest = {
 export type ExposureSummary = {
   job_id: string | null;
   job_ids?: string[];
+  live_job_ids?: string[];
+  target_snapshots?: Array<{
+    target_key: string;
+    target_value: string;
+    target_type: string;
+    snapshot_source: 'live' | 'last_good';
+    live: {
+      job_id: string | null;
+      status: string | null;
+      created_at: string | null;
+      scan_profile: string | null;
+    };
+    last_good: {
+      job_id: string | null;
+      status: string | null;
+      created_at: string | null;
+      completed_at: string | null;
+      scan_profile: string | null;
+    };
+  }>;
   scope_mode?: 'single_job' | 'scope_latest_per_target';
   scope_aggregate?: boolean;
   targets_in_scope?: number;
@@ -116,6 +163,8 @@ export type ExposureSummary = {
 export type ExposureOpenPortRow = {
   id: string;
   scan_job_id: string;
+  target_id?: string | null;
+  raw?: Record<string, unknown> | null;
   host: string;
   ip: string | null;
   port: number;
@@ -232,7 +281,7 @@ export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<Exposure
 
   const { data, error } = await supabase
     .from('surface_open_ports' as any)
-    .select('id, scan_job_id, target_id, host, ip, port, protocol, state, service_name, service_product, service_version, is_web, is_tls, exposure_level, remediation_hint, first_seen_at, last_seen_at')
+    .select('id, scan_job_id, target_id, host, ip, port, protocol, state, service_name, service_product, service_version, is_web, is_tls, exposure_level, remediation_hint, first_seen_at, last_seen_at, raw')
     .in('scan_job_id', uniqueJobIds)
     .order('exposure_level', { ascending: false })
     .order('host', { ascending: true })
@@ -258,9 +307,10 @@ export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<Exposure
     }
   }
 
-  return rows.map((row) => {
+  const normalizedExposureRows = rows.map((row) => {
     const target = targetMap.get(String((row as any).target_id || ''));
     const targetHost = target ? hostFromTarget(target.target_value) : '';
+    const rawScopeHost = normalizeHost(String((row as any)?.raw?.scope_target_host || ''));
 
     const rawHost = String(row.host || '').trim();
     const rawIp = String(row.ip || '').trim();
@@ -268,6 +318,7 @@ export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<Exposure
     const inferredIp = extractIp(rawIp) || extractIp(rawHost) || extractIp(target?.target_value || '');
     let normalizedHost = normalizeHost(rawHost);
 
+    if (rawScopeHost && !isIpLike(rawScopeHost)) normalizedHost = rawScopeHost;
     if (!normalizedHost && targetHost) normalizedHost = targetHost;
     if (normalizedHost && isIpLike(normalizedHost) && targetHost && !isIpLike(targetHost)) {
       normalizedHost = targetHost;
@@ -280,6 +331,165 @@ export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<Exposure
       ip: inferredIp || null,
     } as ExposureOpenPortRow;
   });
+
+  const [classicFindingsRes, classicObservationsRes] = await Promise.all([
+    supabase
+      .from('surface_findings' as any)
+      .select('id, scan_job_id, affected_asset, affected_url, ip, port, protocol, severity, title, evidence, created_at, finding_type')
+      .in('scan_job_id', uniqueJobIds)
+      .in('finding_type', ['open_port_exposed', 'service_fingerprint_exposed', 'sensitive_port_exposed']),
+    supabase
+      .from('surface_observations' as any)
+      .select('id, scan_job_id, value, created_at')
+      .in('scan_job_id', uniqueJobIds)
+      .eq('module', 'open_ports')
+      .in('observation_type', ['open_ports', 'open_ports_summary']),
+  ]);
+
+  if (classicFindingsRes.error) throw classicFindingsRes.error;
+  if (classicObservationsRes.error) throw classicObservationsRes.error;
+
+  const fallbackRows: ExposureOpenPortRow[] = [];
+
+  for (const finding of (classicFindingsRes.data || []) as Array<Record<string, unknown>>) {
+    const evidence = finding?.evidence && typeof finding.evidence === 'object'
+      ? (finding.evidence as Record<string, unknown>)
+      : {};
+    const port = normalizePortNumber(
+      finding?.port ?? evidence?.port ?? (evidence as any)?.raw?.port ?? (evidence as any)?.raw?.number,
+    );
+    if (!port) continue;
+    const protocol = String(finding?.protocol || evidence?.protocol || (evidence as any)?.transport || 'tcp').toLowerCase().trim() || 'tcp';
+    const hostCandidate = String(
+      (evidence as any)?.scope_target_host
+      || finding?.affected_asset
+      || finding?.affected_url
+      || evidence?.host
+      || evidence?.hostname
+      || evidence?.domain
+      || evidence?.target
+      || '',
+    );
+    const host = normalizeHost(hostCandidate) || hostFromTarget(String(finding?.affected_url || '')) || '-';
+    const ip = extractIp(String(finding?.ip || evidence?.ip || (evidence as any)?.raw?.ip_address || '')) || null;
+    const service = String(evidence?.service || evidence?.product || finding?.title || '').trim();
+    const createdAt = String(finding?.created_at || new Date().toISOString());
+
+    fallbackRows.push({
+      id: `finding-${String(finding?.id || `${host}-${port}-${protocol}`)}`,
+      scan_job_id: String(finding?.scan_job_id || ''),
+      host,
+      ip,
+      port,
+      protocol,
+      state: 'open',
+      service_name: service || null,
+      service_product: null,
+      service_version: null,
+      is_web: isWebPortLike(port, service || null),
+      is_tls: isTlsPortLike(port, service || null),
+      exposure_level: normalizeExposureLevel(finding?.severity),
+      remediation_hint: null,
+      first_seen_at: createdAt,
+      last_seen_at: createdAt,
+      raw: evidence,
+    });
+  }
+
+  for (const observation of (classicObservationsRes.data || []) as Array<Record<string, unknown>>) {
+    const value = observation?.value && typeof observation.value === 'object'
+      ? (observation.value as Record<string, unknown>)
+      : {};
+    const baseHost = normalizeHost(
+      String(value?.scope_target_host || value?.host || value?.hostname || value?.domain || value?.target || ''),
+    ) || '-';
+    const baseIp = extractIp(String(value?.ip || value?.ip_address || '')) || null;
+    const createdAt = String(observation?.created_at || new Date().toISOString());
+
+    const registerEntry = (entry: Record<string, unknown>) => {
+      const port = normalizePortNumber(entry?.port ?? entry?.number);
+      if (!port) return;
+      const protocol = String(entry?.protocol || entry?.transport || 'tcp').toLowerCase().trim() || 'tcp';
+      const service = String(entry?.service || entry?.product || '').trim();
+      const ip = extractIp(String(entry?.ip || entry?.ip_address || baseIp || '')) || null;
+      fallbackRows.push({
+        id: `obs-${String(observation?.id || '')}-${port}-${protocol}-${baseHost}`,
+        scan_job_id: String(observation?.scan_job_id || ''),
+        host: baseHost,
+        ip,
+        port,
+        protocol,
+        state: 'open',
+        service_name: service || null,
+        service_product: null,
+        service_version: null,
+        is_web: isWebPortLike(port, service || null),
+        is_tls: isTlsPortLike(port, service || null),
+        exposure_level: normalizeExposureLevel(entry?.severity || value?.severity || 'info'),
+        remediation_hint: null,
+        first_seen_at: createdAt,
+        last_seen_at: createdAt,
+        raw: value,
+      });
+    };
+
+    const openPorts = Array.isArray((value as any)?.open_ports) ? (value as any).open_ports : [];
+    for (const entry of openPorts) {
+      if (typeof entry === 'number' || typeof entry === 'string') {
+        const port = normalizePortNumber(entry);
+        if (!port) continue;
+        fallbackRows.push({
+          id: `obs-${String(observation?.id || '')}-${port}-tcp-${baseHost}`,
+          scan_job_id: String(observation?.scan_job_id || ''),
+          host: baseHost,
+          ip: baseIp,
+          port,
+          protocol: 'tcp',
+          state: 'open',
+          service_name: null,
+          service_product: null,
+          service_version: null,
+          is_web: isWebPortLike(port),
+          is_tls: isTlsPortLike(port),
+          exposure_level: normalizeExposureLevel(value?.severity || 'info'),
+          remediation_hint: null,
+          first_seen_at: createdAt,
+          last_seen_at: createdAt,
+          raw: value,
+        });
+        continue;
+      }
+      if (entry && typeof entry === 'object') registerEntry(entry as Record<string, unknown>);
+    }
+
+    const dataRows = Array.isArray((value as any)?.data) ? (value as any).data : [];
+    for (const entry of dataRows) {
+      if (entry && typeof entry === 'object') registerEntry(entry as Record<string, unknown>);
+    }
+  }
+
+  const dedupe = new Map<string, ExposureOpenPortRow>();
+  for (const row of [...normalizedExposureRows, ...fallbackRows]) {
+    const key = [
+      String(row.scan_job_id || ''),
+      String(row.host || '').toLowerCase(),
+      String(row.ip || '').toLowerCase(),
+      Number(row.port || 0),
+      String(row.protocol || 'tcp').toLowerCase(),
+    ].join('|');
+    const existing = dedupe.get(key);
+    if (!existing) {
+      dedupe.set(key, row);
+      continue;
+    }
+    const existingTs = Date.parse(String(existing.last_seen_at || existing.first_seen_at || ''));
+    const incomingTs = Date.parse(String(row.last_seen_at || row.first_seen_at || ''));
+    if (Number.isFinite(incomingTs) && (!Number.isFinite(existingTs) || incomingTs >= existingTs)) {
+      dedupe.set(key, row);
+    }
+  }
+
+  return sortPortRows(Array.from(dedupe.values()));
 }
 
 export async function fetchTechnologies(jobId: string): Promise<ExposureTechnologyRow[]> {
