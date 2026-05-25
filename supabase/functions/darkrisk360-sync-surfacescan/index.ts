@@ -16,9 +16,35 @@ import {
   inferCompromiseType,
   inferRiskDimensions,
 } from '../_shared/darkrisk-scoring.ts';
+import {
+  type DarkRiskSelectorType,
+  validateDarkRiskSelector,
+} from '../_shared/darkrisk-selector-validation.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+const INTELX_API_KEY = Deno.env.get('INTELX_API_KEY') || '';
+const INTELX_API_URL = String(
+  Deno.env.get('INTELX_API_URL') ||
+  Deno.env.get('INTELX_BASE_URL') ||
+  'https://2.intelx.io',
+).replace(/\/+$/, '');
+const INTELX_MAX_SELECTORS_PER_RUN = Math.max(
+  1,
+  Math.min(10, Number(Deno.env.get('INTELX_MAX_SELECTORS_PER_RUN') || 5)),
+);
+const INTELX_MAX_RESULTS_PER_SELECTOR = Math.max(
+  5,
+  Math.min(80, Number(Deno.env.get('INTELX_MAX_RESULTS_PER_SELECTOR') || 20)),
+);
+const INTELX_MAX_POLL_ROUNDS = Math.max(
+  2,
+  Math.min(18, Number(Deno.env.get('INTELX_MAX_POLL_ROUNDS') || 8)),
+);
+const INTELX_REQUEST_INTERVAL_MS = Math.max(
+  300,
+  Math.min(2000, Number(Deno.env.get('INTELX_REQUEST_INTERVAL_MS') || 1000)),
+);
 
 type SurfaceAssetRow = {
   id: string;
@@ -71,6 +97,186 @@ type CanonicalFinding = {
   payload: Record<string, unknown>;
 };
 
+type IntelxSearchResponse = {
+  id?: string;
+  status?: number;
+  records?: Array<Record<string, unknown>>;
+};
+
+type IntelxSelectorDefinition = {
+  raw: string;
+  normalized: string;
+  type: DarkRiskSelectorType;
+};
+
+const intelxAllowedSelectorTypes = new Set([
+  'email',
+  'domain',
+  'wildcard_domain',
+  'url',
+  'ipv4',
+  'ipv6',
+  'cidrv4',
+  'cidrv6',
+]);
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isIntelxConfigured(): boolean {
+  return Boolean(INTELX_API_KEY && INTELX_API_URL);
+}
+
+function severityFromIntelxScore(score: number | null): 'info' | 'low' | 'medium' | 'high' | 'critical' {
+  if (score == null || !Number.isFinite(score)) return 'medium';
+  if (score >= 90) return 'critical';
+  if (score >= 75) return 'high';
+  if (score >= 50) return 'medium';
+  if (score >= 30) return 'low';
+  return 'info';
+}
+
+function intelxFindingTypeFromRecord(record: Record<string, unknown>, selector: string): string {
+  const text = `${String(selector || '')} ${String(record?.name || '')} ${String(record?.description || '')}`.toLowerCase();
+  if (/credential|password|stealer|combo|leak/.test(text)) return 'intelx_credential_exposure';
+  if (/email|mailbox|account/.test(text)) return 'intelx_identity_exposure';
+  if (/domain|subdomain|host|whois/.test(text)) return 'intelx_domain_exposure';
+  return 'intelx_exposure_signal';
+}
+
+function normalizeIntelxRecordKey(selector: string, record: Record<string, unknown>): string {
+  const systemId = normalizeText(String(record?.systemid || ''));
+  const storageId = normalizeText(String(record?.storageid || ''));
+  if (systemId) return `${selector}|systemid:${systemId}`;
+  if (storageId) return `${selector}|storageid:${storageId}`;
+  const fallback = normalizeText(String(record?.name || record?.description || '')).slice(0, 120);
+  return `${selector}|fallback:${fallback || crypto.randomUUID()}`;
+}
+
+function collectIntelxSelectors(
+  assetRows: Array<Record<string, unknown>>,
+  canonicalFindings: CanonicalFinding[],
+): string[] {
+  const candidates = new Set<string>();
+
+  for (const row of assetRows) {
+    const normalized = normalizeText(String((row as any)?.normalized_value || (row as any)?.value || ''));
+    if (normalized) candidates.add(normalized);
+  }
+
+  for (const finding of canonicalFindings) {
+    const asset = normalizeText(finding.affected_asset);
+    if (asset) candidates.add(asset);
+  }
+
+  const selectors: string[] = [];
+  for (const candidate of candidates) {
+    const validation = validateDarkRiskSelector(candidate);
+    if (!validation.valid || !validation.type || !validation.normalized) continue;
+    if (!intelxAllowedSelectorTypes.has(validation.type)) continue;
+    selectors.push(validation.normalized);
+  }
+
+  return [...new Set(selectors)].slice(0, INTELX_MAX_SELECTORS_PER_RUN);
+}
+
+async function intelxSubmitSearch(term: string): Promise<string | null> {
+  const payload = {
+    term,
+    buckets: [],
+    lookuplevel: 0,
+    maxresults: INTELX_MAX_RESULTS_PER_SELECTOR,
+    timeout: 5,
+    datefrom: '',
+    dateto: '',
+    sort: 2,
+    media: 0,
+    terminate: [],
+  };
+
+  const response = await fetch(`${INTELX_API_URL}/intelligent/search`, {
+    method: 'POST',
+    headers: {
+      'X-Key': INTELX_API_KEY,
+      'Content-Type': 'application/json',
+      'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`IntelX search submit failed (${response.status}): ${errorText.slice(0, 180)}`);
+  }
+
+  const data = (await response.json()) as IntelxSearchResponse;
+  if (Number(data?.status) === 1) return null;
+  return normalizeText(String(data?.id || '')) || null;
+}
+
+async function intelxFetchSearchResult(searchId: string): Promise<IntelxSearchResponse> {
+  const url = new URL(`${INTELX_API_URL}/intelligent/search/result`);
+  url.searchParams.set('id', searchId);
+  url.searchParams.set('limit', String(INTELX_MAX_RESULTS_PER_SELECTOR));
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'X-Key': INTELX_API_KEY,
+      'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`IntelX search result failed (${response.status}): ${errorText.slice(0, 180)}`);
+  }
+  return (await response.json()) as IntelxSearchResponse;
+}
+
+async function intelxTerminateSearch(searchId: string): Promise<void> {
+  const url = new URL(`${INTELX_API_URL}/intelligent/search/terminate`);
+  url.searchParams.set('id', searchId);
+  await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'X-Key': INTELX_API_KEY,
+      'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
+    },
+  }).catch(() => undefined);
+}
+
+async function runIntelxSearch(selector: string): Promise<Array<Record<string, unknown>>> {
+  const searchId = await intelxSubmitSearch(selector);
+  if (!searchId) return [];
+
+  const collected: Array<Record<string, unknown>> = [];
+  const seen = new Set<string>();
+
+  try {
+    for (let round = 0; round < INTELX_MAX_POLL_ROUNDS; round += 1) {
+      await wait(INTELX_REQUEST_INTERVAL_MS);
+      const result = await intelxFetchSearchResult(searchId);
+      const status = Number(result?.status ?? 3);
+      const records = Array.isArray(result?.records) ? result.records : [];
+
+      for (const record of records) {
+        const dedupeKey = normalizeIntelxRecordKey(selector, record);
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        collected.push(record);
+      }
+
+      if (status === 1 || status === 2) break;
+      if (status === 0 && records.length === 0) break;
+    }
+  } finally {
+    await wait(250);
+    await intelxTerminateSearch(searchId);
+  }
+
+  return collected.slice(0, INTELX_MAX_RESULTS_PER_SELECTOR);
+}
+
 function daysSince(value: string | null | undefined): number | null {
   const parsed = Date.parse(String(value || ''));
   if (!Number.isFinite(parsed)) return null;
@@ -92,6 +298,19 @@ function inferConfidence(finding: CanonicalFinding): 'low' | 'medium' | 'high' {
   if (/cve|credential|verified|critical|high/.test(text)) return 'high';
   if (/candidate|possible|unknown/.test(text)) return 'low';
   return 'medium';
+}
+
+function classifyThreatCategoryText(input: string): string {
+  const sourceText = normalizeText(input).toLowerCase();
+  if (/credential|credenzial|password|stealer|compromis/.test(sourceText)) return 'Credenziali compromesse';
+  if (/mail|email/.test(sourceText) && /leak|expos|compromis/.test(sourceText)) return 'Email esposte';
+  if (/database|dump|db /.test(sourceText)) return 'Database leak';
+  if (/phish|brand|impersonation/.test(sourceText)) return 'Phishing e brand abuse';
+  if (/open_port|open port|service_fingerprint|ports|pentest_tool|shodan/.test(sourceText)) return 'Servizi esposti';
+  if (/dmarc|spf|dkim|mail_security|mx|bimi/.test(sourceText)) return 'Email security';
+  if (/dns|tls|ssl|hsts|whois|rdap|http_security|headers/.test(sourceText)) return 'DNS e TLS';
+  if (/safe_browsing|urlhaus|phishtank|reputation|dnsbl|threat/.test(sourceText)) return 'Reputation';
+  return 'Minacce rilevate';
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -210,7 +429,7 @@ serve(async (req: Request) => {
     const scanJobQuery = adminClient
       .from('surface_scan_jobs' as any)
       .select('id, customer_id, organization_id, status, created_at, completed_at, scan_profile')
-      .eq('customer_id', customerId)
+      .or(`customer_id.eq.${customerId},organization_id.eq.${customerId}`)
       .order('created_at', { ascending: false })
       .limit(1);
 
@@ -348,10 +567,70 @@ serve(async (req: Request) => {
       ...exposureFindings.map((row) => normalizeExposureFinding(row)),
     ];
 
+    const intelxSelectorDefinitions: IntelxSelectorDefinition[] = [];
+    for (const selectorValue of collectIntelxSelectors(assetRows, canonicalFindings)) {
+      const validation = validateDarkRiskSelector(selectorValue);
+      if (!validation.valid || !validation.type || !validation.normalized) continue;
+      intelxSelectorDefinitions.push({
+        raw: selectorValue,
+        normalized: validation.normalized,
+        type: validation.type,
+      });
+    }
+
+    if (intelxSelectorDefinitions.length > 0) {
+      const selectorUpsertRows = intelxSelectorDefinitions.map((selector) => {
+        const relatedAsset = assetByNormalized.get(normalizeAssetValue(selector.normalized));
+        return {
+          organization_id: customerId,
+          tenant_id: customerId,
+          asset_id: relatedAsset?.id || null,
+          selector_type: selector.type,
+          value: selector.raw,
+          normalized_value: selector.normalized,
+          source: 'surfacescan360',
+          status: 'approved',
+          metadata: {
+            discovered_by: 'darkrisk360-sync-surfacescan',
+            source_scan_job_id: scanJob.id,
+          },
+        };
+      });
+
+      const { error: selectorUpsertError } = await adminClient
+        .from('darkrisk_selectors' as any)
+        .upsert(selectorUpsertRows as any, {
+          onConflict: 'organization_id,selector_type,normalized_value',
+          ignoreDuplicates: false,
+        });
+      if (selectorUpsertError) throw selectorUpsertError;
+    }
+
+    const selectorValues = [...new Set(intelxSelectorDefinitions.map((entry) => entry.normalized))];
+    const selectorsRes = selectorValues.length > 0
+      ? await adminClient
+          .from('darkrisk_selectors' as any)
+          .select('id, normalized_value')
+          .eq('organization_id', customerId)
+          .in('normalized_value', selectorValues)
+      : { data: [], error: null } as any;
+    if ((selectorsRes as any).error) throw (selectorsRes as any).error;
+
+    const selectorByNormalized = new Map<string, string>();
+    for (const row of ((selectorsRes as any).data || []) as Array<{ id: string; normalized_value: string }>) {
+      selectorByNormalized.set(String(row.normalized_value), String(row.id));
+    }
+
     let recordsCreated = 0;
     let evidenceCreated = 0;
     let findingsCreated = 0;
     let alertsCreated = 0;
+    let intelxRecordsCreated = 0;
+    let intelxEvidenceCreated = 0;
+    let intelxFindingsCreated = 0;
+    let intelxAlertsCreated = 0;
+    let intelxSearchesRun = 0;
+    const intelxWarnings: string[] = [];
 
     for (const finding of canonicalFindings) {
       const affectedNormalized = normalizeAssetValue(finding.affected_asset);
@@ -497,17 +776,19 @@ serve(async (req: Request) => {
           first_seen_at: finding.created_at || new Date().toISOString(),
           last_seen_at: new Date().toISOString(),
           metadata: {
-            source_scan_job_id: scanJob.id,
-            source_origin: finding.origin,
-            source_finding_id: finding.source_id,
-            compromise_type: compromiseType,
-            third_party_involved: compromiseType === 'indirect',
-            requires_validation: compromiseType !== 'misconfiguration',
-            recurrence_count: recurrenceCount,
-          },
-        })
-        .select('id')
-        .single();
+                source_scan_job_id: scanJob.id,
+                source_origin: finding.origin,
+                source_finding_id: finding.source_id,
+                source_module: finding.module,
+                compromise_type: compromiseType,
+                third_party_involved: compromiseType === 'indirect',
+                requires_validation: compromiseType !== 'misconfiguration',
+                recurrence_count: recurrenceCount,
+                category_hint: classifyThreatCategoryText(`${finding.title} ${finding.finding_type} ${finding.module}`),
+              },
+            })
+            .select('id')
+            .single();
 
       if (findingErr || !darkFinding?.id) throw findingErr || new Error('darkrisk finding insert failed');
       findingsCreated += 1;
@@ -527,13 +808,210 @@ serve(async (req: Request) => {
             occurred_at: finding.created_at || new Date().toISOString(),
             metadata: {
               source: 'surfacescan360',
-              source_scan_job_id: scanJob.id,
-              module: finding.module,
-            },
-          });
+                  source_scan_job_id: scanJob.id,
+                  module: finding.module,
+                },
+              });
 
         if (!alertErr) alertsCreated += 1;
       }
+    }
+
+    if (isIntelxConfigured()) {
+      for (const selector of intelxSelectorDefinitions) {
+        try {
+          await wait(INTELX_REQUEST_INTERVAL_MS);
+          const records = await runIntelxSearch(selector.normalized);
+          intelxSearchesRun += 1;
+          if (records.length === 0) continue;
+
+          const selectorId = selectorByNormalized.get(selector.normalized) || null;
+          const assetRef = assetByNormalized.get(normalizeAssetValue(selector.normalized));
+          const linkedAssetId = assetRef?.id || null;
+
+          for (const record of records) {
+            const sourceRecordKey = normalizeIntelxRecordKey(selector.normalized, record);
+            const title = normalizeText(String(record?.name || '')) || `IntelX signal on ${selector.normalized}`;
+            const description = normalizeText(String(record?.description || '')) || `Segnale exposure rilevato su selector ${selector.normalized}.`;
+            const previewText = maskPotentialSecrets(`${title}\n${description}`.slice(0, 1400));
+            const observedAtCandidate = normalizeText(String(record?.date || record?.added || ''));
+            const observedAt = Number.isFinite(Date.parse(observedAtCandidate))
+              ? new Date(observedAtCandidate).toISOString()
+              : new Date().toISOString();
+            const xscore = Number(record?.xscore);
+            const severity = severityFromIntelxScore(Number.isFinite(xscore) ? xscore : null);
+            const findingType = intelxFindingTypeFromRecord(record, selector.normalized);
+            const compromiseType = inferCompromiseType({
+              findingType,
+              title,
+              module: 'intelx',
+            });
+            const confidence: 'low' | 'medium' | 'high' = Number.isFinite(xscore)
+              ? xscore >= 70 ? 'high' : xscore >= 40 ? 'medium' : 'low'
+              : 'medium';
+            const riskDimensions = inferRiskDimensions({
+              findingType,
+              title,
+              module: 'intelx',
+              confidence,
+              freshnessDays: daysSince(observedAt),
+            });
+            const riskScore = calculateFindingRiskScore({
+              severity,
+              confidence,
+              freshnessDays: daysSince(observedAt),
+              recurrenceCount: 1,
+              affectedAssetCriticality: inferAssetCriticality(selector.normalized),
+              isDirectCompromise: compromiseType === 'direct',
+              isThirdPartyOnly: compromiseType === 'indirect',
+            });
+
+            const { data: sourceRecord, error: sourceRecordErr } = await adminClient
+              .from('darkrisk_source_records' as any)
+              .insert({
+                organization_id: customerId,
+                tenant_id: customerId,
+                scan_run_id: scanRunId,
+                source: 'intelx',
+                asset_id: linkedAssetId,
+                selector_id: selectorId,
+                source_record_key: sourceRecordKey,
+                source_system_id: normalizeText(String(record?.systemid || '')) || null,
+                source_storage_id: normalizeText(String(record?.storageid || '')) || null,
+                source_bucket: normalizeText(String(record?.bucket || '')) || null,
+                source_media: normalizeText(String(record?.mediah || record?.media || '')) || null,
+                source_type: normalizeText(String(record?.typeh || record?.type || '')) || 'intelx_record',
+                source_score: Number.isFinite(xscore) ? xscore : null,
+                source_date: observedAt,
+                source_added_at: observedAt,
+                source_simhash: normalizeText(String(record?.simhash || '')) || null,
+                title: maskPotentialSecrets(title),
+                description: maskPotentialSecrets(description),
+                raw_metadata: {
+                  selector: selector.normalized,
+                  record: {
+                    systemid: record?.systemid || null,
+                    storageid: record?.storageid || null,
+                    bucket: record?.bucket || null,
+                    xscore: Number.isFinite(xscore) ? xscore : null,
+                    date: record?.date || null,
+                    added: record?.added || null,
+                    mediah: record?.mediah || null,
+                    typeh: record?.typeh || null,
+                    tags: record?.tags || [],
+                  },
+                },
+                safe_preview: previewText,
+                preview_hash: sourceRecordKey,
+              })
+              .select('id')
+              .single();
+            if (sourceRecordErr || !sourceRecord?.id) throw sourceRecordErr || new Error('intelx source record insert failed');
+            recordsCreated += 1;
+            intelxRecordsCreated += 1;
+
+            const { data: evidence, error: evidenceErr } = await adminClient
+              .from('darkrisk_evidence' as any)
+              .insert({
+                organization_id: customerId,
+                tenant_id: customerId,
+                scan_run_id: scanRunId,
+                source_record_id: sourceRecord.id,
+                source: 'intelx',
+                evidence_class: 'intelx_record',
+                asset_id: linkedAssetId,
+                selector_id: selectorId,
+                title: maskPotentialSecrets(title),
+                summary: maskPotentialSecrets(description),
+                masked_value: maskPotentialSecrets(selector.normalized),
+                severity_hint: severity,
+                confidence,
+                observed_at: observedAt,
+                first_seen_at: observedAt,
+                last_seen_at: new Date().toISOString(),
+                visibility: 'customer',
+                contains_sensitive_data: false,
+                metadata: {
+                  bucket: normalizeText(String(record?.bucket || '')) || null,
+                  mediah: normalizeText(String(record?.mediah || '')) || null,
+                  typeh: normalizeText(String(record?.typeh || '')) || null,
+                  xscore: Number.isFinite(xscore) ? xscore : null,
+                },
+              })
+              .select('id')
+              .single();
+            if (evidenceErr || !evidence?.id) throw evidenceErr || new Error('intelx evidence insert failed');
+            evidenceCreated += 1;
+            intelxEvidenceCreated += 1;
+
+            const { data: darkFinding, error: findingErr } = await adminClient
+              .from('darkrisk_findings' as any)
+              .insert({
+                organization_id: customerId,
+                tenant_id: customerId,
+                scan_run_id: scanRunId,
+                finding_type: findingType,
+                title: maskPotentialSecrets(title),
+                description: maskPotentialSecrets(description),
+                affected_asset_id: linkedAssetId,
+                affected_selector_id: selectorId,
+                severity,
+                confidence,
+                status: 'new',
+                risk_score: riskScore,
+                risk_dimensions: riskDimensions,
+                evidence_ids: [evidence.id],
+                first_seen_at: observedAt,
+                last_seen_at: new Date().toISOString(),
+                metadata: {
+                  source_scan_job_id: scanJob.id,
+                  source_origin: 'intelx',
+                  source_module: 'intelx',
+                  source_record_key: sourceRecordKey,
+                  compromise_type: compromiseType,
+                  third_party_involved: compromiseType === 'indirect',
+                  requires_validation: compromiseType !== 'misconfiguration',
+                  selector: selector.normalized,
+                  category_hint: classifyThreatCategoryText(`${title} ${findingType} intelx`),
+                },
+              })
+              .select('id')
+              .single();
+            if (findingErr || !darkFinding?.id) throw findingErr || new Error('intelx finding insert failed');
+            findingsCreated += 1;
+            intelxFindingsCreated += 1;
+
+            if (severity === 'high' || severity === 'critical') {
+              const { error: alertErr } = await adminClient
+                .from('darkrisk_alerts' as any)
+                .insert({
+                  organization_id: customerId,
+                  tenant_id: customerId,
+                  finding_id: darkFinding.id,
+                  alert_type: 'intelx_signal',
+                  title: maskPotentialSecrets(title),
+                  message: maskPotentialSecrets(description),
+                  severity,
+                  status: 'open',
+                  occurred_at: observedAt,
+                  metadata: {
+                    source: 'intelx',
+                    selector: selector.normalized,
+                    source_scan_job_id: scanJob.id,
+                  },
+                });
+              if (!alertErr) {
+                alertsCreated += 1;
+                intelxAlertsCreated += 1;
+              }
+            }
+          }
+        } catch (intelxErr: any) {
+          intelxWarnings.push(maskPotentialSecrets(normalizeText(intelxErr?.message) || `IntelX failed on ${selector.normalized}`));
+        }
+      }
+    } else {
+      intelxWarnings.push('IntelX non configurato: impostare INTELX_API_KEY in Edge Function secrets.');
     }
 
     let recommendationMode: 'not_requested' | 'generated' | 'failed' | 'disabled' = 'not_requested';
@@ -542,20 +1020,33 @@ serve(async (req: Request) => {
     let reportWarning: string | null = null;
 
     const completedAt = new Date().toISOString();
+    const scanSources = new Set<string>(['surfacescan360']);
+    if (intelxSearchesRun > 0 || intelxRecordsCreated > 0) {
+      scanSources.add('intelx');
+    }
     await adminClient
       .from('darkrisk_scan_runs' as any)
       .update({
         status: 'completed',
         completed_at: completedAt,
-        warnings: [],
+        sources: Array.from(scanSources),
+        warnings: intelxWarnings,
         stats: {
-          source: 'surfacescan360',
           surface_scan_job_id: scanJob.id,
+          sources: Array.from(scanSources),
           source_records_created: recordsCreated,
           evidence_created: evidenceCreated,
           findings_created: findingsCreated,
           alerts_created: alertsCreated,
           assets_synced: assetRows.length,
+          intelx: {
+            selectors_considered: intelxSelectorDefinitions.length,
+            searches_run: intelxSearchesRun,
+            source_records_created: intelxRecordsCreated,
+            evidence_created: intelxEvidenceCreated,
+            findings_created: intelxFindingsCreated,
+            alerts_created: intelxAlertsCreated,
+          },
         },
       })
       .eq('id', scanRunId);
@@ -623,12 +1114,13 @@ serve(async (req: Request) => {
       reportMode = 'disabled';
     }
 
-    if (recommendationWarning || reportWarning) {
+    const allWarnings = [recommendationWarning, reportWarning, ...intelxWarnings].filter(Boolean);
+    if (allWarnings.length > 0) {
       await adminClient
         .from('darkrisk_scan_runs' as any)
         .update({
           status: 'completed_with_warnings',
-          warnings: [recommendationWarning, reportWarning].filter(Boolean),
+          warnings: allWarnings,
         })
         .eq('id', scanRunId);
     }
@@ -639,21 +1131,29 @@ serve(async (req: Request) => {
         organization_id: customerId,
         tenant_id: customerId,
         actor_id: authData.user.id,
-        action: recommendationWarning || reportWarning ? 'darkrisk_scan_completed_with_warnings' : 'darkrisk_scan_completed',
+        action: allWarnings.length > 0 ? 'darkrisk_scan_completed_with_warnings' : 'darkrisk_scan_completed',
         entity_type: 'darkrisk_scan_run',
         entity_id: scanRunId,
         reason: triggerType,
         metadata: {
-          source: 'surfacescan360',
+          source: Array.from(scanSources),
           surface_scan_job_id: scanJob.id,
           assets_synced: assetRows.length,
           source_records_created: recordsCreated,
           evidence_created: evidenceCreated,
           findings_created: findingsCreated,
           alerts_created: alertsCreated,
+          intelx: {
+            selectors_considered: intelxSelectorDefinitions.length,
+            searches_run: intelxSearchesRun,
+            source_records_created: intelxRecordsCreated,
+            evidence_created: intelxEvidenceCreated,
+            findings_created: intelxFindingsCreated,
+            alerts_created: intelxAlertsCreated,
+          },
           recommendation_mode: recommendationMode,
           report_mode: reportMode,
-          warning: [recommendationWarning, reportWarning].filter(Boolean),
+          warning: allWarnings,
         },
       });
 
@@ -661,7 +1161,7 @@ serve(async (req: Request) => {
       ok: true,
       customer_id: customerId,
       scan_run_id: scanRunId,
-      source: 'surfacescan360',
+      source: Array.from(scanSources),
       tier: entitlement.tier,
       started_at: startedAt,
       completed_at: completedAt,
@@ -671,10 +1171,18 @@ serve(async (req: Request) => {
         evidence_created: evidenceCreated,
         findings_created: findingsCreated,
         alerts_created: alertsCreated,
+        intelx: {
+          selectors_considered: intelxSelectorDefinitions.length,
+          searches_run: intelxSearchesRun,
+          source_records_created: intelxRecordsCreated,
+          evidence_created: intelxEvidenceCreated,
+          findings_created: intelxFindingsCreated,
+          alerts_created: intelxAlertsCreated,
+        },
         recommendation_mode: recommendationMode,
         report_mode: reportMode,
       },
-      warning: [recommendationWarning, reportWarning].filter(Boolean).join(' | ') || null,
+      warning: allWarnings.join(' | ') || null,
     });
   } catch (error: any) {
     if (scanRunId) {

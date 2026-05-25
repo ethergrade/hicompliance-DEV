@@ -68,12 +68,13 @@ export const useSurfaceScanEngine = () => {
       setLoading(true);
     }
     try {
+      const scopeFilter = `customer_id.eq.${organizationId},organization_id.eq.${organizationId}`;
       const { data, error } = await supabase
         .from('surface_scan_jobs' as any)
         .select(
           'id, raw_target, normalized_target, target_type, hostname, root_domain, resolved_ips, scan_profile, status, hosting_context, shodan_status, created_at, started_at, completed_at, error_message, summary',
         )
-        .eq('customer_id', organizationId)
+        .or(scopeFilter)
         .order('created_at', { ascending: false })
         .limit(25);
 
@@ -103,7 +104,7 @@ export const useSurfaceScanEngine = () => {
 
   useEffect(() => {
     if (!organizationId) return;
-    const channel = supabase
+    const customerChannel = supabase
       .channel(`surface-scan-jobs-${organizationId}`)
       .on(
         'postgres_changes',
@@ -119,8 +120,25 @@ export const useSurfaceScanEngine = () => {
       )
       .subscribe();
 
+    const orgChannel = supabase
+      .channel(`surface-scan-jobs-org-${organizationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'surface_scan_jobs',
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        (_payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
+          void fetchJobs({ background: true });
+        },
+      )
+      .subscribe();
+
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(customerChannel);
+      supabase.removeChannel(orgChannel);
     };
   }, [organizationId, fetchJobs]);
 

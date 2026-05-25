@@ -348,6 +348,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
     const fetchData = async () => {
       setLoading(true);
       try {
+        const scopeFilter = `customer_id.eq.${organizationId},organization_id.eq.${organizationId}`;
         const [scopeRes, jobsRes] = await Promise.all([
           supabase
             .from('surface_scan_monitored_ips' as any)
@@ -356,7 +357,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
           supabase
             .from('surface_scan_jobs' as any)
             .select('id, raw_target, normalized_target, scan_profile, status, created_at, completed_at, summary')
-            .eq('customer_id', organizationId)
+            .or(scopeFilter)
             .in('status', ['completed', 'partial'])
             .order('created_at', { ascending: false })
             .limit(500),

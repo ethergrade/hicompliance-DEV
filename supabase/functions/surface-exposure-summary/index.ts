@@ -241,10 +241,11 @@ serve(async (req: Request) => {
     if (monitoredScopeError) throw monitoredScopeError;
     const { scopeDomains, ipScopeRules } = splitMonitoredScopeRules((monitoredScopeRows || []) as any);
 
+    const jobScopeFilter = `customer_id.eq.${customerId},organization_id.eq.${customerId}`;
     const { data: allJobsRows, error: allJobsError } = await adminClient
       .from('surface_scan_jobs' as any)
       .select('id, customer_id, organization_id, created_at, status')
-      .eq('customer_id', customerId)
+      .or(jobScopeFilter)
       .eq('scan_type', 'exposure_port_technology')
       .order('created_at', { ascending: false })
       .limit(500);
@@ -362,7 +363,7 @@ serve(async (req: Request) => {
       adminClient
         .from('surface_scan_jobs' as any)
         .select('id')
-        .eq('customer_id', resolvedCustomerId)
+        .or(`customer_id.eq.${resolvedCustomerId},organization_id.eq.${resolvedCustomerId}`)
         .eq('scan_type', 'exposure_port_technology')
         .lt('created_at', String(job.created_at || new Date().toISOString()))
         .order('created_at', { ascending: false })

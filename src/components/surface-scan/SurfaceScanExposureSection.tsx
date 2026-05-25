@@ -329,7 +329,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       {!isSectionCollapsed && (
         <CardContent className="space-y-5">
           <ExposureKpiCards summary={summary} />
-          <ExposureCharts summary={summary} />
+          <ExposureCharts summary={summary} openPorts={openPorts} technologies={technologies} />
 
           {isAdmin && (
             <Card className="border-border">

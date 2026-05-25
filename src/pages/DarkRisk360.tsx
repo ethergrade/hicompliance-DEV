@@ -81,6 +81,26 @@ const classifyThreatCategory = (title: string, findingType: string, source: stri
   return 'Minacce rilevate';
 };
 
+const normalizeThreatCategoryKey = (value: string | null | undefined): string => {
+  const raw = String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/&/g, ' e ')
+    .replace(/[_-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!raw) return '';
+  if (/dns|tls|ssl|hsts|rdap|whois|http security|headers/.test(raw)) return 'dns_tls';
+  if (/email|mail|dmarc|spf|dkim|mx|bimi/.test(raw)) return 'email_security';
+  if (/servizi|service|open port|porte|exposed|exposure/.test(raw)) return 'servizi_esposti';
+  if (/reputation|safe browsing|dnsbl|threat intel|threat/.test(raw)) return 'reputation';
+  if (/credenzial|credential|account|identity/.test(raw)) return 'credenziali_compromesse';
+  if (/minacce|findings|vulnerabilita|vulnerability/.test(raw)) return 'minacce_rilevate';
+  return raw;
+};
+
 const formatDateTime = (value: string | null | undefined): string => {
   if (!value) return '-';
   const parsed = new Date(value);
@@ -93,6 +113,15 @@ const formatDelta = (delta: number | null | undefined): string | null => {
   if (delta === 0) return 'Nessuna variazione';
   if (delta > 0) return `+${delta} vs ultima scansione`;
   return `${delta} vs ultima scansione`;
+};
+
+const riskScoreFromSeverity = (severity: string): number => {
+  const normalized = String(severity || '').toLowerCase();
+  if (normalized === 'critical') return 95;
+  if (normalized === 'high') return 80;
+  if (normalized === 'medium') return 60;
+  if (normalized === 'low') return 35;
+  return 15;
 };
 
 const roadmapStatusLabel: Record<string, string> = {
@@ -166,6 +195,85 @@ const DarkRisk360: React.FC = () => {
       if (findingsError) throw findingsError;
 
       const findings = (findingsData || []) as Array<Record<string, any>>;
+
+      if (findings.length === 0) {
+        const { data: latestSurfaceJob, error: latestSurfaceJobError } = await supabase
+          .from('surface_scan_jobs' as any)
+          .select('id')
+          .or(`customer_id.eq.${organizationId},organization_id.eq.${organizationId}`)
+          .in('status', ['completed', 'partial'])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (latestSurfaceJobError) throw latestSurfaceJobError;
+        if (!latestSurfaceJob?.id) return [];
+
+        const [surfaceRes, exposureRes] = await Promise.all([
+          supabase
+            .from('surface_findings' as any)
+            .select('id, title, finding_type, severity, status, created_at, module, affected_asset, affected_url')
+            .eq('scan_job_id', latestSurfaceJob.id)
+            .order('created_at', { ascending: false })
+            .limit(600),
+          supabase
+            .from('surface_exposure_findings' as any)
+            .select('id, title, finding_type, severity, status, created_at, source, affected_host, affected_url')
+            .eq('scan_job_id', latestSurfaceJob.id)
+            .order('created_at', { ascending: false })
+            .limit(600),
+        ]);
+
+        if (surfaceRes.error) throw surfaceRes.error;
+        if (exposureRes.error) throw exposureRes.error;
+
+        const fallbackSurfaceRows = ((surfaceRes.data || []) as Array<Record<string, any>>).map((row) => {
+          const source = String(row.module || 'surface_scan_engine');
+          const findingType = String(row.finding_type || 'surface_finding');
+          const title = String(row.title || findingType);
+          const category = classifyThreatCategory(title, findingType, source);
+          return {
+            id: `surface-${String(row.id)}`,
+            severity: String(row.severity || 'info') as DarkRiskFindingRow['severity'],
+            risk_score: riskScoreFromSeverity(String(row.severity || 'info')),
+            title,
+            asset: String(row.affected_asset || row.affected_url || '-'),
+            finding_type: findingType,
+            confidence: 'medium' as DarkRiskFindingRow['confidence'],
+            status: String(row.status || 'new'),
+            first_seen_at: String(row.created_at || ''),
+            last_seen_at: String(row.created_at || ''),
+            source,
+            compromise_type: 'misconfiguration',
+            category,
+          } satisfies DarkRiskFindingRowExtended;
+        });
+
+        const fallbackExposureRows = ((exposureRes.data || []) as Array<Record<string, any>>).map((row) => {
+          const source = String(row.source || 'surface_exposure_engine');
+          const findingType = String(row.finding_type || 'surface_exposure_finding');
+          const title = String(row.title || findingType);
+          const category = classifyThreatCategory(title, findingType, source);
+          return {
+            id: `exposure-${String(row.id)}`,
+            severity: String(row.severity || 'info') as DarkRiskFindingRow['severity'],
+            risk_score: riskScoreFromSeverity(String(row.severity || 'info')),
+            title,
+            asset: String(row.affected_host || row.affected_url || '-'),
+            finding_type: findingType,
+            confidence: 'medium' as DarkRiskFindingRow['confidence'],
+            status: String(row.status || 'new'),
+            first_seen_at: String(row.created_at || ''),
+            last_seen_at: String(row.created_at || ''),
+            source,
+            compromise_type: 'misconfiguration',
+            category,
+          } satisfies DarkRiskFindingRowExtended;
+        });
+
+        return [...fallbackSurfaceRows, ...fallbackExposureRows];
+      }
+
       const assetIds = Array.from(
         new Set(
           findings
@@ -190,10 +298,15 @@ const DarkRisk360: React.FC = () => {
       }
 
       return findings.map((finding) => {
-        const source = String(finding?.metadata?.source_origin || 'surface_scan_engine');
+        const source = String(
+          finding?.metadata?.source_module ||
+          finding?.metadata?.source_origin ||
+          'surface_scan_engine',
+        );
         const findingType = String(finding.finding_type || 'unknown');
         const title = String(finding.title || findingType);
-        const category = classifyThreatCategory(title, findingType, source);
+        const categoryHint = String(finding?.metadata?.category_hint || '').trim();
+        const category = categoryHint || classifyThreatCategory(title, findingType, source);
 
         return {
           id: String(finding.id),
@@ -385,7 +498,11 @@ const DarkRisk360: React.FC = () => {
     return findingRows
       .filter((row) => {
         if (findingFilter.severity !== 'all' && row.severity !== findingFilter.severity) return false;
-        if (findingFilter.category && row.category !== findingFilter.category) return false;
+        if (findingFilter.category) {
+          const rowCategoryKey = normalizeThreatCategoryKey(row.category);
+          const filterCategoryKey = normalizeThreatCategoryKey(findingFilter.category);
+          if (rowCategoryKey !== filterCategoryKey) return false;
+        }
 
         const query = findingFilter.query.trim().toLowerCase();
         if (!query) return true;
