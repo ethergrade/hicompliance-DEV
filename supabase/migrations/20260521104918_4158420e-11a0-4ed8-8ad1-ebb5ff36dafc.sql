@@ -1,5 +1,5 @@
 
-CREATE TABLE public.surface_scan_history (
+CREATE TABLE IF NOT EXISTS public.surface_scan_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL,
   scanned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -17,22 +17,62 @@ CREATE TABLE public.surface_scan_history (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_surface_scan_history_org_date ON public.surface_scan_history(organization_id, scanned_at DESC);
+CREATE INDEX IF NOT EXISTS idx_surface_scan_history_org_date ON public.surface_scan_history(organization_id, scanned_at DESC);
 
 ALTER TABLE public.surface_scan_history ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view their org surface scan history"
-ON public.surface_scan_history FOR SELECT
-USING (organization_id IN (SELECT users.organization_id FROM users WHERE users.auth_user_id = auth.uid()));
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'surface_scan_history'
+      AND policyname = 'Users can view their org surface scan history'
+  ) THEN
+    CREATE POLICY "Users can view their org surface scan history"
+    ON public.surface_scan_history FOR SELECT
+    USING (organization_id IN (SELECT users.organization_id FROM users WHERE users.auth_user_id = auth.uid()));
+  END IF;
+END $$;
 
-CREATE POLICY "Sales can view all surface scan history"
-ON public.surface_scan_history FOR SELECT
-USING (can_manage_all_organizations(auth.uid()));
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'surface_scan_history'
+      AND policyname = 'Sales can view all surface scan history'
+  ) THEN
+    CREATE POLICY "Sales can view all surface scan history"
+    ON public.surface_scan_history FOR SELECT
+    USING (can_manage_all_organizations(auth.uid()));
+  END IF;
+END $$;
 
-CREATE POLICY "Sales can manage all surface scan history"
-ON public.surface_scan_history FOR ALL
-USING (can_manage_all_organizations(auth.uid()));
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'surface_scan_history'
+      AND policyname = 'Sales can manage all surface scan history'
+  ) THEN
+    CREATE POLICY "Sales can manage all surface scan history"
+    ON public.surface_scan_history FOR ALL
+    USING (can_manage_all_organizations(auth.uid()));
+  END IF;
+END $$;
 
-CREATE POLICY "Users can insert their org surface scan history"
-ON public.surface_scan_history FOR INSERT
-WITH CHECK (organization_id IN (SELECT users.organization_id FROM users WHERE users.auth_user_id = auth.uid()));
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'surface_scan_history'
+      AND policyname = 'Users can insert their org surface scan history'
+  ) THEN
+    CREATE POLICY "Users can insert their org surface scan history"
+    ON public.surface_scan_history FOR INSERT
+    WITH CHECK (organization_id IN (SELECT users.organization_id FROM users WHERE users.auth_user_id = auth.uid()));
+  END IF;
+END $$;

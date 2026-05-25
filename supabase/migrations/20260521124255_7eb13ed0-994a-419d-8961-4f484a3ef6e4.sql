@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS public.surface_scan_ai_reports (
 CREATE INDEX IF NOT EXISTS idx_ssai_org ON public.surface_scan_ai_reports(organization_id, created_at DESC);
 ALTER TABLE public.surface_scan_ai_reports ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Org members can view AI reports" ON public.surface_scan_ai_reports;
 CREATE POLICY "Org members can view AI reports"
 ON public.surface_scan_ai_reports FOR SELECT TO authenticated
 USING (
@@ -17,6 +18,7 @@ USING (
   OR public.can_manage_all_organizations(auth.uid())
 );
 
+DROP POLICY IF EXISTS "Service role can insert AI reports" ON public.surface_scan_ai_reports;
 CREATE POLICY "Service role can insert AI reports"
 ON public.surface_scan_ai_reports FOR INSERT TO authenticated
 WITH CHECK (
