@@ -336,6 +336,20 @@ function normalizeSensitiveTag(value: string | null | undefined): 'domains' | 'p
   return null;
 }
 
+function isAllZeroCreditCardValue(value: string | null | undefined): boolean {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (digits.length >= 13 && /^0+$/.test(digits)) return true;
+  const masked = String(value || '').replace(/\s+/g, '');
+  const maskedDigits = masked.replace(/\D/g, '');
+  return Boolean(masked.includes('*') && maskedDigits.length >= 8 && /^0+$/.test(maskedDigits) && /^[0*]+$/.test(masked.replace(/[^0-9*]/g, '')));
+}
+
+function shouldIgnoreSensitiveHit(hit: DtiSensitiveHitRow): boolean {
+  const tag = normalizeSensitiveTag(hit.tag);
+  if (tag !== 'credit_cards') return false;
+  return isAllZeroCreditCardValue(hit.clear_value) || isAllZeroCreditCardValue(hit.masked_value);
+}
+
 function isoOrNow(value: string | null | undefined): string {
   const raw = String(value || '').trim();
   const parsed = Date.parse(raw);
@@ -748,7 +762,8 @@ serve(async (req: Request) => {
     const selectors = (selectorsRes.data || []) as SelectorRow[];
     const sourceRows = (sourceRes.data || []) as SourceRecordRow[];
     const dtiSourceRuns = (dtiSourceRunRes.data || []) as DtiSourceRunRow[];
-    const dtiSensitiveHits = (dtiSensitiveHitsRes.data || []) as DtiSensitiveHitRow[];
+    const dtiSensitiveHits = ((dtiSensitiveHitsRes.data || []) as DtiSensitiveHitRow[])
+      .filter((hit) => !shouldIgnoreSensitiveHit(hit));
 
     const findingIds = findings.map((finding) => finding.id);
     const evidenceIds = Array.from(new Set(findings.flatMap((finding) => toArray<string>(finding.evidence_ids))));
