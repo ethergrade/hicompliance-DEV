@@ -93,6 +93,17 @@ type SensitiveDetailRow = {
   source: string;
 };
 
+type IdentityEvidenceRow = {
+  identity: string;
+  domains: number;
+  passwords: number;
+  addresses: number;
+  credit_cards: number;
+  phone_numbers: number;
+  total: number;
+  samples: DtiOverviewData['sensitive_samples'];
+};
+
 const categoryPalette = ['#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ef4444', '#64748b', '#3b82f6', '#a855f7'];
 const scopePalette: Record<string, string> = {
   approved: '#22c55e',
@@ -150,6 +161,12 @@ function shortSiteLabel(value: string): string {
 function isCredentialCompromiseRow(row: Row): boolean {
   const sourceText = `${row.category || ''} ${row.finding_type || ''} ${row.title || ''}`.toLowerCase();
   return /credential|credenzial|password|stealer|compromis/.test(sourceText);
+}
+
+function isIdentitySensitiveSample(row: DtiOverviewData['sensitive_samples'][number]): boolean {
+  const queryKind = String(row.query_kind || '').toLowerCase();
+  const tag = normalizeSensitiveTag(row.tag || '');
+  return queryKind === 'email_selector' && Boolean(tag);
 }
 
 export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: boolean; dti?: DtiOverviewData | null }> = ({
@@ -272,6 +289,36 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
       })
       .slice(0, 120);
 
+    const identityMap = new Map<string, IdentityEvidenceRow>();
+    for (const sample of dti?.sensitive_samples || []) {
+      if (!isIdentitySensitiveSample(sample)) continue;
+      const tag = normalizeSensitiveTag(sample.tag || '');
+      if (!tag) continue;
+      const identity = String(sample.query_term || sample.asset_scope || 'n/a').toLowerCase();
+      const bucket = identityMap.get(identity) || {
+        identity,
+        domains: 0,
+        passwords: 0,
+        addresses: 0,
+        credit_cards: 0,
+        phone_numbers: 0,
+        total: 0,
+        samples: [],
+      };
+      bucket[tag] += 1;
+      bucket.total += 1;
+      if (bucket.samples.length < 8) bucket.samples.push(sample);
+      identityMap.set(identity, bucket);
+    }
+
+    const identityRows = Array.from(identityMap.values())
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 12)
+      .map((row) => ({
+        ...row,
+        identityLabel: shortSiteLabel(row.identity),
+      }));
+
     return {
       topCategories,
       siteRows,
@@ -280,6 +327,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
       detailedSensitiveRows,
       groupedAssetRows,
       credentialCompromiseRows,
+      identityRows,
     };
   }, [rows, dti]);
 
@@ -473,6 +521,77 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <p className="text-sm font-medium">Identity con evidenza di credenziali</p>
+              <p className="text-xs text-muted-foreground">Distribuzione per email monitorata e dettaglio valori rilevati.</p>
+            </div>
+            <Badge variant="outline">{data.identityRows.length} identity</Badge>
+          </div>
+          {data.identityRows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nessuna evidenza identity classificata dalle query email nel ciclo corrente.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <div className="h-[260px] rounded-md border border-border/60 bg-background/30 p-3">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={data.identityRows} margin={{ top: 8, right: 12, left: 0, bottom: 42 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.25)" />
+                    <XAxis dataKey="identityLabel" interval={0} angle={-18} textAnchor="end" height={64} stroke="#94a3b8" />
+                    <YAxis allowDecimals={false} stroke="#94a3b8" />
+                    <Tooltip
+                      contentStyle={{ background: '#0b1220', border: '1px solid rgba(148,163,184,0.3)' }}
+                      formatter={(value: number, key: string) => [value, sensitiveLabel[key] || key]}
+                      labelFormatter={(label) => String(label)}
+                    />
+                    <Legend />
+                    <Bar dataKey="passwords" stackId="identitySensitive" name="Password" fill="#f59e0b" />
+                    <Bar dataKey="domains" stackId="identitySensitive" name="Domini" fill="#8b5cf6" />
+                    <Bar dataKey="addresses" stackId="identitySensitive" name="Indirizzi" fill="#22c55e" />
+                    <Bar dataKey="credit_cards" stackId="identitySensitive" name="Carte" fill="#ef4444" />
+                    <Bar dataKey="phone_numbers" stackId="identitySensitive" name="Telefoni" fill="#06b6d4" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="overflow-x-auto rounded-md border border-border/60 bg-background/30">
+                <table className="w-full min-w-[720px] text-xs">
+                  <thead>
+                    <tr className="border-b border-border/60 text-left text-muted-foreground">
+                      <th className="py-2 px-3">Identity</th>
+                      <th className="py-2 px-3">Password</th>
+                      <th className="py-2 px-3">Domini</th>
+                      <th className="py-2 px-3">Altri dati</th>
+                      <th className="py-2 px-3">Evidenze</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.identityRows.map((row) => (
+                      <tr key={row.identity} className="border-b border-border/40 align-top">
+                        <td className="py-2 px-3 font-medium">{row.identity}</td>
+                        <td className="py-2 px-3">{row.passwords}</td>
+                        <td className="py-2 px-3">{row.domains}</td>
+                        <td className="py-2 px-3">{row.addresses + row.credit_cards + row.phone_numbers}</td>
+                        <td className="py-2 px-3">
+                          <div className="space-y-1">
+                            {row.samples.slice(0, 4).map((sample, index) => (
+                              <div key={`${row.identity}-${sample.tag}-${index}`} className="font-mono text-[11px] break-all">
+                                <span className="text-muted-foreground">{sensitiveLabel[normalizeSensitiveTag(sample.tag || '') || 'domains'] || sample.tag}: </span>
+                                {sample.value || sample.masked_value || '-'}
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
