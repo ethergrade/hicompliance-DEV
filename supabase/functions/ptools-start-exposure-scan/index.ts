@@ -11,7 +11,6 @@ import {
   hostFromTargetValue,
 } from '../_shared/exposureUtils.ts';
 import {
-  buildNetworkScannerParams,
   buildPortScannerParams,
   buildSubdomainFinderParams,
 } from '../_shared/pentestToolsParamMapper.ts';
@@ -212,25 +211,8 @@ serve(async (req: Request) => {
       }
     }
 
-    if (input.include_network_vuln_scan) {
-      const params = buildNetworkScannerParams(input);
-      for (const target of targets) {
-        const key = `${target.type}|${target.value.toLowerCase()}`;
-        queueRows.push({
-          scan_job_id: job.id,
-          target_id: targetIdByKey.get(key) || null,
-          organization_id: input.customer_id,
-          tenant_id: input.tenant_id,
-          customer_id: input.customer_id,
-          tool_id: PENTEST_TOOL_IDS.NETWORK_SCANNER,
-          tool_name: toolNameById(PENTEST_TOOL_IDS.NETWORK_SCANNER),
-          phase: 'network_scan',
-          target_name: hostFromTargetValue(target.value) || target.value,
-          tool_params: params,
-          status: 'queued',
-        });
-      }
-    }
+    // Network vulnerability scans are queued only after an actual open-port result
+    // from the port scanner, to avoid unnecessary provider failures on blind targets.
 
     if (queueRows.length > 0) {
       const { error: queueInsertError } = await adminClient.from('pentest_tools_scans' as any).insert(queueRows);

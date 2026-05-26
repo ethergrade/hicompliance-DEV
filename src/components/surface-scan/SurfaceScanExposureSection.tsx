@@ -173,11 +173,11 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       includePortScan: true,
       includeWebTech: true,
       includeSsl: true,
-      includeNetworkVuln: true,
+      includeNetworkVuln: false,
       detectOs: true,
       detectServiceVersion: true,
       checkAlive: true,
-      traceroute: true,
+      traceroute: false,
     }),
     [],
   );
@@ -327,7 +327,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       include_web_technology_detection: fullControls.includeWebTech,
       include_ssl_scan: fullControls.includeSsl,
       include_network_vuln_scan: fullControls.includeNetworkVuln,
-      scan_depth: 'custom',
+      scan_depth: 'deep',
       protocol: 'tcp',
       custom_ports: customPorts,
       check_alive: fullControls.checkAlive,
@@ -354,6 +354,10 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
 
     const latestJobTs = toTimestamp(jobs[0]?.created_at);
     const isStale = !latestJobTs || (Date.now() - latestJobTs) > 1000 * 60 * 60 * 12;
+    const hasFailedLatestTargets = targetSnapshots.some((snapshot) => {
+      const liveStatus = String(snapshot?.live?.status || '').toLowerCase();
+      return ['failed', 'stopped', 'aborted', 'timed out'].includes(liveStatus);
+    });
     const scannedTargetKeys = new Set(
       jobs
         .map((job) => targetMatchKey(String(job?.normalized_target || job?.raw_target || '')))
@@ -364,7 +368,11 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       ...scopePublicIps.map(targetMatchKey),
     ]);
     const missingScopeTargets = Array.from(scopeTargetKeys).filter((key) => !scannedTargetKeys.has(key));
-    const shouldAutoStart = jobs.length === 0 || isStale || missingScopeTargets.length > 0;
+    const shouldAutoStart =
+      jobs.length === 0
+      || isStale
+      || missingScopeTargets.length > 0
+      || hasFailedLatestTargets;
     if (!shouldAutoStart) return;
 
     autoStartAttemptedRef.current = true;
@@ -381,7 +389,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       include_web_technology_detection: fullControls.includeWebTech,
       include_ssl_scan: fullControls.includeSsl,
       include_network_vuln_scan: fullControls.includeNetworkVuln,
-      scan_depth: 'custom',
+      scan_depth: 'deep',
       protocol: 'tcp',
       custom_ports: customPorts,
       check_alive: fullControls.checkAlive,
@@ -399,6 +407,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
     scopeDomains,
     scopePublicIps,
     jobs,
+    targetSnapshots,
     fullControls,
     customPorts,
     runExposureScan,

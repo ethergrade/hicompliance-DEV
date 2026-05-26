@@ -3,7 +3,7 @@ import { PentestToolsApiError, PentestToolsClient } from './pentestToolsClient.t
 const DEFAULT_MAX_PARALLEL = 5;
 const STALE_QUEUED_MINUTES = 6 * 60;
 const STALE_RETRY_OVERDUE_MINUTES = 30;
-const RETRY_CAP_FOR_STALE = 1;
+const RETRY_CAP_FOR_STALE = 2;
 
 const PHASE_PRIORITY: Record<string, number> = {
   port_scan: 10,
@@ -14,12 +14,18 @@ const PHASE_PRIORITY: Record<string, number> = {
 };
 
 const PHASE_TIMEOUT_MINUTES: Record<string, number> = {
-  port_scan: 45,
-  subdomain_discovery: 40,
-  ssl_scan: 35,
-  website_recon: 35,
-  network_scan: 55,
+  port_scan: 90,
+  subdomain_discovery: 90,
+  ssl_scan: 75,
+  website_recon: 75,
+  network_scan: 120,
 };
+
+const OPTIONAL_PHASES = new Set(['website_recon', 'ssl_scan', 'network_scan']);
+
+function isOptionalPhase(phase: unknown): boolean {
+  return OPTIONAL_PHASES.has(String(phase || '').toLowerCase());
+}
 
 function toInt(value: unknown, fallback: number): number {
   const parsed = Number(value);
@@ -135,6 +141,25 @@ export async function recoverStaleScansForJob(
         })
         .eq('id', row.id);
       recoveredToRetry += 1;
+      continue;
+    }
+
+    if (isOptionalPhase(row?.phase)) {
+      await adminClient
+        .from('pentest_tools_scans' as any)
+        .update({
+          status: 'finished',
+          progress: 100,
+          finished_at: new Date().toISOString(),
+          error_message: `Optional phase skipped after stale recovery: ${reason}`,
+          updated_at: new Date().toISOString(),
+          raw_output: {
+            ...rawPayload,
+            _optional_phase: true,
+            _skipped: true,
+          },
+        })
+        .eq('id', row.id);
       continue;
     }
 
@@ -256,6 +281,26 @@ export async function startQueuedScansForJob(adminClient: any, scanJobId: string
           .eq('id', row.id);
         deferred += 1;
       } else {
+        if (isOptionalPhase(row?.phase)) {
+          await adminClient
+            .from('pentest_tools_scans' as any)
+            .update({
+              status: 'finished',
+              progress: 100,
+              finished_at: new Date().toISOString(),
+              error_message: error?.message
+                ? `Optional phase skipped: ${String(error.message).slice(0, 3900)}`
+                : 'Optional phase skipped',
+              updated_at: new Date().toISOString(),
+              raw_output: {
+                _optional_phase: true,
+                _skipped: true,
+                _skip_reason: 'start_failed',
+              },
+            })
+            .eq('id', row.id);
+          continue;
+        }
         await adminClient
           .from('pentest_tools_scans' as any)
           .update({
