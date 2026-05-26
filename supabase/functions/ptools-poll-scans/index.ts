@@ -39,12 +39,17 @@ const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const INTERNAL_SECRET = Deno.env.get('SURFACESCAN_CRON_INTERNAL_SECRET') || Deno.env.get('SURFACESCAN_INTERNAL_SECRET') || '';
 
 const MAX_POLL_TASKS = 80;
+const OPTIONAL_PHASES = new Set(['website_recon', 'ssl_scan', 'network_scan']);
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json', ...corsHeaders },
   });
+}
+
+function isOptionalPhase(phase: unknown): boolean {
+  return OPTIONAL_PHASES.has(String(phase || '').toLowerCase());
 }
 
 function toArray<T = any>(value: unknown): T[] {
@@ -874,13 +879,27 @@ async function finalizeJobStatuses(adminClient: any, scanJobIds: string[]) {
       continue;
     }
 
-    const finalStatus = finished > 0 ? 'completed' : 'failed';
+    const [openPortsCountRes, technologiesCountRes, findingsCountRes] = await Promise.all([
+      adminClient.from('surface_open_ports' as any).select('id', { count: 'exact', head: true }).eq('scan_job_id', scanJobId),
+      adminClient.from('surface_web_technologies' as any).select('id', { count: 'exact', head: true }).eq('scan_job_id', scanJobId),
+      adminClient.from('surface_exposure_findings' as any).select('id', { count: 'exact', head: true }).eq('scan_job_id', scanJobId),
+    ]);
+    const hasData =
+      Number(openPortsCountRes.count || 0) > 0
+      || Number(technologiesCountRes.count || 0) > 0
+      || Number(findingsCountRes.count || 0) > 0;
+
+    const finalStatus = finished > 0
+      ? (failed > 0 ? 'partial' : 'completed')
+      : (hasData ? 'partial' : 'failed');
     await adminClient
       .from('surface_scan_jobs' as any)
       .update({
         status: finalStatus,
         completed_at: new Date().toISOString(),
-        error_message: finalStatus === 'failed' ? 'All Pentest-Tools tasks failed' : null,
+        error_message: finalStatus === 'failed'
+          ? 'All Pentest-Tools tasks failed'
+          : (finalStatus === 'partial' ? 'Completed with partial optional-phase failures' : null),
       })
       .eq('id', scanJobId);
 
@@ -893,6 +912,7 @@ async function finalizeJobStatuses(adminClient: any, scanJobIds: string[]) {
         tasks_total: total,
         tasks_finished: finished,
         tasks_failed: failed,
+        has_data: hasData,
         final_status: finalStatus,
       },
     });
@@ -1022,14 +1042,30 @@ serve(async (req: Request) => {
           processingStats.retry_scheduled += 1;
           processed.push({ task_id: scanTaskId, status: 'retry_missing_remote_id' });
         } else {
-          await adminClient.from('pentest_tools_scans' as any).update({
-            status: 'failed',
-            finished_at: new Date().toISOString(),
-            error_message: 'Missing remote scan id after recovery retry',
-            updated_at: new Date().toISOString(),
-          }).eq('id', scanTaskId);
-          processingStats.failed_after_retry += 1;
-          processed.push({ task_id: scanTaskId, status: 'failed_missing_remote_id' });
+          if (isOptionalPhase(task.phase)) {
+            await adminClient.from('pentest_tools_scans' as any).update({
+              status: 'finished',
+              progress: 100,
+              finished_at: new Date().toISOString(),
+              error_message: 'Optional phase skipped: missing remote scan id after recovery retry',
+              updated_at: new Date().toISOString(),
+              raw_output: {
+                _optional_phase: true,
+                _skipped: true,
+                _skip_reason: 'missing_remote_scan_id',
+              },
+            }).eq('id', scanTaskId);
+            processed.push({ task_id: scanTaskId, status: 'optional_skipped_missing_remote_id' });
+          } else {
+            await adminClient.from('pentest_tools_scans' as any).update({
+              status: 'failed',
+              finished_at: new Date().toISOString(),
+              error_message: 'Missing remote scan id after recovery retry',
+              updated_at: new Date().toISOString(),
+            }).eq('id', scanTaskId);
+            processingStats.failed_after_retry += 1;
+            processed.push({ task_id: scanTaskId, status: 'failed_missing_remote_id' });
+          }
         }
         continue;
       }
@@ -1051,14 +1087,30 @@ serve(async (req: Request) => {
         }
 
         if (isTerminalErrorStatus(parsed.statusName) || normalizedStatus === 'failed') {
-          await adminClient.from('pentest_tools_scans' as any).update({
-            status: 'failed',
-            progress: parsed.progress,
-            finished_at: new Date().toISOString(),
-            error_message: `Remote status: ${parsed.statusName}`,
-            updated_at: new Date().toISOString(),
-          }).eq('id', scanTaskId);
-          processed.push({ task_id: scanTaskId, status: 'failed', remote_status: parsed.statusName });
+          if (isOptionalPhase(task.phase)) {
+            await adminClient.from('pentest_tools_scans' as any).update({
+              status: 'finished',
+              progress: 100,
+              finished_at: new Date().toISOString(),
+              error_message: `Optional phase skipped (remote): ${parsed.statusName}`,
+              updated_at: new Date().toISOString(),
+              raw_output: {
+                _optional_phase: true,
+                _skipped: true,
+                _skip_reason: `remote_${parsed.statusName}`,
+              },
+            }).eq('id', scanTaskId);
+            processed.push({ task_id: scanTaskId, status: 'optional_skipped', remote_status: parsed.statusName });
+          } else {
+            await adminClient.from('pentest_tools_scans' as any).update({
+              status: 'failed',
+              progress: parsed.progress,
+              finished_at: new Date().toISOString(),
+              error_message: `Remote status: ${parsed.statusName}`,
+              updated_at: new Date().toISOString(),
+            }).eq('id', scanTaskId);
+            processed.push({ task_id: scanTaskId, status: 'failed', remote_status: parsed.statusName });
+          }
           continue;
         }
 
@@ -1093,14 +1145,32 @@ serve(async (req: Request) => {
           processingStats.retry_scheduled += 1;
           processed.push({ task_id: scanTaskId, status: 'retry', error: error?.message || 'poll error' });
         } else {
-          await adminClient.from('pentest_tools_scans' as any).update({
-            status: 'failed',
-            error_message: error?.message ? String(error.message).slice(0, 4000) : 'Polling error',
-            finished_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          }).eq('id', scanTaskId);
-          processingStats.failed_after_retry += 1;
-          processed.push({ task_id: scanTaskId, status: 'failed_after_retries', error: error?.message || 'poll error' });
+          if (isOptionalPhase(task.phase)) {
+            await adminClient.from('pentest_tools_scans' as any).update({
+              status: 'finished',
+              progress: 100,
+              error_message: error?.message
+                ? `Optional phase skipped after retries: ${String(error.message).slice(0, 3900)}`
+                : 'Optional phase skipped after retries',
+              finished_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              raw_output: {
+                _optional_phase: true,
+                _skipped: true,
+                _skip_reason: 'poll_error_after_retries',
+              },
+            }).eq('id', scanTaskId);
+            processed.push({ task_id: scanTaskId, status: 'optional_skipped_after_retries', error: error?.message || 'poll error' });
+          } else {
+            await adminClient.from('pentest_tools_scans' as any).update({
+              status: 'failed',
+              error_message: error?.message ? String(error.message).slice(0, 4000) : 'Polling error',
+              finished_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }).eq('id', scanTaskId);
+            processingStats.failed_after_retry += 1;
+            processed.push({ task_id: scanTaskId, status: 'failed_after_retries', error: error?.message || 'poll error' });
+          }
         }
       }
     }

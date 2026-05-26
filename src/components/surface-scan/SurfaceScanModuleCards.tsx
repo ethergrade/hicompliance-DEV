@@ -316,13 +316,23 @@ const scanStatusLabel = (status: string): string => {
   return 'N/D';
 };
 
+const FAILED_LIVE_STATUSES = new Set(['failed', 'error', 'stopped', 'aborted', 'timed out']);
+
+const effectiveScopeStatus = (row: ScopeTargetRow): string => {
+  const live = String(row.liveStatus || row.status || '').toLowerCase();
+  if (FAILED_LIVE_STATUSES.has(live) && row.snapshotSource === 'last_good') {
+    return 'partial';
+  }
+  return live || 'not_scanned';
+};
+
 const scopeLiveReasonLabel = (row: ScopeTargetRow): string => {
   const live = String(row.liveStatus || '').toLowerCase();
   if (live === 'not_scanned') return 'pending scan';
   if (live === 'queued' || live === 'pending') return 'pending scan';
   if (live === 'running' || live === 'waiting') return 'waiting provider';
   if (live === 'retry') return 'recovered retry';
-  if (live === 'failed' || live === 'error') return row.snapshotSource === 'last_good' ? 'failed after retry' : 'failed';
+  if (FAILED_LIVE_STATUSES.has(live)) return row.snapshotSource === 'last_good' ? 'last good snapshot' : 'failed';
   if (row.snapshotSource === 'last_good') return 'last good snapshot';
   return 'completed';
 };
@@ -999,7 +1009,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
     };
 
     for (const row of scopeTargetRows) {
-      const status = String(row.liveStatus || row.status || '').toLowerCase();
+      const status = effectiveScopeStatus(row);
       if (status === 'not_scanned') {
         counters.notScanned += 1;
         continue;
@@ -1214,8 +1224,8 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                   {selectedScopeTargetRow?.status === 'not_scanned' ? (
                     <Badge variant="outline">Non scansionato</Badge>
                   ) : (
-                    <Badge className={statusBadgeClass[outcomeFromJobStatus(String(selectedScopeTargetRow?.liveStatus || selectedScopeTargetRow?.status || ''))]}>
-                      {scanStatusLabel(String(selectedScopeTargetRow?.liveStatus || selectedScopeTargetRow?.status || ''))}
+                    <Badge className={statusBadgeClass[outcomeFromJobStatus(selectedScopeTargetRow ? effectiveScopeStatus(selectedScopeTargetRow) : 'not_scanned')]}>
+                      {scanStatusLabel(selectedScopeTargetRow ? effectiveScopeStatus(selectedScopeTargetRow) : 'not_scanned')}
                     </Badge>
                   )}
                   {selectedScopeTargetRow?.snapshotSource === 'last_good' && (
@@ -1254,8 +1264,8 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                     {entry.status === 'not_scanned' ? (
                       <Badge variant="outline">Non scansionato</Badge>
                     ) : (
-                      <Badge className={statusBadgeClass[outcomeFromJobStatus(entry.liveStatus || entry.status)]}>
-                        {scanStatusLabel(entry.liveStatus || entry.status)}
+                      <Badge className={statusBadgeClass[outcomeFromJobStatus(effectiveScopeStatus(entry))]}>
+                        {scanStatusLabel(effectiveScopeStatus(entry))}
                       </Badge>
                     )}
                   </div>
