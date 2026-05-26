@@ -2333,6 +2333,7 @@ serve(async (req: Request) => {
             customer_id: customerId,
             scan_run_id: scanRunId,
             classification: 'confidential',
+            report_mode: includeDtiExtended ? 'extended' : 'weekly',
           }),
         });
         if (!reportRes.ok) {
