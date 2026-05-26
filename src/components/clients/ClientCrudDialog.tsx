@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { ShieldCheck, Globe, Eye } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
@@ -24,6 +25,8 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
   const [hicompliance, setHicompliance] = useState(false);
   const [surfaceScan, setSurfaceScan] = useState(false);
   const [darkRisk, setDarkRisk] = useState(false);
+  const [surfaceScanTier, setSurfaceScanTier] = useState<'standard' | 'extended'>('standard');
+  const [darkRiskTier, setDarkRiskTier] = useState<'standard' | 'extended'>('standard');
   const [saving, setSaving] = useState(false);
   const isEdit = !!organization;
 
@@ -37,6 +40,8 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
       setHicompliance(false);
       setSurfaceScan(false);
       setDarkRisk(false);
+      setSurfaceScanTier('standard');
+      setDarkRiskTier('standard');
     }
   }, [organization, open]);
 
@@ -55,16 +60,40 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
         if (error) throw error;
         toast.success('Cliente aggiornato');
       } else {
-        const { error } = await supabase
+        const { data: createdOrganization, error } = await supabase
           .from('organizations')
           .insert({
             name: name.trim(),
             code: code.trim(),
             hicompliance_enabled: hicompliance,
             surface_scan360_enabled: surfaceScan,
+            surface_scan_extended: surfaceScan && surfaceScanTier === 'extended',
+            pentest_tools_auto_validation: surfaceScan,
             dark_risk360_enabled: darkRisk,
-          } as any);
+          } as any)
+          .select('id')
+          .single();
         if (error) throw error;
+
+        if (darkRisk && createdOrganization?.id) {
+          const { error: tierError } = await supabase
+            .from('darkrisk_entitlements' as any)
+            .upsert(
+              {
+                organization_id: createdOrganization.id,
+                tier: darkRiskTier,
+                enabled: true,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: 'organization_id' },
+            );
+
+          if (tierError) {
+            const missingRelation = String((tierError as any)?.code || '') === '42P01';
+            if (!missingRelation) throw tierError;
+          }
+        }
+
         toast.success('Cliente creato');
       }
       onSaved();
@@ -120,7 +149,21 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
                       <p className="text-xs text-muted-foreground">Scansione attack surface esterna</p>
                     </div>
                   </div>
-                  <Switch checked={surfaceScan} onCheckedChange={setSurfaceScan} />
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={surfaceScanTier}
+                      onValueChange={(value) => setSurfaceScanTier(value === 'extended' ? 'extended' : 'standard')}
+                    >
+                      <SelectTrigger className="h-8 w-[132px]">
+                        <SelectValue placeholder="Livello" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="standard">Standard</SelectItem>
+                        <SelectItem value="extended">Estesa</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Switch checked={surfaceScan} onCheckedChange={setSurfaceScan} />
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between rounded-md border p-3">
@@ -131,7 +174,21 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
                       <p className="text-xs text-muted-foreground">Monitoraggio dark web e leak</p>
                     </div>
                   </div>
-                  <Switch checked={darkRisk} onCheckedChange={setDarkRisk} />
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={darkRiskTier}
+                      onValueChange={(value) => setDarkRiskTier(value === 'extended' ? 'extended' : 'standard')}
+                    >
+                      <SelectTrigger className="h-8 w-[132px]">
+                        <SelectValue placeholder="Livello" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="standard">Standard</SelectItem>
+                        <SelectItem value="extended">Estesa</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Switch checked={darkRisk} onCheckedChange={setDarkRisk} />
+                  </div>
                 </div>
               </div>
             </>
