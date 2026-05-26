@@ -3,6 +3,7 @@ import {
   BorderStyle,
   Document,
   HeadingLevel,
+  PageBreak,
   Packer,
   Paragraph,
   Table,
@@ -35,6 +36,46 @@ const getBrandTitle = (report: SurfaceScan360Report): string => {
   return hasHiComplianceBrand(report) ? SURFACESCAN_BRAND_TITLE_HICOMPLIANCE : SURFACESCAN_BRAND_TITLE_HICONSOLE;
 };
 
+const isDarkRiskReport = (report: SurfaceScan360Report): boolean =>
+  /darkrisk360/i.test(getBrandTitle(report)) || /darkrisk360/i.test(String(report?.scan?.scan_profile || ''));
+
+const formatReportDate = (value: unknown): string => {
+  const date = new Date(String(value || new Date().toISOString()));
+  if (Number.isNaN(date.getTime())) return new Date().toLocaleDateString('it-IT');
+  return date.toLocaleDateString('it-IT');
+};
+
+const uniq = (values: string[]): string[] => {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const text = String(value || '').trim();
+    if (!text || text === '-') continue;
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+  }
+  return out;
+};
+
+const collectScopeValues = (report: SurfaceScan360Report): string[] => {
+  const scan = report.scan || {};
+  const assets = Array.isArray(report.assets_in_scope) ? report.assets_in_scope : [];
+  const monitored = Array.isArray(report.monitored_scope) ? report.monitored_scope : [];
+  const scanTargets = Array.isArray(scan.scope_targets) ? scan.scope_targets : [];
+
+  const values = [
+    ...assets.map((asset: any) => asset?.asset_value || asset?.hostname || asset?.ip || asset?.affected_asset),
+    ...monitored.map((entry: any) => entry?.input_value || entry?.asset_value || entry?.hostname || entry?.ip),
+    ...scanTargets.map((entry: any) => (typeof entry === 'string' ? entry : entry?.target || entry?.value || entry?.asset_value)),
+  ];
+
+  const target = String(scan.target || '').trim();
+  if (target && !/^scope completo|^scope cliente/i.test(target)) values.push(target);
+  return uniq(values.map((value) => String(value || '').replace(/^https?:\/\//i, '').replace(/\/$/, '')));
+};
+
 const heading = (label: string, level: HeadingLevel = HeadingLevel.HEADING_2) =>
   new Paragraph({
     heading: level,
@@ -46,6 +87,11 @@ const paragraph = (text: string, bold = false) =>
   new Paragraph({
     spacing: { after: 80 },
     children: [new TextRun({ text, bold })],
+  });
+
+const pageBreak = () =>
+  new Paragraph({
+    children: [new PageBreak()],
   });
 
 const buildSimpleTable = (
@@ -80,6 +126,73 @@ const buildSimpleTable = (
       insideVertical: { style: BorderStyle.SINGLE, size: 1, color: 'E5EBF2' },
     },
   });
+
+const buildDocumentInfoRows = (report: SurfaceScan360Report): string[][] => {
+  const darkRisk = isDarkRiskReport(report);
+  const org = report.organization || {};
+  const clientName = asText(org.legal_name || org.name, 'CLIENTE');
+  return [
+    ['Nome del Prodotto / Servizio', darkRisk ? 'DarkRisk360 Estesa - Domain Threat Intelligence' : 'SurfaceScan360'],
+    ['Tipologia Documento', darkRisk ? 'Relazione Domain Threat Intelligence' : 'Relazione SurfaceScan360'],
+    ['Stato del documento', 'Rilasciato'],
+    ['Versione', `v.1.0 - Data ${formatReportDate(report.generated_at)}`],
+    ['Proprietario del documento', 'HiSolution Srl'],
+    ['Revisionato da', 'Dipartimento R&D - Dipartimento Digital Transformation'],
+    ['Cliente', clientName],
+  ];
+};
+
+const buildScopeRows = (report: SurfaceScan360Report): string[][] => {
+  const scopeValues = collectScopeValues(report);
+  if (scopeValues.length === 0) return [['1', asText(report.scan?.target, 'Scope cliente')]];
+  return scopeValues.slice(0, 250).map((value, index) => [String(index + 1), value]);
+};
+
+const buildTemplateFrontMatter = (report: SurfaceScan360Report): Array<Paragraph | Table> => {
+  const darkRisk = isDarkRiskReport(report);
+  const org = report.organization || {};
+  const clientName = asText(org.legal_name || org.name, 'CLIENTE');
+  const serviceTitle = darkRisk ? 'Accordo di Servizio - DTI' : 'Accordo di Servizio - SurfaceScan360';
+  const intro = darkRisk
+    ? 'Il Cliente incarica il Fornitore di condurre un security Domain Threat Intelligence sui domini indicati di seguito. Il servizio effettua un analisi approfondita di fonti OSINT e di esposizioni note relative a domini aziendali, asset digitali ed eventuali identita autorizzate.'
+    : 'Il Cliente incarica il Fornitore di condurre una verifica SurfaceScan360 sugli asset indicati di seguito. Il servizio analizza la superficie di attacco esterna, le evidenze tecniche, le esposizioni pubbliche, i controlli di sicurezza e le vulnerabilita associate al perimetro concordato.';
+
+  return [
+    new Paragraph({
+      alignment: AlignmentType.LEFT,
+      spacing: { after: 120 },
+      children: [
+        new TextRun({ text: 'Hi', bold: true, color: '3B82F6', size: 22 }),
+        new TextRun({ text: '  HiSolution', bold: true, color: '3B82F6', size: 24 }),
+      ],
+    }),
+    new Paragraph({
+      heading: HeadingLevel.TITLE,
+      spacing: { after: 180 },
+      children: [new TextRun({ text: getBrandTitle(report), bold: true })],
+    }),
+    buildSimpleTable(['Campo', 'Valore'], buildDocumentInfoRows(report)),
+    pageBreak(),
+    heading(serviceTitle, HeadingLevel.HEADING_1),
+    paragraph('Tra:', true),
+    paragraph('HiSolution s.r.l., con sede in Via della Canapiglia 5 - Vecchiano (PI) (di seguito "Fornitore")'),
+    paragraph('e'),
+    paragraph(`${clientName} (di seguito "Cliente").`, true),
+    heading('Premessa', HeadingLevel.HEADING_2),
+    paragraph(intro),
+    pageBreak(),
+    heading('HiSolution Standard', HeadingLevel.HEADING_1),
+    paragraph('I servizi della Business Unit CyberSecurity di HiSolution utilizzano i seguenti standard e framework.'),
+    paragraph('CWE - Il Common Weakness Enumeration e un sistema di classificazione delle debolezze e delle vulnerabilita del software.', true),
+    paragraph('CVE - Il sistema Common Vulnerabilities and Exposures fornisce un metodo di riferimento per vulnerabilita ed esposizioni di sicurezza informatica di pubblica conoscenza.', true),
+    paragraph('CVSS - Il Common Vulnerability Scoring System e uno standard industriale aperto per la valutazione della gravita delle vulnerabilita.', true),
+    paragraph('OWASP - L OWASP Top 10 evidenzia le principali criticita in ambito di sicurezza delle applicazioni web e supporta la prioritizzazione dei rischi.', true),
+    heading('Perimetro concordato', HeadingLevel.HEADING_1),
+    paragraph('Di seguito gli indirizzi URL, domini, sottodomini e IP concordati oggetto dello Scope of Work.'),
+    buildSimpleTable(['ID', 'URL o Indirizzo IP'], buildScopeRows(report)),
+    pageBreak(),
+  ];
+};
 
 export async function generateSurfaceScan360Docx(report: SurfaceScan360Report): Promise<void> {
   const org = report.organization || {};
@@ -139,21 +252,9 @@ export async function generateSurfaceScan360Docx(report: SurfaceScan360Report): 
       {
         properties: {},
         children: [
-          new Paragraph({
-            alignment: AlignmentType.LEFT,
-            spacing: { after: 120 },
-            children: [
-              new TextRun({ text: 'Hi', bold: true, color: '3B82F6', size: 22 }),
-              new TextRun({ text: '  HiSolution', bold: true, color: '3B82F6', size: 24 }),
-            ],
-          }),
-          new Paragraph({
-            heading: HeadingLevel.TITLE,
-            spacing: { after: 120 },
-            children: [new TextRun({ text: getBrandTitle(report), bold: true })],
-          }),
+          ...buildTemplateFrontMatter(report),
+          heading('Report operativo', HeadingLevel.HEADING_1),
           paragraph(`Report generato: ${new Date(report.generated_at).toLocaleString('it-IT')}`),
-          paragraph('Template unificato SurfaceScan360 / DarkRisk360'),
 
           heading('1. Anagrafica cliente'),
           buildSimpleTable(['Campo', 'Valore'], anagraficaRows),
