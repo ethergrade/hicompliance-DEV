@@ -55,6 +55,7 @@ import { adaptDarkRiskReportToSurfaceScanTemplate } from '@/lib/darkrisk/darkris
 import { parseMonitoredScopeMixedEntries } from '@/lib/ipRange';
 
 type DashboardTab = 'overview' | 'roadmap' | 'findings' | 'assets' | 'surface' | 'identity' | 'reports';
+type DarkRiskReportMode = 'weekly' | 'extended';
 
 type FindingFilterState = {
   severity: 'all' | 'critical' | 'high' | 'medium' | 'low' | 'info';
@@ -217,6 +218,20 @@ const presentScopeEntryType = (entryType: string): string => {
   return normalized || 'n/d';
 };
 
+const getDarkRiskReportMode = (report: Record<string, any>): DarkRiskReportMode => {
+  const metadataMode = String(report?.model_metadata?.report_mode || '').toLowerCase();
+  if (metadataMode === 'weekly' || metadataMode === 'settimanale') return 'weekly';
+  if (metadataMode === 'extended' || metadataMode === 'esteso' || metadataMode === 'dti_extended') return 'extended';
+  return String(report?.tier || '').toLowerCase() === 'extended' ? 'extended' : 'weekly';
+};
+
+const getDarkRiskReportLeakCount = (report: Record<string, any>): number => {
+  const counts = report?.model_metadata?.leak_counts || report?.report_json?.dti_intelligence?.sensitive_summary || {};
+  const explicit = Number(counts.sensitive_total ?? counts.total ?? NaN);
+  if (Number.isFinite(explicit)) return explicit;
+  return Number(counts.active_findings ?? report?.report_json?.findings?.length ?? 0) || 0;
+};
+
 const extractSensitiveTags = (input: unknown): string[] => {
   if (!input || typeof input !== 'object') return [];
   const tags = (input as any)?.tags;
@@ -270,7 +285,7 @@ const DarkRisk360: React.FC = () => {
       if (!organizationId) return [];
       const { data, error: queryError } = await supabase
         .from('darkrisk_report_snapshots' as any)
-        .select('id, title, tier, classification, status, generated_at, scan_run_id, html_storage_path, json_storage_path, pdf_storage_path')
+        .select('id, title, tier, classification, status, generated_at, scan_run_id, html_storage_path, json_storage_path, pdf_storage_path, model_metadata')
         .eq('organization_id', organizationId)
         .order('generated_at', { ascending: false })
         .limit(12);
@@ -617,12 +632,13 @@ const DarkRisk360: React.FC = () => {
   } = useDarkRiskQaStatus();
 
   const generateReportMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (mode: DarkRiskReportMode) => {
       if (!organizationId) throw new Error('Nessun cliente selezionato');
       const { data, error: invokeError } = await supabase.functions.invoke('darkrisk360-generate-report', {
         body: {
           customer_id: organizationId,
           classification: 'confidential',
+          report_mode: mode,
         },
       });
       if (invokeError) throw invokeError;
@@ -766,6 +782,17 @@ const DarkRisk360: React.FC = () => {
       return normalizedType === assetTypeFilter;
     });
   }, [assetRows, assetTypeFilter]);
+
+  const reportRepository = useMemo(() => {
+    const weeklyReports = reportSnapshots.filter((report) => getDarkRiskReportMode(report) === 'weekly');
+    const extendedReports = reportSnapshots.filter((report) => getDarkRiskReportMode(report) === 'extended');
+
+    return {
+      weekly: weeklyReports[0] || null,
+      extended: extendedReports[0] || null,
+      hiddenDuplicates: Math.max(0, reportSnapshots.length - (weeklyReports[0] ? 1 : 0) - (extendedReports[0] ? 1 : 0)),
+    };
+  }, [reportSnapshots]);
 
   const surfaceLinkedStats = useMemo(() => {
     const surfaceRows = findingRows.filter((row) => {
@@ -1077,6 +1104,52 @@ const DarkRisk360: React.FC = () => {
     setFindingFilter({ severity: 'all', category: null, query: '', highlightedFindingId: null, scope: 'all' });
   };
 
+  const renderReportSnapshot = (report: Record<string, any>, mode: DarkRiskReportMode) => (
+    <div key={String(report.id)} className="flex flex-wrap items-center gap-3 rounded-lg border border-border/70 bg-muted/20 p-3">
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-medium truncate">{String(report.title || 'DarkRisk360 Report')}</p>
+          <Badge variant={mode === 'extended' ? 'default' : 'secondary'}>
+            {mode === 'extended' ? 'Esteso DTI finale' : 'Settimanale'}
+          </Badge>
+        </div>
+        <p className="text-xs text-muted-foreground truncate">
+          {mode === 'weekly'
+            ? `Leak/evidenze conteggiate: ${getDarkRiskReportLeakCount(report)}`
+            : 'Report esteso unico: non viene duplicato a ogni scansione'}
+          {' '}• {String(report.classification || 'confidential')} • {formatDateTime(report.generated_at)}
+        </p>
+      </div>
+      <Badge variant="outline">{String(report.status || 'completed')}</Badge>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={exportingReportId === String(report.id)}
+        onClick={() => void exportDarkRiskWithSurfaceTemplate(report, 'pdf')}
+      >
+        <Download className="w-4 h-4 mr-2" />
+        PDF
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={exportingReportId === String(report.id)}
+        onClick={() => void exportDarkRiskWithSurfaceTemplate(report, 'docx')}
+      >
+        <Download className="w-4 h-4 mr-2" />
+        DOCX
+      </Button>
+      <Button variant="outline" size="sm" onClick={() => void openReportAsset(report, 'json')}>
+        <Download className="w-4 h-4 mr-2" />
+        JSON
+      </Button>
+      <Button variant="outline" size="sm" onClick={() => void openReportAsset(report, 'html')}>
+        <ExternalLink className="w-4 h-4 mr-2" />
+        HTML
+      </Button>
+    </div>
+  );
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -1101,7 +1174,11 @@ const DarkRisk360: React.FC = () => {
               <Eye className="w-4 h-4 mr-2" />
               {syncingScan ? 'Scansione in corso...' : 'Nuova scansione'}
             </Button>
-            <Button variant="outline" disabled={!organizationId || generateReportMutation.isPending} onClick={() => generateReportMutation.mutate()}>
+            <Button
+              variant="outline"
+              disabled={!organizationId || generateReportMutation.isPending}
+              onClick={() => generateReportMutation.mutate(overview.tier === 'extended' ? 'extended' : 'weekly')}
+            >
               <FileText className="w-4 h-4 mr-2" />
               {generateReportMutation.isPending ? 'Generazione...' : 'Genera report'}
             </Button>
@@ -1625,14 +1702,14 @@ const DarkRisk360: React.FC = () => {
                         variant="outline"
                         size="sm"
                         disabled={!organizationId || generateReportMutation.isPending}
-                        onClick={() => generateReportMutation.mutate()}
+                        onClick={() => generateReportMutation.mutate('weekly')}
                       >
                         <FileText className="w-4 h-4 mr-2" />
-                        {generateReportMutation.isPending ? 'Generazione...' : 'Genera report'}
+                        {generateReportMutation.isPending ? 'Generazione...' : 'Genera settimanale'}
                       </Button>
                     </div>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="space-y-4">
                     {(reportsLoading || generateReportMutation.isPending) && (
                       <p className="text-sm text-muted-foreground">Aggiornamento repository report in corso...</p>
                     )}
@@ -1640,44 +1717,64 @@ const DarkRisk360: React.FC = () => {
                       <p className="text-sm text-muted-foreground">Nessun report snapshot disponibile per il cliente selezionato.</p>
                     )}
                     {!reportsLoading && reportSnapshots.length > 0 && (
-                      <div className="space-y-2">
-                        {reportSnapshots.map((report) => (
-                          <div key={String(report.id)} className="flex flex-wrap items-center gap-3 rounded-lg border border-border/70 bg-muted/20 p-3">
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-medium truncate">{String(report.title || 'DarkRisk360 Report')}</p>
-                              <p className="text-xs text-muted-foreground truncate">
-                                {String(report.tier || 'standard')} • {String(report.classification || 'confidential')} • {formatDateTime(report.generated_at)}
+                      <div className="space-y-4">
+                        <div className="rounded-xl border border-border/70 bg-muted/20 p-4 space-y-3">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-foreground">SETTIMANALE</p>
+                              <p className="text-xs text-muted-foreground">
+                                Un solo report per settimana con la quantità di leak/evidenze trovate nel ciclo DarkRisk360 standard.
                               </p>
                             </div>
-                            <Badge variant="outline">{String(report.status || 'completed')}</Badge>
                             <Button
                               variant="outline"
                               size="sm"
-                              disabled={exportingReportId === String(report.id)}
-                              onClick={() => void exportDarkRiskWithSurfaceTemplate(report, 'pdf')}
+                              disabled={!organizationId || generateReportMutation.isPending}
+                              onClick={() => generateReportMutation.mutate('weekly')}
                             >
-                              <Download className="w-4 h-4 mr-2" />
-                              PDF
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={exportingReportId === String(report.id)}
-                              onClick={() => void exportDarkRiskWithSurfaceTemplate(report, 'docx')}
-                            >
-                              <Download className="w-4 h-4 mr-2" />
-                              DOCX
-                            </Button>
-                            <Button variant="outline" size="sm" onClick={() => void openReportAsset(report, 'json')}>
-                              <Download className="w-4 h-4 mr-2" />
-                              JSON
-                            </Button>
-                            <Button variant="outline" size="sm" onClick={() => void openReportAsset(report, 'html')}>
-                              <ExternalLink className="w-4 h-4 mr-2" />
-                              HTML
+                              <FileText className="w-4 h-4 mr-2" />
+                              Genera settimanale
                             </Button>
                           </div>
-                        ))}
+                          {reportRepository.weekly ? (
+                            renderReportSnapshot(reportRepository.weekly, 'weekly')
+                          ) : (
+                            <p className="text-sm text-muted-foreground">Nessun report settimanale disponibile per questa settimana.</p>
+                          )}
+                        </div>
+
+                        {overview.tier === 'extended' && (
+                          <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-foreground">ESTESO · DTI ESTESO</p>
+                                <p className="text-xs text-muted-foreground">
+                                  Report finale unico: viene creato una sola volta e poi riutilizzato, senza duplicati a ogni scansione.
+                                </p>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={!organizationId || generateReportMutation.isPending || Boolean(reportRepository.extended)}
+                                onClick={() => generateReportMutation.mutate('extended')}
+                              >
+                                <FileText className="w-4 h-4 mr-2" />
+                                {reportRepository.extended ? 'Esteso già generato' : 'Genera esteso'}
+                              </Button>
+                            </div>
+                            {reportRepository.extended ? (
+                              renderReportSnapshot(reportRepository.extended, 'extended')
+                            ) : (
+                              <p className="text-sm text-muted-foreground">Nessun report esteso finale ancora disponibile.</p>
+                            )}
+                          </div>
+                        )}
+
+                        {reportRepository.hiddenDuplicates > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            {reportRepository.hiddenDuplicates} snapshot storico duplicato nascosto dalla vista operativa. Lo storico resta preservato nel DB.
+                          </p>
+                        )}
                       </div>
                     )}
                   </CardContent>

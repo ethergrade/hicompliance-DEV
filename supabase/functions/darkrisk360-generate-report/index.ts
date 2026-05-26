@@ -11,6 +11,7 @@ type Severity = 'info' | 'low' | 'medium' | 'high' | 'critical';
 type Confidence = 'low' | 'medium' | 'high';
 type Tier = 'standard' | 'extended';
 type Classification = 'public' | 'private' | 'confidential';
+type ReportMode = 'weekly' | 'extended';
 
 type FindingRow = {
   id: string;
@@ -321,6 +322,23 @@ function toArray<T = string>(value: unknown): T[] {
 
 function normalizeTier(value: string | null | undefined): Tier {
   return String(value || '').toLowerCase() === 'extended' ? 'extended' : 'standard';
+}
+
+function normalizeReportMode(value: string | null | undefined, entitlementTier: Tier): ReportMode {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['extended', 'dti_extended', 'dti-esteso', 'esteso'].includes(normalized)) return 'extended';
+  if (['weekly', 'standard_weekly', 'settimanale', 'standard'].includes(normalized)) return 'weekly';
+  return entitlementTier === 'extended' ? 'extended' : 'weekly';
+}
+
+function startOfCurrentUtcWeekIso(): string {
+  const now = new Date();
+  const day = now.getUTCDay();
+  const diff = day === 0 ? 6 : day - 1;
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  start.setUTCDate(start.getUTCDate() - diff);
+  start.setUTCHours(0, 0, 0, 0);
+  return start.toISOString();
 }
 
 function normalizeClassification(value: string | null | undefined): Classification {
@@ -672,7 +690,12 @@ serve(async (req: Request) => {
       return jsonResponse({ ok: false, error: 'DarkRisk360 not enabled for customer' }, 403);
     }
 
-    const tier = normalizeTier(entitlement?.tier);
+    const entitlementTier = normalizeTier(entitlement?.tier);
+    const reportMode = normalizeReportMode(body?.report_mode || body?.report_kind || body?.mode, entitlementTier);
+    if (reportMode === 'extended' && entitlementTier !== 'extended') {
+      return jsonResponse({ ok: false, error: 'DarkRisk360 extended report requires extended tier' }, 403);
+    }
+    const tier: Tier = reportMode === 'extended' ? 'extended' : 'standard';
     const allowClearSensitiveInReport = true;
 
     const scanRunRes = requestedScanRunId
@@ -698,14 +721,19 @@ serve(async (req: Request) => {
 
     const scanRun = scanRunRes.data as any;
 
-    if (!forceRegenerate) {
-      const existingReportRes = await adminClient
+    if (!forceRegenerate || reportMode === 'extended') {
+      let existingReportQuery = adminClient
         .from('darkrisk_report_snapshots' as any)
-        .select('id, generated_at, title, classification, tier, html_storage_path, json_storage_path, pdf_storage_path')
+        .select('id, generated_at, title, classification, tier, html_storage_path, json_storage_path, pdf_storage_path, model_metadata')
         .eq('organization_id', customerId)
-        .eq('scan_run_id', scanRun.id)
         .eq('tier', tier)
-        .eq('classification', requestedClassification)
+        .eq('classification', requestedClassification);
+
+      if (reportMode === 'weekly') {
+        existingReportQuery = existingReportQuery.gte('generated_at', startOfCurrentUtcWeekIso());
+      }
+
+      const existingReportRes = await existingReportQuery
         .order('generated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -721,9 +749,10 @@ serve(async (req: Request) => {
             action: 'darkrisk_report_reused',
             entity_type: 'darkrisk_report_snapshot',
             entity_id: existingReportRes.data.id,
-            reason: 'existing_snapshot_for_scan_run',
+            reason: reportMode === 'extended' ? 'existing_final_extended_report' : 'existing_weekly_report',
             metadata: {
               tier,
+              report_mode: reportMode,
               classification: requestedClassification,
               scan_run_id: scanRun.id,
             },
@@ -732,6 +761,7 @@ serve(async (req: Request) => {
         return jsonResponse({
           ok: true,
           reused: true,
+          report_mode: reportMode,
           report: existingReportRes.data,
         });
       }
@@ -1083,7 +1113,7 @@ serve(async (req: Request) => {
       scan_run_id: scanRun.id,
       document_metadata: {
         product_name: 'DarkRisk360',
-        document_type: tier === 'extended' ? 'DarkRisk360 DTI Extended' : 'DarkRisk360 Standard Snapshot',
+        document_type: reportMode === 'extended' ? 'DarkRisk360 DTI Extended' : 'DarkRisk360 Weekly Leak Summary',
         report_title: reportBrandTitle,
         status: 'final',
         version: REPORT_SCHEMA_VERSION,
@@ -1144,7 +1174,7 @@ serve(async (req: Request) => {
       appendices: {
         confidentiality_notice: REPORT_NOTICE,
         report_schema_version: REPORT_SCHEMA_VERSION,
-        section_plan: tier === 'extended' ? extendedSections : standardSections,
+        section_plan: reportMode === 'extended' ? extendedSections : standardSections,
         asset_inventory: assets.map((asset) => ({
           type: safeText(String(asset.asset_type || 'unknown'), 30),
           value: safeText(String(asset.normalized_value || asset.value || ''), 160),
@@ -1210,6 +1240,9 @@ serve(async (req: Request) => {
         generated_by: actorUserId || null,
         generated_at: generatedAt,
         model_metadata: {
+          report_mode: reportMode,
+          report_period: reportMode === 'weekly' ? 'weekly' : 'final_extended',
+          generated_policy: reportMode === 'extended' ? 'single_final_per_customer' : 'one_per_customer_week',
           report_schema_version: REPORT_SCHEMA_VERSION,
           prompt_version: primaryRecommendation?.prompt_version || null,
           model: primaryRecommendation?.model || null,
@@ -1217,6 +1250,15 @@ serve(async (req: Request) => {
           scan_run_id: scanRun.id,
           finding_ids: findingIds,
           recommendation_ids: recommendations.map((entry) => entry.id),
+          leak_counts: {
+            active_findings: reportFindings.length,
+            sensitive_total: dtiSensitiveTotals.total,
+            domains: dtiSensitiveTotals.domains,
+            passwords: dtiSensitiveTotals.passwords,
+            addresses: dtiSensitiveTotals.addresses,
+            credit_cards: dtiSensitiveTotals.credit_cards,
+            phone_numbers: dtiSensitiveTotals.phone_numbers,
+          },
           generated_at: generatedAt,
         },
       });
@@ -1234,6 +1276,7 @@ serve(async (req: Request) => {
         entity_id: reportId,
         reason: forceRegenerate ? 'force_regenerate' : 'generated',
         metadata: {
+          report_mode: reportMode,
           tier,
           classification: requestedClassification,
           scan_run_id: scanRun.id,
@@ -1253,6 +1296,7 @@ serve(async (req: Request) => {
       customer_id: customerId,
       scan_run_id: scanRun.id,
       tier,
+      report_mode: reportMode,
       classification: requestedClassification,
       generated_at: generatedAt,
       storage: {
