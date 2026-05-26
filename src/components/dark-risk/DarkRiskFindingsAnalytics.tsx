@@ -31,6 +31,7 @@ type Row = {
   source: string;
   query_kind?: string;
   source_origin?: string;
+  first_seen_at?: string;
   last_seen_at?: string;
 };
 
@@ -93,6 +94,7 @@ type SensitiveDetailRow = {
   asset: string;
   finding_type: string;
   source: string;
+  markedAt?: string | null;
 };
 
 type SensitiveSampleViewRow = {
@@ -172,6 +174,13 @@ function shortSiteLabel(value: string): string {
   return `${value.slice(0, 35)}...`;
 }
 
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return '-';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '-';
+  return parsed.toLocaleString('it-IT');
+}
+
 function displayDarkRiskSource(value: string): string {
   const source = String(value || '').trim();
   if (!source) return 'DarkRisk360';
@@ -206,8 +215,11 @@ function sensitiveSampleField(row: SensitiveSampleViewRow, field: string): strin
   if (['valore', 'value', 'contenuto', 'evidenza'].includes(normalizedField)) return row.value;
   if (['source', 'fonte'].includes(normalizedField)) return row.source;
   if (['kind', 'query_kind', 'origine'].includes(normalizedField)) return row.queryKind;
+  if (['marcato', 'marked', 'date', 'data', 'created', 'created_at'].includes(normalizedField)) {
+    return `${row.createdAt || ''} ${formatDateTime(row.createdAt)}`;
+  }
   if (['has', 'contiene'].includes(normalizedField)) return `${row.categoryLabel} ${row.tag || ''} ${row.value}`;
-  return `${row.categoryLabel} ${row.assetScope} ${row.queryTerm} ${row.value} ${row.source} ${row.queryKind}`;
+  return `${row.categoryLabel} ${row.assetScope} ${row.queryTerm} ${row.value} ${row.source} ${row.queryKind} ${row.createdAt || ''} ${formatDateTime(row.createdAt)}`;
 }
 
 function matchesSensitivePowerQuery(row: SensitiveSampleViewRow, query: string): boolean {
@@ -274,6 +286,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
             asset: row.asset,
             finding_type: row.finding_type,
             source: displayDarkRiskSource(row.source),
+            markedAt: row.first_seen_at || row.last_seen_at || null,
           });
         }
       }
@@ -519,7 +532,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                   <div>
                     <p className="text-xs font-medium">Dettaglio evidenze sensibili su query domini in scope (`@dominio`)</p>
                     <p className="text-[11px] text-muted-foreground">
-                      PowerQuery: testo libero oppure campi `categoria:`, `dominio:`, `query:`, `valore:`, `source:`, `kind:`.
+                      PowerQuery: testo libero oppure campi `categoria:`, `dominio:`, `query:`, `valore:`, `source:`, `kind:`, `marcato:`.
                     </p>
                   </div>
                   <Badge variant="outline">
@@ -529,7 +542,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                 <Input
                   value={sensitivePowerQuery}
                   onChange={(event) => setSensitivePowerQuery(event.target.value)}
-                  placeholder="Es. categoria:Password dominio:panapesca query:@panapesca.it valore:chrome source:DarkRisk360"
+                  placeholder="Es. categoria:Password dominio:panapesca query:@panapesca.it valore:chrome marcato:2026"
                   className="h-9 text-xs"
                 />
                 <div className="flex flex-wrap items-center gap-2">
@@ -573,13 +586,14 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                 <p className="text-xs text-muted-foreground">Nessuna evidenza corrisponde ai filtri PowerQuery impostati.</p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[900px] text-xs">
+                  <table className="w-full min-w-[1040px] text-xs">
                     <thead>
                       <tr className="border-b border-border/60 text-left text-muted-foreground">
                         <th className="py-2 pr-3">Categoria</th>
                         <th className="py-2 pr-3">Dominio / Sito</th>
                         <th className="py-2 pr-3">Query</th>
                         <th className="py-2 pr-3">Valore</th>
+                        <th className="py-2 pr-3">Marcato il</th>
                         <th className="py-2">Source</th>
                       </tr>
                     </thead>
@@ -591,6 +605,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                             <td className="py-2 pr-3 font-medium">{row.assetScope}</td>
                             <td className="py-2 pr-3">{row.queryTerm}</td>
                             <td className="py-2 pr-3 font-mono text-[11px] break-all">{row.value}</td>
+                            <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap">{formatDateTime(row.createdAt)}</td>
                             <td className="py-2">{displayDarkRiskSource(row.source)}</td>
                           </tr>
                         ))
@@ -601,6 +616,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                             <td className="py-2 pr-3 font-medium">{row.site}</td>
                             <td className="py-2 pr-3">-</td>
                             <td className="py-2 pr-3">-</td>
+                            <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap">{formatDateTime(row.markedAt)}</td>
                             <td className="py-2">{displayDarkRiskSource(row.source)}</td>
                           </tr>
                         ))
@@ -628,7 +644,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] text-xs">
+              <table className="w-full min-w-[1100px] text-xs">
                 <thead>
                   <tr className="border-b border-border/60 text-left text-muted-foreground">
                     <th className="py-2 pr-3">Severity</th>
@@ -637,6 +653,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                     <th className="py-2 pr-3">Asset</th>
                     <th className="py-2 pr-3">Titolo</th>
                     <th className="py-2 pr-3">Tipo</th>
+                    <th className="py-2 pr-3">Marcato il</th>
                     <th className="py-2">Source</th>
                   </tr>
                 </thead>
@@ -651,6 +668,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                       <td className="py-2 pr-3">{row.asset || '-'}</td>
                       <td className="py-2 pr-3">{row.title}</td>
                       <td className="py-2 pr-3">{row.finding_type}</td>
+                      <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap">{formatDateTime(row.first_seen_at || row.last_seen_at)}</td>
                       <td className="py-2">{displayDarkRiskSource(row.source)}</td>
                     </tr>
                   ))}
@@ -695,7 +713,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                 </ResponsiveContainer>
               </div>
               <div className="overflow-x-auto rounded-md border border-border/60 bg-background/30">
-                <table className="w-full min-w-[720px] text-xs">
+                <table className="w-full min-w-[860px] text-xs">
                   <thead>
                     <tr className="border-b border-border/60 text-left text-muted-foreground">
                       <th className="py-2 px-3">Identity</th>
@@ -703,6 +721,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                       <th className="py-2 px-3">Domini</th>
                       <th className="py-2 px-3">Altri dati</th>
                       <th className="py-2 px-3">Evidenze</th>
+                      <th className="py-2 px-3">Ultima marcatura</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -721,6 +740,9 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                               </div>
                             ))}
                           </div>
+                        </td>
+                        <td className="py-2 px-3 text-muted-foreground whitespace-nowrap">
+                          {formatDateTime(row.samples[0]?.created_at)}
                         </td>
                       </tr>
                     ))}

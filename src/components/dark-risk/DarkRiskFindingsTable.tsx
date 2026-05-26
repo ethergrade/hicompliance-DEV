@@ -76,7 +76,7 @@ export const DarkRiskFindingsTable: React.FC<{
                   <th className="py-2 pr-3">Tipo</th>
                   <th className="py-2 pr-3">Confidence</th>
                   <th className="py-2 pr-3">Stato</th>
-                  <th className="py-2 pr-3">First seen</th>
+                  <th className="py-2 pr-3">Marcato il</th>
                   <th className="py-2 pr-3">Last seen</th>
                   <th className="py-2">Source</th>
                 </tr>
