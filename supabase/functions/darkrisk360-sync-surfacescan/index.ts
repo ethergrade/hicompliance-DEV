@@ -272,18 +272,7 @@ function normalizeScopeDomain(value: string): string {
 
 function buildAtDomainTldTerms(scopeDomains: string[]): string[] {
   const normalizedDomains = [...new Set(scopeDomains.map((entry) => normalizeScopeDomain(entry)).filter(isDomainLike))];
-  const direct = normalizedDomains.map((domain) => `@${domain}`);
-
-  const tlds = [...new Set(normalizedDomains.map((domain) => domain.split('.').slice(1).join('.')).filter(Boolean))];
-  const bases = [...new Set(normalizedDomains.map((domain) => domain.split('.')[0]).filter(Boolean))];
-  const crossTld: string[] = [];
-  for (const base of bases) {
-    for (const tld of tlds) {
-      crossTld.push(`@${base}.${tld}`);
-    }
-  }
-
-  return [...new Set([...direct, ...crossTld])];
+  return normalizedDomains.map((domain) => `@${domain}`);
 }
 
 function buildIntelxQueryTerms(
@@ -292,20 +281,6 @@ function buildIntelxQueryTerms(
 ): IntelxQueryTerm[] {
   const terms: IntelxQueryTerm[] = [];
   const dedupe = new Set<string>();
-
-  for (const selector of selectors) {
-    const term = normalizeText(selector.normalized);
-    if (!term) continue;
-    const key = `selector:${term.toLowerCase()}`;
-    if (dedupe.has(key)) continue;
-    dedupe.add(key);
-    terms.push({
-      term,
-      kind: 'selector',
-      selectorNormalized: selector.normalized,
-      linkedAssetNormalized: selector.normalized,
-    });
-  }
 
   const atDomainTerms = buildAtDomainTldTerms(scopeDomains);
   for (const atTerm of atDomainTerms) {
@@ -322,7 +297,29 @@ function buildIntelxQueryTerms(
     });
   }
 
-  return terms.slice(0, INTELX_MAX_QUERY_TERMS_PER_RUN);
+  if (terms.length >= INTELX_MAX_QUERY_TERMS_PER_RUN) {
+    return terms.slice(0, INTELX_MAX_QUERY_TERMS_PER_RUN);
+  }
+
+  for (const selector of selectors) {
+    if (selector.type === 'domain' || selector.type === 'wildcard_domain') {
+      continue;
+    }
+    const term = normalizeText(selector.normalized);
+    if (!term) continue;
+    const key = `selector:${term.toLowerCase()}`;
+    if (dedupe.has(key)) continue;
+    dedupe.add(key);
+    terms.push({
+      term,
+      kind: 'selector',
+      selectorNormalized: selector.normalized,
+      linkedAssetNormalized: selector.normalized,
+    });
+    if (terms.length >= INTELX_MAX_QUERY_TERMS_PER_RUN) break;
+  }
+
+  return terms;
 }
 
 function parseIdentityEmailSelectors(value: unknown): string[] {

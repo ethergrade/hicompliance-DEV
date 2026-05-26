@@ -561,7 +561,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
 
           <Card className="border-border">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Lista asset con porte sotto</CardTitle>
+              <CardTitle className="text-base">Lista Asset con Porte</CardTitle>
               <p className="text-xs text-muted-foreground">
                 Vista rapida per asset in scope: sotto ogni dominio/IP trovi le porte aperte rilevate.
               </p>

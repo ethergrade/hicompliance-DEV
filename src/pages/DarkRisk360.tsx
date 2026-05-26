@@ -47,7 +47,7 @@ import { useSurfaceScanMonitoredIps } from '@/hooks/useSurfaceScanMonitoredIps';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { presentDarkRiskFindingType, presentDarkRiskSource } from '@/lib/darkrisk/presentation';
-import { detectSensitiveIndicators } from '@/lib/darkrisk/sensitiveDetection';
+import { detectSensitiveIndicators, type SensitiveIndicators } from '@/lib/darkrisk/sensitiveDetection';
 import { generateSurfaceScan360Pdf } from '@/lib/surfaceScan360PdfReport';
 import { generateSurfaceScan360Docx } from '@/lib/surfaceScan360DocxReport';
 import { adaptDarkRiskReportToSurfaceScanTemplate } from '@/lib/darkrisk/darkriskReportExportAdapter';
@@ -63,14 +63,20 @@ type FindingFilterState = {
 
 type DarkRiskFindingRowExtended = DarkRiskFindingRow & {
   category: string;
+  query_kind?: string;
+  source_origin?: string;
+  source_module?: string;
+  sensitive_indicators?: SensitiveIndicators;
 };
 
-const sensitiveTagLabels: Record<string, string> = {
-  domains: 'domini',
-  passwords: 'password',
-  addresses: 'indirizzi',
-  credit_cards: 'carte',
-  phone_numbers: 'telefoni',
+const normalizeSensitiveTagKey = (value: string): string => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['domain', 'dominio', 'domini', 'domains'].includes(normalized)) return 'domains';
+  if (['password', 'passwords', 'credenziale', 'credenziali', 'credential', 'credentials'].includes(normalized)) return 'passwords';
+  if (['address', 'addresses', 'indirizzo', 'indirizzi'].includes(normalized)) return 'addresses';
+  if (['credit_card', 'credit_cards', 'card', 'cards', 'carta', 'carte'].includes(normalized)) return 'credit_cards';
+  if (['phone', 'phones', 'phone_number', 'phone_numbers', 'telefono', 'telefoni'].includes(normalized)) return 'phone_numbers';
+  return normalized;
 };
 
 const severityOrder: Array<FindingFilterState['severity']> = ['all', 'critical', 'high', 'medium', 'low', 'info'];
@@ -331,7 +337,8 @@ const DarkRisk360: React.FC = () => {
             category,
             site: normalizeHost(assetValue),
             scope_status: 'approved',
-            sensitive_tags: sensitive.tags.map((tag) => sensitiveTagLabels[tag] || tag),
+            sensitive_tags: sensitive.tags.map((tag) => normalizeSensitiveTagKey(tag)).filter(Boolean),
+            sensitive_indicators: sensitive,
           } satisfies DarkRiskFindingRowExtended;
         });
 
@@ -358,7 +365,8 @@ const DarkRisk360: React.FC = () => {
             category,
             site: normalizeHost(assetValue),
             scope_status: 'approved',
-            sensitive_tags: sensitive.tags.map((tag) => sensitiveTagLabels[tag] || tag),
+            sensitive_tags: sensitive.tags.map((tag) => normalizeSensitiveTagKey(tag)).filter(Boolean),
+            sensitive_indicators: sensitive,
           } satisfies DarkRiskFindingRowExtended;
         });
 
@@ -428,7 +436,9 @@ const DarkRisk360: React.FC = () => {
         const assetValue = assetData?.value || '-';
         const scopeStatus = assetData?.scope_status || String(finding?.metadata?.scope_status || 'unknown');
 
-        const findingSensitiveTags = extractSensitiveTags(finding?.metadata?.sensitive_indicators);
+        const findingSensitiveTags = extractSensitiveTags(finding?.metadata?.sensitive_indicators)
+          .map((tag) => normalizeSensitiveTagKey(tag))
+          .filter(Boolean);
         const evidenceRows = (Array.isArray(finding.evidence_ids) ? finding.evidence_ids : [])
           .map((id: unknown) => evidenceMap.get(String(id || '').trim()))
           .filter(Boolean) as Array<Record<string, any>>;
@@ -436,6 +446,9 @@ const DarkRisk360: React.FC = () => {
         const evidenceSensitiveTags = evidenceRows.flatMap((evidenceRow) =>
           extractSensitiveTags(evidenceRow?.metadata?.sensitive_indicators),
         );
+        const normalizedEvidenceSensitiveTags = evidenceSensitiveTags
+          .map((tag) => normalizeSensitiveTagKey(tag))
+          .filter(Boolean);
 
         const fallbackSensitive = detectSensitiveIndicators(
           `${title}\n${String(finding.description || '')}\n${assetValue}\n${evidenceRows.map((row) => `${String(row.title || '')}\n${String(row.summary || '')}\n${String(row.masked_value || '')}`).join('\n')}`.slice(0, 7000),
@@ -445,9 +458,9 @@ const DarkRisk360: React.FC = () => {
           new Set(
             [
               ...findingSensitiveTags,
-              ...evidenceSensitiveTags,
+              ...normalizedEvidenceSensitiveTags,
               ...(Array.isArray(fallbackSensitive.tags) ? fallbackSensitive.tags : []),
-            ].map((tag) => sensitiveTagLabels[String(tag)] || String(tag)),
+            ].map((tag) => normalizeSensitiveTagKey(String(tag))),
           ),
         ).filter(Boolean);
 
@@ -468,6 +481,18 @@ const DarkRisk360: React.FC = () => {
           site: normalizeHost(assetValue),
           scope_status: scopeStatus,
           sensitive_tags: sensitiveTags,
+          query_kind: String(finding?.metadata?.query_kind || ''),
+          source_origin: String(finding?.metadata?.source_origin || ''),
+          source_module: String(finding?.metadata?.source_module || ''),
+          sensitive_indicators: {
+            domains: Number(finding?.metadata?.sensitive_indicators?.domains || fallbackSensitive.domains || 0),
+            passwords: Number(finding?.metadata?.sensitive_indicators?.passwords || fallbackSensitive.passwords || 0),
+            addresses: Number(finding?.metadata?.sensitive_indicators?.addresses || fallbackSensitive.addresses || 0),
+            credit_cards: Number(finding?.metadata?.sensitive_indicators?.credit_cards || fallbackSensitive.credit_cards || 0),
+            phone_numbers: Number(finding?.metadata?.sensitive_indicators?.phone_numbers || fallbackSensitive.phone_numbers || 0),
+            total_hits: Number(finding?.metadata?.sensitive_indicators?.total_hits || fallbackSensitive.total_hits || 0),
+            tags: sensitiveTags,
+          },
         };
       });
     },
@@ -1253,7 +1278,17 @@ const DarkRisk360: React.FC = () => {
                     scope_status: row.scope_status || 'unknown',
                     category: row.category || 'Minacce rilevate',
                     sensitive_tags: row.sensitive_tags || [],
+                    severity: row.severity,
+                    risk_score: row.risk_score,
+                    title: row.title,
+                    asset: row.asset,
+                    finding_type: row.finding_type,
+                    source: row.source,
+                    query_kind: row.query_kind || '',
+                    source_origin: row.source_origin || '',
+                    last_seen_at: row.last_seen_at,
                   }))}
+                  extendedMode={overview.tier === 'extended'}
                 />
                 <DarkRiskFindingsTable
                   rows={filteredFindings}

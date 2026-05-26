@@ -21,11 +21,32 @@ type Row = {
   scope_status: string;
   category: string;
   sensitive_tags: string[];
+  severity: 'info' | 'low' | 'medium' | 'high' | 'critical';
+  risk_score: number;
+  title: string;
+  asset: string;
+  finding_type: string;
+  source: string;
+  query_kind?: string;
+  source_origin?: string;
+  last_seen_at?: string;
 };
 
 type ScopePieRow = {
   scope: string;
   count: number;
+};
+
+type SensitiveTagKey = 'domains' | 'passwords' | 'addresses' | 'credit_cards' | 'phone_numbers';
+type SensitiveDetailRow = {
+  tag: SensitiveTagKey;
+  site: string;
+  severity: Row['severity'];
+  risk_score: number;
+  title: string;
+  asset: string;
+  finding_type: string;
+  source: string;
 };
 
 const categoryPalette = ['#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ef4444', '#64748b', '#3b82f6', '#a855f7'];
@@ -44,17 +65,52 @@ const sensitiveLabel: Record<string, string> = {
   phone_numbers: 'Numeri di telefono',
 };
 
+const severityRank: Record<Row['severity'], number> = {
+  critical: 5,
+  high: 4,
+  medium: 3,
+  low: 2,
+  info: 1,
+};
+
+const severityTone: Record<Row['severity'], string> = {
+  critical: 'bg-red-500/20 text-red-300 border-red-500/40',
+  high: 'bg-orange-500/20 text-orange-300 border-orange-500/40',
+  medium: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40',
+  low: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+  info: 'bg-slate-500/20 text-slate-300 border-slate-500/40',
+};
+
+const scopeTone: Record<string, string> = {
+  approved: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+  candidate: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+  excluded: 'bg-red-500/20 text-red-300 border-red-500/40',
+  unknown: 'bg-slate-500/20 text-slate-300 border-slate-500/40',
+};
+
+function normalizeSensitiveTag(value: string): SensitiveTagKey | null {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['domains', 'domain', 'dominio', 'domini'].includes(normalized)) return 'domains';
+  if (['passwords', 'password', 'credential', 'credentials', 'credenziale', 'credenziali'].includes(normalized)) return 'passwords';
+  if (['addresses', 'address', 'indirizzo', 'indirizzi'].includes(normalized)) return 'addresses';
+  if (['credit_cards', 'credit_card', 'cards', 'card', 'carta', 'carte'].includes(normalized)) return 'credit_cards';
+  if (['phone_numbers', 'phone_number', 'phone', 'phones', 'telefono', 'telefoni'].includes(normalized)) return 'phone_numbers';
+  return null;
+}
+
 function shortSiteLabel(value: string): string {
   if (value.length <= 38) return value;
   return `${value.slice(0, 35)}...`;
 }
 
-export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[] }> = ({ rows }) => {
+export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: boolean }> = ({ rows, extendedMode = false }) => {
   const data = useMemo(() => {
     const siteCategory = new Map<string, Record<string, number>>();
+    const siteFindings = new Map<string, Row[]>();
     const categoryTotals = new Map<string, number>();
     const scopeTotals = new Map<string, number>();
-    const sensitiveTotals = new Map<string, number>();
+    const sensitiveTotals = new Map<SensitiveTagKey, number>();
+    const sensitiveDetails: SensitiveDetailRow[] = [];
 
     for (const row of rows) {
       const site = row.site || 'n/a';
@@ -69,8 +125,26 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[] }> = ({ rows }) =
       categoryTotals.set(category, (categoryTotals.get(category) || 0) + 1);
       scopeTotals.set(scope, (scopeTotals.get(scope) || 0) + 1);
 
+      if (!siteFindings.has(site)) siteFindings.set(site, []);
+      siteFindings.get(site)!.push(row);
+
+      const isScopeDomainIntelQuery = String(row.query_kind || '').toLowerCase() === 'at_domain_tld';
       for (const tag of row.sensitive_tags || []) {
-        sensitiveTotals.set(tag, (sensitiveTotals.get(tag) || 0) + 1);
+        const normalizedTag = normalizeSensitiveTag(tag);
+        if (!normalizedTag) continue;
+        if (isScopeDomainIntelQuery) {
+          sensitiveTotals.set(normalizedTag, (sensitiveTotals.get(normalizedTag) || 0) + 1);
+          sensitiveDetails.push({
+            tag: normalizedTag,
+            site,
+            severity: row.severity,
+            risk_score: Number(row.risk_score || 0),
+            title: row.title,
+            asset: row.asset,
+            finding_type: row.finding_type,
+            source: row.source,
+          });
+        }
       }
     }
 
@@ -98,17 +172,48 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[] }> = ({ rows }) =
       .map(([scope, count]) => ({ scope, count }))
       .sort((a, b) => b.count - a.count);
 
-    const sensitiveRows = Object.keys(sensitiveLabel).map((tag) => ({
+    const sensitiveRows = (Object.keys(sensitiveLabel) as SensitiveTagKey[]).map((tag) => ({
       tag,
       label: sensitiveLabel[tag],
       count: sensitiveTotals.get(tag) || 0,
     }));
+
+    const detailedSensitiveRows = sensitiveDetails
+      .sort((a, b) => {
+        const severityDelta = severityRank[b.severity] - severityRank[a.severity];
+        if (severityDelta !== 0) return severityDelta;
+        return b.risk_score - a.risk_score;
+      })
+      .slice(0, 80);
+
+    const groupedAssetRows = Array.from(siteFindings.entries())
+      .map(([site, groupedRows]) => {
+        const sorted = [...groupedRows].sort((a, b) => {
+          const severityDelta = severityRank[b.severity] - severityRank[a.severity];
+          if (severityDelta !== 0) return severityDelta;
+          return Number(b.risk_score || 0) - Number(a.risk_score || 0);
+        });
+        return {
+          site,
+          scope_status: String(sorted[0]?.scope_status || 'unknown').toLowerCase(),
+          total: sorted.length,
+          maxSeverity: sorted[0]?.severity || 'info',
+          rows: sorted,
+        };
+      })
+      .sort((a, b) => {
+        const severityDelta = severityRank[b.maxSeverity] - severityRank[a.maxSeverity];
+        if (severityDelta !== 0) return severityDelta;
+        return b.total - a.total;
+      });
 
     return {
       topCategories,
       siteRows,
       scopeRows,
       sensitiveRows,
+      detailedSensitiveRows,
+      groupedAssetRows,
     };
   }, [rows]);
 
@@ -187,6 +292,128 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[] }> = ({ rows }) =
               </div>
             ))}
           </div>
+          {extendedMode ? (
+            <div className="mt-4 rounded-md border border-border/60 bg-background/30 p-3">
+              <p className="text-xs font-medium mb-2">Dettaglio evidenze sensibili su query domini in scope (`@dominio`)</p>
+              {data.detailedSensitiveRows.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Nessuna evidenza sensibile classificata nel ciclo corrente.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[900px] text-xs">
+                    <thead>
+                      <tr className="border-b border-border/60 text-left text-muted-foreground">
+                        <th className="py-2 pr-3">Categoria</th>
+                        <th className="py-2 pr-3">Dominio / Sito</th>
+                        <th className="py-2 pr-3">Severity</th>
+                        <th className="py-2 pr-3">Risk</th>
+                        <th className="py-2 pr-3">Finding</th>
+                        <th className="py-2 pr-3">Asset</th>
+                        <th className="py-2">Source</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.detailedSensitiveRows.map((row, index) => (
+                        <tr key={`${row.tag}-${row.site}-${index}`} className="border-b border-border/40 align-top">
+                          <td className="py-2 pr-3">{sensitiveLabel[row.tag]}</td>
+                          <td className="py-2 pr-3 font-medium">{row.site}</td>
+                          <td className="py-2 pr-3">
+                            <Badge className={severityTone[row.severity]}>{row.severity}</Badge>
+                          </td>
+                          <td className="py-2 pr-3 font-semibold">{row.risk_score}</td>
+                          <td className="py-2 pr-3">{row.title}</td>
+                          <td className="py-2 pr-3">{row.asset}</td>
+                          <td className="py-2">{row.source}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground mt-4">
+              Dettaglio contenuti disponibile in modalità DarkRisk360 Estesa. In Standard vengono mostrati solo i conteggi.
+            </p>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <p className="text-sm font-medium">Lista Asset con Finding (collassabile)</p>
+            <Badge variant="outline">{data.groupedAssetRows.length} asset</Badge>
+          </div>
+          {data.groupedAssetRows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nessun finding disponibile per il filtro corrente.</p>
+          ) : (
+            <div className="space-y-3">
+              {data.groupedAssetRows.map((assetGroup, index) => (
+                <details
+                  key={`${assetGroup.site}-${index}`}
+                  className="rounded-md border border-border/60 bg-background/30 p-3"
+                  open={index < 2}
+                >
+                  <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className="font-medium">{assetGroup.site}</span>
+                      <Badge className={scopeTone[assetGroup.scope_status] || scopeTone.unknown}>
+                        {assetGroup.scope_status}
+                      </Badge>
+                      <Badge variant="outline">{assetGroup.total} finding</Badge>
+                      <Badge className={severityTone[assetGroup.maxSeverity]}>
+                        max {assetGroup.maxSeverity}
+                      </Badge>
+                    </div>
+                    <span className="text-xs text-muted-foreground">Apri / Chiudi</span>
+                  </summary>
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="w-full min-w-[980px] text-xs">
+                      <thead>
+                        <tr className="border-b border-border/60 text-left text-muted-foreground">
+                          <th className="py-2 pr-3">Severity</th>
+                          <th className="py-2 pr-3">Risk</th>
+                          <th className="py-2 pr-3">Titolo</th>
+                          <th className="py-2 pr-3">Tipo</th>
+                          <th className="py-2 pr-3">Categoria</th>
+                          <th className="py-2 pr-3">Source</th>
+                          <th className="py-2">Tag sensibili</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {assetGroup.rows.map((row) => (
+                          <tr key={row.id} className="border-b border-border/40 align-top">
+                            <td className="py-2 pr-3">
+                              <Badge className={severityTone[row.severity]}>{row.severity}</Badge>
+                            </td>
+                            <td className="py-2 pr-3 font-semibold">{row.risk_score}</td>
+                            <td className="py-2 pr-3">{row.title}</td>
+                            <td className="py-2 pr-3">{row.finding_type}</td>
+                            <td className="py-2 pr-3">{row.category}</td>
+                            <td className="py-2 pr-3">{row.source}</td>
+                            <td className="py-2">
+                              {(row.sensitive_tags || []).length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {row.sensitive_tags.map((tag) => {
+                                    const normalizedTag = normalizeSensitiveTag(tag);
+                                    return (
+                                      <Badge key={`${row.id}-${tag}`} variant="outline" className="text-[10px]">
+                                        {normalizedTag ? sensitiveLabel[normalizedTag] : tag}
+                                      </Badge>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              ))}
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
