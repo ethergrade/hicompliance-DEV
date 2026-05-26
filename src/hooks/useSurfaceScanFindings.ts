@@ -313,7 +313,11 @@ export const useSurfaceScanFindings = () => {
       const syntheticCveRows = buildSyntheticCveRowsFromReport(selectedReport, normalizedRows);
       const mergedRows = [...normalizedRows, ...syntheticCveRows];
 
-      setFindings(mergedRows.filter((row) => !shouldHideFindingByScope(row, rules)));
+      setFindings(
+        mergedRows
+          .filter((row) => !['resolved', 'suppressed', 'false_positive', 'accepted_risk'].includes(String(row.status || '').toLowerCase()))
+          .filter((row) => !shouldHideFindingByScope(row, rules)),
+      );
     } catch (error) {
       console.error('Error fetching surface findings:', error);
       if (!background) {

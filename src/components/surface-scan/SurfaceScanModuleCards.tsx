@@ -84,6 +84,7 @@ interface FindingRow {
   affected_url?: string | null;
   ip?: string | null;
   evidence?: Record<string, any> | null;
+  status?: string | null;
   created_at: string;
 }
 
@@ -589,7 +590,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
           ),
           fetchRowsByJobIds<FindingRow>(
             'surface_findings',
-            'scan_job_id, module, finding_type, title, remediation, severity, affected_asset, affected_url, ip, evidence, created_at',
+            'scan_job_id, module, finding_type, title, remediation, severity, affected_asset, affected_url, ip, evidence, status, created_at',
             jobIds,
             { orderBy: 'created_at', ascending: false },
           ),
@@ -602,6 +603,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
         ]);
 
         const prioritizedFindings = findingRows
+          .filter((entry) => !['resolved', 'suppressed', 'false_positive', 'accepted_risk'].includes(String(entry.status || '').toLowerCase()))
           .filter((entry) => ['critical', 'high'].includes(String(entry.severity || '').toLowerCase()))
           .sort((a, b) => (severityRank[b.severity] || 0) - (severityRank[a.severity] || 0));
 
