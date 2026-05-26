@@ -74,6 +74,31 @@ type SourceRecordRow = {
   selector_id: string | null;
 };
 
+type DtiSourceRunRow = {
+  source: string | null;
+  source_label: string | null;
+  source_key: string | null;
+  query_kind: string | null;
+  query_term: string | null;
+  asset_scope: string | null;
+  status: string | null;
+  result_count: number | null;
+  warning: string | null;
+  error_message: string | null;
+  metadata: Record<string, unknown> | null;
+};
+
+type DtiSensitiveHitRow = {
+  source: string | null;
+  source_label: string | null;
+  query_kind: string | null;
+  query_term: string | null;
+  asset_scope: string | null;
+  tag: string | null;
+  masked_value: string | null;
+  clear_value: string | null;
+};
+
 type ReportFinding = {
   id: string;
   title: string;
@@ -143,6 +168,38 @@ type DarkRiskReportJson = {
     by_file_type: Array<{ file_type: string; count: number; percentage: number }>;
     by_severity: Array<{ severity: string; count: number }>;
     by_finding_type: Array<{ finding_type: string; count: number }>;
+  };
+  dti_intelligence: {
+    query_coverage: Record<string, number>;
+    source_execution: Array<{ source: string; query_kind: string; query_term: string; asset_scope: string; status: string; result_count: number; note: string | null }>;
+    sensitive_summary: {
+      domains: number;
+      passwords: number;
+      addresses: number;
+      credit_cards: number;
+      phone_numbers: number;
+      total: number;
+    };
+    sensitive_by_asset: Array<{
+      asset_scope: string;
+      domains: number;
+      passwords: number;
+      addresses: number;
+      credit_cards: number;
+      phone_numbers: number;
+      total: number;
+    }>;
+    sensitive_samples: Array<{
+      source: string;
+      query_kind: string;
+      query_term: string;
+      asset_scope: string;
+      tag: string;
+      value: string;
+      masked_value: string;
+    }>;
+    source_distribution: Array<{ source: string; count: number; percentage: number }>;
+    file_distribution: Array<{ file_type: string; count: number; percentage: number }>;
   };
   appendices: Record<string, unknown>;
 };
@@ -269,6 +326,16 @@ function normalizeConfidence(value: string | null | undefined): Confidence {
   return 'medium';
 }
 
+function normalizeSensitiveTag(value: string | null | undefined): 'domains' | 'passwords' | 'addresses' | 'credit_cards' | 'phone_numbers' | null {
+  const normalized = String(value || '').toLowerCase();
+  if (normalized === 'domains') return 'domains';
+  if (normalized === 'passwords') return 'passwords';
+  if (normalized === 'addresses') return 'addresses';
+  if (normalized === 'credit_cards') return 'credit_cards';
+  if (normalized === 'phone_numbers') return 'phone_numbers';
+  return null;
+}
+
 function isoOrNow(value: string | null | undefined): string {
   const raw = String(value || '').trim();
   const parsed = Date.parse(raw);
@@ -346,6 +413,32 @@ function buildReportHtml(report: DarkRiskReportJson): string {
   }).join('\n');
 
   const topDrivers = report.executive_summary.top_drivers.map((driver) => `<li>${escapeHtml(driver)}</li>`).join('');
+  const dtiSourceRows = report.dti_intelligence.source_execution.slice(0, 80).map((row) => `<tr>
+      <td>${escapeHtml(row.source)}</td>
+      <td>${escapeHtml(row.query_kind)}</td>
+      <td>${escapeHtml(row.query_term)}</td>
+      <td>${escapeHtml(row.asset_scope)}</td>
+      <td>${escapeHtml(row.status)}</td>
+      <td>${escapeHtml(String(row.result_count))}</td>
+      <td>${escapeHtml(String(row.note || '-'))}</td>
+    </tr>`).join('\n');
+  const dtiSensitiveRows = report.dti_intelligence.sensitive_by_asset.slice(0, 80).map((row) => `<tr>
+      <td>${escapeHtml(row.asset_scope)}</td>
+      <td>${escapeHtml(String(row.domains))}</td>
+      <td>${escapeHtml(String(row.passwords))}</td>
+      <td>${escapeHtml(String(row.addresses))}</td>
+      <td>${escapeHtml(String(row.credit_cards))}</td>
+      <td>${escapeHtml(String(row.phone_numbers))}</td>
+      <td>${escapeHtml(String(row.total))}</td>
+    </tr>`).join('\n');
+  const dtiSensitiveSampleRows = report.dti_intelligence.sensitive_samples.slice(0, 120).map((row) => `<tr>
+      <td>${escapeHtml(row.asset_scope || '-')}</td>
+      <td>${escapeHtml(row.query_kind || '-')}</td>
+      <td>${escapeHtml(row.query_term || '-')}</td>
+      <td>${escapeHtml(row.tag || '-')}</td>
+      <td>${escapeHtml(row.value || row.masked_value || '-')}</td>
+      <td>${escapeHtml(row.source || 'DarkRisk360')}</td>
+    </tr>`).join('\n');
 
   return `<!doctype html>
 <html lang="it">
@@ -415,6 +508,46 @@ function buildReportHtml(report: DarkRiskReportJson): string {
     </tbody>
   </table>
 
+  <h2>Domain Threat Intelligence</h2>
+  <p><strong>Copertura query:</strong> @domain.tld=${escapeHtml(String(report.dti_intelligence.query_coverage.at_domain_tld || 0))},
+  selector=${escapeHtml(String(report.dti_intelligence.query_coverage.selector || 0))},
+  email=${escapeHtml(String(report.dti_intelligence.query_coverage.email_selector || 0))}</p>
+  <p><strong>Evidenze sensibili aggregate:</strong> domini=${escapeHtml(String(report.dti_intelligence.sensitive_summary.domains))},
+  password=${escapeHtml(String(report.dti_intelligence.sensitive_summary.passwords))},
+  indirizzi=${escapeHtml(String(report.dti_intelligence.sensitive_summary.addresses))},
+  carte=${escapeHtml(String(report.dti_intelligence.sensitive_summary.credit_cards))},
+  telefoni=${escapeHtml(String(report.dti_intelligence.sensitive_summary.phone_numbers))}</p>
+
+  <h3>Esecuzioni per sorgente/query</h3>
+  <table>
+    <thead>
+      <tr><th>Sorgente</th><th>Query kind</th><th>Query term</th><th>Asset scope</th><th>Status</th><th>Result count</th><th>Note</th></tr>
+    </thead>
+    <tbody>
+      ${dtiSourceRows || '<tr><td colspan="7">Nessuna esecuzione DTI disponibile</td></tr>'}
+    </tbody>
+  </table>
+
+  <h3>Riepilogo evidenze sensibili per asset</h3>
+  <table>
+    <thead>
+      <tr><th>Asset</th><th>Domini</th><th>Password</th><th>Indirizzi</th><th>Carte</th><th>Telefoni</th><th>Tot</th></tr>
+    </thead>
+    <tbody>
+      ${dtiSensitiveRows || '<tr><td colspan="7">Nessuna evidenza sensibile rilevata</td></tr>'}
+    </tbody>
+  </table>
+
+  <h3>Evidenze sensibili (dettaglio operativo)</h3>
+  <table>
+    <thead>
+      <tr><th>Asset scope</th><th>Query kind</th><th>Query</th><th>Classe</th><th>Valore</th><th>Sorgente</th></tr>
+    </thead>
+    <tbody>
+      ${dtiSensitiveSampleRows || '<tr><td colspan="6">Nessuna evidenza dettagliata disponibile</td></tr>'}
+    </tbody>
+  </table>
+
   <p class="muted">Report snapshot immutabile: i dati riflettono lo stato al momento della generazione.</p>
 </body>
 </html>`;
@@ -446,6 +579,7 @@ serve(async (req: Request) => {
 
     let actorUserId = normalizeText(body?.generated_by);
     let customerId = requestedCustomerId;
+    let callerProfile: Awaited<ReturnType<typeof getCallerProfile>> | null = null;
 
     if (!isInternal) {
       const { data: authData, error: authError } = await userClient.auth.getUser();
@@ -455,6 +589,7 @@ serve(async (req: Request) => {
       actorUserId = authData.user.id;
 
       const caller = await getCallerProfile(adminClient, authData.user.id);
+      callerProfile = caller;
       customerId = requestedCustomerId || caller.organizationId || '';
       if (!customerId) {
         return jsonResponse({ ok: false, error: 'customer_id is required' }, 400);
@@ -477,7 +612,7 @@ serve(async (req: Request) => {
 
     const { data: entitlement, error: entitlementErr } = await adminClient
       .from('darkrisk_entitlements' as any)
-      .select('enabled, tier')
+      .select('enabled, tier, enable_raw_evidence')
       .eq('organization_id', customerId)
       .maybeSingle();
 
@@ -494,6 +629,10 @@ serve(async (req: Request) => {
     }
 
     const tier = normalizeTier(entitlement?.tier);
+    const allowClearSensitiveInReport =
+      tier === 'extended'
+      && Boolean((entitlement as any)?.enable_raw_evidence)
+      && Boolean(callerProfile?.isAdminLike || callerProfile?.isSuperAdmin || callerProfile?.canManageAllOrganizations);
 
     const scanRunRes = requestedScanRunId
       ? await adminClient
@@ -557,7 +696,7 @@ serve(async (req: Request) => {
       }
     }
 
-    const [orgRes, assetsRes, selectorsRes, findingsRes, sourceRes] = await Promise.all([
+    const [orgRes, assetsRes, selectorsRes, findingsRes, sourceRes, dtiSourceRunRes, dtiSensitiveHitsRes] = await Promise.all([
       adminClient
         .from('organizations' as any)
         .select('id, name, hicompliance_enabled')
@@ -583,6 +722,20 @@ serve(async (req: Request) => {
         .select('source, source_type, source_media, asset_id, selector_id')
         .eq('organization_id', customerId)
         .eq('scan_run_id', scanRun.id),
+      adminClient
+        .from('darkrisk_dti_source_runs' as any)
+        .select('source, source_label, source_key, query_kind, query_term, asset_scope, status, result_count, warning, error_message, metadata')
+        .eq('organization_id', customerId)
+        .eq('scan_run_id', scanRun.id)
+        .order('created_at', { ascending: false })
+        .limit(2000),
+      adminClient
+        .from('darkrisk_dti_sensitive_hits' as any)
+        .select('source, source_label, query_kind, query_term, asset_scope, tag, masked_value, clear_value')
+        .eq('organization_id', customerId)
+        .eq('scan_run_id', scanRun.id)
+        .order('created_at', { ascending: false })
+        .limit(4000),
     ]);
 
     if (orgRes.error) throw orgRes.error;
@@ -590,11 +743,15 @@ serve(async (req: Request) => {
     if (selectorsRes.error) throw selectorsRes.error;
     if (findingsRes.error) throw findingsRes.error;
     if (sourceRes.error) throw sourceRes.error;
+    if (dtiSourceRunRes.error) throw dtiSourceRunRes.error;
+    if (dtiSensitiveHitsRes.error) throw dtiSensitiveHitsRes.error;
 
     const findings = (findingsRes.data || []) as FindingRow[];
     const assets = (assetsRes.data || []) as AssetRow[];
     const selectors = (selectorsRes.data || []) as SelectorRow[];
     const sourceRows = (sourceRes.data || []) as SourceRecordRow[];
+    const dtiSourceRuns = (dtiSourceRunRes.data || []) as DtiSourceRunRow[];
+    const dtiSensitiveHits = (dtiSensitiveHitsRes.data || []) as DtiSensitiveHitRow[];
 
     const findingIds = findings.map((finding) => finding.id);
     const evidenceIds = Array.from(new Set(findings.flatMap((finding) => toArray<string>(finding.evidence_ids))));
@@ -755,6 +912,97 @@ serve(async (req: Request) => {
       byFindingTypeCounts.set(findingType, (byFindingTypeCounts.get(findingType) || 0) + 1);
     }
 
+    const dtiQueryCoverage = {
+      at_domain_tld: 0,
+      selector: 0,
+      email_selector: 0,
+    };
+    const dtiSourceRowsForReport = dtiSourceRuns.map((row) => {
+      const queryKind = safeText(String(row.query_kind || ''), 40);
+      if (queryKind === 'at_domain_tld') dtiQueryCoverage.at_domain_tld += 1;
+      if (queryKind === 'selector') dtiQueryCoverage.selector += 1;
+      if (queryKind === 'email_selector') dtiQueryCoverage.email_selector += 1;
+      return {
+        source: safeText(presentDarkRiskLabel(String(row.source_label || row.source || 'DarkRisk360')), 80),
+        query_kind: queryKind || '-',
+        query_term: safeText(String(row.query_term || '-'), 180),
+        asset_scope: safeText(String(row.asset_scope || '-'), 160),
+        status: safeText(String(row.status || 'unknown'), 40),
+        result_count: Math.max(0, Number(row.result_count || 0)),
+        note: safeText(String(row.warning || row.error_message || ''), 200) || null,
+      };
+    });
+
+    const dtiSourceDist = new Map<string, number>();
+    for (const row of dtiSourceRowsForReport) {
+      dtiSourceDist.set(row.source, (dtiSourceDist.get(row.source) || 0) + 1);
+    }
+
+    const dtiFileDist = new Map<string, number>();
+    for (const row of dtiSourceRuns) {
+      const fileType = safeText(
+        presentDarkRiskLabel(String((row.metadata || {})?.file_type || (row.metadata || {})?.content_type || row.source_key || 'unknown')),
+        60,
+      );
+      dtiFileDist.set(fileType, (dtiFileDist.get(fileType) || 0) + 1);
+    }
+
+    const dtiSensitiveTotals = {
+      domains: 0,
+      passwords: 0,
+      addresses: 0,
+      credit_cards: 0,
+      phone_numbers: 0,
+      total: 0,
+    };
+    const dtiSensitiveByAssetMap = new Map<string, typeof dtiSensitiveTotals>();
+    for (const hit of dtiSensitiveHits) {
+      const tag = normalizeSensitiveTag(hit.tag);
+      if (!tag) continue;
+      dtiSensitiveTotals[tag] += 1;
+      dtiSensitiveTotals.total += 1;
+      const scopeKey = safeText(String(hit.asset_scope || hit.query_term || 'n/a'), 160).toLowerCase() || 'n/a';
+      const current = dtiSensitiveByAssetMap.get(scopeKey) || {
+        domains: 0,
+        passwords: 0,
+        addresses: 0,
+        credit_cards: 0,
+        phone_numbers: 0,
+        total: 0,
+      };
+      current[tag] += 1;
+      current.total += 1;
+      dtiSensitiveByAssetMap.set(scopeKey, current);
+    }
+
+    const dtiSensitiveByAsset = Array.from(dtiSensitiveByAssetMap.entries())
+      .map(([asset_scope, counters]) => ({
+        asset_scope,
+        ...counters,
+      }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 250);
+
+    const dtiSensitiveSamples = dtiSensitiveHits
+      .map((hit) => {
+        const tag = normalizeSensitiveTag(hit.tag);
+        if (!tag) return null;
+        const clearValue = safeText(String(hit.clear_value || ''), 180);
+        const maskedValue = safeText(String(hit.masked_value || ''), 180);
+        const value = allowClearSensitiveInReport && clearValue ? clearValue : maskedValue;
+        return {
+          source: safeText(presentDarkRiskLabel(String(hit.source_label || hit.source || 'DarkRisk360')), 80),
+          query_kind: safeText(String(hit.query_kind || '-'), 40),
+          query_term: safeText(String(hit.query_term || '-'), 180),
+          asset_scope: safeText(String(hit.asset_scope || hit.query_term || 'n/a'), 160),
+          tag,
+          value: value || '-',
+          masked_value: maskedValue || '-',
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => Boolean(row))
+      .slice(0, 400);
+
     const scopeAuthorizedAssets = assets
       .filter((asset) => String(asset.scope_status || 'approved') === 'approved')
       .map((asset) => safeText(String(asset.normalized_value || asset.value || ''), 160))
@@ -775,7 +1023,9 @@ serve(async (req: Request) => {
       'Report generato da snapshot persistito: nessuna chiamata live ai provider durante la generazione.',
       tier === 'standard'
         ? 'Tier standard: evidenze tecniche mostrate in forma sintetica e mascherata.'
-        : 'Tier extended: maggiore dettaglio tecnico, con mascheramento dati sensibili lato cliente.',
+        : allowClearSensitiveInReport
+          ? 'Tier extended privilegiato: evidenze sensibili in chiaro abilitate per ruoli autorizzati.'
+          : 'Tier extended: maggiore dettaglio tecnico, con mascheramento dati sensibili lato cliente.',
       ...runWarnings,
     ];
 
@@ -844,6 +1094,15 @@ serve(async (req: Request) => {
           .map(([finding_type, count]) => ({ finding_type, count }))
           .sort((a, b) => b.count - a.count),
       },
+      dti_intelligence: {
+        query_coverage: dtiQueryCoverage,
+        source_execution: dtiSourceRowsForReport.slice(0, 600),
+        sensitive_summary: dtiSensitiveTotals,
+        sensitive_by_asset: dtiSensitiveByAsset,
+        sensitive_samples: dtiSensitiveSamples,
+        source_distribution: toPercentRows(dtiSourceDist).map((entry) => ({ source: entry.label, count: entry.count, percentage: entry.percentage })),
+        file_distribution: toPercentRows(dtiFileDist).map((entry) => ({ file_type: entry.label, count: entry.count, percentage: entry.percentage })),
+      },
       appendices: {
         confidentiality_notice: REPORT_NOTICE,
         report_schema_version: REPORT_SCHEMA_VERSION,
@@ -858,6 +1117,16 @@ serve(async (req: Request) => {
           value: safeText(String(selector.normalized_value || ''), 120),
           status: safeText(String(selector.status || 'approved'), 30),
         })),
+        dti_sensitive_samples_masked: dtiSensitiveHits
+          .slice(0, 300)
+          .map((hit) => ({
+            source: safeText(presentDarkRiskLabel(String(hit.source_label || hit.source || 'DarkRisk360')), 60),
+            query_kind: safeText(String(hit.query_kind || ''), 40),
+            query_term: safeText(String(hit.query_term || ''), 120),
+            asset_scope: safeText(String(hit.asset_scope || ''), 120),
+            tag: safeText(String(hit.tag || ''), 40),
+            value: safeText(String(hit.masked_value || ''), 120),
+          })),
       },
     };
 

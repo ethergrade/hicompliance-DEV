@@ -37,6 +37,7 @@ import { DarkRiskThreatGroups } from '@/components/dark-risk/DarkRiskThreatGroup
 import { DarkRiskRecentAlerts } from '@/components/dark-risk/DarkRiskRecentAlerts';
 import { DarkRiskFindingsTable, type DarkRiskFindingRow } from '@/components/dark-risk/DarkRiskFindingsTable';
 import { DarkRiskFindingsAnalytics } from '@/components/dark-risk/DarkRiskFindingsAnalytics';
+import { DarkRiskWeeklyTrend } from '@/components/dark-risk/DarkRiskWeeklyTrend';
 import { DarkRiskAssetsTable, type DarkRiskAssetRow } from '@/components/dark-risk/DarkRiskAssetsTable';
 import { useDarkRiskAlerts } from '@/hooks/useDarkRiskAlerts';
 import { useDarkRiskOverview } from '@/hooks/useDarkRiskOverview';
@@ -1138,6 +1139,8 @@ const DarkRisk360: React.FC = () => {
                     )}
                   </CardContent>
                 </Card>
+
+                <DarkRiskWeeklyTrend />
                 <DarkRiskCoverageMatrix controls={overview.coverage_controls} />
                 <DarkRiskThreatGroups
                   groups={overview.threat_groups}
@@ -1289,6 +1292,7 @@ const DarkRisk360: React.FC = () => {
                     last_seen_at: row.last_seen_at,
                   }))}
                   extendedMode={overview.tier === 'extended'}
+                  dti={overview.dti}
                 />
                 <DarkRiskFindingsTable
                   rows={filteredFindings}

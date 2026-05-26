@@ -65,6 +65,49 @@ export type DarkRiskOverviewResponse = {
     total: number;
     active: number;
   };
+  dti: {
+    privileged_sensitive_view: boolean;
+    source_runs: {
+      completed: number;
+      partial: number;
+      failed: number;
+      skipped: number;
+      total: number;
+    };
+    query_coverage: {
+      at_domain_tld: number;
+      selector: number;
+      email_selector: number;
+    };
+    sensitive_totals: {
+      domains: number;
+      passwords: number;
+      addresses: number;
+      credit_cards: number;
+      phone_numbers: number;
+      total: number;
+    };
+    sensitive_by_asset: Array<{
+      asset_scope: string;
+      domains: number;
+      passwords: number;
+      addresses: number;
+      credit_cards: number;
+      phone_numbers: number;
+      total: number;
+    }>;
+    sensitive_samples: Array<{
+      source: string;
+      query_kind: string;
+      query_term: string;
+      asset_scope: string;
+      tag: string;
+      value: string;
+      masked_value: string;
+      created_at: string | null;
+    }>;
+    latest_scan_run_id: string | null;
+  };
 };
 
 const emptyData: DarkRiskOverviewResponse = {
@@ -92,6 +135,32 @@ const emptyData: DarkRiskOverviewResponse = {
   alert_config: {
     total: 0,
     active: 0,
+  },
+  dti: {
+    privileged_sensitive_view: false,
+    source_runs: {
+      completed: 0,
+      partial: 0,
+      failed: 0,
+      skipped: 0,
+      total: 0,
+    },
+    query_coverage: {
+      at_domain_tld: 0,
+      selector: 0,
+      email_selector: 0,
+    },
+    sensitive_totals: {
+      domains: 0,
+      passwords: 0,
+      addresses: 0,
+      credit_cards: 0,
+      phone_numbers: 0,
+      total: 0,
+    },
+    sensitive_by_asset: [],
+    sensitive_samples: [],
+    latest_scan_run_id: null,
   },
 };
 

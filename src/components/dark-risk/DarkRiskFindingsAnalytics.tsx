@@ -32,6 +32,50 @@ type Row = {
   last_seen_at?: string;
 };
 
+type DtiOverviewData = {
+  privileged_sensitive_view: boolean;
+  source_runs: {
+    completed: number;
+    partial: number;
+    failed: number;
+    skipped: number;
+    total: number;
+  };
+  query_coverage: {
+    at_domain_tld: number;
+    selector: number;
+    email_selector: number;
+  };
+  sensitive_totals: {
+    domains: number;
+    passwords: number;
+    addresses: number;
+    credit_cards: number;
+    phone_numbers: number;
+    total: number;
+  };
+  sensitive_by_asset: Array<{
+    asset_scope: string;
+    domains: number;
+    passwords: number;
+    addresses: number;
+    credit_cards: number;
+    phone_numbers: number;
+    total: number;
+  }>;
+  sensitive_samples: Array<{
+    source: string;
+    query_kind: string;
+    query_term: string;
+    asset_scope: string;
+    tag: string;
+    value: string;
+    masked_value: string;
+    created_at: string | null;
+  }>;
+  latest_scan_run_id: string | null;
+};
+
 type ScopePieRow = {
   scope: string;
   count: number;
@@ -103,7 +147,11 @@ function shortSiteLabel(value: string): string {
   return `${value.slice(0, 35)}...`;
 }
 
-export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: boolean }> = ({ rows, extendedMode = false }) => {
+export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: boolean; dti?: DtiOverviewData | null }> = ({
+  rows,
+  extendedMode = false,
+  dti = null,
+}) => {
   const data = useMemo(() => {
     const siteCategory = new Map<string, Record<string, number>>();
     const siteFindings = new Map<string, Row[]>();
@@ -172,11 +220,14 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
       .map(([scope, count]) => ({ scope, count }))
       .sort((a, b) => b.count - a.count);
 
-    const sensitiveRows = (Object.keys(sensitiveLabel) as SensitiveTagKey[]).map((tag) => ({
-      tag,
-      label: sensitiveLabel[tag],
-      count: sensitiveTotals.get(tag) || 0,
-    }));
+    const sensitiveRows = (Object.keys(sensitiveLabel) as SensitiveTagKey[]).map((tag) => {
+      const dtiCount = dti?.sensitive_totals?.[tag];
+      return {
+        tag,
+        label: sensitiveLabel[tag],
+        count: typeof dtiCount === 'number' ? dtiCount : (sensitiveTotals.get(tag) || 0),
+      };
+    });
 
     const detailedSensitiveRows = sensitiveDetails
       .sort((a, b) => {
@@ -215,7 +266,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
       detailedSensitiveRows,
       groupedAssetRows,
     };
-  }, [rows]);
+  }, [rows, dti]);
 
   return (
     <Card className="border-border">
@@ -226,6 +277,19 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
         </p>
       </CardHeader>
       <CardContent className="space-y-5">
+        {dti ? (
+          <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">Query @domain.tld: {dti.query_coverage.at_domain_tld || 0}</Badge>
+              <Badge variant="outline">Query selector: {dti.query_coverage.selector || 0}</Badge>
+              <Badge variant="outline">Query email: {dti.query_coverage.email_selector || 0}</Badge>
+              <Badge variant="outline">Source run: {dti.source_runs.completed}/{dti.source_runs.total} completed</Badge>
+              {dti.source_runs.partial > 0 ? <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40">partial {dti.source_runs.partial}</Badge> : null}
+              {dti.source_runs.failed > 0 ? <Badge className="bg-red-500/20 text-red-300 border-red-500/40">failed {dti.source_runs.failed}</Badge> : null}
+            </div>
+          </div>
+        ) : null}
+
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
           <div className="xl:col-span-2 rounded-lg border border-border/70 bg-muted/20 p-3">
             <div className="flex items-center justify-between mb-2">
@@ -295,7 +359,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
           {extendedMode ? (
             <div className="mt-4 rounded-md border border-border/60 bg-background/30 p-3">
               <p className="text-xs font-medium mb-2">Dettaglio evidenze sensibili su query domini in scope (`@dominio`)</p>
-              {data.detailedSensitiveRows.length === 0 ? (
+              {(dti?.sensitive_samples?.length || 0) === 0 && data.detailedSensitiveRows.length === 0 ? (
                 <p className="text-xs text-muted-foreground">Nessuna evidenza sensibile classificata nel ciclo corrente.</p>
               ) : (
                 <div className="overflow-x-auto">
@@ -304,27 +368,36 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                       <tr className="border-b border-border/60 text-left text-muted-foreground">
                         <th className="py-2 pr-3">Categoria</th>
                         <th className="py-2 pr-3">Dominio / Sito</th>
-                        <th className="py-2 pr-3">Severity</th>
-                        <th className="py-2 pr-3">Risk</th>
-                        <th className="py-2 pr-3">Finding</th>
-                        <th className="py-2 pr-3">Asset</th>
+                        <th className="py-2 pr-3">Query</th>
+                        <th className="py-2 pr-3">Valore</th>
                         <th className="py-2">Source</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {data.detailedSensitiveRows.map((row, index) => (
-                        <tr key={`${row.tag}-${row.site}-${index}`} className="border-b border-border/40 align-top">
-                          <td className="py-2 pr-3">{sensitiveLabel[row.tag]}</td>
-                          <td className="py-2 pr-3 font-medium">{row.site}</td>
-                          <td className="py-2 pr-3">
-                            <Badge className={severityTone[row.severity]}>{row.severity}</Badge>
-                          </td>
-                          <td className="py-2 pr-3 font-semibold">{row.risk_score}</td>
-                          <td className="py-2 pr-3">{row.title}</td>
-                          <td className="py-2 pr-3">{row.asset}</td>
-                          <td className="py-2">{row.source}</td>
-                        </tr>
-                      ))}
+                      {(dti?.sensitive_samples?.length || 0) > 0 ? (
+                        dti!.sensitive_samples.slice(0, 120).map((row, index) => {
+                          const normalizedTag = normalizeSensitiveTag(row.tag);
+                          return (
+                            <tr key={`${row.tag}-${row.asset_scope}-${index}`} className="border-b border-border/40 align-top">
+                              <td className="py-2 pr-3">{normalizedTag ? sensitiveLabel[normalizedTag] : row.tag}</td>
+                              <td className="py-2 pr-3 font-medium">{row.asset_scope || '-'}</td>
+                              <td className="py-2 pr-3">{row.query_term || '-'}</td>
+                              <td className="py-2 pr-3 font-mono text-[11px] break-all">{row.value || row.masked_value || '-'}</td>
+                              <td className="py-2">{row.source || 'DarkRisk360'}</td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        data.detailedSensitiveRows.map((row, index) => (
+                          <tr key={`${row.tag}-${row.site}-${index}`} className="border-b border-border/40 align-top">
+                            <td className="py-2 pr-3">{sensitiveLabel[row.tag]}</td>
+                            <td className="py-2 pr-3 font-medium">{row.site}</td>
+                            <td className="py-2 pr-3">-</td>
+                            <td className="py-2 pr-3">-</td>
+                            <td className="py-2">{row.source}</td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>

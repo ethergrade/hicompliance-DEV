@@ -37,6 +37,7 @@ import SecurityFindings from '@/components/surface-scan/SecurityFindings';
 import SurfaceScanModuleCards from '@/components/surface-scan/SurfaceScanModuleCards';
 import SurfaceScanReportRepository from '@/components/surface-scan/SurfaceScanReportRepository';
 import SurfaceScanExposureSection from '@/components/surface-scan/SurfaceScanExposureSection';
+import { SurfaceScanTrendline } from '@/components/surface-scan/SurfaceScanTrendline';
 import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
 import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceScanAlertConfigDialog';
 import { useSurfaceScanAlerts, SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
@@ -803,6 +804,8 @@ const SurfaceScan360: React.FC = () => {
             </CardContent>
           </Card>
         </div>
+
+        <SurfaceScanTrendline />
 
         <Card className="border-border">
           <CardHeader>

@@ -51,6 +51,20 @@ type IntelxCoverageInfo = {
   last_execution: string | null;
 };
 
+type DtiSensitiveTag = 'domains' | 'passwords' | 'addresses' | 'credit_cards' | 'phone_numbers';
+
+type DtiSensitiveHitRow = {
+  source: string | null;
+  source_label: string | null;
+  query_kind: string | null;
+  query_term: string | null;
+  asset_scope: string | null;
+  tag: string | null;
+  masked_value: string | null;
+  clear_value: string | null;
+  created_at: string | null;
+};
+
 function presentDarkRiskLabel(value: string | null | undefined): string {
   const text = String(value || '').trim();
   if (!text) return 'DarkRisk360';
@@ -187,6 +201,16 @@ function categoryDescription(category: string): string {
     default:
       return 'Finding tecnici aggregati dall’ultimo ciclo di analisi.';
   }
+}
+
+function normalizeSensitiveTag(value: string | null | undefined): DtiSensitiveTag | null {
+  const normalized = String(value || '').toLowerCase();
+  if (normalized === 'domains') return 'domains';
+  if (normalized === 'passwords') return 'passwords';
+  if (normalized === 'addresses') return 'addresses';
+  if (normalized === 'credit_cards') return 'credit_cards';
+  if (normalized === 'phone_numbers') return 'phone_numbers';
+  return null;
 }
 
 function buildCoverageControls(
@@ -337,13 +361,13 @@ serve(async (req: Request) => {
         .maybeSingle(),
       adminClient
         .from('darkrisk_entitlements' as any)
-        .select('enabled, tier')
+        .select('enabled, tier, enable_raw_evidence')
         .eq('organization_id', customerId)
         .maybeSingle(),
     ]);
 
     const orgFlags = orgFlagsRes.data || null;
-    let entitlement: { enabled?: boolean | null; tier?: string | null } | null = null;
+    let entitlement: { enabled?: boolean | null; tier?: string | null; enable_raw_evidence?: boolean | null } | null = null;
     if (!entitlementRes.error) {
       entitlement = (entitlementRes.data || null) as any;
     } else {
@@ -357,6 +381,7 @@ serve(async (req: Request) => {
     const darkRiskTier = String(entitlement?.tier || 'standard').toLowerCase() === 'extended'
       ? 'extended'
       : 'standard';
+    const privilegedSensitiveView = darkRiskTier === 'extended' && Boolean(entitlement?.enable_raw_evidence) && (caller.canManageAllOrganizations || caller.isAdminLike);
 
     const latestDarkriskRunRes = await adminClient
       .from('darkrisk_scan_runs' as any)
@@ -425,6 +450,8 @@ serve(async (req: Request) => {
       previousFindingsRes,
       previousExposureFindingsRes,
       openPortsRes,
+      dtiSourceRunsRes,
+      dtiSensitiveHitsRes,
     ] = await Promise.all([
       adminClient
         .from('dark_risk_alerts' as any)
@@ -476,6 +503,22 @@ serve(async (req: Request) => {
             .select('id, exposure_level')
             .eq('scan_job_id', latestJob.id)
         : Promise.resolve({ data: [], error: null }),
+      latestDarkriskRun?.id
+        ? adminClient
+            .from('darkrisk_dti_source_runs' as any)
+            .select('id, source, source_label, source_key, query_kind, query_term, asset_scope, selector_value, status, result_count, warning, error_message, completed_at, metadata')
+            .eq('scan_run_id', latestDarkriskRun.id)
+            .order('created_at', { ascending: false })
+            .limit(1200)
+        : Promise.resolve({ data: [], error: null }),
+      latestDarkriskRun?.id
+        ? adminClient
+            .from('darkrisk_dti_sensitive_hits' as any)
+            .select('source, source_label, query_kind, query_term, asset_scope, tag, masked_value, clear_value, created_at')
+            .eq('scan_run_id', latestDarkriskRun.id)
+            .order('created_at', { ascending: false })
+            .limit(3500)
+        : Promise.resolve({ data: [], error: null }),
     ]);
 
     if (alertConfigsRes.error) throw alertConfigsRes.error;
@@ -486,6 +529,8 @@ serve(async (req: Request) => {
     if ((previousFindingsRes as any).error) throw (previousFindingsRes as any).error;
     if ((previousExposureFindingsRes as any).error) throw (previousExposureFindingsRes as any).error;
     if ((openPortsRes as any).error) throw (openPortsRes as any).error;
+    if ((dtiSourceRunsRes as any).error) throw (dtiSourceRunsRes as any).error;
+    if ((dtiSensitiveHitsRes as any).error) throw (dtiSensitiveHitsRes as any).error;
 
     const moduleRows = ((moduleRowsRes as any).data || []) as ModuleResultLite[];
     const coverageControls = buildCoverageControls(moduleRows, darkRiskTier, intelxCoverage);
@@ -532,6 +577,80 @@ serve(async (req: Request) => {
       const level = String(port.exposure_level || '').toLowerCase();
       return level === 'critical' || level === 'high';
     }).length;
+
+    const dtiSourceRuns = ((dtiSourceRunsRes as any).data || []) as Array<Record<string, unknown>>;
+    const dtiSensitiveRows = ((dtiSensitiveHitsRes as any).data || []) as DtiSensitiveHitRow[];
+
+    const dtiRunCounters = {
+      completed: 0,
+      partial: 0,
+      failed: 0,
+      skipped: 0,
+      total: dtiSourceRuns.length,
+    };
+    for (const row of dtiSourceRuns) {
+      const status = normalizeCoverageStatus(String(row.status || ''));
+      if (status === 'completed') dtiRunCounters.completed += 1;
+      else if (status === 'partial') dtiRunCounters.partial += 1;
+      else if (status === 'error') dtiRunCounters.failed += 1;
+      else dtiRunCounters.skipped += 1;
+    }
+
+    const dtiQueryCoverage = {
+      at_domain_tld: 0,
+      selector: 0,
+      email_selector: 0,
+    };
+    for (const row of dtiSourceRuns) {
+      const queryKind = String(row.query_kind || '').toLowerCase();
+      if (queryKind === 'at_domain_tld') dtiQueryCoverage.at_domain_tld += 1;
+      if (queryKind === 'selector') dtiQueryCoverage.selector += 1;
+      if (queryKind === 'email_selector') dtiQueryCoverage.email_selector += 1;
+    }
+
+    const sensitiveTotals: Record<DtiSensitiveTag, number> = {
+      domains: 0,
+      passwords: 0,
+      addresses: 0,
+      credit_cards: 0,
+      phone_numbers: 0,
+    };
+    const sensitiveByAsset = new Map<string, Record<string, number>>();
+    const sensitiveSampleRows: Array<Record<string, unknown>> = [];
+    for (const row of dtiSensitiveRows) {
+      const tag = normalizeSensitiveTag(row.tag);
+      if (!tag) continue;
+      sensitiveTotals[tag] += 1;
+      const scopeKey = String(row.asset_scope || row.query_term || 'n/a').toLowerCase();
+      const current = sensitiveByAsset.get(scopeKey) || {};
+      current[tag] = Number(current[tag] || 0) + 1;
+      sensitiveByAsset.set(scopeKey, current);
+      if (sensitiveSampleRows.length < 120) {
+        sensitiveSampleRows.push({
+          source: presentDarkRiskLabel(String(row.source_label || row.source || 'DarkRisk360')),
+          query_kind: String(row.query_kind || ''),
+          query_term: String(row.query_term || ''),
+          asset_scope: String(row.asset_scope || ''),
+          tag,
+          value: privilegedSensitiveView ? String(row.clear_value || '') : String(row.masked_value || ''),
+          masked_value: String(row.masked_value || ''),
+          created_at: row.created_at || null,
+        });
+      }
+    }
+
+    const sensitiveByAssetRows = Array.from(sensitiveByAsset.entries())
+      .map(([asset_scope, values]) => ({
+        asset_scope,
+        domains: Number(values.domains || 0),
+        passwords: Number(values.passwords || 0),
+        addresses: Number(values.addresses || 0),
+        credit_cards: Number(values.credit_cards || 0),
+        phone_numbers: Number(values.phone_numbers || 0),
+        total: Number(values.domains || 0) + Number(values.passwords || 0) + Number(values.addresses || 0) + Number(values.credit_cards || 0) + Number(values.phone_numbers || 0),
+      }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 120);
 
     const recentAlerts = activeLatest
       .slice(0, 24)
@@ -678,6 +797,18 @@ serve(async (req: Request) => {
       alert_config: {
         total: (alertConfigsRes.data || []).length,
         active: ((alertConfigsRes.data || []) as Array<{ is_active?: boolean }>).filter((alert) => Boolean(alert.is_active)).length,
+      },
+      dti: {
+        privileged_sensitive_view: privilegedSensitiveView,
+        source_runs: dtiRunCounters,
+        query_coverage: dtiQueryCoverage,
+        sensitive_totals: {
+          ...sensitiveTotals,
+          total: sensitiveTotals.domains + sensitiveTotals.passwords + sensitiveTotals.addresses + sensitiveTotals.credit_cards + sensitiveTotals.phone_numbers,
+        },
+        sensitive_by_asset: sensitiveByAssetRows,
+        sensitive_samples: sensitiveSampleRows,
+        latest_scan_run_id: latestDarkriskRun?.id || null,
       },
     });
   } catch (error: any) {
