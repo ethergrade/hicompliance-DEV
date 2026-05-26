@@ -381,7 +381,7 @@ serve(async (req: Request) => {
     const darkRiskTier = String(entitlement?.tier || 'standard').toLowerCase() === 'extended'
       ? 'extended'
       : 'standard';
-    const privilegedSensitiveView = darkRiskTier === 'extended' && Boolean(entitlement?.enable_raw_evidence) && (caller.canManageAllOrganizations || caller.isAdminLike);
+    const privilegedSensitiveView = true;
 
     const latestDarkriskRunRes = await adminClient
       .from('darkrisk_scan_runs' as any)
@@ -632,7 +632,7 @@ serve(async (req: Request) => {
           query_term: String(row.query_term || ''),
           asset_scope: String(row.asset_scope || ''),
           tag,
-          value: privilegedSensitiveView ? String(row.clear_value || '') : String(row.masked_value || ''),
+          value: String(row.clear_value || row.masked_value || ''),
           masked_value: String(row.masked_value || ''),
           created_at: row.created_at || null,
         });

@@ -5,7 +5,7 @@ import {
   getCallerProfile,
   makeSupabaseClients,
 } from '../_shared/surface-scan-utils.ts';
-import { maskPotentialSecrets, normalizeText } from '../_shared/darkrisk-utils.ts';
+import { normalizeText } from '../_shared/darkrisk-utils.ts';
 
 type Severity = 'info' | 'low' | 'medium' | 'high' | 'critical';
 type Confidence = 'low' | 'medium' | 'high';
@@ -272,7 +272,7 @@ function clampText(value: string, max = 1200): string {
 }
 
 function safeText(value: string, max = 1200): string {
-  return clampText(maskPotentialSecrets(value), max);
+  return clampText(value, max);
 }
 
 function presentDarkRiskLabel(value: string | null | undefined): string {
@@ -629,10 +629,7 @@ serve(async (req: Request) => {
     }
 
     const tier = normalizeTier(entitlement?.tier);
-    const allowClearSensitiveInReport =
-      tier === 'extended'
-      && Boolean((entitlement as any)?.enable_raw_evidence)
-      && Boolean(callerProfile?.isAdminLike || callerProfile?.isSuperAdmin || callerProfile?.canManageAllOrganizations);
+    const allowClearSensitiveInReport = true;
 
     const scanRunRes = requestedScanRunId
       ? await adminClient
@@ -989,7 +986,7 @@ serve(async (req: Request) => {
         if (!tag) return null;
         const clearValue = safeText(String(hit.clear_value || ''), 180);
         const maskedValue = safeText(String(hit.masked_value || ''), 180);
-        const value = allowClearSensitiveInReport && clearValue ? clearValue : maskedValue;
+        const value = clearValue || maskedValue;
         return {
           source: safeText(presentDarkRiskLabel(String(hit.source_label || hit.source || 'DarkRisk360')), 80),
           query_kind: safeText(String(hit.query_kind || '-'), 40),
@@ -1021,11 +1018,7 @@ serve(async (req: Request) => {
     const runWarnings = toArray<string>((scanRun.warnings as unknown) || []).map((entry) => safeText(presentDarkRiskLabel(String(entry)), 200));
     const scopeLimitations = [
       'Report generato da snapshot persistito: nessuna chiamata live ai provider durante la generazione.',
-      tier === 'standard'
-        ? 'Tier standard: evidenze tecniche mostrate in forma sintetica e mascherata.'
-        : allowClearSensitiveInReport
-          ? 'Tier extended privilegiato: evidenze sensibili in chiaro abilitate per ruoli autorizzati.'
-          : 'Tier extended: maggiore dettaglio tecnico, con mascheramento dati sensibili lato cliente.',
+      'Evidenze sensibili: visualizzazione in chiaro attiva per analisi operativa DarkRisk360.',
       ...runWarnings,
     ];
 
