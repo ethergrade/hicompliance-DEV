@@ -378,7 +378,7 @@ function extractCvesFromText(value: string): string[] {
 }
 
 function toTextSummary(value: unknown): string {
-  if (value == null) return 'Nessuna evidenza disponibile.';
+  if (value == null) return '';
   if (typeof value === 'string') {
     return redactTechnologyMentions(value);
   }
@@ -491,10 +491,18 @@ function toTextSummary(value: unknown): string {
   if (obj['total'] != null) {
     parts.push(`Risultati storici trovati: ${String(obj['total'])}`);
   }
-  if (parts.length === 0) {
-    parts.push('Nessun campo tecnico valorizzato nel payload corrente.');
-  }
+  if (parts.length === 0) return '';
   return redactTechnologyMentions(parts.join(' · '));
+}
+
+function isPlaceholderSummary(value: string): boolean {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text) return true;
+  return text.includes('nessun campo tecnico valorizzato nel payload corrente')
+    || text.includes('nessuna evidenza disponibile')
+    || text.includes('dati tecnici disponibili:')
+    || text === 'n/d'
+    || text === 'nessun dato';
 }
 
 function mapIntelCategory(provider: string): string {
@@ -1466,6 +1474,7 @@ Deno.serve(async (req) => {
     const intelDedupMap = new Map<string, any>();
     for (const entry of intelScoped) {
       const summaryText = toTextSummary(entry.summary);
+      if (isPlaceholderSummary(summaryText)) continue;
       const summaryObj = entry?.summary && typeof entry.summary === 'object' ? entry.summary as Record<string, any> : {};
       const resolvedTarget = resolveSpecificAssetTarget(
         entry?.target,
@@ -1494,9 +1503,9 @@ Deno.serve(async (req) => {
     const intel = Array.from(intelDedupMap.values()).map((entry: any) => ({
       category: mapIntelCategory(String(entry.provider || '')),
       target: entry.target,
-      summary_text: toTextSummary(entry.summary),
+      summary_text: entry.summary_text || '',
       confidence: entry.confidence || null,
-    }));
+    })).filter((entry: any) => !isPlaceholderSummary(entry.summary_text));
     const syntheticOpenPortObservations = (rawOpenPortsAll || []).map((row: any) => ({
       module: 'port_scanner',
       observation_type: 'open_port',

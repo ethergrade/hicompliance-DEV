@@ -219,6 +219,15 @@ const depthFromRoot = (host: string, rootDomain: string): number => {
 
 const isJunkSummary = (s: any): boolean => {
   if (!s) return true;
+  if (typeof s === 'string') {
+    const text = redactReportWords(s).trim().toLowerCase();
+    if (!text) return true;
+    return text.includes('nessun campo tecnico valorizzato nel payload corrente')
+      || text.includes('nessuna evidenza tecnica disponibile')
+      || text.includes('dati tecnici disponibili:')
+      || text === 'n/d'
+      || text === 'nessun dato';
+  }
   if (typeof s === 'object') {
     const keys = Object.keys(s);
     if (keys.length === 1 && (keys[0] === 'reason' || keys[0] === 'error')) return true;
@@ -233,7 +242,9 @@ const isGenericEvidenceText = (value: string): boolean => {
   return text.includes('evidenza tecnica disponibile')
     || text.includes('evidenza tecnica acquisita')
     || text.includes('nessuna evidenza disponibile')
-    || text.includes('status, scan_id, tool_id');
+    || text.includes('status, scan_id, tool_id')
+    || text.includes('nessun campo tecnico valorizzato nel payload corrente')
+    || text.includes('dati tecnici disponibili:');
 };
 
 const summarizeIntel = (provider: string, target: string, summary: any): string => {
@@ -353,9 +364,9 @@ const summarizeIntel = (provider: string, target: string, summary: any): string 
     if (scalarPairs.length > 0) {
       return redactReportWords(`Dati tecnici: ${scalarPairs.slice(0, 5).join(' · ')}`);
     }
-    return redactReportWords(`Dati tecnici disponibili: ${keys.slice(0, 5).join(', ')}`);
+    return '';
   }
-  return 'Nessuna evidenza tecnica disponibile.';
+  return '';
 };
 
 const computeFallbackRisk = (report: SurfaceScan360Report): { score: number; level: string } => {
@@ -1030,7 +1041,9 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
         ob.value,
       ),
     }));
-  const allIntel = [...intel, ...obsAsIntel];
+  const allIntel = [...intel, ...obsAsIntel]
+    .filter((i: any) => !isJunkSummary(i?.summaryText))
+    .filter((i: any) => !isScopeAggregateTarget(i?.target));
 
   if (allIntel.length === 0) {
     text('Nessun dato di enrichment disponibile.', { color: [MUTED.r, MUTED.g, MUTED.b], size: 9 });
