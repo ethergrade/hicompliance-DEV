@@ -1327,6 +1327,7 @@ const DarkRisk360: React.FC = () => {
                     source: row.source,
                     query_kind: row.query_kind || '',
                     source_origin: row.source_origin || '',
+                    first_seen_at: row.first_seen_at,
                     last_seen_at: row.last_seen_at,
                   }))}
                   extendedMode={overview.tier === 'extended'}
