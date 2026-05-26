@@ -149,6 +149,26 @@ const statusProgressMeta = (
   };
 };
 
+const formatExposureJobError = (errorMessage: string | null | undefined): string => {
+  const raw = String(errorMessage || '').trim();
+  if (!raw) return '-';
+
+  const normalized = raw.toLowerCase();
+  if (normalized.includes('no pentest-tools tasks for this exposure job')) {
+    return 'Recovery automatica task Pentest in corso';
+  }
+  if (normalized.includes('all pentest-tools tasks failed')) {
+    return 'Provider exposure non ha completato i task: retry automatico pianificato';
+  }
+  if (normalized.includes('completed with partial optional-phase failures')) {
+    return 'Completata con moduli opzionali non disponibili';
+  }
+  if (normalized.includes('optional phase skipped')) {
+    return 'Modulo opzionale saltato dal provider';
+  }
+  return raw;
+};
+
 const SCAN_PROFILES: SurfaceScanProfile[] = [
   'safe_recon',
   'domain_exposure',
@@ -1338,7 +1358,9 @@ const SurfaceScan360: React.FC = () => {
                       <TableCell>
                         {job.completed_at ? new Date(job.completed_at).toLocaleString('it-IT') : '-'}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{job.error_message || '-'}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground" title={job.error_message || ''}>
+                        {formatExposureJobError(job.error_message)}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

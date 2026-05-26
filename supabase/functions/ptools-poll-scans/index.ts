@@ -5,6 +5,7 @@ import { PentestToolsClient } from '../_shared/pentestToolsClient.ts';
 import {
   buildNetworkScannerParams,
   buildPortScannerParams,
+  buildSubdomainFinderParams,
   buildPortAndReconUrlCandidates,
   buildSslScannerParams,
   buildWebsiteReconParams,
@@ -15,6 +16,7 @@ import {
   isTerminalErrorStatus,
   normalizeScanStatus,
   reconCandidatesFromOpenPorts,
+  resolveRequestDefaults,
   toolNameById,
 } from '../_shared/exposureUtils.ts';
 import { normalizeSubdomainFinderOutputForDomain } from '../_shared/parsers/subdomainFinderParser.ts';
@@ -140,6 +142,257 @@ async function enqueueScanTask(adminClient: any, payload: Record<string, unknown
   if (error) {
     console.warn('[ptools-poll] enqueueScanTask failed:', error.message);
   }
+}
+
+async function bootstrapExposureTasksForJob(
+  adminClient: any,
+  scanJobId: string,
+  options?: { forceRequeueFailed?: boolean },
+): Promise<{
+  bootstrapped: boolean;
+  queued: number;
+  started: number;
+  deferred: number;
+  failed: number;
+  reason?: string;
+}> {
+  const forceRequeueFailed = Boolean(options?.forceRequeueFailed);
+  const { data: taskRows } = await adminClient
+    .from('pentest_tools_scans' as any)
+    .select('status')
+    .eq('scan_job_id', scanJobId);
+
+  const existingTasks = (taskRows || []) as Array<{ status: string }>;
+  if (existingTasks.length > 0) {
+    const hasActiveTasks = existingTasks.some((row) =>
+      ['queued', 'running', 'waiting', 'retry'].includes(String(row.status || '').toLowerCase()));
+    if (!forceRequeueFailed || hasActiveTasks) {
+      return {
+        bootstrapped: false,
+        queued: 0,
+        started: 0,
+        deferred: 0,
+        failed: 0,
+        reason: hasActiveTasks ? 'active_tasks_already_present' : 'tasks_already_present',
+      };
+    }
+  }
+
+  const { data: job } = await adminClient
+    .from('surface_scan_jobs' as any)
+    .select('id, organization_id, tenant_id, customer_id, raw_target, normalized_target, target_type, root_domain, scan_name, summary, config')
+    .eq('id', scanJobId)
+    .maybeSingle();
+
+  if (!job?.id) {
+    return {
+      bootstrapped: false,
+      queued: 0,
+      started: 0,
+      deferred: 0,
+      failed: 0,
+      reason: 'job_not_found',
+    };
+  }
+
+  const summary = (job.summary && typeof job.summary === 'object') ? (job.summary as Record<string, unknown>) : {};
+  const autoRequeueCount = Number(summary.auto_requeue_count || 0);
+  if (forceRequeueFailed && autoRequeueCount >= 1) {
+    return {
+      bootstrapped: false,
+      queued: 0,
+      started: 0,
+      deferred: 0,
+      failed: 0,
+      reason: 'requeue_limit_reached',
+    };
+  }
+
+  const organizationId = String(job.organization_id || job.customer_id || '').trim();
+  const customerId = String(job.customer_id || organizationId).trim();
+  const tenantId = String(job.tenant_id || customerId || organizationId).trim();
+  if (!organizationId || !customerId || !tenantId) {
+    return {
+      bootstrapped: false,
+      queued: 0,
+      started: 0,
+      deferred: 0,
+      failed: 0,
+      reason: 'missing_job_scope_ids',
+    };
+  }
+
+  let { data: targetRows } = await adminClient
+    .from('surface_scan_targets' as any)
+    .select('id, target_value, target_type, root_domain')
+    .eq('scan_job_id', scanJobId);
+
+  let targets = (targetRows || []) as Array<{
+    id: string;
+    target_value: string;
+    target_type: string;
+    root_domain: string | null;
+  }>;
+
+  if (targets.length === 0) {
+    const fallbackTargetValue = String(job.normalized_target || job.raw_target || '').trim();
+    const rawType = String(job.target_type || '').trim().toLowerCase();
+    const fallbackTargetType = ['domain', 'subdomain', 'url', 'ip', 'ipv4', 'ipv6'].includes(rawType) ? rawType : 'domain';
+    const normalizedFallbackType = ['ipv4', 'ipv6'].includes(fallbackTargetType) ? 'ip' : fallbackTargetType;
+
+    if (fallbackTargetValue) {
+      await adminClient.from('surface_scan_targets' as any).insert({
+        scan_job_id: scanJobId,
+        organization_id: organizationId,
+        tenant_id: tenantId,
+        customer_id: customerId,
+        target_value: fallbackTargetValue,
+        target_type: normalizedFallbackType,
+        root_domain: job.root_domain || null,
+        source: 'existing_asset',
+        is_authorized: true,
+      });
+    }
+
+    const refreshedTargets = await adminClient
+      .from('surface_scan_targets' as any)
+      .select('id, target_value, target_type, root_domain')
+      .eq('scan_job_id', scanJobId);
+    targets = (refreshedTargets.data || []) as Array<{
+      id: string;
+      target_value: string;
+      target_type: string;
+      root_domain: string | null;
+    }>;
+  }
+
+  if (targets.length === 0) {
+    return {
+      bootstrapped: false,
+      queued: 0,
+      started: 0,
+      deferred: 0,
+      failed: 0,
+      reason: 'no_targets_available',
+    };
+  }
+
+  const rawConfig = (job.config && typeof job.config === 'object') ? (job.config as Partial<SurfacePortTechScanRequest>) : {};
+  const resolvedConfig = resolveRequestDefaults({
+    ...rawConfig,
+    tenant_id: tenantId,
+    customer_id: customerId,
+    scan_name: String(rawConfig.scan_name || job.scan_name || `Exposure Recovery ${new Date().toISOString()}`),
+    include_port_scan: true,
+    include_subdomain_discovery: rawConfig.include_subdomain_discovery ?? true,
+  });
+
+  const queueRows: Array<Record<string, unknown>> = [];
+  if (resolvedConfig.include_subdomain_discovery) {
+    const params = buildSubdomainFinderParams(resolvedConfig);
+    for (const target of targets) {
+      const targetType = String(target.target_type || '').toLowerCase();
+      if (targetType !== 'domain') continue;
+      queueRows.push({
+        scan_job_id: scanJobId,
+        target_id: target.id || null,
+        organization_id: organizationId,
+        tenant_id: tenantId,
+        customer_id: customerId,
+        tool_id: PENTEST_TOOL_IDS.SUBDOMAIN_FINDER,
+        tool_name: toolNameById(PENTEST_TOOL_IDS.SUBDOMAIN_FINDER),
+        phase: 'subdomain_discovery',
+        target_name: hostFromTargetValue(target.target_value) || String(target.target_value || ''),
+        tool_params: params,
+        status: 'queued',
+      });
+    }
+  }
+
+  const portParams = buildPortScannerParams(resolvedConfig);
+  for (const target of targets) {
+    const targetName = hostFromTargetValue(target.target_value) || String(target.target_value || '');
+    if (!targetName) continue;
+    queueRows.push({
+      scan_job_id: scanJobId,
+      target_id: target.id || null,
+      organization_id: organizationId,
+      tenant_id: tenantId,
+      customer_id: customerId,
+      tool_id: PENTEST_TOOL_IDS.PORT_SCANNER,
+      tool_name: toolNameById(PENTEST_TOOL_IDS.PORT_SCANNER),
+      phase: 'port_scan',
+      target_name: targetName,
+      tool_params: portParams,
+      status: 'queued',
+    });
+  }
+
+  if (queueRows.length === 0) {
+    return {
+      bootstrapped: false,
+      queued: 0,
+      started: 0,
+      deferred: 0,
+      failed: 0,
+      reason: 'no_queue_rows_built',
+    };
+  }
+
+  const { error: queueError } = await adminClient
+    .from('pentest_tools_scans' as any)
+    .insert(queueRows);
+  if (queueError) {
+    return {
+      bootstrapped: false,
+      queued: 0,
+      started: 0,
+      deferred: 0,
+      failed: 0,
+      reason: `queue_insert_error:${queueError.message}`,
+    };
+  }
+
+  const kicked = await startQueuedScansForJob(adminClient, scanJobId);
+  await adminClient
+    .from('surface_scan_jobs' as any)
+    .update({
+      status: kicked.started > 0 ? 'running' : 'queued',
+      started_at: new Date().toISOString(),
+      completed_at: null,
+      error_message: null,
+      summary: {
+        ...summary,
+        queue_total: Number(summary.queue_total || 0) + queueRows.length,
+        queue_started: Number(summary.queue_started || 0) + kicked.started,
+        queue_deferred: Number(summary.queue_deferred || 0) + kicked.deferred,
+        queue_failed: Number(summary.queue_failed || 0) + kicked.failed,
+        auto_bootstrap_recovered_at: new Date().toISOString(),
+        auto_requeue_count: forceRequeueFailed ? (autoRequeueCount + 1) : autoRequeueCount,
+      },
+    })
+    .eq('id', scanJobId);
+
+  await adminClient.from('surface_scan_audit_log' as any).insert({
+    scan_job_id: scanJobId,
+    organization_id: organizationId,
+    action: forceRequeueFailed ? 'ptools_poll_bootstrap_requeue_all_failed' : 'ptools_poll_bootstrap_no_tasks',
+    details: {
+      queued: queueRows.length,
+      started: kicked.started,
+      deferred: kicked.deferred,
+      failed: kicked.failed,
+      force_requeue_failed: forceRequeueFailed,
+    },
+  });
+
+  return {
+    bootstrapped: true,
+    queued: queueRows.length,
+    started: kicked.started,
+    deferred: kicked.deferred,
+    failed: kicked.failed,
+  };
 }
 
 async function persistOpenPortRows(adminClient: any, args: {
@@ -857,11 +1110,17 @@ async function finalizeJobStatuses(adminClient: any, scanJobIds: string[]) {
     const failed = rows.filter((row) => String(row.status || '').toLowerCase() === 'failed').length;
 
     if (total === 0) {
+      const bootstrapped = await bootstrapExposureTasksForJob(adminClient, scanJobId);
+      if (bootstrapped.bootstrapped) {
+        continue;
+      }
       await adminClient
         .from('surface_scan_jobs' as any)
         .update({
           status: 'failed',
-          error_message: 'No Pentest-Tools tasks for this exposure job',
+          error_message: bootstrapped.reason
+            ? `No Pentest-Tools tasks for this exposure job (${bootstrapped.reason})`
+            : 'No Pentest-Tools tasks for this exposure job',
           completed_at: new Date().toISOString(),
         })
         .eq('id', scanJobId);
@@ -968,10 +1227,21 @@ serve(async (req: Request) => {
       .order('created_at', { ascending: true })
       .limit(40);
 
+    const { data: failedJobsNeedingRequeue } = await adminClient
+      .from('surface_scan_jobs' as any)
+      .select('id, error_message')
+      .eq('scan_type', 'exposure_port_technology')
+      .eq('status', 'failed')
+      .or('error_message.ilike.%No Pentest-Tools tasks for this exposure job%,error_message.ilike.%All Pentest-Tools tasks failed%')
+      .order('updated_at', { ascending: false })
+      .limit(80);
+
     const touchedJobIds = new Set<string>();
     const recoveryStats = {
       recovered_to_retry: 0,
       failed_stale: 0,
+      bootstrap_no_tasks: 0,
+      bootstrap_requeued_failed: 0,
     };
 
     const { data: activeTaskJobs } = await adminClient
@@ -981,9 +1251,19 @@ serve(async (req: Request) => {
       .limit(400);
 
     const recoveryJobIds = new Set<string>();
+    const forceRequeueFailedJobs = new Set<string>();
     for (const job of queuedJobs || []) {
       const jobId = String((job as any).id || '').trim();
       if (jobId) recoveryJobIds.add(jobId);
+    }
+    for (const job of failedJobsNeedingRequeue || []) {
+      const jobId = String((job as any).id || '').trim();
+      if (!jobId) continue;
+      recoveryJobIds.add(jobId);
+      const errorMessage = String((job as any).error_message || '').toLowerCase();
+      if (errorMessage.includes('all pentest-tools tasks failed')) {
+        forceRequeueFailedJobs.add(jobId);
+      }
     }
     for (const row of activeTaskJobs || []) {
       const jobId = String((row as any).scan_job_id || '').trim();
@@ -993,6 +1273,16 @@ serve(async (req: Request) => {
     for (const jobId of recoveryJobIds) {
       if (!jobId) continue;
       touchedJobIds.add(jobId);
+      const bootstrap = await bootstrapExposureTasksForJob(adminClient, jobId, {
+        forceRequeueFailed: forceRequeueFailedJobs.has(jobId),
+      });
+      if (bootstrap.bootstrapped) {
+        if (forceRequeueFailedJobs.has(jobId)) {
+          recoveryStats.bootstrap_requeued_failed += 1;
+        } else {
+          recoveryStats.bootstrap_no_tasks += 1;
+        }
+      }
       const recovery = await recoverStaleScansForJob(adminClient, jobId);
       recoveryStats.recovered_to_retry += recovery.recoveredToRetry;
       recoveryStats.failed_stale += recovery.failedStale;
