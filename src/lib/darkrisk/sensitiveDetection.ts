@@ -36,11 +36,18 @@ function luhnCheck(number: string): boolean {
   return sum % 10 === 0;
 }
 
+function isAllZeroCardNumber(number: string): boolean {
+  const clean = number.replace(/\D/g, '');
+  if (clean.length < 13 || clean.length > 19) return false;
+  return /^0+$/.test(clean);
+}
+
 function parseCards(text: string): string[] {
   const matches = text.match(cardCandidateRegex) || [];
   return matches
     .map((entry) => entry.replace(/\D/g, ''))
     .filter((entry) => entry.length >= 13 && entry.length <= 19)
+    .filter((entry) => !isAllZeroCardNumber(entry))
     .filter((entry) => luhnCheck(entry));
 }
 

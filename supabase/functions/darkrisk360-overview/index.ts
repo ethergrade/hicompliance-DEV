@@ -213,6 +213,20 @@ function normalizeSensitiveTag(value: string | null | undefined): DtiSensitiveTa
   return null;
 }
 
+function isAllZeroCreditCardValue(value: string | null | undefined): boolean {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (digits.length >= 13 && /^0+$/.test(digits)) return true;
+  const masked = String(value || '').replace(/\s+/g, '');
+  const maskedDigits = masked.replace(/\D/g, '');
+  return Boolean(masked.includes('*') && maskedDigits.length >= 8 && /^0+$/.test(maskedDigits) && /^[0*]+$/.test(masked.replace(/[^0-9*]/g, '')));
+}
+
+function shouldIgnoreSensitiveRow(row: DtiSensitiveHitRow): boolean {
+  const tag = normalizeSensitiveTag(row.tag);
+  if (tag !== 'credit_cards') return false;
+  return isAllZeroCreditCardValue(row.clear_value) || isAllZeroCreditCardValue(row.masked_value);
+}
+
 function buildCoverageControls(
   moduleRows: ModuleResultLite[],
   tier: 'standard' | 'extended',
@@ -618,6 +632,7 @@ serve(async (req: Request) => {
     const sensitiveByAsset = new Map<string, Record<string, number>>();
     const sensitiveSampleRows: Array<Record<string, unknown>> = [];
     for (const row of dtiSensitiveRows) {
+      if (shouldIgnoreSensitiveRow(row)) continue;
       const tag = normalizeSensitiveTag(row.tag);
       if (!tag) continue;
       sensitiveTotals[tag] += 1;
