@@ -11,6 +11,17 @@ export interface ParsedMonitoredIpInput {
   ipEnd: string;
 }
 
+export const parseMonitoredScopeMixedEntries = (raw: string): string[] => {
+  return Array.from(
+    new Set(
+      String(raw || '')
+        .split(/[,\n;|]+/g)
+        .map((token) => token.trim())
+        .filter(Boolean),
+    ),
+  );
+};
+
 const IPV4_REGEX =
   /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
 

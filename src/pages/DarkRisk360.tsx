@@ -52,6 +52,7 @@ import { detectSensitiveIndicators, type SensitiveIndicators } from '@/lib/darkr
 import { generateSurfaceScan360Pdf } from '@/lib/surfaceScan360PdfReport';
 import { generateSurfaceScan360Docx } from '@/lib/surfaceScan360DocxReport';
 import { adaptDarkRiskReportToSurfaceScanTemplate } from '@/lib/darkrisk/darkriskReportExportAdapter';
+import { parseMonitoredScopeMixedEntries } from '@/lib/ipRange';
 
 type DashboardTab = 'overview' | 'roadmap' | 'findings' | 'assets' | 'surface' | 'identity' | 'reports';
 
@@ -725,7 +726,11 @@ const DarkRisk360: React.FC = () => {
     });
   }, [assetRows, assetTypeFilter]);
 
-  const handleSyncSurfaceScan = async () => {
+  const handleSyncSurfaceScan = async (options?: {
+    triggerType?: string;
+    includeDtiExtended?: boolean;
+    successMessage?: string;
+  }) => {
     if (!organizationId) {
       toast.error('Nessun cliente selezionato');
       return;
@@ -736,14 +741,15 @@ const DarkRisk360: React.FC = () => {
       const { data, error: invokeError } = await supabase.functions.invoke('darkrisk360-sync-surfacescan', {
         body: {
           customer_id: organizationId,
-          trigger_type: 'manual',
+          trigger_type: options?.triggerType || 'manual',
+          include_dti_extended: options?.includeDtiExtended ?? true,
         },
       });
 
       if (invokeError) throw invokeError;
       if (data?.error) throw new Error(String(data.error));
 
-      toast.success('Sincronizzazione DarkRisk360 completata');
+      toast.success(options?.successMessage || 'Sincronizzazione DarkRisk360 completata');
       void Promise.all([
         refetch(),
         queryClient.invalidateQueries({ queryKey: ['darkrisk360-findings', organizationId] }),
@@ -818,23 +824,49 @@ const DarkRisk360: React.FC = () => {
   };
 
   const handleAddScopeRule = async () => {
-    if (!scopeInput.trim()) {
-      toast.error('Inserisci un dominio o IP in scope');
+    const entries = parseMonitoredScopeMixedEntries(scopeInput);
+    if (entries.length === 0) {
+      toast.error('Inserisci almeno un dominio/IP/range/CIDR in scope');
       return;
     }
+
     setAddingScope(true);
     try {
-      const ok = await addScopeRule(scopeInput.trim(), {
-        discovered_via: 'manual',
-        silent: false,
-        auto_queue_scan: true,
-      });
-      if (ok) {
+      let successCount = 0;
+      const failedEntries: string[] = [];
+
+      for (const entry of entries) {
+        const ok = await addScopeRule(entry, {
+          discovered_via: 'manual',
+          silent: true,
+          auto_queue_scan: true,
+          auto_sync_darkrisk: false,
+        });
+        if (ok) {
+          successCount += 1;
+        } else {
+          failedEntries.push(entry);
+        }
+      }
+
+      if (successCount > 0) {
         setScopeInput('');
+        toast.success(`Scope aggiornato: ${successCount} regole aggiunte`);
+        await handleSyncSurfaceScan({
+          triggerType: 'scope_batch_manual',
+          includeDtiExtended: true,
+          successMessage: 'Scope salvato e sincronizzazione DTI estesa avviata',
+        });
         void Promise.all([
           refetch(),
           queryClient.invalidateQueries({ queryKey: ['darkrisk360-assets', organizationId] }),
         ]);
+      }
+
+      if (failedEntries.length > 0) {
+        toast.error(
+          `Regole non aggiunte: ${failedEntries.slice(0, 3).join(', ')}${failedEntries.length > 3 ? ' ...' : ''}`,
+        );
       }
     } finally {
       setAddingScope(false);
@@ -1080,11 +1112,17 @@ const DarkRisk360: React.FC = () => {
                     <p className="text-sm text-muted-foreground">
                       Inserisci domini/IP direttamente da DarkRisk360: il sistema propaga lo scope, mette in coda i controlli predefiniti e sincronizza automaticamente i moduli attivi del cliente.
                     </p>
+                    <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground space-y-1">
+                      <div className="font-medium text-foreground">Legenda input scope (misto supportato)</div>
+                      <div>Separatore lista: `,` `;` `|` oppure a capo.</div>
+                      <div>Esempio: `terenziboutique.com, cereriaterenzi.com, 203.0.113.10, 203.0.113.10-203.0.113.20, 203.0.113.0/24`</div>
+                      <div>Tipi supportati: dominio, IP singolo, range IP, CIDR.</div>
+                    </div>
                     <div className="flex flex-col gap-2 md:flex-row">
                       <Input
                         value={scopeInput}
                         onChange={(event) => setScopeInput(event.target.value)}
-                        placeholder="es. panapesca.it oppure 203.0.113.10"
+                        placeholder="es. terenziboutique.com, cereriaterenzi.com, 203.0.113.10, 203.0.113.10-203.0.113.20, 203.0.113.0/24"
                         disabled={!organizationId || !isScopeAdmin || scopeSaving || addingScope}
                       />
                       <Button
