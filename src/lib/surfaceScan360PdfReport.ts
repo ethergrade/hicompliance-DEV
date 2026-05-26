@@ -131,11 +131,13 @@ const drawHiSolutionLogo = (doc: jsPDF, x: number, y: number): void => {
 };
 
 const redactReportWords = (value: string) => {
-  const tokens = [
+  const providerTokens = [
     /\bshodan\b/gi,
     /\bpentest-?tools?\b/gi,
     /\bweb[\s-]?check\b/gi,
     /\burlscan\b/gi,
+  ];
+  const technologyTokens = [
     /\bapache\b/gi,
     /\bnginx\b/gi,
     /\bwordpress\b/gi,
@@ -147,7 +149,8 @@ const redactReportWords = (value: string) => {
     /\bjoomla\b/gi,
   ];
   let out = String(value || '');
-  for (const token of tokens) out = out.replace(token, 'componente tecnologica');
+  for (const token of providerTokens) out = out.replace(token, 'SurfaceScan360');
+  for (const token of technologyTokens) out = out.replace(token, 'componente tecnologica');
   return out.replace(/\s{2,}/g, ' ').trim();
 };
 
@@ -186,9 +189,19 @@ const sanitizeAssetLabel = (value: unknown): string => {
     .find((entry) => Boolean(entry && (DOMAIN_RX.test(entry) || extractIpAddress(entry))));
   return token || '';
 };
+const isScopeAggregateTarget = (value: unknown): boolean =>
+  /scope completo in monitoraggio/i.test(String(value || ''));
 const isValidReportAsset = (value: unknown): boolean => {
   const normalized = sanitizeAssetLabel(value);
   return Boolean(normalized && (extractIpAddress(normalized) || DOMAIN_RX.test(normalized)));
+};
+const resolveReportTarget = (...candidates: unknown[]): string => {
+  for (const candidate of candidates) {
+    if (isScopeAggregateTarget(candidate)) continue;
+    const normalized = sanitizeAssetLabel(candidate);
+    if (isValidReportAsset(normalized)) return normalized;
+  }
+  return 'n/d';
 };
 const pickReportAsset = (...candidates: unknown[]): string => {
   for (const candidate of candidates) {
@@ -813,7 +826,8 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     const hostSanitized = sanitizePortHost(hostRaw);
     const ipFromHost = normalizeIp(hostRaw);
     const ip = normalizeIp(input.ip) || ipFromHost || (normalizeIp(hostSanitized) ? normalizeIp(hostSanitized) : '');
-    const host = pickReportAsset(hostSanitized, s.target, input.ip);
+    const host = resolveReportTarget(hostSanitized, input.host, input.ip);
+    if (host === 'n/d' && !ip) return;
     const protocol = String(input.protocol || 'tcp').trim().toLowerCase() || 'tcp';
     const key = `${host}|${ip}|${port}|${protocol}`;
     if (!portEvidenceMap.has(key)) {
@@ -939,7 +953,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
           : services.join(' / ');
       const cveList = Array.from(entry.cves);
       return [
-        pickReportAsset(entry.host, entry.ip, s.target),
+        resolveReportTarget(entry.host, entry.ip),
         entry.ip || '-',
         `${entry.port}/${entry.protocol}`,
         serviceLabel,
@@ -965,17 +979,26 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   sectionTitle(5, 'Evidenze esterne');
   const intel = (report.intel || [])
     .map((i: any) => {
+      const resolvedTarget = resolveReportTarget(
+        i?.target,
+        i?.summary?.domain,
+        i?.summary?.hostname,
+        i?.summary?.host,
+        i?.summary?.url,
+        i?.summary?.ip,
+        i?.summary?.ip_address,
+      );
       if (i && typeof i === 'object' && i.summary_text && !isGenericEvidenceText(String(i.summary_text))) {
         return {
           group: String(i.category || 'Evidenze esterne'),
-          target: String(i.target || 'n/d'),
+          target: resolvedTarget,
           summaryText: redactReportWords(String(i.summary_text)),
         };
       }
       return {
         group: providerLabel(String(i?.provider || '')),
-        target: String(i?.target || 'n/d'),
-        summaryText: summarizeIntel(String(i?.provider || ''), String(i?.target || 'n/d'), i?.summary),
+        target: resolvedTarget,
+        summaryText: summarizeIntel(String(i?.provider || ''), resolvedTarget, i?.summary),
       };
     })
     .filter((i: any) => i.summaryText && !isJunkSummary(i.summaryText));
@@ -986,8 +1009,26 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     .filter((ob: any) => ['dnssec','tech_stack','mail_security','security_headers','ct_log'].includes(ob.module))
     .map((ob: any) => ({
       group: providerLabel(ob.module),
-      target: ob.value?.domain || ob.value?.url || s.target || 'n/d',
-      summaryText: summarizeIntel(ob.module, ob.value?.domain || ob.value?.url || s.target || 'n/d', ob.value),
+      target: resolveReportTarget(
+        ob.value?.domain,
+        ob.value?.hostname,
+        ob.value?.host,
+        ob.value?.target,
+        ob.value?.url,
+        ob.title,
+      ),
+      summaryText: summarizeIntel(
+        ob.module,
+        resolveReportTarget(
+          ob.value?.domain,
+          ob.value?.hostname,
+          ob.value?.host,
+          ob.value?.target,
+          ob.value?.url,
+          ob.title,
+        ),
+        ob.value,
+      ),
     }));
   const allIntel = [...intel, ...obsAsIntel];
 

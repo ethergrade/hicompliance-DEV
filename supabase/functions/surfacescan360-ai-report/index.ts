@@ -280,6 +280,23 @@ function normalizeAssetLabel(value: string): string {
   return raw.replace(/^https?:\/\//i, '').replace(/\/+$/, '').trim().toLowerCase();
 }
 
+function isScopeAggregateLabel(value: unknown): boolean {
+  return /scope completo in monitoraggio/i.test(String(value || ''));
+}
+
+function resolveSpecificAssetTarget(...candidates: unknown[]): string {
+  for (const candidate of candidates) {
+    if (isScopeAggregateLabel(candidate)) continue;
+    const normalized = normalizeAssetLabel(String(candidate || ''));
+    if (!normalized) continue;
+    const inferred = inferAssetType(normalized);
+    if (inferred === 'domain' || inferred === 'subdomain' || inferred === 'ip' || inferred === 'url') {
+      return normalized;
+    }
+  }
+  return '';
+}
+
 function isValidCveAssetLabel(value: string): boolean {
   const normalized = normalizeAssetLabel(value);
   if (!normalized) return false;
@@ -349,9 +366,9 @@ function priorityFromCvss(cvss: number | null): { priority: string; color: strin
 
 function redactTechnologyMentions(value: string): string {
   let out = String(value || '');
-  for (const token of TECHNOLOGY_TOKENS) {
-    out = out.replace(token, 'componente tecnologica');
-  }
+  out = out
+    .replace(/\b(?:shodan|urlscan|web\s*-?\s*check|pentest\s*-?\s*tools?)\b/gi, 'SurfaceScan360');
+  for (const token of TECHNOLOGY_TOKENS) out = out.replace(token, 'componente tecnologica');
   return out.replace(/\s{2,}/g, ' ').trim();
 }
 
@@ -1449,16 +1466,26 @@ Deno.serve(async (req) => {
     const intelDedupMap = new Map<string, any>();
     for (const entry of intelScoped) {
       const summaryText = toTextSummary(entry.summary);
+      const summaryObj = entry?.summary && typeof entry.summary === 'object' ? entry.summary as Record<string, any> : {};
+      const resolvedTarget = resolveSpecificAssetTarget(
+        entry?.target,
+        summaryObj?.host,
+        summaryObj?.hostname,
+        summaryObj?.domain,
+        summaryObj?.url,
+        summaryObj?.ip,
+        summaryObj?.ip_address,
+      ) || 'n/d';
       const key = [
         String(entry?.provider || '').toLowerCase(),
-        normalizeAssetLabel(String(entry?.target || '')),
+        resolvedTarget,
         summaryText,
       ].join('|');
       if (!intelDedupMap.has(key)) {
         intelDedupMap.set(key, {
           ...entry,
           category: mapIntelCategory(String(entry.provider || '')),
-          target: entry.target,
+          target: resolvedTarget,
           summary_text: summaryText,
           confidence: entry.confidence || null,
         });
@@ -1671,7 +1698,18 @@ Deno.serve(async (req) => {
     }
 
     for (const intelEntry of intelScoped) {
-      const target = String(intelEntry?.target || '').trim();
+      const summaryObj = intelEntry?.summary && typeof intelEntry.summary === 'object'
+        ? intelEntry.summary as Record<string, any>
+        : {};
+      const target = resolveSpecificAssetTarget(
+        intelEntry?.target,
+        summaryObj?.host,
+        summaryObj?.hostname,
+        summaryObj?.domain,
+        summaryObj?.url,
+        summaryObj?.ip,
+        summaryObj?.ip_address,
+      );
       if (!target) continue;
       const targetType = isIpv4(target) ? 'ip' : inferAssetType(target);
       registerAsset(target, targetType, isIpv4(target) ? target : null);
@@ -1679,9 +1717,14 @@ Deno.serve(async (req) => {
 
     const cveByAsset = new Map<string, Set<string>>();
     const cveSet = new Set<string>();
+    const primaryJobTarget = normalizeAssetLabel(
+      String(anchorJob?.raw_target || anchorJob?.normalized_target || ''),
+    );
     findings.forEach((finding: any) => {
-      const rawAsset = String(finding.affected_asset || finding.affected_url || scopeTargetLabel || '').trim();
-      const asset = normalizeAssetLabel(rawAsset) || (isValidCveAssetLabel(scopeTargetLabel) ? normalizeAssetLabel(scopeTargetLabel) : '') || 'Asset principale';
+      const rawAsset = String(finding.affected_asset || finding.affected_url || '').trim();
+      const asset = normalizeAssetLabel(rawAsset)
+        || (isValidCveAssetLabel(primaryJobTarget) ? primaryJobTarget : '')
+        || 'Asset principale';
       registerAsset(asset, inferAssetType(asset), String(finding.ip || '').trim() || null);
       const ipFromFinding = String(finding.ip || finding.evidence?.ip || '').trim();
       if (ipFromFinding && isIpv4(ipFromFinding)) {
