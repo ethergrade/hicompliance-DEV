@@ -3,6 +3,7 @@
 // Invocato da pg_cron. Auth: x-cron-secret oppure service role.
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { dispatchSurfaceScanQueue } from '../_shared/surface-scan-engine.ts';
 
 interface MonitoredRule {
   id: string;
@@ -561,6 +562,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const orgFilter: string | undefined = body.organization_id;
     const triggeredBy: string = body.triggered_by ?? 'cron';
+    const dispatchOnly = Boolean(body.dispatch_only);
 
     // 1) Carica regole monitorate (filtra opzionalmente per org)
     let query = supabase.from('surface_scan_monitored_ips').select('*');
@@ -590,6 +592,35 @@ Deno.serve(async (req) => {
       internalSecret;
 
     for (const [orgId, orgRules] of byOrg.entries()) {
+      let queuedClassicStarted = 0;
+      try {
+        const startedClassicJobs = await dispatchSurfaceScanQueue(supabase, orgId, {
+          initiatedByUserId: null,
+          maxToStart: 3,
+        });
+        queuedClassicStarted = startedClassicJobs.length;
+      } catch (queueErr) {
+        console.error(`Classic SurfaceScan queue dispatch failed for org ${orgId}:`, queueErr);
+        await supabase.from('external_scan_audit_log').insert({
+          organization_id: orgId,
+          actor_email: 'system:cron',
+          action: 'auto_classic_queue_dispatch_failed',
+          details: {
+            error: queueErr instanceof Error ? queueErr.message : String(queueErr),
+          },
+        });
+      }
+
+      if (dispatchOnly) {
+        results.push({
+          orgId,
+          ok: true,
+          mode: 'dispatch_only',
+          queued_classic_started: queuedClassicStarted,
+        });
+        continue;
+      }
+
       const { assets, truncated, perRule } = await scanOrganization(orgId, orgRules, SHODAN_API_KEY);
 
       const total = assets.length;
@@ -617,9 +648,9 @@ Deno.serve(async (req) => {
       });
       if (insErr) {
         console.error(`Insert failed for org ${orgId}:`, insErr);
-        results.push({ orgId, ok: false, error: insErr.message });
+        results.push({ orgId, ok: false, error: insErr.message, queued_classic_started: queuedClassicStarted });
       } else {
-        results.push({ orgId, ok: true, total_assets: total, critical, warning, safe });
+        results.push({ orgId, ok: true, total_assets: total, critical, warning, safe, queued_classic_started: queuedClassicStarted });
       }
 
       // Pentest-Tools validation: SEMPRE attiva per ogni scansione

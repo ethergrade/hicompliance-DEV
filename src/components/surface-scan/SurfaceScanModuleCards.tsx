@@ -63,6 +63,10 @@ interface ModuleResultRow {
   severity: 'info' | 'low' | 'medium' | 'high' | 'critical';
   duration_ms: number | null;
   completed_at: string | null;
+  error_message?: string | null;
+  normalized?: Record<string, any> | null;
+  raw?: Record<string, any> | null;
+  source?: string | null;
 }
 
 interface ObservationRow {
@@ -292,6 +296,43 @@ const statusLabel = (status: ModuleOutcomeStatus): string => {
   if (status === 'error') return 'Errore';
   if (status === 'running') return 'In esecuzione';
   return 'In coda';
+};
+
+const firstText = (...values: unknown[]): string => {
+  for (const value of values) {
+    const text = String(value || '').trim();
+    if (text) return text;
+  }
+  return '';
+};
+
+const formatModuleDiagnostic = (moduleKey: string, rawMessage: string): string => {
+  const message = rawMessage.trim();
+  const lowered = message.toLowerCase();
+  const moduleLabel = moduleKey === 'http_security' ? 'HTTP Security' : 'Modulo';
+
+  if (!message) {
+    return `${moduleLabel}: errore non classificato. Il prossimo rerun riprovera il controllo e aggiornera il dettaglio.`;
+  }
+  if (/module timeout|timeout|timed out|aborted|deadline/i.test(message)) {
+    return `${moduleLabel}: timeout durante il controllo. Il target non ha risposto entro il tempo massimo; non significa che gli header siano tutti assenti.`;
+  }
+  if (/no route to host|network is unreachable|host unreachable/i.test(lowered)) {
+    return `${moduleLabel}: host non raggiungibile dalla rete di scansione al momento del test. Verificare DNS/IP e raggiungibilita pubblica del servizio web.`;
+  }
+  if (/dns|enotfound|resolve|name or service not known/i.test(lowered)) {
+    return `${moduleLabel}: risoluzione DNS non riuscita durante la scansione. Il controllo viene considerato non valutabile finche il target non risolve.`;
+  }
+  if (/certificate|tls|ssl|handshake/i.test(lowered)) {
+    return `${moduleLabel}: errore TLS/certificato durante il fetch del target. Verificare certificato, SNI e catena TLS.`;
+  }
+  if (/connection refused|connect error|connection reset|connection closed/i.test(lowered)) {
+    return `${moduleLabel}: connessione rifiutata o chiusa dal target durante il fetch HTTP/HTTPS.`;
+  }
+  if (/fetch failed|sending request|client error/i.test(lowered)) {
+    return `${moduleLabel}: richiesta HTTP/HTTPS non completata. Dettaglio tecnico: ${message.slice(0, 220)}`;
+  }
+  return `${moduleLabel}: ${message.slice(0, 260)}`;
 };
 
 const outcomeFromJobStatus = (status: string): ModuleOutcomeStatus => {
@@ -578,7 +619,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
         const [moduleRows, observationRows, findingRows, exposureRows] = await Promise.all([
           fetchRowsByJobIds<ModuleResultRow>(
             'surface_scan_module_results',
-            'scan_job_id, module_key, module_label, status, severity, duration_ms, completed_at',
+            'scan_job_id, module_key, module_label, status, severity, duration_ms, completed_at, error_message, normalized, raw, source',
             jobIds,
             { orderBy: 'completed_at', ascending: false },
           ),
@@ -975,6 +1016,33 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
     return out;
   }, [selectedObservations, moduleOutcomes, serverLocationCoverage, openPortRows.length]);
 
+  const moduleDiagnostics = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const row of selectedModuleResults) {
+      const status = String(row.status || '').toLowerCase();
+      if (!['error', 'timeout'].includes(status)) continue;
+      const message = firstText(
+        row.error_message,
+        row.normalized?.error,
+        row.normalized?.message,
+        row.raw?.error,
+        row.raw?.message,
+      );
+      if (!out[row.module_key]) {
+        out[row.module_key] = formatModuleDiagnostic(row.module_key, message);
+      }
+    }
+
+    for (const row of selectedObservations) {
+      if (!['module_error', 'module_timeout'].includes(row.observation_type)) continue;
+      const message = firstText(row.value?.error, row.value?.message, row.value?.reason);
+      if (!out[row.module]) {
+        out[row.module] = formatModuleDiagnostic(row.module, message);
+      }
+    }
+    return out;
+  }, [selectedModuleResults, selectedObservations]);
+
   const scoreSummary = useMemo(() => {
     const scores = latestScopeJobs
       .map((entry) => Number(entry.summary?.overall_score))
@@ -1031,6 +1099,9 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
 
   const httpSecurity = (observationByModule.http_security?.value || {}) as Record<string, any>;
   const httpChecks = (httpSecurity.checks || {}) as Record<string, boolean>;
+  const httpSecurityOutcome = moduleOutcomes.http_security || 'success_no_data';
+  const httpSecurityDiagnostic = moduleDiagnostics.http_security;
+  const httpSecurityEvaluated = httpSecurityOutcome === 'success_with_data' || httpSecurityOutcome === 'success_no_data';
   const dnssec = (observationByModule.dnssec?.value || {}) as Record<string, any>;
   const threats = (observationByModule.threats?.value || {}) as Record<string, any>;
   const iocFreshList = (threats?.ioc_fresh_list || threats?.intelguard || {}) as Record<string, any>;
@@ -1370,11 +1441,22 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
             <div className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium flex items-center gap-2"><Shield className="w-4 h-4" />HTTP Security</div>
-                <Badge className={statusBadgeClass[moduleOutcomes.http_security || 'success_no_data']}>
-                  {statusLabel(moduleOutcomes.http_security || 'success_no_data')}
+                <Badge className={statusBadgeClass[httpSecurityOutcome]}>
+                  {statusLabel(httpSecurityOutcome)}
                 </Badge>
               </div>
               <div className="text-xs text-muted-foreground">Score: {toPercent(httpSecurity.score)} / 100 · HTTP {httpSecurity.statusCode ?? '-'}</div>
+              {httpSecurityDiagnostic && (
+                <div className="rounded-md border border-red-500/25 bg-red-500/10 p-2 text-xs text-red-100">
+                  <div className="font-medium text-red-200">Motivo errore</div>
+                  <p className="mt-1 leading-relaxed">{httpSecurityDiagnostic}</p>
+                </div>
+              )}
+              {!httpSecurityDiagnostic && !httpSecurityEvaluated && (
+                <div className="rounded-md border border-amber-500/25 bg-amber-500/10 p-2 text-xs text-amber-100">
+                  Controllo HTTP Security non ancora valutato per questo target: lo stato verra aggiornato dal prossimo ciclo di scansione.
+                </div>
+              )}
               <div className="space-y-1.5 max-h-44 overflow-auto pr-1">
                 {headerRules.map((rule) => {
                   const ok = Boolean(httpChecks[rule.key]);
@@ -1383,10 +1465,20 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                       <TooltipTrigger asChild>
                         <div className="flex items-center justify-between gap-2 text-xs cursor-help">
                           <span className="truncate">{rule.label}</span>
-                          {ok ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <XCircle className="w-3.5 h-3.5 text-red-400" />}
+                          {!httpSecurityEvaluated ? (
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                          ) : ok ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : (
+                            <XCircle className="w-3.5 h-3.5 text-red-400" />
+                          )}
                         </div>
                       </TooltipTrigger>
-                      <TooltipContent className="max-w-xs text-xs">{rule.remediation}</TooltipContent>
+                      <TooltipContent className="max-w-xs text-xs">
+                        {!httpSecurityEvaluated
+                          ? 'Controllo non valutabile finche il target HTTP/HTTPS non risponde correttamente.'
+                          : rule.remediation}
+                      </TooltipContent>
                     </Tooltip>
                   );
                 })}
