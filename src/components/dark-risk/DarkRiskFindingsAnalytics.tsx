@@ -147,6 +147,11 @@ function shortSiteLabel(value: string): string {
   return `${value.slice(0, 35)}...`;
 }
 
+function isCredentialCompromiseRow(row: Row): boolean {
+  const sourceText = `${row.category || ''} ${row.finding_type || ''} ${row.title || ''}`.toLowerCase();
+  return /credential|credenzial|password|stealer|compromis/.test(sourceText);
+}
+
 export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: boolean; dti?: DtiOverviewData | null }> = ({
   rows,
   extendedMode = false,
@@ -258,6 +263,15 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
         return b.total - a.total;
       });
 
+    const credentialCompromiseRows = rows
+      .filter((row) => isCredentialCompromiseRow(row))
+      .sort((a, b) => {
+        const severityDelta = severityRank[b.severity] - severityRank[a.severity];
+        if (severityDelta !== 0) return severityDelta;
+        return Number(b.risk_score || 0) - Number(a.risk_score || 0);
+      })
+      .slice(0, 120);
+
     return {
       topCategories,
       siteRows,
@@ -265,6 +279,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
       sensitiveRows,
       detailedSensitiveRows,
       groupedAssetRows,
+      credentialCompromiseRows,
     };
   }, [rows, dti]);
 
@@ -356,6 +371,15 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
               </div>
             ))}
           </div>
+          {(() => {
+            const passwordCount = data.sensitiveRows.find((row) => row.tag === 'passwords')?.count || 0;
+            if (data.credentialCompromiseRows.length === 0 || passwordCount > 0) return null;
+            return (
+              <p className="mt-3 text-xs text-amber-300">
+                Sono presenti segnali di compromissione credenziale ma non sono stati estratti valori password in chiaro dai payload correnti.
+              </p>
+            );
+          })()}
           {extendedMode ? (
             <div className="mt-4 rounded-md border border-border/60 bg-background/30 p-3">
               <p className="text-xs font-medium mb-2">Dettaglio evidenze sensibili su query domini in scope (`@dominio`)</p>
@@ -407,6 +431,49 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
             <p className="text-xs text-muted-foreground mt-4">
               Dettaglio contenuti disponibile in modalità DarkRisk360 Estesa. In Standard vengono mostrati solo i conteggi.
             </p>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <p className="text-sm font-medium">Compromissioni credenziali rilevate (lista in chiaro)</p>
+            <Badge variant="outline">{data.credentialCompromiseRows.length}</Badge>
+          </div>
+          {data.credentialCompromiseRows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nessuna compromissione credenziale classificata nel filtro corrente.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[980px] text-xs">
+                <thead>
+                  <tr className="border-b border-border/60 text-left text-muted-foreground">
+                    <th className="py-2 pr-3">Severity</th>
+                    <th className="py-2 pr-3">Risk</th>
+                    <th className="py-2 pr-3">Sito</th>
+                    <th className="py-2 pr-3">Asset</th>
+                    <th className="py-2 pr-3">Titolo</th>
+                    <th className="py-2 pr-3">Tipo</th>
+                    <th className="py-2">Source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.credentialCompromiseRows.map((row) => (
+                    <tr key={`credential-row-${row.id}`} className="border-b border-border/40 align-top">
+                      <td className="py-2 pr-3">
+                        <Badge className={severityTone[row.severity]}>{row.severity}</Badge>
+                      </td>
+                      <td className="py-2 pr-3 font-semibold">{row.risk_score}</td>
+                      <td className="py-2 pr-3">{row.site || '-'}</td>
+                      <td className="py-2 pr-3">{row.asset || '-'}</td>
+                      <td className="py-2 pr-3">{row.title}</td>
+                      <td className="py-2 pr-3">{row.finding_type}</td>
+                      <td className="py-2">{row.source}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 

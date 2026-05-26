@@ -20,12 +20,44 @@ export type SensitiveValueHit = {
 };
 
 const domainRegex = /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b/gi;
-const passwordRegex = /\b(pass(?:word)?|pwd|credential(?:s)?|combo|hash|stealer|login\s*[:=]|user(?:name)?\s*[:=])\b/gi;
 const addressRegex = /\b(via|viale|piazza|corso|largo|strada|street|road|avenue|boulevard|blvd)\s+[a-z0-9à-ÿ'.,\-\s]{2,}\b/gi;
 const phoneCandidateRegex = /(?:\+?\d[\d\s().-]{6,}\d)/g;
 const cardCandidateRegex = /\b(?:\d[ -]*?){13,19}\b/g;
-const passwordValueRegex = /\b(?:password|pass|pwd|credential(?:s)?)\s*[:=]\s*([^\s,;|]{3,120})/gi;
+const passwordValueRegex = /\b(?:password|pass|pwd|credential(?:s)?|secret|token)\s*[:=]\s*([^\s,;|]{3,120})/gi;
 const emailPasswordPairRegex = /\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\s*[:;|]\s*([^\s,;|]{3,120})/gi;
+const accountPasswordPairRegex = /\b(?:[a-z][a-z0-9._-]{2,63})\s*[:;|]\s*([^\s,;|]{3,120})/gi;
+
+const invalidPasswordTokens = new Set([
+  'password',
+  'pass',
+  'passwd',
+  'pwd',
+  'credential',
+  'credentials',
+  'null',
+  'none',
+  'n/a',
+  'na',
+  'unknown',
+  'test',
+  'example',
+  'changeme',
+  'qwerty',
+  '123456',
+]);
+
+function isLikelyPasswordCandidate(value: string): boolean {
+  const clean = normalizeText(value);
+  if (!clean) return false;
+  if (clean.length < 3 || clean.length > 120) return false;
+  const lower = clean.toLowerCase();
+  if (invalidPasswordTokens.has(lower)) return false;
+  if (/^https?:\/\//i.test(clean)) return false;
+  if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(clean)) return false;
+  if (/^[*xX•]+$/.test(clean)) return false;
+  if (/^\d{1,6}$/.test(clean)) return false;
+  return true;
+}
 
 function uniqueCount(matches: string[]): number {
   if (!matches.length) return 0;
@@ -145,16 +177,20 @@ function extractPasswordCandidates(text: string): string[] {
   let match: RegExpExecArray | null = null;
   passwordValueRegex.lastIndex = 0;
   emailPasswordPairRegex.lastIndex = 0;
+  accountPasswordPairRegex.lastIndex = 0;
   while ((match = passwordValueRegex.exec(text)) !== null) {
     const value = normalizeText(String(match[1] || ''));
-    if (!value) continue;
-    if (value.length < 3 || value.length > 120) continue;
+    if (!isLikelyPasswordCandidate(value)) continue;
     out.add(value);
   }
   while ((match = emailPasswordPairRegex.exec(text)) !== null) {
     const value = normalizeText(String(match[1] || ''));
-    if (!value) continue;
-    if (value.length < 3 || value.length > 120) continue;
+    if (!isLikelyPasswordCandidate(value)) continue;
+    out.add(value);
+  }
+  while ((match = accountPasswordPairRegex.exec(text)) !== null) {
+    const value = normalizeText(String(match[1] || ''));
+    if (!isLikelyPasswordCandidate(value)) continue;
     out.add(value);
   }
   return Array.from(out);
@@ -175,7 +211,8 @@ export function detectSensitiveIndicators(input: string): SensitiveIndicators {
   }
 
   const domains = uniqueCount(text.match(domainRegex) || []);
-  const passwords = uniqueCount(text.match(passwordRegex) || []);
+  const passwordCandidates = extractPasswordCandidates(text);
+  const passwords = uniqueCount(passwordCandidates);
   const addresses = uniqueCount(text.match(addressRegex) || []);
   const creditCards = uniqueCount(extractValidCardCandidates(text));
   const phoneNumbers = uniqueCount(extractValidPhoneCandidates(text));
