@@ -28,6 +28,7 @@ export interface AddRuleOptions {
   discovered_from?: string | null;
   silent?: boolean;
   auto_queue_scan?: boolean;
+  auto_sync_darkrisk?: boolean;
 }
 
 interface UseSurfaceScanMonitoredIpsReturn {
@@ -268,6 +269,7 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
       const shouldSyncDarkRisk =
         darkRiskEnabled
         && opts.auto_queue_scan !== false
+        && opts.auto_sync_darkrisk !== false
         && String(opts.discovered_via || 'manual') !== 'subdomain_dump';
       if (shouldSyncDarkRisk) {
         void triggerDarkRiskScopeSync({

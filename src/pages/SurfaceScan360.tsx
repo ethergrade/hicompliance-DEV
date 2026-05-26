@@ -45,7 +45,7 @@ import { useSurfaceScanMonitoredIps } from '@/hooks/useSurfaceScanMonitoredIps';
 import { useSurfaceScanEngine, type SurfaceScanProfile } from '@/hooks/useSurfaceScanEngine';
 import { useSurfaceScanDiscoveredAssets } from '@/hooks/useSurfaceScanDiscoveredAssets';
 import { useSurfaceScanFindings } from '@/hooks/useSurfaceScanFindings';
-import { isIpInRange } from '@/lib/ipRange';
+import { isIpInRange, parseMonitoredScopeMixedEntries } from '@/lib/ipRange';
 import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useSubdomainDump } from '@/hooks/useSubdomainDump';
@@ -573,19 +573,8 @@ const SurfaceScan360: React.FC = () => {
     setAssetPage(1);
   }, [assetSearch, ipScopeRules.length, scanDiscovery.discoveredIps.length]);
 
-  const parseScopeMixedEntries = (raw: string): string[] => {
-    return Array.from(
-      new Set(
-        String(raw || '')
-          .split(/[,\n;|]+/g)
-          .map((token) => token.trim())
-          .filter(Boolean),
-      ),
-    );
-  };
-
   const handleAddMonitoredIpRule = async () => {
-    const entries = parseScopeMixedEntries(newMonitoredIpInput);
+    const entries = parseMonitoredScopeMixedEntries(newMonitoredIpInput);
     if (entries.length === 0) {
       toast.error('Inserisci almeno un dominio/IP/range/CIDR');
       return;
