@@ -767,6 +767,24 @@ const DarkRisk360: React.FC = () => {
     });
   }, [assetRows, assetTypeFilter]);
 
+  const surfaceLinkedStats = useMemo(() => {
+    const surfaceRows = findingRows.filter((row) => {
+      const marker = `${row.source} ${row.source_origin || ''} ${row.source_module || ''} ${row.finding_type}`.toLowerCase();
+      return marker.includes('surface') || marker.includes('open_port') || marker.includes('service_fingerprint');
+    });
+
+    const approvedAssets = assetRows.filter((row) => row.scope_status.toLowerCase() === 'approved');
+    const highPriority = surfaceRows.filter((row) => row.severity === 'critical' || row.severity === 'high').length;
+    const latestSurfaceRows = surfaceRows.filter((row) => row.source_origin === 'surface_latest' || row.source_scan_job_id);
+
+    return {
+      findings: surfaceRows.length,
+      latestFindings: latestSurfaceRows.length,
+      highPriority,
+      assets: approvedAssets.length,
+    };
+  }, [assetRows, findingRows]);
+
   const handleSyncSurfaceScan = async (options?: {
     triggerType?: string;
     includeDtiExtended?: boolean;
@@ -1014,6 +1032,22 @@ const DarkRisk360: React.FC = () => {
       query: prev.query || fallbackType,
       scope: 'all',
     }));
+  };
+
+  const openSurfaceFindings = () => {
+    setActiveTab('findings');
+    setFindingFilter({
+      severity: 'all',
+      category: null,
+      query: 'SurfaceScan360',
+      highlightedFindingId: null,
+      scope: 'latest_overview',
+    });
+  };
+
+  const openSurfaceAssets = () => {
+    setActiveTab('assets');
+    setAssetTypeFilter('all');
   };
 
   const onKpiClick = (key: string) => {
@@ -1419,14 +1453,89 @@ const DarkRisk360: React.FC = () => {
                   <CardHeader className="pb-3">
                     <CardTitle>Surface</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-2 text-sm text-muted-foreground">
+                  <CardContent className="space-y-4">
                     {overview.latest_scan ? (
                       <>
-                        <p>Questa vista aggrega i segnali SurfaceScan360 (domini, IP, porte, servizi, TLS, CVE) sui dati reali già sincronizzati.</p>
-                        <p>Usa la tab Findings per consultare le evidenze operative filtrate per severità, categoria e contesto.</p>
+                        <div className="space-y-2 text-sm text-muted-foreground">
+                          <p>Questa vista aggrega i segnali SurfaceScan360 (domini, IP, porte, servizi, TLS, CVE) sui dati reali già sincronizzati.</p>
+                          <p>Usa i collegamenti rapidi per aprire il modulo operativo o filtrare direttamente ritrovamenti e asset collegati.</p>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div className="rounded-lg border border-border/70 bg-muted/20 p-4 space-y-3">
+                            <div>
+                              <p className="text-sm font-semibold text-foreground">Modulo SurfaceScan360</p>
+                              <p className="text-xs text-muted-foreground">Apri dashboard, scope, porte, tecnologie e repository report.</p>
+                            </div>
+                            <Button variant="outline" size="sm" onClick={() => navigate('/surface-scan')}>
+                              <ExternalLink className="w-4 h-4 mr-2" />
+                              Apri SurfaceScan360
+                            </Button>
+                          </div>
+
+                          <div className="rounded-lg border border-border/70 bg-muted/20 p-4 space-y-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-foreground">Ritrovamenti tecnici</p>
+                                <p className="text-xs text-muted-foreground">Finding Surface sincronizzati e filtrati nel ciclo corrente.</p>
+                              </div>
+                              <Badge variant="outline">{surfaceLinkedStats.latestFindings || surfaceLinkedStats.findings}</Badge>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <Badge className="bg-red-500/15 text-red-300 border-red-500/30">{surfaceLinkedStats.highPriority} critical/high</Badge>
+                            </div>
+                            <Button variant="outline" size="sm" onClick={openSurfaceFindings}>
+                              <Activity className="w-4 h-4 mr-2" />
+                              Vedi ritrovamenti
+                            </Button>
+                          </div>
+
+                          <div className="rounded-lg border border-border/70 bg-muted/20 p-4 space-y-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-foreground">Asset in scope</p>
+                                <p className="text-xs text-muted-foreground">Domini, IP, URL e identity importati nel perimetro DarkRisk360.</p>
+                              </div>
+                              <Badge variant="outline">{surfaceLinkedStats.assets}</Badge>
+                            </div>
+                            <Button variant="outline" size="sm" onClick={openSurfaceAssets}>
+                              <Shield className="w-4 h-4 mr-2" />
+                              Vedi asset collegati
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-background/40 p-3">
+                          <Badge variant="secondary">Sync automatico attivo</Badge>
+                          <Badge variant="outline">Finding Surface: {surfaceLinkedStats.findings}</Badge>
+                          <Badge variant="outline">Asset approvati: {surfaceLinkedStats.assets}</Badge>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={syncingScan}
+                            onClick={() => void handleSyncSurfaceScan({ triggerType: 'surface_tab_manual', successMessage: 'Sincronizzazione SurfaceScan360 aggiornata' })}
+                          >
+                            <RefreshCw className={`w-4 h-4 mr-2 ${syncingScan ? 'animate-spin' : ''}`} />
+                            Aggiorna collegamenti
+                          </Button>
+                        </div>
                       </>
                     ) : (
-                      <p>I dati SurfaceScan360 non sono disponibili per questa scansione. Verificare integrazione o rilanciare il job.</p>
+                      <div className="space-y-3">
+                        <p className="text-sm text-muted-foreground">I dati SurfaceScan360 non sono disponibili per questa scansione. Verificare integrazione o rilanciare il job.</p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button variant="outline" size="sm" onClick={() => navigate('/surface-scan')}>
+                            <ExternalLink className="w-4 h-4 mr-2" />
+                            Apri SurfaceScan360
+                          </Button>
+                          <Button
+                            size="sm"
+                            disabled={syncingScan}
+                            onClick={() => void handleSyncSurfaceScan({ triggerType: 'surface_tab_manual', successMessage: 'Sincronizzazione SurfaceScan360 avviata' })}
+                          >
+                            <RefreshCw className={`w-4 h-4 mr-2 ${syncingScan ? 'animate-spin' : ''}`} />
+                            Avvia sincronizzazione
+                          </Button>
+                        </div>
+                      </div>
                     )}
                   </CardContent>
                 </Card>
