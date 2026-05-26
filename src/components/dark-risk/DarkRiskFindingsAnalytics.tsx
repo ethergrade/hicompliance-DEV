@@ -8,7 +8,6 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -121,6 +120,13 @@ type IdentityEvidenceRow = {
 };
 
 const categoryPalette = ['#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ef4444', '#64748b', '#3b82f6', '#a855f7'];
+const identityLegendItems = [
+  { label: 'Password', color: '#f59e0b' },
+  { label: 'Domini', color: '#8b5cf6' },
+  { label: 'Indirizzi', color: '#22c55e' },
+  { label: 'Carte', color: '#ef4444' },
+  { label: 'Telefoni', color: '#06b6d4' },
+];
 const scopePalette: Record<string, string> = {
   approved: '#22c55e',
   candidate: '#f59e0b',
@@ -158,6 +164,20 @@ const scopeTone: Record<string, string> = {
   excluded: 'bg-red-500/20 text-red-300 border-red-500/40',
   unknown: 'bg-slate-500/20 text-slate-300 border-slate-500/40',
 };
+
+function ChartLegend({ items }: { items: Array<{ label: string; color: string }> }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs">
+      {items.map((item) => (
+        <span key={`${item.label}-${item.color}`} className="inline-flex items-center gap-1.5 text-muted-foreground">
+          <span className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: item.color }} />
+          <span>{item.label}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
 
 function normalizeSensitiveTag(value: string): SensitiveTagKey | null {
   const normalized = String(value || '').trim().toLowerCase();
@@ -456,24 +476,29 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
               <p className="text-sm font-medium">Finding per sito (stack categoria)</p>
               <Badge variant="outline">Top {data.siteRows.length} siti</Badge>
             </div>
-            <div className="h-[280px]">
+            <div className="h-[265px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data.siteRows} margin={{ top: 8, right: 12, left: 0, bottom: 28 }}>
+                <BarChart data={data.siteRows} margin={{ top: 8, right: 12, left: 0, bottom: 68 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.25)" />
-                  <XAxis dataKey="siteLabel" interval={0} angle={-18} textAnchor="end" height={56} stroke="#94a3b8" />
+                  <XAxis dataKey="siteLabel" interval={0} angle={-18} textAnchor="end" height={76} stroke="#94a3b8" />
                   <YAxis allowDecimals={false} stroke="#94a3b8" />
                   <Tooltip
                     contentStyle={{ background: '#0b1220', border: '1px solid rgba(148,163,184,0.3)' }}
                     formatter={(value: number, key: string) => [value, key]}
                     labelFormatter={(label) => String(label)}
                   />
-                  <Legend />
                   {data.topCategories.map((category, index) => (
                     <Bar key={category} dataKey={category} stackId="siteCategories" fill={categoryPalette[index % categoryPalette.length]} />
                   ))}
                 </BarChart>
               </ResponsiveContainer>
             </div>
+            <ChartLegend
+              items={data.topCategories.map((category, index) => ({
+                label: category,
+                color: categoryPalette[index % categoryPalette.length],
+              }))}
+            />
           </div>
 
           <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
@@ -692,25 +717,27 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
             </p>
           ) : (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              <div className="h-[260px] rounded-md border border-border/60 bg-background/30 p-3">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={data.identityRows} margin={{ top: 8, right: 12, left: 0, bottom: 42 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.25)" />
-                    <XAxis dataKey="identityLabel" interval={0} angle={-18} textAnchor="end" height={64} stroke="#94a3b8" />
-                    <YAxis allowDecimals={false} stroke="#94a3b8" />
-                    <Tooltip
-                      contentStyle={{ background: '#0b1220', border: '1px solid rgba(148,163,184,0.3)' }}
-                      formatter={(value: number, key: string) => [value, sensitiveLabel[key] || key]}
-                      labelFormatter={(label) => String(label)}
-                    />
-                    <Legend />
-                    <Bar dataKey="passwords" stackId="identitySensitive" name="Password" fill="#f59e0b" />
-                    <Bar dataKey="domains" stackId="identitySensitive" name="Domini" fill="#8b5cf6" />
-                    <Bar dataKey="addresses" stackId="identitySensitive" name="Indirizzi" fill="#22c55e" />
-                    <Bar dataKey="credit_cards" stackId="identitySensitive" name="Carte" fill="#ef4444" />
-                    <Bar dataKey="phone_numbers" stackId="identitySensitive" name="Telefoni" fill="#06b6d4" />
-                  </BarChart>
-                </ResponsiveContainer>
+              <div className="rounded-md border border-border/60 bg-background/30 p-3">
+                <div className="h-[240px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={data.identityRows} margin={{ top: 8, right: 12, left: 0, bottom: 64 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.25)" />
+                      <XAxis dataKey="identityLabel" interval={0} angle={-18} textAnchor="end" height={74} stroke="#94a3b8" />
+                      <YAxis allowDecimals={false} stroke="#94a3b8" />
+                      <Tooltip
+                        contentStyle={{ background: '#0b1220', border: '1px solid rgba(148,163,184,0.3)' }}
+                        formatter={(value: number, key: string) => [value, sensitiveLabel[key] || key]}
+                        labelFormatter={(label) => String(label)}
+                      />
+                      <Bar dataKey="passwords" stackId="identitySensitive" name="Password" fill="#f59e0b" />
+                      <Bar dataKey="domains" stackId="identitySensitive" name="Domini" fill="#8b5cf6" />
+                      <Bar dataKey="addresses" stackId="identitySensitive" name="Indirizzi" fill="#22c55e" />
+                      <Bar dataKey="credit_cards" stackId="identitySensitive" name="Carte" fill="#ef4444" />
+                      <Bar dataKey="phone_numbers" stackId="identitySensitive" name="Telefoni" fill="#06b6d4" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <ChartLegend items={identityLegendItems} />
               </div>
               <div className="overflow-x-auto rounded-md border border-border/60 bg-background/30">
                 <table className="w-full min-w-[860px] text-xs">
