@@ -289,16 +289,35 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                     <p className="text-xs text-muted-foreground">Scansione attack surface esterna</p>
                   </div>
                 </div>
-                <Switch
-                  checked={!!orgFlags?.surface_scan360_enabled}
-                  disabled={updateFlagsMutation.isPending}
-                  onCheckedChange={(v) => {
-                    const patch: any = { surface_scan360_enabled: v };
-                    if (v) { patch.pentest_tools_auto_validation = true; }
-                    if (!v) { patch.surface_scan_extended = false; }
-                    updateFlagsMutation.mutate(patch);
-                  }}
-                />
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={orgFlags?.surface_scan_extended ? 'extended' : 'standard'}
+                    onValueChange={(value) => {
+                      updateFlagsMutation.mutate({
+                        surface_scan_extended: value === 'extended',
+                      });
+                    }}
+                    disabled={updateFlagsMutation.isPending || !orgFlags?.surface_scan360_enabled}
+                  >
+                    <SelectTrigger className="h-8 w-[140px]">
+                      <SelectValue placeholder="Livello" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="standard">Standard</SelectItem>
+                      <SelectItem value="extended">Estesa</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Switch
+                    checked={!!orgFlags?.surface_scan360_enabled}
+                    disabled={updateFlagsMutation.isPending}
+                    onCheckedChange={(v) => {
+                      const patch: any = { surface_scan360_enabled: v };
+                      if (v) { patch.pentest_tools_auto_validation = true; }
+                      if (!v) { patch.surface_scan_extended = false; }
+                      updateFlagsMutation.mutate(patch);
+                    }}
+                  />
+                </div>
               </div>
 
               {orgFlags?.surface_scan360_enabled && (
@@ -307,15 +326,15 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                     <div className="flex items-center gap-3">
                       <Radar className="w-4 h-4 text-muted-foreground" />
                       <div>
-                        <p className="text-sm font-medium">SurfaceScan Esteso</p>
-                        <p className="text-xs text-muted-foreground">Più di 2 domini e range IP da scansionare</p>
+                        <p className="text-sm font-medium">Livello SurfaceScan360</p>
+                        <p className="text-xs text-muted-foreground">
+                          {orgFlags?.surface_scan_extended ? 'Estesa: scope avanzato (domini multipli e range IP)' : 'Standard: scope base operativo'}
+                        </p>
                       </div>
                     </div>
-                    <Switch
-                      checked={!!orgFlags?.surface_scan_extended}
-                      disabled={updateFlagsMutation.isPending}
-                      onCheckedChange={(v) => updateFlagsMutation.mutate({ surface_scan_extended: v })}
-                    />
+                    <Badge variant="outline" className="text-xs">
+                      {orgFlags?.surface_scan_extended ? 'Estesa' : 'Standard'}
+                    </Badge>
                   </div>
 
                   <div className="flex items-center justify-between rounded-md border p-2.5">
@@ -342,18 +361,35 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                     <p className="text-xs text-muted-foreground">Monitoraggio dark web e leak</p>
                   </div>
                 </div>
-                <Switch
-                  checked={!!orgFlags?.dark_risk360_enabled}
-                  disabled={updateFlagsMutation.isPending}
-                  onCheckedChange={async (v) => {
-                    updateFlagsMutation.mutate({ dark_risk360_enabled: v });
-                    if (v) {
-                      await updateDarkRiskTierMutation.mutateAsync(
-                        (String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'extended' : 'standard')
-                      );
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'extended' : 'standard'}
+                    onValueChange={(value) =>
+                      updateDarkRiskTierMutation.mutate(value === 'extended' ? 'extended' : 'standard')
                     }
-                  }}
-                />
+                    disabled={updateDarkRiskTierMutation.isPending || !orgFlags?.dark_risk360_enabled}
+                  >
+                    <SelectTrigger className="h-8 w-[140px]">
+                      <SelectValue placeholder="Livello" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="standard">Standard</SelectItem>
+                      <SelectItem value="extended">Estesa</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Switch
+                    checked={!!orgFlags?.dark_risk360_enabled}
+                    disabled={updateFlagsMutation.isPending}
+                    onCheckedChange={async (v) => {
+                      updateFlagsMutation.mutate({ dark_risk360_enabled: v });
+                      if (v) {
+                        await updateDarkRiskTierMutation.mutateAsync(
+                          (String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'extended' : 'standard')
+                        );
+                      }
+                    }}
+                  />
+                </div>
               </div>
 
               {orgFlags?.dark_risk360_enabled && (
@@ -366,21 +402,9 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                         <p className="text-xs text-muted-foreground">Standard o Estesa sullo stesso modulo</p>
                       </div>
                     </div>
-                    <Select
-                      value={String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'extended' : 'standard'}
-                      onValueChange={(value) =>
-                        updateDarkRiskTierMutation.mutate(value === 'extended' ? 'extended' : 'standard')
-                      }
-                      disabled={updateDarkRiskTierMutation.isPending}
-                    >
-                      <SelectTrigger className="w-[160px]">
-                        <SelectValue placeholder="Seleziona tier" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="standard">Standard</SelectItem>
-                        <SelectItem value="extended">Estesa</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Badge variant="outline" className="text-xs">
+                      {String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'Estesa' : 'Standard'}
+                    </Badge>
                   </div>
                 </div>
               )}
