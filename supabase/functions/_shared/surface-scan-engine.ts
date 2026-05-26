@@ -88,6 +88,61 @@ interface AssetInput {
   raw?: Record<string, unknown>;
 }
 
+type DnsBlocklistCheck = {
+  provider: string;
+  ip: string;
+  listed: boolean;
+  status: "listed" | "not_listed" | "lookup_blocked" | "lookup_error";
+  records: string[];
+  reason?: string;
+};
+
+function classifyDnsBlocklistResponse(provider: string, answers: string[]): {
+  listed: boolean;
+  status: DnsBlocklistCheck["status"];
+  reason?: string;
+} {
+  const normalizedProvider = String(provider || "").toLowerCase();
+  const records = answers.map((entry) => String(entry || "").trim()).filter(Boolean);
+  if (records.length === 0) return { listed: false, status: "not_listed" };
+
+  // Spamhaus returns 127.255.255.x when the lookup is blocked or performed
+  // through an unsupported public resolver. This is not a blacklist hit.
+  if (records.some((entry) => /^127\.255\.255\.\d+$/.test(entry))) {
+    return {
+      listed: false,
+      status: "lookup_blocked",
+      reason: "dnsbl_lookup_blocked_or_rate_limited",
+    };
+  }
+
+  if (normalizedProvider.includes("spamhaus")) {
+    const validSpamhausZenCodes = new Set([
+      "127.0.0.2",
+      "127.0.0.3",
+      "127.0.0.4",
+      "127.0.0.5",
+      "127.0.0.6",
+      "127.0.0.7",
+      "127.0.0.9",
+      "127.0.0.10",
+      "127.0.0.11",
+    ]);
+    return {
+      listed: records.some((entry) => validSpamhausZenCodes.has(entry)),
+      status: records.some((entry) => validSpamhausZenCodes.has(entry)) ? "listed" : "lookup_error",
+      reason: records.some((entry) => validSpamhausZenCodes.has(entry)) ? undefined : "unrecognized_spamhaus_dnsbl_code",
+    };
+  }
+
+  const listed = records.some((entry) => /^127\./.test(entry));
+  return {
+    listed,
+    status: listed ? "listed" : "lookup_error",
+    reason: listed ? undefined : "unrecognized_dnsbl_response",
+  };
+}
+
 type ModuleStatus = "queued" | "running" | "success" | "skipped" | "error" | "timeout";
 
 interface ModuleExecutionConfig {
@@ -3598,15 +3653,22 @@ export async function runSurfaceScanEnrichment(
       return;
     }
 
-    const checked: Array<{ provider: string; ip: string; listed: boolean; records: string[] }> = [];
+    const checked: DnsBlocklistCheck[] = [];
     for (const ip of ipv4Targets) {
       const reversed = ip.split(".").reverse().join(".");
       for (const provider of providers) {
         const queryName = `${reversed}.${provider}`;
         const answers = await resolveWithDnsOverHttps(queryName, "A");
-        const listed = answers.length > 0;
-        checked.push({ provider, ip, listed, records: answers.slice(0, 10) });
-        if (listed) {
+        const classified = classifyDnsBlocklistResponse(provider, answers);
+        checked.push({
+          provider,
+          ip,
+          listed: classified.listed,
+          status: classified.status,
+          records: answers.slice(0, 10),
+          reason: classified.reason,
+        });
+        if (classified.listed) {
           await insertFinding({
             module: "dns_blocklists",
             finding_type: "dnsbl_listed",
@@ -3617,6 +3679,8 @@ export async function runSurfaceScanEnrichment(
             evidence: {
               provider,
               records: answers.slice(0, 10),
+              status: classified.status,
+              reason: classified.reason || null,
             },
             remediation: "Verificare reputazione IP, abuso SMTP/malware e avviare delisting dopo remediation.",
           });
@@ -3631,6 +3695,8 @@ export async function runSurfaceScanEnrichment(
       value: {
         checked,
         listed_count: checked.filter((entry) => entry.listed).length,
+        lookup_blocked_count: checked.filter((entry) => entry.status === "lookup_blocked").length,
+        lookup_error_count: checked.filter((entry) => entry.status === "lookup_error").length,
         not_listed: checked.every((entry) => !entry.listed),
       },
     });
@@ -3811,19 +3877,21 @@ export async function runSurfaceScanEnrichment(
     const getLatestFinding = async (moduleKey: string, findingTypes: string[]) => {
       const query = adminClient
         .from("surface_findings" as any)
-        .select("id, severity")
+        .select("id, severity, status")
         .eq("scan_job_id", job.id)
         .eq("module", moduleKey);
-      const { data } = await query.in("finding_type", findingTypes).limit(1);
-      return (data || [])[0] || null;
+      const { data } = await query.in("finding_type", findingTypes).limit(10);
+      return ((data || []) as Array<Record<string, unknown>>)
+        .find((row) => !["resolved", "suppressed", "false_positive", "accepted_risk"].includes(String(row.status || "").toLowerCase())) || null;
     };
     const getLatestFindingAnyModule = async (moduleKeys: string[], findingTypes: string[]) => {
       const query = adminClient
         .from("surface_findings" as any)
-        .select("id, severity")
+        .select("id, severity, status")
         .eq("scan_job_id", job.id);
-      const { data } = await query.in("module", moduleKeys).in("finding_type", findingTypes).limit(1);
-      return (data || [])[0] || null;
+      const { data } = await query.in("module", moduleKeys).in("finding_type", findingTypes).limit(10);
+      return ((data || []) as Array<Record<string, unknown>>)
+        .find((row) => !["resolved", "suppressed", "false_positive", "accepted_risk"].includes(String(row.status || "").toLowerCase())) || null;
     };
 
     const qualityObservationRes = await adminClient
@@ -5806,13 +5874,16 @@ export async function runSurfaceScanEnrichment(
 
     const findingsAgg = await adminClient
       .from("surface_findings" as any)
-      .select("severity,module,finding_type")
+      .select("severity,module,finding_type,status")
       .eq("scan_job_id", job.id);
-    const findingRows = (findingsAgg.data || []) as Array<{
+    const findingRows = ((findingsAgg.data || []) as Array<{
       severity: string;
       module?: string | null;
       finding_type?: string | null;
-    }>;
+      status?: string | null;
+    }>).filter((row) =>
+      !["resolved", "suppressed", "false_positive", "accepted_risk"].includes(String(row.status || "").toLowerCase())
+    );
     const highestSeverity = findingRows
       .map((row) => row.severity)
       .sort((a, b) => severityRank(b) - severityRank(a))[0] || "info";

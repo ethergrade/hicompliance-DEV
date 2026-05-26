@@ -1210,7 +1210,7 @@ Deno.serve(async (req) => {
       fetchRowsByJobIds(
         supabase,
         'surface_findings',
-        'provider, module, finding_type, title, description, severity, affected_asset, affected_url, ip, port, protocol, remediation, cve, cwe, cvss, evidence, attribution_confidence, created_at, scan_job_id',
+        'provider, module, finding_type, title, description, severity, affected_asset, affected_url, ip, port, protocol, remediation, cve, cwe, cvss, evidence, attribution_confidence, status, created_at, scan_job_id',
         scopedJobIds,
         { orderBy: 'created_at', ascending: false, pageSize: 1000, maxRows: 80000 },
       ),
@@ -1378,6 +1378,7 @@ Deno.serve(async (req) => {
     }));
 
     const findingsRaw = ([...(rawFindingsAll || []), ...exposureFindingsForMerge])
+      .filter((finding: any) => !['resolved', 'suppressed', 'false_positive', 'accepted_risk'].includes(String(finding?.status || '').toLowerCase()))
       .filter((finding: any) => {
         const reason = getScopeReasonFromFinding(finding, scopeDomains, ipScopeRules);
         trackScopeReason(reason);
