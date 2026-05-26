@@ -206,6 +206,8 @@ type DarkRiskReportJson = {
 
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const INTERNAL_SECRET = Deno.env.get('DARKRISK360_INTERNAL_SECRET') || '';
+const OPERATOR_SECRET = Deno.env.get('DARKRISK360_OPERATOR_SECRET') || '';
+const SUPABASE_SECRET_KEYS = Deno.env.get('SUPABASE_SECRET_KEYS') || '';
 const REPORT_SCHEMA_VERSION = '1.0.0';
 const REPORT_NOTICE = 'Il presente documento contiene informazioni riservate. Non distribuire a soggetti non autorizzati. Le evidenze sensibili sono mascherate salvo diversa autorizzazione.';
 const DARKRISK_BRAND_TITLE_HICOMPLIANCE = 'HICOMPLIANCE · DARKRISK360';
@@ -265,6 +267,32 @@ function jsonResponse(body: unknown, status = 200): Response {
       'Content-Type': 'application/json',
     },
   });
+}
+
+function parseSecretKeySet(...rawValues: string[]): Set<string> {
+  const keys = new Set<string>();
+  const add = (value: unknown) => {
+    const normalized = normalizeText(String(value || ''));
+    if (normalized) keys.add(normalized);
+  };
+
+  for (const rawValue of rawValues) {
+    const raw = String(rawValue || '').trim();
+    if (!raw) continue;
+    add(raw);
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        for (const entry of parsed) add(entry);
+      } else if (parsed && typeof parsed === 'object') {
+        for (const value of Object.values(parsed as Record<string, unknown>)) add(value);
+      }
+    } catch {
+      for (const entry of raw.split(/[\n,\s]+/)) add(entry);
+    }
+  }
+
+  return keys;
 }
 
 function clampText(value: string, max = 1200): string {
@@ -582,7 +610,9 @@ serve(async (req: Request) => {
     const authHeader = req.headers.get('authorization') || '';
     const bearer = authHeader.replace(/^Bearer\s+/i, '').trim();
     const internalSecret = req.headers.get('x-darkrisk-internal-secret') || '';
-    const isInternal = (SERVICE_ROLE && bearer === SERVICE_ROLE) || (INTERNAL_SECRET && internalSecret === INTERNAL_SECRET);
+    const serviceKeys = parseSecretKeySet(SERVICE_ROLE, SUPABASE_SECRET_KEYS);
+    const internalKeys = parseSecretKeySet(INTERNAL_SECRET, OPERATOR_SECRET);
+    const isInternal = (bearer && serviceKeys.has(bearer)) || (internalSecret && internalKeys.has(internalSecret));
 
     const body = await req.json().catch(() => ({}));
     const requestedCustomerId = normalizeText(body?.customer_id || body?.organization_id);

@@ -33,7 +33,7 @@ export type FirecrawlScrapeResult = {
 };
 
 export type IntelxDeepFetchResult = {
-  extractionSource: 'metadata' | 'preview' | 'read' | 'preview_read';
+  extractionSource: 'metadata' | 'preview' | 'read' | 'view' | 'preview_read';
   extractedText: string;
   warning: string | null;
   metadata: Record<string, unknown>;
@@ -416,6 +416,16 @@ export async function intelxDeepFetch(params: {
 
   const tryCalls: Array<{ method: 'POST' | 'GET'; path: string; body?: Record<string, unknown>; query?: Record<string, string> }> = [
     {
+      method: 'GET',
+      path: '/file/view',
+      query: {
+        ...(systemId ? { systemid: systemId } : {}),
+        ...(storageId ? { storageid: storageId } : {}),
+        ...(bucket ? { bucket } : {}),
+        f: '0',
+      },
+    },
+    {
       method: 'POST',
       path: '/file/preview',
       body: {
@@ -430,6 +440,8 @@ export async function intelxDeepFetch(params: {
       query: {
         ...(systemId ? { systemid: systemId } : {}),
         ...(storageId ? { storageid: storageId } : {}),
+        ...(bucket ? { bucket } : {}),
+        f: '0',
       },
     },
     {
@@ -447,10 +459,13 @@ export async function intelxDeepFetch(params: {
       query: {
         ...(systemId ? { systemid: systemId } : {}),
         ...(storageId ? { storageid: storageId } : {}),
+        ...(bucket ? { bucket } : {}),
+        type: '0',
       },
     },
   ];
 
+  let viewText = '';
   let previewText = '';
   let readText = '';
   const errors: string[] = [];
@@ -494,23 +509,27 @@ export async function intelxDeepFetch(params: {
       const extracted = safeExtractText(parsed).slice(0, params.maxChars);
       if (!extracted) continue;
 
-      if (call.path.includes('/preview')) {
+      if (call.path.includes('/view')) {
+        viewText = extracted;
+      } else if (call.path.includes('/preview')) {
         previewText = extracted;
       } else {
         readText = extracted;
       }
 
-      if (previewText && readText) break;
+      if ((viewText || previewText) && readText) break;
     } catch (error: any) {
       errors.push(`${call.path}:${normalizeText(String(error?.message || error || 'error'))}`);
     }
   }
 
-  const merged = [previewText, readText].filter(Boolean).join('\n').slice(0, params.maxChars);
+  const merged = [viewText, previewText, readText].filter(Boolean).join('\n').slice(0, params.maxChars);
   const extractionSource: IntelxDeepFetchResult['extractionSource'] = previewText && readText
     ? 'preview_read'
     : readText
     ? 'read'
+    : viewText
+    ? 'view'
     : previewText
     ? 'preview'
     : 'metadata';
@@ -522,6 +541,7 @@ export async function intelxDeepFetch(params: {
     metadata: {
       attempted_calls: tryCalls.length,
       errors: errors.slice(0, 6),
+      has_view: Boolean(viewText),
       has_preview: Boolean(previewText),
       has_read: Boolean(readText),
     },
