@@ -79,6 +79,15 @@ const targetMatchKey = (value: string): string => {
   }
 };
 
+const exposureSeverityClass = (severity: string): string => {
+  const key = String(severity || '').toLowerCase();
+  if (key === 'critical') return 'bg-red-500/20 text-red-300 border-red-500/30';
+  if (key === 'high') return 'bg-orange-500/20 text-orange-300 border-orange-500/30';
+  if (key === 'medium') return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30';
+  if (key === 'low') return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
+  return 'bg-sky-500/20 text-sky-300 border-sky-500/30';
+};
+
 const dedupeOpenPortsRows = (rows: ExposureOpenPortRow[]): ExposureOpenPortRow[] => {
   const map = new Map<string, ExposureOpenPortRow>();
   for (const row of rows || []) {
@@ -181,6 +190,57 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
     }),
     [],
   );
+
+  const assetPortList = useMemo(() => {
+    const grouped = new Map<string, {
+      key: string;
+      label: string;
+      ports: ExposureOpenPortRow[];
+      ips: Set<string>;
+    }>();
+
+    const ensureGroup = (key: string, label: string) => {
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          key,
+          label,
+          ports: [],
+          ips: new Set<string>(),
+        });
+      }
+      return grouped.get(key)!;
+    };
+
+    for (const snapshot of targetSnapshots || []) {
+      const label = String(snapshot?.target_value || '').trim();
+      if (!label) continue;
+      const key = targetMatchKey(label);
+      if (!key) continue;
+      ensureGroup(key, label);
+    }
+
+    for (const row of openPorts || []) {
+      const host = String(row.host || '').trim();
+      if (!host) continue;
+      const key = targetMatchKey(host);
+      if (!key) continue;
+      const group = ensureGroup(key, host);
+      group.ports.push(row);
+      if (row.ip) group.ips.add(String(row.ip));
+    }
+
+    return Array.from(grouped.values())
+      .map((entry) => ({
+        key: entry.key,
+        label: entry.label,
+        ips: Array.from(entry.ips.values()).sort((a, b) => a.localeCompare(b)),
+        ports: [...entry.ports].sort((a, b) => Number(a.port || 0) - Number(b.port || 0)),
+      }))
+      .sort((a, b) => {
+        if (b.ports.length !== a.ports.length) return b.ports.length - a.ports.length;
+        return a.label.localeCompare(b.label);
+      });
+  }, [openPorts, targetSnapshots]);
 
   const selectedJob = useMemo(
     () => jobs.find((job) => String(job.id) === String(selectedJobId)) || null,
@@ -498,6 +558,71 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
             </div>
           )}
           <ExposureCharts summary={summary} openPorts={openPorts} technologies={technologies} />
+
+          <Card className="border-border">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Lista asset con porte sotto</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Vista rapida per asset in scope: sotto ogni dominio/IP trovi le porte aperte rilevate.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {assetPortList.length === 0 && (
+                <div className="rounded-md border border-border p-4 text-sm text-muted-foreground">
+                  Nessun asset disponibile nello scope.
+                </div>
+              )}
+              {assetPortList.map((asset) => (
+                <div key={asset.key} className="rounded-md border border-border p-3">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-foreground break-all">{asset.label}</p>
+                      <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+                        <Badge variant="outline">{asset.ports.length} porte</Badge>
+                        {asset.ips.length > 0 && (
+                          <span className="break-all">IP: {asset.ips.join(', ')}</span>
+                        )}
+                      </div>
+                    </div>
+                    <Badge variant={asset.ports.length > 0 ? 'secondary' : 'outline'}>
+                      {asset.ports.length > 0 ? 'Porte rilevate' : 'Nessuna porta'}
+                    </Badge>
+                  </div>
+                  {asset.ports.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {asset.ports.map((portRow, index) => {
+                        const serviceLabel = [
+                          portRow.service_name,
+                          portRow.service_product,
+                          portRow.service_version,
+                        ]
+                          .filter(Boolean)
+                          .join(' ')
+                          .trim();
+                        return (
+                          <div
+                            key={`${asset.key}-${portRow.port}-${portRow.protocol}-${index}`}
+                            className="inline-flex items-center gap-2 rounded-md border border-border bg-muted/20 px-2 py-1"
+                          >
+                            <Badge className={exposureSeverityClass(portRow.exposure_level)}>
+                              {portRow.port}/{String(portRow.protocol || 'tcp').toLowerCase()}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {serviceLabel || 'servizio n/d'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      Nessuna porta aperta rilevata su questo asset nell’ultimo snapshot valido.
+                    </p>
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
 
           {isAdmin && (
             <Card className="border-border">
