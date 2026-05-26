@@ -29,6 +29,7 @@ interface ShodanBanner {
 const MAX_IPS_PER_RULE = 256;
 const EXPOSURE_SCOPE_AUTOSCAN_TIMEOUT = 30_000;
 const REPORT_SCOPE_REFRESH_TIMEOUT = 45_000;
+const DARKRISK_WEEKLY_SYNC_TIMEOUT = 45_000;
 
 const sev = (c?: number) => (c == null ? 'low' : c >= 7 ? 'high' : c >= 4 ? 'medium' : 'low');
 const isIp = (v: string) => /^(\d{1,3}\.){3}\d{1,3}$/.test(v);
@@ -470,6 +471,78 @@ async function refreshWeeklyScopeRepositoryReport(
   }
 }
 
+async function triggerWeeklyDarkRiskStandardScan(
+  supabase: any,
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  internalSecret: string | null,
+  orgId: string,
+) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), DARKRISK_WEEKLY_SYNC_TIMEOUT);
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/darkrisk360-sync-surfacescan`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${serviceRoleKey}`,
+        ...(internalSecret ? { 'x-darkrisk-internal-secret': internalSecret } : {}),
+      },
+      body: JSON.stringify({
+        customer_id: orgId,
+        trigger_type: 'cron_weekly',
+        include_dti_extended: false,
+        auto_scope_scan: true,
+        force_scope_refresh: false,
+      }),
+      signal: ctrl.signal,
+    });
+
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.error) {
+      const errorMessage = String(body?.error || `HTTP_${response.status}`);
+      const action =
+        response.status === 403 || /not enabled/i.test(errorMessage)
+          ? 'darkrisk_weekly_skipped'
+          : 'darkrisk_weekly_failed';
+      await supabase.from('external_scan_audit_log').insert({
+        organization_id: orgId,
+        actor_email: 'system:cron',
+        action,
+        details: {
+          http_status: response.status,
+          error: errorMessage,
+          include_dti_extended: false,
+        },
+      });
+      return;
+    }
+
+    await supabase.from('external_scan_audit_log').insert({
+      organization_id: orgId,
+      actor_email: 'system:cron',
+      action: 'darkrisk_weekly_started',
+      details: {
+        scan_run_id: body?.scan_run_id || null,
+        status: body?.status || 'accepted',
+        include_dti_extended: false,
+      },
+    });
+  } catch (error) {
+    await supabase.from('external_scan_audit_log').insert({
+      organization_id: orgId,
+      actor_email: 'system:cron',
+      action: 'darkrisk_weekly_failed',
+      details: {
+        error: (error as Error)?.message || 'network_error',
+        include_dti_extended: false,
+      },
+    });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -511,6 +584,10 @@ Deno.serve(async (req) => {
       Deno.env.get('SURFACESCAN_CRON_INTERNAL_SECRET') ||
       Deno.env.get('SURFACESCAN_INTERNAL_SECRET') ||
       null;
+    const darkriskInternalSecret =
+      Deno.env.get('DARKRISK360_INTERNAL_SECRET') ||
+      Deno.env.get('DARKRISK_INTERNAL_SECRET') ||
+      internalSecret;
 
     for (const [orgId, orgRules] of byOrg.entries()) {
       const { assets, truncated, perRule } = await scanOrganization(orgId, orgRules, SHODAN_API_KEY);
@@ -551,6 +628,8 @@ Deno.serve(async (req) => {
       await triggerWeeklyScopeExposureScan(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, orgRules);
       // Report repository canonico SurfaceScan360: refresh automatico settimanale.
       await refreshWeeklyScopeRepositoryReport(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId);
+      // DarkRisk360 standard weekly sync: DTI esteso escluso dai run cron.
+      await triggerWeeklyDarkRiskStandardScan(supabase, supabaseUrl, serviceRoleKey, darkriskInternalSecret, orgId);
 
     }
 

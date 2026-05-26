@@ -21,12 +21,19 @@ import {
 } from '../_shared/darkrisk-scoring.ts';
 import {
   detectSensitiveIndicators,
+  extractSensitiveValueHits,
   hasSensitiveIndicators,
 } from '../_shared/darkrisk-sensitive-detection.ts';
 import {
   type DarkRiskSelectorType,
   validateDarkRiskSelector,
 } from '../_shared/darkrisk-selector-validation.ts';
+import {
+  buildFirecrawlTargets,
+  firecrawlScrape,
+  getFirecrawlSourceTemplates,
+  intelxDeepFetch,
+} from '../_shared/darkrisk-dti-enrichment.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
@@ -64,6 +71,38 @@ const INTELX_MAX_QUERY_TERMS_PER_RUN = Math.max(
   5,
   Math.min(120, Number(Deno.env.get('INTELX_MAX_QUERY_TERMS_PER_RUN') || 40)),
 );
+const INTELX_DEEP_FETCH_ENABLED = String(Deno.env.get('INTELX_DEEP_FETCH_ENABLED') || 'true').toLowerCase() !== 'false';
+const INTELX_DEEP_FETCH_MAX_PER_RUN = Math.max(
+  0,
+  Math.min(240, Number(Deno.env.get('INTELX_DEEP_FETCH_MAX_PER_RUN') || 70)),
+);
+const INTELX_DEEP_FETCH_TIMEOUT_MS = Math.max(
+  2_000,
+  Math.min(30_000, Number(Deno.env.get('INTELX_DEEP_FETCH_TIMEOUT_MS') || 7_500)),
+);
+const INTELX_DEEP_FETCH_MAX_CHARS = Math.max(
+  800,
+  Math.min(80_000, Number(Deno.env.get('INTELX_DEEP_FETCH_MAX_CHARS') || 16_000)),
+);
+const FIRECRAWL_API_KEY = String(Deno.env.get('FIRECRAWL_API_KEY') || '').trim();
+const FIRECRAWL_ENABLED = String(Deno.env.get('DARKRISK_FIRECRAWL_ENABLED') || 'true').toLowerCase() !== 'false';
+const FIRECRAWL_TIMEOUT_MS = Math.max(
+  2_500,
+  Math.min(40_000, Number(Deno.env.get('DARKRISK_FIRECRAWL_TIMEOUT_MS') || 9_000)),
+);
+const FIRECRAWL_RETRIES = Math.max(
+  0,
+  Math.min(4, Number(Deno.env.get('DARKRISK_FIRECRAWL_RETRIES') || 1)),
+);
+const FIRECRAWL_MAX_TARGETS = Math.max(
+  1,
+  Math.min(500, Number(Deno.env.get('DARKRISK_FIRECRAWL_MAX_TARGETS') || 120)),
+);
+const FIRECRAWL_MAX_MARKDOWN_CHARS = Math.max(
+  2_000,
+  Math.min(100_000, Number(Deno.env.get('DARKRISK_FIRECRAWL_MAX_MARKDOWN_CHARS') || 25_000)),
+);
+const FIRECRAWL_SOURCE_CONFIG = String(Deno.env.get('DARKRISK_FIRECRAWL_SOURCES') || '').trim();
 const SURFACESCAN_INTERNAL_SECRET = String(
   Deno.env.get('SURFACESCAN_CRON_INTERNAL_SECRET')
   || Deno.env.get('SURFACESCAN_INTERNAL_SECRET')
@@ -165,6 +204,8 @@ type IntelxQueryTerm = {
   selectorNormalized: string | null;
   linkedAssetNormalized: string | null;
 };
+
+type DtiSourceRunStatus = 'completed' | 'partial' | 'failed' | 'skipped';
 
 const intelxAllowedSelectorTypes = new Set([
   'email',
@@ -337,6 +378,123 @@ function parseIdentityEmailSelectors(value: unknown): string[] {
     emails.push(validation.normalized);
   }
   return emails.slice(0, 80);
+}
+
+function normalizeDtiStatus(value: string | null | undefined): DtiSourceRunStatus {
+  const normalized = normalizeText(value || '').toLowerCase();
+  if (normalized === 'completed') return 'completed';
+  if (normalized === 'partial' || normalized === 'completed_with_warnings') return 'partial';
+  if (normalized === 'skipped') return 'skipped';
+  return 'failed';
+}
+
+function domainFromQueryTerm(queryTerm: string): string {
+  const normalized = normalizeText(queryTerm).toLowerCase();
+  if (!normalized) return '';
+  if (normalized.startsWith('@')) return normalized.slice(1);
+  if (normalized.includes('@')) return normalized.split('@')[1] || normalized;
+  return normalized.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+}
+
+async function createDtiSourceRun(
+  adminClient: any,
+  payload: Record<string, unknown>,
+): Promise<{ id: string; started_at: string } | null> {
+  const { data, error } = await adminClient
+    .from('darkrisk_dti_source_runs' as any)
+    .insert(payload as any)
+    .select('id, started_at')
+    .single();
+  if (error || !data?.id) return null;
+  return {
+    id: String(data.id),
+    started_at: String(data.started_at || new Date().toISOString()),
+  };
+}
+
+async function finalizeDtiSourceRun(
+  adminClient: any,
+  sourceRunId: string,
+  sourceRunStartedAt: string | null,
+  status: DtiSourceRunStatus,
+  resultCount: number,
+  warning: string | null,
+  errorMessage: string | null,
+  metadata: Record<string, unknown>,
+): Promise<void> {
+  const completedAt = new Date().toISOString();
+  const startedAtMs = Number.isFinite(Date.parse(String(sourceRunStartedAt || '')))
+    ? Date.parse(String(sourceRunStartedAt))
+    : Date.now();
+  const durationMs = Math.max(0, Date.now() - startedAtMs);
+  await adminClient
+    .from('darkrisk_dti_source_runs' as any)
+    .update({
+      status,
+      result_count: Math.max(0, Number(resultCount || 0)),
+      warning: warning ? maskPotentialSecrets(warning).slice(0, 400) : null,
+      error_message: errorMessage ? maskPotentialSecrets(errorMessage).slice(0, 700) : null,
+      completed_at: completedAt,
+      duration_ms: durationMs,
+      metadata: metadata || {},
+      updated_at: completedAt,
+    })
+    .eq('id', sourceRunId);
+}
+
+async function persistSensitiveHits(
+  adminClient: any,
+  params: {
+    organizationId: string;
+    scanRunId: string;
+    sourceRunId: string | null;
+    sourceRecordId: string | null;
+    evidenceId: string | null;
+    findingId: string | null;
+    source: 'intelx' | 'firecrawl';
+    sourceLabel: string;
+    queryKind: string | null;
+    queryTerm: string | null;
+    assetScope: string | null;
+    selectorValue: string | null;
+    extractionSource: string;
+    hits: ReturnType<typeof extractSensitiveValueHits>;
+  },
+): Promise<number> {
+  const rows = params.hits
+    .map((hit) => ({
+      organization_id: params.organizationId,
+      tenant_id: params.organizationId,
+      scan_run_id: params.scanRunId,
+      source_run_id: params.sourceRunId,
+      source_record_id: params.sourceRecordId,
+      evidence_id: params.evidenceId,
+      finding_id: params.findingId,
+      source: params.source,
+      source_label: params.sourceLabel,
+      query_kind: params.queryKind,
+      query_term: params.queryTerm,
+      asset_scope: params.assetScope,
+      selector_value: params.selectorValue,
+      tag: hit.tag,
+      clear_value: hit.value,
+      masked_value: hit.masked_value,
+      match_type: 'regex',
+      extraction_source: params.extractionSource,
+      context_excerpt: maskPotentialSecrets(hit.context).slice(0, 500),
+      confidence: hit.tag === 'credit_cards' || hit.tag === 'passwords' ? 'high' : 'medium',
+      metadata: {
+        raw_value_len: String(hit.value || '').length,
+      },
+    }))
+    .slice(0, 250);
+
+  if (rows.length === 0) return 0;
+  const { error } = await adminClient
+    .from('darkrisk_dti_sensitive_hits' as any)
+    .insert(rows as any);
+  if (error) return 0;
+  return rows.length;
 }
 
 async function intelxSubmitSearch(term: string): Promise<string | null> {
@@ -613,6 +771,9 @@ serve(async (req: Request) => {
     const requestedCustomerId = normalizeText(body?.customer_id);
     const requestedScanJobId = normalizeText(body?.scan_job_id);
     const triggerType = normalizeText(body?.trigger_type) || 'manual';
+    const includeDtiExtended = body?.include_dti_extended === undefined
+      ? !triggerType.startsWith('cron_weekly')
+      : Boolean(body?.include_dti_extended);
     const manualIdentityEmails = parseIdentityEmailSelectors(body?.identity_emails);
 
     const customerId = requestedCustomerId || caller?.organizationId || '';
@@ -1177,6 +1338,22 @@ serve(async (req: Request) => {
 
     const intelxQueryTerms = buildIntelxQueryTerms(intelxSelectorDefinitions, scopeDomains);
     const identityEmailSelectorsUsed = intelxSelectorDefinitions.filter((entry) => entry.type === 'email').length;
+    const firecrawlEmailSelectors = Array.from(
+      new Set([
+        ...manualIdentityEmails,
+        ...intelxSelectorDefinitions
+          .filter((entry) => entry.type === 'email')
+          .map((entry) => normalizeText(entry.normalized).toLowerCase())
+          .filter(Boolean),
+      ]),
+    );
+    const firecrawlTemplates = getFirecrawlSourceTemplates(FIRECRAWL_SOURCE_CONFIG);
+    const firecrawlTargets = buildFirecrawlTargets({
+      sourceTemplates: firecrawlTemplates,
+      scopeDomains,
+      emailSelectors: firecrawlEmailSelectors,
+      maxTargets: FIRECRAWL_MAX_TARGETS,
+    });
 
     let recordsCreated = 0;
     let evidenceCreated = 0;
@@ -1188,6 +1365,19 @@ serve(async (req: Request) => {
     let intelxAlertsCreated = 0;
     let intelxSearchesRun = 0;
     let intelxAtDomainQueries = 0;
+    let intelxDeepFetchesRun = 0;
+    let intelxDeepFetchWarnings = 0;
+    let dtiSourceRunsCompleted = 0;
+    let dtiSourceRunsPartial = 0;
+    let dtiSourceRunsFailed = 0;
+    let dtiSensitiveHitsCreated = 0;
+    let firecrawlSourcesRun = 0;
+    let firecrawlSourcesCompleted = 0;
+    let firecrawlSourcesPartial = 0;
+    let firecrawlSourcesFailed = 0;
+    let firecrawlEvidenceCreated = 0;
+    let firecrawlFindingsCreated = 0;
+    let firecrawlSensitiveHitsCreated = 0;
     const intelxWarnings: string[] = [];
 
     for (const finding of canonicalFindings) {
@@ -1386,14 +1576,55 @@ serve(async (req: Request) => {
       }
     }
 
-    if (isIntelxConfigured()) {
+    if (includeDtiExtended && isIntelxConfigured()) {
       for (const queryTerm of intelxQueryTerms) {
+        const sourceRunStartedAt = new Date().toISOString();
+        const sourceRun = await createDtiSourceRun(adminClient, {
+          organization_id: customerId,
+          tenant_id: customerId,
+          scan_run_id: scanRunId,
+          source: 'intelx',
+          source_key: `intelx:${queryTerm.kind}:${queryTerm.term}`,
+          source_label: 'DarkRisk360 DTI',
+          source_kind: 'domain_threat_intelligence',
+          query_kind: queryTerm.kind,
+          query_term: queryTerm.term,
+          asset_scope: queryTerm.linkedAssetNormalized || domainFromQueryTerm(queryTerm.term),
+          selector_value: queryTerm.selectorNormalized || null,
+          status: 'running',
+          started_at: sourceRunStartedAt,
+          metadata: {
+            stage: 'intelx_search',
+          },
+        });
+
         try {
           await wait(INTELX_REQUEST_INTERVAL_MS);
           const records = await runIntelxSearch(queryTerm.term);
           intelxSearchesRun += 1;
           if (queryTerm.kind === 'at_domain_tld') intelxAtDomainQueries += 1;
-          if (records.length === 0) continue;
+
+          if (records.length === 0) {
+            if (sourceRun?.id) {
+              await finalizeDtiSourceRun(
+                adminClient,
+                sourceRun.id,
+                sourceRun.started_at || sourceRunStartedAt,
+                'completed',
+                0,
+                null,
+                null,
+                {
+                  stage: 'intelx_search',
+                  query_term: queryTerm.term,
+                  query_kind: queryTerm.kind,
+                  records_count: 0,
+                },
+              );
+            }
+            dtiSourceRunsCompleted += 1;
+            continue;
+          }
 
           const selectorId = queryTerm.selectorNormalized
             ? selectorByNormalized.get(queryTerm.selectorNormalized) || null
@@ -1402,19 +1633,53 @@ serve(async (req: Request) => {
           const assetRef = linkedAssetKey ? assetByNormalized.get(linkedAssetKey) : undefined;
           const linkedAssetId = assetRef?.id || null;
 
+          let runWarnings: string[] = [];
+          let runSensitiveHits = 0;
+          let runRecordsProcessed = 0;
+
           for (const record of records) {
+            runRecordsProcessed += 1;
             const sourceRecordKey = normalizeIntelxRecordKey(queryTerm.term, record);
             const title = normalizeText(String(record?.name || '')) || `DarkRisk360 signal on ${queryTerm.term}`;
             const description = normalizeText(String(record?.description || '')) || `Segnale exposure rilevato su query ${queryTerm.term}.`;
-            const previewText = maskPotentialSecrets(`${title}\n${description}`.slice(0, 1400));
             const observedAtCandidate = normalizeText(String(record?.date || record?.added || ''));
             const observedAt = Number.isFinite(Date.parse(observedAtCandidate))
               ? new Date(observedAtCandidate).toISOString()
               : new Date().toISOString();
             const xscore = Number(record?.xscore);
-            const sensitiveIndicators = detectSensitiveIndicators(
-              `${title}\n${description}\n${queryTerm.term}\n${JSON.stringify(record || {})}`.slice(0, 6000),
-            );
+            const systemId = normalizeText(String(record?.systemid || '')) || null;
+            const storageId = normalizeText(String(record?.storageid || '')) || null;
+            const bucket = normalizeText(String(record?.bucket || '')) || null;
+            let deepExtractionSource: 'metadata' | 'preview' | 'read' | 'preview_read' = 'metadata';
+            let deepExtractionText = '';
+            let deepWarning: string | null = null;
+            let deepMetadata: Record<string, unknown> = {};
+
+            if (INTELX_DEEP_FETCH_ENABLED && intelxDeepFetchesRun < INTELX_DEEP_FETCH_MAX_PER_RUN && (systemId || storageId)) {
+              const deepRes = await intelxDeepFetch({
+                apiKey: INTELX_API_KEY,
+                apiUrl: INTELX_API_URL,
+                systemId,
+                storageId,
+                bucket,
+                timeoutMs: INTELX_DEEP_FETCH_TIMEOUT_MS,
+                retries: 1,
+                maxChars: INTELX_DEEP_FETCH_MAX_CHARS,
+              });
+              intelxDeepFetchesRun += 1;
+              deepExtractionSource = deepRes.extractionSource;
+              deepExtractionText = deepRes.extractedText;
+              deepWarning = deepRes.warning;
+              deepMetadata = deepRes.metadata || {};
+              if (deepWarning) {
+                intelxDeepFetchWarnings += 1;
+                runWarnings.push(deepWarning);
+              }
+            }
+
+            const sensitiveInput = `${title}\n${description}\n${queryTerm.term}\n${deepExtractionText}\n${JSON.stringify(record || {})}`.slice(0, 14_000);
+            const sensitiveIndicators = detectSensitiveIndicators(sensitiveInput);
+            const sensitiveValueHits = extractSensitiveValueHits(sensitiveInput, 20);
             const severityBase = severityFromIntelxScore(Number.isFinite(xscore) ? xscore : null);
             const severity = boostSeverityForSensitiveData(severityBase, sensitiveIndicators);
             const findingType = intelxFindingTypeFromRecord(record, queryTerm.term);
@@ -1447,6 +1712,7 @@ serve(async (req: Request) => {
               isThirdPartyOnly: compromiseType === 'indirect',
             });
 
+            const previewText = maskPotentialSecrets(`${title}\n${description}\n${deepExtractionText.slice(0, 500)}`.slice(0, 1600));
             const { data: sourceRecord, error: sourceRecordErr } = await adminClient
               .from('darkrisk_source_records' as any)
               .insert({
@@ -1457,15 +1723,22 @@ serve(async (req: Request) => {
                 asset_id: linkedAssetId,
                 selector_id: selectorId,
                 source_record_key: sourceRecordKey,
-                source_system_id: normalizeText(String(record?.systemid || '')) || null,
-                source_storage_id: normalizeText(String(record?.storageid || '')) || null,
-                source_bucket: normalizeText(String(record?.bucket || '')) || null,
+                source_system_id: systemId,
+                source_storage_id: storageId,
+                source_bucket: bucket,
                 source_media: normalizeText(String(record?.mediah || record?.media || '')) || null,
                 source_type: normalizeText(String(record?.typeh || record?.type || '')) || 'intelx_record',
                 source_score: Number.isFinite(xscore) ? xscore : null,
                 source_date: observedAt,
                 source_added_at: observedAt,
                 source_simhash: normalizeText(String(record?.simhash || '')) || null,
+                query_kind: queryTerm.kind,
+                query_term: queryTerm.term,
+                asset_scope: queryTerm.linkedAssetNormalized || domainFromQueryTerm(queryTerm.term),
+                source_url: null,
+                extraction_source: deepExtractionSource,
+                extraction_status: deepWarning ? 'partial' : 'completed',
+                extraction_error: deepWarning,
                 title: maskPotentialSecrets(title),
                 description: maskPotentialSecrets(description),
                 raw_metadata: {
@@ -1473,6 +1746,11 @@ serve(async (req: Request) => {
                   query_term: queryTerm.term,
                   query_kind: queryTerm.kind,
                   sensitive_indicators: sensitiveIndicators,
+                  deep_fetch: {
+                    extraction_source: deepExtractionSource,
+                    warning: deepWarning,
+                    metadata: deepMetadata,
+                  },
                   record: {
                     systemid: record?.systemid || null,
                     storageid: record?.storageid || null,
@@ -1506,7 +1784,7 @@ serve(async (req: Request) => {
                 asset_id: linkedAssetId,
                 selector_id: selectorId,
                 title: maskPotentialSecrets(title),
-                summary: maskPotentialSecrets(description),
+                summary: maskPotentialSecrets(`${description}${deepExtractionText ? `\n${deepExtractionText.slice(0, 1200)}` : ''}`),
                 masked_value: maskPotentialSecrets(queryTerm.term),
                 severity_hint: severity,
                 confidence,
@@ -1521,6 +1799,8 @@ serve(async (req: Request) => {
                   typeh: normalizeText(String(record?.typeh || '')) || null,
                   xscore: Number.isFinite(xscore) ? xscore : null,
                   query_kind: queryTerm.kind,
+                  query_term: queryTerm.term,
+                  extraction_source: deepExtractionSource,
                   sensitive_indicators: sensitiveIndicators,
                 },
               })
@@ -1571,6 +1851,25 @@ serve(async (req: Request) => {
             findingsCreated += 1;
             intelxFindingsCreated += 1;
 
+            const persistedHits = await persistSensitiveHits(adminClient, {
+              organizationId: customerId,
+              scanRunId: String(scanRunId || scanRunData.id),
+              sourceRunId: sourceRun?.id || null,
+              sourceRecordId: String(sourceRecord.id),
+              evidenceId: String(evidence.id),
+              findingId: String(darkFinding.id),
+              source: 'intelx',
+              sourceLabel: 'DarkRisk360',
+              queryKind: queryTerm.kind,
+              queryTerm: queryTerm.term,
+              assetScope: queryTerm.linkedAssetNormalized || domainFromQueryTerm(queryTerm.term),
+              selectorValue: queryTerm.selectorNormalized || null,
+              extractionSource: deepExtractionSource,
+              hits: sensitiveValueHits,
+            });
+            runSensitiveHits += persistedHits;
+            dtiSensitiveHitsCreated += persistedHits;
+
             if (severity === 'high' || severity === 'critical') {
               const { error: alertErr } = await adminClient
                 .from('darkrisk_alerts' as any)
@@ -1597,12 +1896,303 @@ serve(async (req: Request) => {
               }
             }
           }
+
+          const runStatus: DtiSourceRunStatus = runWarnings.length > 0 ? 'partial' : 'completed';
+          if (sourceRun?.id) {
+            await finalizeDtiSourceRun(
+              adminClient,
+              sourceRun.id,
+              sourceRun.started_at || sourceRunStartedAt,
+              runStatus,
+              runRecordsProcessed,
+              runWarnings[0] || null,
+              null,
+              {
+                query_term: queryTerm.term,
+                query_kind: queryTerm.kind,
+                records_count: runRecordsProcessed,
+                sensitive_hits: runSensitiveHits,
+                warnings: runWarnings.slice(0, 8),
+              },
+            );
+          }
+          if (runStatus === 'completed') dtiSourceRunsCompleted += 1;
+          else dtiSourceRunsPartial += 1;
         } catch (intelxErr: any) {
-          intelxWarnings.push(maskPotentialSecrets(normalizeText(intelxErr?.message) || `DarkRisk360 intelligence failed on ${queryTerm.term}`));
+          const message = maskPotentialSecrets(normalizeText(intelxErr?.message) || `DarkRisk360 intelligence failed on ${queryTerm.term}`);
+          intelxWarnings.push(message);
+          if (sourceRun?.id) {
+            await finalizeDtiSourceRun(
+              adminClient,
+              sourceRun.id,
+              sourceRun.started_at || sourceRunStartedAt,
+              'failed',
+              0,
+              null,
+              message,
+              {
+                query_term: queryTerm.term,
+                query_kind: queryTerm.kind,
+              },
+            );
+          }
+          dtiSourceRunsFailed += 1;
         }
       }
-    } else {
+    } else if (includeDtiExtended) {
       intelxWarnings.push('DarkRisk360 intelligence non configurata: impostare la chiave provider nelle Edge Function secrets.');
+    }
+
+    if (includeDtiExtended && FIRECRAWL_ENABLED && FIRECRAWL_API_KEY && firecrawlTargets.length > 0) {
+      for (const target of firecrawlTargets) {
+        firecrawlSourcesRun += 1;
+        const sourceRun = await createDtiSourceRun(adminClient, {
+          organization_id: customerId,
+          tenant_id: customerId,
+          scan_run_id: scanRunId,
+          source: 'firecrawl',
+          source_key: `firecrawl:${target.sourceKey}:${target.queryKind}:${target.queryTerm}`,
+          source_label: target.sourceLabel,
+          source_kind: 'dti_guideline_source',
+          query_kind: target.queryKind,
+          query_term: target.queryTerm,
+          asset_scope: target.assetScope,
+          selector_value: target.selectorValue,
+          target_url: target.targetUrl,
+          status: 'running',
+          metadata: {
+            source_key: target.sourceKey,
+          },
+        });
+
+        try {
+          const scrape = await firecrawlScrape({
+            apiKey: FIRECRAWL_API_KEY,
+            targetUrl: target.targetUrl,
+            timeoutMs: FIRECRAWL_TIMEOUT_MS,
+            retries: FIRECRAWL_RETRIES,
+            maxMarkdownChars: FIRECRAWL_MAX_MARKDOWN_CHARS,
+          });
+
+          const combinedText = `${scrape.title}\n${scrape.summary}\n${scrape.markdown}`.slice(0, 20_000);
+          const sensitiveIndicators = detectSensitiveIndicators(combinedText);
+          const sensitiveHits = extractSensitiveValueHits(combinedText, 20);
+          const severityBase: 'info' | 'low' | 'medium' | 'high' | 'critical' = scrape.ok
+            ? (hasSensitiveIndicators(sensitiveIndicators) ? 'medium' : 'info')
+            : 'low';
+          const severity = boostSeverityForSensitiveData(severityBase, sensitiveIndicators);
+          const confidence: 'low' | 'medium' | 'high' = scrape.ok ? 'medium' : 'low';
+          const sourceRecordKey = `firecrawl:${target.sourceKey}:${target.queryKind}:${target.queryTerm}:${crypto.randomUUID().slice(0, 8)}`;
+
+          const linkedAssetKey = normalizeAssetValue(target.assetScope);
+          const assetRef = linkedAssetKey ? assetByNormalized.get(linkedAssetKey) : undefined;
+          const linkedAssetId = assetRef?.id || null;
+          const selectorId = target.selectorValue
+            ? selectorByNormalized.get(normalizeText(target.selectorValue).toLowerCase()) || null
+            : null;
+
+          const { data: sourceRecord, error: sourceRecordErr } = await adminClient
+            .from('darkrisk_source_records' as any)
+            .insert({
+              organization_id: customerId,
+              tenant_id: customerId,
+              scan_run_id: scanRunId,
+              source: 'firecrawl',
+              asset_id: linkedAssetId,
+              selector_id: selectorId,
+              source_record_key: sourceRecordKey,
+              source_type: 'dti_guideline_source',
+              source_media: 'web_page',
+              source_url: target.targetUrl,
+              query_kind: target.queryKind,
+              query_term: target.queryTerm,
+              asset_scope: target.assetScope,
+              extraction_source: 'firecrawl_scrape',
+              extraction_status: scrape.ok ? (scrape.warning ? 'partial' : 'completed') : 'failed',
+              extraction_error: scrape.error,
+              title: maskPotentialSecrets(scrape.title || `DarkRisk360 source ${target.sourceLabel}`),
+              description: maskPotentialSecrets(scrape.summary || scrape.error || `Source ${target.sourceLabel}`),
+              raw_metadata: {
+                source_key: target.sourceKey,
+                links: scrape.links,
+                metadata: scrape.metadata,
+                warning: scrape.warning,
+                error: scrape.error,
+                sensitive_indicators: sensitiveIndicators,
+              },
+              safe_preview: maskPotentialSecrets(combinedText.slice(0, 1200)),
+              preview_hash: sourceRecordKey,
+            })
+            .select('id')
+            .single();
+          if (sourceRecordErr || !sourceRecord?.id) throw sourceRecordErr || new Error('firecrawl source record insert failed');
+          recordsCreated += 1;
+
+          const { data: evidence, error: evidenceErr } = await adminClient
+            .from('darkrisk_evidence' as any)
+            .insert({
+              organization_id: customerId,
+              tenant_id: customerId,
+              scan_run_id: scanRunId,
+              source_record_id: sourceRecord.id,
+              source: 'firecrawl',
+              evidence_class: 'dti_guideline_source',
+              asset_id: linkedAssetId,
+              selector_id: selectorId,
+              title: maskPotentialSecrets(scrape.title || `DarkRisk360 source ${target.sourceLabel}`),
+              summary: maskPotentialSecrets(scrape.summary || scrape.error || 'Source ingestion result'),
+              masked_value: maskPotentialSecrets(target.queryTerm),
+              severity_hint: severity,
+              confidence,
+              observed_at: new Date().toISOString(),
+              first_seen_at: new Date().toISOString(),
+              last_seen_at: new Date().toISOString(),
+              visibility: 'customer',
+              contains_sensitive_data: hasSensitiveIndicators(sensitiveIndicators),
+              metadata: {
+                source_key: target.sourceKey,
+                query_kind: target.queryKind,
+                query_term: target.queryTerm,
+                source_url: target.targetUrl,
+                links_count: scrape.links.length,
+                sensitive_indicators: sensitiveIndicators,
+              },
+            })
+            .select('id')
+            .single();
+          if (evidenceErr || !evidence?.id) throw evidenceErr || new Error('firecrawl evidence insert failed');
+          evidenceCreated += 1;
+          firecrawlEvidenceCreated += 1;
+
+          const riskDimensions = inferRiskDimensions({
+            findingType: 'darkrisk_dti_signal',
+            title: `${target.sourceLabel} ${target.queryTerm}`,
+            module: 'firecrawl',
+            confidence,
+            freshnessDays: 0,
+          });
+          if (hasSensitiveIndicators(sensitiveIndicators)) {
+            riskDimensions.identity_exposure = Math.min(100, Number(riskDimensions.identity_exposure || 0) + 25);
+          }
+          const riskScore = calculateFindingRiskScore({
+            severity,
+            confidence,
+            freshnessDays: 0,
+            recurrenceCount: 1,
+            affectedAssetCriticality: inferAssetCriticality(target.assetScope),
+            isDirectCompromise: hasSensitiveIndicators(sensitiveIndicators),
+            isThirdPartyOnly: false,
+          });
+
+          const { data: darkFinding, error: findingErr } = await adminClient
+            .from('darkrisk_findings' as any)
+            .insert({
+              organization_id: customerId,
+              tenant_id: customerId,
+              scan_run_id: scanRunId,
+              finding_type: 'darkrisk_dti_source_signal',
+              title: maskPotentialSecrets(scrape.title || `${target.sourceLabel} · ${target.queryTerm}`),
+              description: maskPotentialSecrets(scrape.summary || scrape.error || `Sorgente ${target.sourceLabel} completata`),
+              affected_asset_id: linkedAssetId,
+              affected_selector_id: selectorId,
+              severity,
+              confidence,
+              status: 'new',
+              risk_score: riskScore,
+              risk_dimensions: riskDimensions,
+              evidence_ids: [evidence.id],
+              first_seen_at: new Date().toISOString(),
+              last_seen_at: new Date().toISOString(),
+              metadata: {
+                source_origin: 'firecrawl',
+                source_module: 'firecrawl',
+                query_term: target.queryTerm,
+                query_kind: target.queryKind,
+                source_url: target.targetUrl,
+                source_label: target.sourceLabel,
+                category_hint: classifyThreatCategoryText(`${target.sourceLabel} dti source`),
+                sensitive_indicators: sensitiveIndicators,
+                sensitive_data_detected: hasSensitiveIndicators(sensitiveIndicators),
+              },
+            })
+            .select('id')
+            .single();
+          if (findingErr || !darkFinding?.id) throw findingErr || new Error('firecrawl finding insert failed');
+          findingsCreated += 1;
+          firecrawlFindingsCreated += 1;
+
+          const persistedHits = await persistSensitiveHits(adminClient, {
+            organizationId: customerId,
+            scanRunId: String(scanRunId || scanRunData.id),
+            sourceRunId: sourceRun?.id || null,
+            sourceRecordId: String(sourceRecord.id),
+            evidenceId: String(evidence.id),
+            findingId: String(darkFinding.id),
+            source: 'firecrawl',
+            sourceLabel: target.sourceLabel,
+            queryKind: target.queryKind,
+            queryTerm: target.queryTerm,
+            assetScope: target.assetScope,
+            selectorValue: target.selectorValue,
+            extractionSource: 'firecrawl_scrape',
+            hits: sensitiveHits,
+          });
+          dtiSensitiveHitsCreated += persistedHits;
+          firecrawlSensitiveHitsCreated += persistedHits;
+
+          const runStatus = scrape.ok ? (scrape.warning ? 'partial' : 'completed') : 'failed';
+          if (sourceRun?.id) {
+            await finalizeDtiSourceRun(
+              adminClient,
+              sourceRun.id,
+              sourceRun.started_at || null,
+              normalizeDtiStatus(runStatus),
+              scrape.ok ? 1 : 0,
+              scrape.warning,
+              scrape.error,
+              {
+                source_key: target.sourceKey,
+                source_url: target.targetUrl,
+                links_count: scrape.links.length,
+                sensitive_hits: persistedHits,
+              },
+            );
+          }
+
+          if (runStatus === 'completed') {
+            dtiSourceRunsCompleted += 1;
+            firecrawlSourcesCompleted += 1;
+          } else if (runStatus === 'partial') {
+            dtiSourceRunsPartial += 1;
+            firecrawlSourcesPartial += 1;
+          } else {
+            dtiSourceRunsFailed += 1;
+            firecrawlSourcesFailed += 1;
+          }
+        } catch (firecrawlErr: any) {
+          const message = maskPotentialSecrets(normalizeText(firecrawlErr?.message) || `Firecrawl DTI source failed on ${target.targetUrl}`);
+          intelxWarnings.push(message);
+          if (sourceRun?.id) {
+            await finalizeDtiSourceRun(
+              adminClient,
+              sourceRun.id,
+              sourceRun.started_at || null,
+              'failed',
+              0,
+              null,
+              message,
+              {
+                source_key: target.sourceKey,
+                source_url: target.targetUrl,
+              },
+            );
+          }
+          dtiSourceRunsFailed += 1;
+          firecrawlSourcesFailed += 1;
+        }
+      }
+    } else if (includeDtiExtended && !FIRECRAWL_API_KEY) {
+      intelxWarnings.push('Firecrawl non configurato: impostare FIRECRAWL_API_KEY nelle Edge Function secrets per la raccolta DTI estesa.');
     }
 
     let recommendationMode: 'not_requested' | 'generated' | 'failed' | 'disabled' = 'not_requested';
@@ -1614,6 +2204,9 @@ serve(async (req: Request) => {
     const scanSources = new Set<string>(['surfacescan360']);
     if (intelxSearchesRun > 0 || intelxRecordsCreated > 0) {
       scanSources.add('intelx');
+    }
+    if (firecrawlSourcesRun > 0 || firecrawlEvidenceCreated > 0 || firecrawlFindingsCreated > 0) {
+      scanSources.add('firecrawl');
     }
     await adminClient
       .from('darkrisk_scan_runs' as any)
@@ -1636,10 +2229,32 @@ serve(async (req: Request) => {
             query_terms_considered: intelxQueryTerms.length,
             searches_run: intelxSearchesRun,
             at_domain_tld_queries: intelxAtDomainQueries,
+            deep_fetches_run: intelxDeepFetchesRun,
+            deep_fetch_warnings: intelxDeepFetchWarnings,
             source_records_created: intelxRecordsCreated,
             evidence_created: intelxEvidenceCreated,
             findings_created: intelxFindingsCreated,
             alerts_created: intelxAlertsCreated,
+          },
+          dti: {
+            extended_enabled: includeDtiExtended,
+            source_runs: {
+              completed: dtiSourceRunsCompleted,
+              partial: dtiSourceRunsPartial,
+              failed: dtiSourceRunsFailed,
+            },
+            sensitive_hits_created: dtiSensitiveHitsCreated,
+            firecrawl: {
+              templates_considered: firecrawlTemplates.length,
+              targets_considered: firecrawlTargets.length,
+              sources_run: firecrawlSourcesRun,
+              completed: firecrawlSourcesCompleted,
+              partial: firecrawlSourcesPartial,
+              failed: firecrawlSourcesFailed,
+              evidence_created: firecrawlEvidenceCreated,
+              findings_created: firecrawlFindingsCreated,
+              sensitive_hits_created: firecrawlSensitiveHitsCreated,
+            },
           },
         },
       })
@@ -1745,10 +2360,32 @@ serve(async (req: Request) => {
             query_terms_considered: intelxQueryTerms.length,
             searches_run: intelxSearchesRun,
             at_domain_tld_queries: intelxAtDomainQueries,
+            deep_fetches_run: intelxDeepFetchesRun,
+            deep_fetch_warnings: intelxDeepFetchWarnings,
             source_records_created: intelxRecordsCreated,
             evidence_created: intelxEvidenceCreated,
             findings_created: intelxFindingsCreated,
             alerts_created: intelxAlertsCreated,
+          },
+          dti: {
+            extended_enabled: includeDtiExtended,
+            source_runs: {
+              completed: dtiSourceRunsCompleted,
+              partial: dtiSourceRunsPartial,
+              failed: dtiSourceRunsFailed,
+            },
+            sensitive_hits_created: dtiSensitiveHitsCreated,
+            firecrawl: {
+              templates_considered: firecrawlTemplates.length,
+              targets_considered: firecrawlTargets.length,
+              sources_run: firecrawlSourcesRun,
+              completed: firecrawlSourcesCompleted,
+              partial: firecrawlSourcesPartial,
+              failed: firecrawlSourcesFailed,
+              evidence_created: firecrawlEvidenceCreated,
+              findings_created: firecrawlFindingsCreated,
+              sensitive_hits_created: firecrawlSensitiveHitsCreated,
+            },
           },
           recommendation_mode: recommendationMode,
           report_mode: reportMode,
@@ -1776,10 +2413,32 @@ serve(async (req: Request) => {
           query_terms_considered: intelxQueryTerms.length,
           searches_run: intelxSearchesRun,
           at_domain_tld_queries: intelxAtDomainQueries,
+          deep_fetches_run: intelxDeepFetchesRun,
+          deep_fetch_warnings: intelxDeepFetchWarnings,
           source_records_created: intelxRecordsCreated,
           evidence_created: intelxEvidenceCreated,
           findings_created: intelxFindingsCreated,
           alerts_created: intelxAlertsCreated,
+        },
+        dti: {
+          extended_enabled: includeDtiExtended,
+          source_runs: {
+            completed: dtiSourceRunsCompleted,
+            partial: dtiSourceRunsPartial,
+            failed: dtiSourceRunsFailed,
+          },
+          sensitive_hits_created: dtiSensitiveHitsCreated,
+          firecrawl: {
+            templates_considered: firecrawlTemplates.length,
+            targets_considered: firecrawlTargets.length,
+            sources_run: firecrawlSourcesRun,
+            completed: firecrawlSourcesCompleted,
+            partial: firecrawlSourcesPartial,
+            failed: firecrawlSourcesFailed,
+            evidence_created: firecrawlEvidenceCreated,
+            findings_created: firecrawlFindingsCreated,
+            sensitive_hits_created: firecrawlSensitiveHitsCreated,
+          },
         },
         recommendation_mode: recommendationMode,
         report_mode: reportMode,

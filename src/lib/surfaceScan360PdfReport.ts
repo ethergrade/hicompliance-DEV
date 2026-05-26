@@ -74,6 +74,13 @@ const LIGHT_BG = { r: 243, g: 246, b: 251 };
 const BORDER = { r: 215, g: 222, b: 232 };
 const SURFACESCAN_BRAND_TITLE_HICOMPLIANCE = 'HICOMPLIANCE · SURFACESCAN360';
 const SURFACESCAN_BRAND_TITLE_HICONSOLE = 'HiConsole - SURFACESCAN360';
+const IPV4_STRICT_RX =
+  /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
+const IPV4_LOOSE_RX =
+  /(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}/;
+const IPV6_LOOSE_RX = /(?:[a-f0-9]{1,4}:){2,}[a-f0-9:]{1,}/i;
+const DOMAIN_RX =
+  /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
 
 const sevColor = (s?: string): [number, number, number] => {
   switch ((s || '').toLowerCase()) {
@@ -145,6 +152,51 @@ const redactReportWords = (value: string) => {
 };
 
 const normalizeHost = (value: string): string => String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+const isIpv4Address = (value: string): boolean => IPV4_STRICT_RX.test(String(value || '').trim());
+const extractIpAddress = (value: string): string => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (isIpv4Address(raw) || raw.includes(':')) return raw;
+  const v4 = raw.match(IPV4_LOOSE_RX);
+  if (v4?.[0]) return v4[0].toLowerCase();
+  const v6 = raw.match(IPV6_LOOSE_RX);
+  if (v6?.[0]) return v6[0].toLowerCase();
+  return '';
+};
+const sanitizeAssetLabel = (value: unknown): string => {
+  const raw = redactReportWords(String(value || ''))
+    .replace(/\bscope completo in monitoraggio\s*\(\d+\s*target\)/gi, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  if (!raw) return '';
+  const ip = extractIpAddress(raw);
+  if (ip) return ip;
+  try {
+    const url = /^https?:\/\//i.test(raw) ? new URL(raw) : new URL(`https://${raw}`);
+    const host = normalizeHost(url.hostname || '');
+    if (host && (DOMAIN_RX.test(host) || extractIpAddress(host))) return host;
+  } catch {
+    // fallback on tokens below
+  }
+  const token = raw
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/.*$/, '')
+    .split(/[\s|,;]+/)
+    .map((entry) => entry.trim().toLowerCase())
+    .find((entry) => Boolean(entry && (DOMAIN_RX.test(entry) || extractIpAddress(entry))));
+  return token || '';
+};
+const isValidReportAsset = (value: unknown): boolean => {
+  const normalized = sanitizeAssetLabel(value);
+  return Boolean(normalized && (extractIpAddress(normalized) || DOMAIN_RX.test(normalized)));
+};
+const pickReportAsset = (...candidates: unknown[]): string => {
+  for (const candidate of candidates) {
+    const normalized = sanitizeAssetLabel(candidate);
+    if (isValidReportAsset(normalized)) return normalized;
+  }
+  return 'n/d';
+};
 const depthFromRoot = (host: string, rootDomain: string): number => {
   const h = normalizeHost(host);
   const root = normalizeHost(rootDomain);
@@ -358,6 +410,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   const h = doc.internal.pageSize.getHeight();
   let y = margin;
   let pageNum = 1;
+  const sectionIndex: Array<{ number: number; title: string; page: number }> = [];
 
   const drawFooter = () => {
     doc.setFontSize(8);
@@ -384,6 +437,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   };
 
   const sectionTitle = (n: number, title: string) => {
+    sectionIndex.push({ number: n, title, page: pageNum });
     ensure(50);
     y += 12;
     doc.setFillColor(BRAND.r, BRAND.g, BRAND.b);
@@ -520,6 +574,41 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     doc.text(label, w - margin - tw + 10, 145);
   }
   y = 210;
+  newPage();
+  const tocPage = pageNum;
+  newPage();
+
+  const renderToc = () => {
+    doc.setPage(tocPage);
+    y = margin;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(DARK.r, DARK.g, DARK.b);
+    doc.text('Sommario', margin, y);
+    y += 18;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(MUTED.r, MUTED.g, MUTED.b);
+    doc.text('Indice capitoli (clicca per aprire la sezione)', margin, y);
+    y += 16;
+    sectionIndex
+      .sort((a, b) => a.number - b.number)
+      .forEach((entry) => {
+        if (y > h - margin - 24) return;
+        const label = `${entry.number}. ${entry.title}`;
+        const pageLabel = `Pag. ${entry.page}`;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.setTextColor(DARK.r, DARK.g, DARK.b);
+        doc.text(label, margin, y);
+        const pageLabelWidth = doc.getTextWidth(pageLabel);
+        doc.text(pageLabel, w - margin - pageLabelWidth, y);
+        doc.setDrawColor(BORDER.r, BORDER.g, BORDER.b);
+        doc.line(margin, y + 3, w - margin, y + 3);
+        doc.link(margin, y - 9, w - margin * 2, 14, { pageNumber: entry.page });
+        y += 18;
+      });
+  };
 
   // ===== 1 ANAGRAFICA =====
   sectionTitle(1, 'Anagrafica cliente');
@@ -669,39 +758,13 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
 
   // ===== 4 PORTE APERTE =====
   sectionTitle(4, 'Porte aperte e servizi esposti');
-  const IPV4_RX =
-    /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
-  const IPV6_RX = /:/;
   const normalizeIp = (value: unknown): string => {
-    const raw = String(value || '').trim().toLowerCase();
-    if (!raw) return '';
-    if (IPV4_RX.test(raw) || IPV6_RX.test(raw)) return raw;
-    const foundV4 = raw.match(/(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}/);
-    if (foundV4?.[0]) return foundV4[0].toLowerCase();
-    const foundV6 = raw.match(/(?:[a-f0-9]{1,4}:){2,}[a-f0-9:]{1,}/i);
-    if (foundV6?.[0]) return foundV6[0].toLowerCase();
-    return '';
+    return extractIpAddress(String(value || ''));
   };
   const sanitizePortHost = (value: unknown): string => {
-    const raw = String(value || '')
-      .replace(/\b(?:shodan|urlscan|web\s*-?\s*check|pentest\s*-?\s*tools?)\b/gi, ' ')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
-    if (!raw) return '';
-    const asUrl = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-    try {
-      const parsed = new URL(asUrl);
-      return normalizeHost(parsed.hostname || '');
-    } catch {
-      // fallback below
-    }
-    const token = raw
-      .replace(/^https?:\/\//i, '')
-      .replace(/\/.*$/, '')
-      .split(/[\s|,;]+/)
-      .map((entry) => entry.trim())
-      .find(Boolean);
-    return normalizeHost(token || '');
+    const asset = sanitizeAssetLabel(value);
+    if (extractIpAddress(asset)) return '';
+    return normalizeHost(asset);
   };
   const normalizePort = (value: unknown): number | null => {
     const parsed = Number(value);
@@ -750,9 +813,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     const hostSanitized = sanitizePortHost(hostRaw);
     const ipFromHost = normalizeIp(hostRaw);
     const ip = normalizeIp(input.ip) || ipFromHost || (normalizeIp(hostSanitized) ? normalizeIp(hostSanitized) : '');
-    const host = hostSanitized && !normalizeIp(hostSanitized)
-      ? hostSanitized
-      : (normalizeHost(String(s.target || '')) || 'n/d');
+    const host = pickReportAsset(hostSanitized, s.target, input.ip);
     const protocol = String(input.protocol || 'tcp').trim().toLowerCase() || 'tcp';
     const key = `${host}|${ip}|${port}|${protocol}`;
     if (!portEvidenceMap.has(key)) {
@@ -878,7 +939,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
           : services.join(' / ');
       const cveList = Array.from(entry.cves);
       return [
-        entry.host || 'n/d',
+        pickReportAsset(entry.host, entry.ip, s.target),
         entry.ip || '-',
         `${entry.port}/${entry.protocol}`,
         serviceLabel,
@@ -958,14 +1019,25 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   );
   y += 6;
   const cveCatalog = Array.isArray(report.cve_catalog) ? report.cve_catalog : [];
-  if (cveCatalog.length > 0) {
+  const cveCatalogScoped = cveCatalog
+    .map((entry) => {
+      const scopedAssets = Array.isArray(entry.affected_assets)
+        ? entry.affected_assets.map((asset) => sanitizeAssetLabel(asset)).filter((asset) => isValidReportAsset(asset))
+        : [];
+      return {
+        ...entry,
+        affected_assets: Array.from(new Set(scopedAssets)),
+      };
+    })
+    .filter((entry) => entry.affected_assets.length > 0);
+  if (cveCatalogScoped.length > 0) {
     text('Catalogo CVE con descrizione tecnica', { bold: true, size: 10, color: [BRAND.r, BRAND.g, BRAND.b] });
     y += 2;
-    const cveRows = cveCatalog.map((entry) => {
+    const cveRows = cveCatalogScoped.map((entry) => {
       const cvss = entry.cvss != null ? String(entry.cvss) : '-';
       const epss = entry.epss != null ? `${(Number(entry.epss) * 100).toFixed(2)}%` : '-';
       const kev = entry.cisa_kev ? 'Sì' : 'No';
-      const assets = (entry.affected_assets || []).slice(0, 2).join(', ');
+      const assets = (entry.affected_assets || []).slice(0, 3).join(', ');
       const desc = redactReportWords(String(entry.description || 'Descrizione non disponibile.'));
       return [
         entry.cve_id || '-',
@@ -977,12 +1049,18 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
       ];
     });
     drawTable(['CVE', 'CVSS', 'EPSS', 'KEV', 'Asset', 'Descrizione'], cveRows, [88, 42, 52, 38, 110, 185]);
+  } else {
+    text('Nessuna CVE associabile in modo attendibile ad asset dominio/sottodominio/IP in scope.', {
+      color: [MUTED.r, MUTED.g, MUTED.b],
+      size: 9,
+    });
+    y += 4;
   }
 
   // Raggruppa per asset
   const byAsset: Record<string, any[]> = {};
   allFindings.forEach((f: any) => {
-    const k = f.affected_asset || f.affected_url || s.target || 'n/d';
+    const k = pickReportAsset(f.affected_asset, f.affected_url, f.ip, s.target);
     (byAsset[k] ||= []).push(f);
   });
   const assetEntries = Object.entries(byAsset).sort((a, b) => b[1].length - a[1].length);
@@ -1084,6 +1162,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   }
 
   drawFooter();
+  renderToc();
   const filename = `SurfaceScan360_${(o.name || 'report').replace(/\s+/g, '_')}_${new Date()
     .toISOString()
     .slice(0, 10)}.pdf`;

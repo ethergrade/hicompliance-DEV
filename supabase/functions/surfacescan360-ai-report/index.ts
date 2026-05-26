@@ -266,6 +266,7 @@ function getScopeReasonFromFinding(
 function normalizeAssetLabel(value: string): string {
   const raw = String(value || '')
     .replace(/\b(?:shodan|urlscan|web\s*-?\s*check|pentest\s*-?\s*tools?)\b/gi, ' ')
+    .replace(/\bscope completo in monitoraggio\s*\(\d+\s*target\)/gi, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim();
   if (!raw) return '';
@@ -277,6 +278,13 @@ function normalizeAssetLabel(value: string): string {
   const host = parseHostname(raw);
   if (host) return host;
   return raw.replace(/^https?:\/\//i, '').replace(/\/+$/, '').trim().toLowerCase();
+}
+
+function isValidCveAssetLabel(value: string): boolean {
+  const normalized = normalizeAssetLabel(value);
+  if (!normalized) return false;
+  const inferred = inferAssetType(normalized);
+  return inferred === 'domain' || inferred === 'subdomain' || inferred === 'ip';
 }
 
 function inferAssetType(value: string, hint?: string | null): 'domain' | 'subdomain' | 'ip' | 'url' | 'range' | 'asset' {
@@ -1672,7 +1680,8 @@ Deno.serve(async (req) => {
     const cveByAsset = new Map<string, Set<string>>();
     const cveSet = new Set<string>();
     findings.forEach((finding: any) => {
-      const asset = String(finding.affected_asset || finding.affected_url || scopeTargetLabel || '').trim() || 'Asset principale';
+      const rawAsset = String(finding.affected_asset || finding.affected_url || scopeTargetLabel || '').trim();
+      const asset = normalizeAssetLabel(rawAsset) || (isValidCveAssetLabel(scopeTargetLabel) ? normalizeAssetLabel(scopeTargetLabel) : '') || 'Asset principale';
       registerAsset(asset, inferAssetType(asset), String(finding.ip || '').trim() || null);
       const ipFromFinding = String(finding.ip || finding.evidence?.ip || '').trim();
       if (ipFromFinding && isIpv4(ipFromFinding)) {
@@ -1696,7 +1705,14 @@ Deno.serve(async (req) => {
         if (!cveId) continue;
         cveSet.add(cveId);
         if (!cveByAsset.has(cveId)) cveByAsset.set(cveId, new Set<string>());
-        cveByAsset.get(cveId)!.add(asset);
+        if (isValidCveAssetLabel(asset)) {
+          cveByAsset.get(cveId)!.add(asset);
+        } else {
+          const ipFallback = normalizeAssetLabel(String(finding.ip || finding.evidence?.ip || ''));
+          if (isValidCveAssetLabel(ipFallback)) cveByAsset.get(cveId)!.add(ipFallback);
+          const hostFallback = normalizeAssetLabel(String(finding.affected_url || finding.affected_asset || scopeTargetLabel || ''));
+          if (isValidCveAssetLabel(hostFallback)) cveByAsset.get(cveId)!.add(hostFallback);
+        }
         if (matrixRow) matrixRow.cve_set.add(cveId);
       }
       const portCandidate = Number(finding.port || finding.evidence?.port || 0);
@@ -1733,7 +1749,7 @@ Deno.serve(async (req) => {
         const cwes = Array.isArray(intelRow?.cwe_ids)
           ? intelRow.cwe_ids.map((c: unknown) => String(c || '').trim()).filter(Boolean).slice(0, 12)
           : [];
-        const affectedAssets = Array.from(cveByAsset.get(cveId) ?? []);
+        const affectedAssets = Array.from(cveByAsset.get(cveId) ?? []).filter((asset) => isValidCveAssetLabel(asset));
         const relatedIps = new Set<string>();
         const relatedDomains = new Set<string>();
         for (const rawAsset of affectedAssets) {
@@ -1773,7 +1789,7 @@ Deno.serve(async (req) => {
         if (a.cisa_kev !== b.cisa_kev) return a.cisa_kev ? -1 : 1;
         return bCvss - aCvss;
       })
-      ;
+      .filter((entry) => Array.isArray(entry.affected_assets) && entry.affected_assets.length > 0);
 
     const sevCount = findings.reduce((acc: Record<string, number>, f) => { acc[f.severity] = (acc[f.severity] ?? 0) + 1; return acc; }, {});
     const topFindings = findings.slice(0, 25).map((f) => ({
