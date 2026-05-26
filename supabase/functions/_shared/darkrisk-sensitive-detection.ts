@@ -26,6 +26,8 @@ const cardCandidateRegex = /\b(?:\d[ -]*?){13,19}\b/g;
 const passwordValueRegex = /\b(?:password|pass|pwd|credential(?:s)?|secret|token)\s*[:=]\s*([^\s,;|]{3,120})/gi;
 const emailPasswordPairRegex = /\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\s*[:;|]\s*([^\s,;|]{3,120})/gi;
 const accountPasswordPairRegex = /\b(?:[a-z][a-z0-9._-]{2,63})\s*[:;|]\s*([^\s,;|]{3,120})/gi;
+const emailRegex = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
+const tokenRegex = /[^\s,;|]+/g;
 
 const invalidPasswordTokens = new Set([
   'password',
@@ -46,6 +48,30 @@ const invalidPasswordTokens = new Set([
   '123456',
 ]);
 
+const invalidAdjacentPasswordTokens = new Set([
+  ...invalidPasswordTokens,
+  'it',
+  'en',
+  'de',
+  'fr',
+  'es',
+  'nl',
+  'pl',
+  'uk',
+  'us',
+  'com',
+  'net',
+  'org',
+  'database',
+  'sql',
+  'txt',
+  'csv',
+  'rar',
+  'zip',
+  '7z',
+  'part',
+]);
+
 function isLikelyPasswordCandidate(value: string): boolean {
   const clean = normalizeText(value);
   if (!clean) return false;
@@ -56,6 +82,24 @@ function isLikelyPasswordCandidate(value: string): boolean {
   if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(clean)) return false;
   if (/^[*xX•]+$/.test(clean)) return false;
   if (/^\d{1,6}$/.test(clean)) return false;
+  return true;
+}
+
+function isLikelyAdjacentPasswordCandidate(value: string): boolean {
+  const clean = normalizeText(value)
+    .replace(/^[\s"'`([{<]+/, '')
+    .replace(/[\s"'`)\]}>.,]+$/, '');
+  if (!isLikelyPasswordCandidate(clean)) return false;
+  const lower = clean.toLowerCase();
+  if (invalidAdjacentPasswordTokens.has(lower)) return false;
+  if (clean.includes('@')) return false;
+  if (/^(?:pbkdf2|argon2|bcrypt|scrypt|sha\d*|md5|hash)/i.test(clean)) return false;
+  if (/^\$2[aby]\$/.test(clean)) return false;
+  if (/^[a-f0-9]{16,}$/i.test(clean)) return false;
+  if (/^[A-Za-z0-9+/=]{28,}$/.test(clean)) return false;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return false;
+  if (/^\d{1,3}\.\d{5,}$/.test(clean)) return false;
+  if (/^\d+$/.test(clean)) return false;
   return true;
 }
 
@@ -101,6 +145,9 @@ function extractValidCardCandidates(text: string): string[] {
 function extractValidPhoneCandidates(text: string): string[] {
   const matches = text.match(phoneCandidateRegex) || [];
   return matches.filter((entry) => {
+    const normalized = normalizeText(entry);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return false;
+    if (/^\d{1,3}\.\d{5,}$/.test(normalized)) return false;
     const digits = entry.replace(/\D/g, '');
     return digits.length >= 7 && digits.length <= 15;
   });
@@ -193,6 +240,59 @@ function extractPasswordCandidates(text: string): string[] {
     if (!isLikelyPasswordCandidate(value)) continue;
     out.add(value);
   }
+
+  for (const value of extractEmailAdjacentPasswordCandidates(text)) {
+    out.add(value);
+  }
+  return Array.from(out);
+}
+
+function extractEmailAdjacentPasswordCandidates(text: string): string[] {
+  const out = new Set<string>();
+  const lines = text.split(/\r?\n/).filter((line) => line.includes('@')).slice(0, 1_500);
+
+  for (const line of lines) {
+    const tokens: Array<{ value: string; start: number; end: number }> = [];
+    tokenRegex.lastIndex = 0;
+    let tokenMatch: RegExpExecArray | null = null;
+    while ((tokenMatch = tokenRegex.exec(line)) !== null) {
+      const raw = normalizeText(String(tokenMatch[0] || ''))
+        .replace(/^[\s"'`([{<]+/, '')
+        .replace(/[\s"'`)\]}>.,]+$/, '');
+      if (!raw) continue;
+      tokens.push({
+        value: raw,
+        start: tokenMatch.index,
+        end: tokenMatch.index + String(tokenMatch[0] || '').length,
+      });
+    }
+    if (tokens.length < 2) continue;
+
+    emailRegex.lastIndex = 0;
+    let emailMatch: RegExpExecArray | null = null;
+    while ((emailMatch = emailRegex.exec(line)) !== null) {
+      const emailStart = emailMatch.index;
+      const emailEnd = emailStart + String(emailMatch[0] || '').length;
+      const emailTokenIndex = tokens.findIndex((token) => token.start <= emailStart && token.end >= emailEnd);
+      if (emailTokenIndex < 0) continue;
+
+      // Database dumps commonly store credentials as: hash username email country
+      // or username password email. Prefer the nearest field before the email.
+      const candidateIndexes = [
+        emailTokenIndex - 1,
+        emailTokenIndex - 2,
+        emailTokenIndex + 1,
+      ].filter((index) => index >= 0 && index < tokens.length);
+
+      for (const index of candidateIndexes) {
+        const candidate = tokens[index]?.value || '';
+        if (!isLikelyAdjacentPasswordCandidate(candidate)) continue;
+        out.add(candidate);
+        break;
+      }
+    }
+  }
+
   return Array.from(out);
 }
 

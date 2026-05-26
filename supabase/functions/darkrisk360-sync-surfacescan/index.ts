@@ -37,6 +37,7 @@ import {
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+const SUPABASE_SECRET_KEYS = String(Deno.env.get('SUPABASE_SECRET_KEYS') || '').trim();
 const INTERNAL_FUNCTIONS_API_KEY = String(
   Deno.env.get('SUPABASE_ANON_KEY')
   || Deno.env.get('SUPABASE_PUBLISHABLE_KEY')
@@ -45,6 +46,7 @@ const INTERNAL_FUNCTIONS_API_KEY = String(
   || '',
 ).trim();
 const DARKRISK_INTERNAL_SECRET = String(Deno.env.get('DARKRISK360_INTERNAL_SECRET') || '').trim();
+const DARKRISK_OPERATOR_SECRET = String(Deno.env.get('DARKRISK360_OPERATOR_SECRET') || '').trim();
 const INTELX_API_KEY = Deno.env.get('INTELX_API_KEY') || '';
 const INTELX_API_URL = String(
   Deno.env.get('INTELX_API_URL') ||
@@ -125,6 +127,32 @@ function extractBearerToken(req: Request): string {
   const auth = String(req.headers.get('authorization') || '');
   const match = auth.match(/^Bearer\s+(.+)$/i);
   return String(match?.[1] || '').trim();
+}
+
+function parseSecretKeySet(...rawValues: string[]): Set<string> {
+  const keys = new Set<string>();
+  const add = (value: unknown) => {
+    const normalized = normalizeText(String(value || ''));
+    if (normalized) keys.add(normalized);
+  };
+
+  for (const rawValue of rawValues) {
+    const raw = String(rawValue || '').trim();
+    if (!raw) continue;
+    add(raw);
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        for (const entry of parsed) add(entry);
+      } else if (parsed && typeof parsed === 'object') {
+        for (const value of Object.values(parsed as Record<string, unknown>)) add(value);
+      }
+    } catch {
+      for (const entry of raw.split(/[\n,\s]+/)) add(entry);
+    }
+  }
+
+  return keys;
 }
 
 type SurfaceAssetRow = {
@@ -751,12 +779,10 @@ serve(async (req: Request) => {
       || req.headers.get('x-darkrisk360-internal')
       || '',
     ).trim();
-    const isServiceRoleInvocation = Boolean(SERVICE_ROLE && bearerToken && bearerToken === SERVICE_ROLE);
-    const isInternalSecretInvocation = Boolean(
-      DARKRISK_INTERNAL_SECRET
-      && internalHeaderSecret
-      && internalHeaderSecret === DARKRISK_INTERNAL_SECRET,
-    );
+    const serviceInvocationKeys = parseSecretKeySet(SERVICE_ROLE, SUPABASE_SECRET_KEYS);
+    const isServiceRoleInvocation = Boolean(bearerToken && serviceInvocationKeys.has(bearerToken));
+    const internalInvocationKeys = parseSecretKeySet(DARKRISK_INTERNAL_SECRET, DARKRISK_OPERATOR_SECRET);
+    const isInternalSecretInvocation = Boolean(internalHeaderSecret && internalInvocationKeys.has(internalHeaderSecret));
 
     let actorUserId = normalizeText((body as any)?.requested_by) || null;
     let caller: Awaited<ReturnType<typeof getCallerProfile>> | null = null;
@@ -1650,7 +1676,7 @@ serve(async (req: Request) => {
             const systemId = normalizeText(String(record?.systemid || '')) || null;
             const storageId = normalizeText(String(record?.storageid || '')) || null;
             const bucket = normalizeText(String(record?.bucket || '')) || null;
-            let deepExtractionSource: 'metadata' | 'preview' | 'read' | 'preview_read' = 'metadata';
+            let deepExtractionSource: 'metadata' | 'preview' | 'read' | 'view' | 'preview_read' = 'metadata';
             let deepExtractionText = '';
             let deepWarning: string | null = null;
             let deepMetadata: Record<string, unknown> = {};
