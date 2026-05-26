@@ -1,6 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Bar,
   BarChart,
@@ -93,6 +95,18 @@ type SensitiveDetailRow = {
   source: string;
 };
 
+type SensitiveSampleViewRow = {
+  id: string;
+  tag: SensitiveTagKey | null;
+  categoryLabel: string;
+  assetScope: string;
+  queryTerm: string;
+  value: string;
+  source: string;
+  queryKind: string;
+  createdAt: string | null;
+};
+
 type IdentityEvidenceRow = {
   identity: string;
   domains: number;
@@ -158,6 +172,13 @@ function shortSiteLabel(value: string): string {
   return `${value.slice(0, 35)}...`;
 }
 
+function displayDarkRiskSource(value: string): string {
+  const source = String(value || '').trim();
+  if (!source) return 'DarkRisk360';
+  if (/intelx|firecrawl|openai/i.test(source)) return 'DarkRisk360';
+  return source;
+}
+
 function isCredentialCompromiseRow(row: Row): boolean {
   const sourceText = `${row.category || ''} ${row.finding_type || ''} ${row.title || ''}`.toLowerCase();
   return /credential|credenzial|password|stealer|compromis/.test(sourceText);
@@ -169,11 +190,51 @@ function isIdentitySensitiveSample(row: DtiOverviewData['sensitive_samples'][num
   return queryKind === 'email_selector' && Boolean(tag);
 }
 
+function normalizeSearchText(value: unknown): string {
+  return String(value || '').trim().toLowerCase();
+}
+
+function tokenizePowerQuery(query: string): string[] {
+  return query.match(/"[^"]+"|'[^']+'|\S+/g)?.map((token) => token.replace(/^['"]|['"]$/g, '')) || [];
+}
+
+function sensitiveSampleField(row: SensitiveSampleViewRow, field: string): string {
+  const normalizedField = normalizeSearchText(field);
+  if (['categoria', 'category', 'tag', 'tipo'].includes(normalizedField)) return `${row.categoryLabel} ${row.tag || ''}`;
+  if (['dominio', 'domain', 'site', 'sito', 'asset'].includes(normalizedField)) return row.assetScope;
+  if (['query', 'q'].includes(normalizedField)) return row.queryTerm;
+  if (['valore', 'value', 'contenuto', 'evidenza'].includes(normalizedField)) return row.value;
+  if (['source', 'fonte'].includes(normalizedField)) return row.source;
+  if (['kind', 'query_kind', 'origine'].includes(normalizedField)) return row.queryKind;
+  if (['has', 'contiene'].includes(normalizedField)) return `${row.categoryLabel} ${row.tag || ''} ${row.value}`;
+  return `${row.categoryLabel} ${row.assetScope} ${row.queryTerm} ${row.value} ${row.source} ${row.queryKind}`;
+}
+
+function matchesSensitivePowerQuery(row: SensitiveSampleViewRow, query: string): boolean {
+  const tokens = tokenizePowerQuery(query);
+  if (tokens.length === 0) return true;
+
+  return tokens.every((token) => {
+    const separatorIndex = token.indexOf(':');
+    if (separatorIndex > 0) {
+      const field = token.slice(0, separatorIndex);
+      const expected = normalizeSearchText(token.slice(separatorIndex + 1));
+      if (!expected) return true;
+      return normalizeSearchText(sensitiveSampleField(row, field)).includes(expected);
+    }
+    const expected = normalizeSearchText(token);
+    return normalizeSearchText(sensitiveSampleField(row, 'all')).includes(expected);
+  });
+}
+
 export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: boolean; dti?: DtiOverviewData | null }> = ({
   rows,
   extendedMode = false,
   dti = null,
 }) => {
+  const [sensitivePowerQuery, setSensitivePowerQuery] = useState('');
+  const [sensitiveTagFilter, setSensitiveTagFilter] = useState<'all' | SensitiveTagKey>('all');
+
   const data = useMemo(() => {
     const siteCategory = new Map<string, Record<string, number>>();
     const siteFindings = new Map<string, Row[]>();
@@ -212,7 +273,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
             title: row.title,
             asset: row.asset,
             finding_type: row.finding_type,
-            source: row.source,
+            source: displayDarkRiskSource(row.source),
           });
         }
       }
@@ -319,6 +380,21 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
         identityLabel: shortSiteLabel(row.identity),
       }));
 
+    const sensitiveSampleRows: SensitiveSampleViewRow[] = (dti?.sensitive_samples || []).map((sample, index) => {
+      const tag = normalizeSensitiveTag(sample.tag || '');
+      return {
+        id: `${sample.query_kind || 'sample'}-${sample.asset_scope || 'asset'}-${sample.tag || 'tag'}-${index}`,
+        tag,
+        categoryLabel: tag ? sensitiveLabel[tag] : String(sample.tag || 'Altro'),
+        assetScope: String(sample.asset_scope || '-'),
+        queryTerm: String(sample.query_term || '-'),
+        value: String(sample.value || sample.masked_value || '-'),
+        source: displayDarkRiskSource(String(sample.source || 'DarkRisk360')),
+        queryKind: String(sample.query_kind || '-'),
+        createdAt: sample.created_at || null,
+      };
+    });
+
     return {
       topCategories,
       siteRows,
@@ -328,8 +404,16 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
       groupedAssetRows,
       credentialCompromiseRows,
       identityRows,
+      sensitiveSampleRows,
     };
   }, [rows, dti]);
+
+  const filteredSensitiveSampleRows = useMemo(() => {
+    return data.sensitiveSampleRows.filter((row) => {
+      if (sensitiveTagFilter !== 'all' && row.tag !== sensitiveTagFilter) return false;
+      return matchesSensitivePowerQuery(row, sensitivePowerQuery);
+    });
+  }, [data.sensitiveSampleRows, sensitivePowerQuery, sensitiveTagFilter]);
 
   return (
     <Card className="border-border">
@@ -430,9 +514,63 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
           })()}
           {extendedMode ? (
             <div className="mt-4 rounded-md border border-border/60 bg-background/30 p-3">
-              <p className="text-xs font-medium mb-2">Dettaglio evidenze sensibili su query domini in scope (`@dominio`)</p>
+              <div className="flex flex-col gap-3 mb-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-medium">Dettaglio evidenze sensibili su query domini in scope (`@dominio`)</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      PowerQuery: testo libero oppure campi `categoria:`, `dominio:`, `query:`, `valore:`, `source:`, `kind:`.
+                    </p>
+                  </div>
+                  <Badge variant="outline">
+                    {filteredSensitiveSampleRows.length}/{data.sensitiveSampleRows.length || data.detailedSensitiveRows.length} risultati
+                  </Badge>
+                </div>
+                <Input
+                  value={sensitivePowerQuery}
+                  onChange={(event) => setSensitivePowerQuery(event.target.value)}
+                  placeholder="Es. categoria:Password dominio:panapesca query:@panapesca.it valore:chrome source:DarkRisk360"
+                  className="h-9 text-xs"
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={sensitiveTagFilter === 'all' ? 'default' : 'outline'}
+                    onClick={() => setSensitiveTagFilter('all')}
+                  >
+                    Tutte
+                  </Button>
+                  {(Object.keys(sensitiveLabel) as SensitiveTagKey[]).map((tag) => (
+                    <Button
+                      key={`sensitive-filter-${tag}`}
+                      type="button"
+                      size="sm"
+                      variant={sensitiveTagFilter === tag ? 'default' : 'outline'}
+                      onClick={() => setSensitiveTagFilter(tag)}
+                    >
+                      {sensitiveLabel[tag]}
+                    </Button>
+                  ))}
+                  {(sensitivePowerQuery || sensitiveTagFilter !== 'all') ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setSensitivePowerQuery('');
+                        setSensitiveTagFilter('all');
+                      }}
+                    >
+                      Pulisci filtri
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
               {(dti?.sensitive_samples?.length || 0) === 0 && data.detailedSensitiveRows.length === 0 ? (
                 <p className="text-xs text-muted-foreground">Nessuna evidenza sensibile classificata nel ciclo corrente.</p>
+              ) : data.sensitiveSampleRows.length > 0 && filteredSensitiveSampleRows.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Nessuna evidenza corrisponde ai filtri PowerQuery impostati.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[900px] text-xs">
@@ -446,19 +584,16 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                       </tr>
                     </thead>
                     <tbody>
-                      {(dti?.sensitive_samples?.length || 0) > 0 ? (
-                        dti!.sensitive_samples.slice(0, 120).map((row, index) => {
-                          const normalizedTag = normalizeSensitiveTag(row.tag);
-                          return (
-                            <tr key={`${row.tag}-${row.asset_scope}-${index}`} className="border-b border-border/40 align-top">
-                              <td className="py-2 pr-3">{normalizedTag ? sensitiveLabel[normalizedTag] : row.tag}</td>
-                              <td className="py-2 pr-3 font-medium">{row.asset_scope || '-'}</td>
-                              <td className="py-2 pr-3">{row.query_term || '-'}</td>
-                              <td className="py-2 pr-3 font-mono text-[11px] break-all">{row.value || row.masked_value || '-'}</td>
-                              <td className="py-2">{row.source || 'DarkRisk360'}</td>
-                            </tr>
-                          );
-                        })
+                      {data.sensitiveSampleRows.length > 0 ? (
+                        filteredSensitiveSampleRows.slice(0, 160).map((row) => (
+                          <tr key={row.id} className="border-b border-border/40 align-top">
+                            <td className="py-2 pr-3">{row.categoryLabel}</td>
+                            <td className="py-2 pr-3 font-medium">{row.assetScope}</td>
+                            <td className="py-2 pr-3">{row.queryTerm}</td>
+                            <td className="py-2 pr-3 font-mono text-[11px] break-all">{row.value}</td>
+                            <td className="py-2">{displayDarkRiskSource(row.source)}</td>
+                          </tr>
+                        ))
                       ) : (
                         data.detailedSensitiveRows.map((row, index) => (
                           <tr key={`${row.tag}-${row.site}-${index}`} className="border-b border-border/40 align-top">
@@ -466,7 +601,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                             <td className="py-2 pr-3 font-medium">{row.site}</td>
                             <td className="py-2 pr-3">-</td>
                             <td className="py-2 pr-3">-</td>
-                            <td className="py-2">{row.source}</td>
+                            <td className="py-2">{displayDarkRiskSource(row.source)}</td>
                           </tr>
                         ))
                       )}
@@ -516,7 +651,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                       <td className="py-2 pr-3">{row.asset || '-'}</td>
                       <td className="py-2 pr-3">{row.title}</td>
                       <td className="py-2 pr-3">{row.finding_type}</td>
-                      <td className="py-2">{row.source}</td>
+                      <td className="py-2">{displayDarkRiskSource(row.source)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -647,7 +782,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                             <td className="py-2 pr-3">{row.title}</td>
                             <td className="py-2 pr-3">{row.finding_type}</td>
                             <td className="py-2 pr-3">{row.category}</td>
-                            <td className="py-2 pr-3">{row.source}</td>
+                            <td className="py-2 pr-3">{displayDarkRiskSource(row.source)}</td>
                             <td className="py-2">
                               {(row.sensitive_tags || []).length > 0 ? (
                                 <div className="flex flex-wrap gap-1">
