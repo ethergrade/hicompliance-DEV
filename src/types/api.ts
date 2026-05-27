@@ -505,3 +505,236 @@ export interface UpdateIntegrationRequest {
   is_active?: boolean;
   api_methods?: Record<string, unknown>;
 }
+
+// ─── Assessment v2 ───────────────────────────────────────────────────────────
+
+export interface AssessmentCategory {
+  id: string;
+  name: string;
+  code: string;
+  description: string | null;
+  order_index: number;
+  questions: AssessmentQuestion[];
+}
+
+export interface AssessmentQuestion {
+  id: string;
+  category_id: string;
+  question_text: string;
+  order_index: number;
+}
+
+export interface AssessmentResponseItem {
+  id: string;
+  question_id: string;
+  status: 'not_applicable' | 'planned_in_progress' | 'completed';
+  notes: string | null;
+  score: number;
+  updated_at: string;
+  question?: AssessmentQuestion;
+}
+
+export interface BatchAssessmentResponseRequest {
+  responses: {
+    question_id: string;
+    status: 'not_applicable' | 'planned_in_progress' | 'completed';
+    notes?: string | null;
+  }[];
+}
+
+export interface CategoryScore {
+  name: string;
+  score: number;
+  answered: number;
+  total: number;
+}
+
+export interface AssessmentSnapshot {
+  id: string;
+  snapshot_year: number;
+  overall_score: number;
+  total_answered: number;
+  total_questions: number;
+  category_scores: Record<string, CategoryScore>;
+  openai_data?: unknown | null;
+  shodan_data?: unknown | null;
+  intelx_data?: unknown | null;
+  created_at: string;
+}
+
+export interface RemediationTemplate {
+  id: string;
+  title: string;
+  description?: string;
+  category?: string;
+  priority?: string;
+}
+
+// ─── Asset Inventory v2 (company-scoped) ────────────────────────────────────
+
+export interface AssetInventoryV2Payload {
+  workstations?: number;
+  servers_physical?: number;
+  servers_virtual?: number;
+  nas_san?: number;
+  routers?: number;
+  switches?: number;
+  firewalls?: number;
+  wap?: number;
+  printers?: number;
+  voip_phones?: number;
+  iot_devices?: number;
+  mobile_devices?: number;
+  cloud_services?: number;
+  saas_apps?: number;
+  databases?: number;
+  web_apps?: number;
+  email_accounts?: number;
+  domain_accounts?: number;
+  local_accounts?: number;
+  service_accounts?: number;
+  privileged_accounts?: number;
+  external_contractors?: number;
+  backup_solutions_count?: number;
+  dr_sites?: number;
+  data_centers_owned?: number;
+  data_centers_cloud?: number;
+  internet_connections?: number;
+  vpn_tunnels?: number;
+  critical_servers?: number;
+  public_ips?: number;
+  domains_owned?: number;
+  ssl_certificates?: number;
+  security_cameras?: number;
+  access_control_systems?: number;
+  hilog_sharepoint_dlp_enabled?: boolean;
+  hilog_entra_id_enabled?: boolean;
+  notes?: string;
+}
+
+export interface AssetInventoryV2Resource extends AssetInventoryV2Payload {
+  id?: string;
+  company_id?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// ─── Remediation Tasks ──────────────────────────────────────────────────────
+
+export interface RemediationTask {
+  id: string;
+  task: string;
+  category?: string | null;
+  priority?: 'low' | 'medium' | 'high' | 'critical' | null;
+  color?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  progress?: number;
+  assignee?: string | null;
+  budget?: string | null;
+  dependencies?: string[];
+  display_order?: number;
+  is_deleted?: boolean;
+  is_hidden?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface StoreRemediationTaskRequest {
+  task: string;
+  category?: string | null;
+  priority?: 'low' | 'medium' | 'high' | 'critical' | null;
+  color?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  progress?: number;
+  assignee?: string | null;
+  budget?: string | null;
+  dependencies?: string[];
+  display_order?: number;
+}
+
+export interface UpdateRemediationTaskRequest extends Partial<StoreRemediationTaskRequest> {
+  is_deleted?: boolean;
+  is_hidden?: boolean;
+}
+
+// ─── Risk Analysis ──────────────────────────────────────────────────────────
+
+export interface RiskAnalysisItem {
+  id: string;
+  asset_name: string;
+  threat_source?: 'non_umana' | 'umana_esterna' | 'umana_interna' | null;
+  control_scores?: Record<string, unknown> | null;
+  risk_score?: number;
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface StoreRiskAnalysisRequest {
+  asset_name: string;
+  threat_source?: 'non_umana' | 'umana_esterna' | 'umana_interna' | null;
+  control_scores?: Record<string, unknown> | null;
+  risk_score?: number;
+  notes?: string | null;
+}
+
+export interface UpdateRiskAnalysisRequest extends Partial<StoreRiskAnalysisRequest> {}
+
+// ─── Playbook Completions ───────────────────────────────────────────────────
+
+export interface PlaybookCompletion {
+  id: string;
+  playbook_id: string;
+  playbook_title?: string | null;
+  playbook_category?: string | null;
+  playbook_severity?: string | null;
+  progress_percentage?: number;
+  data?: Record<string, unknown> | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface StorePlaybookCompletionRequest {
+  playbook_id: string;
+  playbook_title?: string | null;
+  playbook_category?: string | null;
+  playbook_severity?: string | null;
+  progress_percentage?: number;
+  data?: Record<string, unknown> | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+}
+
+export interface UpdatePlaybookCompletionRequest extends Partial<StorePlaybookCompletionRequest> {
+  progress_percentage?: number;
+  completed_at?: string | null;
+}
+
+// ─── Dark Risk Alerts ───────────────────────────────────────────────────────
+
+export interface DarkRiskAlert {
+  id: string;
+  company_id?: string | null;
+  alert_email: string;
+  alert_types?: string[];
+  is_active?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface StoreDarkRiskAlertRequest {
+  alert_email: string;
+  alert_types?: string[];
+  is_active?: boolean;
+  company_id?: string | null;
+}
+
+export interface UpdateDarkRiskAlertRequest {
+  alert_email?: string;
+  alert_types?: string[];
+  is_active?: boolean;
+}
