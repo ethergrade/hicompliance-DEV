@@ -12,6 +12,7 @@ import {
   AdvancedFilter, createEmptyFilter,
 } from './filterEngine';
 import { HiLogExcelExport } from './HiLogExcelExport';
+import { HiLogPdfExport } from './HiLogPdfExport';
 
 export interface HiLogFilters {
   globalSearch: string;
@@ -19,6 +20,7 @@ export interface HiLogFilters {
   hostname: string;
   username: string;
   ip: string;
+  period: 'all' | '7d' | '1m' | '3m' | '6m';
 }
 
 interface DataSets {
@@ -49,11 +51,11 @@ export const GlobalFilters: React.FC<Props> = ({
   };
 
   const clearAll = () => {
-    onChange({ globalSearch: '', severity: 'all', hostname: '', username: '', ip: '' });
+    onChange({ globalSearch: '', severity: 'all', hostname: '', username: '', ip: '', period: 'all' });
     onAdvancedFilterChange(createEmptyFilter());
   };
 
-  const hasFilters = filters.globalSearch || filters.severity !== 'all' || filters.hostname || filters.username || filters.ip;
+  const hasFilters = filters.globalSearch || filters.severity !== 'all' || filters.hostname || filters.username || filters.ip || filters.period !== 'all';
   const hasAdvanced = advancedFilter.groups.some(g => g.conditions.some(c => c.value.trim()));
 
   return (
@@ -89,6 +91,19 @@ export const GlobalFilters: React.FC<Props> = ({
                   </Select>
                 </div>
                 <div className="w-28 shrink-0">
+                  <Label className="text-xs text-muted-foreground mb-1 block">Periodo</Label>
+                  <Select value={filters.period} onValueChange={(v) => update('period', v as HiLogFilters['period'])}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tutto</SelectItem>
+                      <SelectItem value="7d">7d precedenti</SelectItem>
+                      <SelectItem value="1m">1m precedente</SelectItem>
+                      <SelectItem value="3m">3m precedenti</SelectItem>
+                      <SelectItem value="6m">6m precedenti</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="w-28 shrink-0">
                   <Label className="text-xs text-muted-foreground mb-1 block">Hostname</Label>
                   <Input placeholder="SRV-DC01" value={filters.hostname} onChange={(e) => update('hostname', e.target.value)} />
                 </div>
@@ -119,7 +134,12 @@ export const GlobalFilters: React.FC<Props> = ({
                   Reset
                 </Button>
               )}
-              {dataSets && <HiLogExcelExport dataSets={dataSets} />}
+              {dataSets && (
+                <>
+                  <HiLogPdfExport dataSets={dataSets} />
+                  <HiLogExcelExport dataSets={dataSets} />
+                </>
+              )}
             </div>
           </div>
         </CardContent>

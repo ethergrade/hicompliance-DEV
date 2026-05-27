@@ -1,81 +1,135 @@
  import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+ import { supabase } from '@/integrations/supabase/client';
  import { useAuth } from '@/components/auth/AuthProvider';
  import { useUserRoles } from '@/hooks/useUserRoles';
- import { tenantsApi } from '@/lib/api';
- import type { TenantResource } from '@/types/api';
  
- interface ClientContextType {
-   selectedOrganization: TenantResource | null;
-   setSelectedOrganization: (org: TenantResource) => void;
-   clearSelection: () => void;
-   canManageMultipleClients: boolean;
-   isLoadingClients: boolean;
-   organizations: TenantResource[];
-   fetchOrganizations: () => Promise<void>;
-   userOrganizationId: string | null;
+ interface Organization {
+   id: string;
+   name: string;
+   code: string;
+   created_at: string;
  }
  
- const ClientContext = createContext<ClientContextType | undefined>(undefined);
+interface ClientContextType {
+  selectedOrganization: Organization | null;
+  setSelectedOrganization: (org: Organization) => void;
+  clearSelection: () => void;
+  canManageMultipleClients: boolean;
+  isLoadingClients: boolean;
+  hasFetchedOrganizations: boolean;
+  organizations: Organization[];
+  fetchOrganizations: () => Promise<void>;
+  userOrganizationId: string | null;
+}
  
- const STORAGE_KEY = 'hicompliance_selected_org';
+const ClientContext = createContext<ClientContextType | undefined>(undefined);
 
- function getStoredOrganization(): TenantResource | null {
-   try {
-     const raw = localStorage.getItem(STORAGE_KEY);
-     if (raw) return JSON.parse(raw) as TenantResource;
-   } catch { /* ignore corrupt data */ }
-   return null;
- }
+const STORAGE_KEY = 'hicompliance_selected_org';
+const SALES_LOCK_EMAIL = 'sales@sales.com';
+const SALES_LOCK_ORG_CODE = 'cliente1';
+
+export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [selectedOrganization, setSelectedOrganizationState] = useState<Organization | null>(null);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [isLoadingClients, setIsLoadingClients] = useState(true);
+  const [hasFetchedOrganizations, setHasFetchedOrganizations] = useState(false);
+  const [userOrganizationId, setUserOrganizationId] = useState<string | null>(null);
+  const { user, userProfile } = useAuth();
+  const { isSuperAdmin, isSales, loading: rolesLoading } = useUserRoles();
+
+  const normalizedEmail = String(user?.email || userProfile?.email || '').trim().toLowerCase();
+  const isLockedSalesUser = isSales && normalizedEmail === SALES_LOCK_EMAIL;
+  const canManageMultipleClients = isSuperAdmin || (isSales && !isLockedSalesUser);
+
+  // Fetch organizations for sales/admin users
+  const fetchOrganizations = useCallback(async () => {
+    if (!user || rolesLoading) return;
+    
+    setIsLoadingClients(true);
+    setHasFetchedOrganizations(false);
+    try {
+      // First get user's own organization
+      const { data: userData } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('auth_user_id', user.id)
+        .single();
+      
+      setUserOrganizationId(userData?.organization_id || null);
+
+      if (isLockedSalesUser) {
+        const { data: lockedOrg, error: lockedOrgError } = await supabase
+          .from('organizations')
+          .select('id, name, code, created_at')
+          .eq('code', SALES_LOCK_ORG_CODE)
+          .single();
+
+        if (lockedOrgError) throw lockedOrgError;
+        if (!lockedOrg) throw new Error(`Organization "${SALES_LOCK_ORG_CODE}" not found`);
+
+        setUserOrganizationId(lockedOrg.id);
+        setOrganizations([lockedOrg]);
+        setSelectedOrganizationState(lockedOrg);
+        localStorage.setItem(STORAGE_KEY, lockedOrg.id);
+        return;
+      }
+
+      if (canManageMultipleClients) {
+        // Sales/Admin: fetch all organizations
+        const { data, error } = await supabase
+          .from('organizations')
+           .select('id, name, code, created_at')
+           .order('name');
  
- export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-   const [selectedOrganization, setSelectedOrganizationState] = useState<TenantResource | null>(getStoredOrganization);
-   const [organizations, setOrganizations] = useState<TenantResource[]>([]);
-   const [isLoadingClients, setIsLoadingClients] = useState(true);
-   const [userOrganizationId, setUserOrganizationId] = useState<string | null>(null);
-   const { user, loading: authLoading } = useAuth();
- const { isSuperAdmin, isSales, loading: rolesLoading } = useUserRoles();
-  
-   const canManageMultipleClients = isSuperAdmin || isSales;
+         if (error) throw error;
+         setOrganizations(data || []);
 
-   // Fetch organizations for super-admin/sales users
-   const fetchOrganizations = useCallback(async () => {
-     if (!user || rolesLoading) return;
-     
-     setIsLoadingClients(true);
-     try {
-       setUserOrganizationId(user.tenant_id || null);
+         // URL override: ?org=<organization_id>
+         const orgFromUrl = new URLSearchParams(window.location.search).get('org');
+         if (orgFromUrl && data) {
+           const urlOrg = data.find(o => o.id === orgFromUrl);
+           if (urlOrg) {
+             setSelectedOrganizationState(urlOrg);
+             localStorage.setItem(STORAGE_KEY, urlOrg.id);
+             return;
+           }
+         }
 
-       if (canManageMultipleClients) {
-         // Super-admin/Sales: fetch all tenants
-         const tenants = await tenantsApi.listAll();
-         setOrganizations(tenants);
-
-         // Restore from localStorage (already handled in useState init, but
-         // refresh with fresh API data here to ensure name/code are current)
-         const stored = getStoredOrganization();
-         if (stored && !selectedOrganization) {
-           const fresh = tenants.find(t => t.id === stored.id);
-           if (fresh) setSelectedOrganizationState(fresh);
+         // Try to restore from localStorage
+         const storedOrgId = localStorage.getItem(STORAGE_KEY);
+         if (storedOrgId && data) {
+           const storedOrg = data.find(o => o.id === storedOrgId);
+           if (storedOrg) {
+             setSelectedOrganizationState(storedOrg);
+           }
          }
        } else {
-         // Normal client: use their own tenant
-         if (user.tenant_id) {
-           const tenant = await tenantsApi.getOwn();
-           setOrganizations([tenant]);
-           setSelectedOrganizationState(tenant);
+         // Normal client: use their organization
+         if (userData?.organization_id) {
+           const { data: orgData } = await supabase
+             .from('organizations')
+             .select('id, name, code, created_at')
+             .eq('id', userData.organization_id)
+             .single();
+           
+           if (orgData) {
+             setOrganizations([orgData]);
+             setSelectedOrganizationState(orgData);
+           }
          }
        }
-     } catch (error) {
-       console.error('Error fetching organizations:', error);
-     } finally {
-       setIsLoadingClients(false);
-     }
-   }, [user, canManageMultipleClients, rolesLoading]);
+    } catch (error) {
+      console.error('Error fetching organizations:', error);
+    } finally {
+      setIsLoadingClients(false);
+      setHasFetchedOrganizations(true);
+    }
+  }, [user, canManageMultipleClients, rolesLoading, isLockedSalesUser]);
  
    // Set selected organization with persistence
-   const setSelectedOrganization = useCallback((org: TenantResource) => {
+   const setSelectedOrganization = useCallback((org: Organization) => {
      setSelectedOrganizationState(org);
-     localStorage.setItem(STORAGE_KEY, JSON.stringify(org));
+     localStorage.setItem(STORAGE_KEY, org.id);
    }, []);
  
    // Clear selection (for switching clients)
@@ -85,32 +139,31 @@
    }, []);
  
    // Fetch organizations on auth change
-   // IMPORTANT: authLoading guard prevents clearing stored org during initial page load
    useEffect(() => {
-     if (authLoading) return; // Wait for auth to resolve
-     if (user && !rolesLoading) {
-       fetchOrganizations();
-     } else if (!user) {
-       // User explicitly logged out — clear everything
-       setOrganizations([]);
-       setSelectedOrganizationState(null);
-       setUserOrganizationId(null);
-       localStorage.removeItem(STORAGE_KEY);
-     }
-   }, [user, rolesLoading, fetchOrganizations, authLoading]);
+    if (user && !rolesLoading) {
+      fetchOrganizations();
+    } else if (!user) {
+      setOrganizations([]);
+      setSelectedOrganizationState(null);
+      setUserOrganizationId(null);
+      setHasFetchedOrganizations(false);
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  }, [user, rolesLoading, fetchOrganizations]);
  
    return (
      <ClientContext.Provider
        value={{
          selectedOrganization,
          setSelectedOrganization,
-         clearSelection,
-         canManageMultipleClients,
-         isLoadingClients,
-         organizations,
-         fetchOrganizations,
-         userOrganizationId,
-       }}
+        clearSelection,
+        canManageMultipleClients,
+        isLoadingClients,
+        hasFetchedOrganizations,
+        organizations,
+        fetchOrganizations,
+        userOrganizationId,
+      }}
      >
        {children}
      </ClientContext.Provider>
