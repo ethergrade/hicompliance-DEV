@@ -5,6 +5,7 @@ import type {
   LoginData,
   LoginUser,
   ChangePasswordRequest,
+  Group,
 } from "@/types/api";
 
 export const authApi = {
@@ -27,5 +28,11 @@ export const authApi = {
 
   async changePassword(payload: ChangePasswordRequest): Promise<void> {
     await apiClient.patch<ApiResponse<null>>("/auth/password", payload);
+  },
+
+  /** Get auth groups for the current user */
+  async groups(): Promise<Group[]> {
+    const res = await apiClient.get<ApiResponse<Group[]>>("/auth/groups");
+    return res.data;
   },
 };

@@ -115,7 +115,41 @@ export const irpApi = {
     return res.data;
   },
 
-  // ─── Groups ──────────────────────────────────────────────────────────────
+  // ─── IRP History ────────────────────────────────────────────────────────
+
+  /** Get IRP document history for a company */
+  async history(companyId: string): Promise<Record<string, unknown>[]> {
+    const res = await apiClient.get<ApiResponse<Record<string, unknown>[]>>(
+      `/companies/${companyId}/irp/history`,
+      undefined,
+      groupHeader(companyId)
+    );
+    return res.data;
+  },
+
+  // ─── IRP Document Publish ────────────────────────────────────────────────
+
+  /** Publish the IRP document for a company */
+  async publishDocument(companyId: string): Promise<Record<string, unknown>> {
+    const res = await apiClient.post<ApiResponse<Record<string, unknown>>>(
+      `/companies/${companyId}/irp/document/publish`,
+      undefined,
+      groupHeader(companyId)
+    );
+    return res.data;
+  },
+
+  // ─── Import Emergency Contacts from Directory ─────────────────────────────
+
+  /** Import emergency contacts from the directory */
+  async importEmergencyContactsFromDirectory(companyId: string): Promise<IrpEmergencyContactResource[]> {
+    const res = await apiClient.post<ApiResponse<IrpEmergencyContactResource[]>>(
+      `/companies/${companyId}/irp/emergency-contacts/import-from-directory`,
+      undefined,
+      groupHeader(companyId)
+    );
+    return res.data;
+  },
 
   /** List all groups */
   async groups(): Promise<Group[]> {

@@ -7,50 +7,77 @@ import type {
   UpdateTenantRequest,
 } from "@/types/api";
 
-export const tenantsApi = {
-  async list(page?: number): Promise<PaginatedResponse<TenantResource>> {
-    return apiClient.get<PaginatedResponse<TenantResource>>("/tenants", page ? { page } : undefined);
+const groupHeader = (groupId: string) => ({
+  headers: { "X-Group-Id": groupId },
+});
+
+/**
+ * Companies API (replaces deprecated /tenants endpoints).
+ *
+ * Auth format (2026-05-27):
+ *   /auth/me returns { is_super_admin: bool, groups: Group[] }
+ *   Group.id = group UUID (used as X-Group-Id)
+ *   Company.id = old tenant_id (same UUID)
+ *
+ * List:  GET  /companies?group_id={gid}    → paginated, X-Group-Id required
+ * Single: GET  /companies/{id}              → {success, message, data}
+ */
+export const companiesApi = {
+  /** List companies for a group */
+  async list(groupId: string, page?: number): Promise<PaginatedResponse<TenantResource>> {
+    return apiClient.get<PaginatedResponse<TenantResource>>(
+      "/companies",
+      { page, group_id: groupId },
+      groupHeader(groupId)
+    );
   },
 
-  /** Fetch all tenants across all pages */
-  async listAll(): Promise<TenantResource[]> {
-    const first = await this.list(1);
+  /** Fetch all companies for a group (auto-paginate) */
+  async listAll(groupId: string): Promise<TenantResource[]> {
+    const first = await this.list(groupId, 1);
     const all = [...first.data];
     for (let p = 2; p <= first.meta.last_page; p++) {
-      const page = await this.list(p);
+      const page = await this.list(groupId, p);
       all.push(...page.data);
     }
     return all;
   },
 
-  async get(id: string): Promise<TenantResource> {
-    const res = await apiClient.get<ApiResponse<TenantResource>>(`/tenants/${id}`);
+  /** Get a single company by ID */
+  async get(id: string, groupId?: string): Promise<TenantResource> {
+    const res = await apiClient.get<ApiResponse<TenantResource>>(
+      `/companies/${id}`,
+      undefined,
+      groupId ? groupHeader(groupId) : undefined
+    );
     return res.data;
   },
 
-  async create(payload: StoreTenantRequest): Promise<TenantResource> {
-    const res = await apiClient.post<ApiResponse<TenantResource>>("/tenants", payload);
+  /** Create a new company */
+  async create(payload: StoreTenantRequest, groupId: string): Promise<TenantResource> {
+    const res = await apiClient.post<ApiResponse<TenantResource>>(
+      "/companies",
+      payload,
+      groupHeader(groupId)
+    );
     return res.data;
   },
 
-  async update(id: string, payload: UpdateTenantRequest): Promise<TenantResource> {
-    const res = await apiClient.patch<ApiResponse<TenantResource>>(`/tenants/${id}`, payload);
+  /** Update a company */
+  async update(id: string, payload: UpdateTenantRequest, groupId: string): Promise<TenantResource> {
+    const res = await apiClient.put<ApiResponse<TenantResource>>(
+      `/companies/${id}`,
+      payload,
+      groupHeader(groupId)
+    );
     return res.data;
   },
 
-  async delete(id: string): Promise<void> {
-    await apiClient.delete(`/tenants/${id}`);
-  },
-
-  /** Get the authenticated user's own tenant */
-  async getOwn(): Promise<TenantResource> {
-    const res = await apiClient.get<ApiResponse<TenantResource>>("/tenant");
-    return res.data;
-  },
-
-  /** Update the authenticated user's own tenant */
-  async updateOwn(payload: UpdateTenantRequest): Promise<TenantResource> {
-    const res = await apiClient.patch<ApiResponse<TenantResource>>("/tenant", payload);
-    return res.data;
+  /** Delete a company */
+  async delete(id: string, groupId: string): Promise<void> {
+    await apiClient.delete(`/companies/${id}`, groupHeader(groupId));
   },
 };
+
+// Backward-compatible alias
+export const tenantsApi = companiesApi;

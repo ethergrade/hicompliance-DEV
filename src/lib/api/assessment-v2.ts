@@ -9,6 +9,10 @@ import type {
   RemediationTemplate,
 } from "@/types/api";
 
+const groupHeader = (companyId: string) => ({
+  headers: { "X-Group-Id": companyId },
+});
+
 export const assessmentV2Api = {
   /** Get all assessment categories with nested questions */
   async categories(): Promise<AssessmentCategory[]> {
@@ -33,7 +37,9 @@ export const assessmentV2Api = {
   /** Get all assessment responses for a company */
   async responses(companyId: string): Promise<AssessmentResponseItem[]> {
     const res = await apiClient.get<ApiResponse<AssessmentResponseItem[]>>(
-      `/companies/${companyId}/assessment-responses`
+      `/companies/${companyId}/assessment-responses`,
+      undefined,
+      groupHeader(companyId)
     );
     return res.data;
   },
@@ -42,7 +48,8 @@ export const assessmentV2Api = {
   async updateResponses(companyId: string, payload: BatchAssessmentResponseRequest): Promise<AssessmentResponseItem[]> {
     const res = await apiClient.put<ApiResponse<AssessmentResponseItem[]>>(
       `/companies/${companyId}/assessment-responses`,
-      payload
+      payload,
+      groupHeader(companyId)
     );
     return res.data;
   },
@@ -55,7 +62,8 @@ export const assessmentV2Api = {
   ): Promise<AssessmentResponseItem> {
     const res = await apiClient.put<ApiResponse<AssessmentResponseItem>>(
       `/companies/${companyId}/assessment-responses/${questionId}`,
-      payload
+      payload,
+      groupHeader(companyId)
     );
     return res.data;
   },
@@ -65,7 +73,9 @@ export const assessmentV2Api = {
   /** Get all snapshots for a company */
   async snapshots(companyId: string): Promise<AssessmentSnapshot[]> {
     const res = await apiClient.get<ApiResponse<AssessmentSnapshot[]>>(
-      `/companies/${companyId}/assessment-snapshots`
+      `/companies/${companyId}/assessment-snapshots`,
+      undefined,
+      groupHeader(companyId)
     );
     return res.data;
   },
@@ -73,7 +83,9 @@ export const assessmentV2Api = {
   /** Create a new snapshot (recalculates scores from current responses) */
   async createSnapshot(companyId: string): Promise<AssessmentSnapshot> {
     const res = await apiClient.post<ApiResponse<AssessmentSnapshot>>(
-      `/companies/${companyId}/assessment-snapshots`
+      `/companies/${companyId}/assessment-snapshots`,
+      undefined,
+      groupHeader(companyId)
     );
     return res.data;
   },
