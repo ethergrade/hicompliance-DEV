@@ -487,6 +487,7 @@ async function persistSensitiveHits(
     selectorValue: string | null;
     extractionSource: string;
     hits: ReturnType<typeof extractSensitiveValueHits>;
+    warnings?: string[];
   },
 ): Promise<number> {
   const rows = params.hits
@@ -521,9 +522,38 @@ async function persistSensitiveHits(
   const { error } = await adminClient
     .from('darkrisk_dti_sensitive_hits' as any)
     .insert(rows as any);
-  if (error) return 0;
+  if (error) {
+    const msg = `sensitive_hits_insert_failed: ${maskPotentialSecrets(String(error?.message || 'unknown')).slice(0, 120)}`;
+    if (Array.isArray(params.warnings)) params.warnings.push(msg);
+    return 0;
+  }
   return rows.length;
 }
+
+async function intelxFetchWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+): Promise<T> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      const is429 = msg.includes('429') || msg.toLowerCase().includes('rate limit') || msg.toLowerCase().includes('too many');
+      if (is429 && attempt < maxRetries - 1) {
+        await wait(1000 * Math.pow(2, attempt));
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw new Error('intelx_max_retries_exceeded');
+}
+
+const INTELX_SERVER_TIMEOUT_S = Math.max(
+  3,
+  Math.ceil((INTELX_MAX_POLL_ROUNDS * INTELX_REQUEST_INTERVAL_MS) / 1000),
+);
 
 async function intelxSubmitSearch(term: string): Promise<string | null> {
   const payload = {
@@ -531,7 +561,7 @@ async function intelxSubmitSearch(term: string): Promise<string | null> {
     buckets: [],
     lookuplevel: 0,
     maxresults: INTELX_MAX_RESULTS_PER_SELECTOR,
-    timeout: 5,
+    timeout: INTELX_SERVER_TIMEOUT_S,
     datefrom: '',
     dateto: '',
     sort: 2,
@@ -539,24 +569,26 @@ async function intelxSubmitSearch(term: string): Promise<string | null> {
     terminate: [],
   };
 
-  const response = await fetch(`${INTELX_API_URL}/intelligent/search`, {
-    method: 'POST',
-    headers: {
-      'X-Key': INTELX_API_KEY,
-      'Content-Type': 'application/json',
-      'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
-    },
-    body: JSON.stringify(payload),
+  return intelxFetchWithBackoff(async () => {
+    const response = await fetch(`${INTELX_API_URL}/intelligent/search`, {
+      method: 'POST',
+      headers: {
+        'X-Key': INTELX_API_KEY,
+        'Content-Type': 'application/json',
+        'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`DarkRisk360 intelligence search submit failed (${response.status}): ${errorText.slice(0, 180)}`);
+    }
+
+    const data = (await response.json()) as IntelxSearchResponse;
+    if (Number(data?.status) === 1) return null;
+    return normalizeText(String(data?.id || '')) || null;
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`DarkRisk360 intelligence search submit failed (${response.status}): ${errorText.slice(0, 180)}`);
-  }
-
-  const data = (await response.json()) as IntelxSearchResponse;
-  if (Number(data?.status) === 1) return null;
-  return normalizeText(String(data?.id || '')) || null;
 }
 
 async function intelxFetchSearchResult(searchId: string): Promise<IntelxSearchResponse> {
@@ -564,19 +596,21 @@ async function intelxFetchSearchResult(searchId: string): Promise<IntelxSearchRe
   url.searchParams.set('id', searchId);
   url.searchParams.set('limit', String(INTELX_MAX_RESULTS_PER_SELECTOR));
 
-  const response = await fetch(url.toString(), {
-    method: 'GET',
-    headers: {
-      'X-Key': INTELX_API_KEY,
-      'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
-    },
-  });
+  return intelxFetchWithBackoff(async () => {
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'X-Key': INTELX_API_KEY,
+        'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
+      },
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`DarkRisk360 intelligence search result failed (${response.status}): ${errorText.slice(0, 180)}`);
-  }
-  return (await response.json()) as IntelxSearchResponse;
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`DarkRisk360 intelligence search result failed (${response.status}): ${errorText.slice(0, 180)}`);
+    }
+    return (await response.json()) as IntelxSearchResponse;
+  });
 }
 
 async function intelxTerminateSearch(searchId: string): Promise<void> {
@@ -618,6 +652,79 @@ async function runIntelxSearch(selector: string): Promise<Array<Record<string, u
   } finally {
     await wait(250);
     await intelxTerminateSearch(searchId);
+  }
+
+  return collected.slice(0, INTELX_MAX_RESULTS_PER_SELECTOR);
+}
+
+async function intelxSubmitPhonebookSearch(term: string): Promise<string | null> {
+  return intelxFetchWithBackoff(async () => {
+    const response = await fetch(`${INTELX_API_URL}/phonebook/search`, {
+      method: 'POST',
+      headers: {
+        'X-Key': INTELX_API_KEY,
+        'Content-Type': 'application/json',
+        'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
+      },
+      body: JSON.stringify({
+        term,
+        maxresults: INTELX_MAX_RESULTS_PER_SELECTOR,
+        timeout: INTELX_SERVER_TIMEOUT_S,
+        target: 2,
+      }),
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`DarkRisk360 phonebook search submit failed (${response.status}): ${errorText.slice(0, 180)}`);
+    }
+    const data = (await response.json()) as IntelxSearchResponse;
+    if (Number(data?.status) === 1) return null;
+    return normalizeText(String(data?.id || '')) || null;
+  });
+}
+
+async function intelxFetchPhonebookResult(searchId: string): Promise<IntelxSearchResponse> {
+  const url = new URL(`${INTELX_API_URL}/phonebook/search/result`);
+  url.searchParams.set('id', searchId);
+  url.searchParams.set('limit', String(INTELX_MAX_RESULTS_PER_SELECTOR));
+  return intelxFetchWithBackoff(async () => {
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { 'X-Key': INTELX_API_KEY, 'User-Agent': 'HICONSOLE-DarkRisk360/1.0' },
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`DarkRisk360 phonebook result failed (${response.status}): ${errorText.slice(0, 180)}`);
+    }
+    return (await response.json()) as IntelxSearchResponse;
+  });
+}
+
+async function runIntelxPhonebookSearch(selector: string): Promise<Array<Record<string, unknown>>> {
+  const searchId = await intelxSubmitPhonebookSearch(selector);
+  if (!searchId) return [];
+
+  const collected: Array<Record<string, unknown>> = [];
+  const seen = new Set<string>();
+
+  try {
+    for (let round = 0; round < INTELX_MAX_POLL_ROUNDS; round += 1) {
+      await wait(INTELX_REQUEST_INTERVAL_MS);
+      const result = await intelxFetchPhonebookResult(searchId);
+      const status = Number(result?.status ?? 3);
+      const records = Array.isArray(result?.records) ? result.records : [];
+      for (const record of records) {
+        const dedupeKey = normalizeIntelxRecordKey(selector, record);
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        collected.push(record);
+      }
+      if (status === 1 || status === 2) break;
+      if (status === 0 && records.length === 0) break;
+    }
+  } finally {
+    await wait(250);
+    await intelxTerminateSearch(searchId).catch(() => undefined);
   }
 
   return collected.slice(0, INTELX_MAX_RESULTS_PER_SELECTOR);
@@ -854,26 +961,58 @@ serve(async (req: Request) => {
       .eq('status', 'running')
       .lt('started_at', staleThresholdIso);
 
-    if (!allowParallelRuns) {
-      const runningGuardRes = await adminClient
-        .from('darkrisk_scan_runs' as any)
-        .select('id, started_at')
-        .eq('organization_id', customerId)
-        .eq('status', 'running')
-        .gte('started_at', guardThresholdIso)
-        .order('started_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+    // Evict stale locks older than DARKRISK_STALE_RUN_MINUTES so a crashed scan
+    // never blocks a future run permanently.
+    await adminClient
+      .from('darkrisk_scan_locks' as any)
+      .delete()
+      .eq('organization_id', customerId)
+      .lt('locked_at', staleThresholdIso);
 
-      if (runningGuardRes.error) throw runningGuardRes.error;
-      if (runningGuardRes.data?.id) {
-        return jsonResponse({
-          ok: true,
-          reused_running_scan_run_id: String(runningGuardRes.data.id),
-          customer_id: customerId,
-          status: 'running',
-          message: 'Scan DarkRisk360 già in esecuzione: riutilizzato run recente.',
-        });
+    if (!allowParallelRuns) {
+      // Atomic lock: INSERT fails with PK violation if scan already running.
+      const { error: lockErr } = await adminClient
+        .from('darkrisk_scan_locks' as any)
+        .insert({ organization_id: customerId, locked_at: nowIso });
+
+      if (lockErr) {
+        // PK violation (23505) = another scan is already in progress.
+        const alreadyLocked = String((lockErr as any)?.code || '') === '23505';
+        if (alreadyLocked) {
+          return jsonResponse({
+            ok: true,
+            customer_id: customerId,
+            status: 'running',
+            message: 'Scan DarkRisk360 già in esecuzione per questa organizzazione.',
+          });
+        }
+        // Lock table might not exist yet (migration pending) — fall through to legacy guard.
+        const tableNotFound = String((lockErr as any)?.code || '') === '42P01';
+        if (!tableNotFound) throw lockErr;
+      }
+
+      // Legacy guard retained as fallback when lock table is unavailable.
+      if (lockErr) {
+        const runningGuardRes = await adminClient
+          .from('darkrisk_scan_runs' as any)
+          .select('id, started_at')
+          .eq('organization_id', customerId)
+          .eq('status', 'running')
+          .gte('started_at', guardThresholdIso)
+          .order('started_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (runningGuardRes.error) throw runningGuardRes.error;
+        if (runningGuardRes.data?.id) {
+          return jsonResponse({
+            ok: true,
+            reused_running_scan_run_id: String(runningGuardRes.data.id),
+            customer_id: customerId,
+            status: 'running',
+            message: 'Scan DarkRisk360 già in esecuzione: riutilizzato run recente.',
+          });
+        }
       }
     }
 
@@ -923,39 +1062,45 @@ serve(async (req: Request) => {
         ...scopeIps.map((ip) => ({ target: ip, profile: 'ip_exposure' })),
       ].slice(0, 120);
 
-      for (const item of scopeTargets) {
-        const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), SURFACESCAN_SCOPE_AUTOSTART_TIMEOUT_MS);
-        try {
-          const startRes = await fetch(`${SUPABASE_URL}/functions/v1/surfacescan360-start-scan`, {
-            method: 'POST',
-            headers: {
-              Authorization: relayAuthorization,
-              apikey: relayApiKey,
-              'Content-Type': 'application/json',
-              ...(SURFACESCAN_INTERNAL_SECRET ? { 'x-surface-internal-secret': SURFACESCAN_INTERNAL_SECRET } : {}),
-            },
-            body: JSON.stringify({
-              target: item.target,
-              customer_id: customerId,
-              scan_profile: item.profile,
-              authorization_confirmed: true,
-              ownership_proof: `darkrisk360:auto_scope:${triggerType}`,
-              force_refresh: forceScopeRefresh,
-              requested_by: actorUserId,
-            }),
-            signal: ctrl.signal,
-          });
-          const startPayload = await startRes.json().catch(() => ({}));
-          if (!startRes.ok || startPayload?.error) {
-            autoClassicFailed += 1;
-          } else {
-            autoClassicQueued += 1;
-          }
-        } catch {
-          autoClassicFailed += 1;
-        } finally {
-          clearTimeout(timeout);
+      const SCOPE_QUEUE_CHUNK = 5;
+      for (let si = 0; si < scopeTargets.length; si += SCOPE_QUEUE_CHUNK) {
+        const chunk = scopeTargets.slice(si, si + SCOPE_QUEUE_CHUNK);
+        const chunkResults = await Promise.allSettled(
+          chunk.map(async (item) => {
+            const ctrl = new AbortController();
+            const timeout = setTimeout(() => ctrl.abort(), SURFACESCAN_SCOPE_AUTOSTART_TIMEOUT_MS);
+            try {
+              const startRes = await fetch(`${SUPABASE_URL}/functions/v1/surfacescan360-start-scan`, {
+                method: 'POST',
+                headers: {
+                  Authorization: relayAuthorization,
+                  apikey: relayApiKey,
+                  'Content-Type': 'application/json',
+                  ...(SURFACESCAN_INTERNAL_SECRET ? { 'x-surface-internal-secret': SURFACESCAN_INTERNAL_SECRET } : {}),
+                },
+                body: JSON.stringify({
+                  target: item.target,
+                  customer_id: customerId,
+                  scan_profile: item.profile,
+                  authorization_confirmed: true,
+                  ownership_proof: `darkrisk360:auto_scope:${triggerType}`,
+                  force_refresh: forceScopeRefresh,
+                  requested_by: actorUserId,
+                }),
+                signal: ctrl.signal,
+              });
+              clearTimeout(timeout);
+              const startPayload = await startRes.json().catch(() => ({}));
+              return startRes.ok && !startPayload?.error ? 'queued' : 'failed';
+            } catch {
+              clearTimeout(timeout);
+              return 'failed';
+            }
+          }),
+        );
+        for (const r of chunkResults) {
+          if (r.status === 'fulfilled' && r.value === 'queued') autoClassicQueued += 1;
+          else autoClassicFailed += 1;
         }
       }
 
@@ -1391,6 +1536,7 @@ serve(async (req: Request) => {
     let intelxAlertsCreated = 0;
     let intelxSearchesRun = 0;
     let intelxAtDomainQueries = 0;
+    let intelxPhonebookSearchesRun = 0;
     let intelxDeepFetchesRun = 0;
     let intelxDeepFetchWarnings = 0;
     let dtiSourceRunsCompleted = 0;
@@ -1405,6 +1551,13 @@ serve(async (req: Request) => {
     let firecrawlFindingsCreated = 0;
     let firecrawlSensitiveHitsCreated = 0;
     const intelxWarnings: string[] = [];
+
+    // Pre-compute recurrence counts to avoid O(n²) filter per finding
+    const recurrenceMap = new Map<string, number>();
+    for (const f of canonicalFindings) {
+      const k = `${f.finding_type}|${normalizeAssetValue(f.affected_asset)}`;
+      recurrenceMap.set(k, (recurrenceMap.get(k) ?? 0) + 1);
+    }
 
     for (const finding of canonicalFindings) {
       const affectedNormalized = normalizeAssetValue(finding.affected_asset);
@@ -1510,10 +1663,7 @@ serve(async (req: Request) => {
 
       const confidence = inferConfidence(finding);
       const freshnessDays = daysSince(finding.created_at);
-      const recurrenceCount = canonicalFindings.filter((candidate) =>
-        candidate.finding_type === finding.finding_type &&
-        normalizeAssetValue(candidate.affected_asset) === normalizeAssetValue(finding.affected_asset),
-      ).length;
+      const recurrenceCount = recurrenceMap.get(`${finding.finding_type}|${normalizeAssetValue(finding.affected_asset)}`) ?? 1;
       const compromiseType = inferCompromiseType({
         findingType: finding.finding_type,
         title: finding.title,
@@ -1540,12 +1690,14 @@ serve(async (req: Request) => {
         isThirdPartyOnly: compromiseType === 'indirect',
       });
 
+      const surfaceFindingSourceKey = `${sourceScanJobId || 'scope_only'}:${finding.origin}:${finding.source_id}`;
       const { data: darkFinding, error: findingErr } = await adminClient
         .from('darkrisk_findings' as any)
-        .insert({
+        .upsert({
           organization_id: customerId,
           tenant_id: customerId,
           scan_run_id: scanRunId,
+          source_record_key: surfaceFindingSourceKey,
           finding_type: finding.finding_type,
           title: finding.title,
           description: maskPotentialSecrets(finding.description),
@@ -1571,7 +1723,7 @@ serve(async (req: Request) => {
                 sensitive_indicators: sensitiveIndicators,
                 sensitive_data_detected: hasSensitiveIndicators(sensitiveIndicators),
               },
-            })
+            }, { onConflict: 'organization_id,source_record_key', ignoreDuplicates: false })
             .select('id')
             .single();
 
@@ -1728,11 +1880,13 @@ serve(async (req: Request) => {
               riskDimensions.identity_exposure = Math.min(100, (Number(riskDimensions.identity_exposure || 0) + 30));
               riskDimensions.surface_posture = Math.min(100, (Number(riskDimensions.surface_posture || 0) + 10));
             }
+            const intelxRecurrenceKey = `${findingType}|${normalizeAssetValue(queryTerm.linkedAssetNormalized || queryTerm.term.replace(/^@/, ''))}`;
+            const intelxRecurrenceCount = recurrenceMap.get(intelxRecurrenceKey) ?? 1;
             const riskScore = calculateFindingRiskScore({
               severity,
               confidence,
               freshnessDays: daysSince(observedAt),
-              recurrenceCount: 1,
+              recurrenceCount: intelxRecurrenceCount,
               affectedAssetCriticality: inferAssetCriticality(queryTerm.linkedAssetNormalized || queryTerm.term),
               isDirectCompromise: compromiseType === 'direct',
               isThirdPartyOnly: compromiseType === 'indirect',
@@ -1838,10 +1992,11 @@ serve(async (req: Request) => {
 
             const { data: darkFinding, error: findingErr } = await adminClient
               .from('darkrisk_findings' as any)
-              .insert({
+              .upsert({
                 organization_id: customerId,
                 tenant_id: customerId,
                 scan_run_id: scanRunId,
+                source_record_key: sourceRecordKey,
                 finding_type: findingType,
                 title: maskPotentialSecrets(title),
                 description: maskPotentialSecrets(description),
@@ -1870,7 +2025,7 @@ serve(async (req: Request) => {
                   sensitive_indicators: sensitiveIndicators,
                   sensitive_data_detected: hasSensitiveIndicators(sensitiveIndicators),
                 },
-              })
+              }, { onConflict: 'organization_id,source_record_key', ignoreDuplicates: false })
               .select('id')
               .single();
             if (findingErr || !darkFinding?.id) throw findingErr || new Error('darkrisk360 finding insert failed');
@@ -1892,6 +2047,7 @@ serve(async (req: Request) => {
               selectorValue: queryTerm.selectorNormalized || null,
               extractionSource: deepExtractionSource,
               hits: sensitiveValueHits,
+              warnings: runWarnings,
             });
             runSensitiveHits += persistedHits;
             dtiSensitiveHitsCreated += persistedHits;
@@ -1969,6 +2125,60 @@ serve(async (req: Request) => {
       intelxWarnings.push('DarkRisk360 intelligence non configurata: impostare la chiave provider nelle Edge Function secrets.');
     }
 
+    // Phonebook searches — extended tier only
+    if (includeDtiExtended && isIntelxConfigured() && entitlement.tier === 'extended') {
+      const phonebookTerms = intelxQueryTerms.filter(
+        (qt) => qt.kind === 'at_domain_tld' || qt.kind === 'selector',
+      ).slice(0, Math.min(10, INTELX_MAX_QUERY_TERMS_PER_RUN));
+
+      for (const queryTerm of phonebookTerms) {
+        const sourceRunStartedAt = new Date().toISOString();
+        const sourceRun = await createDtiSourceRun(adminClient, {
+          organization_id: customerId,
+          tenant_id: customerId,
+          scan_run_id: scanRunId,
+          source: 'intelx',
+          source_key: `intelx:phonebook:${queryTerm.kind}:${queryTerm.term}`,
+          source_label: 'DarkRisk360 Phonebook',
+          source_kind: 'phonebook_intelligence',
+          query_kind: queryTerm.kind,
+          query_term: queryTerm.term,
+          asset_scope: queryTerm.linkedAssetNormalized || domainFromQueryTerm(queryTerm.term),
+          selector_value: queryTerm.selectorNormalized || null,
+          status: 'running',
+          started_at: sourceRunStartedAt,
+          metadata: { stage: 'intelx_phonebook' },
+        });
+
+        try {
+          await wait(INTELX_REQUEST_INTERVAL_MS);
+          const records = await runIntelxPhonebookSearch(queryTerm.term);
+          intelxPhonebookSearchesRun += 1;
+
+          const runStatus: DtiSourceRunStatus = records.length > 0 ? 'completed' : 'completed';
+          if (sourceRun?.id) {
+            await finalizeDtiSourceRun(
+              adminClient, sourceRun.id, sourceRun.started_at || sourceRunStartedAt,
+              runStatus, records.length, null, null,
+              { query_term: queryTerm.term, query_kind: queryTerm.kind, records_count: records.length, stage: 'phonebook' },
+            );
+          }
+          if (runStatus === 'completed') dtiSourceRunsCompleted += 1;
+        } catch (pbErr: any) {
+          const message = maskPotentialSecrets(normalizeText(pbErr?.message) || `Phonebook search failed on ${queryTerm.term}`);
+          intelxWarnings.push(message);
+          if (sourceRun?.id) {
+            await finalizeDtiSourceRun(
+              adminClient, sourceRun.id, sourceRun.started_at || sourceRunStartedAt,
+              'failed', 0, null, message,
+              { query_term: queryTerm.term, query_kind: queryTerm.kind },
+            );
+          }
+          dtiSourceRunsFailed += 1;
+        }
+      }
+    }
+
     if (includeDtiExtended && FIRECRAWL_ENABLED && FIRECRAWL_API_KEY && firecrawlTargets.length > 0) {
       for (const target of firecrawlTargets) {
         firecrawlSourcesRun += 1;
@@ -2008,7 +2218,8 @@ serve(async (req: Request) => {
             : 'low';
           const severity = boostSeverityForSensitiveData(severityBase, sensitiveIndicators);
           const confidence: 'low' | 'medium' | 'high' = scrape.ok ? 'medium' : 'low';
-          const sourceRecordKey = `firecrawl:${target.sourceKey}:${target.queryKind}:${target.queryTerm}:${crypto.randomUUID().slice(0, 8)}`;
+          // Deterministic key — no UUID — to prevent duplicate records on repeated scans
+          const sourceRecordKey = `firecrawl:${target.sourceKey}:${target.queryKind}:${normalizeText(target.queryTerm).toLowerCase()}`;
 
           const linkedAssetKey = normalizeAssetValue(target.assetScope);
           const assetRef = linkedAssetKey ? assetByNormalized.get(linkedAssetKey) : undefined;
@@ -2019,7 +2230,7 @@ serve(async (req: Request) => {
 
           const { data: sourceRecord, error: sourceRecordErr } = await adminClient
             .from('darkrisk_source_records' as any)
-            .insert({
+            .upsert({
               organization_id: customerId,
               tenant_id: customerId,
               scan_run_id: scanRunId,
@@ -2048,7 +2259,7 @@ serve(async (req: Request) => {
               },
               safe_preview: maskPotentialSecrets(combinedText.slice(0, 1200)),
               preview_hash: sourceRecordKey,
-            })
+            }, { onConflict: 'organization_id,source,source_record_key', ignoreDuplicates: false })
             .select('id')
             .single();
           if (sourceRecordErr || !sourceRecord?.id) throw sourceRecordErr || new Error('firecrawl source record insert failed');
@@ -2112,10 +2323,11 @@ serve(async (req: Request) => {
 
           const { data: darkFinding, error: findingErr } = await adminClient
             .from('darkrisk_findings' as any)
-            .insert({
+            .upsert({
               organization_id: customerId,
               tenant_id: customerId,
               scan_run_id: scanRunId,
+              source_record_key: sourceRecordKey,
               finding_type: 'darkrisk_dti_source_signal',
               title: maskPotentialSecrets(scrape.title || `${target.sourceLabel} · ${target.queryTerm}`),
               description: maskPotentialSecrets(scrape.summary || scrape.error || `Sorgente ${target.sourceLabel} completata`),
@@ -2140,13 +2352,14 @@ serve(async (req: Request) => {
                 sensitive_indicators: sensitiveIndicators,
                 sensitive_data_detected: hasSensitiveIndicators(sensitiveIndicators),
               },
-            })
+            }, { onConflict: 'organization_id,source_record_key', ignoreDuplicates: false })
             .select('id')
             .single();
           if (findingErr || !darkFinding?.id) throw findingErr || new Error('firecrawl finding insert failed');
           findingsCreated += 1;
           firecrawlFindingsCreated += 1;
 
+          const firecrawlRunWarnings: string[] = [];
           const persistedHits = await persistSensitiveHits(adminClient, {
             organizationId: customerId,
             scanRunId: String(scanRunId || scanRunData.id),
@@ -2162,7 +2375,9 @@ serve(async (req: Request) => {
             selectorValue: target.selectorValue,
             extractionSource: 'firecrawl_scrape',
             hits: sensitiveHits,
+            warnings: firecrawlRunWarnings,
           });
+          if (firecrawlRunWarnings.length > 0) intelxWarnings.push(...firecrawlRunWarnings);
           dtiSensitiveHitsCreated += persistedHits;
           firecrawlSensitiveHitsCreated += persistedHits;
 
@@ -2255,6 +2470,7 @@ serve(async (req: Request) => {
             query_terms_considered: intelxQueryTerms.length,
             searches_run: intelxSearchesRun,
             at_domain_tld_queries: intelxAtDomainQueries,
+            phonebook_searches_run: intelxPhonebookSearchesRun,
             deep_fetches_run: intelxDeepFetchesRun,
             deep_fetch_warnings: intelxDeepFetchWarnings,
             source_records_created: intelxRecordsCreated,
@@ -2387,6 +2603,7 @@ serve(async (req: Request) => {
             query_terms_considered: intelxQueryTerms.length,
             searches_run: intelxSearchesRun,
             at_domain_tld_queries: intelxAtDomainQueries,
+            phonebook_searches_run: intelxPhonebookSearchesRun,
             deep_fetches_run: intelxDeepFetchesRun,
             deep_fetch_warnings: intelxDeepFetchWarnings,
             source_records_created: intelxRecordsCreated,
@@ -2419,6 +2636,13 @@ serve(async (req: Request) => {
           warning: allWarnings,
         },
       });
+
+    // Release scan lock so subsequent scans can proceed.
+    await adminClient
+      .from('darkrisk_scan_locks' as any)
+      .delete()
+      .eq('organization_id', customerId)
+      .catch(() => undefined);
 
     return jsonResponse({
       ok: true,
@@ -2475,14 +2699,14 @@ serve(async (req: Request) => {
   } catch (error: any) {
     if (scanRunId) {
       try {
-        const { adminClient } = makeSupabaseClients(req);
-        const { data: runScope } = await adminClient
+        const { adminClient: errAdminClient } = makeSupabaseClients(req);
+        const { data: runScope } = await errAdminClient
           .from('darkrisk_scan_runs' as any)
           .select('organization_id, requested_by')
           .eq('id', scanRunId)
           .maybeSingle();
 
-        await adminClient
+        await errAdminClient
           .from('darkrisk_scan_runs' as any)
           .update({
             status: 'failed',
@@ -2491,7 +2715,17 @@ serve(async (req: Request) => {
           })
           .eq('id', scanRunId);
 
-        await adminClient
+        // Release scan lock on failure so the next attempt is not blocked.
+        const failedOrg = runScope?.organization_id;
+        if (failedOrg) {
+          await errAdminClient
+            .from('darkrisk_scan_locks' as any)
+            .delete()
+            .eq('organization_id', failedOrg)
+            .catch(() => undefined);
+        }
+
+        await errAdminClient
           .from('darkrisk_audit_log' as any)
           .insert({
             organization_id: runScope?.organization_id || null,

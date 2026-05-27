@@ -130,26 +130,23 @@ function isActiveFinding(status: string | null | undefined): boolean {
   return !(normalized === 'resolved' || normalized === 'suppressed' || normalized === 'false_positive' || normalized === 'accepted_risk');
 }
 
+function statusPenaltyWeight(status: string | null | undefined): number {
+  const s = String(status || 'new').toLowerCase();
+  if (s === 'validated' || s === 'remediation_in_progress') return 1.2;
+  if (s === 'new' || s === 'open') return 1.0;
+  if (s === 'triaged' || s === 'investigating') return 0.9;
+  return 1.0;
+}
+
 function riskFromFindings(findings: FindingLite[]): { score: number; level: 'Basso' | 'Medio' | 'Alto' | 'Critico' } {
-  const counts = {
-    critical: 0,
-    high: 0,
-    medium: 0,
-    low: 0,
-    info: 0,
-  };
+  let penalty = 0;
 
   for (const finding of findings) {
     const sev = normalizeSeverity(finding.severity);
-    counts[sev] += 1;
+    const weight = statusPenaltyWeight(finding.status);
+    const base = sev === 'critical' ? 12 : sev === 'high' ? 7 : sev === 'medium' ? 3 : sev === 'low' ? 1 : 0.25;
+    penalty += base * weight;
   }
-
-  const penalty =
-    counts.critical * 12 +
-    counts.high * 7 +
-    counts.medium * 3 +
-    counts.low * 1 +
-    counts.info * 0.25;
 
   const score = Math.max(5, Math.min(100, Math.round(100 - penalty)));
 
@@ -610,17 +607,22 @@ serve(async (req: Request) => {
       else dtiRunCounters.skipped += 1;
     }
 
-    const dtiQueryCoverage = {
-      at_domain_tld: 0,
-      selector: 0,
-      email_selector: 0,
-    };
+    const coveredAtDomain = new Set<string>();
+    const coveredSelector = new Set<string>();
+    const coveredEmail = new Set<string>();
     for (const row of dtiSourceRuns) {
-      const queryKind = String(row.query_kind || '').toLowerCase();
-      if (queryKind === 'at_domain_tld') dtiQueryCoverage.at_domain_tld += 1;
-      if (queryKind === 'selector') dtiQueryCoverage.selector += 1;
-      if (queryKind === 'email_selector') dtiQueryCoverage.email_selector += 1;
+      const qt = String(row.query_term || '').toLowerCase();
+      if (!qt) continue;
+      const qk = String(row.query_kind || '').toLowerCase();
+      if (qk === 'at_domain_tld') coveredAtDomain.add(qt);
+      else if (qk === 'selector') coveredSelector.add(qt);
+      else if (qk === 'email_selector') coveredEmail.add(qt);
     }
+    const dtiQueryCoverage = {
+      at_domain_tld: coveredAtDomain.size,
+      selector: coveredSelector.size,
+      email_selector: coveredEmail.size,
+    };
 
     const sensitiveTotals: Record<DtiSensitiveTag, number> = {
       domains: 0,
@@ -667,8 +669,7 @@ serve(async (req: Request) => {
       .sort((a, b) => b.total - a.total)
       .slice(0, 120);
 
-    const recentAlerts = activeLatest
-      .slice(0, 24)
+    const recentAlerts = [...activeLatest]
       .sort((a, b) => Date.parse(String(b.created_at || 0)) - Date.parse(String(a.created_at || 0)))
       .slice(0, 8)
       .map((finding) => {
