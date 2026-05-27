@@ -68,21 +68,21 @@ const Index = () => {
     description: "Vulnerability Assessment continuativo e Patch Management"
   }];
   const stats = [{
-    label: "Organizzazioni Protette",
+    label: "Aziende che ci hanno scelto",
     value: "500+",
     icon: Users
   }, {
-    label: "Conformità NIS2",
-    value: "100%",
+    label: "Riduzione media del rischio cyber",
+    value: "-72%",
+    icon: Shield
+  }, {
+    label: "Tempo risparmiato sulla compliance",
+    value: "10x",
     icon: CheckCircle
   }, {
-    label: "Uptime Garantito",
-    value: "99.9%",
+    label: "Clienti che rinnovano ogni anno",
+    value: "98%",
     icon: Network
-  }, {
-    label: "delle aziende hanno ridotto il rischio nei primi 3 mesi",
-    value: "63%",
-    icon: Shield
   }];
   return <div className="min-h-screen bg-background">
       {/* Header */}
@@ -162,7 +162,7 @@ const Index = () => {
                   <stat.icon className="w-6 h-6 text-white" />
                 </div>
                 <div className="text-3xl font-bold text-foreground mb-2">{stat.value}</div>
-                <div className="text-sm text-muted-foreground">Conformità NIST/NIS2/ISO</div>
+                <div className="text-sm text-muted-foreground">{stat.label}</div>
               </div>)}
           </div>
         </div>
