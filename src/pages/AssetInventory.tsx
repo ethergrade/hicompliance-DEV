@@ -6,8 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { assetInventoryApi } from '@/lib/api';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { Server, Network, HardDrive, Users as UsersIcon, MapPin, Save, FileSpreadsheet, ScrollText } from 'lucide-react';
@@ -111,9 +111,7 @@ const AssetInventory: React.FC = () => {
     if (!selectedOrgId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const { data: existingData, error } = await supabase
-        .from('asset_inventory').select('*').eq('organization_id', selectedOrgId).maybeSingle();
-      if (error && error.code !== 'PGRST116') throw error;
+      const existingData = await assetInventoryApi.getByOrganization(selectedOrgId);
       if (existingData) {
         setData({
           ...INITIAL_DATA,
@@ -138,13 +136,10 @@ const AssetInventory: React.FC = () => {
     }
     setSaving(true);
     try {
-      const payload = { ...data, organization_id: selectedOrgId };
       if (data.id) {
-        const { error } = await supabase.from('asset_inventory').update(payload).eq('id', data.id);
-        if (error) throw error;
+        await assetInventoryApi.update(data.id, data);
       } else {
-        const { data: newData, error } = await supabase.from('asset_inventory').insert(payload).select().single();
-        if (error) throw error;
+        const newData = await assetInventoryApi.create({ ...data, organization_id: selectedOrgId });
         if (newData) setData({ ...INITIAL_DATA, ...newData, notes: newData.notes ?? '', hilog_sharepoint_dlp_enabled: newData.hilog_sharepoint_dlp_enabled ?? false, hilog_entra_id_enabled: newData.hilog_entra_id_enabled ?? false });
       }
       toast({ title: "Successo", description: "Inventario salvato con successo" });

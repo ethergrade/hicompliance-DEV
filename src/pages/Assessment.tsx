@@ -31,7 +31,10 @@ import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { NIS2_LABELS } from '@/types/organization';
 import { useUserPreferences } from '@/hooks/useUserPreferences';
-import { ASSESSMENT_CATEGORIES, AssessmentResponse, calculateCategoryScore, getRiskFromScore, CATEGORY_DESCRIPTIONS } from '@/data/assessmentQuestions';
+import { assessmentV2Api } from '@/lib/api';
+import { loadV2AssessmentData, mapToV2Status, mapToUiStatus } from '@/lib/assessmentV2Mapper';
+import { calculateCategoryScore, getRiskFromScore, CATEGORY_DESCRIPTIONS } from '@/data/assessmentQuestions';
+import type { AssessmentCategory as UICategory } from '@/data/assessmentQuestions';
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { generateAssessmentPDF } from '@/components/assessment/AssessmentReportGenerator';
 import GapAnalysisSection from '@/components/assessment/GapAnalysisSection';
@@ -39,14 +42,17 @@ import { AssessmentRadarChart } from '@/components/assessment/AssessmentRadarCha
 import { assessmentApi } from '@/lib/api';
 import { moduleVisibility } from '@/config/moduleVisibility';
 
+// Local type for UI assessment response values
+type AssessmentResponse = 'completato' | 'pianificato_in_corso' | 'non_iniziato' | 'non_applicabile' | null;
+
 // Map UI response values to API values and vice versa
-const UI_TO_API_QUESTION_STATUS: Record<Exclude<AssessmentResponse, null>, number> = {
+const UI_TO_API_QUESTION_STATUS: Record<string, number> = {
   non_iniziato: 0,
   pianificato_in_corso: 1,
   completato: 2,
   non_applicabile: 3,
 };
-const API_QUESTION_STATUS_TO_UI: Record<number, AssessmentResponse> = {
+const API_QUESTION_STATUS_TO_UI: Record<number, string> = {
   0: 'non_iniziato',
   1: 'pianificato_in_corso',
   2: 'completato',
@@ -182,35 +188,57 @@ const Assessment: React.FC = () => {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const assessmentIdRef = useRef<string | number | null>(null);
   const loadedOrgRef = useRef<string | null>(null);
+  const [assessmentCategories, setAssessmentCategories] = useState<UICategory[]>([]);
+  const [v2Categories, setV2Categories] = useState<UICategory[]>([]);
+  const [indexToUuid, setIndexToUuid] = useState<Record<number, string>>({});
+  const categoriesLoaded = useRef(false);
   const guidedOrgRef = useRef<string | null>(null);
 
-  // Load existing assessment responses from the API
+  // Load v2 categories + questions from API
+  useEffect(() => {
+    if (categoriesLoaded.current) return;
+    categoriesLoaded.current = true;
+    loadV2AssessmentData().then((data) => {
+      setV2Categories(data.categories);
+      setIndexToUuid(data.indexToUuid);
+    }).catch((err) => {
+      console.error('Failed to load v2 assessment data:', err);
+    });
+  }, []);
+
+  // Load existing assessment responses from the v2 API
   useEffect(() => {
     if (!orgId || !user) return;
-    if (loadedOrgRef.current === orgId) return;
+    if (v2Categories.length === 0 || Object.keys(indexToUuid).length === 0) return;
 
     const loadResponses = async () => {
       try {
-        const assessments = await assessmentApi.list();
-        const assessment = assessments.find(a => a.tenant_id === orgId) || null;
-        if (!assessment) {
+        const items = await assessmentV2Api.responses(orgId);
+        if (!items || items.length === 0) {
           setResponses({});
-          assessmentIdRef.current = null;
-          loadedOrgRef.current = orgId;
           return;
         }
-        assessmentIdRef.current = assessment.id;
-        setResponses(parseAssessmentQuestions(assessment.questions));
-        loadedOrgRef.current = orgId;
+        // Map v2 responses to UI format
+        const uuidToIndex: Record<string, number> = {};
+        Object.entries(indexToUuid).forEach(([idx, uuid]) => {
+          uuidToIndex[uuid] = Number(idx);
+        });
+        const mapped: Record<number, string | null> = {};
+        items.forEach((item) => {
+          const idx = uuidToIndex[item.question_id];
+          if (idx) {
+            mapped[idx] = mapToUiStatus(item.status);
+          }
+        });
+        setResponses(mapped);
       } catch (error) {
-        console.error('Assessment load error:', error);
+        console.error('Assessment v2 load error:', error);
         setResponses({});
-        assessmentIdRef.current = null;
       }
     };
 
     loadResponses();
-  }, [orgId, user]);
+  }, [orgId, user, v2Categories.length, indexToUuid]);
 
   // Auto-save: debounced save after each response change
   const snapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -218,30 +246,30 @@ const Assessment: React.FC = () => {
   responsesRef.current = responses;
 
   const triggerAutoSave = useCallback(() => {
-    if (!orgId || !user) return;
+    if (!orgId || !user || Object.keys(indexToUuid).length === 0) return;
     if (snapshotTimerRef.current) clearTimeout(snapshotTimerRef.current);
     snapshotTimerRef.current = setTimeout(async () => {
       const currentResponses = responsesRef.current;
-      const serializedQuestions = serializeAssessmentQuestions(currentResponses);
       try {
-        if (!assessmentIdRef.current) {
-          const createdAssessment = await assessmentApi.create({
-            questions: serializedQuestions,
-          });
-          assessmentIdRef.current = createdAssessment.id;
-        } else {
-          await assessmentApi.update(assessmentIdRef.current, {
-            questions: serializedQuestions,
-          });
+        // Build v2 batch payload: map numeric IDs back to UUIDs
+        const responses = Object.entries(currentResponses)
+          .filter(([, value]) => value)
+          .map(([idx, value]) => ({
+            question_id: indexToUuid[Number(idx)],
+            status: mapToV2Status(value) ?? 'planned_in_progress',
+            notes: null,
+          }));
+        if (responses.length > 0) {
+          await assessmentV2Api.updateResponses(orgId, { responses });
         }
         setSaveStatus('saved');
         setLastSaved(new Date());
       } catch (err) {
-        console.error('Auto-snapshot error:', err);
+        console.error('Auto-save v2 error:', err);
         setSaveStatus('error');
       }
     }, 3000); // 3s debounce
-  }, [orgId, user]);
+  }, [orgId, user, indexToUuid]);
 
   const setResponse = useCallback((questionId: number, value: AssessmentResponse) => {
     if (isReadOnlyView) return;
@@ -257,7 +285,7 @@ const Assessment: React.FC = () => {
 
   // Compute counts per category from responses
   const getCategoryCounts = useCallback((categoryName: string) => {
-    const cat = ASSESSMENT_CATEGORIES.find(c => c.name === categoryName);
+    const cat = (v2Categories.length > 0 ? v2Categories : []).find(c => c.name === categoryName);
     if (!cat) return { completato: 0, pianificato_in_corso: 0, non_iniziato: 0, non_applicabile: 0, unanswered: 0 };
     const counts = { completato: 0, pianificato_in_corso: 0, non_iniziato: 0, non_applicabile: 0, unanswered: 0 };
     cat.questions.forEach(q => {
@@ -325,7 +353,7 @@ const Assessment: React.FC = () => {
   };
 
   const assessmentCategories = useMemo(() => {
-    return ASSESSMENT_CATEGORIES.map(cat => {
+    return (v2Categories.length > 0 ? v2Categories : []).map(cat => {
       const counts = getCategoryCounts(cat.name);
       const answered = counts.completato + counts.pianificato_in_corso + counts.non_iniziato + counts.non_applicabile;
       const total = cat.questions.length;
@@ -945,7 +973,7 @@ const Assessment: React.FC = () => {
             <div className="space-y-3">
               {filteredAndSortedCategories.map((category) => {
                 const isExpanded = expandedCategories.has(category.name);
-                const catData = ASSESSMENT_CATEGORIES.find(c => c.name === category.name);
+                const catData = (v2Categories.length > 0 ? v2Categories : []).find(c => c.name === category.name);
                 const counts = category.counts;
                 const canonicalIndex = assessmentCategories.findIndex(item => item.name === category.name);
                 const isActiveGuidedCategory = activeGuidedCategory?.name === category.name;
