@@ -139,8 +139,15 @@ const normalizeThreatCategoryKey = (value: string | null | undefined): string =>
 
 const inactiveFindingStatuses = new Set(['resolved', 'suppressed', 'false_positive', 'accepted_risk']);
 
+const normalizeDarkRiskStatus = (status: unknown): string => {
+  const normalized = String(status || 'new').toLowerCase();
+  if (normalized === 'open') return 'new';
+  if (normalized === 'investigating') return 'triaged';
+  return normalized;
+};
+
 const isActiveDarkRiskStatus = (status: unknown): boolean => {
-  return !inactiveFindingStatuses.has(String(status || 'open').toLowerCase());
+  return !inactiveFindingStatuses.has(normalizeDarkRiskStatus(status));
 };
 
 const formatDateTime = (value: string | null | undefined): string => {
@@ -746,11 +753,25 @@ const DarkRisk360: React.FC = () => {
   );
 
   const filteredFindings = useMemo(() => {
+    const latestSurfaceScanId = String(overview.latest_scan?.id || '').trim();
+    const latestDarkRiskRunId = String(overview.dti?.latest_scan_run_id || '').trim();
+
     return findingRows
       .filter((row) => {
         if (findingFilter.scope === 'latest_overview') {
-          const latestScanId = String(overview.latest_scan?.id || '');
-          if (!latestScanId || row.source_scan_job_id !== latestScanId) return false;
+          const hasLatestReference = Boolean(latestSurfaceScanId || latestDarkRiskRunId);
+          if (!hasLatestReference) return false;
+
+          const bySurfaceScan = Boolean(
+            latestSurfaceScanId &&
+              String(row.source_scan_job_id || '').trim() === latestSurfaceScanId,
+          );
+          const byDarkRiskRun = Boolean(
+            latestDarkRiskRunId &&
+              String(row.scan_run_id || '').trim() === latestDarkRiskRunId,
+          );
+
+          if (!bySurfaceScan && !byDarkRiskRun) return false;
         } else if (row.detail_only) {
           return false;
         }
@@ -775,7 +796,7 @@ const DarkRisk360: React.FC = () => {
         }
         return b.risk_score - a.risk_score;
       });
-  }, [findingRows, findingFilter, overview.latest_scan?.id]);
+  }, [findingRows, findingFilter, overview.latest_scan?.id, overview.dti?.latest_scan_run_id]);
 
   const filteredAssets = useMemo(() => {
     return assetRows.filter((row) => {

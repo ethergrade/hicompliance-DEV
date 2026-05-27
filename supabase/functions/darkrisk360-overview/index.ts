@@ -92,12 +92,17 @@ const severityRank: Record<Severity, number> = {
 
 const activeStatuses = new Set([
   'new',
-  'open',
   'triaged',
   'validated',
   'remediation_in_progress',
-  'investigating',
 ]);
+
+function normalizeFindingStatus(status: string | null | undefined): string {
+  const normalized = String(status || 'new').toLowerCase();
+  if (normalized === 'open') return 'new';
+  if (normalized === 'investigating') return 'triaged';
+  return normalized;
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -136,16 +141,16 @@ function normalizeCoverageStatus(status: string | null | undefined): CoverageSta
 }
 
 function isActiveFinding(status: string | null | undefined): boolean {
-  const normalized = String(status || 'open').toLowerCase();
+  const normalized = normalizeFindingStatus(status);
   if (activeStatuses.has(normalized)) return true;
   return !(normalized === 'resolved' || normalized === 'suppressed' || normalized === 'false_positive' || normalized === 'accepted_risk');
 }
 
 function statusPenaltyWeight(status: string | null | undefined): number {
-  const s = String(status || 'new').toLowerCase();
+  const s = normalizeFindingStatus(status);
   if (s === 'validated' || s === 'remediation_in_progress') return 1.2;
-  if (s === 'new' || s === 'open') return 1.0;
-  if (s === 'triaged' || s === 'investigating') return 0.9;
+  if (s === 'new') return 1.0;
+  if (s === 'triaged') return 0.9;
   return 1.0;
 }
 
@@ -747,7 +752,7 @@ serve(async (req: Request) => {
           asset: findImpactedAsset(finding),
           type: category,
           time: finding.created_at,
-          status: String(finding.status || 'open').toLowerCase(),
+          status: normalizeFindingStatus(finding.status),
           confidence: String(finding.attribution_confidence || 'medium').toLowerCase(),
           source: presentDarkRiskLabel(String(finding.module || finding.source || 'surface_scan_engine')),
           finding_id: finding.id,
