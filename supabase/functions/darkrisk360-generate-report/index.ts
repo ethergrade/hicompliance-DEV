@@ -394,10 +394,55 @@ function isAllZeroCreditCardValue(value: string | null | undefined): boolean {
   return Boolean(masked.includes('*') && maskedDigits.length >= 8 && /^0+$/.test(maskedDigits) && /^[0*]+$/.test(masked.replace(/[^0-9*]/g, '')));
 }
 
+const invalidPasswordEvidenceTokens = new Set([
+  'query',
+  'selector',
+  'metadata',
+  'record',
+  'source',
+  'field',
+  'password',
+  'passwd',
+  'pwd',
+  'secret',
+  'token',
+  'unknown',
+  'null',
+  'none',
+  'n/a',
+  'na',
+  '&#39',
+  '&apos;',
+  '&quot;',
+]);
+
+function isInvalidPasswordEvidenceValue(value: string | null | undefined): boolean {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return true;
+  if (normalized.length < 4 || normalized.length > 120) return true;
+  if (invalidPasswordEvidenceTokens.has(normalized)) return true;
+  if (/^&#\d{1,6};?$/i.test(normalized)) return true;
+  if (/^&[a-z]{2,8};$/i.test(normalized)) return true;
+  if (normalized.includes('@')) return true;
+  if (/[=:]/.test(normalized)) return true;
+  if (/^https?:\/\//.test(normalized)) return true;
+  if (/^[*_#\-.]+$/.test(normalized)) return true;
+  return false;
+}
+
 function shouldIgnoreSensitiveHit(hit: DtiSensitiveHitRow): boolean {
   const tag = normalizeSensitiveTag(hit.tag);
-  if (tag !== 'credit_cards') return false;
-  return isAllZeroCreditCardValue(hit.clear_value) || isAllZeroCreditCardValue(hit.masked_value);
+  if (tag === 'credit_cards') {
+    return isAllZeroCreditCardValue(hit.clear_value) || isAllZeroCreditCardValue(hit.masked_value);
+  }
+  if (tag === 'passwords') {
+    const rawValue = String(hit.clear_value || hit.masked_value || '');
+    if (isInvalidPasswordEvidenceValue(rawValue)) return true;
+    const policy = String((hit as any).match_policy || '').toLowerCase();
+    if (policy && policy !== 'strict_pair') return true;
+    return false;
+  }
+  return false;
 }
 
 function isoOrNow(value: string | null | undefined): string {

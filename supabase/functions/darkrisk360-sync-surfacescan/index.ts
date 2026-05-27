@@ -74,6 +74,10 @@ const INTELX_MAX_QUERY_TERMS_PER_RUN = Math.max(
   5,
   Math.min(120, Number(Deno.env.get('INTELX_MAX_QUERY_TERMS_PER_RUN') || 40)),
 );
+const INTELX_MAX_RECORDS_PER_RUN = Math.max(
+  20,
+  Math.min(1500, Number(Deno.env.get('INTELX_MAX_RECORDS_PER_RUN') || 120)),
+);
 const INTELX_DEEP_FETCH_ENABLED = String(Deno.env.get('INTELX_DEEP_FETCH_ENABLED') || 'true').toLowerCase() !== 'false';
 const INTELX_DEEP_FETCH_MAX_PER_RUN = Math.max(
   0,
@@ -122,6 +126,10 @@ const DARKRISK_RUNNING_GUARD_MINUTES = Math.max(
 const DARKRISK_STALE_RUN_MINUTES = Math.max(
   5,
   Math.min(180, Number(Deno.env.get('DARKRISK_STALE_RUN_MINUTES') || 20)),
+);
+const DARKRISK_RUN_BUDGET_MS = Math.max(
+  30_000,
+  Math.min(300_000, Number(Deno.env.get('DARKRISK_RUN_BUDGET_MS') || 120_000)),
 );
 
 function extractBearerToken(req: Request): string {
@@ -219,6 +227,62 @@ type IntelxSearchResponse = {
   status?: number;
   records?: Array<Record<string, unknown>>;
 };
+
+function isActionableFindingStatus(status: string | null | undefined): boolean {
+  const normalized = normalizeText(String(status || 'new')).toLowerCase();
+  return !(
+    normalized === 'resolved'
+    || normalized === 'suppressed'
+    || normalized === 'false_positive'
+    || normalized === 'accepted_risk'
+  );
+}
+
+type DarkRiskFindingUpsertPayload = Record<string, unknown> & {
+  organization_id: string;
+  source_record_key?: string | null;
+};
+
+async function upsertDarkRiskFinding(
+  adminClient: any,
+  payload: DarkRiskFindingUpsertPayload,
+): Promise<{ id: string }> {
+  const organizationId = normalizeText(String(payload.organization_id || ''));
+  const sourceRecordKey = normalizeText(String(payload.source_record_key || ''));
+
+  if (!organizationId) throw new Error('darkrisk finding missing organization_id');
+
+  if (sourceRecordKey) {
+    const { data: existing, error: existingErr } = await adminClient
+      .from('darkrisk_findings' as any)
+      .select('id')
+      .eq('organization_id', organizationId)
+      .eq('source_record_key', sourceRecordKey)
+      .order('last_seen_at', { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+    if (existingErr) throw existingErr;
+
+    if (existing?.id) {
+      const { data: updated, error: updateErr } = await adminClient
+        .from('darkrisk_findings' as any)
+        .update(payload)
+        .eq('id', existing.id)
+        .select('id')
+        .single();
+      if (updateErr || !updated?.id) throw updateErr || new Error('darkrisk finding update failed');
+      return { id: String(updated.id) };
+    }
+  }
+
+  const { data: inserted, error: insertErr } = await adminClient
+    .from('darkrisk_findings' as any)
+    .insert(payload)
+    .select('id')
+    .single();
+  if (insertErr || !inserted?.id) throw insertErr || new Error('darkrisk finding insert failed');
+  return { id: String(inserted.id) };
+}
 
 type IntelxSelectorDefinition = {
   raw: string;
@@ -393,6 +457,73 @@ function buildIntelxQueryTerms(
   return terms;
 }
 
+function ensureIdentityEmailQueryTerms(
+  terms: IntelxQueryTerm[],
+  manualIdentityEmails: string[],
+  selectorDefinitions: IntelxSelectorDefinition[],
+): IntelxQueryTerm[] {
+  const result = [...terms];
+  const existingKeys = new Set(
+    result.map((entry) => `${entry.kind}:${normalizeText(entry.term).toLowerCase()}`),
+  );
+
+  const candidates = [
+    ...manualIdentityEmails,
+    ...selectorDefinitions
+      .filter((selector) => selector.type === 'email')
+      .map((selector) => normalizeText(selector.normalized).toLowerCase()),
+  ]
+    .map((entry) => normalizeText(entry).toLowerCase())
+    .filter(Boolean);
+
+  for (const email of Array.from(new Set(candidates))) {
+    const key = `email_selector:${email}`;
+    if (existingKeys.has(key)) continue;
+    result.push({
+      term: email,
+      kind: 'email_selector',
+      selectorNormalized: email,
+      linkedAssetNormalized: email,
+    });
+    existingKeys.add(key);
+  }
+
+  return result.slice(0, INTELX_MAX_QUERY_TERMS_PER_RUN);
+}
+
+function prioritizeIntelxSelectorDefinitions(
+  selectors: IntelxSelectorDefinition[],
+  maxSelectors: number,
+): IntelxSelectorDefinition[] {
+  const queryEligible = selectors.filter((selector) =>
+    selector.type !== 'domain' && selector.type !== 'wildcard_domain'
+  );
+
+  const ranked = queryEligible
+    .map((selector, index) => {
+      const normalized = normalizeText(selector.normalized).toLowerCase();
+      const isEmail = selector.type === 'email';
+      let priority = 100;
+
+      if (isEmail && selector.source === 'manual') priority = 0;
+      else if (isEmail && selector.source === 'existing') priority = 1;
+      else if (isEmail && selector.source === 'surfacescan360') priority = 2;
+      else if (selector.source === 'manual') priority = 3;
+      else if (selector.source === 'existing') priority = 4;
+      else priority = 5;
+
+      return { selector, priority, index, normalized };
+    })
+    .sort((a, b) => {
+      if (a.priority !== b.priority) return a.priority - b.priority;
+      if (a.index !== b.index) return a.index - b.index;
+      return a.normalized.localeCompare(b.normalized);
+    })
+    .map((entry) => entry.selector);
+
+  return ranked.slice(0, Math.max(1, maxSelectors));
+}
+
 function parseIdentityEmailSelectors(value: unknown): string[] {
   const normalized = Array.isArray(value)
     ? value.map((entry) => normalizeText(String(entry || '')).toLowerCase())
@@ -430,12 +561,20 @@ const invalidPasswordTokens = new Set([
   'na',
   'true',
   'false',
+  '&#39',
+  '&apos;',
+  '&quot;',
 ]);
 
 function isValidStrictPasswordValue(value: string): boolean {
   const normalized = normalizeText(value);
   if (!normalized || normalized.length < 4 || normalized.length > 120) return false;
   if (invalidPasswordTokens.has(normalized.toLowerCase())) return false;
+  if (/^&#\d{1,6};?$/i.test(normalized)) return false;
+  if (/^&[a-z]{2,8};$/i.test(normalized)) return false;
+  if (normalized.includes('@')) return false;
+  if (/[=:]/.test(normalized)) return false;
+  if (/^https?:\/\//i.test(normalized)) return false;
   if (/^[*_#\-.]+$/.test(normalized)) return false;
   return true;
 }
@@ -1143,24 +1282,63 @@ serve(async (req: Request) => {
 
     if (!allowParallelRuns) {
       // Atomic lock: INSERT fails with PK violation if scan already running.
-      const { error: lockErr } = await adminClient
+      let lockErr: any = null;
+      const firstLockAttempt = await adminClient
         .from('darkrisk_scan_locks' as any)
         .insert({ organization_id: customerId, locked_at: nowIso });
+      lockErr = firstLockAttempt.error;
 
       if (lockErr) {
-        // PK violation (23505) = another scan is already in progress.
         const alreadyLocked = String((lockErr as any)?.code || '') === '23505';
-        if (alreadyLocked) {
-          return jsonResponse({
-            ok: true,
-            customer_id: customerId,
-            status: 'running',
-            message: 'Scan DarkRisk360 già in esecuzione per questa organizzazione.',
-          });
-        }
-        // Lock table might not exist yet (migration pending) — fall through to legacy guard.
         const tableNotFound = String((lockErr as any)?.code || '') === '42P01';
-        if (!tableNotFound) throw lockErr;
+        if (!alreadyLocked && !tableNotFound) throw lockErr;
+
+        if (alreadyLocked) {
+          const runningGuardRes = await adminClient
+            .from('darkrisk_scan_runs' as any)
+            .select('id, started_at')
+            .eq('organization_id', customerId)
+            .eq('status', 'running')
+            .gte('started_at', guardThresholdIso)
+            .order('started_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (runningGuardRes.error) throw runningGuardRes.error;
+          if (runningGuardRes.data?.id) {
+            return jsonResponse({
+              ok: true,
+              customer_id: customerId,
+              status: 'running',
+              message: 'Scan DarkRisk360 già in esecuzione per questa organizzazione.',
+            });
+          }
+
+          // No active running scan but lock still present -> recover stale/orphan lock.
+          await adminClient
+            .from('darkrisk_scan_locks' as any)
+            .delete()
+            .eq('organization_id', customerId);
+
+          const secondLockAttempt = await adminClient
+            .from('darkrisk_scan_locks' as any)
+            .insert({ organization_id: customerId, locked_at: new Date().toISOString() });
+
+          if (secondLockAttempt.error) {
+            const secondConflict = String((secondLockAttempt.error as any)?.code || '') === '23505';
+            if (secondConflict) {
+              return jsonResponse({
+                ok: true,
+                customer_id: customerId,
+                status: 'running',
+                message: 'Scan DarkRisk360 già in esecuzione per questa organizzazione.',
+              });
+            }
+            throw secondLockAttempt.error;
+          }
+
+          lockErr = null;
+        }
       }
 
       // Legacy guard retained as fallback when lock table is unavailable.
@@ -1453,8 +1631,10 @@ serve(async (req: Request) => {
     if (exposureFindingsRes.error) throw exposureFindingsRes.error;
 
     const assets = (assetsRes.data || []) as SurfaceAssetRow[];
-    const surfaceFindings = (findingsRes.data || []) as SurfaceFindingRow[];
-    const exposureFindings = (exposureFindingsRes.data || []) as ExposureFindingRow[];
+    const surfaceFindings = ((findingsRes.data || []) as SurfaceFindingRow[])
+      .filter((row) => isActionableFindingStatus(row.status));
+    const exposureFindings = ((exposureFindingsRes.data || []) as ExposureFindingRow[])
+      .filter((row) => isActionableFindingStatus(row.status));
     const normalizedScopeDomains = Array.from(new Set(scopeDomains.map((entry) => normalizeScopeDomain(entry)).filter(isDomainLike)));
 
     const scopeAssetRows: Array<Record<string, unknown>> = [
@@ -1633,7 +1813,11 @@ serve(async (req: Request) => {
       addSelectorDefinition(raw || normalized, normalized, selectorType, 'existing');
     }
 
-    const intelxSelectorDefinitions = Array.from(selectorDefinitionsByNormalized.values()).slice(0, INTELX_MAX_SELECTORS_PER_RUN);
+    const selectorDefinitionsAll = Array.from(selectorDefinitionsByNormalized.values());
+    const intelxSelectorDefinitions = prioritizeIntelxSelectorDefinitions(
+      selectorDefinitionsAll,
+      INTELX_MAX_SELECTORS_PER_RUN,
+    );
 
     if (intelxSelectorDefinitions.length > 0) {
       const selectorUpsertRows = intelxSelectorDefinitions.map((selector) => {
@@ -1679,8 +1863,19 @@ serve(async (req: Request) => {
       selectorByNormalized.set(String(row.normalized_value), String(row.id));
     }
 
-    const intelxQueryTerms = buildIntelxQueryTerms(intelxSelectorDefinitions, scopeDomains);
-    const identityEmailSelectorsUsed = intelxSelectorDefinitions.filter((entry) => entry.type === 'email').length;
+    const intelxQueryTerms = ensureIdentityEmailQueryTerms(
+      buildIntelxQueryTerms(intelxSelectorDefinitions, scopeDomains),
+      manualIdentityEmails,
+      intelxSelectorDefinitions,
+    );
+    const identityEmailSelectorsUsed = new Set(
+      [
+        ...intelxSelectorDefinitions
+          .filter((entry) => entry.type === 'email')
+          .map((entry) => normalizeText(entry.normalized).toLowerCase()),
+        ...manualIdentityEmails.map((entry) => normalizeText(entry).toLowerCase()),
+      ].filter(Boolean),
+    ).size;
     const firecrawlEmailSelectors = Array.from(
       new Set([
         ...manualIdentityEmails,
@@ -1725,7 +1920,9 @@ serve(async (req: Request) => {
     let identityEmailQueriesRun = 0;
     let strictPasswordHits = 0;
     let metadataOnlyHits = 0;
+    let intelxRecordsProcessedTotal = 0;
     const intelxWarnings: string[] = [];
+    const runDeadlineTs = Date.now() + DARKRISK_RUN_BUDGET_MS;
 
     // Pre-compute recurrence counts to avoid O(n²) filter per finding
     const recurrenceMap = new Map<string, number>();
@@ -1778,7 +1975,7 @@ serve(async (req: Request) => {
       const sourceRecordKey = `${sourceScanJobId || 'scope_only'}:${finding.origin}:${finding.source_id}`;
       const { data: sourceRecord, error: sourceRecordErr } = await adminClient
         .from('darkrisk_source_records' as any)
-        .insert({
+        .upsert({
           organization_id: customerId,
           tenant_id: customerId,
           scan_run_id: scanRunId,
@@ -1791,7 +1988,7 @@ serve(async (req: Request) => {
           raw_metadata: finding.payload,
           safe_preview: maskPotentialSecrets(`${finding.title}\n${finding.description}`),
           preview_hash: sourceRecordKey,
-        })
+        }, { onConflict: 'organization_id,source,source_record_key', ignoreDuplicates: false })
         .select('id')
         .single();
 
@@ -1866,9 +2063,7 @@ serve(async (req: Request) => {
       });
 
       const surfaceFindingSourceKey = `${sourceScanJobId || 'scope_only'}:${finding.origin}:${finding.source_id}`;
-      const { data: darkFinding, error: findingErr } = await adminClient
-        .from('darkrisk_findings' as any)
-        .upsert({
+      const darkFinding = await upsertDarkRiskFinding(adminClient, {
           organization_id: customerId,
           tenant_id: customerId,
           scan_run_id: scanRunId,
@@ -1898,11 +2093,7 @@ serve(async (req: Request) => {
                 sensitive_indicators: sensitiveIndicators,
                 sensitive_data_detected: hasSensitiveIndicators(sensitiveIndicators),
               },
-            }, { onConflict: 'organization_id,source_record_key', ignoreDuplicates: false })
-            .select('id')
-            .single();
-
-      if (findingErr || !darkFinding?.id) throw findingErr || new Error('darkrisk finding insert failed');
+            });
       findingsCreated += 1;
 
       if (finding.severity === 'high' || finding.severity === 'critical') {
@@ -1931,6 +2122,10 @@ serve(async (req: Request) => {
 
     if (includeDtiExtended && isIntelxConfigured()) {
       for (const queryTerm of intelxQueryTerms) {
+        if (Date.now() >= runDeadlineTs) {
+          intelxWarnings.push('Run budget raggiunto: ciclo IntelX interrotto in modo controllato.');
+          break;
+        }
         if (isEmailSelectorCoverageKind(queryTerm.kind, queryTerm.term)) identityEmailQueriesRun += 1;
         const sourceRunStartedAt = new Date().toISOString();
         const sourceRun = await createDtiSourceRun(adminClient, {
@@ -1980,6 +2175,18 @@ serve(async (req: Request) => {
             continue;
           }
 
+          let runWarnings: string[] = [];
+          let runSensitiveHits = 0;
+          let runRecordsProcessed = 0;
+
+          const perQueryCap = queryTerm.kind === 'email_selector'
+            ? Math.min(INTELX_MAX_RESULTS_PER_SELECTOR, 12)
+            : Math.min(INTELX_MAX_RESULTS_PER_SELECTOR, 4);
+          const recordsToProcess = records.slice(0, perQueryCap);
+          if (records.length > recordsToProcess.length) {
+            runWarnings.push(`Record IntelX troncati (${recordsToProcess.length}/${records.length}) per query ${queryTerm.term}.`);
+          }
+
           const selectorId = queryTerm.selectorNormalized
             ? selectorByNormalized.get(queryTerm.selectorNormalized) || null
             : null;
@@ -1987,11 +2194,16 @@ serve(async (req: Request) => {
           const assetRef = linkedAssetKey ? assetByNormalized.get(linkedAssetKey) : undefined;
           const linkedAssetId = assetRef?.id || null;
 
-          let runWarnings: string[] = [];
-          let runSensitiveHits = 0;
-          let runRecordsProcessed = 0;
-
-          for (const record of records) {
+          for (const record of recordsToProcess) {
+            if (Date.now() >= runDeadlineTs) {
+              runWarnings.push('Run budget raggiunto durante processing IntelX.');
+              break;
+            }
+            if (intelxRecordsProcessedTotal >= INTELX_MAX_RECORDS_PER_RUN) {
+              runWarnings.push(`Limite record IntelX per run raggiunto (${INTELX_MAX_RECORDS_PER_RUN}).`);
+              break;
+            }
+            intelxRecordsProcessedTotal += 1;
             runRecordsProcessed += 1;
             const sourceRecordKey = normalizeIntelxRecordKey(queryTerm.term, record);
             const title = normalizeText(String(record?.name || '')) || `DarkRisk360 signal on ${queryTerm.term}`;
@@ -2009,7 +2221,15 @@ serve(async (req: Request) => {
             let deepWarning: string | null = null;
             let deepMetadata: Record<string, unknown> = {};
 
-            if (INTELX_DEEP_FETCH_ENABLED && intelxDeepFetchesRun < INTELX_DEEP_FETCH_MAX_PER_RUN && (systemId || storageId)) {
+            const remainingBudgetMs = runDeadlineTs - Date.now();
+            const allowDeepFetchForTerm = queryTerm.kind === 'email_selector';
+            if (
+              INTELX_DEEP_FETCH_ENABLED
+              && allowDeepFetchForTerm
+              && remainingBudgetMs > (INTELX_DEEP_FETCH_TIMEOUT_MS + 1000)
+              && intelxDeepFetchesRun < INTELX_DEEP_FETCH_MAX_PER_RUN
+              && (systemId || storageId)
+            ) {
               const deepRes = await intelxDeepFetch({
                 apiKey: INTELX_API_KEY,
                 apiUrl: INTELX_API_URL,
@@ -2081,7 +2301,7 @@ serve(async (req: Request) => {
             const previewText = maskPotentialSecrets(`${title}\n${description}\n${deepExtractionText.slice(0, 500)}`.slice(0, 1600));
             const { data: sourceRecord, error: sourceRecordErr } = await adminClient
               .from('darkrisk_source_records' as any)
-              .insert({
+              .upsert({
                 organization_id: customerId,
                 tenant_id: customerId,
                 scan_run_id: scanRunId,
@@ -2134,7 +2354,7 @@ serve(async (req: Request) => {
                 },
                 safe_preview: previewText,
                 preview_hash: sourceRecordKey,
-              })
+              }, { onConflict: 'organization_id,source,source_record_key', ignoreDuplicates: false })
               .select('id')
               .single();
             if (sourceRecordErr || !sourceRecord?.id) throw sourceRecordErr || new Error('darkrisk360 source record insert failed');
@@ -2182,9 +2402,7 @@ serve(async (req: Request) => {
             evidenceCreated += 1;
             intelxEvidenceCreated += 1;
 
-            const { data: darkFinding, error: findingErr } = await adminClient
-              .from('darkrisk_findings' as any)
-              .upsert({
+            const darkFinding = await upsertDarkRiskFinding(adminClient, {
                 organization_id: customerId,
                 tenant_id: customerId,
                 scan_run_id: scanRunId,
@@ -2220,10 +2438,7 @@ serve(async (req: Request) => {
                   sensitive_indicators: sensitiveIndicators,
                   sensitive_data_detected: hasSensitiveIndicators(sensitiveIndicators),
                 },
-              }, { onConflict: 'organization_id,source_record_key', ignoreDuplicates: false })
-              .select('id')
-              .single();
-            if (findingErr || !darkFinding?.id) throw findingErr || new Error('darkrisk360 finding insert failed');
+              });
             findingsCreated += 1;
             intelxFindingsCreated += 1;
 
@@ -2537,9 +2752,7 @@ serve(async (req: Request) => {
             isThirdPartyOnly: false,
           });
 
-          const { data: darkFinding, error: findingErr } = await adminClient
-            .from('darkrisk_findings' as any)
-            .upsert({
+          const darkFinding = await upsertDarkRiskFinding(adminClient, {
               organization_id: customerId,
               tenant_id: customerId,
               scan_run_id: scanRunId,
@@ -2571,10 +2784,7 @@ serve(async (req: Request) => {
                 sensitive_indicators: sensitiveIndicators,
                 sensitive_data_detected: hasSensitiveIndicators(sensitiveIndicators),
               },
-            }, { onConflict: 'organization_id,source_record_key', ignoreDuplicates: false })
-            .select('id')
-            .single();
-          if (findingErr || !darkFinding?.id) throw findingErr || new Error('firecrawl finding insert failed');
+            });
           findingsCreated += 1;
           firecrawlFindingsCreated += 1;
 
@@ -2866,11 +3076,14 @@ serve(async (req: Request) => {
       });
 
     // Release scan lock so subsequent scans can proceed.
-    await adminClient
-      .from('darkrisk_scan_locks' as any)
-      .delete()
-      .eq('organization_id', customerId)
-      .catch(() => undefined);
+    try {
+      await adminClient
+        .from('darkrisk_scan_locks' as any)
+        .delete()
+        .eq('organization_id', customerId);
+    } catch {
+      // ignore lock release failures
+    }
 
     return jsonResponse({
       ok: true,
@@ -2949,11 +3162,14 @@ serve(async (req: Request) => {
         // Release scan lock on failure so the next attempt is not blocked.
         const failedOrg = runScope?.organization_id;
         if (failedOrg) {
-          await errAdminClient
-            .from('darkrisk_scan_locks' as any)
-            .delete()
-            .eq('organization_id', failedOrg)
-            .catch(() => undefined);
+          try {
+            await errAdminClient
+              .from('darkrisk_scan_locks' as any)
+              .delete()
+              .eq('organization_id', failedOrg);
+          } catch {
+            // ignore lock release failures
+          }
         }
 
         await errAdminClient
