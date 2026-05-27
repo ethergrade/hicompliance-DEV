@@ -469,7 +469,9 @@ const DarkRisk360: React.FC = () => {
         }
       }
 
-      const darkRiskRows = findings.map((finding) => {
+      const darkRiskRows = findings
+        .filter((finding) => isActiveDarkRiskStatus(finding.status))
+        .map((finding) => {
         const source = presentDarkRiskSource(String(
           finding?.metadata?.source_module ||
           finding?.metadata?.source_origin ||
@@ -570,7 +572,7 @@ const DarkRisk360: React.FC = () => {
           .limit(600),
         supabase
           .from('darkrisk_findings' as any)
-          .select('id, affected_asset_id')
+          .select('id, affected_asset_id, status')
           .eq('organization_id', organizationId)
           .limit(1200),
       ]);
@@ -580,6 +582,7 @@ const DarkRisk360: React.FC = () => {
 
       const findingCountByAsset = new Map<string, number>();
       for (const finding of ((findingsRes.data || []) as Array<Record<string, any>>)) {
+        if (!isActiveDarkRiskStatus(finding.status)) continue;
         const assetId = String(finding.affected_asset_id || '').trim();
         if (!assetId) continue;
         findingCountByAsset.set(assetId, (findingCountByAsset.get(assetId) || 0) + 1);

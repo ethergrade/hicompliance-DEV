@@ -127,7 +127,47 @@ type IdentityEvidenceRow = {
   phone_numbers: number;
   total: number;
   samples: DtiOverviewData['sensitive_samples'];
+  passwordValues: string[];
+  sourceLabels: string[];
+  lastMarkedAt: string | null;
 };
+
+const invalidPasswordEvidenceTokens = new Set([
+  'query',
+  'selector',
+  'metadata',
+  'record',
+  'source',
+  'field',
+  'password',
+  'passwd',
+  'pwd',
+  'secret',
+  'token',
+  'unknown',
+  'null',
+  'none',
+  'n/a',
+  'na',
+  '&#39',
+  '&apos;',
+  '&quot;',
+]);
+
+function isDisplayablePasswordValue(value: string | null | undefined): boolean {
+  const normalized = String(value || '').trim();
+  if (!normalized) return false;
+  const lowered = normalized.toLowerCase();
+  if (normalized.length < 4 || normalized.length > 120) return false;
+  if (invalidPasswordEvidenceTokens.has(lowered)) return false;
+  if (/^&#\d{1,6};?$/i.test(normalized)) return false;
+  if (/^&[a-z]{2,8};$/i.test(normalized)) return false;
+  if (lowered.includes('@')) return false;
+  if (/[=:]/.test(normalized)) return false;
+  if (/^https?:\/\//i.test(normalized)) return false;
+  if (/^[*_#\-.]+$/.test(normalized)) return false;
+  return true;
+}
 
 const categoryPalette = ['#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ef4444', '#64748b', '#3b82f6', '#a855f7'];
 const identityLegendItems = [
@@ -189,6 +229,34 @@ function ChartLegend({ items }: { items: Array<{ label: string; color: string }>
   );
 }
 
+function IdentityCredentialTooltip({ active, payload, label }: any) {
+  if (!active || !Array.isArray(payload) || payload.length === 0) return null;
+  const row = payload[0]?.payload as IdentityEvidenceRow & { identityLabel?: string } | undefined;
+  if (!row) return null;
+  const passwordValues = Array.isArray(row.passwordValues) ? row.passwordValues : [];
+  const preview = passwordValues;
+  return (
+    <div className="rounded-md border border-border/70 bg-[#0b1220] p-3 text-xs shadow-xl max-w-[420px]">
+      <p className="font-medium mb-1">{String(label || row.identityLabel || row.identity || '')}</p>
+      <div className="text-muted-foreground mb-2">
+        Password: <span className="text-foreground font-semibold">{row.passwords}</span> · Domini: <span className="text-foreground font-semibold">{row.domains}</span>
+      </div>
+      <p className="text-[11px] text-muted-foreground mb-1">Password in chiaro (lista completa):</p>
+      {preview.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground">Nessuna password valida classificata.</p>
+      ) : (
+        <div className="max-h-40 overflow-y-auto space-y-1">
+          {preview.map((value) => (
+            <div key={`${row.identity}-${value}`} className="font-mono text-[11px] break-all">
+              {value}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function normalizeSensitiveTag(value: string): SensitiveTagKey | null {
   const normalized = String(value || '').trim().toLowerCase();
   if (['domains', 'domain', 'dominio', 'domini'].includes(normalized)) return 'domains';
@@ -216,11 +284,6 @@ function displayDarkRiskSource(value: string): string {
   if (!source) return 'DarkRisk360';
   if (/intelx|firecrawl|openai/i.test(source)) return 'DarkRisk360';
   return source;
-}
-
-function isCredentialCompromiseRow(row: Row): boolean {
-  const sourceText = `${row.category || ''} ${row.finding_type || ''} ${row.title || ''}`.toLowerCase();
-  return /credential|credenzial|password|stealer|compromis/.test(sourceText);
 }
 
 function isEmailLike(value: string): boolean {
@@ -396,15 +459,6 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
         return b.total - a.total;
       });
 
-    const credentialCompromiseRows = rows
-      .filter((row) => isCredentialCompromiseRow(row))
-      .sort((a, b) => {
-        const severityDelta = severityRank[b.severity] - severityRank[a.severity];
-        if (severityDelta !== 0) return severityDelta;
-        return Number(b.risk_score || 0) - Number(a.risk_score || 0);
-      })
-      .slice(0, 120);
-
     const identityMap = new Map<string, IdentityEvidenceRow>();
     for (const sample of dti?.sensitive_samples || []) {
       if (!isIdentitySensitiveSample(sample)) continue;
@@ -420,10 +474,28 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
         phone_numbers: 0,
         total: 0,
         samples: [],
+        passwordValues: [],
+        sourceLabels: [],
+        lastMarkedAt: null,
       };
+      const sampleValue = String(sample.value || sample.masked_value || '').trim();
+      if (tag === 'passwords') {
+        if (!isDisplayablePasswordValue(sampleValue)) continue;
+        if (!bucket.passwordValues.includes(sampleValue)) {
+          bucket.passwordValues.push(sampleValue);
+        }
+      }
       bucket[tag] += 1;
       bucket.total += 1;
-      if (bucket.samples.length < 8) bucket.samples.push(sample);
+      const sourceLabel = displayDarkRiskSource(String(sample.source || 'DarkRisk360'));
+      if (sourceLabel && !bucket.sourceLabels.includes(sourceLabel)) {
+        bucket.sourceLabels.push(sourceLabel);
+      }
+      const sampleTs = sample.created_at && Number.isFinite(Date.parse(sample.created_at)) ? sample.created_at : null;
+      if (sampleTs && (!bucket.lastMarkedAt || Date.parse(sampleTs) > Date.parse(bucket.lastMarkedAt))) {
+        bucket.lastMarkedAt = sampleTs;
+      }
+      if (bucket.samples.length < 40) bucket.samples.push(sample);
       identityMap.set(identity, bucket);
     }
 
@@ -476,7 +548,6 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
       sensitiveRows,
       detailedSensitiveRows,
       groupedAssetRows,
-      credentialCompromiseRows,
       identityRows,
       identityFindingRows,
       sensitiveSampleRows,
@@ -709,41 +780,50 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
 
         <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
           <div className="flex items-center justify-between gap-3 mb-3">
-            <p className="text-sm font-medium">Compromissioni credenziali rilevate (lista in chiaro)</p>
-            <Badge variant="outline">{data.credentialCompromiseRows.length}</Badge>
+            <p className="text-sm font-medium">Compromissioni credenziali rilevate (lista in chiaro per identity)</p>
+            <Badge variant="outline">{data.identityRows.filter((row) => row.passwordValues.length > 0).length}</Badge>
           </div>
-          {data.credentialCompromiseRows.length === 0 ? (
+          {data.identityRows.filter((row) => row.passwordValues.length > 0).length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Nessuna compromissione credenziale classificata nel filtro corrente.
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1100px] text-xs">
+              <table className="w-full min-w-[1220px] text-xs">
                 <thead>
                   <tr className="border-b border-border/60 text-left text-muted-foreground">
-                    <th className="py-2 pr-3">Severity</th>
-                    <th className="py-2 pr-3">Risk</th>
-                    <th className="py-2 pr-3">Sito</th>
-                    <th className="py-2 pr-3">Asset</th>
-                    <th className="py-2 pr-3">Titolo</th>
-                    <th className="py-2 pr-3">Tipo</th>
+                    <th className="py-2 pr-3">Identity (Email)</th>
+                    <th className="py-2 pr-3">Password valide</th>
+                    <th className="py-2 pr-3">Password in chiaro</th>
+                    <th className="py-2 pr-3">Domini</th>
+                    <th className="py-2 pr-3">Altri dati</th>
                     <th className="py-2 pr-3">Marcato il</th>
                     <th className="py-2">Source</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.credentialCompromiseRows.map((row) => (
-                    <tr key={`credential-row-${row.id}`} className="border-b border-border/40 align-top">
+                  {data.identityRows
+                    .filter((row) => row.passwordValues.length > 0)
+                    .map((row) => (
+                    <tr key={`credential-identity-${row.identity}`} className="border-b border-border/40 align-top">
+                      <td className="py-2 pr-3 font-medium">{row.identity}</td>
+                      <td className="py-2 pr-3 font-semibold">{row.passwordValues.length}</td>
                       <td className="py-2 pr-3">
-                        <Badge className={severityTone[row.severity]}>{row.severity}</Badge>
+                        <div className="space-y-1">
+                          {row.passwordValues.slice(0, 30).map((value) => (
+                            <div key={`${row.identity}-clear-pwd-${value}`} className="font-mono text-[11px] break-all">
+                              {value}
+                            </div>
+                          ))}
+                          {row.passwordValues.length > 30 ? (
+                            <div className="text-[11px] text-muted-foreground">+{row.passwordValues.length - 30} altre password</div>
+                          ) : null}
+                        </div>
                       </td>
-                      <td className="py-2 pr-3 font-semibold">{row.risk_score}</td>
-                      <td className="py-2 pr-3">{row.site || '-'}</td>
-                      <td className="py-2 pr-3">{row.asset || '-'}</td>
-                      <td className="py-2 pr-3">{row.title}</td>
-                      <td className="py-2 pr-3">{row.finding_type}</td>
-                      <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap">{formatDateTime(row.first_seen_at || row.last_seen_at)}</td>
-                      <td className="py-2">{displayDarkRiskSource(row.source)}</td>
+                      <td className="py-2 pr-3">{row.domains}</td>
+                      <td className="py-2 pr-3">{row.addresses + row.credit_cards + row.phone_numbers}</td>
+                      <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap">{formatDateTime(row.lastMarkedAt)}</td>
+                      <td className="py-2">{row.sourceLabels.join(', ') || 'DarkRisk360'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -774,11 +854,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.25)" />
                       <XAxis dataKey="identityLabel" interval={0} angle={-18} textAnchor="end" height={74} stroke="#94a3b8" />
                       <YAxis allowDecimals={false} stroke="#94a3b8" />
-                      <Tooltip
-                        contentStyle={{ background: '#0b1220', border: '1px solid rgba(148,163,184,0.3)' }}
-                        formatter={(value: number, key: string) => [value, sensitiveLabel[key] || key]}
-                        labelFormatter={(label) => String(label)}
-                      />
+                      <Tooltip content={<IdentityCredentialTooltip />} />
                       <Bar dataKey="passwords" stackId="identitySensitive" name="Password" fill="#f59e0b" />
                       <Bar dataKey="domains" stackId="identitySensitive" name="Domini" fill="#8b5cf6" />
                       <Bar dataKey="addresses" stackId="identitySensitive" name="Indirizzi" fill="#22c55e" />
@@ -810,16 +886,22 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                         <td className="py-2 px-3">{row.addresses + row.credit_cards + row.phone_numbers}</td>
                         <td className="py-2 px-3">
                           <div className="space-y-1">
-                            {row.samples.slice(0, 4).map((sample, index) => (
-                              <div key={`${row.identity}-${sample.tag}-${index}`} className="font-mono text-[11px] break-all">
-                                <span className="text-muted-foreground">{sensitiveLabel[normalizeSensitiveTag(sample.tag || '') || 'domains'] || sample.tag}: </span>
-                                {sample.value || sample.masked_value || '-'}
+                            {row.passwordValues.slice(0, 6).map((value) => (
+                              <div key={`${row.identity}-pwd-${value}`} className="font-mono text-[11px] break-all">
+                                <span className="text-muted-foreground">Password: </span>
+                                {value}
                               </div>
                             ))}
+                            {row.passwordValues.length > 6 ? (
+                              <div className="text-[11px] text-muted-foreground">+{row.passwordValues.length - 6} altre password</div>
+                            ) : null}
+                            {row.passwordValues.length === 0 ? (
+                              <div className="text-[11px] text-muted-foreground">Nessuna password valida in chiaro nel campione corrente.</div>
+                            ) : null}
                           </div>
                         </td>
                         <td className="py-2 px-3 text-muted-foreground whitespace-nowrap">
-                          {formatDateTime(row.samples[0]?.created_at)}
+                          {formatDateTime(row.lastMarkedAt)}
                         </td>
                       </tr>
                     ))}

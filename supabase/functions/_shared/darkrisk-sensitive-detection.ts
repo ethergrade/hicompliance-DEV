@@ -52,6 +52,9 @@ const invalidPasswordTokens = new Set([
   'record',
   'source',
   'field',
+  '&#39',
+  '&apos;',
+  '&quot;',
 ]);
 
 const invalidAdjacentPasswordTokens = new Set([
@@ -84,6 +87,8 @@ function isLikelyPasswordCandidate(value: string): boolean {
   if (clean.length < 3 || clean.length > 120) return false;
   const lower = clean.toLowerCase();
   if (invalidPasswordTokens.has(lower)) return false;
+  if (/^&#\d{1,6};?$/i.test(clean)) return false;
+  if (/^&[a-z]{2,8};$/i.test(clean)) return false;
   if (/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(clean)) return false;
   if (/^https?:\/\//i.test(clean)) return false;
   if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(clean)) return false;
