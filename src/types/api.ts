@@ -1,6 +1,6 @@
 // Types derived from HiConsole OpenAPI spec (https://hiapi.websoupcloud.it/docs/api.json)
 
-// ─── Generic API envelope ───────────────────────────────────────────────────
+// ─── Generic API envelope ─────────────────────────────────────────────────
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -54,15 +54,16 @@ export interface LoginRequest {
 export interface Group {
   id: string;
   name: string;
+  slug?: string;
   description?: string;
-  company_id?: string | null;
+  is_active: boolean;
 }
 
 export interface LoginUser {
   id: string | number;
   name: string;
   email: string;
-  is_super_admin: string | null;
+  is_super_admin: boolean;
   groups: Group[];
 }
 
@@ -77,7 +78,7 @@ export interface ChangePasswordRequest {
   password_confirmation: string;
 }
 
-// ─── User ───────────────────────────────────────────────────────────────────
+// ─── User ─────────────────────────────────────────────────────────────────
 
 export interface UserResource {
   id: string | number;
@@ -379,6 +380,7 @@ export interface TenantServiceResource {
   service_type: string;
   status: string;
   settings: Record<string, unknown> | null;
+  api_methods: Record<string, unknown> | null;
   updated_by: string | null;
   created_at: string;
   updated_at: string;
@@ -752,26 +754,22 @@ export interface UpdateDarkRiskAlertRequest {
 
 export interface DocumentResource {
   id: string;
+  tenant_id: string;
+  group_id: string;
   name: string;
-  file_path: string | null;
   file_size: number | null;
   file_type: string | null;
   category: string;
-  uploaded_at: string | null;
-  uploaded_by: string | null;
   document_code: string | null;
   revision: number;
   revision_date: string | null;
   status: string;
-  drafted_by: string[] | null;
-  prepared_by: string[] | null;
-  reviewed_by: string[] | null;
-  approved_by: string[] | null;
   description: string | null;
   tags: string[] | null;
   confidentiality: string;
-  organization_id: string | null;
-  company_id?: string | null;
+  uploaded_by: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface StoreDocumentRequest {
@@ -782,10 +780,6 @@ export interface StoreDocumentRequest {
   confidentiality?: string;
   description?: string | null;
   tags?: string[] | null;
-  drafted_by?: string[] | null;
-  prepared_by?: string[] | null;
-  reviewed_by?: string[] | null;
-  approved_by?: string[] | null;
 }
 
 export interface UpdateDocumentRequest {
@@ -797,17 +791,16 @@ export interface UpdateDocumentRequest {
   confidentiality?: string;
   description?: string | null;
   tags?: string[] | null;
-  drafted_by?: string[] | null;
-  prepared_by?: string[] | null;
-  reviewed_by?: string[] | null;
-  approved_by?: string[] | null;
 }
 
 // ─── IRP Contacts ───────────────────────────────────────────────────────────
 
 export interface IrpContactResource {
   id: string;
-  name: string;
+  tenant_id: string;
+  group_id: string;
+  first_name: string;
+  last_name: string;
   role?: string;
   job_title?: string | null;
   irp_role?: string | null;
@@ -815,15 +808,15 @@ export interface IrpContactResource {
   email: string;
   category: string;
   responsibilities?: string | null;
-  escalation_level?: number;
+  notes?: string | null;
   directory_contact_id?: string | null;
-  company_id?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface StoreIrpContactRequest {
-  name: string;
+  first_name: string;
+  last_name: string;
   role?: string;
   job_title?: string | null;
   irp_role?: string | null;
@@ -831,7 +824,7 @@ export interface StoreIrpContactRequest {
   email: string;
   category?: string;
   responsibilities?: string | null;
-  escalation_level?: number;
+  notes?: string | null;
   directory_contact_id?: string | null;
 }
 
@@ -839,22 +832,31 @@ export interface StoreIrpContactRequest {
 
 export interface IrpEmergencyContactResource {
   id: string;
+  tenant_id: string;
+  group_id: string;
   name: string;
+  role?: string | null;
+  job_title?: string | null;
+  irp_role?: string | null;
   phone: string;
   email: string;
   category?: string;
-  role?: string;
-  company_id?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
+  responsibilities?: string | null;
+  directory_contact_id?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface StoreIrpEmergencyContactRequest {
   name: string;
+  role?: string | null;
+  job_title?: string | null;
+  irp_role?: string | null;
   phone: string;
   email: string;
   category?: string;
-  role?: string;
+  responsibilities?: string | null;
+  directory_contact_id?: string | null;
 }
 
 // ─── Consistenze ───────────────────────────────────────────────────────────
@@ -884,31 +886,51 @@ export interface ConsistenzeSummary {
 
 export interface CriticalInfrastructureAsset {
   id: string;
-  company_id?: string | null;
+  tenant_id: string;
+  group_id: string;
   asset_id: string;
   component_name: string;
-  description?: string | null;
-  category?: string | null;
-  criticality?: string | null;
-  owner?: string | null;
-  location?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
+  criticality: 'H' | 'M' | 'L' | null;
+  owner_team: string;
+  management_type: 'internal' | 'external' | null;
+  location: string;
+  sensitive_data: 'S' | 'N' | 'N/A' | null;
+  dependencies: string;
+  main_controls: string;
+  has_backup: 'S' | 'N' | null;
+  backup_frequency: string;
+  last_test_date: string | null;
+  rpo_hours: number | null;
+  rto_hours: number | null;
+  runbook_link: string;
+  ir_notes: string;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
 }
+
+export type CriticalInfrastructureUpdate = Partial<Omit<CriticalInfrastructureAsset, 'id' | 'group_id' | 'created_at'>>;
 
 // ─── Asset IRP ─────────────────────────────────────────────────────────────
 
 export interface AssetIrpItem {
   id: string;
-  company_id?: string | null;
-  asset_id?: string | null;
-  name?: string | null;
-  category?: string | null;
-  criticality?: string | null;
-  owner?: string | null;
-  notes?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
+  tenant_id: string;
+  group_id: string;
+  consistenza_item_id: string | null;
+  area: string | null;
+  categoria: string | null;
+  tecnologia: string | null;
+  fornitore: string | null;
+  quantita: number | null;
+  esposizione_score: number | null;
+  criticita_score: number | null;
+  superficie_score: number | null;
+  rischio_intrinseco: string | null;
+  rischio_residuo: string | null;
+  last_sync_from_consistenze: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // ─── User Preferences ──────────────────────────────────────────────────────
@@ -917,3 +939,20 @@ export interface UserPreferenceValue {
   key: string;
   value: unknown;
 }
+
+// ─── Service Catalog (Tenant Services v2) ──────────────────────────────────
+
+export interface ServiceCatalogField {
+  label: string;
+  type: 'select' | 'checkbox' | 'text';
+  options?: string[];
+  required?: boolean;
+  is_secret?: boolean;
+}
+
+export interface ServiceCatalogEntry {
+  label: string;
+  fields: Record<string, ServiceCatalogField>;
+}
+
+export type ServiceCatalog = Record<string, ServiceCatalogEntry>;
