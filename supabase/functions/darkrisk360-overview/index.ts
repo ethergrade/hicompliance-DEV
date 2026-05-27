@@ -5,6 +5,7 @@ import {
   getCallerProfile,
   makeSupabaseClients,
 } from '../_shared/surface-scan-utils.ts';
+import { isEmailSelectorCoverageKind } from '../_shared/darkrisk-query-kind.ts';
 
 type Severity = 'info' | 'low' | 'medium' | 'high' | 'critical';
 type CoverageStatus = 'completed' | 'partial' | 'error' | 'not_run' | 'planned';
@@ -46,6 +47,9 @@ type IntelxCoverageInfo = {
   selectors_considered: number;
   query_terms_considered: number;
   searches_run: number;
+  email_queries_run: number;
+  strict_password_hits: number;
+  metadata_only_hits: number;
   at_domain_tld_queries: number;
   phonebook_searches_run: number;
   last_execution: string | null;
@@ -54,6 +58,10 @@ type IntelxCoverageInfo = {
 type DtiSensitiveTag = 'domains' | 'passwords' | 'addresses' | 'credit_cards' | 'phone_numbers';
 
 type DtiSensitiveHitRow = {
+  id?: string | null;
+  source_run_id?: string | null;
+  source_record_id?: string | null;
+  finding_id?: string | null;
   source: string | null;
   source_label: string | null;
   query_kind: string | null;
@@ -62,6 +70,9 @@ type DtiSensitiveHitRow = {
   tag: string | null;
   masked_value: string | null;
   clear_value: string | null;
+  match_policy?: string | null;
+  extraction_confidence?: string | null;
+  evidence_scope?: string | null;
   created_at: string | null;
 };
 
@@ -410,6 +421,9 @@ serve(async (req: Request) => {
       selectors_considered: Number(latestDarkriskIntelxStats?.selectors_considered || 0),
       query_terms_considered: Number(latestDarkriskIntelxStats?.query_terms_considered || 0),
       searches_run: Number(latestDarkriskIntelxStats?.searches_run || 0),
+      email_queries_run: Number(latestDarkriskIntelxStats?.email_queries_run || 0),
+      strict_password_hits: Number(latestDarkriskIntelxStats?.strict_password_hits || 0),
+      metadata_only_hits: Number(latestDarkriskIntelxStats?.metadata_only_hits || 0),
       at_domain_tld_queries: Number(latestDarkriskIntelxStats?.at_domain_tld_queries || 0),
       phonebook_searches_run: Number(latestDarkriskIntelxStats?.phonebook_searches_run || 0),
       last_execution: latestDarkriskRun?.completed_at || latestDarkriskRun?.created_at || null,
@@ -525,7 +539,7 @@ serve(async (req: Request) => {
       latestDarkriskRun?.id
         ? adminClient
             .from('darkrisk_dti_sensitive_hits' as any)
-            .select('source, source_label, query_kind, query_term, asset_scope, tag, masked_value, clear_value, created_at')
+            .select('id, source_run_id, source_record_id, finding_id, source, source_label, query_kind, query_term, asset_scope, tag, masked_value, clear_value, match_policy, extraction_confidence, evidence_scope, created_at')
             .eq('scan_run_id', latestDarkriskRun.id)
             .order('created_at', { ascending: false })
             .limit(3500)
@@ -615,8 +629,8 @@ serve(async (req: Request) => {
       if (!qt) continue;
       const qk = String(row.query_kind || '').toLowerCase();
       if (qk === 'at_domain_tld') coveredAtDomain.add(qt);
+      else if (isEmailSelectorCoverageKind(qk, qt)) coveredEmail.add(qt);
       else if (qk === 'selector') coveredSelector.add(qt);
-      else if (qk === 'email_selector') coveredEmail.add(qt);
     }
     const dtiQueryCoverage = {
       at_domain_tld: coveredAtDomain.size,
@@ -644,6 +658,10 @@ serve(async (req: Request) => {
       sensitiveByAsset.set(scopeKey, current);
       if (sensitiveSampleRows.length < 120) {
         sensitiveSampleRows.push({
+          id: String((row as any).id || ''),
+          source_run_id: String((row as any).source_run_id || ''),
+          source_record_id: String((row as any).source_record_id || ''),
+          finding_id: String((row as any).finding_id || ''),
           source: presentDarkRiskLabel(String(row.source_label || row.source || 'DarkRisk360')),
           query_kind: String(row.query_kind || ''),
           query_term: String(row.query_term || ''),
@@ -651,6 +669,9 @@ serve(async (req: Request) => {
           tag,
           value: String(row.clear_value || row.masked_value || ''),
           masked_value: String(row.masked_value || ''),
+          match_policy: String((row as any).match_policy || ''),
+          extraction_confidence: String((row as any).extraction_confidence || ''),
+          evidence_scope: String((row as any).evidence_scope || ''),
           created_at: row.created_at || null,
         });
       }
@@ -825,6 +846,11 @@ serve(async (req: Request) => {
         sensitive_by_asset: sensitiveByAssetRows,
         sensitive_samples: sensitiveSampleRows,
         latest_scan_run_id: latestDarkriskRun?.id || null,
+        intelx_stats: {
+          email_queries_run: intelxCoverage.email_queries_run,
+          strict_password_hits: intelxCoverage.strict_password_hits,
+          metadata_only_hits: intelxCoverage.metadata_only_hits,
+        },
       },
     });
   } catch (error: any) {

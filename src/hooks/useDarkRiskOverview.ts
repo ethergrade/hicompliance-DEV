@@ -97,6 +97,10 @@ export type DarkRiskOverviewResponse = {
       total: number;
     }>;
     sensitive_samples: Array<{
+      id?: string;
+      source_run_id?: string;
+      source_record_id?: string;
+      finding_id?: string;
       source: string;
       query_kind: string;
       query_term: string;
@@ -104,8 +108,16 @@ export type DarkRiskOverviewResponse = {
       tag: string;
       value: string;
       masked_value: string;
+      match_policy?: string;
+      extraction_confidence?: string;
+      evidence_scope?: string;
       created_at: string | null;
     }>;
+    intelx_stats?: {
+      email_queries_run?: number;
+      strict_password_hits?: number;
+      metadata_only_hits?: number;
+    };
     latest_scan_run_id: string | null;
   };
 };
@@ -160,6 +172,11 @@ const emptyData: DarkRiskOverviewResponse = {
     },
     sensitive_by_asset: [],
     sensitive_samples: [],
+    intelx_stats: {
+      email_queries_run: 0,
+      strict_password_hits: 0,
+      metadata_only_hits: 0,
+    },
     latest_scan_run_id: null,
   },
 };

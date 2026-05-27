@@ -1119,8 +1119,8 @@ async function finalizeJobStatuses(adminClient: any, scanJobIds: string[]) {
         .update({
           status: 'failed',
           error_message: bootstrapped.reason
-            ? `No Pentest-Tools tasks for this exposure job (${bootstrapped.reason})`
-            : 'No Pentest-Tools tasks for this exposure job',
+            ? `No active exposure tasks generated for this job (${bootstrapped.reason})`
+            : 'No active exposure tasks generated for this job',
           completed_at: new Date().toISOString(),
         })
         .eq('id', scanJobId);
@@ -1157,7 +1157,7 @@ async function finalizeJobStatuses(adminClient: any, scanJobIds: string[]) {
         status: finalStatus,
         completed_at: new Date().toISOString(),
         error_message: finalStatus === 'failed'
-          ? 'All Pentest-Tools tasks failed'
+          ? 'All exposure tasks failed'
           : (finalStatus === 'partial' ? 'Completed with partial optional-phase failures' : null),
       })
       .eq('id', scanJobId);
@@ -1232,7 +1232,7 @@ serve(async (req: Request) => {
       .select('id, error_message')
       .eq('scan_type', 'exposure_port_technology')
       .eq('status', 'failed')
-      .or('error_message.ilike.%No Pentest-Tools tasks for this exposure job%,error_message.ilike.%All Pentest-Tools tasks failed%')
+      .or('error_message.ilike.%No Pentest-Tools tasks for this exposure job%,error_message.ilike.%No active exposure tasks generated for this job%,error_message.ilike.%All Pentest-Tools tasks failed%,error_message.ilike.%All exposure tasks failed%')
       .order('updated_at', { ascending: false })
       .limit(80);
 
