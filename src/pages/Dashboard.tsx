@@ -293,7 +293,6 @@ const Dashboard: React.FC = () => {
         <ClientServicesDialog
           open={modulesDialogOpen}
           onOpenChange={setModulesDialogOpen}
-          organizationId={activeOrgId}
           organizationName={activeOrgName}
         />
       )}

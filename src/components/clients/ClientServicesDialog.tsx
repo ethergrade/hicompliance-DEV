@@ -1,5 +1,11 @@
-import React, { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,29 +13,49 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Link2, Unlink, Plug, Shield, Mail, Monitor, Smartphone, Activity, Search as SearchIcon, Server, ShieldCheck, FileCheck, Eye, Radar } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Loader2,
+  Plug,
+  ShieldCheck,
+  Radar,
+  Eye,
+  Shield,
+  Activity,
+  Server,
+  Mail,
+  Monitor,
+  Smartphone,
+  Search as SearchIcon,
+  Settings,
+  Save,
+} from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { tenantServicesApi } from '@/lib/api/tenant-services';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
+import type {
+  TenantServiceResource,
+  ServiceCatalog,
+  ServiceCatalogField,
+} from '@/types/api';
 
 interface ClientServicesDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  organizationId: string;
   organizationName: string;
 }
 
-interface Integration {
-  id: string;
-  service_id: string;
-  api_url: string;
-  is_active: boolean;
-  service_code?: string;
-  service_name?: string;
-}
-
 const SERVICE_ICONS: Record<string, React.ReactNode> = {
+  hicompliance: <ShieldCheck className="w-4 h-4" />,
+  surfacescan360: <Radar className="w-4 h-4" />,
+  darkrisk360: <Eye className="w-4 h-4" />,
   hipatch: <Shield className="w-4 h-4" />,
   hifirewall: <Shield className="w-4 h-4" />,
   hiendpoint: <Monitor className="w-4 h-4" />,
@@ -40,167 +66,282 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
   himobile: <Smartphone className="w-4 h-4" />,
 };
 
+const SERVICE_ORDER = [
+  'HiCompliance',
+  'SurfaceScan360',
+  'DarkRisk360',
+  'HiPatch',
+  'HiTrack',
+  'HiLog',
+  'HiMail',
+  'HiEndpoint',
+  'HiFirewall',
+  'HiDetect',
+  'HiMobile',
+];
+
+function sortServiceTypes(types: string[]): string[] {
+  return [...types].sort((a, b) => {
+    const ia = SERVICE_ORDER.indexOf(a);
+    const ib = SERVICE_ORDER.indexOf(b);
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
+    return a.localeCompare(b);
+  });
+}
+
 const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
-  open, onOpenChange, organizationId, organizationName,
+  open,
+  onOpenChange,
+  organizationName,
 }) => {
   const queryClient = useQueryClient();
-  const [connectingService, setConnectingService] = useState<{ id: string; name: string } | null>(null);
-  const [apiUrl, setApiUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
+  const { organizationId } = useClientOrganization();
 
-  const { data: orgFlags } = useQuery({
-    queryKey: ['org-feature-flags', organizationId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('organizations')
-        .select('hicompliance_enabled, irp_extended, surface_scan_extended, pentest_tools_auto_validation, surface_scan360_enabled, dark_risk360_enabled' as any)
-        .eq('id', organizationId)
-        .maybeSingle();
-      if (error) throw error;
-      return (data as any) || { hicompliance_enabled: false, irp_extended: false, surface_scan_extended: false, pentest_tools_auto_validation: true, surface_scan360_enabled: false, dark_risk360_enabled: false };
-    },
-    enabled: open && !!organizationId,
-  });
+  const [localSettings, setLocalSettings] = useState<
+    Record<string, Record<string, unknown>>
+  >({});
+  const [dirty, setDirty] = useState<Set<string>>(new Set());
+  const initializedRef = React.useRef(false);
 
-  const { data: darkRiskEntitlement } = useQuery({
-    queryKey: ['darkrisk-entitlement', organizationId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('darkrisk_entitlements' as any)
-        .select('tier, enabled')
-        .eq('organization_id', organizationId)
-        .maybeSingle();
+  // Reset local state when dialog opens/closes
+  useEffect(() => {
+    if (!open) {
+      initializedRef.current = false;
+      setLocalSettings({});
+      setDirty(new Set());
+    }
+  }, [open]);
 
-      if (error) {
-        const missingRelation = String((error as any)?.code || '') === '42P01';
-        if (missingRelation) {
-          return { tier: 'standard', enabled: Boolean(orgFlags?.dark_risk360_enabled) };
-        }
-        throw error;
-      }
-
-      return (data as any) || { tier: 'standard', enabled: Boolean(orgFlags?.dark_risk360_enabled) };
-    },
-    enabled: open && !!organizationId,
-  });
-
-  const updateFlagsMutation = useMutation({
-    mutationFn: async (patch: Record<string, boolean>) => {
-      const { error } = await supabase.from('organizations').update(patch as any).eq('id', organizationId);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['org-feature-flags', organizationId] });
-      toast.success('Configurazione aggiornata');
-    },
-    onError: (err: Error) => toast.error(`Errore: ${err.message}`),
-  });
-
-  const updateDarkRiskTierMutation = useMutation({
-    mutationFn: async (tier: 'standard' | 'extended') => {
-      const payload = {
-        organization_id: organizationId,
-        tier,
-        enabled: true,
-        updated_at: new Date().toISOString(),
-      };
-
-      const { error } = await supabase
-        .from('darkrisk_entitlements' as any)
-        .upsert(payload, { onConflict: 'organization_id' });
-
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['darkrisk-entitlement', organizationId] });
-      toast.success('Tier DarkRisk360 aggiornato');
-    },
-    onError: (err: Error) => toast.error(`Errore tier DarkRisk360: ${err.message}`),
-  });
-
-  const { data: services = [] } = useQuery({
-    queryKey: ['hisolution-services'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('hisolution_services').select('*');
-      if (error) throw error;
-      return data || [];
-    },
+  const { data: catalog, isLoading: catalogLoading } = useQuery<ServiceCatalog>({
+    queryKey: ['tenant-services-catalog'],
+    queryFn: () => tenantServicesApi.catalog(),
     enabled: open,
+    staleTime: 5 * 60 * 1000,
   });
 
-  const { data: integrations = [], isLoading } = useQuery({
-    queryKey: ['client-integrations', organizationId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('organization_integrations')
-        .select('id, service_id, api_url, is_active, hisolution_services(code, name)')
-        .eq('organization_id', organizationId)
-        .eq('is_active', true);
-      if (error) throw error;
-      return (data || []).map((item: any) => ({
-        id: item.id,
-        service_id: item.service_id,
-        api_url: item.api_url,
-        is_active: item.is_active,
-        service_code: item.hisolution_services?.code,
-        service_name: item.hisolution_services?.name,
-      })) as Integration[];
-    },
+  const { data: tenantServices = [], isLoading: servicesLoading } = useQuery<
+    TenantServiceResource[]
+  >({
+    queryKey: ['tenant-services', organizationId],
+    queryFn: () => tenantServicesApi.listByOrganization(organizationId!),
     enabled: open && !!organizationId,
   });
 
-  const connectMutation = useMutation({
-    mutationFn: async ({ serviceId, apiUrl, apiKey }: { serviceId: string; apiUrl: string; apiKey: string }) => {
-      const { data: existing } = await supabase
-        .from('organization_integrations')
-        .select('id')
-        .eq('organization_id', organizationId)
-        .eq('service_id', serviceId)
-        .maybeSingle();
+  // One-time init of local settings from fetched services
+  useEffect(() => {
+    if (!initializedRef.current && tenantServices.length > 0) {
+      const next: Record<string, Record<string, unknown>> = {};
+      tenantServices.forEach((s) => {
+        if (s.status === 'active') {
+          next[s.service_type] = (s.settings as Record<string, unknown>) || {};
+        }
+      });
+      setLocalSettings(next);
+      initializedRef.current = true;
+    }
+  }, [tenantServices]);
 
-      if (existing) {
-        const { error } = await supabase
-          .from('organization_integrations')
-          .update({ api_url: apiUrl, api_key: apiKey, is_active: true, api_methods: {} })
-          .eq('id', existing.id);
-        if (error) throw error;
+  const servicesMap = useMemo(() => {
+    const map = new Map<string, TenantServiceResource>();
+    tenantServices.forEach((s) => map.set(s.service_type, s));
+    return map;
+  }, [tenantServices]);
+
+  const createMutation = useMutation({
+    mutationFn: (serviceType: string) =>
+      tenantServicesApi.create(
+        {
+          tenant_id: organizationId!,
+          service_type: serviceType,
+          status: 'active',
+          settings: {},
+        },
+        organizationId!
+      ),
+    onSuccess: (_, serviceType) => {
+      setLocalSettings((prev) => ({ ...prev, [serviceType]: {} }));
+      queryClient.invalidateQueries({
+        queryKey: ['tenant-services', organizationId],
+      });
+      toast.success('Servizio attivato');
+    },
+    onError: (err: Error) => toast.error(`Errore attivazione: ${err.message}`),
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: ({
+      id,
+      status,
+    }: {
+      id: string;
+      status: 'active' | 'inactive';
+    }) => tenantServicesApi.update(id, { status }, organizationId!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['tenant-services', organizationId],
+      });
+      toast.success('Stato servizio aggiornato');
+    },
+    onError: (err: Error) =>
+      toast.error(`Errore aggiornamento stato: ${err.message}`),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => tenantServicesApi.delete(id, organizationId!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['tenant-services', organizationId],
+      });
+      toast.success('Servizio disattivato');
+    },
+    onError: (err: Error) =>
+      toast.error(`Errore disattivazione: ${err.message}`),
+  });
+
+  const updateSettingsMutation = useMutation({
+    mutationFn: ({
+      id,
+      settings,
+    }: {
+      id: string;
+      settings: Record<string, unknown>;
+    }) => tenantServicesApi.update(id, { settings }, organizationId!),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ['tenant-services', organizationId],
+      });
+      toast.success('Configurazione salvata');
+      setDirty((prev) => {
+        const next = new Set(prev);
+        const serviceType = Object.keys(localSettings).find(
+          (k) => servicesMap.get(k)?.id === variables.id
+        );
+        if (serviceType) next.delete(serviceType);
+        return next;
+      });
+    },
+    onError: (err: Error) =>
+      toast.error(`Errore salvataggio: ${err.message}`),
+  });
+
+  const handleToggle = (serviceType: string, checked: boolean) => {
+    const service = servicesMap.get(serviceType);
+    if (checked) {
+      if (service) {
+        if (service.status !== 'active') {
+          updateStatusMutation.mutate({ id: service.id, status: 'active' });
+        }
       } else {
-        const { error } = await supabase
-          .from('organization_integrations')
-          .insert({ organization_id: organizationId, service_id: serviceId, api_url: apiUrl, api_key: apiKey, is_active: true, api_methods: {} });
-        if (error) throw error;
+        createMutation.mutate(serviceType);
       }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['client-integrations', organizationId] });
-      toast.success('Servizio collegato con successo');
-      setConnectingService(null);
-      setApiUrl('');
-      setApiKey('');
-    },
-    onError: (err: Error) => toast.error(`Errore: ${err.message}`),
-  });
+    } else {
+      if (service) {
+        deleteMutation.mutate(service.id);
+      }
+    }
+  };
 
-  const disconnectMutation = useMutation({
-    mutationFn: async (integrationId: string) => {
-      const { error } = await supabase
-        .from('organization_integrations')
-        .update({ is_active: false })
-        .eq('id', integrationId);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['client-integrations', organizationId] });
-      toast.success('Servizio scollegato');
-    },
-    onError: (err: Error) => toast.error(`Errore: ${err.message}`),
-  });
+  const handleFieldChange = (
+    serviceType: string,
+    fieldKey: string,
+    value: unknown
+  ) => {
+    setLocalSettings((prev) => ({
+      ...prev,
+      [serviceType]: {
+        ...(prev[serviceType] || {}),
+        [fieldKey]: value,
+      },
+    }));
+    setDirty((prev) => new Set(prev).add(serviceType));
+  };
 
-  const getIntegration = (serviceId: string) => integrations.find(i => i.service_id === serviceId);
+  const handleSaveSettings = (serviceType: string) => {
+    const service = servicesMap.get(serviceType);
+    if (!service) return;
+    const settings = localSettings[serviceType] || {};
+    updateSettingsMutation.mutate({ id: service.id, settings });
+  };
 
-  const handleConnect = () => {
-    if (!connectingService || !apiUrl.trim() || !apiKey.trim()) return;
-    connectMutation.mutate({ serviceId: connectingService.id, apiUrl: apiUrl.trim(), apiKey: apiKey.trim() });
+  const isLoading = catalogLoading || servicesLoading;
+  const anyMutationPending =
+    createMutation.isPending ||
+    deleteMutation.isPending ||
+    updateStatusMutation.isPending ||
+    updateSettingsMutation.isPending;
+
+  const sortedServiceTypes = useMemo(
+    () => sortServiceTypes(Object.keys(catalog || {})),
+    [catalog]
+  );
+
+  const renderField = (
+    serviceType: string,
+    fieldKey: string,
+    field: ServiceCatalogField
+  ) => {
+    const inputId = `${serviceType}-${fieldKey}`;
+    const value = localSettings[serviceType]?.[fieldKey];
+
+    if (field.type === 'select' && field.options && field.options.length > 0) {
+      return (
+        <div className="space-y-1" key={fieldKey}>
+          <Label htmlFor={inputId}>{field.label}</Label>
+          <Select
+            value={String(value ?? '')}
+            onValueChange={(v) => handleFieldChange(serviceType, fieldKey, v)}
+          >
+            <SelectTrigger id={inputId} className="h-9">
+              <SelectValue placeholder={`Seleziona ${field.label}`} />
+            </SelectTrigger>
+            <SelectContent>
+              {field.options.map((opt) => (
+                <SelectItem key={opt} value={opt}>
+                  {opt}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      );
+    }
+
+    if (field.type === 'checkbox') {
+      return (
+        <div className="flex items-center justify-between py-1.5" key={fieldKey}>
+          <Label htmlFor={inputId} className="cursor-pointer">
+            {field.label}
+          </Label>
+          <Switch
+            id={inputId}
+            checked={!!value}
+            onCheckedChange={(v) =>
+              handleFieldChange(serviceType, fieldKey, v)
+            }
+            aria-label={field.label}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-1" key={fieldKey}>
+        <Label htmlFor={inputId}>{field.label}</Label>
+        <Input
+          id={inputId}
+          type={field.is_secret ? 'password' : 'text'}
+          value={String(value ?? '')}
+          onChange={(e) =>
+            handleFieldChange(serviceType, fieldKey, e.target.value)
+          }
+          className="h-9"
+          placeholder={field.label}
+          autoComplete="off"
+        />
+      </div>
+    );
   };
 
   return (
@@ -211,256 +352,119 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
             <Plug className="w-5 h-5" />
             Servizi API — {organizationName}
           </DialogTitle>
-          <DialogDescription>Collega o scollega i servizi HiSolution per questo cliente</DialogDescription>
+          <DialogDescription>
+            Attiva o disattiva i servizi HiSolution per questo cliente e configura
+            i parametri richiesti
+          </DialogDescription>
         </DialogHeader>
 
-        {connectingService ? (
-          <div className="space-y-4 py-2">
-            <p className="text-sm font-medium">Collega {connectingService.name}</p>
-            <div className="space-y-2">
-              <Label htmlFor="client-api-url">URL API</Label>
-              <Input id="client-api-url" placeholder="https://api.example.com/v1" value={apiUrl} onChange={e => setApiUrl(e.target.value)} />
+        <ScrollArea className="max-h-[520px] pr-2">
+          {isLoading ? (
+            <div className="flex justify-center py-10">
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="client-api-key">Chiave API</Label>
-              <Input id="client-api-key" type="password" placeholder="sk-..." value={apiKey} onChange={e => setApiKey(e.target.value)} />
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => { setConnectingService(null); setApiUrl(''); setApiKey(''); }}>Annulla</Button>
-              <Button onClick={handleConnect} disabled={connectMutation.isPending || !apiUrl.trim() || !apiKey.trim()}>
-                {connectMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Collega
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <ScrollArea className="max-h-[500px] pr-2">
-            {/* Top-level feature flags */}
-            <div className="space-y-3 mb-4">
-              {/* HiCompliance */}
-              <div className="flex items-center justify-between rounded-md border p-3">
-                <div className="flex items-center gap-3">
-                  <div className={`p-1.5 rounded-md ${orgFlags?.hicompliance_enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
-                    <ShieldCheck className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">HiCompliance</p>
-                    <p className="text-xs text-muted-foreground">Assessment, Analisi, Remediation, Incident</p>
-                  </div>
-                </div>
-                <Switch
-                  checked={!!orgFlags?.hicompliance_enabled}
-                  disabled={updateFlagsMutation.isPending}
-                  onCheckedChange={(v) => {
-                    const patch: any = { hicompliance_enabled: v };
-                    if (!v) { patch.irp_extended = false; }
-                    updateFlagsMutation.mutate(patch);
-                  }}
-                />
-              </div>
+          ) : (
+            <div className="space-y-3">
+              {sortedServiceTypes.map((serviceType, idx) => {
+                const entry = catalog![serviceType];
+                const service = servicesMap.get(serviceType);
+                const isActive = service?.status === 'active';
+                const iconKey = serviceType.toLowerCase();
+                const icon =
+                  SERVICE_ICONS[iconKey] || (
+                    <Settings className="w-4 h-4" />
+                  );
+                const hasFields =
+                  entry.fields && Object.keys(entry.fields).length > 0;
+                const isDirty = dirty.has(serviceType);
+                const isSavingService =
+                  updateSettingsMutation.isPending &&
+                  service?.id === updateSettingsMutation.variables?.id;
 
-              {orgFlags?.hicompliance_enabled && (
-                <div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
-                  <div className="flex items-center justify-between rounded-md border p-2.5">
-                    <div className="flex items-center gap-3">
-                      <FileCheck className="w-4 h-4 text-muted-foreground" />
-                      <div>
-                        <p className="text-sm font-medium">IRP Esteso</p>
-                        <p className="text-xs text-muted-foreground">Playbook avanzati e documento esteso</p>
-                      </div>
-                    </div>
-                    <Switch
-                      checked={!!orgFlags?.irp_extended}
-                      disabled={updateFlagsMutation.isPending}
-                      onCheckedChange={(v) => updateFlagsMutation.mutate({ irp_extended: v })}
-                    />
-                  </div>
-                </div>
-              )}
+                return (
+                  <div key={serviceType}>
+                    {idx > 0 && <Separator className="my-2" />}
 
-              {/* SurfaceScan360 — independent */}
-              <div className="flex items-center justify-between rounded-md border p-3">
-                <div className="flex items-center gap-3">
-                  <div className={`p-1.5 rounded-md ${orgFlags?.surface_scan360_enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
-                    <Radar className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">SurfaceScan360</p>
-                    <p className="text-xs text-muted-foreground">Scansione attack surface esterna</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Select
-                    value={orgFlags?.surface_scan_extended ? 'extended' : 'standard'}
-                    onValueChange={(value) => {
-                      updateFlagsMutation.mutate({
-                        surface_scan_extended: value === 'extended',
-                      });
-                    }}
-                    disabled={updateFlagsMutation.isPending || !orgFlags?.surface_scan360_enabled}
-                  >
-                    <SelectTrigger className="h-8 w-[140px]">
-                      <SelectValue placeholder="Livello" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="standard">Standard</SelectItem>
-                      <SelectItem value="extended">Estesa</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Switch
-                    checked={!!orgFlags?.surface_scan360_enabled}
-                    disabled={updateFlagsMutation.isPending}
-                    onCheckedChange={(v) => {
-                      const patch: any = { surface_scan360_enabled: v };
-                      if (v) { patch.pentest_tools_auto_validation = true; }
-                      if (!v) { patch.surface_scan_extended = false; }
-                      updateFlagsMutation.mutate(patch);
-                    }}
-                  />
-                </div>
-              </div>
-
-              {orgFlags?.surface_scan360_enabled && (
-                <div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
-                  <div className="flex items-center justify-between rounded-md border p-2.5">
-                    <div className="flex items-center gap-3">
-                      <Radar className="w-4 h-4 text-muted-foreground" />
-                      <div>
-                        <p className="text-sm font-medium">Livello SurfaceScan360</p>
-                        <p className="text-xs text-muted-foreground">
-                          {orgFlags?.surface_scan_extended ? 'Estesa: scope avanzato (domini multipli e range IP)' : 'Standard: scope base operativo'}
-                        </p>
-                      </div>
-                    </div>
-                    <Badge variant="outline" className="text-xs">
-                      {orgFlags?.surface_scan_extended ? 'Estesa' : 'Standard'}
-                    </Badge>
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-md border p-2.5">
-                    <div className="flex items-center gap-3">
-                      <ShieldCheck className="w-4 h-4 text-muted-foreground" />
-                      <div>
-                        <p className="text-sm font-medium">Validazione attiva CVE</p>
-                        <p className="text-xs text-muted-foreground">Sempre attiva di default su tutti i clienti abilitati SurfaceScan360</p>
-                      </div>
-                    </div>
-                    <Badge variant="outline" className="text-xs border-green-500/30 text-green-500">Sempre attiva</Badge>
-                  </div>
-                </div>
-              )}
-
-              {/* DarkRisk360 — independent */}
-              <div className="flex items-center justify-between rounded-md border p-3">
-                <div className="flex items-center gap-3">
-                  <div className={`p-1.5 rounded-md ${orgFlags?.dark_risk360_enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
-                    <Eye className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">DarkRisk360</p>
-                    <p className="text-xs text-muted-foreground">Monitoraggio dark web e leak</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Select
-                    value={String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'extended' : 'standard'}
-                    onValueChange={(value) =>
-                      updateDarkRiskTierMutation.mutate(value === 'extended' ? 'extended' : 'standard')
-                    }
-                    disabled={updateDarkRiskTierMutation.isPending || !orgFlags?.dark_risk360_enabled}
-                  >
-                    <SelectTrigger className="h-8 w-[140px]">
-                      <SelectValue placeholder="Livello" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="standard">Standard</SelectItem>
-                      <SelectItem value="extended">Estesa</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Switch
-                    checked={!!orgFlags?.dark_risk360_enabled}
-                    disabled={updateFlagsMutation.isPending}
-                    onCheckedChange={async (v) => {
-                      updateFlagsMutation.mutate({ dark_risk360_enabled: v });
-                      if (v) {
-                        await updateDarkRiskTierMutation.mutateAsync(
-                          (String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'extended' : 'standard')
-                        );
-                      }
-                    }}
-                  />
-                </div>
-              </div>
-
-              {orgFlags?.dark_risk360_enabled && (
-                <div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
-                  <div className="flex items-center justify-between rounded-md border p-2.5">
-                    <div className="flex items-center gap-3">
-                      <Eye className="w-4 h-4 text-muted-foreground" />
-                      <div>
-                        <p className="text-sm font-medium">Tier DarkRisk360</p>
-                        <p className="text-xs text-muted-foreground">Standard o Estesa sullo stesso modulo</p>
-                      </div>
-                    </div>
-                    <Badge variant="outline" className="text-xs">
-                      {String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'Estesa' : 'Standard'}
-                    </Badge>
-                  </div>
-                </div>
-              )}
-            </div>
-
-
-            <Separator className="my-3" />
-            <p className="text-xs font-medium text-muted-foreground mb-2 px-1">Servizi HiSolution (API)</p>
-
-            {isLoading ? (
-              <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
-            ) : (
-              <div className="space-y-1">
-
-                {services.map((svc, idx) => {
-                  const integration = getIntegration(svc.id);
-                  const connected = !!integration;
-                  return (
-                    <React.Fragment key={svc.id}>
-                      {idx > 0 && <Separator />}
-                      <div className="flex items-center justify-between py-2.5 px-1">
-                        <div className="flex items-center gap-3">
-                          <div className={`p-1.5 rounded-md ${connected ? 'bg-green-500/10 text-green-500' : 'bg-muted text-muted-foreground'}`}>
-                            {SERVICE_ICONS[svc.code?.toLowerCase()] || <Plug className="w-4 h-4" />}
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium">{svc.name}</p>
-                            {connected && <p className="text-xs text-muted-foreground truncate max-w-[180px]">{integration.api_url}</p>}
-                          </div>
+                    {/* Service row */}
+                    <div className="flex items-center justify-between rounded-md border p-3 gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className={`p-1.5 rounded-md shrink-0 ${
+                            isActive
+                              ? 'bg-primary/10 text-primary'
+                              : 'bg-muted text-muted-foreground'
+                          }`}
+                        >
+                          {icon}
                         </div>
-                        <div className="flex items-center gap-2">
-                          {connected ? (
-                            <>
-                              <Badge variant="outline" className="text-xs border-green-500/30 text-green-500">Attivo</Badge>
-                              <Button
-                                variant="ghost" size="sm"
-                                onClick={() => disconnectMutation.mutate(integration.id)}
-                                disabled={disconnectMutation.isPending}
-                              >
-                                {disconnectMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Unlink className="w-3.5 h-3.5" />}
-                              </Button>
-                            </>
-                          ) : (
-                            <Button variant="outline" size="sm" className="text-xs" onClick={() => setConnectingService({ id: svc.id, name: svc.name })}>
-                              <Link2 className="w-3.5 h-3.5 mr-1" /> Collega
-                            </Button>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {entry.label || serviceType}
+                          </p>
+                          {isActive && (
+                            <p className="text-xs text-muted-foreground">
+                              Configurazione attiva
+                            </p>
                           )}
                         </div>
                       </div>
-                    </React.Fragment>
-                  );
-                })}
-              </div>
-            )}
-          </ScrollArea>
-        )}
+                      <Switch
+                        checked={isActive}
+                        disabled={
+                          anyMutationPending || !organizationId
+                        }
+                        onCheckedChange={(v) => handleToggle(serviceType, v)}
+                        aria-label={`Attiva ${entry.label || serviceType}`}
+                      />
+                    </div>
+
+                    {/* Expanded settings */}
+                    {isActive && hasFields && (
+                      <div className="ml-4 mt-2 space-y-3 border-l-2 border-primary/20 pl-3">
+                        <div className="space-y-3">
+                          {Object.entries(entry.fields).map(
+                            ([fieldKey, field]) =>
+                              renderField(serviceType, fieldKey, field)
+                          )}
+                        </div>
+
+                        <div className="flex justify-end pt-1">
+                          <Button
+                            size="sm"
+                            className="h-8 text-xs"
+                            disabled={!isDirty || isSavingService}
+                            onClick={() => handleSaveSettings(serviceType)}
+                          >
+                            {isSavingService ? (
+                              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                            ) : (
+                              <Save className="w-3.5 h-3.5 mr-1.5" />
+                            )}
+                            Salva configurazione
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {isActive && !hasFields && (
+                      <div className="ml-4 mt-2 border-l-2 border-primary/20 pl-3 py-2">
+                        <Badge variant="outline" className="text-xs">
+                          Nessuna configurazione richiesta
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {sortedServiceTypes.length === 0 && !catalogLoading && (
+                <div className="text-center py-8 text-sm text-muted-foreground">
+                  Nessun servizio disponibile nel catalogo
+                </div>
+              )}
+            </div>
+          )}
+        </ScrollArea>
       </DialogContent>
     </Dialog>
   );

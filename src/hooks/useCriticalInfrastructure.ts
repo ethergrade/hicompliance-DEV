@@ -1,14 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { CriticalInfrastructureAsset, CriticalInfrastructureUpdate } from '@/types/infrastructure';
- import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { criticalInfrastructureApi } from '@/lib/api/critical-infrastructure';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
+import type { CriticalInfrastructureAsset, CriticalInfrastructureUpdate } from '@/types/api';
 
 export const useCriticalInfrastructure = () => {
   const [assets, setAssets] = useState<CriticalInfrastructureAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const { organizationId: clientOrgId, isLoading: clientLoading } = useClientOrganization();
 
   const loadAssets = useCallback(async () => {
@@ -19,17 +18,8 @@ export const useCriticalInfrastructure = () => {
     
     try {
       setLoading(true);
-      setOrganizationId(clientOrgId);
-
-      const { data, error } = await supabase
-        .from('critical_infrastructure')
-        .select('*')
-        .eq('organization_id', clientOrgId)
-        .order('asset_id');
-
-      if (error) throw error;
-
-      setAssets((data || []) as unknown as CriticalInfrastructureAsset[]);
+      const items = await criticalInfrastructureApi.list(clientOrgId);
+      setAssets(items || []);
     } catch (error) {
       console.error('Error loading critical infrastructure:', error);
       toast.error('Errore nel caricamento degli asset');
@@ -53,7 +43,7 @@ export const useCriticalInfrastructure = () => {
   }, [assets]);
 
   const addAsset = useCallback(async () => {
-    if (!organizationId) {
+    if (!clientOrgId) {
       toast.error('Organizzazione non trovata');
       return null;
     }
@@ -61,10 +51,8 @@ export const useCriticalInfrastructure = () => {
     try {
       setSaving(true);
       const newAssetId = generateNextAssetId();
-      const { data: user } = await supabase.auth.getUser();
 
-      const newAsset = {
-        organization_id: organizationId,
+      const newAsset: Partial<CriticalInfrastructureAsset> = {
         asset_id: newAssetId,
         component_name: '',
         criticality: null,
@@ -81,18 +69,11 @@ export const useCriticalInfrastructure = () => {
         rto_hours: null,
         runbook_link: '',
         ir_notes: '',
-        created_by: user.user?.id || null,
+        created_by: null,
+        // tenant_id and group_id are auto-assigned by the backend
       };
 
-      const { data, error } = await supabase
-        .from('critical_infrastructure')
-        .insert(newAsset)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      const insertedAsset = data as unknown as CriticalInfrastructureAsset;
+      const insertedAsset = await criticalInfrastructureApi.create(clientOrgId, newAsset);
       setAssets(prev => [...prev, insertedAsset]);
       toast.success(`Asset ${newAssetId} creato`);
       return insertedAsset;
@@ -103,19 +84,17 @@ export const useCriticalInfrastructure = () => {
     } finally {
       setSaving(false);
     }
-  }, [organizationId, generateNextAssetId]);
+  }, [clientOrgId, generateNextAssetId]);
 
   const updateAsset = useCallback(async (id: string, updates: CriticalInfrastructureUpdate) => {
+    if (!clientOrgId) {
+      toast.error('Organizzazione non trovata');
+      throw new Error('Organizzazione non trovata');
+    }
+
     try {
       setSaving(true);
-
-      const { error } = await supabase
-        .from('critical_infrastructure')
-        .update(updates)
-        .eq('id', id);
-
-      if (error) throw error;
-
+      await criticalInfrastructureApi.update(clientOrgId, id, updates);
       setAssets(prev => prev.map(asset => 
         asset.id === id ? { ...asset, ...updates } : asset
       ));
@@ -126,20 +105,18 @@ export const useCriticalInfrastructure = () => {
     } finally {
       setSaving(false);
     }
-  }, []);
+  }, [clientOrgId]);
 
   const deleteAsset = useCallback(async (id: string) => {
+    if (!clientOrgId) {
+      toast.error('Organizzazione non trovata');
+      return;
+    }
+
     try {
       setSaving(true);
       const asset = assets.find(a => a.id === id);
-
-      const { error } = await supabase
-        .from('critical_infrastructure')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-
+      await criticalInfrastructureApi.delete(clientOrgId, id);
       setAssets(prev => prev.filter(a => a.id !== id));
       toast.success(`Asset ${asset?.asset_id} eliminato`);
     } catch (error) {
@@ -148,7 +125,7 @@ export const useCriticalInfrastructure = () => {
     } finally {
       setSaving(false);
     }
-  }, [assets]);
+  }, [clientOrgId, assets]);
 
   useEffect(() => {
     if (!clientLoading) {

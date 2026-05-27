@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useContactDirectory } from '@/hooks/useContactDirectory';
@@ -58,10 +57,6 @@ const Documents: React.FC = () => {
     confidentiality: 'Interno',
     description: '',
     tags: [] as string[],
-    drafted_by: [] as string[],
-    prepared_by: [] as string[],
-    reviewed_by: [] as string[],
-    approved_by: [] as string[],
   });
   const [tagInput, setTagInput] = useState('');
   const [showUploadDetails, setShowUploadDetails] = useState(false);
@@ -146,15 +141,6 @@ const Documents: React.FC = () => {
       const nextSeq = categoryDocs.length + 1;
       const docCode = generateDocumentCode(uploadForm.category, nextSeq);
 
-      const fileExt = selectedFile.name.split('.').pop();
-      const fileName = `${Date.now()}_${uploadForm.name.replace(/[^a-zA-Z0-9]/g, '_')}.${fileExt}`;
-      const filePath = `${user.id}/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('incident-documents')
-        .upload(filePath, selectedFile);
-      if (uploadError) throw uploadError;
-
       await documentsApi.create(organizationId, {
         name: uploadForm.name,
         category: uploadForm.category,
@@ -163,17 +149,13 @@ const Documents: React.FC = () => {
         confidentiality: uploadForm.confidentiality,
         description: uploadForm.description,
         tags: uploadForm.tags,
-        drafted_by: uploadForm.drafted_by.length > 0 ? uploadForm.drafted_by : null,
-        prepared_by: uploadForm.prepared_by.length > 0 ? uploadForm.prepared_by : null,
-        reviewed_by: uploadForm.reviewed_by.length > 0 ? uploadForm.reviewed_by : null,
-        approved_by: uploadForm.approved_by.length > 0 ? uploadForm.approved_by : null,
       });
 
       toast({ title: "Successo", description: "Documento caricato con successo" });
       setSelectedFile(null);
       setUploadForm({
         name: '', category: 'Varie', status: 'Bozza', confidentiality: 'Interno',
-        description: '', tags: [], drafted_by: [], prepared_by: [], reviewed_by: [], approved_by: [],
+        description: '', tags: [],
       });
       setShowUploadDetails(false);
       fetchDocuments();
@@ -186,9 +168,9 @@ const Documents: React.FC = () => {
   };
 
   const handleDownload = async (doc: ISODocument) => {
+    if (!organizationId) return;
     try {
-      const { data, error } = await supabase.storage.from('incident-documents').download(doc.file_path);
-      if (error) throw error;
+      const data = await documentsApi.download(organizationId, doc.id);
       const url = URL.createObjectURL(data);
       const a = document.createElement('a');
       a.href = url;
@@ -204,13 +186,11 @@ const Documents: React.FC = () => {
     }
   };
 
-  const handleDelete = async (docId: string, filePath: string) => {
+  const handleDelete = async (docId: string) => {
     if (!confirm('Sei sicuro di voler eliminare questo documento?')) return;
+    if (!organizationId) return;
     try {
-      await supabase.storage.from('incident-documents').remove([filePath]);
-      if (organizationId) {
-        await documentsApi.delete(organizationId, docId);
-      }
+      await documentsApi.delete(organizationId, docId);
       toast({ title: "Successo", description: "Documento eliminato" });
       fetchDocuments();
     } catch (error) {
@@ -235,10 +215,6 @@ const Documents: React.FC = () => {
         category: metadata.category,
         description: metadata.description,
         tags: metadata.tags,
-        drafted_by: metadata.drafted_by,
-        prepared_by: metadata.prepared_by,
-        reviewed_by: metadata.reviewed_by,
-        approved_by: metadata.approved_by,
       });
 
       toast({ title: "Successo", description: "Metadata aggiornati" });
@@ -408,10 +384,10 @@ const Documents: React.FC = () => {
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                      <ContactPicker label="Redatto da" selectedIds={uploadForm.drafted_by} onChange={ids => setUploadForm(f => ({ ...f, drafted_by: ids }))} contacts={contacts} />
-                      <ContactPicker label="Elaborato da" selectedIds={uploadForm.prepared_by} onChange={ids => setUploadForm(f => ({ ...f, prepared_by: ids }))} contacts={contacts} />
-                      <ContactPicker label="Revisionato da" selectedIds={uploadForm.reviewed_by} onChange={ids => setUploadForm(f => ({ ...f, reviewed_by: ids }))} contacts={contacts} />
-                      <ContactPicker label="Approvato da" selectedIds={uploadForm.approved_by} onChange={ids => setUploadForm(f => ({ ...f, approved_by: ids }))} contacts={contacts} />
+                      <ContactPicker label="Redatto da" selectedIds={[]} onChange={() => {}} contacts={contacts} />
+                      <ContactPicker label="Elaborato da" selectedIds={[]} onChange={() => {}} contacts={contacts} />
+                      <ContactPicker label="Revisionato da" selectedIds={[]} onChange={() => {}} contacts={contacts} />
+                      <ContactPicker label="Approvato da" selectedIds={[]} onChange={() => {}} contacts={contacts} />
                     </div>
                   </div>
                 )}
@@ -478,17 +454,8 @@ const Documents: React.FC = () => {
                               ))}
                             </div>
                             <div className="text-xs text-muted-foreground space-y-0.5">
-                              <span>{formatFileSize(doc.file_size)} • {formatDate(doc.uploaded_at)}</span>
+                              <span>{formatFileSize(doc.file_size)} • {formatDate(doc.created_at)}</span>
                               {doc.revision_date && <span> • Rev. {formatDate(doc.revision_date)}</span>}
-                              {getContactNames(doc.drafted_by) && (
-                                <div>Redatto: {getContactNames(doc.drafted_by)}</div>
-                              )}
-                              {getContactNames(doc.reviewed_by) && (
-                                <div>Revisionato: {getContactNames(doc.reviewed_by)}</div>
-                              )}
-                              {getContactNames(doc.approved_by) && (
-                                <div>Approvato: {getContactNames(doc.approved_by)}</div>
-                              )}
                             </div>
                           </div>
                         </div>
@@ -502,7 +469,7 @@ const Documents: React.FC = () => {
                           <Button size="sm" variant="ghost" onClick={() => handleDownload(doc)} title="Download">
                             <Download className="w-4 h-4" />
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => handleDelete(doc.id, doc.file_path)} title="Elimina">
+                          <Button size="sm" variant="ghost" onClick={() => handleDelete(doc.id)} title="Elimina">
                             <Trash2 className="w-4 h-4 text-destructive" />
                           </Button>
                         </div>
@@ -529,10 +496,6 @@ const Documents: React.FC = () => {
           category: selectedDocument.category,
           description: selectedDocument.description || '',
           tags: selectedDocument.tags || [],
-          drafted_by: selectedDocument.drafted_by || [],
-          prepared_by: selectedDocument.prepared_by || [],
-          reviewed_by: selectedDocument.reviewed_by || [],
-          approved_by: selectedDocument.approved_by || [],
         } : null}
         onSave={handleSaveMetadata}
         contacts={contacts}
@@ -541,7 +504,7 @@ const Documents: React.FC = () => {
       <DocumentPreviewDialog
         open={previewOpen}
         onOpenChange={setPreviewOpen}
-        filePath={previewDoc?.file_path ?? null}
+        filePath={null}
         fileName={previewDoc?.name ?? ''}
         fileType={previewDoc?.file_type ?? ''}
       />
