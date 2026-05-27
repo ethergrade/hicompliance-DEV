@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useClientContext } from '@/contexts/ClientContext';
 import { useUserRoles } from '@/hooks/useUserRoles';
@@ -8,45 +8,47 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, Building2, Calendar, ArrowRight, Users, FileText, Server, Plug, Plus, Pencil, Trash2, ShieldCheck } from 'lucide-react';
+import { Search, Building2, Calendar, ArrowRight, Users, Plus, Pencil, Trash2, FileText, Server, Plug } from 'lucide-react';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
+import ClientCrudDialog from '@/components/clients/ClientCrudDialog';
+import DeleteClientDialog from '@/components/clients/DeleteClientDialog';
 import ClientProfileSheet from '@/components/clients/ClientProfileSheet';
 import ClientAssetSheet from '@/components/clients/ClientAssetSheet';
 import ClientServicesDialog from '@/components/clients/ClientServicesDialog';
-import ClientCrudDialog from '@/components/clients/ClientCrudDialog';
-import ClientContactsDialog from '@/components/clients/ClientContactsDialog';
-import DeleteClientDialog from '@/components/clients/DeleteClientDialog';
 
 const ClientSelection: React.FC = () => {
   const navigate = useNavigate();
-  const location = useLocation();
-  const { organizations, setSelectedOrganization, isLoadingClients, selectedOrganization, fetchOrganizations } = useClientContext();
+  const { organizations, setSelectedOrganization, isLoadingClients, selectedOrganization, fetchOrganizations, canManageMultipleClients } = useClientContext();
   const { isSuperAdmin } = useUserRoles();
   const [searchQuery, setSearchQuery] = useState('');
-  const [editingOrgId, setEditingOrgId] = useState<string | null>(null);
-  const [editingOrgName, setEditingOrgName] = useState<string>('');
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [assetOpen, setAssetOpen] = useState(false);
-  const [servicesOpen, setServicesOpen] = useState(false);
-  const [contactsOpen, setContactsOpen] = useState(false);
+
+  if (!canManageMultipleClients) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   // CRUD state
   const [crudOpen, setCrudOpen] = useState(false);
-  const [crudOrg, setCrudOrg] = useState<{ id: string; name: string; code: string } | null>(null);
+  const [crudOrg, setCrudOrg] = useState<{ id: string; name: string; ms_tenant_id: string | null } | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteOrg, setDeleteOrg] = useState<{ id: string; name: string } | null>(null);
+
+  // Sheet state
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [assetOpen, setAssetOpen] = useState(false);
+  const [servicesOpen, setServicesOpen] = useState(false);
+  const [editingOrgId, setEditingOrgId] = useState<string | null>(null);
+  const [editingOrgName, setEditingOrgName] = useState<string>('');
 
   const filteredOrganizations = organizations.filter(org => {
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase();
-    return org.name.toLowerCase().includes(query) || org.code.toLowerCase().includes(query);
+    return org.name.toLowerCase().includes(query) || (org.ms_tenant_id || '').toLowerCase().includes(query);
   });
 
   const handleSelectClient = (org: typeof organizations[0]) => {
     setSelectedOrganization(org);
-    const from = (location.state as { from?: string } | null)?.from;
-    navigate(from || '/dashboard');
+    navigate('/dashboard');
   };
 
   const openProfile = (e: React.MouseEvent, org: typeof organizations[0]) => {
@@ -70,13 +72,6 @@ const ClientSelection: React.FC = () => {
     setServicesOpen(true);
   };
 
-  const openContacts = (e: React.MouseEvent, org: typeof organizations[0]) => {
-    e.stopPropagation();
-    setEditingOrgId(org.id);
-    setEditingOrgName(org.name);
-    setContactsOpen(true);
-  };
-
   const openCreate = () => {
     setCrudOrg(null);
     setCrudOpen(true);
@@ -84,7 +79,7 @@ const ClientSelection: React.FC = () => {
 
   const openEdit = (e: React.MouseEvent, org: typeof organizations[0]) => {
     e.stopPropagation();
-    setCrudOrg({ id: org.id, name: org.name, code: org.code });
+    setCrudOrg({ id: org.id, name: org.name, ms_tenant_id: org.ms_tenant_id });
     setCrudOpen(true);
   };
 
@@ -211,7 +206,7 @@ const ClientSelection: React.FC = () => {
                   <CardTitle className="text-lg mt-3 group-hover:text-primary transition-colors">
                     {org.name}
                   </CardTitle>
-                  <CardDescription className="font-mono text-xs">{org.code}</CardDescription>
+                  <CardDescription className="font-mono text-xs">{org.ms_tenant_id || org.id}</CardDescription>
                 </CardHeader>
                 <CardContent className="pt-0">
                   <div className="flex items-center gap-2 text-xs text-muted-foreground mb-4">
@@ -220,27 +215,22 @@ const ClientSelection: React.FC = () => {
                   </div>
 
                   {/* Quick edit buttons */}
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    <Button variant="outline" size="sm" className="flex-1 text-xs min-w-[110px]" onClick={(e) => openProfile(e, org)}>
-                      <FileText className="w-3.5 h-3.5 mr-1" />
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    <Button variant="outline" size="sm" className="flex-1 min-w-0 text-xs px-2" onClick={(e) => openProfile(e, org)}>
+                      <FileText className="w-3 h-3 mr-1 flex-shrink-0" />
                       Anagrafica
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1 text-xs min-w-[110px]" onClick={(e) => openAsset(e, org)}>
-                      <Server className="w-3.5 h-3.5 mr-1" />
+                    <Button variant="outline" size="sm" className="flex-1 min-w-0 text-xs px-2" onClick={(e) => openAsset(e, org)}>
+                      <Server className="w-3 h-3 mr-1 flex-shrink-0" />
                       Consistenze
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1 text-xs min-w-[110px]" onClick={(e) => openContacts(e, org)}>
-                      <ShieldCheck className="w-3.5 h-3.5 mr-1" />
-                      Rubrica & Permessi
-                    </Button>
                     {isSuperAdmin && (
-                      <Button variant="outline" size="sm" className="flex-1 text-xs min-w-[110px]" onClick={(e) => openServices(e, org)}>
-                        <Plug className="w-3.5 h-3.5 mr-1" />
+                      <Button variant="outline" size="sm" className="flex-1 min-w-0 text-xs px-2" onClick={(e) => openServices(e, org)}>
+                        <Plug className="w-3 h-3 mr-1 flex-shrink-0" />
                         Servizi
                       </Button>
                     )}
                   </div>
-
                   <Button variant="ghost" className="w-full group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
                     <span>Gestisci</span>
                     <ArrowRight className="w-4 h-4 ml-2" />
@@ -258,10 +248,6 @@ const ClientSelection: React.FC = () => {
       {isSuperAdmin && editingOrgId && (
         <ClientServicesDialog organizationId={editingOrgId} organizationName={editingOrgName} open={servicesOpen} onOpenChange={setServicesOpen} />
       )}
-      {editingOrgId && (
-        <ClientContactsDialog organizationId={editingOrgId} organizationName={editingOrgName} open={contactsOpen} onOpenChange={setContactsOpen} />
-      )}
-
       {/* CRUD Dialogs */}
       <ClientCrudDialog open={crudOpen} onOpenChange={setCrudOpen} organization={crudOrg} onSaved={fetchOrganizations} />
       <DeleteClientDialog open={deleteOpen} onOpenChange={setDeleteOpen} organization={deleteOrg} onDeleted={fetchOrganizations} />

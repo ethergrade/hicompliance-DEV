@@ -1,12 +1,19 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   Pagination,
   PaginationContent,
+  PaginationEllipsis,
   PaginationItem,
   PaginationLink,
   PaginationNext,
@@ -14,1362 +21,1133 @@ import {
 } from '@/components/ui/pagination';
 import { Input } from '@/components/ui/input';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { toast } from 'sonner';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
-  Globe,
-  Shield,
-  AlertTriangle,
-  Eye,
-  Plus,
-  Trash2,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import { 
+  Globe, 
+  Shield, 
+  AlertTriangle, 
+  CheckCircle, 
   Search,
+  Eye,
+  TrendingUp,
+  Filter,
+  Calendar,
+  BarChart3,
+  Activity,
+  Network,
+  TrendingDown,
   ChevronDown,
-  ChevronRight,
+  ChevronUp
 } from 'lucide-react';
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Tooltip as RechartsTooltip } from 'recharts';
 import SecurityFindings from '@/components/surface-scan/SecurityFindings';
-import SurfaceScanModuleCards from '@/components/surface-scan/SurfaceScanModuleCards';
-import SurfaceScanReportRepository from '@/components/surface-scan/SurfaceScanReportRepository';
-import SurfaceScanExposureSection from '@/components/surface-scan/SurfaceScanExposureSection';
-import { SurfaceScanTrendline } from '@/components/surface-scan/SurfaceScanTrendline';
 import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
 import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceScanAlertConfigDialog';
 import { useSurfaceScanAlerts, SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
-import { useSurfaceScanMonitoredIps } from '@/hooks/useSurfaceScanMonitoredIps';
-import { useSurfaceScanEngine, type SurfaceScanProfile } from '@/hooks/useSurfaceScanEngine';
-import { useSurfaceScanDiscoveredAssets } from '@/hooks/useSurfaceScanDiscoveredAssets';
-import { useSurfaceScanFindings } from '@/hooks/useSurfaceScanFindings';
-import { isIpInRange, parseMonitoredScopeMixedEntries } from '@/lib/ipRange';
-import { supabase } from '@/integrations/supabase/client';
-import { useClientOrganization } from '@/hooks/useClientOrganization';
-import { useSubdomainDump } from '@/hooks/useSubdomainDump';
-import { SubdomainDumpPanel } from '@/components/surface-scan/SubdomainDumpPanel';
-import {
-  classifySurfaceHostForScope,
-  isIpWithinScopeRules,
-  splitMonitoredScopeRules,
-} from '@/lib/surfaceScopeGuard';
-import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
-
-const IPV4_REGEX =
-  /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
-
-const isIpv6 = (value: string): boolean => value.includes(':');
-const isDomainLike = (value: string): boolean => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(value);
-const simpleRootDomain = (hostname: string): string => {
-  const parts = hostname.toLowerCase().split('.').filter(Boolean);
-  if (parts.length <= 2) return parts.join('.');
-  return parts.slice(-2).join('.');
-};
-
-const extractHostFromTarget = (rawTarget: string): string | null => {
-  const raw = String(rawTarget || '').trim();
-  if (!raw) return null;
-
-  try {
-    return new URL(raw).hostname.toLowerCase();
-  } catch {
-    // continue
-  }
-
-  try {
-    if (!raw.includes('://') && /[/:]/.test(raw)) {
-      return new URL(`https://${raw}`).hostname.toLowerCase();
-    }
-  } catch {
-    // continue
-  }
-
-  return raw.toLowerCase().replace(/\.$/, '');
-};
-
-const formatLastScanLabel = (timestamp: string | null): string => {
-  if (!timestamp) return 'Nessuna';
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return 'Nessuna';
-
-  const diffMs = Date.now() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin <= 1) return 'Adesso';
-  if (diffMin < 60) return `${diffMin} min fa`;
-
-  const diffHours = Math.floor(diffMin / 60);
-  if (diffHours < 24) return `${diffHours}h fa`;
-
-  const diffDays = Math.floor(diffHours / 24);
-  return `${diffDays}g fa`;
-};
-
-const statusProgressMeta = (
-  status: string,
-): { value: number; barClass: string; trackClass: string; title: string } => {
-  const normalized = String(status || '').toLowerCase();
-  if (normalized === 'completed') {
-    return {
-      value: 100,
-      barClass: 'bg-green-500',
-      trackClass: 'bg-green-500/20',
-      title: 'Completata',
-    };
-  }
-  if (normalized === 'failed') {
-    return {
-      value: 100,
-      barClass: 'bg-red-500',
-      trackClass: 'bg-red-500/20',
-      title: 'Fallita',
-    };
-  }
-  if (normalized === 'running') {
-    return {
-      value: 65,
-      barClass: 'bg-amber-500',
-      trackClass: 'bg-amber-500/20',
-      title: 'In esecuzione',
-    };
-  }
-  if (normalized === 'queued') {
-    return {
-      value: 25,
-      barClass: 'bg-sky-500',
-      trackClass: 'bg-sky-500/20',
-      title: 'In coda',
-    };
-  }
-  return {
-    value: 35,
-    barClass: 'bg-slate-500',
-    trackClass: 'bg-slate-500/20',
-    title: 'In attesa',
-  };
-};
-
-const formatExposureJobError = (errorMessage: string | null | undefined): string => {
-  const raw = String(errorMessage || '').trim();
-  if (!raw) return '-';
-
-  const normalized = raw.toLowerCase();
-  if (normalized.includes('no pentest-tools tasks for this exposure job')) {
-    return 'Recovery automatica task Pentest in corso';
-  }
-  if (normalized.includes('all pentest-tools tasks failed')) {
-    return 'Provider exposure non ha completato i task: retry automatico pianificato';
-  }
-  if (normalized.includes('completed with partial optional-phase failures')) {
-    return 'Completata con moduli opzionali non disponibili';
-  }
-  if (normalized.includes('optional phase skipped')) {
-    return 'Modulo opzionale saltato dal provider';
-  }
-  return raw;
-};
-
-const SCAN_PROFILES: SurfaceScanProfile[] = [
-  'safe_recon',
-  'domain_exposure',
-  'ip_exposure',
-  'cve_api_validation',
-];
-
-const hostingLabel = (context: string | null): string => {
-  if (context === 'excluded_noise') return 'Fuori scope (PTR/shared)';
-  if (context === 'excluded_scope') return 'Fuori scope (scope guard)';
-  if (context === 'shared_hosting') return 'Servizio in shared host';
-  if (context === 'cdn_proxy') return 'Servizio dietro CDN/Proxy';
-  if (context === 'dedicated') return 'Server dedicato';
-  return 'Non classificato';
-};
-
-interface ReverseAssetRow {
-  asset_value: string;
-  raw: { ip?: string } | null;
-}
 
 const SurfaceScan360: React.FC = () => {
-  const dependencyMapRef = useRef<HTMLDivElement>(null);
-  const exposureSectionRef = useRef<HTMLDivElement>(null);
+  const [openTooltip, setOpenTooltip] = useState<number | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [riskFilter, setRiskFilter] = useState('all');
+  const [monthlyMonitoring, setMonthlyMonitoring] = useState(false);
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
-  const [newMonitoredIpInput, setNewMonitoredIpInput] = useState('');
-  const [ownershipProof, setOwnershipProof] = useState('');
-  const [assetSearch, setAssetSearch] = useState('');
-  const [assetPage, setAssetPage] = useState(1);
-  const [isDiscoveryCollapsed, setIsDiscoveryCollapsed] = useState(true);
-  const [isLiveResultsCollapsed, setIsLiveResultsCollapsed] = useState(true);
-  const [showScopeDiagnostics, setShowScopeDiagnostics] = useState(false);
-  const [reverseDnsMap, setReverseDnsMap] = useState<Record<string, string[]>>({});
-
-  const assetsPerPage = 15;
-  const { organizationId } = useClientOrganization();
-
+  
+  // Collapsible states for legends
+  const [cveCollegendOpen, setCveLegendOpen] = useState(false);
+  const [epssLegendOpen, setEpssLegendOpen] = useState(false);
+  const [riskTrendLegendOpen, setRiskTrendLegendOpen] = useState(false);
+  
+  // Alert management
   const { alerts, createAlert } = useSurfaceScanAlerts();
-  const activeAlertsCount = alerts.filter((a) => a.is_active).length;
-
-  const { jobs: scanJobs, startScanQueue, isAdmin } = useSurfaceScanEngine();
-  const {
-    subdomains: discoveredSubdomains,
-    ips: discoveredIps,
-    hostMeta,
-    scopeDomains,
-    scopeCounters,
-    loading: discoveredAssetsLoading,
-  } = useSurfaceScanDiscoveredAssets();
-  const subdomainDump = useSubdomainDump();
-  const { counts: findingsCounts } = useSurfaceScanFindings();
-
-  const {
-    rules: monitoredIpRules,
-    loading: monitoredIpRulesLoading,
-    saving: monitoredIpRulesSaving,
-    isAdmin: isAdminUser,
-    addRule: addMonitoredIpRule,
-    removeRule: removeMonitoredIpRule,
-  } = useSurfaceScanMonitoredIps();
-
-  const { ipScopeRules } = useMemo(
-    () => splitMonitoredScopeRules(monitoredIpRules as any),
-    [monitoredIpRules],
-  );
+  const activeAlertsCount = alerts.filter(a => a.is_active).length;
 
   const handleCreateAlert = async (data: { alert_email: string; alert_types: SurfaceScanAlertTypes }) => {
     return await createAlert(data);
   };
+  
+  const assetsPerPage = 5;
+  
+  const allPublicAssets = [
+    { ip: '203.0.113.10', hostname: 'cliente1.com', score: 95, risk: 'Basso', status: 'Sicuro', ports: [80, 443], services: ['HTTP', 'HTTPS'] },
+    { ip: '203.0.113.25', hostname: 'mail.cliente1.com', score: 78, risk: 'Medio', status: 'Attenzione', ports: [25, 587, 993], services: ['SMTP', 'IMAPS'] },
+    { ip: '203.0.113.45', hostname: 'vpn.cliente1.com', score: 45, risk: 'Alto', status: 'Critico', ports: [1723, 443], services: ['PPTP', 'OpenVPN'] },
+    { ip: '203.0.113.67', hostname: 'api.cliente1.com', score: 88, risk: 'Basso', status: 'Sicuro', ports: [443, 8080], services: ['HTTPS', 'API'] },
+    { ip: '203.0.113.89', hostname: 'ftp.cliente1.com', score: 62, risk: 'Medio', status: 'Attenzione', ports: [21, 22], services: ['FTP', 'SSH'] },
+    { ip: '203.0.113.102', hostname: 'db.cliente1.com', score: 72, risk: 'Medio', status: 'Attenzione', ports: [3306, 5432], services: ['MySQL', 'PostgreSQL'] },
+    { ip: '203.0.113.123', hostname: 'cdn.cliente1.com', score: 91, risk: 'Basso', status: 'Sicuro', ports: [80, 443], services: ['HTTP', 'HTTPS'] },
+    { ip: '203.0.113.144', hostname: 'test.cliente1.com', score: 55, risk: 'Alto', status: 'Critico', ports: [80, 8080], services: ['HTTP', 'Apache'] },
+    { ip: '203.0.113.165', hostname: 'backup.cliente1.com', score: 82, risk: 'Basso', status: 'Sicuro', ports: [22, 873], services: ['SSH', 'rsync'] },
+    { ip: '203.0.113.186', hostname: 'monitor.cliente1.com', score: 77, risk: 'Medio', status: 'Attenzione', ports: [443, 9090], services: ['HTTPS', 'Prometheus'] },
+  ];
 
-  const scrollToDependencyMap = () => {
-    if (isDiscoveryCollapsed) {
-      setIsDiscoveryCollapsed(false);
-      setTimeout(() => {
-        dependencyMapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 120);
-      return;
-    }
-    dependencyMapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
+  const filteredAssets = allPublicAssets.filter(asset => {
+    const matchesSearch = searchTerm === '' || 
+      asset.ip.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      asset.hostname.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      asset.services.some(service => service.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    const matchesStatus = statusFilter === 'all' || asset.status === statusFilter;
+    const matchesRisk = riskFilter === 'all' || asset.risk === riskFilter;
+    
+    return matchesSearch && matchesStatus && matchesRisk;
+  });
 
-  const scrollToExposureSection = () => {
-    exposureSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-
-  const scanDiscovery = useMemo(() => {
-    const scannedTargets = new Set<string>();
-    const scannedDomains = new Set<string>();
-    const scannedIps = new Set<string>();
-
-    for (const job of scanJobs) {
-      const rawTarget = String(job.raw_target || '').trim();
-      if (rawTarget) {
-        scannedTargets.add(rawTarget);
-      }
-
-      const host = extractHostFromTarget(rawTarget);
-      if (!host) continue;
-
-      if (IPV4_REGEX.test(host) || isIpv6(host)) {
-        scannedIps.add(host);
-      } else if (isDomainLike(host)) {
-        scannedDomains.add(host);
-      }
-    }
-
-    const lastScanAt = scanJobs.length > 0 ? scanJobs[0].created_at : null;
-
-    const dumpedSubdomains = subdomainDump.history
-      .flatMap((dump) =>
-        dump.results
-          .map((entry) => String(entry.subdomain || '').trim().toLowerCase())
-          .filter(Boolean)
-          .filter((host) => !classifySurfaceHostForScope(host, scopeDomains).blocked),
-      );
-
-    const mergedSubdomains = [...new Set([...discoveredSubdomains, ...dumpedSubdomains])];
-
-    return {
-      scannedTargets: [...scannedTargets],
-      scannedDomains: [...scannedDomains],
-      scannedIps: [...scannedIps],
-      discoveredSubdomains: mergedSubdomains,
-      discoveredIps,
-      lastScanAt,
-      lastScanLabel: formatLastScanLabel(lastScanAt),
-    };
-  }, [scanJobs, discoveredSubdomains, discoveredIps, subdomainDump.history, scopeDomains]);
-
-  const visibleScannedTargets = useMemo(() => {
-    return scanDiscovery.scannedTargets.filter((target) => {
-      const host = extractHostFromTarget(target);
-      if (!host) return false;
-      if (IPV4_REGEX.test(host) || isIpv6(host)) {
-        return isIpWithinScopeRules(host, ipScopeRules);
-      }
-      return !classifySurfaceHostForScope(host, scopeDomains).blocked;
-    });
-  }, [scanDiscovery.scannedTargets, scopeDomains, ipScopeRules]);
-
-  const excludedScannedTargets = useMemo(() => {
-    return scanDiscovery.scannedTargets.filter((target) => !visibleScannedTargets.includes(target));
-  }, [scanDiscovery.scannedTargets, visibleScannedTargets]);
-
-  const excludedHostDiagnostics = useMemo(() => {
-    return Object.values(hostMeta)
-      .filter((meta) => Boolean(meta.exclusionReason))
-      .sort((a, b) => a.host.localeCompare(b.host));
-  }, [hostMeta]);
-
-  const dumpedSubdomainMeta = useMemo(() => {
-    const map: Record<string, { ip: string | null; note: string; sources: string[] }> = {};
-    for (const dump of subdomainDump.history) {
-      for (const entry of dump.results) {
-        const key = String(entry.subdomain || '').trim().toLowerCase();
-        if (!key || map[key]) continue;
-        if (classifySurfaceHostForScope(key, scopeDomains).blocked) continue;
-        const note = [entry.country, entry.asn_name].filter(Boolean).join(' · ');
-        map[key] = {
-          ip: entry.ip || null,
-          note: note || `Fonte: ${dump.sources.join(', ')}`,
-          sources: dump.sources || [],
-        };
-      }
-    }
-    return map;
-  }, [subdomainDump.history, scopeDomains]);
+  const totalPages = Math.ceil(filteredAssets.length / assetsPerPage);
+  const indexOfLastAsset = currentPage * assetsPerPage;
+  const indexOfFirstAsset = indexOfLastAsset - assetsPerPage;
+  const currentAssets = filteredAssets.slice(indexOfFirstAsset, indexOfLastAsset);
 
   React.useEffect(() => {
-    const loadReverseDnsMap = async () => {
-      if (!organizationId) {
-        setReverseDnsMap({});
-        return;
-      }
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, riskFilter]);
 
-      const { data, error } = await supabase
-        .from('surface_assets' as any)
-        .select('asset_value, raw')
-        .eq('organization_id', organizationId)
-        .eq('asset_type', 'reverse_dns_hostname')
-        .order('last_seen', { ascending: false })
-        .limit(1500);
+  const scanResults = [
+    { 
+      domain: 'cliente1.com', 
+      status: 'Sicuro', 
+      issues: 0, 
+      score: 95,
+      cves: [
+        { id: 'CVE-2024-0001', severity: 'low', description: 'Minor configuration issue' },
+        { id: 'CVE-2024-0002', severity: 'low', description: 'SSL certificate warning' }
+      ]
+    },
+    { 
+      domain: 'mail.cliente1.com', 
+      status: 'Attenzione', 
+      issues: 3, 
+      score: 78,
+      cves: [
+        { id: 'CVE-2024-0003', severity: 'medium', description: 'Outdated mail server version' },
+        { id: 'CVE-2024-0004', severity: 'medium', description: 'Weak encryption protocol' },
+        { id: 'CVE-2024-0005', severity: 'low', description: 'Missing security header' }
+      ]
+    },
+    { 
+      domain: 'vpn.cliente1.com', 
+      status: 'Critico', 
+      issues: 8, 
+      score: 45,
+      cves: [
+        { id: 'CVE-2024-0006', severity: 'high', description: 'Remote code execution vulnerability' },
+        { id: 'CVE-2024-0007', severity: 'high', description: 'Authentication bypass' },
+        { id: 'CVE-2024-0008', severity: 'medium', description: 'Information disclosure' },
+        { id: 'CVE-2024-0009', severity: 'medium', description: 'Privilege escalation' },
+        { id: 'CVE-2024-0010', severity: 'low', description: 'Cross-site scripting' }
+      ]
+    },
+    { 
+      domain: 'api.cliente1.com', 
+      status: 'Sicuro', 
+      issues: 1, 
+      score: 88,
+      cves: [
+        { id: 'CVE-2024-0011', severity: 'low', description: 'Rate limiting not configured' }
+      ]
+    },
+  ];
 
-      if (error) {
-        console.error('Error loading reverse DNS assets:', error);
-        return;
-      }
-
-      const map: Record<string, string[]> = {};
-      for (const row of (data || []) as ReverseAssetRow[]) {
-        const ip = String(row?.raw?.ip || '').trim().toLowerCase();
-        const host = String(row?.asset_value || '').trim().toLowerCase();
-        if (!ip || !host) continue;
-        if (!map[ip]) map[ip] = [];
-        if (!map[ip].includes(host)) map[ip].push(host);
-      }
-
-      setReverseDnsMap(map);
-    };
-
-    void loadReverseDnsMap();
-    if (!organizationId) return;
-    const reverseDnsChannel = supabase
-      .channel(`surface-reverse-dns-${organizationId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'surface_assets',
-          filter: `organization_id=eq.${organizationId}`,
-        },
-        (payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
-          const next = payload.new as Record<string, any> | null;
-          const old = payload.old as Record<string, any> | null;
-          const nextType = String(next?.asset_type || '');
-          const oldType = String(old?.asset_type || '');
-          if (nextType === 'reverse_dns_hostname' || oldType === 'reverse_dns_hostname') {
-            void loadReverseDnsMap();
-          }
-        },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(reverseDnsChannel);
-    };
-  }, [organizationId]);
-
-  const latestJobByHost = useMemo(() => {
-    const map = new Map<string, (typeof scanJobs)[number]>();
-    for (const job of scanJobs) {
-      const host = String(job.hostname || '').trim().toLowerCase();
-      if (!host) continue;
-      if (!map.has(host)) map.set(host, job);
+  const getRiskColor = (risk: string) => {
+    switch (risk) {
+      case 'Basso': return 'text-green-500';
+      case 'Medio': return 'text-yellow-500';
+      case 'Alto': return 'text-red-500';
+      default: return 'text-gray-500';
     }
-    return map;
-  }, [scanJobs]);
+  };
 
-  const resolvedIpsByHost = useMemo(() => {
-    const map = new Map<string, string[]>();
-    for (const job of scanJobs) {
-      const host = String(job.hostname || '').trim().toLowerCase();
-      if (!host) continue;
-      const ips = Array.isArray(job.resolved_ips)
-        ? job.resolved_ips.map((ip) => String(ip).trim()).filter(Boolean)
-        : [];
-      if (ips.length === 0) continue;
-      if (!map.has(host)) map.set(host, []);
-      const current = map.get(host)!;
-      for (const ip of ips) {
-        if (!current.includes(ip)) current.push(ip);
-      }
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'Sicuro': return 'text-green-500';
+      case 'Attenzione': return 'text-yellow-500';
+      case 'Critico': return 'text-red-500';
+      default: return 'text-gray-500';
     }
-    return map;
-  }, [scanJobs]);
+  };
 
-  const reverseAnalysisRows = useMemo(() => {
-    const rows: Array<{
-      host: string;
-      hostingContext: string | null;
-      resolvedIps: string[];
-      reverseHosts: string[];
-      inScope: boolean;
-    }> = [];
-
-    const hostsToAnalyze = [...new Set([
-      ...scanDiscovery.scannedDomains,
-      ...scanDiscovery.discoveredSubdomains,
-    ])].slice(0, 50);
-
-    for (const host of hostsToAnalyze) {
-      const hostScope = classifySurfaceHostForScope(host, scopeDomains);
-      if (hostScope.blocked) continue;
-      const job = latestJobByHost.get(host);
-      const resolvedIps = Array.isArray(job?.resolved_ips)
-        ? job?.resolved_ips.filter(Boolean).map((ip) => String(ip).toLowerCase())
-        : [];
-
-      const reverseHosts = [...new Set(resolvedIps.flatMap((ip) => reverseDnsMap[ip] || []))];
-
-      rows.push({
-        host,
-        hostingContext: job?.hosting_context || null,
-        resolvedIps,
-        reverseHosts,
-        inScope: hostScope.inScope,
-      });
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'Sicuro': return 'default';
+      case 'Attenzione': return 'secondary';
+      case 'Critico': return 'destructive';
+      default: return 'outline';
     }
+  };
 
-    return rows;
-  }, [scanDiscovery.scannedDomains, scanDiscovery.discoveredSubdomains, latestJobByHost, reverseDnsMap, scopeDomains]);
-
-  const domainIpDependencyGraph = useMemo(() => {
-    const edgeSet = new Set<string>();
-    const domainToIps = new Map<string, string[]>();
-    const candidateDomains = [...new Set([
-      ...scanDiscovery.scannedDomains,
-      ...scanDiscovery.discoveredSubdomains,
-    ])]
-      .map((entry) => String(entry || '').trim().toLowerCase())
-      .filter(Boolean)
-      .filter((host) => !classifySurfaceHostForScope(host, scopeDomains).blocked)
-      .slice(0, 60);
-
-    for (const domain of candidateDomains) {
-      const ipSet = new Set<string>();
-      const jobIps = resolvedIpsByHost.get(domain) || [];
-      const metaIps = hostMeta[domain]?.ips || [];
-      const dumpIp = dumpedSubdomainMeta[domain]?.ip ? [dumpedSubdomainMeta[domain]?.ip as string] : [];
-      for (const ip of [...jobIps, ...metaIps, ...dumpIp]) {
-        const normalizedIp = String(ip || '').trim().toLowerCase();
-        if (!normalizedIp) continue;
-        if (!isIpWithinScopeRules(normalizedIp, ipScopeRules)) continue;
-        ipSet.add(normalizedIp);
-      }
-      if (ipSet.size === 0) continue;
-      const ips = [...ipSet].slice(0, 12);
-      domainToIps.set(domain, ips);
-      for (const ip of ips) {
-        edgeSet.add(`${domain}|${ip}`);
-      }
+  const getSeverityColor = (severity: string) => {
+    switch (severity) {
+      case 'high': return 'bg-red-500';
+      case 'medium': return 'bg-orange-500';
+      case 'low': return 'bg-green-500';
+      default: return 'bg-gray-500';
     }
+  };
 
-    const edges = [...edgeSet].map((entry) => {
-      const [domain, ip] = entry.split('|');
-      return { domain, ip };
-    });
+  const monthlyData = [
+    { mese: 'Gen', porte_aperte: 45, porte_chiuse: 23, cve_critiche: 12, cve_risolte: 8, epss_score: 6.2 },
+    { mese: 'Feb', porte_aperte: 52, porte_chiuse: 18, cve_critiche: 15, cve_risolte: 11, epss_score: 6.8 },
+    { mese: 'Mar', porte_aperte: 48, porte_chiuse: 25, cve_critiche: 9, cve_risolte: 14, epss_score: 5.9 },
+    { mese: 'Apr', porte_aperte: 41, porte_chiuse: 32, cve_critiche: 7, cve_risolte: 18, epss_score: 5.1 },
+    { mese: 'Mag', porte_aperte: 39, porte_chiuse: 34, cve_critiche: 8, cve_risolte: 16, epss_score: 5.4 },
+    { mese: 'Giu', porte_aperte: 43, porte_chiuse: 30, cve_critiche: 11, cve_risolte: 13, epss_score: 5.8 },
+    { mese: 'Lug', porte_aperte: 46, porte_chiuse: 27, cve_critiche: 13, cve_risolte: 10, epss_score: 6.1 },
+    { mese: 'Ago', porte_aperte: 44, porte_chiuse: 29, cve_critiche: 10, cve_risolte: 15, epss_score: 5.7 },
+    { mese: 'Set', porte_aperte: 38, porte_chiuse: 35, cve_critiche: 6, cve_risolte: 19, epss_score: 4.9 },
+    { mese: 'Ott', porte_aperte: 42, porte_chiuse: 31, cve_critiche: 9, cve_risolte: 16, epss_score: 5.5 },
+    { mese: 'Nov', porte_aperte: 40, porte_chiuse: 33, cve_critiche: 8, cve_risolte: 17, epss_score: 5.2 },
+    { mese: 'Dic', porte_aperte: 37, porte_chiuse: 36, cve_critiche: 5, cve_risolte: 20, epss_score: 4.6 }
+  ];
 
-    const ips = [...new Set(edges.map((entry) => entry.ip))].slice(0, 30);
-    const allowedIpSet = new Set(ips);
-    const filteredEdges = edges.filter((edge) => allowedIpSet.has(edge.ip)).slice(0, 180);
-    const domains = [...new Set(filteredEdges.map((entry) => entry.domain))].slice(0, 30);
-    const allowedDomainSet = new Set(domains);
-    const finalEdges = filteredEdges.filter((edge) => allowedDomainSet.has(edge.domain));
+  const exposedServicesData = [
+    { name: 'HTTP/HTTPS', value: 35, color: '#3b82f6' },
+    { name: 'SSH', value: 25, color: '#10b981' },
+    { name: 'FTP', value: 15, color: '#f59e0b' },
+    { name: 'SMTP', value: 12, color: '#ef4444' },
+    { name: 'DNS', value: 8, color: '#8b5cf6' },
+    { name: 'Altro', value: 5, color: '#6b7280' }
+  ];
 
-    const maxRows = Math.max(domains.length, ips.length, 1);
-    const viewBoxHeight = Math.max(320, maxRows * 28 + 50);
+  const riskTrendData = [
+    { mese: 'Gen', rischio_alto: 15, rischio_medio: 28, rischio_basso: 57 },
+    { mese: 'Feb', rischio_alto: 18, rischio_medio: 32, rischio_basso: 50 },
+    { mese: 'Mar', rischio_alto: 12, rischio_medio: 35, rischio_basso: 53 },
+    { mese: 'Apr', rischio_alto: 9, rischio_medio: 31, rischio_basso: 60 },
+    { mese: 'Mag', rischio_alto: 11, rischio_medio: 29, rischio_basso: 60 },
+    { mese: 'Giu', rischio_alto: 14, rischio_medio: 33, rischio_basso: 53 },
+    { mese: 'Lug', rischio_alto: 16, rischio_medio: 36, rischio_basso: 48 },
+    { mese: 'Ago', rischio_alto: 13, rischio_medio: 34, rischio_basso: 53 },
+    { mese: 'Set', rischio_alto: 8, rischio_medio: 27, rischio_basso: 65 },
+    { mese: 'Ott', rischio_alto: 10, rischio_medio: 30, rischio_basso: 60 },
+    { mese: 'Nov', rischio_alto: 9, rischio_medio: 28, rischio_basso: 63 },
+    { mese: 'Dic', rischio_alto: 6, rischio_medio: 25, rischio_basso: 69 }
+  ];
 
-    return {
-      domains,
-      ips,
-      edges: finalEdges,
-      viewBoxHeight,
-      truncated: candidateDomains.length > domains.length || edges.length > finalEdges.length,
-      totalRelations: finalEdges.length,
-    };
-  }, [
-    dumpedSubdomainMeta,
-    hostMeta,
-    ipScopeRules,
-    resolvedIpsByHost,
-    scanDiscovery.discoveredSubdomains,
-    scanDiscovery.scannedDomains,
-    scopeDomains,
-  ]);
-
-  const rescanTargets = useMemo(() => {
-    const unique = new Set<string>();
-    for (const job of scanJobs) {
-      const target = String(job.raw_target || job.normalized_target || '').trim();
-      if (!target) continue;
-      const host = extractHostFromTarget(target);
-      if (host) {
-        if (IPV4_REGEX.test(host) || isIpv6(host)) {
-          if (!isIpWithinScopeRules(host, ipScopeRules)) continue;
-        } else if (classifySurfaceHostForScope(host, scopeDomains).blocked) {
-          continue;
-        }
-      }
-      unique.add(target);
+  const chartConfig = {
+    porte_aperte: {
+      label: "Porte Aperte",
+      color: "hsl(var(--destructive))",
+    },
+    porte_chiuse: {
+      label: "Porte Chiuse", 
+      color: "hsl(var(--primary))",
+    },
+    cve_critiche: {
+      label: "CVE Critiche",
+      color: "hsl(var(--destructive))",
+    },
+    cve_risolte: {
+      label: "CVE Risolte",
+      color: "hsl(var(--primary))",
+    },
+    epss_score: {
+      label: "EPSS Score",
+      color: "hsl(var(--chart-3))",
     }
-    for (const subdomain of scanDiscovery.discoveredSubdomains) {
-      if (!subdomain) continue;
-      if (classifySurfaceHostForScope(subdomain, scopeDomains).blocked) continue;
-      unique.add(subdomain);
-    }
-    for (const ip of scanDiscovery.discoveredIps) {
-      if (!ip) continue;
-      if (!isIpWithinScopeRules(ip, ipScopeRules)) continue;
-      unique.add(ip);
-    }
-    return [...unique];
-  }, [scanJobs, scanDiscovery.discoveredSubdomains, scanDiscovery.discoveredIps, scopeDomains, ipScopeRules]);
+  };
 
-  const monitoredLiveIps = useMemo(() => {
-    let ips = [...scanDiscovery.discoveredIps].filter((ip) => isIpWithinScopeRules(ip, ipScopeRules));
+  const toggleTooltip = (index: number) => {
+    setOpenTooltip(openTooltip === index ? null : index);
+  };
 
-    const term = assetSearch.trim().toLowerCase();
-    if (term) {
-      ips = ips.filter((ip) => ip.toLowerCase().includes(term));
-    }
+  const getEPSSRiskLevel = (score: number) => {
+    if (score < 4) return { level: 'Basso', color: '#10b981' }; // Green
+    if (score < 7) return { level: 'Medio', color: '#f59e0b' }; // Orange (more visible)
+    return { level: 'Alto', color: '#ef4444' }; // Red
+  };
 
-    return ips.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-  }, [scanDiscovery.discoveredIps, ipScopeRules, assetSearch]);
+  // Custom dot component for dynamic coloring
+  const CustomDot = (props: any) => {
+    const { cx, cy, payload } = props;
+    const riskInfo = getEPSSRiskLevel(payload.epss_score);
+    
+    return (
+      <circle
+        cx={cx}
+        cy={cy}
+        r={6}
+        fill={riskInfo.color}
+        stroke="hsl(var(--background))"
+        strokeWidth={2}
+      />
+    );
+  };
 
-  const totalAssetPages = Math.max(1, Math.ceil(monitoredLiveIps.length / assetsPerPage));
-  const paginatedLiveIps = monitoredLiveIps.slice((assetPage - 1) * assetsPerPage, assetPage * assetsPerPage);
+  // Custom active dot component
+  const CustomActiveDot = (props: any) => {
+    const { cx, cy, payload } = props;
+    const riskInfo = getEPSSRiskLevel(payload.epss_score);
+    
+    return (
+      <circle
+        cx={cx}
+        cy={cy}
+        r={8}
+        fill={riskInfo.color}
+        stroke="hsl(var(--background))"
+        strokeWidth={3}
+      />
+    );
+  };
 
-  React.useEffect(() => {
-    setAssetPage(1);
-  }, [assetSearch, ipScopeRules.length, scanDiscovery.discoveredIps.length]);
-
-  const handleAddMonitoredIpRule = async () => {
-    const entries = parseMonitoredScopeMixedEntries(newMonitoredIpInput);
-    if (entries.length === 0) {
-      toast.error('Inserisci almeno un dominio/IP/range/CIDR');
-      return;
-    }
-
-    let successCount = 0;
-    const failedEntries: string[] = [];
-
-    for (const entry of entries) {
-      const success = await addMonitoredIpRule(entry, { silent: true });
-      if (success) {
-        successCount += 1;
-      } else {
-        failedEntries.push(entry);
-      }
-    }
-
-    if (successCount > 0) {
-      toast.success(`Scope aggiornato: ${successCount} regole aggiunte`);
-      setNewMonitoredIpInput('');
-    }
-
-    if (failedEntries.length > 0) {
-      toast.error(
-        `Regole non aggiunte: ${failedEntries.slice(0, 3).join(', ')}${failedEntries.length > 3 ? ' ...' : ''}`,
+  // Custom EPSS tooltip component
+  const EPSSTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0];
+      const currentScore = data.value;
+      const currentIndex = monthlyData.findIndex(item => item.mese === label);
+      const previousScore = currentIndex > 0 ? monthlyData[currentIndex - 1].epss_score : null;
+      const variation = previousScore ? (currentScore - previousScore).toFixed(1) : null;
+      const riskInfo = getEPSSRiskLevel(currentScore);
+      
+      return (
+        <div className="bg-background border border-border rounded-lg p-3 shadow-lg">
+          <div className="font-medium text-foreground mb-2">{label} 2024</div>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <div 
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: riskInfo.color }}
+              />
+              <span className="text-sm text-foreground font-medium">
+                EPSS Score: {currentScore}
+              </span>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Livello di rischio: <span style={{ color: riskInfo.color }}>{riskInfo.level}</span>
+            </div>
+            {variation && (
+              <div className="text-xs text-muted-foreground">
+                Variazione: {parseFloat(variation) > 0 ? '+' : ''}{variation} vs mese precedente
+              </div>
+            )}
+          </div>
+        </div>
       );
     }
-  };
-
-  const handleRemoveMonitoredIpRule = async (ruleId: string) => {
-    await removeMonitoredIpRule(ruleId);
-  };
-
-  const handleAddSubdomainToScope = async (subdomain: string) => {
-    if (!isAdminUser) return;
-    const candidate = String(subdomain || '').trim().toLowerCase();
-    if (!candidate) return;
-    await addMonitoredIpRule(candidate, {
-      discovered_via: 'subdomain_dump',
-      discovered_from: 'surface-module-cards',
-      silent: false,
-    });
-  };
-
-  const handleScanSingleSubdomain = async (subdomain: string) => {
-    if (!isAdmin) return;
-    const target = String(subdomain || '').trim().toLowerCase();
-    if (!target) return;
-    const scanProfiles = [...SCAN_PROFILES];
-    await startScanQueue({
-      targets: [target],
-      scan_profiles: scanProfiles,
-      authorization_confirmed: true,
-      ownership_proof: ownershipProof || 'subdomain_module_card',
-    });
+    return null;
   };
 
   return (
-    <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">SurfaceScan360</h1>
-            <p className="text-muted-foreground">
-              Scansione completa della superficie di attacco esterna
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" onClick={scrollToExposureSection}>
-              Ports &amp; Technologies
-            </Button>
-          </div>
-        </div>
-
-        {isAdminUser && (
-          <Card className="border-primary/30 bg-primary/5">
-            <CardHeader>
-              <CardTitle>Gestione IP Monitorati (Solo Admin)</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Aggiungi IP singoli, range o reti CIDR per controllare quali asset pubblici rientrano nel monitoraggio.
+    <TooltipProvider>
+      <DashboardLayout>
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-foreground">SurfaceScan360</h1>
+              <p className="text-muted-foreground">
+                Scansione completa della superficie di attacco esterna
               </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground space-y-1">
-                <div className="font-medium text-foreground">Legenda input scope (misto supportato)</div>
-                <div>Separatore lista: `,` `;` `|` oppure a capo.</div>
-                <div>Esempio: `panapesca.it, 203.0.113.10, 203.0.113.10-203.0.113.20, 203.0.113.0/24`</div>
-                <div>Tipi supportati: dominio, IP singolo, range IP, CIDR.</div>
-              </div>
-              <div className="flex flex-col md:flex-row gap-2">
-                <Input
-                  placeholder="Es. panapesca.it, 203.0.113.10, 203.0.113.10-203.0.113.20, 203.0.113.0/24"
-                  value={newMonitoredIpInput}
-                  onChange={(event) => setNewMonitoredIpInput(event.target.value)}
-                  disabled={monitoredIpRulesSaving}
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center space-x-2">
+                <Calendar className="w-4 h-4 text-primary" />
+                <span className="text-sm text-muted-foreground">Monitoraggio Mensile</span>
+                <Switch
+                  checked={monthlyMonitoring}
+                  onCheckedChange={setMonthlyMonitoring}
                 />
-                <Button
-                  onClick={handleAddMonitoredIpRule}
-                  disabled={monitoredIpRulesSaving || !newMonitoredIpInput.trim()}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Aggiungi
-                </Button>
               </div>
-
-              <div className="rounded-lg border border-border">
-                <div className="px-3 py-2 border-b border-border bg-muted/30 text-xs text-muted-foreground">
-                  Regole attive: {monitoredIpRules.length}
-                </div>
-
-                {monitoredIpRulesLoading ? (
-                  <div className="p-4 text-sm text-muted-foreground">Caricamento regole in corso...</div>
-                ) : monitoredIpRules.length === 0 ? (
-                  <div className="p-4 text-sm text-muted-foreground">
-                    Nessuna regola configurata: vengono mostrati tutti gli IP scoperti.
-                  </div>
-                ) : (
-                  <div className="divide-y divide-border">
-                    {monitoredIpRules.map((rule) => (
-                      <div key={rule.id} className="flex items-center justify-between px-3 py-2">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="uppercase">
-                            {rule.entry_type}
-                          </Badge>
-                          <span className="text-sm font-medium">{rule.input_value}</span>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRemoveMonitoredIpRule(rule.id)}
-                          disabled={monitoredIpRulesSaving}
-                        >
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Rimuovi
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        <SubdomainDumpPanel isAdmin={isAdminUser} />
-
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Host unici scansionati</p>
-                  <p className="text-2xl font-bold text-foreground">
-                    {scanDiscovery.scannedDomains.length + scanDiscovery.scannedIps.length}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Target lanciati: {scanDiscovery.scannedTargets.length}
-                  </p>
-                </div>
-                <Globe className="w-8 h-8 text-primary" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-sm text-muted-foreground">Vulnerabilità Critiche</p>
-                    <AlertBellButton alertCount={activeAlertsCount} onClick={() => setAlertDialogOpen(true)} />
-                  </div>
-                  <p className="text-2xl font-bold text-red-500">{findingsCounts.critical}</p>
-                </div>
-                <AlertTriangle className="w-8 h-8 text-red-500" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Finding Totali</p>
-                  <p className="text-2xl font-bold text-foreground">{findingsCounts.total}</p>
-                  <p className="text-xs text-muted-foreground">
-                    High: {findingsCounts.high} • Medium: {findingsCounts.medium} • Low: {findingsCounts.low}
-                  </p>
-                </div>
-                <Shield className="w-8 h-8 text-primary" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Asset IP Monitorati</p>
-                  <p className="text-2xl font-bold text-foreground">{monitoredLiveIps.length}</p>
-                </div>
-                <Eye className="w-8 h-8 text-primary" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Ultima Scansione</p>
-                  <p className="text-sm font-medium text-foreground">{scanDiscovery.lastScanLabel}</p>
-                </div>
-                <Eye className="w-8 h-8 text-primary" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <SurfaceScanTrendline />
-
-        <Card className="border-border">
-          <CardHeader>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <CardTitle>Domini/IP Scansionati e Subdomain Trovati</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Vista rapida dei target lanciati e degli asset scoperti via enrichment OSINT.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="secondary" size="sm" onClick={scrollToDependencyMap}>
-                  Vai alla mappa DNS
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsDiscoveryCollapsed((prev) => !prev)}
-                >
-                  {isDiscoveryCollapsed ? (
-                    <ChevronRight className="w-4 h-4 mr-2" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4 mr-2" />
-                  )}
-                  {isDiscoveryCollapsed ? 'Espandi' : 'Collassa'}
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          {!isDiscoveryCollapsed ? (
-            <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="rounded-lg border border-border p-3">
-            <div className="text-xs text-muted-foreground">Target scansionati</div>
-            <div className="text-xl font-semibold">{visibleScannedTargets.length}</div>
-          </div>
-              <div className="rounded-lg border border-border p-3">
-                <div className="text-xs text-muted-foreground">Subdomain trovati</div>
-                <div className="text-xl font-semibold">
-                  {discoveredAssetsLoading ? '...' : scanDiscovery.discoveredSubdomains.length}
-                </div>
-              </div>
-          <div className="rounded-lg border border-border p-3">
-            <div className="text-xs text-muted-foreground">IP trovati</div>
-            <div className="text-xl font-semibold">
-              {discoveredAssetsLoading ? '...' : scanDiscovery.discoveredIps.length}
-            </div>
-          </div>
-          <div className="rounded-lg border border-border p-3">
-            <div className="text-xs text-muted-foreground">In scope</div>
-            <div className="text-xl font-semibold">{discoveredAssetsLoading ? '...' : scopeCounters.in_scope}</div>
-          </div>
-          <div className="rounded-lg border border-border p-3">
-            <div className="text-xs text-muted-foreground">Esclusi scope</div>
-            <div className="text-xl font-semibold">{discoveredAssetsLoading ? '...' : scopeCounters.excluded_by_scope}</div>
-          </div>
-          <div className="rounded-lg border border-border p-3">
-            <div className="text-xs text-muted-foreground">Esclusi shared/noise</div>
-            <div className="text-xl font-semibold">{discoveredAssetsLoading ? '...' : scopeCounters.excluded_shared_noise}</div>
-          </div>
-        </div>
-
-            <div className="space-y-3">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Ultimi target scansionati</p>
-                <div className="flex flex-wrap gap-2">
-                  {visibleScannedTargets.slice(0, 12).map((target) => (
-                    <Badge key={target} variant="outline" className="max-w-full truncate">
-                      {target}
-                    </Badge>
-                  ))}
-                  {visibleScannedTargets.length === 0 && (
-                    <p className="text-sm text-muted-foreground">Nessun target scansionato</p>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Subdomain trovati</p>
-                <div className="flex flex-wrap gap-2">
-                  {scanDiscovery.discoveredSubdomains.slice(0, 16).map((subdomain) => (
-                    <Badge key={subdomain} variant="secondary" className="max-w-full truncate">
-                      {subdomain}
-                    </Badge>
-                  ))}
-                  {scanDiscovery.discoveredSubdomains.length === 0 && !discoveredAssetsLoading && (
-                    <p className="text-sm text-muted-foreground">Nessun subdomain trovato</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {isAdminUser && (
-              <div className="rounded-lg border border-border p-3 space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium">Diagnostica Scope Guard (Admin)</p>
-                    <p className="text-xs text-muted-foreground">
-                      Vista opzionale di elementi esclusi automaticamente da scope guard.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={showScopeDiagnostics}
-                      onCheckedChange={setShowScopeDiagnostics}
-                      aria-label="Mostra elementi esclusi da scope guard"
-                    />
-                    <span className="text-xs text-muted-foreground">Mostra esclusi</span>
-                  </div>
-                </div>
-
-                {showScopeDiagnostics && (
-                  <div className="space-y-3">
-                    <div className="flex flex-wrap gap-2 text-xs">
-                      <Badge variant="secondary">Target esclusi: {excludedScannedTargets.length}</Badge>
-                      <Badge variant="secondary">Host esclusi: {excludedHostDiagnostics.length}</Badge>
-                      <Badge variant="secondary">IP esclusi scope: {scopeCounters.excluded_by_scope}</Badge>
-                      <Badge variant="secondary">Shared/noise esclusi: {scopeCounters.excluded_shared_noise}</Badge>
-                    </div>
-                    <div className="rounded-md border border-border overflow-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Elemento escluso</TableHead>
-                            <TableHead>Motivo</TableHead>
-                            <TableHead>Origine</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {excludedHostDiagnostics.slice(0, 50).map((entry) => (
-                            <TableRow key={`excluded-${entry.host}`}>
-                              <TableCell className="font-mono text-xs">{entry.host}</TableCell>
-                              <TableCell>
-                                <Badge variant="outline">
-                                  {entry.exclusionReason === 'scope_excluded_shared_noise'
-                                    ? 'Shared/Noise'
-                                    : 'Out of Scope'}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-xs text-muted-foreground">
-                                {(entry.sourceLabels || []).join(', ') || '-'}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                          {excludedHostDiagnostics.length === 0 && (
-                            <TableRow>
-                              <TableCell colSpan={3} className="text-center text-muted-foreground py-4">
-                                Nessun host escluso disponibile
-                              </TableCell>
-                            </TableRow>
-                          )}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="rounded-lg border border-border overflow-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Subdomain / Dominio</TableHead>
-                    <TableHead>IP Dominio/Host</TableHead>
-                    <TableHead>Tipo Hosting</TableHead>
-                    <TableHead>Ruolo</TableHead>
-                    <TableHead>Evidenza</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {scanDiscovery.discoveredSubdomains.slice(0, 20).map((subdomain) => {
-                    const directJob = latestJobByHost.get(subdomain);
-                    const rootJob = latestJobByHost.get(simpleRootDomain(subdomain));
-                    const classification = classifySurfaceHostForScope(subdomain, scopeDomains);
-                    const context = directJob?.hosting_context ?? rootJob?.hosting_context ?? (classification.blocked ? 'excluded_noise' : null);
-                    const isShared = context === 'shared_hosting' || context === 'excluded_noise';
-                    const dumpMeta = dumpedSubdomainMeta[subdomain];
-                    const meta = hostMeta[subdomain];
-                    const ipCandidates = [
-                      ...(resolvedIpsByHost.get(subdomain) || []),
-                      ...(resolvedIpsByHost.get(simpleRootDomain(subdomain)) || []),
-                      ...(meta?.ips || []),
-                      ...(dumpMeta?.ip ? [dumpMeta.ip] : []),
-                    ].filter(Boolean);
-                    const uniqueIps = [...new Set(ipCandidates)];
-                    const role = classification.blocked
-                      ? 'Fuori scope (shared/noise)'
-                      : classification.inScope
-                        ? 'Scope monitorato'
-                        : meta?.fromReverseDns
-                          ? 'Subdomain reverse/dump'
-                          : 'Subdomain scoperto';
-                    const evidenceLabels = [...new Set([...(meta?.sourceLabels || []), ...(dumpMeta?.sources || [])])];
-                    return (
-                      <TableRow key={subdomain}>
-                        <TableCell className="font-medium">{subdomain}</TableCell>
-                        <TableCell className="text-sm">{uniqueIps.length > 0 ? uniqueIps.join(', ') : '-'}</TableCell>
-                        <TableCell>
-                          <Badge variant={isShared ? 'destructive' : 'outline'}>
-                            {hostingLabel(context)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {role}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground space-y-1">
-                          <div>{dumpMeta?.note || 'Da scansione SurfaceScan360'}</div>
-                          {evidenceLabels.length > 0 && (
-                            <div className="flex flex-wrap gap-1">
-                              {evidenceLabels.map((label) => (
-                                <Badge key={`${subdomain}-${label}`} variant="secondary" className="text-[10px] px-1.5 py-0">
-                                  {label}
-                                </Badge>
-                              ))}
-                            </div>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                  {scanDiscovery.discoveredSubdomains.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground py-4">
-                        Nessun subdomain disponibile
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            <div
-              ref={dependencyMapRef}
-              id="domain-ip-dependency-map"
-              className="rounded-lg border border-border p-4 space-y-3"
-            >
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div>
-                  <p className="text-sm font-medium">Mappa Dipendenze Dominio/IP (Scope)</p>
-                  <p className="text-xs text-muted-foreground">
-                    Relazioni DNS operative tra domini/subdomini in scope e IP associati.
-                  </p>
-                </div>
-                <Badge variant="secondary">
-                  Relazioni: {domainIpDependencyGraph.totalRelations}
-                </Badge>
-              </div>
-              {domainIpDependencyGraph.edges.length === 0 ? (
-                <div className="text-sm text-muted-foreground py-4">
-                  Nessuna relazione dominio/IP disponibile al momento.
-                </div>
-              ) : (
-                <div className="rounded-md border border-border bg-muted/10 p-3 overflow-auto">
-                  <svg
-                    viewBox={`0 0 1000 ${domainIpDependencyGraph.viewBoxHeight}`}
-                    className="w-full min-w-[780px]"
-                    role="img"
-                    aria-label="Mappa dipendenze domini e IP"
-                  >
-                    <g>
-                      <text x="120" y="22" className="text-[12px]" fill="hsl(var(--muted-foreground))">Domini/Subdomini</text>
-                      <text x="760" y="22" className="text-[12px]" fill="hsl(var(--muted-foreground))">IP correlati</text>
-                    </g>
-                    {domainIpDependencyGraph.edges.map((edge) => {
-                      const domainIndex = domainIpDependencyGraph.domains.indexOf(edge.domain);
-                      const ipIndex = domainIpDependencyGraph.ips.indexOf(edge.ip);
-                      const domainY = 42 + domainIndex * 28;
-                      const ipY = 42 + ipIndex * 28;
-                      return (
-                        <line
-                          key={`edge-${edge.domain}-${edge.ip}`}
-                          x1={280}
-                          y1={domainY}
-                          x2={720}
-                          y2={ipY}
-                          stroke="rgba(99, 102, 241, 0.35)"
-                          strokeWidth="1.2"
-                        />
-                      );
-                    })}
-                    {domainIpDependencyGraph.domains.map((domain, index) => {
-                      const y = 42 + index * 28;
-                      const label = domain.length > 44 ? `${domain.slice(0, 41)}...` : domain;
-                      return (
-                        <g key={`domain-${domain}`}>
-                          <circle cx={275} cy={y} r={4} fill="rgb(99, 102, 241)" />
-                          <text x={268} y={y + 4} textAnchor="end" className="text-[11px]" fill="hsl(var(--foreground))">
-                            {label}
-                          </text>
-                        </g>
-                      );
-                    })}
-                    {domainIpDependencyGraph.ips.map((ip, index) => {
-                      const y = 42 + index * 28;
-                      return (
-                        <g key={`ip-${ip}`}>
-                          <circle cx={725} cy={y} r={4} fill="rgb(34, 197, 94)" />
-                          <text x={734} y={y + 4} textAnchor="start" className="text-[11px]" fill="hsl(var(--foreground))">
-                            {ip}
-                          </text>
-                        </g>
-                      );
-                    })}
-                  </svg>
-                </div>
-              )}
-              {domainIpDependencyGraph.truncated && (
-                <p className="text-xs text-muted-foreground">
-                  Mappa ottimizzata: alcune relazioni aggiuntive sono disponibili nei dettagli tabellari.
-                </p>
-              )}
-            </div>
-
-            <div className="rounded-lg border border-border overflow-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Dominio Scansionato</TableHead>
-                    <TableHead>IP Puntuale</TableHead>
-                    <TableHead>Reverse DNS (PTR)</TableHead>
-                    <TableHead>Hosting</TableHead>
-                    <TableHead>Scope</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {reverseAnalysisRows.map((row) => (
-                    <TableRow key={row.host}>
-                      <TableCell className="font-medium">{row.host}</TableCell>
-                      <TableCell className="text-sm">
-                        {row.resolvedIps.length > 0 ? row.resolvedIps.join(', ') : '-'}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {row.reverseHosts.length > 0 ? row.reverseHosts.slice(0, 4).join(', ') : '-'}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={row.hostingContext === 'shared_hosting' ? 'destructive' : 'outline'}>
-                          {hostingLabel(row.hostingContext)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={row.inScope ? 'default' : 'secondary'}>
-                          {row.inScope ? 'In Scope' : 'Scoperta OSINT'}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {reverseAnalysisRows.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground py-4">
-                        Nessuna analisi reverse disponibile
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-            </CardContent>
-          ) : (
-            <CardContent className="pt-0">
-              <div className="rounded-lg border border-border p-3 flex items-center justify-between gap-3 flex-wrap">
-                <div>
-                  <p className="text-sm font-medium">Sezione Discovery collassata</p>
-                  <p className="text-xs text-muted-foreground">
-                    La mappa dipendenze dominio↔IP è disponibile ({domainIpDependencyGraph.totalRelations} relazioni).
-                  </p>
-                </div>
-                <Button variant="secondary" size="sm" onClick={scrollToDependencyMap}>
-                  Apri mappa DNS
-                </Button>
-              </div>
-            </CardContent>
-          )}
-        </Card>
-
-        <SurfaceScanModuleCards
-          isAdminView={isAdminUser}
-          subdomains={scanDiscovery.discoveredSubdomains}
-          onAddSubdomainToScope={handleAddSubdomainToScope}
-          onScanSubdomain={handleScanSingleSubdomain}
-        />
-
-        <div ref={exposureSectionRef}>
-          <SurfaceScanExposureSection isAdmin={isAdmin} />
-        </div>
-
-        <SecurityFindings />
-
-        <SurfaceScanReportRepository scanJobs={scanJobs} />
-
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle>Asset IP Pubblici Monitorati ({monitoredLiveIps.length} trovati)</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              {ipScopeRules.length > 0
-                ? `Filtrati da ${ipScopeRules.length} regole IP attive`
-                : 'Nessuna regola IP attiva: con strict scope gli IP fuori regola sono esclusi'}
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-              <Input
-                placeholder="Cerca IP..."
-                value={assetSearch}
-                onChange={(event) => setAssetSearch(event.target.value)}
-                className="pl-10"
-              />
-            </div>
-
-            {paginatedLiveIps.length === 0 ? (
-              <div className="p-4 rounded-lg border border-dashed border-border text-sm text-muted-foreground">
-                Nessun asset corrisponde ai filtri correnti.
-              </div>
-            ) : (
-              <div className="rounded-lg border border-border overflow-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>IP</TableHead>
-                      <TableHead>Regole Match</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {paginatedLiveIps.map((ip) => {
-                      const matchedRules = monitoredIpRules.filter(
-                        (rule) =>
-                          ['single', 'range', 'cidr'].includes(String(rule.entry_type || '').toLowerCase()) &&
-                          isIpInRange(ip, rule.ip_start, rule.ip_end),
-                      );
-                      return (
-                        <TableRow key={ip}>
-                          <TableCell className="font-medium">{ip}</TableCell>
-                          <TableCell>
-                            {matchedRules.length === 0 ? (
-                              <span className="text-muted-foreground text-sm">Nessuna (visualizzazione completa)</span>
-                            ) : (
-                              <div className="flex flex-wrap gap-2">
-                                {matchedRules.slice(0, 3).map((rule) => (
-                                  <Badge key={rule.id} variant="outline" className="text-xs">
-                                    {rule.input_value}
-                                  </Badge>
-                                ))}
-                                {matchedRules.length > 3 && (
-                                  <Badge variant="secondary" className="text-xs">+{matchedRules.length - 3}</Badge>
-                                )}
-                              </div>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-
-            {totalAssetPages > 1 && (
-              <div className="flex justify-center">
-                <Pagination>
-                  <PaginationContent>
-                    <PaginationItem>
-                      <PaginationPrevious
-                        onClick={() => setAssetPage((prev) => Math.max(prev - 1, 1))}
-                        className={assetPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                      />
-                    </PaginationItem>
-                    {Array.from({ length: totalAssetPages }, (_, index) => index + 1).map((page) => (
-                      <PaginationItem key={page}>
-                        <PaginationLink
-                          onClick={() => setAssetPage(page)}
-                          isActive={assetPage === page}
-                          className="cursor-pointer"
-                        >
-                          {page}
-                        </PaginationLink>
-                      </PaginationItem>
-                    ))}
-                    <PaginationItem>
-                      <PaginationNext
-                        onClick={() => setAssetPage((prev) => Math.min(prev + 1, totalAssetPages))}
-                        className={assetPage === totalAssetPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                      />
-                    </PaginationItem>
-                  </PaginationContent>
-                </Pagination>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-border">
-          <CardHeader>
-            <div className="flex items-center justify-between gap-3">
-              <CardTitle>Risultati Scansione (Live)</CardTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsLiveResultsCollapsed((prev) => !prev)}
-              >
-                {isLiveResultsCollapsed ? (
-                  <ChevronRight className="w-4 h-4 mr-2" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 mr-2" />
-                )}
-                {isLiveResultsCollapsed ? 'Espandi' : 'Collassa'}
+              <Button className="bg-primary text-primary-foreground">
+                <Search className="w-4 h-4 mr-2" />
+                Nuova Scansione
               </Button>
             </div>
-          </CardHeader>
-          {!isLiveResultsCollapsed && (
-            <CardContent>
-            <div className="rounded-lg border border-border overflow-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Target</TableHead>
-                    <TableHead>Profilo</TableHead>
-                    <TableHead>Avanzamento</TableHead>
-                    <TableHead>Creata</TableHead>
-                    <TableHead>Completata</TableHead>
-                    <TableHead>Errore</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {scanJobs.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground py-6">
-                        Nessuna scansione disponibile.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                  {scanJobs.slice(0, 20).map((job) => (
-                    <TableRow key={job.id}>
-                      <TableCell className="font-medium">{job.raw_target || job.normalized_target}</TableCell>
-                      <TableCell>{job.scan_profile}</TableCell>
-                      <TableCell>
-                        {(() => {
-                          const progress = statusProgressMeta(job.status);
-                          return (
-                            <div className="w-32" title={progress.title}>
-                              <div className={`h-2 rounded-full overflow-hidden ${progress.trackClass}`}>
-                                <div
-                                  className={`h-2 rounded-full ${progress.barClass}`}
-                                  style={{ width: `${progress.value}%` }}
-                                />
+          </div>
+
+          {/* Stats Overview */}
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Domini Monitorati</p>
+                    <p className="text-2xl font-bold text-foreground">12</p>
+                  </div>
+                  <Globe className="w-8 h-8 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-sm text-muted-foreground">Vulnerabilità Critiche</p>
+                      <AlertBellButton
+                        alertCount={activeAlertsCount}
+                        onClick={() => setAlertDialogOpen(true)}
+                      />
+                    </div>
+                    <p className="text-2xl font-bold text-red-500">8</p>
+                  </div>
+                  <AlertTriangle className="w-8 h-8 text-red-500" />
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Score Medio</p>
+                    <p className="text-2xl font-bold text-yellow-500">76</p>
+                  </div>
+                  <TrendingUp className="w-8 h-8 text-yellow-500" />
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Asset Monitorati</p>
+                    <p className="text-2xl font-bold text-foreground">34</p>
+                  </div>
+                  <Shield className="w-8 h-8 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Ultima Scansione</p>
+                    <p className="text-sm font-medium text-foreground">2 ore fa</p>
+                  </div>
+                  <Eye className="w-8 h-8 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Security Findings Section - NEW */}
+          <SecurityFindings />
+
+          {/* Monthly Monitoring Section */}
+          {monthlyMonitoring && (
+            <>
+              {/* Monthly KPI Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <Card className="border-border">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Nuove Porte Aperte</p>
+                        <p className="text-2xl font-bold text-destructive">+12</p>
+                        <p className="text-xs text-muted-foreground">Questo mese</p>
+                      </div>
+                      <Network className="w-8 h-8 text-destructive" />
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                <Card className="border-border">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-muted-foreground">CVE Risolte</p>
+                        <p className="text-2xl font-bold text-primary">20</p>
+                        <p className="text-xs text-muted-foreground">Dicembre 2024</p>
+                      </div>
+                      <CheckCircle className="w-8 h-8 text-primary" />
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                <Card className="border-border">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-muted-foreground">EPSS Score Medio</p>
+                        <p className="text-2xl font-bold text-chart-3">4.6</p>
+                        <p className="text-xs text-green-500">-0.6 vs ultimo mese</p>
+                      </div>
+                      <BarChart3 className="w-8 h-8 text-chart-3" />
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                <Card className="border-border">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Trend Rischio</p>
+                        <p className="text-2xl font-bold text-green-500">↓ 69%</p>
+                        <p className="text-xs text-muted-foreground">Rischio basso</p>
+                      </div>
+                      <Activity className="w-8 h-8 text-green-500" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Monthly Charts */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Ports Timeline */}
+                <Card className="border-border">
+                  <CardHeader>
+                    <CardTitle>Trend Porte Aperte/Chiuse</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={chartConfig} className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={monthlyData}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="mese" className="text-muted-foreground" />
+                          <YAxis className="text-muted-foreground" />
+                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <Line 
+                            type="monotone" 
+                            dataKey="porte_aperte" 
+                            stroke="hsl(var(--destructive))" 
+                            strokeWidth={2}
+                            dot={{ fill: "hsl(var(--destructive))" }}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="porte_chiuse" 
+                            stroke="hsl(var(--primary))" 
+                            strokeWidth={2}
+                            dot={{ fill: "hsl(var(--primary))" }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </ChartContainer>
+                  </CardContent>
+                </Card>
+
+                {/* CVE Timeline with Collapsible Legend */}
+                <Card className="border-border">
+                  <CardHeader>
+                    <CardTitle>CVE Critiche vs Risolte</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={chartConfig} className="h-[250px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={monthlyData}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="mese" className="text-muted-foreground" />
+                          <YAxis className="text-muted-foreground" />
+                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <Bar dataKey="cve_critiche" fill="hsl(var(--destructive))" />
+                          <Bar dataKey="cve_risolte" fill="hsl(var(--primary))" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </ChartContainer>
+
+                    {/* Collapsible CVE Legend */}
+                    <div className="mt-4 p-3 bg-muted/30 rounded-lg border border-border">
+                      {/* Always visible color legend */}
+                      <div className="grid grid-cols-2 gap-3 mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-3 bg-destructive rounded flex-shrink-0"></div>
+                          <span className="text-sm font-medium">CVE Critiche</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-3 bg-primary rounded flex-shrink-0"></div>
+                          <span className="text-sm font-medium">CVE Risolte</span>
+                        </div>
+                      </div>
+
+                      {/* Collapsible detailed legend */}
+                      <Collapsible open={cveCollegendOpen} onOpenChange={setCveLegendOpen}>
+                        <CollapsibleTrigger asChild>
+                          <Button variant="ghost" size="sm" className="w-full justify-between text-sm p-2">
+                            <span className="flex items-center gap-2">
+                              <BarChart3 className="w-4 h-4" />
+                              Dettagli Legenda
+                            </span>
+                            {cveCollegendOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="space-y-4 mt-3">
+                          {/* CVE Definition */}
+                          <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                            <div className="flex items-start gap-2">
+                              <AlertTriangle className="w-4 h-4 text-purple-600 mt-0.5 flex-shrink-0" />
+                              <div>
+                                <p className="text-sm font-medium text-purple-800 mb-1">📋 Cosa sono le CVE?</p>
+                                <p className="text-xs text-purple-700">
+                                  Sistema di identificazione standardizzato per vulnerabilità di sicurezza note. 
+                                  Ogni CVE ha un ID univoco e descrive una specifica falla di sicurezza.
+                                </p>
                               </div>
-                              <div className="text-[10px] text-muted-foreground mt-1">{progress.value}%</div>
                             </div>
-                          );
-                        })()}
-                      </TableCell>
-                      <TableCell>{new Date(job.created_at).toLocaleString('it-IT')}</TableCell>
-                      <TableCell>
-                        {job.completed_at ? new Date(job.completed_at).toLocaleString('it-IT') : '-'}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground" title={job.error_message || ''}>
-                        {formatExposureJobError(job.error_message)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-                </Table>
+                          </div>
+
+                          {/* Trend Indicators */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="flex items-center gap-2 p-2 bg-green-50 rounded-lg border border-green-200">
+                              <TrendingDown className="w-4 h-4 text-green-600 flex-shrink-0" />
+                              <div>
+                                <span className="text-sm font-medium text-green-800">CVE Critiche ↓</span>
+                                <div className="text-xs text-green-600">Tendenza positiva</div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
+                              <TrendingUp className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                              <div>
+                                <span className="text-sm font-medium text-blue-800">CVE Risolte ↑</span>
+                                <div className="text-xs text-blue-600">Attività remediation</div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Monthly Comparison */}
+                          <div className="p-3 bg-orange-50 rounded-lg border border-orange-200">
+                            <div className="flex items-start gap-2">
+                              <BarChart3 className="w-4 h-4 text-orange-600 mt-0.5 flex-shrink-0" />
+                              <div>
+                                <p className="text-sm font-medium text-orange-800 mb-1">💡 Confronto Mensile</p>
+                                <p className="text-xs text-orange-700">
+                                  Il rapporto ideale mostra CVE critiche in diminuzione e CVE risolte stabili o in aumento, 
+                                  indicando un miglioramento continuo della postura di sicurezza.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    </div>
+
+                    {/* Current Status */}
+                    <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                      <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle className="w-4 h-4 text-primary" />
+                        <span className="font-medium">Stato Attuale:</span>
+                        <span className="text-primary">20 CVE risolte a Dicembre</span>
+                        <span className="text-destructive">vs 5 critiche attive</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Enhanced EPSS Score Timeline with Collapsible Legend */}
+                <Card className="border-border">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="w-5 h-5 text-chart-3" />
+                      EPSS Score Mensile
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Exploit Prediction Scoring System - predice la probabilità di sfruttamento delle vulnerabilità
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={chartConfig} className="h-[250px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={monthlyData}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="mese" className="text-muted-foreground" />
+                          <YAxis 
+                            className="text-muted-foreground" 
+                            domain={[0, 10]}
+                            ticks={[0, 2, 4, 6, 8, 10]}
+                          />
+                          <defs>
+                            <linearGradient id="epssGradient" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="hsl(var(--chart-3))" stopOpacity={0.3} />
+                              <stop offset="100%" stopColor="hsl(var(--chart-3))" stopOpacity={0.05} />
+                            </linearGradient>
+                          </defs>
+                          <RechartsTooltip content={<EPSSTooltip />} />
+                          <Line 
+                            type="monotone" 
+                            dataKey="epss_score" 
+                            stroke="hsl(var(--chart-3))" 
+                            strokeWidth={3}
+                            dot={<CustomDot />}
+                            activeDot={<CustomActiveDot />}
+                            fill="url(#epssGradient)"
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey={() => 4} 
+                            stroke="#9ca3af" 
+                            strokeWidth={1}
+                            strokeDasharray="5 5"
+                            dot={false}
+                            activeDot={false}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey={() => 7} 
+                            stroke="#9ca3af" 
+                            strokeWidth={1}
+                            strokeDasharray="5 5"
+                            dot={false}
+                            activeDot={false}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </ChartContainer>
+                    
+                    {/* Collapsible EPSS Legend */}
+                    <div className="mt-4 p-3 bg-muted/30 rounded-lg border border-border">
+                      {/* Always visible risk levels */}
+                      <div className="grid grid-cols-3 gap-3 mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full bg-green-500 flex-shrink-0"></div>
+                          <span className="text-sm font-medium text-green-800">Basso &lt; 4.0</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full bg-orange-500 flex-shrink-0"></div>
+                          <span className="text-sm font-medium text-orange-800">Medio 4.0-7.0</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full bg-red-500 flex-shrink-0"></div>
+                          <span className="text-sm font-medium text-red-800">Alto &gt; 7.0</span>
+                        </div>
+                      </div>
+
+                      {/* Collapsible detailed legend */}
+                      <Collapsible open={epssLegendOpen} onOpenChange={setEpssLegendOpen}>
+                        <CollapsibleTrigger asChild>
+                          <Button variant="ghost" size="sm" className="w-full justify-between text-sm p-2">
+                            <span className="flex items-center gap-2">
+                              <BarChart3 className="w-4 h-4" />
+                              Dettagli Legenda
+                            </span>
+                            {epssLegendOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="space-y-4 mt-3">
+                          {/* Chart Elements Legend */}
+                          <div className="flex flex-wrap items-center gap-6 p-3 bg-gray-50 rounded-lg border">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-1 bg-chart-3 rounded"></div>
+                              <span className="text-sm">Trend EPSS mensile</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-0.5 border-t-2 border-dashed border-gray-400"></div>
+                              <span className="text-sm">Soglie di rischio</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full border-2 border-background bg-chart-3"></div>
+                              <span className="text-sm">Punti colorati per rischio</span>
+                            </div>
+                          </div>
+                          
+                          {/* EPSS Explanation */}
+                          <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                            <div className="flex items-start gap-2">
+                              <AlertTriangle className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                              <div>
+                                <p className="text-sm font-medium text-blue-800 mb-1">📈 Cos'è l'EPSS Score?</p>
+                                <p className="text-xs text-blue-700">
+                                  Punteggio da 0 a 10 che indica la probabilità percentuale di sfruttamento 
+                                  di una vulnerabilità nei prossimi 30 giorni. Più basso è meglio.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    </div>
+
+                    {/* Current Status */}
+                    <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Activity className="w-4 h-4 text-chart-3" />
+                        <span className="font-medium">Trend Attuale:</span>
+                        <span className="text-green-500">↓ Miglioramento (-1.6 vs Gen 2024)</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Exposed Services */}
+                <Card className="border-border">
+                  <CardHeader>
+                    <CardTitle>Servizi Maggiormente Esposti</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={exposedServicesData}
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={80}
+                            dataKey="value"
+                            label={({ name, value }) => `${name}: ${value}%`}
+                          >
+                            {exposedServicesData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <RechartsTooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Risk Trend Analysis with Collapsible Legend */}
+              <Card className="border-border">
+                <CardHeader>
+                  <CardTitle>Analisi Trend Rischio Mensile</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ChartContainer config={chartConfig} className="h-[350px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={riskTrendData}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="mese" className="text-muted-foreground" />
+                        <YAxis className="text-muted-foreground" />
+                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <Bar dataKey="rischio_alto" stackId="stack" fill="hsl(var(--destructive))" />
+                        <Bar dataKey="rischio_medio" stackId="stack" fill="hsl(var(--chart-2))" />
+                        <Bar dataKey="rischio_basso" stackId="stack" fill="hsl(var(--primary))" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </ChartContainer>
+
+                  {/* Collapsible Risk Trend Legend */}
+                  <div className="mt-4 p-3 bg-muted/30 rounded-lg border border-border">
+                    {/* Always visible color legend */}
+                    <div className="grid grid-cols-3 gap-3 mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-3 bg-destructive rounded flex-shrink-0"></div>
+                        <span className="text-sm font-medium text-red-800">Rischio Alto</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-3 bg-chart-2 rounded flex-shrink-0"></div>
+                        <span className="text-sm font-medium text-orange-800">Rischio Medio</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-3 bg-primary rounded flex-shrink-0"></div>
+                        <span className="text-sm font-medium text-blue-800">Rischio Basso</span>
+                      </div>
+                    </div>
+
+                    {/* Collapsible detailed legend */}
+                    <Collapsible open={riskTrendLegendOpen} onOpenChange={setRiskTrendLegendOpen}>
+                      <CollapsibleTrigger asChild>
+                        <Button variant="ghost" size="sm" className="w-full justify-between text-sm p-2">
+                          <span className="flex items-center gap-2">
+                            <BarChart3 className="w-4 h-4" />
+                            Dettagli Legenda
+                          </span>
+                          {riskTrendLegendOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        </Button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="space-y-4 mt-3">
+                        {/* Stacked Bar Explanation */}
+                        <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-200">
+                          <div className="flex items-start gap-2">
+                            <BarChart3 className="w-4 h-4 text-indigo-600 mt-0.5 flex-shrink-0" />
+                            <div>
+                              <p className="text-sm font-medium text-indigo-800 mb-1">📊 Grafico a Barre Impilate</p>
+                              <p className="text-xs text-indigo-700">
+                                Ogni barra rappresenta il 100% degli asset, suddivisi per livello di rischio. 
+                                L'altezza delle sezioni mostra la distribuzione percentuale dei rischi.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Risk Level Definitions */}
+                        <div className="grid grid-cols-1 gap-3">
+                          <div className="flex items-center gap-2 p-2 bg-red-50 rounded-lg border border-red-200">
+                            <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0" />
+                            <div>
+                              <span className="text-sm font-medium text-red-800">Rischio Alto:</span>
+                              <div className="text-xs text-red-600">CVE critiche, porte critiche esposte, configurazioni pericolose</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 p-2 bg-orange-50 rounded-lg border border-orange-200">
+                            <Eye className="w-4 h-4 text-orange-600 flex-shrink-0" />
+                            <div>
+                              <span className="text-sm font-medium text-orange-800">Rischio Medio:</span>
+                              <div className="text-xs text-orange-600">Vulnerabilità moderate, configurazioni sub-ottimali</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 p-2 bg-green-50 rounded-lg border border-green-200">
+                            <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+                            <div>
+                              <span className="text-sm font-medium text-green-800">Rischio Basso:</span>
+                              <div className="text-xs text-green-600">Asset sicuri, configurazioni corrette, vulnerabilità minori</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Trend Interpretation */}
+                        <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                          <div className="flex items-start gap-2">
+                            <TrendingUp className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                            <div>
+                              <p className="text-sm font-medium text-blue-800 mb-1">📈 Interpretazione del Trend</p>
+                              <p className="text-xs text-blue-700">
+                                Un trend positivo mostra il rischio alto in diminuzione e il rischio basso in aumento nel tempo. 
+                                Questo indica miglioramenti nella postura di sicurezza complessiva.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Security Objectives */}
+                        <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                          <div className="flex items-start gap-2">
+                            <Shield className="w-4 h-4 text-purple-600 mt-0.5 flex-shrink-0" />
+                            <div>
+                              <p className="text-sm font-medium text-purple-800 mb-1">🎯 Obiettivi di Sicurezza</p>
+                              <p className="text-xs text-purple-700">
+                                Idealmente: Rischio Alto &lt; 10%, Rischio Medio &lt; 30%, Rischio Basso &gt; 60%. 
+                                Il trend dovrebbe mostrare una riduzione costante dei rischi alti e medi.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </div>
+
+                  {/* Current Status */}
+                  <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                    <div className="flex items-center gap-2 text-sm">
+                      <TrendingUp className="w-4 h-4 text-green-500" />
+                      <span className="font-medium">Trend Positivo:</span>
+                      <span className="text-green-500">Rischio basso al 69% (+12% vs Gen 2024)</span>
+                      <span className="text-red-500">Rischio alto ridotto al 6% (-9% vs Gen 2024)</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          )}
+
+          {/* Search and Filter Bar */}
+          <Card className="border-border">
+            <CardContent className="p-4">
+              <div className="flex flex-col md:flex-row gap-4 items-center">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                  <Input
+                    placeholder="Cerca per IP, hostname o servizio..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Stato" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tutti gli stati</SelectItem>
+                      <SelectItem value="Sicuro">Sicuro</SelectItem>
+                      <SelectItem value="Attenzione">Attenzione</SelectItem>
+                      <SelectItem value="Critico">Critico</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={riskFilter} onValueChange={setRiskFilter}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Rischio" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tutti i rischi</SelectItem>
+                      <SelectItem value="Basso">Basso</SelectItem>
+                      <SelectItem value="Medio">Medio</SelectItem>
+                      <SelectItem value="Alto">Alto</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </CardContent>
-          )}
-        </Card>
-      </div>
+          </Card>
 
-      <SurfaceScanAlertConfigDialog
-        open={alertDialogOpen}
-        onOpenChange={setAlertDialogOpen}
-        onSubmit={handleCreateAlert}
-        mode="create"
-      />
-    </DashboardLayout>
+          {/* Public Assets Table */}
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle>Asset IP Pubblici Monitorati ({filteredAssets.length} trovati)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {currentAssets.map((asset, index) => (
+                  <div key={index} className="flex items-center justify-between p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors">
+                    <div className="flex items-center space-x-4">
+                      <div className="p-2 rounded-lg bg-primary/10">
+                        <Shield className="w-5 h-5 text-primary" />
+                      </div>
+                      <div>
+                        <h4 className="font-medium">{asset.ip}</h4>
+                        <p className="text-sm text-muted-foreground">{asset.hostname}</p>
+                        <div className="flex items-center space-x-2 mt-1">
+                          <span className="text-xs text-muted-foreground">Porte:</span>
+                          <div className="flex space-x-1">
+                            {asset.ports.map((port, portIndex) => (
+                              <Badge key={portIndex} variant="outline" className="text-xs">
+                                {port}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-4">
+                      <div className="text-center">
+                        <div className="text-sm text-muted-foreground">Servizi</div>
+                        <div className="flex space-x-1 mt-1">
+                          {asset.services.map((service, serviceIndex) => (
+                            <Badge key={serviceIndex} variant="secondary" className="text-xs">
+                              {service}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-medium">Score: {asset.score}/100</div>
+                        <div className={`text-xs font-medium ${getRiskColor(asset.risk)}`}>
+                          Rischio: {asset.risk}
+                        </div>
+                        <Badge variant={getStatusBadge(asset.status) as any} className="mt-1">
+                          {asset.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              
+              {totalPages > 1 && (
+                <div className="mt-6 flex justify-center">
+                  <Pagination>
+                    <PaginationContent>
+                      <PaginationItem>
+                        <PaginationPrevious 
+                          onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                          className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                        />
+                      </PaginationItem>
+                      
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                        <PaginationItem key={page}>
+                          <PaginationLink
+                            onClick={() => setCurrentPage(page)}
+                            isActive={currentPage === page}
+                            className="cursor-pointer"
+                          >
+                            {page}
+                          </PaginationLink>
+                        </PaginationItem>
+                      ))}
+                      
+                      <PaginationItem>
+                        <PaginationNext 
+                          onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                          className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                        />
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Scan Results */}
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle>Risultati Scansione</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {scanResults.map((result, index) => (
+                  <div key={index} className="flex items-center justify-between p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors">
+                    <div className="flex items-center space-x-4">
+                      <div className="p-2 rounded-lg bg-primary/10">
+                        <Globe className="w-5 h-5 text-primary" />
+                      </div>
+                      <div>
+                        <h4 className="font-medium">{result.domain}</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {result.issues} vulnerabilità rilevate
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-4">
+                      <div className="text-right">
+                        <div className="text-sm font-medium">Punteggio: {result.score}/100</div>
+                        <Badge variant={getStatusBadge(result.status) as any}>
+                          {result.status}
+                        </Badge>
+                      </div>
+                      <Tooltip open={openTooltip === index} onOpenChange={() => toggleTooltip(index)}>
+                        <TooltipTrigger asChild>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => toggleTooltip(index)}
+                          >
+                            <Eye className="w-4 h-4 mr-1" />
+                            Dettagli
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent 
+                          side="left" 
+                          className="w-80 p-4 bg-background border border-border shadow-lg z-50"
+                          align="start"
+                        >
+                          <div className="space-y-3">
+                            <h4 className="font-semibold text-foreground">CVE Rilevate per {result.domain}</h4>
+                            {result.cves.length > 0 ? (
+                              <div className="space-y-2 max-h-60 overflow-y-auto">
+                                {result.cves.map((cve, cveIndex) => (
+                                  <div key={cveIndex} className="flex items-start space-x-3 p-2 rounded-md bg-muted/50">
+                                    <div 
+                                      className={`w-3 h-3 rounded-full ${getSeverityColor(cve.severity)} mt-1 flex-shrink-0`}
+                                    />
+                                    <div className="flex-1">
+                                      <div className="font-medium text-sm text-foreground">{cve.id}</div>
+                                      <div className="text-xs text-muted-foreground capitalize">{cve.severity} severity</div>
+                                      <div className="text-xs text-muted-foreground mt-1">{cve.description}</div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-sm text-muted-foreground">Nessuna CVE rilevata</p>
+                            )}
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Alert Configuration Dialog */}
+        <SurfaceScanAlertConfigDialog
+          open={alertDialogOpen}
+          onOpenChange={setAlertDialogOpen}
+          onSubmit={handleCreateAlert}
+          mode="create"
+        />
+      </DashboardLayout>
+    </TooltipProvider>
   );
 };
 
