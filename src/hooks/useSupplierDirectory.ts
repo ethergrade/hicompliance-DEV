@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { criticalInfrastructureApi } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { SupplierDirectoryEntry } from '@/types/irp';
@@ -45,19 +46,8 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
 
     setLoading(true);
     try {
-      const { data: assetsData, error: assetsError } = await supabase
-        .from('critical_infrastructure')
-        .select('id, asset_id, component_name')
-        .eq('organization_id', clientOrgId)
-        .order('asset_id', { ascending: true });
-
-      if (assetsError) throw assetsError;
-
-      const assets = (assetsData || []) as Array<{
-        id: string;
-        asset_id: string;
-        component_name: string | null;
-      }>;
+      // Fetch critical infrastructure assets via API for linked-asset labels
+      const assets = await criticalInfrastructureApi.list(clientOrgId);
 
       const options: SupplierAssetOption[] = assets.map((asset) => ({
         id: asset.id,
@@ -70,6 +60,8 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
 
       const assetLabelById = new Map(options.map((option) => [option.id, option.label]));
 
+      // supplier_directory has no backend API endpoint (Supabase-only table)
+      // Keep this query on Supabase until an API endpoint is created.
       const suppliersRes = await supabase
         .from('supplier_directory' as any)
         .select('*')
@@ -136,6 +128,7 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
         linked_asset_id: supplierData.linked_asset_id || null,
       };
 
+      // supplier_directory has no backend API — keep on Supabase
       const { data, error } = await supabase
         .from('supplier_directory' as any)
         .insert(payload)
@@ -172,6 +165,7 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
         linked_asset_id: supplierData.linked_asset_id === '' ? null : supplierData.linked_asset_id,
       };
 
+      // supplier_directory has no backend API — keep on Supabase
       const { error } = await supabase
         .from('supplier_directory' as any)
         .update(payload)
@@ -202,6 +196,7 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
   const deleteSupplier = async (id: string): Promise<boolean> => {
     setSaving(true);
     try {
+      // supplier_directory has no backend API — keep on Supabase
       const { error } = await supabase
         .from('supplier_directory' as any)
         .delete()

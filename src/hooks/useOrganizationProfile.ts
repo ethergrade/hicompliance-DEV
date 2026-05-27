@@ -118,7 +118,7 @@ export function useOrganizationProfile() {
   const organizationIdRef = useRef<string | null>(null);
   const saveProfileRef = useRef<(data: ProfileFormData) => Promise<void>>(async () => {});
   const sourceIdRef = useRef<string>(`org-profile-${Math.random().toString(36).slice(2, 11)}`);
-  const { organizationId: clientOrgId, isLoading: clientLoading, canManageMultipleClients } = useClientOrganization();
+  const { organizationId: clientOrgId, isLoading: clientLoading, selectedOrganization } = useClientOrganization();
   const organizationId = clientOrgId ?? null;
 
   // ─── Fetch profile ──────────────────────────────────────────────────────
@@ -160,25 +160,17 @@ export function useOrganizationProfile() {
   // ─── Save profile ───────────────────────────────────────────────────────
 
   const saveProfile = useCallback(async (data: ProfileFormData) => {
-    if (canManageMultipleClients && !organizationId) return;
+    if (!organizationId) return;
 
     setSaving(true);
     try {
       const payload = formDataToUpdatePayload(data);
+      const groupId = selectedOrganization?.group_id ?? organizationId;
 
-      if (organizationId) {
-        await tenantsApi.update(organizationId, payload);
-      } else {
-        await tenantsApi.updateOwn(payload);
-      }
+      await tenantsApi.update(organizationId, payload, groupId);
 
-      // Re-fetch to get the updated profile with server-side computed fields
-      let updatedTenant: TenantResource;
-      if (organizationId) {
-        updatedTenant = await tenantsApi.get(organizationId);
-      } else {
-        updatedTenant = await tenantsApi.getOwn();
-      }
+      // Re-fetch to get the updated profile
+      const updatedTenant = await tenantsApi.get(organizationId, groupId);
 
       setProfile(tenantToProfile(updatedTenant));
       lastPersistedHashRef.current = JSON.stringify(data);
@@ -211,7 +203,7 @@ export function useOrganizationProfile() {
     } finally {
       setSaving(false);
     }
-  }, [organizationId, canManageMultipleClients, toast]);
+  }, [organizationId, selectedOrganization, toast]);
 
   // ─── Flush pending save ────────────────────────────────────────────────
 
@@ -221,14 +213,14 @@ export function useOrganizationProfile() {
       saveTimeoutRef.current = null;
     }
 
-    if (!organizationId && canManageMultipleClients) return;
+    if (!organizationId) return;
 
     const currentData = latestFormDataRef.current;
     const currentHash = JSON.stringify(currentData);
     if (currentHash === lastPersistedHashRef.current) return;
 
     await saveProfile(currentData);
-  }, [organizationId, canManageMultipleClients, saveProfile]);
+  }, [organizationId, saveProfile]);
 
   // ─── Update field with auto-save ───────────────────────────────────────
 
@@ -297,7 +289,7 @@ export function useOrganizationProfile() {
       }
 
       const orgId = organizationIdRef.current;
-      if (!orgId && canManageMultipleClients) return;
+      if (!orgId) return;
 
       const currentData = latestFormDataRef.current;
       const currentHash = JSON.stringify(currentData);
@@ -305,7 +297,7 @@ export function useOrganizationProfile() {
 
       void saveProfileRef.current(currentData);
     };
-  }, [canManageMultipleClients]);
+  }, []);
 
   return {
     profile,
