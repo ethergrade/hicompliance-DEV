@@ -78,8 +78,8 @@ const AssetInventory: React.FC = () => {
   useEffect(() => {
     if (isSuperAdmin || isSales) {
       setLoading(false);
-    } else if (user?.tenant_id) {
-      setSelectedOrgId(user.tenant_id);
+    } else if (user?.groups?.[0]?.id) {
+      setSelectedOrgId(user.groups[0].id);
     }
   }, [user, isSuperAdmin, isSales]);
 

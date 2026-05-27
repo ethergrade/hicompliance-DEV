@@ -3,10 +3,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Search, X, SlidersHorizontal } from 'lucide-react';
-import { DOCUMENT_STATUSES, CONFIDENTIALITY_LEVELS } from './DocumentCodeGenerator';
-import type { Database } from '@/integrations/supabase/types';
-
-type DocumentCategory = Database['public']['Enums']['document_category'];
+import { DOCUMENT_STATUSES, CONFIDENTIALITY_LEVELS, type DocumentCategory } from './DocumentCodeGenerator';
 
 const DOCUMENT_CATEGORIES: DocumentCategory[] = [
   'Piano Generale', 'Checklist / OPL / SOP', 'Template', 'Processo',

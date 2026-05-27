@@ -43,7 +43,9 @@
      
      setIsLoadingClients(true);
      try {
-       setUserOrganizationId(user.tenant_id || null);
+       // Use the first group's ID as the user's organization
+      const primaryGroup = user.groups?.[0];
+      setUserOrganizationId(primaryGroup?.id || null);
 
        if (canManageMultipleClients) {
          // Super-admin/Sales: fetch all tenants
@@ -59,7 +61,8 @@
          }
        } else {
          // Normal client: use their own tenant
-         if (user.tenant_id) {
+         const primaryGroup = user.groups?.[0];
+       if (primaryGroup?.id) {
            const tenant = await tenantsApi.getOwn();
            setOrganizations([tenant]);
            setSelectedOrganizationState(tenant);

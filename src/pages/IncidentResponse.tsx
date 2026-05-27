@@ -13,8 +13,9 @@ import { OrganizationProfileForm } from '@/components/irp/OrganizationProfileFor
 import { PlaybookViewer } from '@/components/irp/PlaybookViewer';
 import { CriticalInfrastructureManager } from '@/components/irp/CriticalInfrastructureManager';
 import { RiskAnalysisManager } from '@/components/irp/RiskAnalysisManager';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { irpApi } from '@/lib/api';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { Playbook } from '@/types/playbook';
 import { playbooksMap } from '@/data/playbooks/phishing';
 import { generatePlaybookDocx } from '@/components/irp/playbookDocxGenerator';
@@ -54,6 +55,7 @@ const IncidentResponse: React.FC = () => {
   const [playbookViewerOpen, setPlaybookViewerOpen] = useState(false);
   const [selectedPlaybook, setSelectedPlaybook] = useState<Playbook | null>(null);
   const { toast } = useToast();
+  const { organizationId } = useClientOrganization();
 
   // Handle navigation state to open a specific playbook
   useEffect(() => {
@@ -259,17 +261,19 @@ const IncidentResponse: React.FC = () => {
     }
   ];
 
-  // Fetch emergency contacts from database
+  // Fetch emergency contacts from API
   const fetchEmergencyContacts = async () => {
+    if (!organizationId) { setLoading(false); return; }
     try {
-      const { data, error } = await supabase
-        .from('emergency_contacts')
-        .select('*')
-        .order('category', { ascending: true })
-        .order('name', { ascending: true });
-
-      if (error) throw error;
-      setEmergencyContacts((data || []) as EmergencyContact[]);
+      const data = await irpApi.emergencyContacts(organizationId);
+      setEmergencyContacts((data || []).map(c => ({
+        id: c.id,
+        name: c.name,
+        role: c.role || '',
+        phone: c.phone,
+        email: c.email,
+        category: c.category || '',
+      })));
     } catch (error) {
       console.error('Error fetching emergency contacts:', error);
       toast({
@@ -284,20 +288,16 @@ const IncidentResponse: React.FC = () => {
 
   useEffect(() => {
     fetchEmergencyContacts();
-  }, []);
+  }, [organizationId]);
 
   const handleContactAdded = () => {
     fetchEmergencyContacts();
   };
 
   const handleDeleteContact = async (contactId: string) => {
+    if (!organizationId) return;
     try {
-      const { error } = await supabase
-        .from('emergency_contacts')
-        .delete()
-        .eq('id', contactId);
-
-      if (error) throw error;
+      await irpApi.deleteEmergencyContact(organizationId, contactId);
 
       toast({
         title: "Successo",

@@ -8,11 +8,12 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
-import type { Database } from '@/integrations/supabase/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useContactDirectory } from '@/hooks/useContactDirectory';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { documentsApi } from '@/lib/api';
+import type { DocumentResource } from '@/types/api';
 import DocumentSearchBar, { DocumentFilters } from '@/components/documents/DocumentSearchBar';
 import DocumentMetadataDialog, { DocumentMetadata } from '@/components/documents/DocumentMetadataDialog';
 import ContactPicker from '@/components/documents/ContactPicker';
@@ -23,6 +24,7 @@ import {
   CONFIDENTIALITY_LEVELS,
   STATUS_COLORS,
   CONFIDENTIALITY_COLORS,
+  type DocumentCategory,
 } from '@/components/documents/DocumentCodeGenerator';
 import {
   Download, FileText, Upload, Trash2, File, FolderOpen,
@@ -31,35 +33,13 @@ import {
 import DocumentPreviewDialog from '@/components/documents/DocumentPreviewDialog';
 import { useNavigate } from 'react-router-dom';
 
-type DocumentCategory = Database['public']['Enums']['document_category'];
-
 const DOCUMENT_CATEGORIES: DocumentCategory[] = [
   'Piano Generale', 'Checklist / OPL / SOP', 'Template', 'Processo',
   'Legal', 'ISO & Audit', 'NIS2', 'Tecnico', 'Varie'
 ];
 
-interface ISODocument {
-  id: string;
-  name: string;
-  file_path: string;
-  file_size: number;
-  file_type: string;
-  category: DocumentCategory;
-  uploaded_at: string;
-  uploaded_by: string;
-  document_code: string | null;
-  revision: number;
-  revision_date: string | null;
-  status: string;
-  drafted_by: string[] | null;
-  prepared_by: string[] | null;
-  reviewed_by: string[] | null;
-  approved_by: string[] | null;
-  description: string | null;
-  tags: string[] | null;
-  confidentiality: string;
-  organization_id: string | null;
-}
+// DocumentResource from API replaces ISODocument — use alias for clarity
+type ISODocument = DocumentResource;
 
 const Documents: React.FC = () => {
   const [documents, setDocuments] = useState<ISODocument[]>([]);
@@ -105,31 +85,11 @@ const Documents: React.FC = () => {
   const { contacts } = useContactDirectory();
   const { organizationId } = useClientOrganization();
 
-  const [userId, setUserId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchUserId = async () => {
-      if (!user) return;
-      const { data } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_user_id', user.id)
-        .single();
-      setUserId(data?.id ?? null);
-    };
-    fetchUserId();
-  }, [user]);
-
   const fetchDocuments = async () => {
-    if (!userId) return;
+    if (!organizationId) return;
     try {
-      const { data, error } = await supabase
-        .from('incident_documents')
-        .select('*')
-        .order('uploaded_at', { ascending: false });
-
-      if (error) throw error;
-      setDocuments((data as unknown as ISODocument[]) || []);
+      const docs = await documentsApi.list(organizationId);
+      setDocuments(docs);
     } catch (error) {
       console.error('Error fetching documents:', error);
       toast({ title: "Errore", description: "Errore nel caricamento dei documenti", variant: "destructive" });
@@ -139,8 +99,8 @@ const Documents: React.FC = () => {
   };
 
   useEffect(() => {
-    if (userId) fetchDocuments();
-  }, [userId]);
+    if (organizationId) fetchDocuments();
+  }, [organizationId]);
 
   // Filter documents
   const filteredDocuments = useMemo(() => {
@@ -174,7 +134,7 @@ const Documents: React.FC = () => {
   };
 
   const handleUpload = async () => {
-    if (!selectedFile || !uploadForm.name || !user || !userId) {
+    if (!selectedFile || !uploadForm.name || !user || !organizationId) {
       toast({ title: "Errore", description: "Compila tutti i campi obbligatori", variant: "destructive" });
       return;
     }
@@ -195,30 +155,19 @@ const Documents: React.FC = () => {
         .upload(filePath, selectedFile);
       if (uploadError) throw uploadError;
 
-      const { error: dbError } = await supabase
-        .from('incident_documents')
-        .insert({
-          name: uploadForm.name,
-          file_path: filePath,
-          file_size: selectedFile.size,
-          file_type: selectedFile.type,
-          category: uploadForm.category,
-          uploaded_by: userId,
-          document_code: docCode,
-          revision: 1,
-          revision_date: new Date().toISOString(),
-          status: uploadForm.status,
-          confidentiality: uploadForm.confidentiality,
-          description: uploadForm.description,
-          tags: uploadForm.tags,
-          drafted_by: uploadForm.drafted_by,
-          prepared_by: uploadForm.prepared_by,
-          reviewed_by: uploadForm.reviewed_by,
-          approved_by: uploadForm.approved_by,
-          organization_id: organizationId || null,
-        } as any);
-
-      if (dbError) throw dbError;
+      await documentsApi.create(organizationId, {
+        name: uploadForm.name,
+        category: uploadForm.category,
+        document_code: docCode,
+        status: uploadForm.status,
+        confidentiality: uploadForm.confidentiality,
+        description: uploadForm.description,
+        tags: uploadForm.tags,
+        drafted_by: uploadForm.drafted_by.length > 0 ? uploadForm.drafted_by : null,
+        prepared_by: uploadForm.prepared_by.length > 0 ? uploadForm.prepared_by : null,
+        reviewed_by: uploadForm.reviewed_by.length > 0 ? uploadForm.reviewed_by : null,
+        approved_by: uploadForm.approved_by.length > 0 ? uploadForm.approved_by : null,
+      });
 
       toast({ title: "Successo", description: "Documento caricato con successo" });
       setSelectedFile(null);
@@ -259,8 +208,9 @@ const Documents: React.FC = () => {
     if (!confirm('Sei sicuro di voler eliminare questo documento?')) return;
     try {
       await supabase.storage.from('incident-documents').remove([filePath]);
-      const { error } = await supabase.from('incident_documents').delete().eq('id', docId);
-      if (error) throw error;
+      if (organizationId) {
+        await documentsApi.delete(organizationId, docId);
+      }
       toast({ title: "Successo", description: "Documento eliminato" });
       fetchDocuments();
     } catch (error) {
@@ -274,28 +224,23 @@ const Documents: React.FC = () => {
   };
 
   const handleSaveMetadata = async (metadata: DocumentMetadata) => {
-    if (!selectedDocument) return;
+    if (!selectedDocument || !organizationId) return;
     try {
-      const { error } = await supabase
-        .from('incident_documents')
-        .update({
-          name: metadata.name,
-          document_code: metadata.document_code,
-          revision: metadata.revision,
-          revision_date: new Date().toISOString(),
-          status: metadata.status,
-          confidentiality: metadata.confidentiality,
-          category: metadata.category,
-          description: metadata.description,
-          tags: metadata.tags,
-          drafted_by: metadata.drafted_by,
-          prepared_by: metadata.prepared_by,
-          reviewed_by: metadata.reviewed_by,
-          approved_by: metadata.approved_by,
-        } as any)
-        .eq('id', selectedDocument.id);
+      await documentsApi.update(organizationId, selectedDocument.id, {
+        name: metadata.name,
+        document_code: metadata.document_code,
+        revision: metadata.revision,
+        status: metadata.status,
+        confidentiality: metadata.confidentiality,
+        category: metadata.category,
+        description: metadata.description,
+        tags: metadata.tags,
+        drafted_by: metadata.drafted_by,
+        prepared_by: metadata.prepared_by,
+        reviewed_by: metadata.reviewed_by,
+        approved_by: metadata.approved_by,
+      });
 
-      if (error) throw error;
       toast({ title: "Successo", description: "Metadata aggiornati" });
       fetchDocuments();
     } catch (error) {

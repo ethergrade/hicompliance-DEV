@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { tenantsApi } from '@/lib/api';
+import { irpApi, tenantsApi } from '@/lib/api';
 import { IRPDocument, IRPDocumentData, EmergencyContact } from '@/types/irp';
 import { toast } from 'sonner';
- import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 export const useIRPDocument = () => {
   const [document, setDocument] = useState<IRPDocumentData | null>(null);
@@ -12,28 +11,22 @@ export const useIRPDocument = () => {
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
   const { organizationId: clientOrgId, isLoading: clientLoading } = useClientOrganization();
 
-  // Load emergency contacts from database
+  // Load emergency contacts from API
   const loadEmergencyContacts = async (orgId: string) => {
     try {
-      const { data: contactsData, error } = await supabase
-        .from('emergency_contacts')
-        .select('*')
-        .eq('organization_id', orgId)
-        .order('category');
-
-      if (error) throw error;
+      const contactsData = await irpApi.contacts(orgId);
 
       const mappedContacts: EmergencyContact[] = (contactsData || []).map(contact => ({
         id: contact.id,
         name: contact.name,
-        role: contact.role,
-        job_title: (contact as any).job_title || contact.role,
-        irp_role: (contact as any).irp_role || '',
+        role: contact.role || '',
+        job_title: contact.job_title || contact.role || '',
+        irp_role: contact.irp_role || '',
         phone: contact.phone,
         email: contact.email,
         category: contact.category,
-        responsibilities: (contact as any).responsibilities || '',
-        escalationLevel: 3,
+        responsibilities: contact.responsibilities || '',
+        escalationLevel: contact.escalation_level || 3,
       }));
 
       setContacts(mappedContacts);
@@ -54,29 +47,26 @@ export const useIRPDocument = () => {
     
     try {
       setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
       const tenant = await tenantsApi.get(clientOrgId);
 
-      // Try to load existing draft
-      const { data: existingDoc } = await supabase
-        .from('irp_documents')
-        .select('*')
-        .eq('organization_id', clientOrgId)
-        .eq('is_published', false)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .single();
+      // Try to load existing document from API
+      let existingDocData: IRPDocumentData | null = null;
+      try {
+        const rawDoc = await irpApi.document(clientOrgId);
+        if (rawDoc && typeof rawDoc === 'object') {
+          existingDocData = rawDoc as unknown as IRPDocumentData;
+        }
+      } catch {
+        // No existing document — will create default
+      }
 
       const loadedContacts = await loadEmergencyContacts(clientOrgId);
 
-      if (existingDoc && existingDoc.document_data) {
-        const docData = existingDoc.document_data as unknown as IRPDocumentData;
+      if (existingDocData) {
         setDocument({
-          ...docData,
+          ...existingDocData,
           sections: {
-            ...docData.sections,
+            ...(existingDocData.sections || {}),
             contacts: loadedContacts || [],
           },
         });
@@ -106,50 +96,15 @@ export const useIRPDocument = () => {
     }
   };
 
-  // Save document to database
+  // Save document via API
   const saveDocument = async (docData: IRPDocumentData) => {
+    if (!clientOrgId) {
+      toast.error('Organizzazione non trovata');
+      return;
+    }
     try {
       setSaving(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-
-      if (!clientOrgId) throw new Error('Organization not found');
-
-      // Check if draft exists
-      const { data: existingDoc } = await supabase
-        .from('irp_documents')
-        .select('id, version')
-        .eq('organization_id', clientOrgId)
-        .eq('is_published', false)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .single();
-
-      if (existingDoc) {
-        // Update existing draft
-        const { error } = await supabase
-          .from('irp_documents')
-          .update({
-            document_data: docData as any,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', existingDoc.id);
-
-        if (error) throw error;
-      } else {
-        // Create new draft
-        const { error } = await supabase
-          .from('irp_documents')
-          .insert([{
-            organization_id: clientOrgId,
-            user_id: user.id,
-            document_data: docData as any,
-            version: 1,
-            is_published: false,
-          }]);
-
-        if (error) throw error;
-      }
+      await irpApi.saveDocument(clientOrgId, docData as unknown as Record<string, unknown>);
 
       toast.success('Bozza salvata con successo');
       setDocument(docData);

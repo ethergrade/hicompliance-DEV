@@ -7,8 +7,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { BookUser } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { irpApi } from '@/lib/api';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { EmergencyContact, IRP_ROLES, DirectoryContact } from '@/types/irp';
 import { ContactDirectoryDialog } from './ContactDirectoryDialog';
 import { useContactDirectory } from '@/hooks/useContactDirectory';
@@ -41,6 +42,7 @@ export const IRPContactForm: React.FC<IRPContactFormProps> = ({
   });
   const { toast } = useToast();
   const { addContact: addToDirectory } = useContactDirectory();
+  const { organizationId } = useClientOrganization();
 
   useEffect(() => {
     if (editContact) {
@@ -93,35 +95,13 @@ export const IRPContactForm: React.FC<IRPContactFormProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!organizationId) {
+      toast({ title: "Errore", description: "Organizzazione non trovata", variant: "destructive" });
+      return;
+    }
     setLoading(true);
 
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
-      if (userError || !user) {
-        toast({
-          title: "Errore",
-          description: "Utente non autenticato",
-          variant: "destructive"
-        });
-        return;
-      }
-
-      const { data: userData, error: orgError } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('auth_user_id', user.id)
-        .single();
-
-      if (orgError || !userData?.organization_id) {
-        toast({
-          title: "Errore",
-          description: "Organizzazione non trovata",
-          variant: "destructive"
-        });
-        return;
-      }
-
       // If saveToDirectory is checked and not already from directory, add to directory first
       let directoryContactId = selectedDirectoryContactId;
       if (saveToDirectory && !selectedDirectoryContactId) {
@@ -147,28 +127,18 @@ export const IRPContactForm: React.FC<IRPContactFormProps> = ({
         email: formData.email,
         responsibilities: formData.responsibilities,
         category: 'governance',
-        organization_id: userData.organization_id,
-        directory_contact_id: directoryContactId
+        directory_contact_id: directoryContactId || undefined,
       };
 
       if (editContact) {
-        const { error } = await supabase
-          .from('emergency_contacts')
-          .update(contactData)
-          .eq('id', editContact.id);
-
-        if (error) throw error;
+        await irpApi.updateContact(organizationId, editContact.id, contactData);
 
         toast({
           title: "Successo",
           description: "Contatto aggiornato con successo"
         });
       } else {
-        const { error } = await supabase
-          .from('emergency_contacts')
-          .insert(contactData);
-
-        if (error) throw error;
+        await irpApi.createContact(organizationId, contactData);
 
         toast({
           title: "Successo",

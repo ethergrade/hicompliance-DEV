@@ -1,6 +1,4 @@
-import type { Database } from '@/integrations/supabase/types';
-
-type DocumentCategory = Database['public']['Enums']['document_category'];
+export type DocumentCategory = 'Piano Generale' | 'Checklist / OPL / SOP' | 'Template' | 'Processo' | 'Legal' | 'Audit' | 'ISO & Audit' | 'NIS2' | 'Tecnico' | 'Varie';
 
 const CATEGORY_PREFIX_MAP: Record<DocumentCategory, string> = {
   'Piano Generale': 'PG',

@@ -8,11 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { X } from 'lucide-react';
 import ContactPicker from './ContactPicker';
-import { DOCUMENT_STATUSES, CONFIDENTIALITY_LEVELS } from './DocumentCodeGenerator';
+import { DOCUMENT_STATUSES, CONFIDENTIALITY_LEVELS, type DocumentCategory } from './DocumentCodeGenerator';
 import { DirectoryContact } from '@/types/irp';
-import type { Database } from '@/integrations/supabase/types';
-
-type DocumentCategory = Database['public']['Enums']['document_category'];
 
 const DOCUMENT_CATEGORIES: DocumentCategory[] = [
   'Piano Generale', 'Checklist / OPL / SOP', 'Template', 'Processo',
