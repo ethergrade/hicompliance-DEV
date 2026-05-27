@@ -129,24 +129,29 @@ async function request<T>(
 
 // ─── HTTP method helpers ────────────────────────────────────────────────────
 
+type ApiClientOptions = {
+  headers?: Record<string, string>;
+  params?: RequestOptions["params"];
+};
+
 export const apiClient = {
-  get<T>(path: string, params?: RequestOptions["params"]): Promise<T> {
-    return request<T>(path, { method: "GET", params });
+  get<T>(path: string, params?: RequestOptions["params"], opts?: ApiClientOptions): Promise<T> {
+    return request<T>(path, { method: "GET", params, headers: opts?.headers });
   },
 
-  post<T>(path: string, body?: unknown): Promise<T> {
-    return request<T>(path, { method: "POST", body });
+  post<T>(path: string, body?: unknown, opts?: ApiClientOptions): Promise<T> {
+    return request<T>(path, { method: "POST", body, headers: opts?.headers });
   },
 
-  put<T>(path: string, body?: unknown): Promise<T> {
-    return request<T>(path, { method: "PUT", body });
+  put<T>(path: string, body?: unknown, opts?: ApiClientOptions): Promise<T> {
+    return request<T>(path, { method: "PUT", body, headers: opts?.headers });
   },
 
-  patch<T>(path: string, body?: unknown): Promise<T> {
-    return request<T>(path, { method: "PATCH", body });
+  patch<T>(path: string, body?: unknown, opts?: ApiClientOptions): Promise<T> {
+    return request<T>(path, { method: "PATCH", body, headers: opts?.headers });
   },
 
-  delete<T>(path: string): Promise<T> {
-    return request<T>(path, { method: "DELETE" });
+  delete<T>(path: string, opts?: ApiClientOptions): Promise<T> {
+    return request<T>(path, { method: "DELETE", headers: opts?.headers });
   },
 };

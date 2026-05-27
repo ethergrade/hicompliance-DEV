@@ -21,3 +21,5 @@ export { remediationTasksApi } from "./remediation-tasks";
 export { riskAnalysisApi } from "./risk-analysis";
 export { playbookCompletionsApi } from "./playbook-completions";
 export { darkRiskAlertsApi } from "./dark-risk-alerts";
+export { documentsApi } from "./documents";
+export { irpApi } from "./irp";

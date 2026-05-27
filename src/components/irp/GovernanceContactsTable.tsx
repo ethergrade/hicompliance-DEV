@@ -6,8 +6,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Plus, Trash2, Edit, Save, Eye, Info, Download, Loader2, Users, Check } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { irpApi } from '@/lib/api';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { EmergencyContact, DirectoryContact } from '@/types/irp';
 import { IRPContactForm } from './IRPContactForm';
 import { ContactDirectoryDialog } from './ContactDirectoryDialog';
@@ -40,6 +41,7 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
   const [showConfirmAllDialog, setShowConfirmAllDialog] = useState(false);
   const [directoryOpen, setDirectoryOpen] = useState(false);
   const { toast } = useToast();
+  const { organizationId } = useClientOrganization();
   
   // Use organization profile hook for CISO substitute persistence
   const { formData, updateField, saving: savingProfile, lastSaved } = useOrganizationProfile();
@@ -53,31 +55,15 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
   };
 
   const fetchContacts = async () => {
+    if (!organizationId) { setLoading(false); return; }
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('auth_user_id', user.id)
-        .single();
-
-      if (!userData?.organization_id) return;
-
-      const { data, error } = await supabase
-        .from('emergency_contacts')
-        .select('*')
-        .eq('organization_id', userData.organization_id)
-        .order('name');
-
-      if (error) throw error;
+      const data = await irpApi.contacts(organizationId);
 
       const mappedContacts: EmergencyContact[] = (data || []).map(contact => ({
         id: contact.id,
         name: contact.name,
-        role: contact.role,
-        job_title: contact.job_title || contact.role,
+        role: contact.role || '',
+        job_title: contact.job_title || contact.role || '',
         irp_role: contact.irp_role || '',
         phone: contact.phone,
         email: contact.email,
@@ -100,16 +86,12 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
 
   useEffect(() => {
     fetchContacts();
-  }, []);
+  }, [organizationId]);
 
   const handleDeleteContact = async (contactId: string) => {
+    if (!organizationId) return;
     try {
-      const { error } = await supabase
-        .from('emergency_contacts')
-        .delete()
-        .eq('id', contactId);
-
-      if (error) throw error;
+      await irpApi.deleteContact(organizationId, contactId);
 
       toast({
         title: "Successo",
@@ -144,34 +126,19 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
   };
 
   const addExampleContact = async (exampleContact: typeof exampleContacts[0], index: number) => {
+    if (!organizationId) return;
     setAddingExampleIndex(index);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('auth_user_id', user.id)
-        .single();
-
-      if (!userData?.organization_id) throw new Error('Organization not found');
-
-      const { error } = await supabase
-        .from('emergency_contacts')
-        .insert({
-          name: exampleContact.name,
-          role: exampleContact.job_title, // Legacy field
-          job_title: exampleContact.job_title,
-          irp_role: exampleContact.irp_role,
-          phone: exampleContact.phone,
-          email: exampleContact.email,
-          responsibilities: exampleContact.responsibilities,
-          category: 'governance',
-          organization_id: userData.organization_id,
-        });
-
-      if (error) throw error;
+      await irpApi.createContact(organizationId, {
+        name: exampleContact.name,
+        role: exampleContact.job_title,
+        job_title: exampleContact.job_title,
+        irp_role: exampleContact.irp_role,
+        phone: exampleContact.phone,
+        email: exampleContact.email,
+        responsibilities: exampleContact.responsibilities,
+        category: 'governance',
+      });
 
       toast({
         title: "Successo",
@@ -193,36 +160,21 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
   };
 
   const addAllExampleContacts = async () => {
+    if (!organizationId) return;
     setAddingAllExamples(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('auth_user_id', user.id)
-        .single();
-
-      if (!userData?.organization_id) throw new Error('Organization not found');
-
-      const contactsToInsert = exampleContacts.map(contact => ({
-        name: contact.name,
-        role: contact.job_title, // Legacy field
-        job_title: contact.job_title,
-        irp_role: contact.irp_role,
-        phone: contact.phone,
-        email: contact.email,
-        responsibilities: contact.responsibilities,
-        category: 'governance',
-        organization_id: userData.organization_id,
-      }));
-
-      const { error } = await supabase
-        .from('emergency_contacts')
-        .insert(contactsToInsert);
-
-      if (error) throw error;
+      for (const contact of exampleContacts) {
+        await irpApi.createContact(organizationId, {
+          name: contact.name,
+          role: contact.job_title,
+          job_title: contact.job_title,
+          irp_role: contact.irp_role,
+          phone: contact.phone,
+          email: contact.email,
+          responsibilities: contact.responsibilities,
+          category: 'governance',
+        });
+      }
 
       toast({
         title: "Successo",

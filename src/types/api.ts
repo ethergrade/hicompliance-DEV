@@ -51,12 +51,19 @@ export interface LoginRequest {
   password: string;
 }
 
+export interface Group {
+  id: string;
+  name: string;
+  description?: string;
+  company_id?: string | null;
+}
+
 export interface LoginUser {
   id: string | number;
   name: string;
   email: string;
-  tenant_id: string | null;
-  roles: string[];
+  is_super_admin: string | null;
+  groups: Group[];
 }
 
 export interface LoginData {
@@ -737,4 +744,113 @@ export interface UpdateDarkRiskAlertRequest {
   alert_email?: string;
   alert_types?: string[];
   is_active?: boolean;
+}
+
+// ─── Documents ──────────────────────────────────────────────────────────────
+
+export interface DocumentResource {
+  id: string;
+  name: string;
+  file_path: string | null;
+  file_size: number | null;
+  file_type: string | null;
+  category: string;
+  uploaded_at: string | null;
+  uploaded_by: string | null;
+  document_code: string | null;
+  revision: number;
+  revision_date: string | null;
+  status: string;
+  drafted_by: string[] | null;
+  prepared_by: string[] | null;
+  reviewed_by: string[] | null;
+  approved_by: string[] | null;
+  description: string | null;
+  tags: string[] | null;
+  confidentiality: string;
+  organization_id: string | null;
+  company_id?: string | null;
+}
+
+export interface StoreDocumentRequest {
+  name: string;
+  category?: string;
+  document_code?: string | null;
+  status?: string;
+  confidentiality?: string;
+  description?: string | null;
+  tags?: string[] | null;
+  drafted_by?: string[] | null;
+  prepared_by?: string[] | null;
+  reviewed_by?: string[] | null;
+  approved_by?: string[] | null;
+}
+
+export interface UpdateDocumentRequest {
+  name?: string;
+  category?: string;
+  document_code?: string | null;
+  revision?: number;
+  status?: string;
+  confidentiality?: string;
+  description?: string | null;
+  tags?: string[] | null;
+  drafted_by?: string[] | null;
+  prepared_by?: string[] | null;
+  reviewed_by?: string[] | null;
+  approved_by?: string[] | null;
+}
+
+// ─── IRP Contacts ───────────────────────────────────────────────────────────
+
+export interface IrpContactResource {
+  id: string;
+  name: string;
+  role?: string;
+  job_title?: string | null;
+  irp_role?: string | null;
+  phone: string;
+  email: string;
+  category: string;
+  responsibilities?: string | null;
+  escalation_level?: number;
+  directory_contact_id?: string | null;
+  company_id?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface StoreIrpContactRequest {
+  name: string;
+  role?: string;
+  job_title?: string | null;
+  irp_role?: string | null;
+  phone: string;
+  email: string;
+  category?: string;
+  responsibilities?: string | null;
+  escalation_level?: number;
+  directory_contact_id?: string | null;
+}
+
+// ─── IRP Emergency Contacts ─────────────────────────────────────────────────
+
+export interface IrpEmergencyContactResource {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  category?: string;
+  role?: string;
+  company_id?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface StoreIrpEmergencyContactRequest {
+  name: string;
+  phone: string;
+  email: string;
+  category?: string;
+  role?: string;
 }

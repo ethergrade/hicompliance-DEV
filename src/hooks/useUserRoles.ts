@@ -28,19 +28,25 @@ const ROLE_ALIASES: Record<string, AppRole> = {
 export const useUserRoles = () => {
   const { user, loading } = useAuth();
 
+  // Derive roles from group names + is_super_admin field
   const roles = useMemo<AppRole[]>(() => {
-    const userRoles = user?.roles || (user as any)?.role;
-    if (!userRoles) return [];
+    const inferred: AppRole[] = [];
 
-    const rawRoles = Array.isArray(userRoles)
-      ? userRoles
-      : typeof userRoles === 'string'
-        ? userRoles.split(',')
-        : [];
+    // is_super_admin is a truthy string → super-admin
+    if (user?.is_super_admin) {
+      inferred.push('super-admin');
+    }
 
-    return rawRoles
-      .map((role) => ROLE_ALIASES[String(role).trim().toLowerCase()])
-      .filter((role): role is AppRole => Boolean(role));
+    // Check group names for role patterns
+    const groupNames = (user?.groups ?? []).map(g => g.name?.toLowerCase() || '');
+    for (const name of groupNames) {
+      const mapped = ROLE_ALIASES[name];
+      if (mapped && !inferred.includes(mapped)) {
+        inferred.push(mapped as AppRole);
+      }
+    }
+
+    return inferred;
   }, [user]);
 
   const hasRole = (role: AppRole) => {

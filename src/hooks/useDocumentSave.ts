@@ -1,7 +1,8 @@
 import { supabase } from '@/integrations/supabase/client';
-import type { Database } from '@/integrations/supabase/types';
-
-type DocumentCategory = Database['public']['Enums']['document_category'];
+import { documentsApi } from '@/lib/api';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
+import type { DocumentCategory } from '@/components/documents/DocumentCodeGenerator';
 
 interface SaveDocumentOptions {
   blob: Blob;
@@ -10,24 +11,13 @@ interface SaveDocumentOptions {
 }
 
 export const useDocumentSave = () => {
+  const { user } = useAuth();
+  const { organizationId } = useClientOrganization();
+
   const saveToDocuments = async ({ blob, fileName, category }: SaveDocumentOptions): Promise<boolean> => {
     try {
-      // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        console.error('User not authenticated:', userError);
-        return false;
-      }
-
-      // Get user ID from users table
-      const { data: userData, error: userDataError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_user_id', user.id)
-        .single();
-
-      if (userDataError || !userData) {
-        console.error('Error fetching user data:', userDataError);
+      if (!user || !organizationId) {
+        console.error('User not authenticated or no organization');
         return false;
       }
 
@@ -46,19 +36,13 @@ export const useDocumentSave = () => {
         return false;
       }
 
-      // Save to database
-      const { error: dbError } = await supabase
-        .from('incident_documents')
-        .insert({
+      // Save to database via API
+      try {
+        await documentsApi.create(organizationId, {
           name: fileName,
-          file_path: filePath,
-          file_size: blob.size,
-          file_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
           category: category,
-          uploaded_by: userData.id
         });
-
-      if (dbError) {
+      } catch (dbError) {
         console.error('Error saving to database:', dbError);
         // Cleanup: remove uploaded file
         await supabase.storage.from('incident-documents').remove([filePath]);
