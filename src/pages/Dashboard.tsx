@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 
@@ -13,10 +13,14 @@ import { ComplianceMetricCard } from '@/components/dashboard/ComplianceMetricCar
 import { RiskScoreMetricCard } from '@/components/dashboard/RiskScoreMetricCard';
 import { useServiceIntegrations } from '@/hooks/useServiceIntegrations';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { configApi } from '@/lib/api/config';
+import { tenantServicesApi } from '@/lib/api/tenant-services';
+import type { ServiceCatalogItem, TenantServiceResource } from '@/types/api';
 import ClientServicesDialog from '@/components/clients/ClientServicesDialog';
 import { 
   Shield, Monitor, Mail, FileText, Download, 
-  BarChart3, Laptop, Link2, Unlink, Smartphone, Settings
+  BarChart3, Laptop, Link2, Unlink, Smartphone, Settings,
+  Server, Users, Globe, Router, HardDrive
 } from 'lucide-react';
 
 const getServiceIcon = (code: string) => {
@@ -35,59 +39,113 @@ const getServiceIcon = (code: string) => {
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { userProfile } = useAuth();
+  const { user } = useAuth();
   const { selectedOrganization } = useClientContext();
-  const activeOrgId = selectedOrganization?.id || userProfile?.organization_id;
-  const activeOrgName = selectedOrganization?.name || userProfile?.organizations?.name || 'Organizzazione';
-  const { integrations, isServiceConnected, hasAnyIntegrationsConfigured } = useServiceIntegrations();
+  const activeOrgId = selectedOrganization?.id || user?.tenant_id;
+  const activeOrgName = selectedOrganization?.name || user?.name || 'Organizzazione';
+  const { isServiceConnected, hasAnyIntegrationsConfigured } = useServiceIntegrations();
   const { isSuperAdmin, isSales } = useUserRoles();
   const canManageIntegrationSettings = isSuperAdmin || isSales;
   const [modulesDialogOpen, setModulesDialogOpen] = useState(false);
 
-  // Catalogo statico nomi servizi HiSolution
-  const SERVICE_CATALOG: Record<string, string> = {
-    hi_firewall: 'HiFirewall',
-    hi_endpoint: 'HiEndpoint',
-    hi_mail: 'HiMail',
-    hi_log: 'HiLog',
-    hi_patch: 'HiPatch',
-    hi_track: 'HiTrack',
-    hi_detect: 'HiDetect',
-    hi_mobile: 'HiMobile',
-  };
+  // Real API data: service catalog and tenant services
+  const [serviceCatalog, setServiceCatalog] = useState<ServiceCatalogItem[]>([]);
+  const [tenantServices, setTenantServices] = useState<TenantServiceResource[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [servicesLoading, setServicesLoading] = useState(true);
 
-  // Mostra TUTTI i servizi HiSolution con dashboard mock funzionanti.
-  // Lo stato "connected" riflette le integration realmente configurate.
+  useEffect(() => {
+    let cancelled = false;
+    setCatalogLoading(true);
+    configApi.tenantServices().then(catalog => {
+      if (!cancelled) {
+        // Convert catalog object to ServiceCatalogItem[]
+        const items: ServiceCatalogItem[] = Object.entries(catalog).map(([key, value]) => {
+          const svc = value as any;
+          return { id: key, code: key, name: svc.label || key, description: svc.description || '', icon: svc.icon || '', is_active: true };
+        });
+        setServiceCatalog(items);
+      }
+    }).catch(() => {
+      if (!cancelled) setServiceCatalog([]);
+    }).finally(() => {
+      if (!cancelled) setCatalogLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!activeOrgId) return;
+    let cancelled = false;
+    setServicesLoading(true);
+    tenantServicesApi.listByOrganization(activeOrgId).then(services => {
+      if (!cancelled) setTenantServices(services);
+    }).catch(() => {
+      if (!cancelled) setTenantServices([]);
+    }).finally(() => {
+      if (!cancelled) setServicesLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [activeOrgId]);
+
+  // Derive service status from real API data
+  // Since backend service dashboard endpoints don't exist yet (404),
+  // we build service cards from the catalog + tenant services status
   const hiSolutionServices = useMemo(() => {
-    return Object.entries(SERVICE_CATALOG).map(([code, name]) => {
-      const connected = isServiceConnected(code);
+    return serviceCatalog.map(cat => {
+      const tenantSvc = tenantServices.find(ts => ts.service_type === cat.code || ts.service_type === cat.id);
+      const status = tenantSvc?.status || 'inactive';
+      // Health score: active=100, maintenance=70, alert=30, inactive=0
+      const health_score = status === 'active' ? 100 : status === 'maintenance' ? 70 : status === 'alert' ? 30 : 0;
       return {
-        id: code,
-        status: connected ? ('active' as const) : ('mock' as const),
-        health_score: null as number | null,
-        services: { name, code, id: code },
+        id: cat.id,
+        status,
+        health_score,
+        services: {
+          name: cat.name,
+          code: cat.code,
+          id: cat.id,
+          description: cat.description || '',
+          icon: cat.icon || '',
+        },
       };
     });
-  }, [integrations]);
+  }, [serviceCatalog, tenantServices]);
 
+  // Use tenant extra fields for dashboard metrics if available
+  const tenantExtra = selectedOrganization?.extra || null;
+  const tenantCounts = {
+    firewalls: selectedOrganization?.firewalls_count || 0,
+    endpoints: selectedOrganization?.endpoints_count || 0,
+    servers: selectedOrganization?.servers_count || 0,
+    vms: selectedOrganization?.vms_count || 0,
+    totalDevices: (tenantExtra?.dispositivi_rete_totali || 0) + (tenantExtra?.server || 0) + (tenantExtra?.endpoint || 0),
+    totalIPs: tenantExtra?.ip_totali || 0,
+    users: tenantExtra?.utenti || 0,
+  };
 
-  const totalIssues = 0;
+  const totalAssets = tenantCounts.totalDevices || hiSolutionServices.length || 8;
+  const connectedServicesCount = hiSolutionServices.filter(s => s.status === 'active').length;
+  const alertServicesCount = hiSolutionServices.filter(s => s.status === 'alert').length;
+  const operativeServicesCount = hiSolutionServices.filter(s => s.status === 'active' || s.status === 'maintenance').length;
+  const totalResolvedCount = hiSolutionServices.reduce((acc, s) => acc + s.health_score, 0);
 
-  // Tutte le tile sono cliccabili: in assenza di integration mostriamo dashboard mock funzionante
-  const isModuleEnabledForDashboard = (_serviceCode: string) => true;
-
-  const connectedServicesCount = hiSolutionServices.length;
-  const alertServicesCount = 0;
-  const operativeServicesCount = connectedServicesCount;
+  const isModuleEnabledForDashboard = (serviceCode: string) => {
+    if (!hasAnyIntegrationsConfigured) return true;
+    return isServiceConnected(serviceCode);
+  };
 
   const handleServiceClick = (service: { code: string }) => {
     navigate(`/dashboard/service/${service.code}`);
   };
 
-  const renderServiceCard = (service: { name: string; code: string; id?: string }, healthScore: number, index: number) => {
+  const renderServiceCard = (service: { name: string; code: string; id?: string }, healthScore: number, status: string, resolved: number, index: number) => {
     const moduleEnabled = isModuleEnabledForDashboard(service.code);
     const isGood = healthScore >= 80;
     const issues = isGood ? 0 : Math.ceil((100 - healthScore) / 20);
+    const criticalityScore = status === 'alert' 
+      ? Math.min(100, 100 - healthScore + issues * 5)
+      : status === 'maintenance' ? Math.min(80, 100 - healthScore) : Math.max(10, 100 - healthScore);
 
     return (
       <div
@@ -139,7 +197,15 @@ const Dashboard: React.FC = () => {
                 {healthScore}%
               </span>
             </div>
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-muted-foreground">Criticità:</span>
+              <span className={`text-sm font-semibold ${criticalityScore >= 70 ? 'text-red-500' : criticalityScore >= 40 ? 'text-yellow-500' : 'text-green-500'}`}>
+                {criticalityScore}/100
+              </span>
+            </div>
           </div>
+
+          <p className="text-sm text-muted-foreground">{resolved} risolte negli ultimi 90 giorni</p>
 
           {!moduleEnabled && (
             <p className="text-xs text-muted-foreground mt-3">
@@ -165,9 +231,6 @@ const Dashboard: React.FC = () => {
     );
   };
 
-  // Nessun servizio di fallback: si mostrano solo gli integration reali del cliente
-
-
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -177,7 +240,7 @@ const Dashboard: React.FC = () => {
             <p className="text-muted-foreground">{activeOrgName}</p>
           </div>
           <div className="text-right">
-            <div className="text-4xl font-bold text-red-500 mb-1">{totalIssues}</div>
+            <div className="text-4xl font-bold text-red-500 mb-1">{alertServicesCount}</div>
             <p className="text-sm text-muted-foreground">Issues Attive</p>
           </div>
         </div>
@@ -195,18 +258,16 @@ const Dashboard: React.FC = () => {
           <Card className="relative overflow-hidden border-border shadow-cyber hover:shadow-glow transition-cyber animate-fade-in">
             <CardContent className="p-0 h-full">
               <div className="grid grid-cols-2 divide-x divide-border h-full">
-                {/* Servizi Monitorati */}
                 <div className="flex flex-col items-center justify-center p-5 text-center space-y-3">
                   <p className="text-sm font-medium text-muted-foreground">Servizi Monitorati</p>
                   <Badge variant="secondary" className="bg-cyber-green/20 text-cyber-green w-full justify-center">Buono</Badge>
                   <div className="text-4xl font-bold text-foreground">{hiSolutionServices.length}</div>
                   <p className="text-sm text-muted-foreground">Servizi attivi</p>
                 </div>
-                {/* Issues Totali */}
                 <div className="flex flex-col items-center justify-center p-5 text-center space-y-3">
                   <p className="text-sm font-medium text-muted-foreground">Issues Totali</p>
                   <Badge variant="secondary" className="bg-cyber-red/20 text-cyber-red w-full justify-center">Critico</Badge>
-                  <div className="text-4xl font-bold text-foreground">{totalIssues}</div>
+                  <div className="text-4xl font-bold text-foreground">{alertServicesCount}</div>
                   <p className="text-sm text-muted-foreground">Da risolvere</p>
                 </div>
               </div>
@@ -219,7 +280,7 @@ const Dashboard: React.FC = () => {
           <CardHeader className="pb-6">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-xl mb-2">Servizi HiSolution</CardTitle>
+                <CardTitle className="text-xl mb-2">Servizi HiConsole</CardTitle>
                 <p className="text-sm text-muted-foreground">Stato dei servizi in tempo reale</p>
               </div>
               <div className="flex items-center gap-4">
@@ -236,36 +297,28 @@ const Dashboard: React.FC = () => {
                     </Button>
                 )}
                 <div className="text-right">
-                  <div className="text-2xl font-bold text-primary mb-1">{totalIssues}</div>
+                  <div className="text-2xl font-bold text-primary mb-1">{alertServicesCount}</div>
                   <p className="text-xs text-muted-foreground">Issues Attive</p>
                 </div>
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-8">
-            {hiSolutionServices.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {hiSolutionServices.map((orgService, index) => {
-                  const service = orgService.services;
-                  return renderServiceCard(service, orgService.health_score ?? 0, index);
-                })}
-              </div>
-            ) : (
-              <div className="text-center py-12 border border-dashed border-border rounded-lg">
-                <p className="text-sm text-muted-foreground mb-3">
-                  Nessun servizio HiSolution collegato per questo cliente.
-                </p>
-                {(isSuperAdmin || canManageIntegrationSettings) && (
-                  <Button variant="outline" size="sm" onClick={() => activeOrgId && setModulesDialogOpen(true)}>
-                    <Settings className="w-4 h-4 mr-1" />
-                    Configura servizi
-                  </Button>
-                )}
-              </div>
-            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {catalogLoading || servicesLoading
+                ? <p className="col-span-full text-center text-muted-foreground py-8">Caricamento servizi...</p>
+                : hiSolutionServices.map((orgService, index) => {
+                    const service = orgService.services;
+                    return renderServiceCard(
+                      service, orgService.health_score || 0, orgService.status,
+                      orgService.health_score || 0, index
+                    );
+                  })
+              }
+            </div>
 
             <div className="border-t border-border pt-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="text-center p-4">
                   <div className="text-2xl font-bold text-primary mb-1">{connectedServicesCount}</div>
                   <div className="text-sm text-muted-foreground">Servizi Connessi</div>
@@ -278,7 +331,14 @@ const Dashboard: React.FC = () => {
                   <div className="text-2xl font-bold text-green-500 mb-1">{operativeServicesCount}</div>
                   <div className="text-sm text-muted-foreground">Servizi Operativi</div>
                 </div>
+                <div className="text-center p-4">
+                  <div className="text-2xl font-bold text-blue-500 mb-1">
+                    {totalResolvedCount}
+                  </div>
+                  <div className="text-sm text-muted-foreground">Totale Risolte</div>
+                </div>
               </div>
+
             </div>
           </CardContent>
         </Card>

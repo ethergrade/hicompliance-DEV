@@ -2,7 +2,6 @@ import React from 'react';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar } from './AppSidebar';
 import { ClientIndicator } from './ClientIndicator';
-import { AppFooter } from './AppFooter';
 import { useUserRoles } from '@/hooks/useUserRoles';
 
 interface DashboardLayoutProps {
@@ -28,7 +27,6 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
           
           <main className="flex-1 p-6 overflow-x-hidden overflow-y-auto">
             {children}
-            <AppFooter />
           </main>
         </div>
       </div>

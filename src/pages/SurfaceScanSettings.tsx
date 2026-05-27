@@ -4,15 +4,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,12 +17,6 @@ import {
 import { Bell, Pencil, Trash2, Plus, User } from 'lucide-react';
 import { useSurfaceScanAlerts, SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
 import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceScanAlertConfigDialog';
-import {
-  IocLeaseMinutes,
-  IocSeverity,
-  IocType,
-  useSurfaceScanIocFreshList,
-} from '@/hooks/useSurfaceScanIocFreshList';
 import { supabase } from '@/integrations/supabase/client';
 import { useUserRoles } from '@/hooks/useUserRoles';
 
@@ -51,37 +36,18 @@ export default function SurfaceScanSettings() {
   const [editingAlert, setEditingAlert] = useState<string | null>(null);
   const [deleteAlertId, setDeleteAlertId] = useState<string | null>(null);
   const [userNames, setUserNames] = useState<Record<string, string>>({});
-  const [leaseMinutes, setLeaseMinutes] = useState<IocLeaseMinutes>(60);
-  const [iocEnabled, setIocEnabled] = useState(true);
-  const [iocValue, setIocValue] = useState('');
-  const [iocType, setIocType] = useState<IocType>('domain');
-  const [iocConfidence, setIocConfidence] = useState(80);
-  const [iocSeverity, setIocSeverity] = useState<IocSeverity>('medium');
-  const [iocNotes, setIocNotes] = useState('');
-
-  const {
-    config: iocConfig,
-    items: iocItems,
-    loading: iocLoading,
-    saving: iocSaving,
-    isAdmin: isIocAdmin,
-    saveConfig: saveIocConfig,
-    addItem: addIocItem,
-    removeItem: removeIocItem,
-    toggleItem: toggleIocItem,
-  } = useSurfaceScanIocFreshList();
 
   // Carica i nomi utente per gli alert (solo per admin)
   useEffect(() => {
     if (!isAdmin || alerts.length === 0) return;
-
+    
     const fetchUserNames = async () => {
-      const userIds = [...new Set(alerts.map((a) => a.user_id))];
+      const userIds = [...new Set(alerts.map(a => a.user_id))];
       const { data } = await supabase
         .from('users')
         .select('auth_user_id, full_name, email')
         .in('auth_user_id', userIds);
-
+      
       if (data) {
         const names: Record<string, string> = {};
         data.forEach((user) => {
@@ -93,12 +59,6 @@ export default function SurfaceScanSettings() {
 
     fetchUserNames();
   }, [alerts, isAdmin]);
-
-  useEffect(() => {
-    if (!iocConfig) return;
-    setLeaseMinutes(iocConfig.lease_minutes);
-    setIocEnabled(Boolean(iocConfig.is_enabled));
-  }, [iocConfig]);
 
   const handleCreateAlert = async (data: {
     alert_email: string;
@@ -126,29 +86,6 @@ export default function SurfaceScanSettings() {
     const success = await deleteAlert(deleteAlertId);
     if (success) {
       setDeleteAlertId(null);
-    }
-  };
-
-  const handleSaveIocConfig = async () => {
-    await saveIocConfig({
-      lease_minutes: leaseMinutes,
-      is_enabled: iocEnabled,
-    });
-  };
-
-  const handleAddIoc = async () => {
-    const ok = await addIocItem({
-      ioc_value: iocValue,
-      ioc_type: iocType,
-      confidence: iocConfidence,
-      severity: iocSeverity,
-      notes: iocNotes,
-    });
-    if (ok) {
-      setIocValue('');
-      setIocNotes('');
-      setIocConfidence(80);
-      setIocSeverity('medium');
     }
   };
 
@@ -267,168 +204,6 @@ export default function SurfaceScanSettings() {
               );
             })}
           </div>
-        )}
-
-        {isAdmin && isIocAdmin && (
-          <Card>
-            <CardHeader>
-              <CardTitle>IOC Fresh List</CardTitle>
-              <CardDescription>
-                Lista IOC amministrabile con aggiornamento periodico basato su lease.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">Lease aggiornamento</p>
-                  <Select
-                    value={String(leaseMinutes)}
-                    onValueChange={(value) => setLeaseMinutes(Number(value) as IocLeaseMinutes)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="30">30 min</SelectItem>
-                      <SelectItem value="60">1 ora</SelectItem>
-                      <SelectItem value="120">2 ore</SelectItem>
-                      <SelectItem value="720">12 ore</SelectItem>
-                      <SelectItem value="1440">24 ore</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">Abilitazione</p>
-                  <div className="h-10 px-3 rounded-md border border-input flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">
-                      {iocEnabled ? 'Attiva' : 'Disattiva'}
-                    </span>
-                    <Switch checked={iocEnabled} onCheckedChange={setIocEnabled} />
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">Ultimo refresh feed</p>
-                  <div className="h-10 px-3 rounded-md border border-input flex items-center text-sm text-muted-foreground">
-                    {iocConfig?.last_refreshed_at
-                      ? new Date(iocConfig.last_refreshed_at).toLocaleString('it-IT')
-                      : 'Non ancora eseguito'}
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">Azioni</p>
-                  <Button className="w-full" onClick={handleSaveIocConfig} disabled={iocSaving}>
-                    Salva configurazione
-                  </Button>
-                </div>
-              </div>
-
-              <div className="rounded-lg border p-4 space-y-3">
-                <p className="text-sm font-medium">Aggiungi IOC manuale</p>
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-                  <Input
-                    className="md:col-span-2"
-                    value={iocValue}
-                    onChange={(event) => setIocValue(event.target.value)}
-                    placeholder="es. bad-domain.tld, 203.0.113.10, https://target/path"
-                  />
-                  <Select value={iocType} onValueChange={(value) => setIocType(value as IocType)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="domain">Dominio</SelectItem>
-                      <SelectItem value="ip">IP</SelectItem>
-                      <SelectItem value="url">URL</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={iocConfidence}
-                    onChange={(event) =>
-                      setIocConfidence(Math.max(0, Math.min(100, Number(event.target.value) || 0)))
-                    }
-                    placeholder="Confidenza 0-100"
-                  />
-                  <Select value={iocSeverity} onValueChange={(value) => setIocSeverity(value as IocSeverity)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="critical">Critical</SelectItem>
-                      <SelectItem value="high">High</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="low">Low</SelectItem>
-                      <SelectItem value="info">Info</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Textarea
-                  value={iocNotes}
-                  onChange={(event) => setIocNotes(event.target.value)}
-                  placeholder="Note operative (opzionale)"
-                  rows={2}
-                />
-                <div className="flex justify-end">
-                  <Button onClick={handleAddIoc} disabled={iocSaving || !iocValue.trim()}>
-                    Aggiungi IOC
-                  </Button>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium">IOC in lista</p>
-                  <Badge variant="secondary">{iocItems.length}</Badge>
-                </div>
-                {iocLoading ? (
-                  <p className="text-sm text-muted-foreground">Caricamento IOC...</p>
-                ) : iocItems.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Nessun IOC presente.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {iocItems.map((item) => (
-                      <div key={item.id} className="rounded-md border p-3 flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">{item.ioc_value}</p>
-                          <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            <Badge variant="outline">{item.ioc_type}</Badge>
-                            <Badge variant="outline">{item.source === 'manual' ? 'Manuale' : 'Feed curato'}</Badge>
-                            <Badge variant="outline">Conf: {item.confidence}</Badge>
-                            <Badge variant="outline">{item.severity}</Badge>
-                            {item.expires_at ? (
-                              <span className="text-xs text-muted-foreground">
-                                Exp: {new Date(item.expires_at).toLocaleString('it-IT')}
-                              </span>
-                            ) : null}
-                          </div>
-                          {item.notes ? (
-                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{item.notes}</p>
-                          ) : null}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Switch
-                            checked={item.is_active}
-                            onCheckedChange={(checked) => void toggleIocItem(item.id, checked)}
-                          />
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => void removeIocItem(item.id)}
-                            disabled={item.source !== 'manual'}
-                            title={item.source === 'manual' ? 'Elimina IOC' : 'IOC gestito automaticamente dal feed'}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
         )}
       </div>
 
