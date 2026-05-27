@@ -402,6 +402,51 @@ export type Database = {
           },
         ]
       }
+      cisa_kev_catalog: {
+        Row: {
+          cve_id: string
+          cwes: string[] | null
+          date_added: string | null
+          due_date: string | null
+          known_ransomware_use: string | null
+          notes: string | null
+          product: string | null
+          required_action: string | null
+          short_description: string | null
+          synced_at: string
+          vendor_project: string | null
+          vulnerability_name: string | null
+        }
+        Insert: {
+          cve_id: string
+          cwes?: string[] | null
+          date_added?: string | null
+          due_date?: string | null
+          known_ransomware_use?: string | null
+          notes?: string | null
+          product?: string | null
+          required_action?: string | null
+          short_description?: string | null
+          synced_at?: string
+          vendor_project?: string | null
+          vulnerability_name?: string | null
+        }
+        Update: {
+          cve_id?: string
+          cwes?: string[] | null
+          date_added?: string | null
+          due_date?: string | null
+          known_ransomware_use?: string | null
+          notes?: string | null
+          product?: string | null
+          required_action?: string | null
+          short_description?: string | null
+          synced_at?: string
+          vendor_project?: string | null
+          vulnerability_name?: string | null
+        }
+        Relationships: []
+      }
       consistenze_clienti: {
         Row: {
           created_at: string
@@ -510,36 +555,48 @@ export type Database = {
       }
       contact_directory: {
         Row: {
+          account_disabled: boolean
+          auth_user_id: string | null
           created_at: string | null
           email: string | null
           first_name: string
           id: string
+          is_platform_user: boolean
           job_title: string | null
           last_name: string
+          module_permissions: Json
           notes: string | null
           organization_id: string | null
           phone: string | null
           updated_at: string | null
         }
         Insert: {
+          account_disabled?: boolean
+          auth_user_id?: string | null
           created_at?: string | null
           email?: string | null
           first_name: string
           id?: string
+          is_platform_user?: boolean
           job_title?: string | null
           last_name: string
+          module_permissions?: Json
           notes?: string | null
           organization_id?: string | null
           phone?: string | null
           updated_at?: string | null
         }
         Update: {
+          account_disabled?: boolean
+          auth_user_id?: string | null
           created_at?: string | null
           email?: string | null
           first_name?: string
           id?: string
+          is_platform_user?: boolean
           job_title?: string | null
           last_name?: string
+          module_permissions?: Json
           notes?: string | null
           organization_id?: string | null
           phone?: string | null
@@ -634,6 +691,123 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      cve_enrichment_queue: {
+        Row: {
+          attempts: number
+          cve_id: string
+          id: string
+          last_error: string | null
+          organization_id: string | null
+          processed_at: string | null
+          queued_at: string
+          source: string | null
+          status: string
+        }
+        Insert: {
+          attempts?: number
+          cve_id: string
+          id?: string
+          last_error?: string | null
+          organization_id?: string | null
+          processed_at?: string | null
+          queued_at?: string
+          source?: string | null
+          status?: string
+        }
+        Update: {
+          attempts?: number
+          cve_id?: string
+          id?: string
+          last_error?: string | null
+          organization_id?: string | null
+          processed_at?: string | null
+          queued_at?: string
+          source?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
+      cve_intel_cache: {
+        Row: {
+          cisa_kev: boolean | null
+          cpe_json: Json | null
+          created_at: string
+          cve_id: string
+          cvss_v2_score: number | null
+          cvss_v2_vector: string | null
+          cvss_v3_score: number | null
+          cvss_v3_severity: string | null
+          cvss_v3_vector: string | null
+          cwe_ids: string[] | null
+          description: string | null
+          epss_percentile: number | null
+          epss_score: number | null
+          exploit_links: Json | null
+          fetch_error: string | null
+          fetch_status: string | null
+          kev_date_added: string | null
+          kev_due_date: string | null
+          kev_required_action: string | null
+          last_modified_at: string | null
+          nvd_status: string | null
+          published_at: string | null
+          references_json: Json | null
+          refreshed_at: string
+        }
+        Insert: {
+          cisa_kev?: boolean | null
+          cpe_json?: Json | null
+          created_at?: string
+          cve_id: string
+          cvss_v2_score?: number | null
+          cvss_v2_vector?: string | null
+          cvss_v3_score?: number | null
+          cvss_v3_severity?: string | null
+          cvss_v3_vector?: string | null
+          cwe_ids?: string[] | null
+          description?: string | null
+          epss_percentile?: number | null
+          epss_score?: number | null
+          exploit_links?: Json | null
+          fetch_error?: string | null
+          fetch_status?: string | null
+          kev_date_added?: string | null
+          kev_due_date?: string | null
+          kev_required_action?: string | null
+          last_modified_at?: string | null
+          nvd_status?: string | null
+          published_at?: string | null
+          references_json?: Json | null
+          refreshed_at?: string
+        }
+        Update: {
+          cisa_kev?: boolean | null
+          cpe_json?: Json | null
+          created_at?: string
+          cve_id?: string
+          cvss_v2_score?: number | null
+          cvss_v2_vector?: string | null
+          cvss_v3_score?: number | null
+          cvss_v3_severity?: string | null
+          cvss_v3_vector?: string | null
+          cwe_ids?: string[] | null
+          description?: string | null
+          epss_percentile?: number | null
+          epss_score?: number | null
+          exploit_links?: Json | null
+          fetch_error?: string | null
+          fetch_status?: string | null
+          kev_date_added?: string | null
+          kev_due_date?: string | null
+          kev_required_action?: string | null
+          last_modified_at?: string | null
+          nvd_status?: string | null
+          published_at?: string | null
+          references_json?: Json | null
+          refreshed_at?: string
+        }
+        Relationships: []
       }
       dark_risk_alerts: {
         Row: {
@@ -735,6 +909,325 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      external_cve_findings: {
+        Row: {
+          affected_url: string | null
+          attribution_confidence: string
+          confidence: string
+          created_at: string
+          cve: string[]
+          cvss: number | null
+          cvssv3: number | null
+          cwe: string | null
+          epss_percentile: number | null
+          epss_score: number | null
+          evidence: Json | null
+          external_finding_id: number | null
+          id: string
+          in_cisa_catalog: boolean
+          ip: unknown
+          name: string
+          organization_id: string
+          port: number | null
+          protocol: string | null
+          provider: string
+          raw_finding: Json | null
+          recommendation: string | null
+          risk_level: number
+          scan_job_id: string
+          service: string | null
+          severity: string
+          status: string
+          target: string
+          task_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          affected_url?: string | null
+          attribution_confidence?: string
+          confidence?: string
+          created_at?: string
+          cve?: string[]
+          cvss?: number | null
+          cvssv3?: number | null
+          cwe?: string | null
+          epss_percentile?: number | null
+          epss_score?: number | null
+          evidence?: Json | null
+          external_finding_id?: number | null
+          id?: string
+          in_cisa_catalog?: boolean
+          ip?: unknown
+          name: string
+          organization_id: string
+          port?: number | null
+          protocol?: string | null
+          provider?: string
+          raw_finding?: Json | null
+          recommendation?: string | null
+          risk_level?: number
+          scan_job_id: string
+          service?: string | null
+          severity?: string
+          status?: string
+          target: string
+          task_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          affected_url?: string | null
+          attribution_confidence?: string
+          confidence?: string
+          created_at?: string
+          cve?: string[]
+          cvss?: number | null
+          cvssv3?: number | null
+          cwe?: string | null
+          epss_percentile?: number | null
+          epss_score?: number | null
+          evidence?: Json | null
+          external_finding_id?: number | null
+          id?: string
+          in_cisa_catalog?: boolean
+          ip?: unknown
+          name?: string
+          organization_id?: string
+          port?: number | null
+          protocol?: string | null
+          provider?: string
+          raw_finding?: Json | null
+          recommendation?: string | null
+          risk_level?: number
+          scan_job_id?: string
+          service?: string | null
+          severity?: string
+          status?: string
+          target?: string
+          task_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_cve_findings_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "external_scan_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "external_cve_findings_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "external_scan_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      external_scan_audit_log: {
+        Row: {
+          action: string
+          actor_email: string | null
+          actor_id: string | null
+          created_at: string
+          details: Json | null
+          id: string
+          organization_id: string | null
+          scan_job_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_email?: string | null
+          actor_id?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: string
+          organization_id?: string | null
+          scan_job_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_email?: string | null
+          actor_id?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: string
+          organization_id?: string | null
+          scan_job_id?: string | null
+        }
+        Relationships: []
+      }
+      external_scan_jobs: {
+        Row: {
+          authorization_proof: string | null
+          completed_at: string | null
+          created_at: string
+          error_message: string | null
+          hosting_context: string
+          id: string
+          organization_id: string
+          provider: string
+          requested_by: string | null
+          resolved_ips: string[]
+          scan_profile: string
+          shodan_status: string
+          started_at: string | null
+          status: string
+          target: string
+          target_type: string
+          triggered_by: string
+        }
+        Insert: {
+          authorization_proof?: string | null
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          hosting_context?: string
+          id?: string
+          organization_id: string
+          provider?: string
+          requested_by?: string | null
+          resolved_ips?: string[]
+          scan_profile: string
+          shodan_status?: string
+          started_at?: string | null
+          status?: string
+          target: string
+          target_type: string
+          triggered_by?: string
+        }
+        Update: {
+          authorization_proof?: string | null
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          hosting_context?: string
+          id?: string
+          organization_id?: string
+          provider?: string
+          requested_by?: string | null
+          resolved_ips?: string[]
+          scan_profile?: string
+          shodan_status?: string
+          started_at?: string | null
+          status?: string
+          target?: string
+          target_type?: string
+          triggered_by?: string
+        }
+        Relationships: []
+      }
+      external_scan_reports: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          download_url: string | null
+          external_report_id: number | null
+          format: string
+          group_by: string
+          id: string
+          organization_id: string
+          scan_job_id: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          download_url?: string | null
+          external_report_id?: number | null
+          format?: string
+          group_by?: string
+          id?: string
+          organization_id: string
+          scan_job_id: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          download_url?: string | null
+          external_report_id?: number | null
+          format?: string
+          group_by?: string
+          id?: string
+          organization_id?: string
+          scan_job_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_scan_reports_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "external_scan_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      external_scan_tasks: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          error_message: string | null
+          external_scan_id: number | null
+          external_task_id: number | null
+          id: string
+          organization_id: string
+          progress: number | null
+          provider: string
+          raw_status: Json | null
+          scan_job_id: string
+          started_at: string | null
+          status: string
+          target: string
+          tool_id: number
+          tool_name: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          external_scan_id?: number | null
+          external_task_id?: number | null
+          id?: string
+          organization_id: string
+          progress?: number | null
+          provider?: string
+          raw_status?: Json | null
+          scan_job_id: string
+          started_at?: string | null
+          status?: string
+          target: string
+          tool_id: number
+          tool_name: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          external_scan_id?: number | null
+          external_task_id?: number | null
+          id?: string
+          organization_id?: string
+          progress?: number | null
+          provider?: string
+          raw_status?: Json | null
+          scan_job_id?: string
+          started_at?: string | null
+          status?: string
+          target?: string
+          tool_id?: number
+          tool_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_scan_tasks_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "external_scan_jobs"
             referencedColumns: ["id"]
           },
         ]
@@ -1298,22 +1791,46 @@ export type Database = {
         Row: {
           code: string
           created_at: string
+          dark_risk360_enabled: boolean
+          hicompliance_enabled: boolean
           id: string
+          irp_extended: boolean
           name: string
+          pentest_tools_auto_validation: boolean
+          subdomain_dump_depth: number
+          subdomain_dump_enabled: boolean
+          surface_scan_extended: boolean
+          surface_scan360_enabled: boolean
           updated_at: string
         }
         Insert: {
           code: string
           created_at?: string
+          dark_risk360_enabled?: boolean
+          hicompliance_enabled?: boolean
           id?: string
+          irp_extended?: boolean
           name: string
+          pentest_tools_auto_validation?: boolean
+          subdomain_dump_depth?: number
+          subdomain_dump_enabled?: boolean
+          surface_scan_extended?: boolean
+          surface_scan360_enabled?: boolean
           updated_at?: string
         }
         Update: {
           code?: string
           created_at?: string
+          dark_risk360_enabled?: boolean
+          hicompliance_enabled?: boolean
           id?: string
+          irp_extended?: boolean
           name?: string
+          pentest_tools_auto_validation?: boolean
+          subdomain_dump_depth?: number
+          subdomain_dump_enabled?: boolean
+          surface_scan_extended?: boolean
+          surface_scan360_enabled?: boolean
           updated_at?: string
         }
         Relationships: []
@@ -1390,6 +1907,8 @@ export type Database = {
           organization_id: string | null
           priority: string
           progress: number
+          source: string | null
+          source_ref: string | null
           start_date: string
           task: string
           updated_at: string
@@ -1409,6 +1928,8 @@ export type Database = {
           organization_id?: string | null
           priority?: string
           progress?: number
+          source?: string | null
+          source_ref?: string | null
           start_date: string
           task: string
           updated_at?: string
@@ -1428,6 +1949,8 @@ export type Database = {
           organization_id?: string | null
           priority?: string
           progress?: number
+          source?: string | null
+          source_ref?: string | null
           start_date?: string
           task?: string
           updated_at?: string
@@ -1577,6 +2100,439 @@ export type Database = {
         }
         Relationships: []
       }
+      shodan_enrichments: {
+        Row: {
+          confidence: string
+          cpes: string[] | null
+          created_at: string
+          found: boolean
+          hostnames: string[] | null
+          id: string
+          ip: unknown
+          organization_id: string
+          ports: number[] | null
+          raw_response: Json | null
+          scan_job_id: string
+          source: string
+          target: string
+          vulns: Json | null
+        }
+        Insert: {
+          confidence?: string
+          cpes?: string[] | null
+          created_at?: string
+          found?: boolean
+          hostnames?: string[] | null
+          id?: string
+          ip?: unknown
+          organization_id: string
+          ports?: number[] | null
+          raw_response?: Json | null
+          scan_job_id: string
+          source?: string
+          target: string
+          vulns?: Json | null
+        }
+        Update: {
+          confidence?: string
+          cpes?: string[] | null
+          created_at?: string
+          found?: boolean
+          hostnames?: string[] | null
+          id?: string
+          ip?: unknown
+          organization_id?: string
+          ports?: number[] | null
+          raw_response?: Json | null
+          scan_job_id?: string
+          source?: string
+          target?: string
+          vulns?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shodan_enrichments_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "external_scan_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      subdomain_dumps: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          depth_limit: number
+          id: string
+          organization_id: string
+          results: Json
+          root_domain: string
+          sources: Json
+          total_discovered: number
+          total_returned: number
+          triggered_by: string
+          truncated: boolean
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          depth_limit?: number
+          id?: string
+          organization_id: string
+          results?: Json
+          root_domain: string
+          sources?: Json
+          total_discovered?: number
+          total_returned?: number
+          triggered_by?: string
+          truncated?: boolean
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          depth_limit?: number
+          id?: string
+          organization_id?: string
+          results?: Json
+          root_domain?: string
+          sources?: Json
+          total_discovered?: number
+          total_returned?: number
+          triggered_by?: string
+          truncated?: boolean
+        }
+        Relationships: []
+      }
+      supplier_directory: {
+        Row: {
+          contact_name: string | null
+          created_at: string
+          email: string | null
+          id: string
+          linked_asset_id: string | null
+          notes: string | null
+          organization_id: string
+          phone: string | null
+          service_type: string | null
+          supplier_name: string
+          updated_at: string
+        }
+        Insert: {
+          contact_name?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          linked_asset_id?: string | null
+          notes?: string | null
+          organization_id: string
+          phone?: string | null
+          service_type?: string | null
+          supplier_name: string
+          updated_at?: string
+        }
+        Update: {
+          contact_name?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          linked_asset_id?: string | null
+          notes?: string | null
+          organization_id?: string
+          phone?: string | null
+          service_type?: string | null
+          supplier_name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_directory_linked_asset_id_fkey"
+            columns: ["linked_asset_id"]
+            isOneToOne: false
+            referencedRelation: "critical_infrastructure"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_directory_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      surface_assets: {
+        Row: {
+          asset_type: string
+          asset_value: string
+          confidence: string
+          first_seen: string
+          hostname: string | null
+          id: string
+          ip: unknown
+          last_seen: string
+          organization_id: string
+          raw: Json | null
+          root_domain: string | null
+          scan_job_id: string
+          source: string
+        }
+        Insert: {
+          asset_type: string
+          asset_value: string
+          confidence?: string
+          first_seen?: string
+          hostname?: string | null
+          id?: string
+          ip?: unknown
+          last_seen?: string
+          organization_id: string
+          raw?: Json | null
+          root_domain?: string | null
+          scan_job_id: string
+          source: string
+        }
+        Update: {
+          asset_type?: string
+          asset_value?: string
+          confidence?: string
+          first_seen?: string
+          hostname?: string | null
+          id?: string
+          ip?: unknown
+          last_seen?: string
+          organization_id?: string
+          raw?: Json | null
+          root_domain?: string | null
+          scan_job_id?: string
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_assets_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      surface_external_intel: {
+        Row: {
+          confidence: string
+          created_at: string
+          found: boolean
+          id: string
+          organization_id: string
+          provider: string
+          raw_response: Json | null
+          scan_job_id: string
+          summary: Json | null
+          target: string
+        }
+        Insert: {
+          confidence?: string
+          created_at?: string
+          found?: boolean
+          id?: string
+          organization_id: string
+          provider: string
+          raw_response?: Json | null
+          scan_job_id: string
+          summary?: Json | null
+          target: string
+        }
+        Update: {
+          confidence?: string
+          created_at?: string
+          found?: boolean
+          id?: string
+          organization_id?: string
+          provider?: string
+          raw_response?: Json | null
+          scan_job_id?: string
+          summary?: Json | null
+          target?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_external_intel_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      surface_findings: {
+        Row: {
+          affected_asset: string | null
+          affected_url: string | null
+          attribution_confidence: string
+          cisa_kev: boolean
+          created_at: string
+          cve: string[]
+          cvss: number | null
+          cwe: string[]
+          description: string | null
+          epss: number | null
+          evidence: Json | null
+          finding_type: string
+          id: string
+          ip: unknown
+          module: string | null
+          organization_id: string
+          port: number | null
+          protocol: string | null
+          provider: string | null
+          remediation: string | null
+          scan_job_id: string
+          severity: string
+          status: string
+          title: string
+        }
+        Insert: {
+          affected_asset?: string | null
+          affected_url?: string | null
+          attribution_confidence?: string
+          cisa_kev?: boolean
+          created_at?: string
+          cve?: string[]
+          cvss?: number | null
+          cwe?: string[]
+          description?: string | null
+          epss?: number | null
+          evidence?: Json | null
+          finding_type: string
+          id?: string
+          ip?: unknown
+          module?: string | null
+          organization_id: string
+          port?: number | null
+          protocol?: string | null
+          provider?: string | null
+          remediation?: string | null
+          scan_job_id: string
+          severity?: string
+          status?: string
+          title: string
+        }
+        Update: {
+          affected_asset?: string | null
+          affected_url?: string | null
+          attribution_confidence?: string
+          cisa_kev?: boolean
+          created_at?: string
+          cve?: string[]
+          cvss?: number | null
+          cwe?: string[]
+          description?: string | null
+          epss?: number | null
+          evidence?: Json | null
+          finding_type?: string
+          id?: string
+          ip?: unknown
+          module?: string | null
+          organization_id?: string
+          port?: number | null
+          protocol?: string | null
+          provider?: string | null
+          remediation?: string | null
+          scan_job_id?: string
+          severity?: string
+          status?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_findings_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      surface_observations: {
+        Row: {
+          asset_id: string | null
+          confidence: string
+          created_at: string
+          id: string
+          module: string
+          observation_type: string
+          organization_id: string
+          scan_job_id: string
+          severity: string
+          title: string | null
+          value: Json
+        }
+        Insert: {
+          asset_id?: string | null
+          confidence?: string
+          created_at?: string
+          id?: string
+          module: string
+          observation_type: string
+          organization_id: string
+          scan_job_id: string
+          severity?: string
+          title?: string | null
+          value: Json
+        }
+        Update: {
+          asset_id?: string | null
+          confidence?: string
+          created_at?: string
+          id?: string
+          module?: string
+          observation_type?: string
+          organization_id?: string
+          scan_job_id?: string
+          severity?: string
+          title?: string | null
+          value?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_observations_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      surface_scan_ai_reports: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          organization_id: string
+          payload: Json
+          scan_job_id: string | null
+          title: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id: string
+          payload: Json
+          scan_job_id?: string | null
+          title?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id?: string
+          payload?: Json
+          scan_job_id?: string | null
+          title?: string | null
+        }
+        Relationships: []
+      }
       surface_scan_alerts: {
         Row: {
           alert_email: string
@@ -1617,6 +2573,204 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      surface_scan_audit_log: {
+        Row: {
+          action: string
+          created_at: string
+          details: Json | null
+          id: string
+          organization_id: string | null
+          scan_job_id: string | null
+          user_email: string | null
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          organization_id?: string | null
+          scan_job_id?: string | null
+          user_email?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          organization_id?: string | null
+          scan_job_id?: string | null
+          user_email?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      surface_scan_history: {
+        Row: {
+          assets_snapshot: Json
+          avg_score: number
+          created_at: string
+          critical_count: number
+          high_cves: number
+          id: string
+          low_cves: number
+          medium_cves: number
+          organization_id: string
+          safe_count: number
+          scanned_at: string
+          total_assets: number
+          triggered_by: string
+          truncated_rules: Json
+          warning_count: number
+        }
+        Insert: {
+          assets_snapshot?: Json
+          avg_score?: number
+          created_at?: string
+          critical_count?: number
+          high_cves?: number
+          id?: string
+          low_cves?: number
+          medium_cves?: number
+          organization_id: string
+          safe_count?: number
+          scanned_at?: string
+          total_assets?: number
+          triggered_by?: string
+          truncated_rules?: Json
+          warning_count?: number
+        }
+        Update: {
+          assets_snapshot?: Json
+          avg_score?: number
+          created_at?: string
+          critical_count?: number
+          high_cves?: number
+          id?: string
+          low_cves?: number
+          medium_cves?: number
+          organization_id?: string
+          safe_count?: number
+          scanned_at?: string
+          total_assets?: number
+          triggered_by?: string
+          truncated_rules?: Json
+          warning_count?: number
+        }
+        Relationships: []
+      }
+      surface_scan_jobs: {
+        Row: {
+          authorization_confirmed: boolean
+          completed_at: string | null
+          created_at: string
+          error_message: string | null
+          hosting_context: string
+          hostname: string | null
+          id: string
+          normalized_target: string
+          organization_id: string
+          port: number | null
+          protocol: string | null
+          raw_target: string
+          requested_by: string | null
+          resolved_ips: string[]
+          root_domain: string | null
+          scan_profile: string
+          shodan_status: string
+          started_at: string | null
+          status: string
+          target_type: string
+        }
+        Insert: {
+          authorization_confirmed?: boolean
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          hosting_context?: string
+          hostname?: string | null
+          id?: string
+          normalized_target: string
+          organization_id: string
+          port?: number | null
+          protocol?: string | null
+          raw_target: string
+          requested_by?: string | null
+          resolved_ips?: string[]
+          root_domain?: string | null
+          scan_profile?: string
+          shodan_status?: string
+          started_at?: string | null
+          status?: string
+          target_type: string
+        }
+        Update: {
+          authorization_confirmed?: boolean
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          hosting_context?: string
+          hostname?: string | null
+          id?: string
+          normalized_target?: string
+          organization_id?: string
+          port?: number | null
+          protocol?: string | null
+          raw_target?: string
+          requested_by?: string | null
+          resolved_ips?: string[]
+          root_domain?: string | null
+          scan_profile?: string
+          shodan_status?: string
+          started_at?: string | null
+          status?: string
+          target_type?: string
+        }
+        Relationships: []
+      }
+      surface_scan_monitored_ips: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          discovered_from: string | null
+          discovered_via: string
+          entry_type: string
+          id: string
+          input_value: string
+          ip_end: string
+          ip_start: string
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          discovered_from?: string | null
+          discovered_via?: string
+          entry_type: string
+          id?: string
+          input_value: string
+          ip_end?: string
+          ip_start?: string
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          discovered_from?: string | null
+          discovered_via?: string
+          entry_type?: string
+          id?: string
+          input_value?: string
+          ip_end?: string
+          ip_start?: string
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       user_preferences: {
         Row: {
@@ -1731,10 +2885,24 @@ export type Database = {
         Args: { _user_id: string }
         Returns: boolean
       }
+      enqueue_cve_enrichment: {
+        Args: { _cves: string[]; _org_id: string; _source: string }
+        Returns: undefined
+      }
       get_current_user_type: { Args: never; Returns: string }
+      get_my_module_permissions: { Args: never; Returns: Json }
       get_user_roles: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"][]
+      }
+      has_module_permission: {
+        Args: {
+          _action: string
+          _module: string
+          _subsection: string
+          _user_id: string
+        }
+        Returns: boolean
       }
       has_role: {
         Args: {
