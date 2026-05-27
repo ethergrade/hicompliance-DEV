@@ -30,15 +30,7 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
   const [compareYear, setCompareYear] = useState<string>('');
 
   const handleSaveSnapshot = () => {
-    const catData = currentCategories.map(c => ({
-      name: c.name,
-      score: c.score,
-      answered: c.completed,
-      total: c.questions,
-    }));
-    const totalAnswered = currentCategories.reduce((a, c) => a + c.completed, 0);
-    const totalQuestions = currentCategories.reduce((a, c) => a + c.questions, 0);
-    saveSnapshot(currentYear, catData, overallScore, totalAnswered, totalQuestions);
+    saveSnapshot();
   };
 
   const selectedSnapshot = useMemo(() => {

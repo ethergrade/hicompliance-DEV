@@ -1,16 +1,35 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { riskAnalysisApi } from '@/lib/api';
+import { supabase } from '@/integrations/supabase/client';
+import type {
+  RiskAnalysisItem,
+  StoreRiskAnalysisRequest,
+} from '@/types/api';
 import { 
   RiskAnalysisAsset, 
-  RiskAnalysisInsert, 
-  RiskAnalysisUpdate,
   ThreatSource,
   ControlScores,
   AssetSummary
 } from '@/types/riskAnalysis';
 import { SECURITY_CONTROLS } from '@/data/securityControls';
- import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
+
+/** Map an API RiskAnalysisItem to the hook's local RiskAnalysisAsset shape */
+function toAsset(item: RiskAnalysisItem, orgId: string): RiskAnalysisAsset {
+  return {
+    id: item.id,
+    organization_id: orgId,
+    asset_name: item.asset_name,
+    threat_source: item.threat_source as ThreatSource,
+    control_scores: (item.control_scores || {}) as ControlScores,
+    risk_score: item.risk_score ?? 0,
+    notes: item.notes ?? null,
+    created_at: item.created_at ?? '',
+    updated_at: item.updated_at ?? '',
+    created_by: null,
+  };
+}
 
 export const useRiskAnalysis = () => {
   const [assets, setAssets] = useState<RiskAnalysisAsset[]>([]);
@@ -29,21 +48,8 @@ export const useRiskAnalysis = () => {
       setLoading(true);
       setOrganizationId(clientOrgId);
 
-      const { data, error } = await supabase
-        .from('risk_analysis')
-        .select('*')
-        .eq('organization_id', clientOrgId)
-        .order('asset_name')
-        .order('threat_source');
-
-      if (error) throw error;
-
-      // Parse control_scores from JSON
-      const parsedAssets = (data || []).map(asset => ({
-        ...asset,
-        control_scores: (asset.control_scores || {}) as ControlScores,
-      })) as RiskAnalysisAsset[];
-
+      const items = await riskAnalysisApi.list(clientOrgId);
+      const parsedAssets = (items || []).map(item => toAsset(item, clientOrgId));
       setAssets(parsedAssets);
     } catch (error) {
       console.error('Error loading risk analysis:', error);
@@ -83,73 +89,59 @@ export const useRiskAnalysis = () => {
 
     try {
       setSaving(true);
-      const { data: user } = await supabase.auth.getUser();
 
-      const newAsset: RiskAnalysisInsert = {
-        organization_id: organizationId,
+      const payload: StoreRiskAnalysisRequest = {
         asset_name: assetName,
         threat_source: threatSource,
         control_scores: {},
         risk_score: 0,
-        created_by: user.user?.id || null,
       };
 
-      const { data, error } = await supabase
-        .from('risk_analysis')
-        .insert(newAsset)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // If syncToInfrastructure is enabled, also create in critical_infrastructure
-      if (syncToInfrastructure) {
-        // Get current infrastructure assets to generate next ID
-        const { data: infraAssets } = await supabase
-          .from('critical_infrastructure')
-          .select('asset_id')
-          .eq('organization_id', organizationId)
-          .order('asset_id');
-
-        // Generate next asset_id (C-01, C-02, etc.)
-        let nextNumber = 1;
-        if (infraAssets && infraAssets.length > 0) {
-          const numbers = infraAssets
-            .map(a => {
-              const match = a.asset_id.match(/C-(\d+)/);
-              return match ? parseInt(match[1], 10) : 0;
-            })
-            .filter(n => !isNaN(n));
-          nextNumber = Math.max(...numbers, 0) + 1;
-        }
-        const newAssetId = `C-${String(nextNumber).padStart(2, '0')}`;
-
-        const { error: infraError } = await supabase
-          .from('critical_infrastructure')
-          .insert({
-            organization_id: organizationId,
-            asset_id: newAssetId,
-            component_name: assetName,
-            created_by: user.user?.id || null,
-          });
-
-        if (infraError) {
-          console.error('Error syncing to infrastructure:', infraError);
-          toast.warning('Asset creato ma sincronizzazione con Infrastruttura fallita');
-        } else {
-          toast.success(`Asset "${assetName}" creato e sincronizzato (${newAssetId})`);
-        }
-      }
-
-      const insertedAsset = {
-        ...data,
-        control_scores: (data.control_scores || {}) as ControlScores,
-      } as RiskAnalysisAsset;
+      const created = await riskAnalysisApi.create(organizationId, payload);
+      const insertedAsset = toAsset(created, organizationId);
       
       setAssets(prev => [...prev, insertedAsset]);
-      if (!syncToInfrastructure) {
+
+      // If syncToInfrastructure is enabled, also create in critical_infrastructure
+      // (no API endpoint for critical infrastructure — use supabase, warn on failure)
+      if (syncToInfrastructure) {
+        try {
+          const { data: infraAssets } = await supabase
+            .from('critical_infrastructure')
+            .select('asset_id')
+            .eq('organization_id', organizationId)
+            .order('asset_id');
+
+          let nextNumber = 1;
+          if (infraAssets && infraAssets.length > 0) {
+            const numbers = infraAssets
+              .map((a: any) => {
+                const match = a.asset_id.match(/C-(\d+)/);
+                return match ? parseInt(match[1], 10) : 0;
+              })
+              .filter((n: number) => !isNaN(n));
+            nextNumber = Math.max(...numbers, 0) + 1;
+          }
+          const newAssetId = `C-${String(nextNumber).padStart(2, '0')}`;
+
+          const { error: infraError } = await supabase
+            .from('critical_infrastructure')
+            .insert({
+              organization_id: organizationId,
+              asset_id: newAssetId,
+              component_name: assetName,
+            });
+
+          if (infraError) throw infraError;
+          toast.success(`Asset "${assetName}" creato e sincronizzato (${newAssetId})`);
+        } catch (infraErr) {
+          console.error('Error syncing to infrastructure:', infraErr);
+          toast.warning('Asset creato ma sincronizzazione con Infrastruttura fallita');
+        }
+      } else {
         toast.success(`Asset "${assetName}" aggiunto`);
       }
+
       return insertedAsset;
     } catch (error) {
       console.error('Error adding asset:', error);
@@ -160,25 +152,21 @@ export const useRiskAnalysis = () => {
     }
   }, [organizationId, assets]);
 
-  const updateAsset = useCallback(async (id: string, updates: RiskAnalysisUpdate) => {
+  const updateAsset = useCallback(async (id: string, updates: { asset_name?: string; threat_source?: ThreatSource; control_scores?: ControlScores; risk_score?: number; notes?: string | null }) => {
+    if (!organizationId) return;
     try {
       setSaving(true);
 
       // If updating control_scores, recalculate risk_score
-      let finalUpdates = { ...updates };
+      let finalUpdates: Partial<{ asset_name: string; threat_source: ThreatSource; control_scores: Record<string, unknown>; risk_score: number; notes: string | null }> = { ...updates };
       if (updates.control_scores) {
         finalUpdates.risk_score = calculateRiskScore(updates.control_scores);
       }
 
-      const { error } = await supabase
-        .from('risk_analysis')
-        .update(finalUpdates)
-        .eq('id', id);
-
-      if (error) throw error;
+      await riskAnalysisApi.update(organizationId, id, finalUpdates as any);
 
       setAssets(prev => prev.map(asset => 
-        asset.id === id ? { ...asset, ...finalUpdates } : asset
+        asset.id === id ? { ...asset, ...updates, risk_score: finalUpdates.risk_score ?? updates.risk_score ?? asset.risk_score } : asset
       ));
     } catch (error) {
       console.error('Error updating asset:', error);
@@ -187,7 +175,7 @@ export const useRiskAnalysis = () => {
     } finally {
       setSaving(false);
     }
-  }, []);
+  }, [organizationId]);
 
   const updateControlScore = useCallback(async (
     id: string, 
@@ -206,38 +194,31 @@ export const useRiskAnalysis = () => {
   }, [assets, updateAsset]);
 
   const deleteAsset = useCallback(async (id: string) => {
+    if (!organizationId) return;
     try {
       setSaving(true);
-      const asset = assets.find(a => a.id === id);
 
-      const { error } = await supabase
-        .from('risk_analysis')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      await riskAnalysisApi.delete(organizationId, id);
 
       setAssets(prev => prev.filter(a => a.id !== id));
-      toast.success(`Asset eliminato`);
+      toast.success('Asset eliminato');
     } catch (error) {
       console.error('Error deleting asset:', error);
       toast.error('Errore nell\'eliminazione');
     } finally {
       setSaving(false);
     }
-  }, [assets]);
+  }, [organizationId]);
 
   const deleteAssetAllSources = useCallback(async (assetName: string) => {
+    if (!organizationId) return;
     try {
       setSaving(true);
 
-      const { error } = await supabase
-        .from('risk_analysis')
-        .delete()
-        .eq('organization_id', organizationId)
-        .eq('asset_name', assetName);
-
-      if (error) throw error;
+      const matching = assets.filter(a => a.asset_name === assetName);
+      for (const a of matching) {
+        await riskAnalysisApi.delete(organizationId, a.id);
+      }
 
       setAssets(prev => prev.filter(a => a.asset_name !== assetName));
       toast.success(`Asset "${assetName}" eliminato con tutte le fonti`);
@@ -247,7 +228,7 @@ export const useRiskAnalysis = () => {
     } finally {
       setSaving(false);
     }
-  }, [organizationId]);
+  }, [organizationId, assets]);
 
   // Get unique asset names with their summary
   const getAssetSummaries = useCallback((): AssetSummary[] => {

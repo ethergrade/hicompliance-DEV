@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { playbookCompletionsApi } from '@/lib/api';
+import type { PlaybookCompletion as ApiPlaybookCompletion } from '@/types/api';
 import { Playbook, calculatePlaybookProgress } from '@/types/playbook';
- import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 export interface PlaybookCompletion {
   id: string;
@@ -29,6 +30,25 @@ interface UsePlaybookCompletionsReturn {
   getCompletion: (playbookId: string) => PlaybookCompletion | undefined;
 }
 
+/** Map API PlaybookCompletion to the hook's local shape */
+function toLocalCompletion(item: ApiPlaybookCompletion, orgId: string): PlaybookCompletion {
+  return {
+    id: item.id,
+    organization_id: orgId,
+    user_id: '', // Backend manages user via auth token — not returned in response
+    playbook_id: item.playbook_id,
+    playbook_title: item.playbook_title ?? '',
+    playbook_category: item.playbook_category ?? '',
+    playbook_severity: item.playbook_severity ?? '',
+    progress_percentage: item.progress_percentage ?? 0,
+    data: (item.data as unknown as Playbook) ?? ({} as Playbook),
+    started_at: item.started_at ?? '',
+    completed_at: item.completed_at ?? null,
+    created_at: item.created_at ?? '',
+    updated_at: item.updated_at ?? '',
+  };
+}
+
 export const usePlaybookCompletions = (): UsePlaybookCompletionsReturn => {
   const [completions, setCompletions] = useState<PlaybookCompletion[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -42,28 +62,12 @@ export const usePlaybookCompletions = (): UsePlaybookCompletionsReturn => {
     setError(null);
 
     try {
-      const { data, error: fetchError } = await supabase
-        .from('playbook_completions')
-        .select('*')
-        .eq('organization_id', clientOrgId)
-        .order('updated_at', { ascending: false });
-
-      if (fetchError) {
-        console.error('Error fetching completions:', fetchError);
-        setError('Errore nel caricamento dei playbook');
-        return;
-      }
-
-      // Parse JSONB data field
-      const parsed = (data || []).map(item => ({
-        ...item,
-        data: item.data as unknown as Playbook
-      }));
-
+      const items = await playbookCompletionsApi.list(clientOrgId);
+      const parsed = (items || []).map(item => toLocalCompletion(item, clientOrgId));
       setCompletions(parsed);
     } catch (err) {
-      console.error('Unexpected error:', err);
-      setError('Errore imprevisto');
+      console.error('Error fetching completions:', err);
+      setError('Errore nel caricamento dei playbook');
     } finally {
       setIsLoading(false);
     }
@@ -71,12 +75,6 @@ export const usePlaybookCompletions = (): UsePlaybookCompletionsReturn => {
 
   const upsertCompletion = useCallback(async (playbook: Playbook): Promise<PlaybookCompletion | null> => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        console.error('User not authenticated');
-        return null;
-      }
-
       if (!clientOrgId) {
         console.error('No organization selected');
         return null;
@@ -86,93 +84,65 @@ export const usePlaybookCompletions = (): UsePlaybookCompletionsReturn => {
       const isComplete = progress.percentage === 100;
       const now = new Date().toISOString();
 
-      // Check if record exists
-      const { data: existing } = await supabase
-        .from('playbook_completions')
-        .select('id, started_at, completed_at')
-        .eq('organization_id', clientOrgId)
-        .eq('user_id', user.id)
-        .eq('playbook_id', playbook.id)
-        .maybeSingle();
+      // Find existing completion for this playbook
+      const existing = completions.find(c => c.playbook_id === playbook.id);
 
-      const completionData = {
-        organization_id: clientOrgId,
-        user_id: user.id,
+      const payload = {
         playbook_id: playbook.id,
         playbook_title: playbook.title,
         playbook_category: playbook.category,
         playbook_severity: playbook.severity as string,
         progress_percentage: progress.percentage,
-        data: JSON.parse(JSON.stringify(playbook)),
-        updated_at: now,
-        // Only set completed_at once when first reaching 100%
-        completed_at: isComplete && !existing?.completed_at ? now : existing?.completed_at || null,
-        // Keep original started_at or set new one
+        data: JSON.parse(JSON.stringify(playbook)) as Record<string, unknown>,
         started_at: existing?.started_at || now,
+        completed_at: isComplete && !existing?.completed_at ? now : existing?.completed_at || null,
       };
 
-      let result;
+      let result: ApiPlaybookCompletion;
       if (existing) {
-        // Update existing record
-        const { data, error } = await supabase
-          .from('playbook_completions')
-          .update(completionData)
-          .eq('id', existing.id)
-          .select()
-          .single();
-
-        if (error) throw error;
-        result = data;
+        result = await playbookCompletionsApi.update(clientOrgId, existing.id, payload);
       } else {
-        // Insert new record
-        const { data, error } = await supabase
-          .from('playbook_completions')
-          .insert(completionData)
-          .select()
-          .single();
-
-        if (error) throw error;
-        result = data;
+        result = await playbookCompletionsApi.create(clientOrgId, payload);
       }
+
+      const localResult = toLocalCompletion(result, clientOrgId);
 
       // Update local state
       setCompletions(prev => {
         const idx = prev.findIndex(c => c.playbook_id === playbook.id);
-        const parsed = { ...result, data: result.data as Playbook };
         if (idx >= 0) {
           const updated = [...prev];
-          updated[idx] = parsed;
+          updated[idx] = localResult;
           return updated;
         }
-        return [parsed, ...prev];
+        return [localResult, ...prev];
       });
 
-      return { ...result, data: result.data as Playbook };
+      return localResult;
     } catch (err) {
       console.error('Error upserting completion:', err);
       return null;
     }
-  }, [clientOrgId]);
+  }, [clientOrgId, completions]);
 
   const deleteCompletion = useCallback(async (playbookId: string): Promise<boolean> => {
     try {
       if (!clientOrgId) return false;
 
-      const { error } = await supabase
-        .from('playbook_completions')
-        .delete()
-        .eq('organization_id', clientOrgId)
-        .eq('playbook_id', playbookId);
+      const existing = completions.find(c => c.playbook_id === playbookId);
+      if (!existing) {
+        // Already gone from state — silently succeed
+        return true;
+      }
 
-      if (error) throw error;
-
+      await playbookCompletionsApi.delete(clientOrgId, existing.id);
       setCompletions(prev => prev.filter(c => c.playbook_id !== playbookId));
       return true;
     } catch (err) {
       console.error('Error deleting completion:', err);
       return false;
     }
-  }, [clientOrgId]);
+  }, [clientOrgId, completions]);
 
   const getCompletion = useCallback((playbookId: string): PlaybookCompletion | undefined => {
     return completions.find(c => c.playbook_id === playbookId);
@@ -195,4 +165,3 @@ export const usePlaybookCompletions = (): UsePlaybookCompletionsReturn => {
     getCompletion,
   };
 };
-

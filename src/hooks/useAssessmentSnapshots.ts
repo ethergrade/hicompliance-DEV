@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { useClientContext } from '@/contexts/ClientContext';
+import { assessmentV2Api } from '@/lib/api';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { toast } from 'sonner';
+import type { AssessmentSnapshot as ApiAssessmentSnapshot } from '@/types/api';
 
 export interface CategorySnapshot {
   name: string;
@@ -22,10 +22,24 @@ export interface AssessmentSnapshot {
   created_at: string;
 }
 
+/** Map API snapshot (Record category_scores) to local shape (array category_scores) */
+function toSnapshot(item: ApiAssessmentSnapshot, orgId: string): AssessmentSnapshot {
+  return {
+    id: item.id,
+    organization_id: orgId,
+    snapshot_year: item.snapshot_year,
+    category_scores: item.category_scores
+      ? Object.values(item.category_scores)
+      : [],
+    overall_score: item.overall_score,
+    total_answered: item.total_answered,
+    total_questions: item.total_questions,
+    created_at: item.created_at,
+  };
+}
+
 export const useAssessmentSnapshots = () => {
-  const { user } = useAuth();
-  const { selectedOrganization, userOrganizationId } = useClientContext();
-  const orgId = selectedOrganization?.id || userOrganizationId;
+  const { organizationId: orgId } = useClientOrganization();
 
   const [snapshots, setSnapshots] = useState<AssessmentSnapshot[]>([]);
   const [loading, setLoading] = useState(false);
@@ -35,19 +49,8 @@ export const useAssessmentSnapshots = () => {
     if (!orgId) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('assessment_snapshots')
-        .select('*')
-        .eq('organization_id', orgId)
-        .order('snapshot_year', { ascending: false });
-
-      if (error) throw error;
-      setSnapshots(
-        (data || []).map((row: any) => ({
-          ...row,
-          category_scores: Array.isArray(row.category_scores) ? row.category_scores : [],
-        }))
-      );
+      const items = await assessmentV2Api.snapshots(orgId);
+      setSnapshots((items || []).map(item => toSnapshot(item, orgId)));
     } catch (err) {
       console.error('Error loading snapshots:', err);
     } finally {
@@ -59,43 +62,21 @@ export const useAssessmentSnapshots = () => {
     loadSnapshots();
   }, [loadSnapshots]);
 
-  const saveSnapshot = useCallback(
-    async (
-      year: number,
-      categoryData: { name: string; score: number; answered: number; total: number }[],
-      overallScore: number,
-      totalAnswered: number,
-      totalQuestions: number
-    ) => {
-      if (!orgId || !user) return;
-      setSaving(true);
-      try {
-        const { error } = await supabase
-          .from('assessment_snapshots')
-          .upsert(
-            {
-              organization_id: orgId,
-              snapshot_year: year,
-              category_scores: categoryData as any,
-              overall_score: overallScore,
-              total_answered: totalAnswered,
-              total_questions: totalQuestions,
-              created_by: user.id,
-            },
-            { onConflict: 'organization_id,snapshot_year' }
-          );
-        if (error) throw error;
-        toast.success(`Snapshot ${year} salvato con successo`);
-        await loadSnapshots();
-      } catch (err: any) {
-        toast.error('Errore nel salvataggio dello snapshot');
-        console.error(err);
-      } finally {
-        setSaving(false);
-      }
-    },
-    [orgId, user, loadSnapshots]
-  );
+  /** Trigger a snapshot recalculation on the backend (no manual data needed) */
+  const saveSnapshot = useCallback(async () => {
+    if (!orgId) return;
+    setSaving(true);
+    try {
+      await assessmentV2Api.createSnapshot(orgId);
+      toast.success('Snapshot ricalcolato e salvato con successo');
+      await loadSnapshots();
+    } catch (err: any) {
+      toast.error('Errore nel salvataggio dello snapshot');
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  }, [orgId, loadSnapshots]);
 
   return { snapshots, loading, saving, saveSnapshot };
 };
