@@ -5,8 +5,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
+import { irpApi } from '@/lib/api/irp';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 interface EmergencyContactFormProps {
   onContactAdded: () => void;
@@ -25,82 +26,47 @@ export const EmergencyContactForm: React.FC<EmergencyContactFormProps> = ({ onCo
     category: '',
     newCategory: ''
   });
-  const { toast } = useToast();
+  const { organizationId } = useClientOrganization();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!organizationId) {
+      toast.error('Organizzazione non trovata. Contatta l\'amministratore.');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // Get current user first
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
-      if (userError || !user) {
-        toast({
-          title: "Errore",
-          description: "Utente non autenticato",
-          variant: "destructive"
-        });
-        return;
-      }
-
-      // Get user's organization
-      const { data: userData, error: orgError } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('auth_user_id', user.id)
-        .single();
-
-      if (orgError || !userData?.organization_id) {
-        console.error('Organization error:', orgError);
-        toast({
-          title: "Errore",
-          description: "Organizzazione non trovata. Contatta l'amministratore.",
-          variant: "destructive"
-        });
-        return;
-      }
-
       const finalCategory = formData.category === 'new' ? formData.newCategory : formData.category;
       const fullName = `${formData.firstName} ${formData.lastName}`.trim();
 
-      const { error } = await supabase
-        .from('emergency_contacts')
-        .insert({
-          name: fullName,
-          role: formData.role,
-          phone: formData.phone,
-          email: formData.email,
-          category: finalCategory,
-          organization_id: userData.organization_id
-        });
-
-      if (error) throw error;
-
-      toast({
-        title: "Successo",
-        description: "Contatto di emergenza aggiunto con successo"
+      await irpApi.createEmergencyContact(organizationId, {
+        name: fullName,
+        role: formData.role,
+        phone: formData.phone,
+        email: formData.email,
+        category: finalCategory || undefined,
       });
 
-      setFormData({ 
-        firstName: '', 
-        lastName: '', 
-        role: '', 
-        phone: '', 
-        email: '', 
-        category: '', 
-        newCategory: '' 
+      toast.success('Contatto di emergenza aggiunto con successo');
+
+      setFormData({
+        firstName: '',
+        lastName: '',
+        role: '',
+        phone: '',
+        email: '',
+        category: '',
+        newCategory: ''
       });
       setShowNewCategory(false);
       setOpen(false);
       onContactAdded();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding contact:', error);
-      toast({
-        title: "Errore",
-        description: "Errore durante l'aggiunta del contatto",
-        variant: "destructive"
-      });
+      toast.error(error?.message || 'Errore durante l\'aggiunta del contatto');
     } finally {
       setLoading(false);
     }

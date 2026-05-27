@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { preferencesApi } from '@/lib/api/preferences';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { useClientContext } from '@/contexts/ClientContext';
-import type { Json } from '@/integrations/supabase/types';
 
 export interface UserPreferences {
   // Audit log preferences
@@ -11,11 +9,16 @@ export interface UserPreferences {
   auditLogDateFrom?: string;
   auditLogDateTo?: string;
   auditLogSortOrder?: 'asc' | 'desc';
-  
+
   // General view preferences
   defaultView?: string;
   itemsPerPage?: number;
-  
+
+  // Assessment / Remediation filter prefs
+  statusFilter?: string;
+  sortBy?: string;
+  selectedTimeframe?: string;
+
   // Other preferences can be added here
   [key: string]: unknown;
 }
@@ -27,113 +30,75 @@ interface UseUserPreferencesOptions {
 
 export const useUserPreferences = ({ preferenceKey, defaultPreferences = {} }: UseUserPreferencesOptions) => {
   const { user } = useAuth();
-  const { selectedOrganization } = useClientContext();
   const queryClient = useQueryClient();
   const [localPreferences, setLocalPreferences] = useState<UserPreferences>(defaultPreferences);
 
-  const organizationId = selectedOrganization?.id || null;
-
-  // Fetch preferences from database
-  const { data: dbPreferences, isLoading } = useQuery({
-    queryKey: ['user-preferences', user?.id, organizationId, preferenceKey],
+  // Fetch preferences from API
+  const { data: apiPreferences, isLoading } = useQuery({
+    queryKey: ['user-preferences', user?.id, preferenceKey],
     queryFn: async () => {
-      if (!user?.id || !organizationId) return null;
+      if (!user?.id) return null;
 
-      const { data, error } = await supabase
-        .from('user_preferences')
-        .select('preference_value')
-        .eq('user_id', user.id)
-        .eq('organization_id', organizationId)
-        .eq('preference_key', preferenceKey)
-        .maybeSingle();
-
-      if (error) throw error;
-      return (data?.preference_value ?? null) as UserPreferences | null;
+      try {
+        const result = await preferencesApi.get(preferenceKey);
+        return (result?.value ?? null) as UserPreferences | null;
+      } catch (_err) {
+        // Preference key not found yet → return null
+        return null;
+      }
     },
-    enabled: !!user?.id && !!organizationId,
+    enabled: !!user?.id,
   });
 
-  // Sync local state with database — use a ref for defaultPreferences to avoid infinite loops
+  // Sync local state with API — use a ref for defaultPreferences to avoid infinite loops
   const defaultPrefsRef = useRef(defaultPreferences);
 
   useEffect(() => {
-    if (dbPreferences) {
-      setLocalPreferences({ ...defaultPrefsRef.current, ...dbPreferences });
+    if (apiPreferences) {
+      setLocalPreferences({ ...defaultPrefsRef.current, ...apiPreferences });
     } else {
       setLocalPreferences(defaultPrefsRef.current);
     }
-  }, [dbPreferences]);
+  }, [apiPreferences]);
 
   // Save preferences mutation
   const saveMutation = useMutation({
     mutationFn: async (preferences: UserPreferences) => {
-      if (!user?.id || !organizationId) throw new Error('User or organization not available');
+      if (!user?.id) throw new Error('User not available');
 
-      // Check if preference exists
-      const { data: existing } = await supabase
-        .from('user_preferences')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('organization_id', organizationId)
-        .eq('preference_key', preferenceKey)
-        .maybeSingle();
-
-      const prefValue = preferences as unknown as Json;
-
-      if (existing) {
-        // Update existing
-        const { error: updateError } = await supabase
-          .from('user_preferences')
-          .update({ preference_value: prefValue })
-          .eq('id', existing.id);
-        if (updateError) throw updateError;
-      } else {
-        // Insert new
-        const { error: insertError } = await supabase
-          .from('user_preferences')
-          .insert({
-            user_id: user.id,
-            organization_id: organizationId,
-            preference_key: preferenceKey,
-            preference_value: prefValue,
-          });
-        if (insertError) throw insertError;
-      }
-
+      await preferencesApi.set(preferenceKey, preferences);
       return preferences;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ 
-        queryKey: ['user-preferences', user?.id, organizationId, preferenceKey] 
+      queryClient.invalidateQueries({
+        queryKey: ['user-preferences', user?.id, preferenceKey],
       });
     },
   });
 
   // Update preferences (debounced save)
   const updatePreferences = useCallback((updates: Partial<UserPreferences>) => {
-    setLocalPreferences(prev => {
+    setLocalPreferences((prev) => {
       const newPrefs = { ...prev, ...updates };
       saveMutation.mutate(newPrefs);
       return newPrefs;
     });
   }, [saveMutation]);
 
-  // Clear preferences
+  // Clear preferences for this key (reset to defaults)
   const clearPreferences = useCallback(async () => {
-    setLocalPreferences(defaultPreferences);
-    if (user?.id && organizationId) {
-      await supabase
-        .from('user_preferences')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('organization_id', organizationId)
-        .eq('preference_key', preferenceKey);
-      
-      queryClient.invalidateQueries({ 
-        queryKey: ['user-preferences', user?.id, organizationId, preferenceKey] 
+    if (!user?.id) return;
+
+    try {
+      await preferencesApi.set(preferenceKey, defaultPreferences);
+      setLocalPreferences(defaultPreferences);
+      queryClient.invalidateQueries({
+        queryKey: ['user-preferences', user.id, preferenceKey],
       });
+    } catch (err) {
+      console.error('Error clearing preferences:', err);
     }
-  }, [user?.id, organizationId, preferenceKey, defaultPreferences, queryClient]);
+  }, [user?.id, preferenceKey, defaultPreferences, queryClient]);
 
   return {
     preferences: localPreferences,
@@ -144,40 +109,30 @@ export const useUserPreferences = ({ preferenceKey, defaultPreferences = {} }: U
   };
 };
 
-// Standalone function to reset all preferences for the current user
+// ─── Reset all preferences ─────────────────────────────────────────────────
+
+/**
+ * Standalone hook to reset preferences for the current user.
+ * The API does not expose a bulk-delete endpoint, so this invalidates
+ * all cached preference queries and consumers will re-fetch with their
+ * default values.
+ */
 export const useResetAllPreferences = () => {
   const { user } = useAuth();
-  const { selectedOrganization } = useClientContext();
   const queryClient = useQueryClient();
 
-  const resetAllPreferences = useCallback(async (currentOrgOnly: boolean = false) => {
+  const resetAllPreferences = useCallback(async (_currentOrgOnly: boolean = false) => {
     if (!user?.id) return false;
 
     try {
-      let query = supabase
-        .from('user_preferences')
-        .delete()
-        .eq('user_id', user.id);
-
-      if (currentOrgOnly && selectedOrganization?.id) {
-        query = query.eq('organization_id', selectedOrganization.id);
-      }
-
-      const { error } = await query;
-
-      if (error) {
-        console.error('Error resetting preferences:', error);
-        return false;
-      }
-
-      // Invalidate all preference queries
+      // Invalidate all preference queries so every consumer re-fetches defaults
       queryClient.invalidateQueries({ queryKey: ['user-preferences'] });
       return true;
     } catch (error) {
       console.error('Error resetting preferences:', error);
       return false;
     }
-  }, [user?.id, selectedOrganization?.id, queryClient]);
+  }, [user?.id, queryClient]);
 
   return { resetAllPreferences };
 };
