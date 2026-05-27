@@ -6,6 +6,7 @@ import {
   makeSupabaseClients,
 } from '../_shared/surface-scan-utils.ts';
 import { normalizeText } from '../_shared/darkrisk-utils.ts';
+import { isEmailSelectorCoverageKind } from '../_shared/darkrisk-query-kind.ts';
 
 type Severity = 'info' | 'low' | 'medium' | 'high' | 'critical';
 type Confidence = 'low' | 'medium' | 'high';
@@ -98,6 +99,9 @@ type DtiSensitiveHitRow = {
   tag: string | null;
   masked_value: string | null;
   clear_value: string | null;
+  match_policy?: string | null;
+  extraction_confidence?: string | null;
+  evidence_scope?: string | null;
 };
 
 type ReportFinding = {
@@ -802,7 +806,7 @@ serve(async (req: Request) => {
         .limit(2000),
       adminClient
         .from('darkrisk_dti_sensitive_hits' as any)
-        .select('source, source_label, query_kind, query_term, asset_scope, tag, masked_value, clear_value')
+        .select('source, source_label, query_kind, query_term, asset_scope, tag, masked_value, clear_value, match_policy, extraction_confidence, evidence_scope')
         .eq('organization_id', customerId)
         .eq('scan_run_id', scanRun.id)
         .order('created_at', { ascending: false })
@@ -992,8 +996,8 @@ serve(async (req: Request) => {
     const dtiSourceRowsForReport = dtiSourceRuns.map((row) => {
       const queryKind = safeText(String(row.query_kind || ''), 40);
       if (queryKind === 'at_domain_tld') dtiQueryCoverage.at_domain_tld += 1;
-      if (queryKind === 'selector') dtiQueryCoverage.selector += 1;
-      if (queryKind === 'email_selector') dtiQueryCoverage.email_selector += 1;
+      if (isEmailSelectorCoverageKind(queryKind, String(row.query_term || ''))) dtiQueryCoverage.email_selector += 1;
+      else if (queryKind === 'selector') dtiQueryCoverage.selector += 1;
       return {
         source: safeText(presentDarkRiskLabel(String(row.source_label || row.source || 'DarkRisk360')), 80),
         query_kind: queryKind || '-',
@@ -1070,6 +1074,9 @@ serve(async (req: Request) => {
           tag,
           value: value || '-',
           masked_value: maskedValue || '-',
+          match_policy: safeText(String(hit.match_policy || '-'), 40),
+          extraction_confidence: safeText(String(hit.extraction_confidence || '-'), 20),
+          evidence_scope: safeText(String(hit.evidence_scope || '-'), 30),
         };
       })
       .filter((row): row is NonNullable<typeof row> => Boolean(row))

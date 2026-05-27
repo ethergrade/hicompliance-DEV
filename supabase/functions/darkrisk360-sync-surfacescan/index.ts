@@ -34,6 +34,7 @@ import {
   getFirecrawlSourceTemplates,
   intelxDeepFetch,
 } from '../_shared/darkrisk-dti-enrichment.ts';
+import { isEmailSelectorCoverageKind } from '../_shared/darkrisk-query-kind.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
@@ -228,7 +229,7 @@ type IntelxSelectorDefinition = {
 
 type IntelxQueryTerm = {
   term: string;
-  kind: 'selector' | 'at_domain_tld';
+  kind: 'selector' | 'at_domain_tld' | 'email_selector';
   selectorNormalized: string | null;
   linkedAssetNormalized: string | null;
 };
@@ -376,12 +377,13 @@ function buildIntelxQueryTerms(
     }
     const term = normalizeText(selector.normalized);
     if (!term) continue;
-    const key = `selector:${term.toLowerCase()}`;
+    const queryKind: IntelxQueryTerm['kind'] = selector.type === 'email' ? 'email_selector' : 'selector';
+    const key = `${queryKind}:${term.toLowerCase()}`;
     if (dedupe.has(key)) continue;
     dedupe.add(key);
     terms.push({
       term,
-      kind: 'selector',
+      kind: queryKind,
       selectorNormalized: selector.normalized,
       linkedAssetNormalized: selector.normalized,
     });
@@ -406,6 +408,170 @@ function parseIdentityEmailSelectors(value: unknown): string[] {
     emails.push(validation.normalized);
   }
   return emails.slice(0, 80);
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const invalidPasswordTokens = new Set([
+  'query',
+  'selector',
+  'password',
+  'passwd',
+  'pwd',
+  'secret',
+  'token',
+  'metadata',
+  'unknown',
+  'null',
+  'none',
+  'n/a',
+  'na',
+  'true',
+  'false',
+]);
+
+function isValidStrictPasswordValue(value: string): boolean {
+  const normalized = normalizeText(value);
+  if (!normalized || normalized.length < 4 || normalized.length > 120) return false;
+  if (invalidPasswordTokens.has(normalized.toLowerCase())) return false;
+  if (/^[*_#\-.]+$/.test(normalized)) return false;
+  return true;
+}
+
+function hasTightEmailPasswordContext(sourceText: string, email: string, password: string): boolean {
+  const safeEmail = escapeRegex(normalizeText(email).toLowerCase());
+  const safePassword = escapeRegex(normalizeText(password));
+  if (!safeEmail || !safePassword) return false;
+
+  const lines = sourceText.split(/\r?\n/).slice(0, 2000);
+  for (const line of lines) {
+    const lowered = line.toLowerCase();
+    if (!lowered.includes(email.toLowerCase())) continue;
+    if (!lowered.includes(password.toLowerCase())) continue;
+    const emailIdx = lowered.indexOf(email.toLowerCase());
+    const pwdIdx = lowered.indexOf(password.toLowerCase());
+    if (emailIdx >= 0 && pwdIdx >= 0 && Math.abs(emailIdx - pwdIdx) <= 180) {
+      return true;
+    }
+  }
+
+  const nearRegex = new RegExp(
+    `(?:${safeEmail}[\\s\\S]{0,180}${safePassword}|${safePassword}[\\s\\S]{0,180}${safeEmail})`,
+    'i',
+  );
+  return nearRegex.test(sourceText);
+}
+
+function indicatorsFromSensitiveHits(
+  hits: ReturnType<typeof extractSensitiveValueHits>,
+): ReturnType<typeof detectSensitiveIndicators> {
+  const counters = {
+    domains: 0,
+    passwords: 0,
+    addresses: 0,
+    credit_cards: 0,
+    phone_numbers: 0,
+    total_hits: 0,
+    tags: [] as string[],
+  };
+
+  const byTag = new Map<string, Set<string>>();
+  for (const hit of hits) {
+    const tag = normalizeText(String(hit.tag || '')).toLowerCase();
+    const value = normalizeText(String(hit.value || '')).toLowerCase();
+    if (!tag || !value) continue;
+    if (!byTag.has(tag)) byTag.set(tag, new Set());
+    byTag.get(tag)!.add(value);
+  }
+
+  const readCount = (tag: string): number => byTag.get(tag)?.size || 0;
+  counters.domains = readCount('domains');
+  counters.passwords = readCount('passwords');
+  counters.addresses = readCount('addresses');
+  counters.credit_cards = readCount('credit_cards');
+  counters.phone_numbers = readCount('phone_numbers');
+  counters.total_hits =
+    counters.domains +
+    counters.passwords +
+    counters.addresses +
+    counters.credit_cards +
+    counters.phone_numbers;
+
+  if (counters.domains > 0) counters.tags.push('domains');
+  if (counters.passwords > 0) counters.tags.push('passwords');
+  if (counters.addresses > 0) counters.tags.push('addresses');
+  if (counters.credit_cards > 0) counters.tags.push('credit_cards');
+  if (counters.phone_numbers > 0) counters.tags.push('phone_numbers');
+
+  return counters;
+}
+
+function applyStrictSensitivePolicy(params: {
+  queryKind: string | null | undefined;
+  queryTerm: string | null | undefined;
+  extractionSource: string;
+  sourceText: string;
+  hits: ReturnType<typeof extractSensitiveValueHits>;
+}): {
+  hits: ReturnType<typeof extractSensitiveValueHits>;
+  strictPasswordHits: number;
+  metadataOnlyHits: number;
+  matchPolicy: 'strict_pair' | 'standard';
+  extractionConfidence: 'low' | 'medium' | 'high';
+  evidenceScope: 'identity' | 'domain';
+} {
+  const isIdentity = isEmailSelectorCoverageKind(params.queryKind, params.queryTerm);
+  const evidenceScope: 'identity' | 'domain' = isIdentity ? 'identity' : 'domain';
+  const extractionSource = normalizeText(params.extractionSource).toLowerCase();
+  const extractionConfidence: 'low' | 'medium' | 'high' =
+    extractionSource === 'metadata'
+      ? 'low'
+      : extractionSource === 'preview' || extractionSource === 'view'
+      ? 'medium'
+      : 'high';
+
+  let strictPasswordHits = 0;
+  let metadataOnlyHits = 0;
+
+  if (!isIdentity) {
+    const cleaned = params.hits.filter((hit) => {
+      if (hit.tag !== 'passwords') return true;
+      return isValidStrictPasswordValue(hit.value);
+    });
+    strictPasswordHits = cleaned.filter((hit) => hit.tag === 'passwords').length;
+    return {
+      hits: cleaned,
+      strictPasswordHits,
+      metadataOnlyHits,
+      matchPolicy: 'standard',
+      extractionConfidence,
+      evidenceScope,
+    };
+  }
+
+  const email = normalizeText(String(params.queryTerm || '')).toLowerCase();
+  const filtered = params.hits.filter((hit) => {
+    if (hit.tag !== 'passwords') return true;
+    if (!isValidStrictPasswordValue(hit.value)) return false;
+    const isTight = hasTightEmailPasswordContext(params.sourceText, email, hit.value);
+    if (isTight) {
+      strictPasswordHits += 1;
+      return true;
+    }
+    metadataOnlyHits += 1;
+    return false;
+  });
+
+  return {
+    hits: filtered,
+    strictPasswordHits,
+    metadataOnlyHits,
+    matchPolicy: 'strict_pair',
+    extractionConfidence,
+    evidenceScope,
+  };
 }
 
 function normalizeDtiStatus(value: string | null | undefined): DtiSourceRunStatus {
@@ -487,6 +653,9 @@ async function persistSensitiveHits(
     selectorValue: string | null;
     extractionSource: string;
     hits: ReturnType<typeof extractSensitiveValueHits>;
+    matchPolicy: 'strict_pair' | 'standard';
+    extractionConfidence: 'low' | 'medium' | 'high';
+    evidenceScope: 'identity' | 'domain';
     warnings?: string[];
   },
 ): Promise<number> {
@@ -509,7 +678,10 @@ async function persistSensitiveHits(
       clear_value: hit.value,
       masked_value: hit.masked_value,
       match_type: 'regex',
+      match_policy: params.matchPolicy,
       extraction_source: params.extractionSource,
+      extraction_confidence: params.extractionConfidence,
+      evidence_scope: params.evidenceScope,
       context_excerpt: maskPotentialSecrets(hit.context).slice(0, 500),
       confidence: hit.tag === 'credit_cards' || hit.tag === 'passwords' ? 'high' : 'medium',
       metadata: {
@@ -1550,6 +1722,9 @@ serve(async (req: Request) => {
     let firecrawlEvidenceCreated = 0;
     let firecrawlFindingsCreated = 0;
     let firecrawlSensitiveHitsCreated = 0;
+    let identityEmailQueriesRun = 0;
+    let strictPasswordHits = 0;
+    let metadataOnlyHits = 0;
     const intelxWarnings: string[] = [];
 
     // Pre-compute recurrence counts to avoid O(n²) filter per finding
@@ -1756,6 +1931,7 @@ serve(async (req: Request) => {
 
     if (includeDtiExtended && isIntelxConfigured()) {
       for (const queryTerm of intelxQueryTerms) {
+        if (isEmailSelectorCoverageKind(queryTerm.kind, queryTerm.term)) identityEmailQueriesRun += 1;
         const sourceRunStartedAt = new Date().toISOString();
         const sourceRun = await createDtiSourceRun(adminClient, {
           organization_id: customerId,
@@ -1856,8 +2032,18 @@ serve(async (req: Request) => {
             }
 
             const sensitiveInput = `${title}\n${description}\n${queryTerm.term}\n${deepExtractionText}\n${JSON.stringify(record || {})}`.slice(0, 14_000);
-            const sensitiveIndicators = detectSensitiveIndicators(sensitiveInput);
-            const sensitiveValueHits = extractSensitiveValueHits(sensitiveInput, 20);
+            const sensitiveRawHits = extractSensitiveValueHits(sensitiveInput, 20);
+            const strictPolicy = applyStrictSensitivePolicy({
+              queryKind: queryTerm.kind,
+              queryTerm: queryTerm.term,
+              extractionSource: deepExtractionSource,
+              sourceText: sensitiveInput,
+              hits: sensitiveRawHits,
+            });
+            strictPasswordHits += strictPolicy.strictPasswordHits;
+            metadataOnlyHits += strictPolicy.metadataOnlyHits;
+            const sensitiveValueHits = strictPolicy.hits;
+            const sensitiveIndicators = indicatorsFromSensitiveHits(sensitiveValueHits);
             const severityBase = severityFromIntelxScore(Number.isFinite(xscore) ? xscore : null);
             const severity = boostSeverityForSensitiveData(severityBase, sensitiveIndicators);
             const findingType = intelxFindingTypeFromRecord(record, queryTerm.term);
@@ -1925,6 +2111,9 @@ serve(async (req: Request) => {
                   selector: queryTerm.selectorNormalized || null,
                   query_term: queryTerm.term,
                   query_kind: queryTerm.kind,
+                  match_policy: strictPolicy.matchPolicy,
+                  extraction_confidence: strictPolicy.extractionConfidence,
+                  evidence_scope: strictPolicy.evidenceScope,
                   sensitive_indicators: sensitiveIndicators,
                   deep_fetch: {
                     extraction_source: deepExtractionSource,
@@ -1980,6 +2169,9 @@ serve(async (req: Request) => {
                   xscore: Number.isFinite(xscore) ? xscore : null,
                   query_kind: queryTerm.kind,
                   query_term: queryTerm.term,
+                  match_policy: strictPolicy.matchPolicy,
+                  extraction_confidence: strictPolicy.extractionConfidence,
+                  evidence_scope: strictPolicy.evidenceScope,
                   extraction_source: deepExtractionSource,
                   sensitive_indicators: sensitiveIndicators,
                 },
@@ -2021,6 +2213,9 @@ serve(async (req: Request) => {
                   selector: queryTerm.selectorNormalized || null,
                   query_term: queryTerm.term,
                   query_kind: queryTerm.kind,
+                  match_policy: strictPolicy.matchPolicy,
+                  extraction_confidence: strictPolicy.extractionConfidence,
+                  evidence_scope: strictPolicy.evidenceScope,
                   category_hint: classifyThreatCategoryText(`${title} ${findingType} intelx`),
                   sensitive_indicators: sensitiveIndicators,
                   sensitive_data_detected: hasSensitiveIndicators(sensitiveIndicators),
@@ -2047,6 +2242,9 @@ serve(async (req: Request) => {
               selectorValue: queryTerm.selectorNormalized || null,
               extractionSource: deepExtractionSource,
               hits: sensitiveValueHits,
+              matchPolicy: strictPolicy.matchPolicy,
+              extractionConfidence: strictPolicy.extractionConfidence,
+              evidenceScope: strictPolicy.evidenceScope,
               warnings: runWarnings,
             });
             runSensitiveHits += persistedHits;
@@ -2128,10 +2326,11 @@ serve(async (req: Request) => {
     // Phonebook searches — extended tier only
     if (includeDtiExtended && isIntelxConfigured() && entitlement.tier === 'extended') {
       const phonebookTerms = intelxQueryTerms.filter(
-        (qt) => qt.kind === 'at_domain_tld' || qt.kind === 'selector',
+        (qt) => qt.kind === 'at_domain_tld' || qt.kind === 'selector' || qt.kind === 'email_selector',
       ).slice(0, Math.min(10, INTELX_MAX_QUERY_TERMS_PER_RUN));
 
       for (const queryTerm of phonebookTerms) {
+        if (isEmailSelectorCoverageKind(queryTerm.kind, queryTerm.term)) identityEmailQueriesRun += 1;
         const sourceRunStartedAt = new Date().toISOString();
         const sourceRun = await createDtiSourceRun(adminClient, {
           organization_id: customerId,
@@ -2181,6 +2380,7 @@ serve(async (req: Request) => {
 
     if (includeDtiExtended && FIRECRAWL_ENABLED && FIRECRAWL_API_KEY && firecrawlTargets.length > 0) {
       for (const target of firecrawlTargets) {
+        if (isEmailSelectorCoverageKind(target.queryKind, target.queryTerm)) identityEmailQueriesRun += 1;
         firecrawlSourcesRun += 1;
         const sourceRun = await createDtiSourceRun(adminClient, {
           organization_id: customerId,
@@ -2211,8 +2411,18 @@ serve(async (req: Request) => {
           });
 
           const combinedText = `${scrape.title}\n${scrape.summary}\n${scrape.markdown}`.slice(0, 20_000);
-          const sensitiveIndicators = detectSensitiveIndicators(combinedText);
-          const sensitiveHits = extractSensitiveValueHits(combinedText, 20);
+          const rawSensitiveHits = extractSensitiveValueHits(combinedText, 20);
+          const strictPolicy = applyStrictSensitivePolicy({
+            queryKind: target.queryKind,
+            queryTerm: target.queryTerm,
+            extractionSource: 'firecrawl_scrape',
+            sourceText: combinedText,
+            hits: rawSensitiveHits,
+          });
+          strictPasswordHits += strictPolicy.strictPasswordHits;
+          metadataOnlyHits += strictPolicy.metadataOnlyHits;
+          const sensitiveHits = strictPolicy.hits;
+          const sensitiveIndicators = indicatorsFromSensitiveHits(sensitiveHits);
           const severityBase: 'info' | 'low' | 'medium' | 'high' | 'critical' = scrape.ok
             ? (hasSensitiveIndicators(sensitiveIndicators) ? 'medium' : 'info')
             : 'low';
@@ -2255,6 +2465,9 @@ serve(async (req: Request) => {
                 metadata: scrape.metadata,
                 warning: scrape.warning,
                 error: scrape.error,
+                match_policy: strictPolicy.matchPolicy,
+                extraction_confidence: strictPolicy.extractionConfidence,
+                evidence_scope: strictPolicy.evidenceScope,
                 sensitive_indicators: sensitiveIndicators,
               },
               safe_preview: maskPotentialSecrets(combinedText.slice(0, 1200)),
@@ -2292,6 +2505,9 @@ serve(async (req: Request) => {
                 query_term: target.queryTerm,
                 source_url: target.targetUrl,
                 links_count: scrape.links.length,
+                match_policy: strictPolicy.matchPolicy,
+                extraction_confidence: strictPolicy.extractionConfidence,
+                evidence_scope: strictPolicy.evidenceScope,
                 sensitive_indicators: sensitiveIndicators,
               },
             })
@@ -2348,6 +2564,9 @@ serve(async (req: Request) => {
                 query_kind: target.queryKind,
                 source_url: target.targetUrl,
                 source_label: target.sourceLabel,
+                match_policy: strictPolicy.matchPolicy,
+                extraction_confidence: strictPolicy.extractionConfidence,
+                evidence_scope: strictPolicy.evidenceScope,
                 category_hint: classifyThreatCategoryText(`${target.sourceLabel} dti source`),
                 sensitive_indicators: sensitiveIndicators,
                 sensitive_data_detected: hasSensitiveIndicators(sensitiveIndicators),
@@ -2375,6 +2594,9 @@ serve(async (req: Request) => {
             selectorValue: target.selectorValue,
             extractionSource: 'firecrawl_scrape',
             hits: sensitiveHits,
+            matchPolicy: strictPolicy.matchPolicy,
+            extractionConfidence: strictPolicy.extractionConfidence,
+            evidenceScope: strictPolicy.evidenceScope,
             warnings: firecrawlRunWarnings,
           });
           if (firecrawlRunWarnings.length > 0) intelxWarnings.push(...firecrawlRunWarnings);
@@ -2469,6 +2691,9 @@ serve(async (req: Request) => {
             identity_email_selectors_used: identityEmailSelectorsUsed,
             query_terms_considered: intelxQueryTerms.length,
             searches_run: intelxSearchesRun,
+            email_queries_run: identityEmailQueriesRun,
+            strict_password_hits: strictPasswordHits,
+            metadata_only_hits: metadataOnlyHits,
             at_domain_tld_queries: intelxAtDomainQueries,
             phonebook_searches_run: intelxPhonebookSearchesRun,
             deep_fetches_run: intelxDeepFetchesRun,
@@ -2602,6 +2827,9 @@ serve(async (req: Request) => {
             identity_email_selectors_used: identityEmailSelectorsUsed,
             query_terms_considered: intelxQueryTerms.length,
             searches_run: intelxSearchesRun,
+            email_queries_run: identityEmailQueriesRun,
+            strict_password_hits: strictPasswordHits,
+            metadata_only_hits: metadataOnlyHits,
             at_domain_tld_queries: intelxAtDomainQueries,
             phonebook_searches_run: intelxPhonebookSearchesRun,
             deep_fetches_run: intelxDeepFetchesRun,
@@ -2663,6 +2891,9 @@ serve(async (req: Request) => {
           identity_email_selectors_used: identityEmailSelectorsUsed,
           query_terms_considered: intelxQueryTerms.length,
           searches_run: intelxSearchesRun,
+          email_queries_run: identityEmailQueriesRun,
+          strict_password_hits: strictPasswordHits,
+          metadata_only_hits: metadataOnlyHits,
           at_domain_tld_queries: intelxAtDomainQueries,
           deep_fetches_run: intelxDeepFetchesRun,
           deep_fetch_warnings: intelxDeepFetchWarnings,

@@ -46,6 +46,12 @@ const invalidPasswordTokens = new Set([
   'changeme',
   'qwerty',
   '123456',
+  'query',
+  'selector',
+  'metadata',
+  'record',
+  'source',
+  'field',
 ]);
 
 const invalidAdjacentPasswordTokens = new Set([
@@ -78,6 +84,7 @@ function isLikelyPasswordCandidate(value: string): boolean {
   if (clean.length < 3 || clean.length > 120) return false;
   const lower = clean.toLowerCase();
   if (invalidPasswordTokens.has(lower)) return false;
+  if (/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(clean)) return false;
   if (/^https?:\/\//i.test(clean)) return false;
   if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(clean)) return false;
   if (/^[*xX•]+$/.test(clean)) return false;
@@ -90,6 +97,7 @@ function isLikelyAdjacentPasswordCandidate(value: string): boolean {
     .replace(/^[\s"'`([{<]+/, '')
     .replace(/[\s"'`)\]}>.,]+$/, '');
   if (!isLikelyPasswordCandidate(clean)) return false;
+  if (/[=:]/.test(clean)) return false;
   const lower = clean.toLowerCase();
   if (invalidAdjacentPasswordTokens.has(lower)) return false;
   if (clean.includes('@')) return false;

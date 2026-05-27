@@ -69,6 +69,7 @@ type DarkRiskFindingRowExtended = DarkRiskFindingRow & {
   category: string;
   category_key?: string;
   query_kind?: string;
+  query_term?: string;
   source_origin?: string;
   source_module?: string;
   source_scan_job_id?: string | null;
@@ -529,6 +530,7 @@ const DarkRisk360: React.FC = () => {
           scope_status: scopeStatus,
           sensitive_tags: sensitiveTags,
           query_kind: String(finding?.metadata?.query_kind || ''),
+          query_term: String(finding?.metadata?.query_term || ''),
           source_origin: String(finding?.metadata?.source_origin || ''),
           source_module: String(finding?.metadata?.source_module || ''),
           source_scan_job_id: String(finding?.metadata?.source_scan_job_id || '') || null,

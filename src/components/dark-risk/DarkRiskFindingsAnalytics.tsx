@@ -28,7 +28,9 @@ type Row = {
   asset: string;
   finding_type: string;
   source: string;
+  confidence?: 'low' | 'medium' | 'high';
   query_kind?: string;
+  query_term?: string;
   source_origin?: string;
   first_seen_at?: string;
   last_seen_at?: string;
@@ -73,8 +75,16 @@ type DtiOverviewData = {
     tag: string;
     value: string;
     masked_value: string;
+    match_policy?: string;
+    extraction_confidence?: string;
+    evidence_scope?: string;
     created_at: string | null;
   }>;
+  intelx_stats?: {
+    email_queries_run?: number;
+    strict_password_hits?: number;
+    metadata_only_hits?: number;
+  };
   latest_scan_run_id: string | null;
 };
 
@@ -213,10 +223,22 @@ function isCredentialCompromiseRow(row: Row): boolean {
   return /credential|credenzial|password|stealer|compromis/.test(sourceText);
 }
 
+function isEmailLike(value: string): boolean {
+  const normalized = String(value || '').trim().toLowerCase();
+  return Boolean(normalized && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized));
+}
+
+function isEmailSelectorCoverageKind(queryKind: string | undefined, queryTerm: string | undefined): boolean {
+  const kind = String(queryKind || '').toLowerCase();
+  if (kind === 'email_selector') return true;
+  if (kind === 'selector' && isEmailLike(String(queryTerm || ''))) return true;
+  return false;
+}
+
 function isIdentitySensitiveSample(row: DtiOverviewData['sensitive_samples'][number]): boolean {
   const queryKind = String(row.query_kind || '').toLowerCase();
   const tag = normalizeSensitiveTag(row.tag || '');
-  return queryKind === 'email_selector' && Boolean(tag);
+  return isEmailSelectorCoverageKind(queryKind, String(row.query_term || '')) && Boolean(tag);
 }
 
 function normalizeSearchText(value: unknown): string {
@@ -413,6 +435,25 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
         identityLabel: shortSiteLabel(row.identity),
       }));
 
+    const identityFindingRows = rows
+      .filter((row) => isEmailSelectorCoverageKind(row.query_kind, row.query_term || row.asset))
+      .map((row) => ({
+        email: String(row.query_term || row.asset || row.site || '-').toLowerCase(),
+        severity: row.severity,
+        confidence: String(row.confidence || 'medium'),
+        riskScore: Number(row.risk_score || 0),
+        title: row.title,
+        source: displayDarkRiskSource(row.source),
+        firstSeenAt: row.first_seen_at || null,
+        lastSeenAt: row.last_seen_at || null,
+      }))
+      .sort((a, b) => {
+        const severityDelta = severityRank[b.severity] - severityRank[a.severity];
+        if (severityDelta !== 0) return severityDelta;
+        return b.riskScore - a.riskScore;
+      })
+      .slice(0, 200);
+
     const sensitiveSampleRows: SensitiveSampleViewRow[] = (dti?.sensitive_samples || []).map((sample, index) => {
       const tag = normalizeSensitiveTag(sample.tag || '');
       return {
@@ -437,6 +478,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
       groupedAssetRows,
       credentialCompromiseRows,
       identityRows,
+      identityFindingRows,
       sensitiveSampleRows,
     };
   }, [rows, dti]);
@@ -464,6 +506,13 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
               <Badge variant="outline">Query selector: {dti.query_coverage.selector || 0}</Badge>
               <Badge variant="outline">Query email: {dti.query_coverage.email_selector || 0}</Badge>
               <Badge variant="outline">Source run: {dti.source_runs.completed}/{dti.source_runs.total} completed</Badge>
+              <Badge variant="outline">Email query run: {Number(dti.intelx_stats?.email_queries_run || 0)}</Badge>
+              <Badge variant="outline">Strict password hit: {Number(dti.intelx_stats?.strict_password_hits || 0)}</Badge>
+              {Number(dti.intelx_stats?.metadata_only_hits || 0) > 0 ? (
+                <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40">
+                  metadata-only excluded {Number(dti.intelx_stats?.metadata_only_hits || 0)}
+                </Badge>
+              ) : null}
               {dti.source_runs.partial > 0 ? <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40">partial {dti.source_runs.partial}</Badge> : null}
               {dti.source_runs.failed > 0 ? <Badge className="bg-red-500/20 text-red-300 border-red-500/40">failed {dti.source_runs.failed}</Badge> : null}
             </div>
@@ -716,6 +765,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
               Nessuna evidenza identity classificata dalle query email nel ciclo corrente.
             </p>
           ) : (
+            <>
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               <div className="rounded-md border border-border/60 bg-background/30 p-3">
                 <div className="h-[240px]">
@@ -777,6 +827,45 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                 </table>
               </div>
             </div>
+            <div className="mt-4 overflow-x-auto rounded-md border border-border/60 bg-background/30">
+              <table className="w-full min-w-[980px] text-xs">
+                <thead>
+                  <tr className="border-b border-border/60 text-left text-muted-foreground">
+                    <th className="py-2 px-3">Email</th>
+                    <th className="py-2 px-3">Severity</th>
+                    <th className="py-2 px-3">Confidence</th>
+                    <th className="py-2 px-3">Risk</th>
+                    <th className="py-2 px-3">Finding</th>
+                    <th className="py-2 px-3">Source</th>
+                    <th className="py-2 px-3">First seen</th>
+                    <th className="py-2 px-3">Last seen</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.identityFindingRows.length === 0 ? (
+                    <tr>
+                      <td className="py-3 px-3 text-muted-foreground" colSpan={8}>
+                        Nessun finding identity per-email nel ciclo corrente.
+                      </td>
+                    </tr>
+                  ) : (
+                    data.identityFindingRows.map((row, index) => (
+                      <tr key={`identity-finding-${row.email}-${index}`} className="border-b border-border/40 align-top">
+                        <td className="py-2 px-3 font-medium">{row.email}</td>
+                        <td className="py-2 px-3"><Badge className={severityTone[row.severity]}>{row.severity}</Badge></td>
+                        <td className="py-2 px-3">{row.confidence}</td>
+                        <td className="py-2 px-3 font-semibold">{row.riskScore}</td>
+                        <td className="py-2 px-3">{row.title}</td>
+                        <td className="py-2 px-3">{row.source}</td>
+                        <td className="py-2 px-3 whitespace-nowrap text-muted-foreground">{formatDateTime(row.firstSeenAt)}</td>
+                        <td className="py-2 px-3 whitespace-nowrap text-muted-foreground">{formatDateTime(row.lastSeenAt)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            </>
           )}
         </div>
 

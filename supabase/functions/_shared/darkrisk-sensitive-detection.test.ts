@@ -27,3 +27,11 @@ Deno.test("extractSensitiveValueHits ignores all-zero cards and metadata dates a
   assertEquals(hits.filter((entry) => entry.tag === "credit_cards").length, 0);
   assertEquals(hits.filter((entry) => entry.tag === "phone_numbers").length, 0);
 });
+
+Deno.test("extractSensitiveValueHits ignores parser artifacts like query/selector as passwords", () => {
+  const input = "password=query selector=emmaterenzi@icloud.com metadata=record";
+  const hits = extractSensitiveValueHits(input);
+  const passwordHits = hits.filter((entry) => entry.tag === "passwords");
+  assertEquals(passwordHits.length, 0);
+  assertEquals(detectSensitiveIndicators(input).passwords, 0);
+});
