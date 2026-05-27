@@ -8,3 +8,44 @@ verify_jwt = false
 
  [functions.ai-ciso-chat]
  verify_jwt = false
+
+ [functions.surface-scan-cron]
+ verify_jwt = false
+
+ [functions.pentest-tools-webhook]
+ verify_jwt = false
+
+ [functions.pentest-tools-orchestrator]
+ verify_jwt = false
+
+ [functions.surfacescan360-run-enrichment]
+ verify_jwt = false
+ [functions.surfacescan360-ai-report]
+ verify_jwt = false
+
+ [functions.pentest-tools-poll]
+ verify_jwt = false
+
+ [functions.cve-enrichment]
+ verify_jwt = false
+
+ [functions.cisa-kev-sync]
+ verify_jwt = false
+
+ [functions.surfacescan360-start-scan]
+ verify_jwt = false
+
+ [functions.ptools-start-exposure-scan]
+ verify_jwt = false
+
+ [functions.ptools-poll-scans]
+ verify_jwt = false
+
+ [functions.darkrisk360-sync-surfacescan]
+ verify_jwt = false
+
+ [functions.darkrisk360-generate-recommendations]
+ verify_jwt = false
+
+ [functions.darkrisk360-generate-report]
+ verify_jwt = false

@@ -1,0 +1,350 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { useUserRoles } from '@/hooks/useUserRoles';
+import {
+  MonitoredIpEntryType,
+  parseMonitoredIpInput,
+} from '@/lib/ipRange';
+
+export interface SurfaceScanMonitoredIpRule {
+  id: string;
+  organization_id: string;
+  input_value: string;
+  entry_type: MonitoredIpEntryType;
+  ip_start: string;
+  ip_end: string;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  discovered_via?: 'manual' | 'subdomain_dump' | string;
+  discovered_from?: string | null;
+}
+
+export interface AddRuleOptions {
+  discovered_via?: 'manual' | 'subdomain_dump';
+  discovered_from?: string | null;
+  silent?: boolean;
+  auto_queue_scan?: boolean;
+  auto_sync_darkrisk?: boolean;
+}
+
+interface UseSurfaceScanMonitoredIpsReturn {
+  rules: SurfaceScanMonitoredIpRule[];
+  loading: boolean;
+  saving: boolean;
+  isAdmin: boolean;
+  hasRules: boolean;
+  addRule: (input: string, opts?: AddRuleOptions) => Promise<boolean>;
+  removeRule: (id: string) => Promise<boolean>;
+  refetch: () => Promise<void>;
+}
+
+export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn => {
+  const [rules, setRules] = useState<SurfaceScanMonitoredIpRule[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const { toast } = useToast();
+  const { organizationId, isLoading: isClientLoading } = useClientOrganization();
+  const { user, userProfile } = useAuth();
+  const { isSuperAdmin } = useUserRoles();
+
+  const isAdmin = userProfile?.user_type === 'admin' || isSuperAdmin;
+
+  const queueScopeRuleScan = useCallback(async (args: {
+    organizationId: string;
+    target: string;
+    scanProfile: 'domain_exposure' | 'ip_exposure';
+    silent?: boolean;
+    discoveredVia?: string;
+  }) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('surfacescan360-start-scan', {
+        body: {
+          target: args.target,
+          customer_id: args.organizationId,
+          scan_profile: args.scanProfile,
+          authorization_confirmed: true,
+          ownership_proof: `auto_scope_rule:${args.discoveredVia || 'manual'}`,
+        },
+      });
+
+      if (error || data?.error) {
+        const message = String(error?.message || data?.error || '').toLowerCase();
+        const expectedFailure =
+          message.includes('cooldown')
+          || message.includes('rate limit')
+          || message.includes('queue is full')
+          || message.includes('target_module_cooldown_active');
+        if (!expectedFailure) {
+          console.warn('Auto scope scan enqueue failed:', error || data);
+        }
+        return;
+      }
+
+      if (!args.silent) {
+        toast({
+          title: 'Scansione automatica accodata',
+          description: `${args.target} (${args.scanProfile})`,
+        });
+      }
+    } catch (scanError) {
+      console.warn('Auto scope scan enqueue error:', scanError);
+    }
+  }, [toast]);
+
+  const triggerDarkRiskScopeSync = useCallback(async (args: {
+    organizationId: string;
+    triggerType: string;
+    silent?: boolean;
+  }) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('darkrisk360-sync-surfacescan', {
+        body: {
+          customer_id: args.organizationId,
+          trigger_type: args.triggerType,
+          auto_scope_scan: true,
+          force_scope_refresh: false,
+        },
+      });
+
+      if (error || data?.error) {
+        console.warn('DarkRisk auto scope sync failed:', error || data);
+        return;
+      }
+
+      if (!args.silent) {
+        toast({
+          title: 'DarkRisk360 sincronizzato',
+          description: 'Scope propagato e controlli DarkRisk avviati',
+        });
+      }
+    } catch (syncError) {
+      console.warn('DarkRisk auto scope sync error:', syncError);
+    }
+  }, [toast]);
+
+  const fetchRules = useCallback(async () => {
+    if (isClientLoading || !organizationId) return;
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('surface_scan_monitored_ips' as any)
+        .select('*')
+        .eq('organization_id', organizationId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setRules((data || []) as unknown as SurfaceScanMonitoredIpRule[]);
+    } catch (error) {
+      console.error('Error fetching monitored IP rules:', error);
+      toast({
+        title: 'Errore',
+        description: 'Impossibile caricare gli IP monitorati',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [isClientLoading, organizationId, toast]);
+
+  useEffect(() => {
+    if (!isClientLoading && organizationId) {
+      fetchRules();
+    }
+  }, [isClientLoading, organizationId, fetchRules]);
+
+  const addRule = async (input: string, opts: AddRuleOptions = {}): Promise<boolean> => {
+    if (!organizationId) {
+      if (!opts.silent) {
+        toast({
+          title: 'Errore',
+          description: 'Seleziona prima un cliente',
+          variant: 'destructive',
+        });
+      }
+      return false;
+    }
+
+    if (!isAdmin) {
+      if (!opts.silent) {
+        toast({
+          title: 'Operazione non consentita',
+          description: 'Solo gli admin possono gestire gli IP monitorati',
+          variant: 'destructive',
+        });
+      }
+      return false;
+    }
+
+    let parsed;
+    try {
+      parsed = parseMonitoredIpInput(input);
+    } catch (error: any) {
+      if (!opts.silent) {
+        toast({
+          title: 'Formato non valido',
+          description: error?.message || 'Inserisci un formato IP valido',
+          variant: 'destructive',
+        });
+      }
+      return false;
+    }
+
+    setSaving(true);
+    try {
+      const payload: any = {
+        organization_id: organizationId,
+        input_value: parsed.inputValue,
+        entry_type: parsed.entryType,
+        ip_start: parsed.ipStart,
+        ip_end: parsed.ipEnd,
+        created_by: user?.id || null,
+        discovered_via: opts.discovered_via ?? 'manual',
+        discovered_from: opts.discovered_from ?? null,
+      };
+
+      const { error } = await supabase
+        .from('surface_scan_monitored_ips' as any)
+        .insert(payload);
+
+      if (error) {
+        if (error.code === '23505') {
+          if (!opts.silent) {
+            toast({
+              title: 'Regola duplicata',
+              description: 'Questa regola di monitoraggio è già presente',
+              variant: 'destructive',
+            });
+          }
+          return false;
+        }
+        throw error;
+      }
+
+      if (!opts.silent) {
+        toast({
+          title: 'Regola aggiunta',
+          description: 'IP monitorato salvato con successo',
+        });
+      }
+
+      const { data: orgFlagsData, error: orgFlagsError } = await supabase
+        .from('organizations' as any)
+        .select('surface_scan360_enabled, dark_risk360_enabled')
+        .eq('id', organizationId)
+        .maybeSingle();
+      if (orgFlagsError) {
+        console.warn('Unable to read organization flags for scope auto-flow:', orgFlagsError);
+      }
+      const surfaceEnabled = orgFlagsData?.surface_scan360_enabled !== false;
+      const darkRiskEnabled = Boolean(orgFlagsData?.dark_risk360_enabled);
+
+      const shouldAutoQueue = opts.auto_queue_scan !== false && surfaceEnabled;
+      if (shouldAutoQueue) {
+        if (parsed.entryType === 'domain') {
+          void queueScopeRuleScan({
+            organizationId,
+            target: parsed.inputValue,
+            scanProfile: 'domain_exposure',
+            silent: opts.silent,
+            discoveredVia: opts.discovered_via || 'manual',
+          });
+        } else if (parsed.entryType === 'single') {
+          void queueScopeRuleScan({
+            organizationId,
+            target: parsed.inputValue,
+            scanProfile: 'ip_exposure',
+            silent: opts.silent,
+            discoveredVia: opts.discovered_via || 'manual',
+          });
+        }
+      }
+
+      const shouldSyncDarkRisk =
+        darkRiskEnabled
+        && opts.auto_queue_scan !== false
+        && opts.auto_sync_darkrisk !== false
+        && String(opts.discovered_via || 'manual') !== 'subdomain_dump';
+      if (shouldSyncDarkRisk) {
+        void triggerDarkRiskScopeSync({
+          organizationId,
+          triggerType: 'scope_rule_added_auto',
+          silent: opts.silent,
+        });
+      }
+
+      await fetchRules();
+      return true;
+    } catch (error) {
+      console.error('Error adding monitored IP rule:', error);
+      if (!opts.silent) {
+        toast({
+          title: 'Errore',
+          description: 'Impossibile aggiungere la regola IP',
+          variant: 'destructive',
+        });
+      }
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeRule = async (id: string): Promise<boolean> => {
+    if (!isAdmin) {
+      toast({
+        title: 'Operazione non consentita',
+        description: 'Solo gli admin possono gestire gli IP monitorati',
+        variant: 'destructive',
+      });
+      return false;
+    }
+
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('surface_scan_monitored_ips' as any)
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      toast({
+        title: 'Regola rimossa',
+        description: 'IP monitorato rimosso con successo',
+      });
+
+      await fetchRules();
+      return true;
+    } catch (error) {
+      console.error('Error deleting monitored IP rule:', error);
+      toast({
+        title: 'Errore',
+        description: 'Impossibile rimuovere la regola IP',
+        variant: 'destructive',
+      });
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const hasRules = useMemo(() => rules.length > 0, [rules.length]);
+
+  return {
+    rules,
+    loading,
+    saving,
+    isAdmin,
+    hasRules,
+    addRule,
+    removeRule,
+    refetch: fetchRules,
+  };
+};

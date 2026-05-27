@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,11 +8,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Link2, Unlink, Plug, Shield, Mail, Monitor, Smartphone, Activity, Search as SearchIcon, Server, Pencil } from 'lucide-react';
+import { Loader2, Link2, Unlink, Plug, Shield, Mail, Monitor, Smartphone, Activity, Search as SearchIcon, Server, ShieldCheck, FileCheck, Eye, Radar } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { tenantServicesApi } from '@/lib/api/tenant-services';
-import { configApi } from '@/lib/api/config';
-import type { TenantServiceResource } from '@/types/api';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 interface ClientServicesDialogProps {
@@ -20,6 +18,15 @@ interface ClientServicesDialogProps {
   onOpenChange: (open: boolean) => void;
   organizationId: string;
   organizationName: string;
+}
+
+interface Integration {
+  id: string;
+  service_id: string;
+  api_url: string;
+  is_active: boolean;
+  service_code?: string;
+  service_name?: string;
 }
 
 const SERVICE_ICONS: Record<string, React.ReactNode> = {
@@ -33,157 +40,168 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
   himobile: <Smartphone className="w-4 h-4" />,
 };
 
-/** Prettify a service key for display: 'hipatch' → 'HiPatch', 'hifirewall' → 'HiFirewall' */
-const prettifyServiceKey = (key: string) => {
-  if (key.toLowerCase().startsWith('hi')) {
-    return `Hi${key.slice(2).charAt(0).toUpperCase()}${key.slice(3)}`;
-  }
-  return key.charAt(0).toUpperCase() + key.slice(1);
-};
-
 const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   open, onOpenChange, organizationId, organizationName,
 }) => {
   const queryClient = useQueryClient();
-  const [selectedService, setSelectedService] = useState<any | null>(null);
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [formValues, setFormValues] = useState<Record<string, string | boolean>>({});
+  const [connectingService, setConnectingService] = useState<{ id: string; name: string } | null>(null);
+  const [apiUrl, setApiUrl] = useState('');
+  const [apiKey, setApiKey] = useState('');
 
-  // Service catalog from /config/tenant-services
-  const { data: catalog = {}, isLoading: catalogLoading } = useQuery({
-    queryKey: ['config-tenant-services'],
-    queryFn: () => configApi.tenantServices(),
-    enabled: open,
-    staleTime: 5 * 60_000,
-  });
-
-  // Tenant services from /tenant-services?tenant_id=X
-  const { data: tenantServices = [], isLoading: servicesLoading } = useQuery({
-    queryKey: ['tenant-services', organizationId],
-    queryFn: () => tenantServicesApi.listByOrganization(organizationId),
+  const { data: orgFlags } = useQuery({
+    queryKey: ['org-feature-flags', organizationId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('organizations')
+        .select('hicompliance_enabled, irp_extended, surface_scan_extended, pentest_tools_auto_validation, surface_scan360_enabled, dark_risk360_enabled' as any)
+        .eq('id', organizationId)
+        .maybeSingle();
+      if (error) throw error;
+      return (data as any) || { hicompliance_enabled: false, irp_extended: false, surface_scan_extended: false, pentest_tools_auto_validation: true, surface_scan360_enabled: false, dark_risk360_enabled: false };
+    },
     enabled: open && !!organizationId,
-    staleTime: 30_000,
   });
 
-  // Build service list from catalog + tenant services
-  const serviceList = useMemo(() => {
-    return Object.entries(catalog).map(([key, value]) => {
-      const svc = value as any;
-      const tenantSvc = tenantServices.find((ts: TenantServiceResource) => ts.service_type === key);
-      return {
-        id: key,
-        code: key,
-        name: svc.label || key,
-        description: svc.description || '',
-        icon: svc.icon || '',
-        fields: svc.fields || {},
-        status: tenantSvc?.status || 'inactive',
-        tenantServiceId: tenantSvc?.id || null,
-        settings: tenantSvc?.settings || null,
-      };
-    });
-  }, [catalog, tenantServices]);
+  const { data: darkRiskEntitlement } = useQuery({
+    queryKey: ['darkrisk-entitlement', organizationId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('darkrisk_entitlements' as any)
+        .select('tier, enabled')
+        .eq('organization_id', organizationId)
+        .maybeSingle();
 
-  const openEditForm = (svc: any) => {
-    const existing = tenantServices.find((ts: TenantServiceResource) => ts.service_type === svc.id);
-    const settings = (existing?.settings as Record<string, string> | undefined) || {};
-    const fields = svc.fields || {};
-
-    const initialValues: Record<string, string | boolean> = {};
-    Object.entries(fields).forEach(([key, fieldDef]: [string, any]) => {
-      const val = settings[key];
-      if (fieldDef.type === 'checkbox') {
-        initialValues[key] = val === true || val === '1' || val === 'true' || val === 1;
-      } else {
-        initialValues[key] = val !== undefined && val !== null ? String(val) : '';
-      }
-    });
-
-    setSelectedService(svc);
-    setIsEditMode(!!existing && svc.status === 'active');
-    setFormValues(initialValues);
-  };
-
-  const closeForm = () => {
-    setSelectedService(null);
-    setIsEditMode(false);
-    setFormValues({});
-  };
-
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedService) return;
-
-      const existing = tenantServices.find((ts: TenantServiceResource) => ts.service_type === selectedService.id);
-
-      const fields = (selectedService.fields || {}) as Record<string, any>;
-
-      const settings: Record<string, unknown> = {};
-      Object.entries(fields).forEach(([key, def]) => {
-        const val = formValues[key];
-        if (def.type === 'checkbox') {
-          settings[key] = val === true || val === 'true' || val === '1';
-        } else {
-          settings[key] = val !== undefined && val !== null ? String(val) : '';
+      if (error) {
+        const missingRelation = String((error as any)?.code || '') === '42P01';
+        if (missingRelation) {
+          return { tier: 'standard', enabled: Boolean(orgFlags?.dark_risk360_enabled) };
         }
-      });
-
-      const payload = {
-        status: 'active' as const,
-        settings,
-      };
-
-      if (existing?.id) {
-        await tenantServicesApi.update(existing.id, payload);
-      } else {
-        await tenantServicesApi.create({
-          tenant_id: organizationId,
-          service_type: selectedService.id,
-          status: 'active',
-          settings: payload.settings,
-        });
+        throw error;
       }
+
+      return (data as any) || { tier: 'standard', enabled: Boolean(orgFlags?.dark_risk360_enabled) };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tenant-services', organizationId] });
-      toast.success(isEditMode ? 'Configurazione aggiornata' : 'Servizio collegato con successo');
-      closeForm();
-    },
-    onError: (err: Error) => {
-      toast.error(`Errore: ${err.message}`);
-    },
+    enabled: open && !!organizationId,
   });
 
-  const disconnectMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedService) return;
-      const existing = tenantServices.find((ts: TenantServiceResource) => ts.service_type === selectedService.id);
-      if (existing?.id) {
-        await tenantServicesApi.update(existing.id, { status: 'inactive' });
-      }
+  const updateFlagsMutation = useMutation({
+    mutationFn: async (patch: Record<string, boolean>) => {
+      const { error } = await supabase.from('organizations').update(patch as any).eq('id', organizationId);
+      if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tenant-services', organizationId] });
-      toast.success('Servizio scollegato');
-      closeForm();
+      queryClient.invalidateQueries({ queryKey: ['org-feature-flags', organizationId] });
+      toast.success('Configurazione aggiornata');
     },
     onError: (err: Error) => toast.error(`Errore: ${err.message}`),
   });
 
-  const handleSave = () => {
-    if (!selectedService) return;
-    const fields = (selectedService.fields || {}) as Record<string, any>;
+  const updateDarkRiskTierMutation = useMutation({
+    mutationFn: async (tier: 'standard' | 'extended') => {
+      const payload = {
+        organization_id: organizationId,
+        tier,
+        enabled: true,
+        updated_at: new Date().toISOString(),
+      };
 
-    const missing = Object.entries(fields).filter(([key, def]) => def.required && !(formValues[key] ?? '').toString().trim());
-    if (missing.length > 0) {
-      const labels = missing.map(([_, def]) => def.label);
-      toast.error(`Campi obbligatori mancanti: ${labels.join(', ')}`);
-      return;
-    }
-    saveMutation.mutate();
+      const { error } = await supabase
+        .from('darkrisk_entitlements' as any)
+        .upsert(payload, { onConflict: 'organization_id' });
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['darkrisk-entitlement', organizationId] });
+      toast.success('Tier DarkRisk360 aggiornato');
+    },
+    onError: (err: Error) => toast.error(`Errore tier DarkRisk360: ${err.message}`),
+  });
+
+  const { data: services = [] } = useQuery({
+    queryKey: ['hisolution-services'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('hisolution_services').select('*');
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: open,
+  });
+
+  const { data: integrations = [], isLoading } = useQuery({
+    queryKey: ['client-integrations', organizationId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('organization_integrations')
+        .select('id, service_id, api_url, is_active, hisolution_services(code, name)')
+        .eq('organization_id', organizationId)
+        .eq('is_active', true);
+      if (error) throw error;
+      return (data || []).map((item: any) => ({
+        id: item.id,
+        service_id: item.service_id,
+        api_url: item.api_url,
+        is_active: item.is_active,
+        service_code: item.hisolution_services?.code,
+        service_name: item.hisolution_services?.name,
+      })) as Integration[];
+    },
+    enabled: open && !!organizationId,
+  });
+
+  const connectMutation = useMutation({
+    mutationFn: async ({ serviceId, apiUrl, apiKey }: { serviceId: string; apiUrl: string; apiKey: string }) => {
+      const { data: existing } = await supabase
+        .from('organization_integrations')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .eq('service_id', serviceId)
+        .maybeSingle();
+
+      if (existing) {
+        const { error } = await supabase
+          .from('organization_integrations')
+          .update({ api_url: apiUrl, api_key: apiKey, is_active: true, api_methods: {} })
+          .eq('id', existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('organization_integrations')
+          .insert({ organization_id: organizationId, service_id: serviceId, api_url: apiUrl, api_key: apiKey, is_active: true, api_methods: {} });
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['client-integrations', organizationId] });
+      toast.success('Servizio collegato con successo');
+      setConnectingService(null);
+      setApiUrl('');
+      setApiKey('');
+    },
+    onError: (err: Error) => toast.error(`Errore: ${err.message}`),
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: async (integrationId: string) => {
+      const { error } = await supabase
+        .from('organization_integrations')
+        .update({ is_active: false })
+        .eq('id', integrationId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['client-integrations', organizationId] });
+      toast.success('Servizio scollegato');
+    },
+    onError: (err: Error) => toast.error(`Errore: ${err.message}`),
+  });
+
+  const getIntegration = (serviceId: string) => integrations.find(i => i.service_id === serviceId);
+
+  const handleConnect = () => {
+    if (!connectingService || !apiUrl.trim() || !apiKey.trim()) return;
+    connectMutation.mutate({ serviceId: connectingService.id, apiUrl: apiUrl.trim(), apiKey: apiKey.trim() });
   };
-
-  const isLoading = catalogLoading || servicesLoading;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -191,131 +209,246 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plug className="w-5 h-5" />
-            {selectedService ? `Configura ${prettifyServiceKey(selectedService.id)} - ${selectedService.name}` : `Servizi API - ${organizationName}`}
+            Servizi API — {organizationName}
           </DialogTitle>
-          <DialogDescription>
-            {selectedService ? 'Modifica le credenziali API del servizio' : 'Collega o scollega i servizi per questo cliente'}
-          </DialogDescription>
+          <DialogDescription>Collega o scollega i servizi HiSolution per questo cliente</DialogDescription>
         </DialogHeader>
 
-        {selectedService ? (
+        {connectingService ? (
           <div className="space-y-4 py-2">
-            {Object.entries(selectedService.fields || {}).map(([key, fieldDef]: [string, any]) => (
-              <div key={key} className="space-y-2">
-                {fieldDef.type === 'checkbox' ? (
-                  <div className="flex items-center gap-3">
-                    <Switch
-                      id={`field-${key}`}
-                      checked={!!formValues[key]}
-                      onCheckedChange={(checked: boolean) =>
-                        setFormValues(prev => ({ ...prev, [key]: checked }))
-                      }
-                    />
-                    <Label htmlFor={`field-${key}`}>{fieldDef.label}</Label>
-                  </div>
-                ) : fieldDef.type === 'select' ? (
-                  <>
-                    <Label htmlFor={`field-${key}`}>{fieldDef.label}</Label>
-                    <Select
-                      value={String(formValues[key] ?? '')}
-                      onValueChange={value => setFormValues(prev => ({ ...prev, [key]: value }))}
-                    >
-                      <SelectTrigger id={`field-${key}`}>
-                        <SelectValue placeholder="Seleziona..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(fieldDef.options || {}).map(([optKey, optLabel]) => (
-                          <SelectItem key={optKey} value={String(optKey)}>
-                            {String(optLabel)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </>
-                ) : (
-                  <>
-                    <Label htmlFor={`field-${key}`}>{fieldDef.label}</Label>
-                    <Input
-                      id={`field-${key}`}
-                      type={fieldDef.is_secret ? 'password' : 'text'}
-                      placeholder={fieldDef.placeholder || ''}
-                      value={String(formValues[key] ?? '')}
-                      onChange={e => setFormValues(prev => ({ ...prev, [key]: e.target.value }))}
-                    />
-                  </>
-                )}
-              </div>
-            ))}
+            <p className="text-sm font-medium">Collega {connectingService.name}</p>
+            <div className="space-y-2">
+              <Label htmlFor="client-api-url">URL API</Label>
+              <Input id="client-api-url" placeholder="https://api.example.com/v1" value={apiUrl} onChange={e => setApiUrl(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="client-api-key">Chiave API</Label>
+              <Input id="client-api-key" type="password" placeholder="sk-..." value={apiKey} onChange={e => setApiKey(e.target.value)} />
+            </div>
             <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={closeForm}>
-                Annulla
-              </Button>
-              {isEditMode && (
-                <Button
-                  variant="destructive"
-                  onClick={() => disconnectMutation.mutate()}
-                  disabled={disconnectMutation.isPending}
-                >
-                  {disconnectMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  Scollega
-                </Button>
-              )}
-              <Button
-                onClick={handleSave}
-                disabled={saveMutation.isPending}
-              >
-                {saveMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                {isEditMode ? 'Salva' : 'Collega'}
+              <Button variant="outline" onClick={() => { setConnectingService(null); setApiUrl(''); setApiKey(''); }}>Annulla</Button>
+              <Button onClick={handleConnect} disabled={connectMutation.isPending || !apiUrl.trim() || !apiKey.trim()}>
+                {connectMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Collega
               </Button>
             </div>
           </div>
         ) : (
-          <ScrollArea className="max-h-[400px]">
+          <ScrollArea className="max-h-[500px] pr-2">
+            {/* Top-level feature flags */}
+            <div className="space-y-3 mb-4">
+              {/* HiCompliance */}
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <div className="flex items-center gap-3">
+                  <div className={`p-1.5 rounded-md ${orgFlags?.hicompliance_enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">HiCompliance</p>
+                    <p className="text-xs text-muted-foreground">Assessment, Analisi, Remediation, Incident</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={!!orgFlags?.hicompliance_enabled}
+                  disabled={updateFlagsMutation.isPending}
+                  onCheckedChange={(v) => {
+                    const patch: any = { hicompliance_enabled: v };
+                    if (!v) { patch.irp_extended = false; }
+                    updateFlagsMutation.mutate(patch);
+                  }}
+                />
+              </div>
+
+              {orgFlags?.hicompliance_enabled && (
+                <div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
+                  <div className="flex items-center justify-between rounded-md border p-2.5">
+                    <div className="flex items-center gap-3">
+                      <FileCheck className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium">IRP Esteso</p>
+                        <p className="text-xs text-muted-foreground">Playbook avanzati e documento esteso</p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={!!orgFlags?.irp_extended}
+                      disabled={updateFlagsMutation.isPending}
+                      onCheckedChange={(v) => updateFlagsMutation.mutate({ irp_extended: v })}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* SurfaceScan360 — independent */}
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <div className="flex items-center gap-3">
+                  <div className={`p-1.5 rounded-md ${orgFlags?.surface_scan360_enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                    <Radar className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">SurfaceScan360</p>
+                    <p className="text-xs text-muted-foreground">Scansione attack surface esterna</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={orgFlags?.surface_scan_extended ? 'extended' : 'standard'}
+                    onValueChange={(value) => {
+                      updateFlagsMutation.mutate({
+                        surface_scan_extended: value === 'extended',
+                      });
+                    }}
+                    disabled={updateFlagsMutation.isPending || !orgFlags?.surface_scan360_enabled}
+                  >
+                    <SelectTrigger className="h-8 w-[140px]">
+                      <SelectValue placeholder="Livello" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="standard">Standard</SelectItem>
+                      <SelectItem value="extended">Estesa</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Switch
+                    checked={!!orgFlags?.surface_scan360_enabled}
+                    disabled={updateFlagsMutation.isPending}
+                    onCheckedChange={(v) => {
+                      const patch: any = { surface_scan360_enabled: v };
+                      if (v) { patch.pentest_tools_auto_validation = true; }
+                      if (!v) { patch.surface_scan_extended = false; }
+                      updateFlagsMutation.mutate(patch);
+                    }}
+                  />
+                </div>
+              </div>
+
+              {orgFlags?.surface_scan360_enabled && (
+                <div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
+                  <div className="flex items-center justify-between rounded-md border p-2.5">
+                    <div className="flex items-center gap-3">
+                      <Radar className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium">Livello SurfaceScan360</p>
+                        <p className="text-xs text-muted-foreground">
+                          {orgFlags?.surface_scan_extended ? 'Estesa: scope avanzato (domini multipli e range IP)' : 'Standard: scope base operativo'}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="text-xs">
+                      {orgFlags?.surface_scan_extended ? 'Estesa' : 'Standard'}
+                    </Badge>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-md border p-2.5">
+                    <div className="flex items-center gap-3">
+                      <ShieldCheck className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium">Validazione attiva CVE</p>
+                        <p className="text-xs text-muted-foreground">Sempre attiva di default su tutti i clienti abilitati SurfaceScan360</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="text-xs border-green-500/30 text-green-500">Sempre attiva</Badge>
+                  </div>
+                </div>
+              )}
+
+              {/* DarkRisk360 — independent */}
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <div className="flex items-center gap-3">
+                  <div className={`p-1.5 rounded-md ${orgFlags?.dark_risk360_enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                    <Eye className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">DarkRisk360</p>
+                    <p className="text-xs text-muted-foreground">Monitoraggio dark web e leak</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'extended' : 'standard'}
+                    onValueChange={(value) =>
+                      updateDarkRiskTierMutation.mutate(value === 'extended' ? 'extended' : 'standard')
+                    }
+                    disabled={updateDarkRiskTierMutation.isPending || !orgFlags?.dark_risk360_enabled}
+                  >
+                    <SelectTrigger className="h-8 w-[140px]">
+                      <SelectValue placeholder="Livello" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="standard">Standard</SelectItem>
+                      <SelectItem value="extended">Estesa</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Switch
+                    checked={!!orgFlags?.dark_risk360_enabled}
+                    disabled={updateFlagsMutation.isPending}
+                    onCheckedChange={async (v) => {
+                      updateFlagsMutation.mutate({ dark_risk360_enabled: v });
+                      if (v) {
+                        await updateDarkRiskTierMutation.mutateAsync(
+                          (String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'extended' : 'standard')
+                        );
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+
+              {orgFlags?.dark_risk360_enabled && (
+                <div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
+                  <div className="flex items-center justify-between rounded-md border p-2.5">
+                    <div className="flex items-center gap-3">
+                      <Eye className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium">Tier DarkRisk360</p>
+                        <p className="text-xs text-muted-foreground">Standard o Estesa sullo stesso modulo</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="text-xs">
+                      {String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'Estesa' : 'Standard'}
+                    </Badge>
+                  </div>
+                </div>
+              )}
+            </div>
+
+
+            <Separator className="my-3" />
+            <p className="text-xs font-medium text-muted-foreground mb-2 px-1">Servizi HiSolution (API)</p>
+
             {isLoading ? (
               <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
-            ) : serviceList.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">Nessun servizio disponibile nel catalogo</div>
             ) : (
               <div className="space-y-1">
-                {serviceList.map((svc, idx) => {
-                  const isActive = svc.status === 'active';
-                  const settings = svc.settings as Record<string, string> | undefined;
+
+                {services.map((svc, idx) => {
+                  const integration = getIntegration(svc.id);
+                  const connected = !!integration;
                   return (
                     <React.Fragment key={svc.id}>
                       {idx > 0 && <Separator />}
                       <div className="flex items-center justify-between py-2.5 px-1">
                         <div className="flex items-center gap-3">
-                          <div className={`p-1.5 rounded-md ${isActive ? 'bg-green-500/10 text-green-500' : 'bg-muted text-muted-foreground'}`}>
+                          <div className={`p-1.5 rounded-md ${connected ? 'bg-green-500/10 text-green-500' : 'bg-muted text-muted-foreground'}`}>
                             {SERVICE_ICONS[svc.code?.toLowerCase()] || <Plug className="w-4 h-4" />}
                           </div>
                           <div>
-                            <p className="text-sm font-medium">{prettifyServiceKey(svc.id)} - {svc.name}</p>
-                            {isActive && svc.settings && Object.keys(svc.settings || {}).length > 0 && (
-                              <p className="text-xs text-muted-foreground truncate max-w-[180px]">Configurato</p>
-                            )}
+                            <p className="text-sm font-medium">{svc.name}</p>
+                            {connected && <p className="text-xs text-muted-foreground truncate max-w-[180px]">{integration.api_url}</p>}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          {isActive ? (
+                          {connected ? (
                             <>
                               <Badge variant="outline" className="text-xs border-green-500/30 text-green-500">Attivo</Badge>
                               <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => openEditForm(svc)}
-                                disabled={saveMutation.isPending || disconnectMutation.isPending}
+                                variant="ghost" size="sm"
+                                onClick={() => disconnectMutation.mutate(integration.id)}
+                                disabled={disconnectMutation.isPending}
                               >
-                                <Pencil className="w-3.5 h-3.5" />
+                                {disconnectMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Unlink className="w-3.5 h-3.5" />}
                               </Button>
                             </>
                           ) : (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-xs"
-                              onClick={() => openEditForm(svc)}
-                              disabled={saveMutation.isPending}
-                            >
+                            <Button variant="outline" size="sm" className="text-xs" onClick={() => setConnectingService({ id: svc.id, name: svc.name })}>
                               <Link2 className="w-3.5 h-3.5 mr-1" /> Collega
                             </Button>
                           )}
