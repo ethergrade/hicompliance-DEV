@@ -58,4 +58,14 @@ export const documentsApi = {
       groupHeader(companyId)
     );
   },
+
+  /** Get download URL or binary for a document */
+  async download(companyId: string, documentId: string): Promise<Blob> {
+    const res = await apiClient.get<Blob>(
+      `/companies/${companyId}/documents/${documentId}/download`,
+      undefined,
+      groupHeader(companyId)
+    );
+    return res;
+  },
 };

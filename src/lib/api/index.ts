@@ -23,3 +23,7 @@ export { playbookCompletionsApi } from "./playbook-completions";
 export { darkRiskAlertsApi } from "./dark-risk-alerts";
 export { documentsApi } from "./documents";
 export { irpApi } from "./irp";
+export { consistenzeApi } from "./consistenze";
+export { criticalInfrastructureApi } from "./critical-infrastructure";
+export { assetIrpApi } from "./asset-irp";
+export { preferencesApi } from "./preferences";

@@ -108,6 +108,8 @@ export interface UpdateUserRequest {
 
 export interface TenantResource {
   id: string;
+  group_id: string | null;
+  customer_code: string | null;
   name: string;
   ms_tenant_id: string | null;
   contact_first_name: string | null;
@@ -853,4 +855,65 @@ export interface StoreIrpEmergencyContactRequest {
   email: string;
   category?: string;
   role?: string;
+}
+
+// ─── Consistenze ───────────────────────────────────────────────────────────
+
+export interface ConsistenzeItem {
+  id: string;
+  company_id?: string | null;
+  name: string;
+  description?: string | null;
+  category?: string | null;
+  value?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface ConsistenzeSummary {
+  id: string;
+  company_id?: string | null;
+  total_items: number;
+  categories_count: number;
+  notes?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+// ─── Critical Infrastructure ────────────────────────────────────────────────
+
+export interface CriticalInfrastructureAsset {
+  id: string;
+  company_id?: string | null;
+  asset_id: string;
+  component_name: string;
+  description?: string | null;
+  category?: string | null;
+  criticality?: string | null;
+  owner?: string | null;
+  location?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+// ─── Asset IRP ─────────────────────────────────────────────────────────────
+
+export interface AssetIrpItem {
+  id: string;
+  company_id?: string | null;
+  asset_id?: string | null;
+  name?: string | null;
+  category?: string | null;
+  criticality?: string | null;
+  owner?: string | null;
+  notes?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+// ─── User Preferences ──────────────────────────────────────────────────────
+
+export interface UserPreferenceValue {
+  key: string;
+  value: unknown;
 }
