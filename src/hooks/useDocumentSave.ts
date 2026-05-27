@@ -1,4 +1,3 @@
-import { supabase } from '@/integrations/supabase/client';
 import { documentsApi } from '@/lib/api';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
@@ -21,33 +20,10 @@ export const useDocumentSave = () => {
         return false;
       }
 
-      // Create unique file path
-      const timestamp = Date.now();
-      const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const filePath = `${user.id}/${timestamp}_${sanitizedFileName}`;
-
-      // Upload to storage
-      const { error: uploadError } = await supabase.storage
-        .from('incident-documents')
-        .upload(filePath, blob);
-
-      if (uploadError) {
-        console.error('Error uploading to storage:', uploadError);
-        return false;
-      }
-
-      // Save to database via API
-      try {
-        await documentsApi.create(organizationId, {
-          name: fileName,
-          category: category,
-        });
-      } catch (dbError) {
-        console.error('Error saving to database:', dbError);
-        // Cleanup: remove uploaded file
-        await supabase.storage.from('incident-documents').remove([filePath]);
-        return false;
-      }
+      await documentsApi.createWithFile(organizationId, blob, fileName, {
+        name: fileName,
+        category,
+      });
 
       return true;
     } catch (error) {

@@ -15,7 +15,6 @@ import { documentsApi } from '@/lib/api';
 import type { DocumentResource } from '@/types/api';
 import DocumentSearchBar, { DocumentFilters } from '@/components/documents/DocumentSearchBar';
 import DocumentMetadataDialog, { DocumentMetadata } from '@/components/documents/DocumentMetadataDialog';
-import ContactPicker from '@/components/documents/ContactPicker';
 import {
   generateDocumentCode,
   formatDocumentCodeWithRevision,
@@ -383,12 +382,7 @@ const Documents: React.FC = () => {
                         placeholder="Descrizione del documento..."
                       />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <ContactPicker label="Redatto da" selectedIds={[]} onChange={() => {}} contacts={contacts} />
-                      <ContactPicker label="Elaborato da" selectedIds={[]} onChange={() => {}} contacts={contacts} />
-                      <ContactPicker label="Revisionato da" selectedIds={[]} onChange={() => {}} contacts={contacts} />
-                      <ContactPicker label="Approvato da" selectedIds={[]} onChange={() => {}} contacts={contacts} />
-                    </div>
+
                   </div>
                 )}
 

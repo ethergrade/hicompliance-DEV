@@ -1,4 +1,4 @@
-import { apiClient } from "@/lib/api-client";
+import { apiClient, getToken } from "@/lib/api-client";
 import type {
   ApiResponse,
   DocumentResource,
@@ -6,9 +6,35 @@ import type {
   UpdateDocumentRequest,
 } from "@/types/api";
 
+const API_BASE_URL = import.meta.env.DEV
+  ? "/api"
+  : (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") || "https://hiapi.websoupcloud.it";
+
 const groupHeader = (companyId: string) => ({
   headers: { "X-Group-Id": companyId },
 });
+
+async function uploadMultipart(companyId: string, path: string, formData: FormData): Promise<DocumentResource> {
+  const token = getToken();
+
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "X-Group-Id": companyId,
+    },
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({ message: res.statusText }));
+    throw new Error(json.message || `Upload failed with status ${res.status}`);
+  }
+
+  const json = await res.json();
+  return json.data as DocumentResource;
+}
 
 export const documentsApi = {
   /** List all documents for a company */
@@ -31,7 +57,7 @@ export const documentsApi = {
     return res.data;
   },
 
-  /** Create a new document */
+  /** Create a new document (JSON metadata only, no file) */
   async create(companyId: string, payload: StoreDocumentRequest): Promise<DocumentResource> {
     const res = await apiClient.post<ApiResponse<DocumentResource>>(
       `/companies/${companyId}/documents`,
@@ -39,6 +65,28 @@ export const documentsApi = {
       groupHeader(companyId)
     );
     return res.data;
+  },
+
+  /** Create a new document with file upload (multipart/form-data) */
+  async createWithFile(
+    companyId: string,
+    file: Blob,
+    fileName: string,
+    metadata: Partial<StoreDocumentRequest> = {}
+  ): Promise<DocumentResource> {
+    const formData = new FormData();
+    formData.append("file", file, fileName);
+
+    for (const [key, value] of Object.entries(metadata)) {
+      if (value === undefined || value === null) continue;
+      if (key === "tags" && Array.isArray(value)) {
+        value.forEach((tag: string) => formData.append("tags[]", tag));
+      } else {
+        formData.append(key, String(value));
+      }
+    }
+
+    return uploadMultipart(companyId, `/companies/${companyId}/documents`, formData);
   },
 
   /** Update document metadata */

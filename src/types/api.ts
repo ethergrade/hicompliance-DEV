@@ -863,21 +863,28 @@ export interface StoreIrpEmergencyContactRequest {
 
 export interface ConsistenzeItem {
   id: string;
-  company_id?: string | null;
-  name: string;
-  description?: string | null;
-  category?: string | null;
-  value?: string | null;
+  tenant_id: string;
+  group_id: string;
+  area: string;
+  categoria: string;
+  tecnologia: string;
+  fornitore: string;
+  quantita: number;
+  scadenza?: string | null;
+  metriche_json: Record<string, unknown>;
   created_at?: string | null;
   updated_at?: string | null;
 }
 
 export interface ConsistenzeSummary {
   id: string;
-  company_id?: string | null;
-  total_items: number;
-  categories_count: number;
-  notes?: string | null;
+  tenant_id: string;
+  group_id: string;
+  nr_sedi: number;
+  nr_interni_telefonici: number;
+  descrizione_telefoni: string;
+  nr_canali_fonia: number;
+  note_generali: string;
   created_at?: string | null;
   updated_at?: string | null;
 }

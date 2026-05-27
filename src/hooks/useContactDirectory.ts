@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { irpApi } from '@/lib/api/irp';
 import { useToast } from '@/hooks/use-toast';
 import { DirectoryContact } from '@/types/irp';
- import { useClientOrganization } from '@/hooks/useClientOrganization';
+import type { IrpContactResource } from '@/types/api';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 interface UseContactDirectoryReturn {
   contacts: DirectoryContact[];
@@ -17,6 +18,20 @@ interface UseContactDirectoryReturn {
   importFromEmergencyContacts: () => Promise<{ imported: number; skipped: number }>;
 }
 
+/** Map API IrpContactResource → DirectoryContact for backward compatibility */
+const toDirectoryContact = (api: IrpContactResource): DirectoryContact => ({
+  id: api.id,
+  organization_id: api.tenant_id,
+  first_name: api.first_name,
+  last_name: api.last_name,
+  job_title: api.job_title ?? undefined,
+  phone: api.phone,
+  email: api.email,
+  notes: api.notes ?? undefined,
+  created_at: api.created_at,
+  updated_at: api.updated_at,
+});
+
 export const useContactDirectory = (): UseContactDirectoryReturn => {
   const [contacts, setContacts] = useState<DirectoryContact[]>([]);
   const [loading, setLoading] = useState(false);
@@ -26,18 +41,11 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
 
   const fetchContacts = useCallback(async () => {
     if (clientLoading || !clientOrgId) return;
-    
+
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('contact_directory')
-        .select('*')
-        .eq('organization_id', clientOrgId)
-        .order('last_name', { ascending: true });
-
-      if (error) throw error;
-
-      setContacts((data as DirectoryContact[]) || []);
+      const apiContacts = await irpApi.contacts(clientOrgId);
+      setContacts((apiContacts || []).map(toDirectoryContact));
     } catch (error) {
       console.error('Error fetching directory contacts:', error);
       toast({
@@ -71,16 +79,14 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
     try {
       if (!clientOrgId) throw new Error('Organizzazione non trovata');
 
-      const { data, error } = await supabase
-        .from('contact_directory')
-        .insert({
-          ...contactData,
-          organization_id: clientOrgId
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
+      const created = await irpApi.createContact(clientOrgId, {
+        first_name: contactData.first_name,
+        last_name: contactData.last_name,
+        job_title: contactData.job_title ?? null,
+        email: contactData.email ?? '',
+        phone: contactData.phone ?? '',
+        notes: contactData.notes ?? null,
+      });
 
       toast({
         title: "Successo",
@@ -88,7 +94,7 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
       });
 
       await fetchContacts();
-      return data as DirectoryContact;
+      return toDirectoryContact(created);
     } catch (error) {
       console.error('Error adding directory contact:', error);
       toast({
@@ -102,12 +108,17 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
 
   const updateContact = async (id: string, contactData: Partial<DirectoryContact>): Promise<boolean> => {
     try {
-      const { error } = await supabase
-        .from('contact_directory')
-        .update(contactData)
-        .eq('id', id);
+      if (!clientOrgId) throw new Error('Organizzazione non trovata');
 
-      if (error) throw error;
+      const payload: Record<string, unknown> = {};
+      if (contactData.first_name !== undefined) payload.first_name = contactData.first_name;
+      if (contactData.last_name !== undefined) payload.last_name = contactData.last_name;
+      if (contactData.job_title !== undefined) payload.job_title = contactData.job_title;
+      if (contactData.email !== undefined) payload.email = contactData.email;
+      if (contactData.phone !== undefined) payload.phone = contactData.phone;
+      if (contactData.notes !== undefined) payload.notes = contactData.notes;
+
+      await irpApi.updateContact(clientOrgId, id, payload);
 
       toast({
         title: "Successo",
@@ -129,12 +140,9 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
 
   const deleteContact = async (id: string): Promise<boolean> => {
     try {
-      const { error } = await supabase
-        .from('contact_directory')
-        .delete()
-        .eq('id', id);
+      if (!clientOrgId) throw new Error('Organizzazione non trovata');
 
-      if (error) throw error;
+      await irpApi.deleteContact(clientOrgId, id);
 
       toast({
         title: "Successo",
@@ -158,13 +166,8 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
     try {
       if (!clientOrgId) throw new Error('Organizzazione non trovata');
 
-      // Fetch existing emergency contacts
-      const { data: emergencyContacts, error: fetchError } = await supabase
-        .from('emergency_contacts')
-        .select('*')
-        .eq('organization_id', clientOrgId);
-
-      if (fetchError) throw fetchError;
+      // Fetch emergency contacts from API
+      const emergencyContacts = await irpApi.emergencyContacts(clientOrgId);
 
       if (!emergencyContacts || emergencyContacts.length === 0) {
         toast({
@@ -175,75 +178,58 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
       }
 
       // Fetch existing directory contacts to avoid duplicates
-      const { data: existingContacts } = await supabase
-        .from('contact_directory')
-        .select('first_name, last_name, email')
-        .eq('organization_id', clientOrgId);
-
+      const existingContacts = await irpApi.contacts(clientOrgId);
       const existingSet = new Set(
-        (existingContacts || []).map(c => 
+        (existingContacts || []).map(c =>
           `${c.first_name?.toLowerCase()}_${c.last_name?.toLowerCase()}_${c.email?.toLowerCase()}`
         )
       );
 
-      // Parse names and prepare imports
-      const toImport: Array<{
-        organization_id: string;
-        first_name: string;
-        last_name: string;
-        job_title: string;
-        phone: string;
-        email: string;
-      }> = [];
-
+      let imported = 0;
       let skipped = 0;
 
       for (const contact of emergencyContacts) {
-        const nameParts = contact.name.split(' ');
+        const nameParts = (contact.name || '').split(' ');
         const firstName = nameParts[0] || '';
         const lastName = nameParts.slice(1).join(' ') || '';
-        
+
         const key = `${firstName.toLowerCase()}_${lastName.toLowerCase()}_${contact.email?.toLowerCase()}`;
-        
+
         if (existingSet.has(key)) {
           skipped++;
           continue;
         }
 
-        // Add to set to avoid duplicates within import batch
         existingSet.add(key);
 
-        toImport.push({
-          organization_id: clientOrgId,
-          first_name: firstName,
-          last_name: lastName,
-          job_title: contact.job_title || contact.role || '',
-          phone: contact.phone || '',
-          email: contact.email || ''
-        });
+        try {
+          await irpApi.createContact(clientOrgId, {
+            first_name: firstName,
+            last_name: lastName,
+            job_title: contact.job_title || contact.role || null,
+            phone: contact.phone || '',
+            email: contact.email || '',
+          });
+          imported++;
+        } catch {
+          skipped++;
+        }
       }
 
-      if (toImport.length === 0) {
+      if (imported === 0 && skipped > 0) {
         toast({
           title: "Info",
           description: `Tutti i contatti sono già presenti nella rubrica (${skipped} duplicati)`
         });
-        return { imported: 0, skipped };
+      } else {
+        toast({
+          title: "Importazione completata",
+          description: `${imported} contatti importati${skipped > 0 ? `, ${skipped} duplicati saltati` : ''}`
+        });
       }
 
-      const { error: insertError } = await supabase
-        .from('contact_directory')
-        .insert(toImport);
-
-      if (insertError) throw insertError;
-
-      toast({
-        title: "Importazione completata",
-        description: `${toImport.length} contatti importati${skipped > 0 ? `, ${skipped} duplicati saltati` : ''}`
-      });
-
       await fetchContacts();
-      return { imported: toImport.length, skipped };
+      return { imported, skipped };
     } catch (error) {
       console.error('Error importing contacts:', error);
       toast({

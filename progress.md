@@ -4,31 +4,29 @@
 In Progress
 
 ## Tasks
-- [x] Wire useCriticalInfrastructure hook from Supabase to API
-- [x] Rewrite ClientServicesDialog to use tenant-services API instead of Supabase
+- [x] Wire useContactDirectory from Supabase to API (irpApi)
+- [x] Wire useConsistenze from Supabase to API (consistenzeApi)
+- [x] Wire useUserPreferences from Supabase to API (preferencesApi)
+- [x] Wire ClientCrudDialog from Supabase to API (companiesApi)
+- [x] Wire EmergencyContactForm from Supabase to API (irpApi)
 
 ## Files Changed
-- `src/hooks/useCriticalInfrastructure.ts` — rewritten to use `criticalInfrastructureApi` instead of Supabase direct calls
-- `src/types/api.ts` — expanded `CriticalInfrastructureAsset` to match full DB shape and added `CriticalInfrastructureUpdate`
-- `src/types/api.ts` — added `ServiceCatalog`, `ServiceCatalogField`, `ServiceCatalogEntry` types for tenant-services catalog
-- `src/lib/api/tenant-services.ts` — added `groupHeader` helper and updated all methods to pass `X-Group-Id`; fixed `catalog()` return type to `ServiceCatalog`
-- `src/components/clients/ClientServicesDialog.tsx` — full rewrite:
-  - Uses `useClientOrganization` for `organizationId`
-  - Fetches service catalog from `GET /config/tenant-services`
-  - Fetches active tenant services from `GET /tenant-services?tenant_id=...`
-  - Creates service via `POST /tenant-services` on toggle ON
-  - Deletes service via `DELETE /tenant-services/{id}` on toggle OFF
-  - Saves settings via `PUT /tenant-services/{id}` with debounced per-service form
-  - Dynamically renders catalog fields (`select`, `checkbox`, `text`) including secret inputs
-  - Preserves existing UI style (icons, badges, switches, dialog layout)
-- `src/pages/Dashboard.tsx` — removed `organizationId` prop from `ClientServicesDialog` call
-- `src/pages/ClientSelection.tsx` — removed `organizationId` prop from `ClientServicesDialog` call
+- `src/hooks/useContactDirectory.ts` — rewritten: supabase → irpApi (contacts, createContact, updateContact, deleteContact, emergencyContacts for import)
+- `src/hooks/useConsistenze.ts` — rewritten: supabase → consistenzeApi (summary, items, createItem, updateItem, deleteItem). Added mapper functions to bridge API types (tenant_id) → local types (organization_id).
+- `src/types/api.ts` — fixed ConsistenzeSummary (matches ConsistenzaClienteResource: nr_sedi, nr_interni_telefonici, etc.) and ConsistenzeItem (matches ConsistenzaItemResource: area, categoria, tecnologia, fornitore, quantita, scadenza, metriche_json)
+
+- `src/hooks/useUserPreferences.ts` — rewritten: supabase → preferencesApi.get/set. Removed organizationId scoping (API handles user context). Kept same hook surface ({preferences, updatePreferences, clearPreferences, isSaving}). useResetAllPreferences invalidates query cache (no bulk-delete API endpoint).
+
+- [x] Wire useDocumentSave from Supabase to API (documentsApi.createWithFile)
+- [x] Clean up dead ContactPicker stubs in Documents.tsx
+
+## Files Changed
+- `src/lib/api/documents.ts` — added `createWithFile()` multipart upload method for file+metadata upload
+- `src/hooks/useDocumentSave.ts` — rewritten: supabase → documentsApi.createWithFile. Removed supabase.storage dependency. Simplified: single API call handles file upload + metadata creation.
+- `src/pages/Documents.tsx` — removed 4 dead ContactPicker stubs (Redatto da, Elaborato da, Revisionato da, Approvato da) and unused ContactPicker import
 
 ## Notes
-- Hook maintains identical public interface (assets, loading, saving, addAsset, updateAsset, deleteAsset, reloadAssets)
-- Uses `useClientOrganization` for `organizationId` passed as `companyId` to API
-- Types imported from `@/types/api` per requirements
-- `useContactDirectory.ts` and `useSupplierDirectory.ts` left untouched on Supabase
-- TypeScript check: zero errors
-- Dialog supports independent services (SurfaceScan360, DarkRisk360) without requiring HiCompliance
-- All service configuration is stored in the free-form `settings` JSON blob per tenant-service
+- Backend API mapping: `IrpContactResource.tenant_id` → `DirectoryContact.organization_id` for backward compat
+- `importFromEmergencyContacts` rewritten to iterate API calls instead of bulk insert
+- Hook interface preserved (same return types, same `DirectoryContact` type)
+- `documentsApi.createWithFile()` uses native fetch with FormData for multipart upload — apiClient only handles JSON
