@@ -307,7 +307,12 @@ const DarkRisk360: React.FC = () => {
     data: findingRows = [],
     isLoading: findingsLoading,
   } = useQuery({
-    queryKey: ['darkrisk360-findings', organizationId, overview.latest_scan?.id || null],
+    queryKey: [
+      'darkrisk360-findings',
+      organizationId,
+      overview.latest_scan?.id || null,
+      overview.dti?.latest_scan_run_id || null,
+    ],
     enabled: Boolean(organizationId),
     queryFn: async (): Promise<DarkRiskFindingRowExtended[]> => {
       if (!organizationId) return [];
