@@ -8,7 +8,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { IRPDocumentEditor } from '@/components/irp/IRPDocumentEditor';
 import { GovernanceContactsTable } from '@/components/irp/GovernanceContactsTable';
 import { ContactDirectoryManager } from '@/components/irp/ContactDirectoryManager';
-import { SupplierDirectoryManager } from '@/components/irp/SupplierDirectoryManager';
 import { OrganizationProfileForm } from '@/components/irp/OrganizationProfileForm';
 import { PlaybookViewer } from '@/components/irp/PlaybookViewer';
 import { CriticalInfrastructureManager } from '@/components/irp/CriticalInfrastructureManager';
@@ -512,7 +511,7 @@ const IncidentResponse: React.FC = () => {
 
           <TabsContent value="directory" className="space-y-6">
             <ContactDirectoryManager />
-            <SupplierDirectoryManager />
+            {/* SupplierDirectoryManager nascosto — nessun endpoint API backend */}
           </TabsContent>
 
           <TabsContent value="infrastructure" className="space-y-6">
