@@ -517,7 +517,7 @@ export async function intelxDeepFetch(params: {
         readText = extracted;
       }
 
-      if ((viewText || previewText) && readText) break;
+      if (viewText || previewText || readText) break;
     } catch (error: any) {
       errors.push(`${call.path}:${normalizeText(String(error?.message || error || 'error'))}`);
     }
