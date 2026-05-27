@@ -5838,7 +5838,7 @@ export async function runSurfaceScanEnrichment(
       key: "pentest_tools",
       label: "Pentest-Tools",
       timeoutMs: 240000,
-      featureFlag: "SURFACESCAN_ENABLE_OPEN_PORTS",
+      featureFlag: "SURFACESCAN_ENABLE_PENTEST_TOOLS",
     },
     open_ports: {
       key: "open_ports",

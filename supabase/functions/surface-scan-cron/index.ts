@@ -653,10 +653,15 @@ Deno.serve(async (req) => {
         results.push({ orgId, ok: true, total_assets: total, critical, warning, safe, queued_classic_started: queuedClassicStarted });
       }
 
-      // Pentest-Tools validation: SEMPRE attiva per ogni scansione
-      await maybeTriggerAutoValidation(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, perRule);
-      // Exposure full-scope: avvio automatico settimanale su tutti i domini/IP in scope.
-      await triggerWeeklyScopeExposureScan(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, orgRules);
+      const pentestToolsEnabled = Deno.env.get('SURFACESCAN_ENABLE_PENTEST_TOOLS') === 'true';
+      if (pentestToolsEnabled) {
+        // Pentest-Tools validation: attiva solo se SURFACESCAN_ENABLE_PENTEST_TOOLS=true
+        await maybeTriggerAutoValidation(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, perRule);
+        // Exposure full-scope: avvio automatico settimanale su tutti i domini/IP in scope.
+        await triggerWeeklyScopeExposureScan(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, orgRules);
+      } else {
+        console.log(`[cron] pentest-tools disabled (SURFACESCAN_ENABLE_PENTEST_TOOLS != true) — skipping auto-validation and exposure scan for org=${orgId}`);
+      }
       // Report repository canonico SurfaceScan360: refresh automatico settimanale.
       await refreshWeeklyScopeRepositoryReport(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId);
       // DarkRisk360 standard weekly sync: DTI esteso escluso dai run cron.
