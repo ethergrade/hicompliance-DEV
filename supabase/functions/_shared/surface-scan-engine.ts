@@ -583,6 +583,7 @@ export async function runSurfaceScanEnrichment(
   const targetUrl = parsedTarget.normalized_target;
   const seenAssetKeys = new Set<string>();
   const seenFindingKeys = new Set<string>();
+  const scanWarnings: string[] = [];
   const { data: monitoredScopeRows } = await adminClient
     .from("surface_scan_monitored_ips" as any)
     .select("entry_type, input_value, ip_start, ip_end")
@@ -678,7 +679,6 @@ export async function runSurfaceScanEnrichment(
       input.provider || "surface_scan_engine",
       input.module || "generic",
       input.finding_type,
-      input.title,
       input.affected_asset || "",
       input.affected_url || "",
       input.ip || "",
@@ -953,6 +953,7 @@ export async function runSurfaceScanEnrichment(
     const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
     if (!supabaseUrl || !serviceRole) {
       await logAudit("scan_cve_enrichment_trigger_failed", { reason: "missing_supabase_env" });
+      scanWarnings.push("cve_enrichment_trigger_failed:missing_supabase_env");
       return;
     }
 
@@ -975,6 +976,7 @@ export async function runSurfaceScanEnrichment(
           status: res.status,
           error: body?.error || "unknown_error",
         });
+        scanWarnings.push(`cve_enrichment_trigger_failed:http_${res.status}`);
         return;
       }
       await logAudit("scan_cve_enrichment_triggered", {
@@ -985,6 +987,7 @@ export async function runSurfaceScanEnrichment(
       await logAudit("scan_cve_enrichment_trigger_failed", {
         error: error?.message || String(error),
       });
+      scanWarnings.push("cve_enrichment_trigger_failed:fetch_error");
     }
   };
 
@@ -3185,8 +3188,19 @@ export async function runSurfaceScanEnrichment(
           12000,
         );
 
-        const safePayload = await safeBrowsingRes.json().catch(() => ({}));
-        safeBrowsingMatches = Array.isArray(safePayload?.matches) ? safePayload.matches : [];
+        if (!safeBrowsingRes.ok) {
+          safeBrowsingMatches = [];
+          await insertObservation({
+            module: "threats",
+            observation_type: "safe_browsing_api_error",
+            title: "Safe Browsing API error",
+            value: { status: safeBrowsingRes.status, configured: true },
+            severity: "info",
+          });
+        } else {
+          const safePayload = await safeBrowsingRes.json().catch(() => ({}));
+          safeBrowsingMatches = Array.isArray(safePayload?.matches) ? safePayload.matches : [];
+        }
       } catch {
         safeBrowsingMatches = [];
       }
@@ -3202,14 +3216,18 @@ export async function runSurfaceScanEnrichment(
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: form.toString(),
       }, 12000);
-      const urlHausPayload = await urlHausRes.json().catch(() => ({}));
-      const urls = Array.isArray(urlHausPayload?.urls) ? urlHausPayload.urls : [];
-      const queryStatus = String(urlHausPayload?.query_status || "").toLowerCase();
-      urlHausListed = queryStatus === "ok" && urls.length > 0;
-      urlHausSummary = {
-        query_status: queryStatus || "unknown",
-        listed_urls: urls.slice(0, 20),
-      };
+      if (!urlHausRes.ok) {
+        urlHausSummary = { query_status: `http_${urlHausRes.status}` };
+      } else {
+        const urlHausPayload = await urlHausRes.json().catch(() => ({}));
+        const urls = Array.isArray(urlHausPayload?.urls) ? urlHausPayload.urls : [];
+        const queryStatus = String(urlHausPayload?.query_status || "").toLowerCase();
+        urlHausListed = queryStatus === "ok" && urls.length > 0;
+        urlHausSummary = {
+          query_status: queryStatus || "unknown",
+          listed_urls: urls.slice(0, 20),
+        };
+      }
     } catch {
       urlHausSummary = { query_status: "error" };
     }
@@ -3497,6 +3515,13 @@ export async function runSurfaceScanEnrichment(
       const fallback = await tryLoadLegacyIocMatches();
       matchedIocIndicators.push(...fallback);
       iocRefreshStatus = "failed";
+      await insertObservation({
+        module: "threats",
+        observation_type: "ioc_feed_refresh_failed",
+        title: "IOC Fresh feed refresh failed — using legacy fallback",
+        value: { fallback_count: fallback.length },
+        severity: "info",
+      });
     }
 
     if (matchedIocIndicators.length === 0) {
@@ -3638,10 +3663,11 @@ export async function runSurfaceScanEnrichment(
 
   const runDnsBlocklistsModule = async () => {
     const providers = ["zen.spamhaus.org", "bl.spamcop.net", "dnsbl.sorbs.net"];
+    const maxIps = Number(Deno.env.get("SURFACESCAN_DNSBL_MAX_IPS") || "15");
     const ipv4Targets = [...discoveredIps]
       .map((entry) => String(entry || "").trim())
       .filter((entry) => /^\d{1,3}(\.\d{1,3}){3}$/.test(entry))
-      .slice(0, 5);
+      .slice(0, maxIps);
     if (ipv4Targets.length === 0) {
       await insertObservation({
         module: "dns_blocklists",
@@ -3654,9 +3680,9 @@ export async function runSurfaceScanEnrichment(
     }
 
     const checked: DnsBlocklistCheck[] = [];
-    for (const ip of ipv4Targets) {
-      const reversed = ip.split(".").reverse().join(".");
-      for (const provider of providers) {
+    const lookupTasks = ipv4Targets.flatMap((ip) =>
+      providers.map((provider) => async () => {
+        const reversed = ip.split(".").reverse().join(".");
         const queryName = `${reversed}.${provider}`;
         const answers = await resolveWithDnsOverHttps(queryName, "A");
         const classified = classifyDnsBlocklistResponse(provider, answers);
@@ -3685,7 +3711,11 @@ export async function runSurfaceScanEnrichment(
             remediation: "Verificare reputazione IP, abuso SMTP/malware e avviare delisting dopo remediation.",
           });
         }
-      }
+      })
+    );
+    const DNSBL_CHUNK = 6;
+    for (let i = 0; i < lookupTasks.length; i += DNSBL_CHUNK) {
+      await Promise.allSettled(lookupTasks.slice(i, i + DNSBL_CHUNK).map((fn) => fn()));
     }
 
     await insertObservation({
@@ -4282,11 +4312,11 @@ export async function runSurfaceScanEnrichment(
     let hostDataFound = false;
     let unrelatedHostCount = 0;
 
-    for (const ip of shodanEligibleIps) {
+    const processShodanIp = async (ip: string) => {
       try {
         const shodanUrl = `https://api.shodan.io/shodan/host/${encodeURIComponent(ip)}?key=${encodeURIComponent(key)}&minify=true`;
         const res = await fetchWithTimeout(shodanUrl, {}, 12000);
-        if (!res.ok) continue;
+        if (!res.ok) return;
         const payload = await res.json();
         shodanHostPayloads.push({
           ip,
@@ -4532,6 +4562,11 @@ export async function runSurfaceScanEnrichment(
       } catch {
         // ignore single host errors
       }
+    };
+
+    const SHODAN_CHUNK = 3;
+    for (let i = 0; i < shodanEligibleIps.length; i += SHODAN_CHUNK) {
+      await Promise.allSettled(shodanEligibleIps.slice(i, i + SHODAN_CHUNK).map(processShodanIp));
     }
 
     if (!hostDataFound) {
@@ -5820,44 +5855,49 @@ export async function runSurfaceScanEnrichment(
   };
 
   const runSafeRecon = async () => {
-    await safeRun(modules.dns, runDnsModule);
-    await safeRun(modules.dnssec, runDnssecModule);
-    await safeRun(modules.whois, runWhoisModule);
-    await safeRun(modules.http_security, runHttpModules);
-    await safeRun(modules.headers, async () => {
-      await fetchPrimaryHttpSnapshot();
-    });
-    await safeRun(modules.robots, runRobotsModule);
-    await safeRun(modules.security_txt, runSecurityTxtModule);
-    await safeRun(modules.sitemap, runSitemapModule);
-    await safeRun(modules.redirects, runRedirectModule);
-    await safeRun(modules.quality, runQualityModule);
-    await safeRun(modules.threats, runThreatsModule);
-    await safeRun(modules.dns_blocklists, runDnsBlocklistsModule);
+    // Phase 1: baseline resolution — no inter-dependencies
+    await Promise.allSettled([
+      safeRun(modules.dns, runDnsModule),
+      safeRun(modules.dnssec, runDnssecModule),
+      safeRun(modules.whois, runWhoisModule),
+    ]);
+    // Phase 2: HTTP checks + threat intel + IP-based checks (discoveredIps populated by phase 1)
+    await Promise.allSettled([
+      safeRun(modules.http_security, runHttpModules),
+      safeRun(modules.headers, async () => { await fetchPrimaryHttpSnapshot(); }),
+      safeRun(modules.robots, runRobotsModule),
+      safeRun(modules.security_txt, runSecurityTxtModule),
+      safeRun(modules.sitemap, runSitemapModule),
+      safeRun(modules.redirects, runRedirectModule),
+      safeRun(modules.quality, runQualityModule),
+      safeRun(modules.threats, runThreatsModule),
+      safeRun(modules.dns_blocklists, runDnsBlocklistsModule),
+    ]);
   };
 
   try {
     await runSafeRecon();
 
     if (["domain_exposure", "ip_exposure", "cve_api_validation"].includes(job.scan_profile)) {
-      await safeRun(modules.reverse_dns_and_dumpster, runReverseAndDumpsterModule);
-      await safeRun(modules.shodan, runShodanModule);
-    }
-
-    if (["domain_exposure", "cve_api_validation"].includes(job.scan_profile)) {
-      await safeRun(modules.urlscan, runUrlscanModule);
-    }
-
-    if (["domain_exposure", "ip_exposure", "cve_api_validation"].includes(job.scan_profile)) {
+      const phase3: Promise<void>[] = [
+        safeRun(modules.reverse_dns_and_dumpster, runReverseAndDumpsterModule),
+        safeRun(modules.shodan, runShodanModule),
+      ];
+      if (["domain_exposure", "cve_api_validation"].includes(job.scan_profile)) {
+        phase3.push(safeRun(modules.urlscan, runUrlscanModule));
+      }
+      await Promise.allSettled(phase3);
       await safeRun(modules.pentest_tools, runPentestToolsModule);
     }
     await safeRun(modules.open_ports, runOpenPortsModule);
 
-    await safeRun(modules.ssl_certificate, runSslCertificateModule);
-    await safeRun(modules.tls_summary, runTlsSummaryModule);
-    await safeRun(modules.server_info, runServerInfoModule);
-    await safeRun(modules.server_location, runServerLocationModule);
-    await safeRun(modules.tech_stack, runTechStackModule);
+    await Promise.allSettled([
+      safeRun(modules.ssl_certificate, runSslCertificateModule),
+      safeRun(modules.tls_summary, runTlsSummaryModule),
+      safeRun(modules.server_info, runServerInfoModule),
+      safeRun(modules.server_location, runServerLocationModule),
+      safeRun(modules.tech_stack, runTechStackModule),
+    ]);
 
     await safeRun(modules.passes, runPassesModule);
 
@@ -6119,6 +6159,8 @@ export async function runSurfaceScanEnrichment(
         timeout: 0,
       } as Record<string, number>,
     );
+    await triggerCveEnrichmentQueue();
+
     const scanSummary = {
       overall_score: overallScore,
       risk_level: riskLevel,
@@ -6134,6 +6176,7 @@ export async function runSurfaceScanEnrichment(
       scope_guard: scopeCounters,
       hosting_context: hostingContext,
       shodan_status: shodanStatus,
+      warnings: scanWarnings.length > 0 ? scanWarnings : undefined,
     };
 
     await insertObservation({
@@ -6171,7 +6214,6 @@ export async function runSurfaceScanEnrichment(
       scope_guard: scopeCounters,
     });
 
-    await triggerCveEnrichmentQueue();
     await triggerAutoReportRepository();
   } catch (error: any) {
     await adminClient

@@ -251,7 +251,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
     if (!organizationId) return;
     setLoading(true);
     try {
-      const [jobsData, summaryData, scopeDomainsRes] = await Promise.all([
+      const [jobsResult, summaryResult, scopeDomainsResult] = await Promise.allSettled([
         fetchExposureJobs(organizationId, 50),
         fetchExposureSummary({
           customerId: organizationId,
@@ -264,9 +264,12 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
           .order('input_value', { ascending: true }),
       ]);
 
-      if (scopeDomainsRes.error) throw scopeDomainsRes.error;
+      const jobsData = jobsResult.status === 'fulfilled' ? jobsResult.value : [];
+      const summaryData = summaryResult.status === 'fulfilled' ? summaryResult.value : null;
+      const scopeDomainsRes = scopeDomainsResult.status === 'fulfilled' ? scopeDomainsResult.value : null;
+      if (scopeDomainsRes && (scopeDomainsRes as any).error) throw (scopeDomainsRes as any).error;
 
-      const monitoredRules = (scopeDomainsRes.data || []) as Array<{ entry_type: string; input_value: string }>;
+      const monitoredRules = ((scopeDomainsRes as any)?.data || []) as Array<{ entry_type: string; input_value: string }>;
       const normalizedScopeDomains = Array.from(
         new Set(
           monitoredRules
@@ -291,10 +294,10 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       const fallbackSelected = String(jobsData[0]?.id || '');
       setSelectedJobId((prev) => prev || fallbackSelected);
       setSummary(summaryData);
-      setTargetSnapshots(summaryData.target_snapshots || []);
+      setTargetSnapshots(summaryData?.target_snapshots || []);
 
-      const effectiveJobIds = (summaryData.job_ids || []).map((entry) => String(entry || '').trim()).filter(Boolean);
-      if (effectiveJobIds.length === 0 && summaryData.job_id) {
+      const effectiveJobIds = (summaryData?.job_ids || []).map((entry) => String(entry || '').trim()).filter(Boolean);
+      if (effectiveJobIds.length === 0 && summaryData?.job_id) {
         effectiveJobIds.push(String(summaryData.job_id));
       }
       if (effectiveJobIds.length === 0) {
@@ -306,14 +309,14 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
         }
       }
 
-      const [portsData, techData, findingsData] = await Promise.all([
+      const [portsRes, techRes, findingsRes2] = await Promise.allSettled([
         fetchOpenPortsByJobIds(effectiveJobIds),
         fetchTechnologiesByJobIds(effectiveJobIds),
         fetchExposureFindingsByJobIds(effectiveJobIds),
       ]);
-      setOpenPorts(dedupeOpenPortsRows(portsData));
-      setTechnologies(dedupeTechnologiesRows(techData));
-      setFindings(dedupeFindingsRows(findingsData));
+      setOpenPorts(portsRes.status === 'fulfilled' ? dedupeOpenPortsRows(portsRes.value) : []);
+      setTechnologies(techRes.status === 'fulfilled' ? dedupeTechnologiesRows(techRes.value) : []);
+      setFindings(findingsRes2.status === 'fulfilled' ? dedupeFindingsRows(findingsRes2.value) : []);
     } catch (error: any) {
       console.error('Exposure refresh error:', error);
       toast.error('Impossibile caricare dati exposure', {

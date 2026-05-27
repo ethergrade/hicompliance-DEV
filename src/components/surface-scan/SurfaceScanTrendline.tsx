@@ -79,7 +79,7 @@ export const SurfaceScanTrendline: React.FC = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
               <div className="rounded-lg border p-3">
                 <p className="text-xs text-muted-foreground">Score medio</p>
-                <p className="text-2xl font-bold">{lastSnap?.avg_score.toFixed(1)}</p>
+                <p className="text-2xl font-bold">{lastSnap?.avg_score?.toFixed(1) ?? '-'}</p>
               </div>
               <div className="rounded-lg border p-3">
                 <p className="text-xs text-muted-foreground">Asset analizzati</p>
