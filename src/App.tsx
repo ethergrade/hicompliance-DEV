@@ -36,6 +36,7 @@ import CyberNews from "./pages/CyberNews";
 // import AdminReporting from "./pages/AdminReporting";
 import Consistenze from "./pages/Consistenze";
 import AdminCompanies from "./pages/AdminCompanies";
+import AssessmentGanttTest from "./pages/AssessmentGanttTest";
 // HIDDEN: supabase-only (ai_ciso_conversations), no backend model
 // import AICiso from "./pages/AICiso";
 import HiConsoleLanding from "./pages/HiConsoleLanding";
@@ -81,6 +82,7 @@ const App = () => (
             {/* <Route path="/settings/surface-scan-alerts" element={<ClientSelectionGuard><SurfaceScanSettings /></ClientSelectionGuard>} /> */}
             <Route path="/admin/role-settings" element={<ClientSelectionGuard><RoleSettings /></ClientSelectionGuard>} />
             <Route path="/admin/companies" element={<AdminCompanies />} />
+            <Route path="/test/assessment-gantt" element={<ClientSelectionGuard><AssessmentGanttTest /></ClientSelectionGuard>} />
             {/* HIDDEN: supabase-only */}
             {/* <Route path="/admin/reporting" element={<AdminReporting />} /> */}
             <Route path="/consistenze" element={<ClientSelectionGuard><Consistenze /></ClientSelectionGuard>} />
