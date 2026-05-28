@@ -10,14 +10,16 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Link2, Unlink, Plug, Shield, Mail, Monitor, Smartphone, Activity, Search as SearchIcon, Server, ShieldCheck, FileCheck, Eye, Radar } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { tenantServicesApi } from '@/lib/api';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
+import type { TenantServiceResource } from '@/types/api';
 
 interface ClientServicesDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  organizationId: string;
-  organizationName: string;
+  organizationId?: string;
+  organizationName?: string;
 }
 
 interface Integration {
@@ -40,57 +42,106 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
   himobile: <Smartphone className="w-4 h-4" />,
 };
 
+/** Derive feature flags from tenant-services list */
+function deriveFlags(services: TenantServiceResource[]) {
+  const hc = services.find(s => s.service_type === 'hicompliance' && s.status === 'active');
+  const ht = services.find(s => s.service_type === 'hitrack' && s.status === 'active');
+  const dr = services.find(s => s.service_type === 'darkrisk' && s.status === 'active');
+  return {
+    hicompliance_enabled: !!hc,
+    irp_extended: !!(hc?.settings as any)?.extended_range,
+    surface_scan_extended: !!(ht?.settings as any)?.extended_range,
+    pentest_tools_auto_validation: true,
+    surface_scan360_enabled: !!ht,
+    dark_risk360_enabled: !!dr,
+  };
+}
+
+/** Derive DarkRisk tier from tenant-services list */
+function deriveDarkRiskTier(services: TenantServiceResource[]) {
+  const dr = services.find(s => s.service_type === 'darkrisk' && s.status === 'active');
+  const tier = (dr?.settings as any)?.tier;
+  return {
+    tier: (tier === 'extended' ? 'extended' : 'standard') as 'standard' | 'extended',
+    enabled: !!dr,
+  };
+}
+
 const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
-  open, onOpenChange, organizationId, organizationName,
+  open, onOpenChange, organizationId: propOrgId, organizationName,
 }) => {
   const queryClient = useQueryClient();
+  const { organizationId: hookOrgId, selectedOrganization } = useClientOrganization();
+  const organizationId = propOrgId || hookOrgId;
+  const groupId = selectedOrganization?.group_id || organizationId;
   const [connectingService, setConnectingService] = useState<{ id: string; name: string } | null>(null);
   const [apiUrl, setApiUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
 
-  const { data: orgFlags } = useQuery({
-    queryKey: ['org-feature-flags', organizationId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('organizations')
-        .select('hicompliance_enabled, irp_extended, surface_scan_extended, pentest_tools_auto_validation, surface_scan360_enabled, dark_risk360_enabled' as any)
-        .eq('id', organizationId)
-        .maybeSingle();
-      if (error) throw error;
-      return (data as any) || { hicompliance_enabled: false, irp_extended: false, surface_scan_extended: false, pentest_tools_auto_validation: true, surface_scan360_enabled: false, dark_risk360_enabled: false };
-    },
-    enabled: open && !!organizationId,
+  // All tenant-services for this client
+  const { data: tenantServices = [], refetch: refetchServices } = useQuery({
+    queryKey: ['tenant-services-client', organizationId],
+    queryFn: () => tenantServicesApi.list(),
+    enabled: open && !!groupId,
   });
 
-  const { data: darkRiskEntitlement } = useQuery({
-    queryKey: ['darkrisk-entitlement', organizationId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('darkrisk_entitlements' as any)
-        .select('tier, enabled')
-        .eq('organization_id', organizationId)
-        .maybeSingle();
-
-      if (error) {
-        const missingRelation = String((error as any)?.code || '') === '42P01';
-        if (missingRelation) {
-          return { tier: 'standard', enabled: Boolean(orgFlags?.dark_risk360_enabled) };
-        }
-        throw error;
-      }
-
-      return (data as any) || { tier: 'standard', enabled: Boolean(orgFlags?.dark_risk360_enabled) };
-    },
-    enabled: open && !!organizationId,
-  });
+  // Feature flags derived from tenant-services
+  const orgFlags = deriveFlags(tenantServices);
+  const darkRiskEntitlement = deriveDarkRiskTier(tenantServices);
 
   const updateFlagsMutation = useMutation({
     mutationFn: async (patch: Record<string, boolean>) => {
-      const { error } = await supabase.from('organizations').update(patch as any).eq('id', organizationId);
-      if (error) throw error;
+      const ts = [...tenantServices];
+      // HiCompliance toggle
+      if ('hicompliance_enabled' in patch) {
+        const hc = ts.find(s => s.service_type === 'hicompliance');
+        if (patch.hicompliance_enabled) {
+          if (!hc) {
+            await tenantServicesApi.create({ service_type: 'hicompliance', status: 'active', settings: { duration: '3', extended_range: false } }, groupId);
+          }
+        } else {
+          if (hc) await tenantServicesApi.delete(hc.id, groupId);
+        }
+      }
+      // IRP extended toggle
+      if ('irp_extended' in patch) {
+        const hc = ts.find(s => s.service_type === 'hicompliance');
+        if (hc) {
+          await tenantServicesApi.update(hc.id, { settings: { ...(hc.settings as any || {}), extended_range: patch.irp_extended } }, groupId);
+        }
+      }
+      // SurfaceScan360 toggle
+      if ('surface_scan360_enabled' in patch) {
+        const ht = ts.find(s => s.service_type === 'hitrack');
+        if (patch.surface_scan360_enabled) {
+          if (!ht) {
+            await tenantServicesApi.create({ service_type: 'hitrack', status: 'active', settings: { duration: '3', extended_range: false } }, groupId);
+          }
+        } else {
+          if (ht) await tenantServicesApi.delete(ht.id, groupId);
+        }
+      }
+      // SurfaceScan extended toggle
+      if ('surface_scan_extended' in patch) {
+        const ht = ts.find(s => s.service_type === 'hitrack');
+        if (ht) {
+          await tenantServicesApi.update(ht.id, { settings: { ...(ht.settings as any || {}), extended_range: patch.surface_scan_extended } }, groupId);
+        }
+      }
+      // DarkRisk360 toggle
+      if ('dark_risk360_enabled' in patch) {
+        const dr = ts.find(s => s.service_type === 'darkrisk');
+        if (patch.dark_risk360_enabled) {
+          if (!dr) {
+            await tenantServicesApi.create({ service_type: 'darkrisk', status: 'active', settings: { tier: 'standard' } }, groupId);
+          }
+        } else {
+          if (dr) await tenantServicesApi.delete(dr.id, groupId);
+        }
+      }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['org-feature-flags', organizationId] });
+      refetchServices();
       toast.success('Configurazione aggiornata');
     },
     onError: (err: Error) => toast.error(`Errore: ${err.message}`),
@@ -98,81 +149,58 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 
   const updateDarkRiskTierMutation = useMutation({
     mutationFn: async (tier: 'standard' | 'extended') => {
-      const payload = {
-        organization_id: organizationId,
-        tier,
-        enabled: true,
-        updated_at: new Date().toISOString(),
-      };
-
-      const { error } = await supabase
-        .from('darkrisk_entitlements' as any)
-        .upsert(payload, { onConflict: 'organization_id' });
-
-      if (error) throw error;
+      const ts = [...tenantServices];
+      let dr = ts.find(s => s.service_type === 'darkrisk');
+      if (!dr) {
+        dr = await tenantServicesApi.create({ service_type: 'darkrisk', status: 'active', settings: { tier: 'standard' } }, groupId);
+      }
+      await tenantServicesApi.update(dr.id, { settings: { ...(dr.settings as any || {}), tier, enabled: true } }, groupId);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['darkrisk-entitlement', organizationId] });
+      refetchServices();
       toast.success('Tier DarkRisk360 aggiornato');
     },
     onError: (err: Error) => toast.error(`Errore tier DarkRisk360: ${err.message}`),
   });
 
+  // Service catalog (hisolution_services equivalent)
   const { data: services = [] } = useQuery({
-    queryKey: ['hisolution-services'],
+    queryKey: ['tenant-services-catalog'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('hisolution_services').select('*');
-      if (error) throw error;
-      return data || [];
+      const catalog = await tenantServicesApi.catalog();
+      return Object.entries(catalog).map(([code, entry]) => ({
+        id: code,
+        code,
+        name: (entry as any).label || code,
+      }));
     },
     enabled: open,
   });
 
-  const { data: integrations = [], isLoading } = useQuery({
-    queryKey: ['client-integrations', organizationId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('organization_integrations')
-        .select('id, service_id, api_url, is_active, hisolution_services(code, name)')
-        .eq('organization_id', organizationId)
-        .eq('is_active', true);
-      if (error) throw error;
-      return (data || []).map((item: any) => ({
-        id: item.id,
-        service_id: item.service_id,
-        api_url: item.api_url,
-        is_active: item.is_active,
-        service_code: item.hisolution_services?.code,
-        service_name: item.hisolution_services?.name,
-      })) as Integration[];
-    },
-    enabled: open && !!organizationId,
-  });
+  // Integrations = tenant-services list
+  const integrations: Integration[] = tenantServices
+    .filter(s => s.status === 'active')
+    .map(s => ({
+      id: s.id,
+      service_id: s.service_type,
+      api_url: (s.settings as any)?.api_url || '',
+      is_active: s.status === 'active',
+      service_code: s.service_type,
+      service_name: s.service_type,
+    }));
+
+  const isLoading = false; // tenant-services query handles loading state
 
   const connectMutation = useMutation({
-    mutationFn: async ({ serviceId, apiUrl, apiKey }: { serviceId: string; apiUrl: string; apiKey: string }) => {
-      const { data: existing } = await supabase
-        .from('organization_integrations')
-        .select('id')
-        .eq('organization_id', organizationId)
-        .eq('service_id', serviceId)
-        .maybeSingle();
-
-      if (existing) {
-        const { error } = await supabase
-          .from('organization_integrations')
-          .update({ api_url: apiUrl, api_key: apiKey, is_active: true, api_methods: {} })
-          .eq('id', existing.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('organization_integrations')
-          .insert({ organization_id: organizationId, service_id: serviceId, api_url: apiUrl, api_key: apiKey, is_active: true, api_methods: {} });
-        if (error) throw error;
-      }
+    mutationFn: async ({ serviceId, apiUrl: url, apiKey: key }: { serviceId: string; apiUrl: string; apiKey: string }) => {
+      await tenantServicesApi.create({
+        service_type: serviceId,
+        status: 'active',
+        settings: { api_url: url, api_key: key },
+      }, groupId);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['client-integrations', organizationId] });
+      refetchServices();
       toast.success('Servizio collegato con successo');
       setConnectingService(null);
       setApiUrl('');
@@ -183,14 +211,10 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 
   const disconnectMutation = useMutation({
     mutationFn: async (integrationId: string) => {
-      const { error } = await supabase
-        .from('organization_integrations')
-        .update({ is_active: false })
-        .eq('id', integrationId);
-      if (error) throw error;
+      await tenantServicesApi.delete(integrationId, groupId);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['client-integrations', organizationId] });
+      refetchServices();
       toast.success('Servizio scollegato');
     },
     onError: (err: Error) => toast.error(`Errore: ${err.message}`),
