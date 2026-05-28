@@ -188,7 +188,6 @@ const Assessment: React.FC = () => {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const assessmentIdRef = useRef<string | number | null>(null);
   const loadedOrgRef = useRef<string | null>(null);
-  const [assessmentCategories, setAssessmentCategories] = useState<UICategory[]>([]);
   const [v2Categories, setV2Categories] = useState<UICategory[]>([]);
   const [indexToUuid, setIndexToUuid] = useState<Record<number, string>>({});
   const categoriesLoaded = useRef(false);

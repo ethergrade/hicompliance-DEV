@@ -15,19 +15,19 @@ const _h = (companyId: string, groupId?: string | null) => ({
 
 export const assessmentV2Api = {
   /** Get all assessment categories with nested questions */
-  async categories(, _g?: string | null): Promise<AssessmentCategory[]> {
+  async categories(_companyId?: string): Promise<AssessmentCategory[]> {
     const res = await apiClient.get<ApiResponse<AssessmentCategory[]>>("/assessments-v2/categories");
     return res.data;
   },
 
   /** Get all 132 questions */
-  async questions(, _g?: string | null): Promise<AssessmentQuestion[]> {
+  async questions(_companyId?: string): Promise<AssessmentQuestion[]> {
     const res = await apiClient.get<ApiResponse<AssessmentQuestion[]>>("/assessments-v2/questions");
     return res.data;
   },
 
   /** Get remediation template catalog */
-  async remediationTemplates(, _g?: string | null): Promise<RemediationTemplate[]> {
+  async remediationTemplates(_companyId?: string): Promise<RemediationTemplate[]> {
     const res = await apiClient.get<ApiResponse<RemediationTemplate[]>>("/assessments-v2/remediation-templates");
     return res.data;
   },

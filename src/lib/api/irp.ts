@@ -152,7 +152,7 @@ export const irpApi = {
   },
 
   /** List all groups */
-  async groups(, _g?: string | null): Promise<Group[]> {
+  async groups(_companyId?: string): Promise<Group[]> {
     const res = await apiClient.get<ApiResponse<Group[]>>("/groups");
     return res.data;
   },
