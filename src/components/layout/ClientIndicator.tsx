@@ -32,9 +32,7 @@ export const ClientIndicator: React.FC = () => {
     isLoadingClients,
   } = useClientContext();
 
-  if (!canManageMultipleClients) return null;
-
-  // Filter organizations by selected group
+  // Tutti gli hook devono essere prima di qualsiasi return condizionale
   const filteredOrganizations = useMemo(() => {
     if (!selectedGroup) return organizations;
     return organizations.filter(org => org.group_id === selectedGroup.id);
@@ -44,8 +42,6 @@ export const ClientIndicator: React.FC = () => {
     const group = groups.find((g) => g.id === groupId);
     if (group) {
       setSelectedGroup(group);
-      // Clear organization selection when group changes
-      // The user will need to select a new organization from the filtered list
     }
   };
 
@@ -53,39 +49,34 @@ export const ClientIndicator: React.FC = () => {
     const organization = filteredOrganizations.find((org) => org.id === organizationId);
     if (!organization) return;
 
-    // Update selected organization
     setSelectedOrganization(organization);
 
-    // Check if current route requires a specific service
     const currentPath = location.pathname;
     const requiredService = SERVICE_ROUTE_MAP[currentPath];
     
     if (requiredService && organization.group_id) {
       try {
-        // Fetch services for the new organization
         const services = await tenantServicesApi.listByOrganization(
           organization.id,
           organization.group_id
         );
         const orgServices = services.filter(s => s.tenant_id === organization.id);
-        
-        // Check if required service is active
         const hasService = orgServices.some(
           s => s.service_type === requiredService && s.status === 'active'
         );
-        
-        // Redirect to dashboard if service not available
         if (!hasService) {
           navigate('/dashboard', { replace: true });
         }
       } catch {
-        // On error, redirect to dashboard as fallback
         navigate('/dashboard', { replace: true });
       }
     }
   };
 
   const showGroupSelector = groups.length > 1;
+
+  // Return condizionale DOPO tutti gli hook
+  if (!canManageMultipleClients) return null;
 
   return (
     <div className="flex flex-col gap-3 border-b border-border bg-primary/5 px-4 py-3 md:flex-row md:items-center">
