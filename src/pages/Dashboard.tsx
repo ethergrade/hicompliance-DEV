@@ -39,6 +39,7 @@ const Dashboard: React.FC = () => {
   const { selectedOrganization } = useClientContext();
   const activeOrgId = selectedOrganization?.id || userProfile?.organization_id;
   const activeOrgName = selectedOrganization?.name || userProfile?.organizations?.name || 'Organizzazione';
+  const activeGroupId = selectedOrganization?.group_id ?? null;
   const { integrations, isServiceConnected, hasAnyIntegrationsConfigured } = useServiceIntegrations();
   const { isSuperAdmin, isSales } = useUserRoles();
   const canManageIntegrationSettings = isSuperAdmin || isSales;
@@ -293,7 +294,9 @@ const Dashboard: React.FC = () => {
         <ClientServicesDialog
           open={modulesDialogOpen}
           onOpenChange={setModulesDialogOpen}
+          organizationId={activeOrgId}
           organizationName={activeOrgName}
+          groupId={activeGroupId}
         />
       )}
     </DashboardLayout>
