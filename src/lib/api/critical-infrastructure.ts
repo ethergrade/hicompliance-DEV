@@ -4,46 +4,46 @@ import type {
   CriticalInfrastructureAsset,
 } from "@/types/api";
 
-const groupHeader = (companyId: string) => ({
-  headers: { "X-Group-Id": companyId },
+const _h = (companyId: string, groupId?: string | null) => ({
+  headers: { "X-Group-Id": groupId || companyId },
 });
 
 export const criticalInfrastructureApi = {
   /** List all critical infrastructure assets for a company */
-  async list(companyId: string): Promise<CriticalInfrastructureAsset[]> {
+  async list(companyId: string, _g?: string | null): Promise<CriticalInfrastructureAsset[]> {
     const res = await apiClient.get<ApiResponse<CriticalInfrastructureAsset[]>>(
       `/companies/${companyId}/critical-infrastructure`,
       undefined,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
   /** Create a new critical infrastructure asset */
-  async create(companyId: string, payload: Partial<CriticalInfrastructureAsset>): Promise<CriticalInfrastructureAsset> {
+  async create(companyId: string, payload: Partial<CriticalInfrastructureAsset>, _g?: string | null): Promise<CriticalInfrastructureAsset> {
     const res = await apiClient.post<ApiResponse<CriticalInfrastructureAsset>>(
       `/companies/${companyId}/critical-infrastructure`,
       payload,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
   /** Update a critical infrastructure asset */
-  async update(companyId: string, assetId: string, payload: Partial<CriticalInfrastructureAsset>): Promise<CriticalInfrastructureAsset> {
+  async update(companyId: string, assetId: string, payload: Partial<CriticalInfrastructureAsset>, _g?: string | null): Promise<CriticalInfrastructureAsset> {
     const res = await apiClient.put<ApiResponse<CriticalInfrastructureAsset>>(
       `/companies/${companyId}/critical-infrastructure/${assetId}`,
       payload,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
   /** Delete a critical infrastructure asset */
-  async delete(companyId: string, assetId: string): Promise<void> {
+  async delete(companyId: string, assetId: string, _g?: string | null): Promise<void> {
     await apiClient.delete(
       `/companies/${companyId}/critical-infrastructure/${assetId}`,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
   },
 };

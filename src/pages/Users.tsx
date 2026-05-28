@@ -12,9 +12,9 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { configApi, tenantsApi, usersApi } from "@/lib/api";
-import { useClientContext } from "@/contexts/ClientContext";
-import type { TenantResource, UserResource } from "@/types/api";
+import { configApi, usersApi } from "@/lib/api";
+import { useClientOrganization } from "@/hooks/useClientOrganization";
+import type { UserResource } from "@/types/api";
 import { User, Plus, Edit, Trash2, UserCheck, UserX } from "lucide-react";
 
 interface UserFormData {
@@ -64,7 +64,8 @@ const Users = () => {
   const [userToDelete, setUserToDelete] = useState<UserResource | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { selectedOrganization, canManageMultipleClients } = useClientContext();
+  const { selectedOrganization } = useClientOrganization();
+  const groupId = selectedOrganization?.group_id ?? null;
 
   const form = useForm<UserFormData>({
     defaultValues: {
@@ -76,13 +77,9 @@ const Users = () => {
   });
 
   const { data: users = [], isLoading } = useQuery({
-    queryKey: ["users"],
-    queryFn: usersApi.list,
-  });
-
-  const { data: tenants = [] } = useQuery({
-    queryKey: ["tenants"],
-    queryFn: tenantsApi.listAll,
+    queryKey: ["users", groupId],
+    queryFn: () => usersApi.list(groupId),
+    enabled: !!groupId,
   });
 
   const { data: roles = [] } = useQuery({
@@ -92,11 +89,9 @@ const Users = () => {
 
   const roleOptions = roles.length > 0 ? roles : fallbackRoles;
 
-  const getTenantName = (user: UserResource) => {
-    if (user.tenant_name) return user.tenant_name;
-    if (!user.tenant_id) return "Nessuna";
-    const tenant = tenants.find((item: TenantResource) => item.id === user.tenant_id);
-    return tenant?.name ?? user.tenant_id;
+  const getUserGroups = (user: UserResource) => {
+    const groups = (user as any).groups as Array<{ id: string; name: string; role: string }> | undefined;
+    return groups?.map(g => g.name).join(", ") ?? "—";
   };
 
   const createUserMutation = useMutation({
@@ -105,8 +100,7 @@ const Users = () => {
       email: data.email,
       password: data.password,
       role: data.role,
-      tenant_id: canManageMultipleClients ? selectedOrganization?.id ?? null : undefined,
-    }),
+    }, groupId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       setIsDialogOpen(false);
@@ -134,7 +128,7 @@ const Users = () => {
         name: data.name,
         email: data.email,
         role: data.role,
-      });
+      }, groupId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
@@ -156,7 +150,7 @@ const Users = () => {
   });
 
   const deleteUserMutation = useMutation({
-    mutationFn: (userId: string | number) => usersApi.delete(userId),
+    mutationFn: (userId: string | number) => usersApi.delete(userId, groupId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       setIsDeleteDialogOpen(false);
@@ -321,9 +315,8 @@ const Users = () => {
                     )}
                   />
                   <p className="text-xs text-muted-foreground">
-                    {canManageMultipleClients
-                      ? `L'utente verrà creato nel tenant selezionato: ${selectedOrganization?.name || 'nessun cliente selezionato'}.`
-                      : "L'utente verrà creato nel tenant dell'account autenticato."}
+                    L'utente verrà creato nel gruppo corrente
+                    {selectedOrganization?.name ? ` (${selectedOrganization.name})` : ""}.
                   </p>
                   <DialogFooter>
                     <Button
@@ -349,7 +342,7 @@ const Users = () => {
               Utenti del Sistema
             </CardTitle>
             <CardDescription>
-              Lista completa degli utenti con i loro ruoli e tenant
+              Lista completa degli utenti con i loro ruoli e gruppi
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -376,7 +369,7 @@ const Users = () => {
                     <TableHead>Nome</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Ruolo</TableHead>
-                    <TableHead>Tenant</TableHead>
+                    <TableHead>Gruppo</TableHead>
                     <TableHead>Data Creazione</TableHead>
                     <TableHead className="text-right">Azioni</TableHead>
                   </TableRow>
@@ -404,7 +397,7 @@ const Users = () => {
                             )}
                           </Badge>
                         </TableCell>
-                        <TableCell>{getTenantName(user)}</TableCell>
+                        <TableCell>{getUserGroups(user)}</TableCell>
                         <TableCell>
                           {new Date(user.created_at).toLocaleDateString("it-IT")}
                         </TableCell>

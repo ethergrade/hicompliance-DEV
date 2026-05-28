@@ -6,51 +6,51 @@ import type {
   UpdateRemediationTaskRequest,
 } from "@/types/api";
 
-const groupHeader = (companyId: string) => ({
-  headers: { "X-Group-Id": companyId },
+const _h = (companyId: string, groupId?: string | null) => ({
+  headers: { "X-Group-Id": groupId || companyId },
 });
 
 export const remediationTasksApi = { 
-  async list(companyId: string): Promise<RemediationTask[]> {
+  async list(companyId: string, _g?: string | null): Promise<RemediationTask[]> {
     const res = await apiClient.get<ApiResponse<RemediationTask[]>>(
       `/companies/${companyId}/remediation-tasks`,
       undefined,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
-  async get(companyId: string, id: string): Promise<RemediationTask> {
+  async get(companyId: string, id: string, _g?: string | null): Promise<RemediationTask> {
     const res = await apiClient.get<ApiResponse<RemediationTask>>(
       `/companies/${companyId}/remediation-tasks/${id}`,
       undefined,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
-  async create(companyId: string, payload: StoreRemediationTaskRequest): Promise<RemediationTask> {
+  async create(companyId: string, payload: StoreRemediationTaskRequest, _g?: string | null): Promise<RemediationTask> {
     const res = await apiClient.post<ApiResponse<RemediationTask>>(
       `/companies/${companyId}/remediation-tasks`,
       payload,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
-  async update(companyId: string, id: string, payload: UpdateRemediationTaskRequest): Promise<RemediationTask> {
+  async update(companyId: string, id: string, payload: UpdateRemediationTaskRequest, _g?: string | null): Promise<RemediationTask> {
     const res = await apiClient.put<ApiResponse<RemediationTask>>(
       `/companies/${companyId}/remediation-tasks/${id}`,
       payload,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
-  async delete(companyId: string, id: string): Promise<void> {
+  async delete(companyId: string, id: string, _g?: string | null): Promise<void> {
     await apiClient.delete(
       `/companies/${companyId}/remediation-tasks/${id}`,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
   },
 };

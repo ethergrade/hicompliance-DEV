@@ -7,19 +7,62 @@ const CSRF_URL = import.meta.env.DEV
   : `${API_BASE_URL}/sanctum/csrf-cookie`;
 
 const TOKEN_KEY = import.meta.env.VITE_AUTH_TOKEN_KEY as string;
+const TOKEN_EXPIRY_KEY = `${TOKEN_KEY}_expiry`;
+
+/** Session window: 115 min (5 min before backend SESSION_LIFETIME default of 120 min) */
+const TOKEN_TTL_MS = 115 * 60 * 1000;
 
 // ─── Token management ───────────────────────────────────────────────────────
 
+function getTokenExpiry(): number | null {
+  const raw = localStorage.getItem(TOKEN_EXPIRY_KEY);
+  if (!raw) return null;
+  const ts = Number(raw);
+  return Number.isFinite(ts) ? ts : null;
+}
+
+function setTokenExpiry(): void {
+  localStorage.setItem(TOKEN_EXPIRY_KEY, String(Date.now() + TOKEN_TTL_MS));
+}
+
+function isTokenExpired(): boolean {
+  const expiry = getTokenExpiry();
+  return expiry !== null && Date.now() >= expiry;
+}
+
 export function getToken(): string | null {
+  if (isTokenExpired()) {
+    handleTokenExpired();
+    return null;
+  }
   return localStorage.getItem(TOKEN_KEY);
 }
 
 export function setToken(token: string): void {
   localStorage.setItem(TOKEN_KEY, token);
+  setTokenExpiry();
 }
 
 export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(TOKEN_EXPIRY_KEY);
+}
+
+/** Extend session on successful API calls (keeps token alive for active users) */
+function refreshTokenExpiry(): void {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) setTokenExpiry();
+}
+
+/** Handle expired token — clear and redirect before any API request is made */
+function handleTokenExpired(): void {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(TOKEN_EXPIRY_KEY);
+
+  if (typeof window === "undefined") return;
+  if (window.location.pathname === "/auth") return;
+
+  window.dispatchEvent(new CustomEvent('auth:unauthorized'));
 }
 
 function handleUnauthorized(): void {
@@ -31,6 +74,15 @@ function handleUnauthorized(): void {
   // Dispatch custom event so AuthProvider can handle logout gracefully
   // via React state instead of a hard page redirect
   window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+}
+
+/** Check token expiry before making a request. Returns true if expired (redirected). */
+function guardTokenExpiry(): boolean {
+  if (isTokenExpired()) {
+    handleTokenExpired();
+    return true;
+  }
+  return false;
 }
 
 /** Force logout from external code (e.g. AuthProvider on me() failure) */
@@ -90,6 +142,11 @@ async function request<T>(
     if (qs) url += `?${qs}`;
   }
 
+  // Pre-flight: if token expired, redirect now (avoid 401) — skip for /auth paths
+  if (!path.startsWith("/auth/login")) {
+    guardTokenExpiry();
+  }
+
   const token = getToken();
   const reqHeaders: Record<string, string> = {
     Accept: "application/json",
@@ -123,6 +180,9 @@ async function request<T>(
     // This prevents a single expired API call from destroying the entire session.
     throw new ApiError(response.status, json as ApiErrorResponse);
   }
+
+  // Extend session on successful API calls (active user keeps token alive)
+  refreshTokenExpiry();
 
   return json as T;
 }

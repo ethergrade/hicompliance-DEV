@@ -9,25 +9,25 @@ import type {
   RemediationTemplate,
 } from "@/types/api";
 
-const groupHeader = (companyId: string) => ({
-  headers: { "X-Group-Id": companyId },
+const _h = (companyId: string, groupId?: string | null) => ({
+  headers: { "X-Group-Id": groupId || companyId },
 });
 
 export const assessmentV2Api = {
   /** Get all assessment categories with nested questions */
-  async categories(): Promise<AssessmentCategory[]> {
+  async categories(, _g?: string | null): Promise<AssessmentCategory[]> {
     const res = await apiClient.get<ApiResponse<AssessmentCategory[]>>("/assessments-v2/categories");
     return res.data;
   },
 
   /** Get all 132 questions */
-  async questions(): Promise<AssessmentQuestion[]> {
+  async questions(, _g?: string | null): Promise<AssessmentQuestion[]> {
     const res = await apiClient.get<ApiResponse<AssessmentQuestion[]>>("/assessments-v2/questions");
     return res.data;
   },
 
   /** Get remediation template catalog */
-  async remediationTemplates(): Promise<RemediationTemplate[]> {
+  async remediationTemplates(, _g?: string | null): Promise<RemediationTemplate[]> {
     const res = await apiClient.get<ApiResponse<RemediationTemplate[]>>("/assessments-v2/remediation-templates");
     return res.data;
   },
@@ -35,21 +35,21 @@ export const assessmentV2Api = {
   // ─── Company-scoped assessment responses ────────────────────────────────────
 
   /** Get all assessment responses for a company */
-  async responses(companyId: string): Promise<AssessmentResponseItem[]> {
+  async responses(companyId: string, _g?: string | null): Promise<AssessmentResponseItem[]> {
     const res = await apiClient.get<ApiResponse<AssessmentResponseItem[]>>(
       `/companies/${companyId}/assessment-responses`,
       undefined,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
   /** Batch update assessment responses */
-  async updateResponses(companyId: string, payload: BatchAssessmentResponseRequest): Promise<AssessmentResponseItem[]> {
+  async updateResponses(companyId: string, payload: BatchAssessmentResponseRequest, _g?: string | null): Promise<AssessmentResponseItem[]> {
     const res = await apiClient.put<ApiResponse<AssessmentResponseItem[]>>(
       `/companies/${companyId}/assessment-responses`,
       payload,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
@@ -63,7 +63,7 @@ export const assessmentV2Api = {
     const res = await apiClient.put<ApiResponse<AssessmentResponseItem>>(
       `/companies/${companyId}/assessment-responses/${questionId}`,
       payload,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
@@ -71,21 +71,21 @@ export const assessmentV2Api = {
   // ─── Snapshots ──────────────────────────────────────────────────────────────
 
   /** Get all snapshots for a company */
-  async snapshots(companyId: string): Promise<AssessmentSnapshot[]> {
+  async snapshots(companyId: string, _g?: string | null): Promise<AssessmentSnapshot[]> {
     const res = await apiClient.get<ApiResponse<AssessmentSnapshot[]>>(
       `/companies/${companyId}/assessment-snapshots`,
       undefined,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
   /** Create a new snapshot (recalculates scores from current responses) */
-  async createSnapshot(companyId: string): Promise<AssessmentSnapshot> {
+  async createSnapshot(companyId: string, _g?: string | null): Promise<AssessmentSnapshot> {
     const res = await apiClient.post<ApiResponse<AssessmentSnapshot>>(
       `/companies/${companyId}/assessment-snapshots`,
       undefined,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },

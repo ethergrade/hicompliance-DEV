@@ -5,65 +5,65 @@ import type {
   ConsistenzeSummary,
 } from "@/types/api";
 
-const groupHeader = (companyId: string) => ({
-  headers: { "X-Group-Id": companyId },
+const _h = (companyId: string, groupId?: string | null) => ({
+  headers: { "X-Group-Id": groupId || companyId },
 });
 
 export const consistenzeApi = {
   /** List all items for a company */
-  async items(companyId: string): Promise<ConsistenzeItem[]> {
+  async items(companyId: string, _g?: string | null): Promise<ConsistenzeItem[]> {
     const res = await apiClient.get<ApiResponse<ConsistenzeItem[]>>(
       `/companies/${companyId}/consistenze/items`,
       undefined,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
   /** Create a new item */
-  async createItem(companyId: string, payload: Partial<ConsistenzeItem>): Promise<ConsistenzeItem> {
+  async createItem(companyId: string, payload: Partial<ConsistenzeItem>, _g?: string | null): Promise<ConsistenzeItem> {
     const res = await apiClient.post<ApiResponse<ConsistenzeItem>>(
       `/companies/${companyId}/consistenze/items`,
       payload,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
   /** Update an item */
-  async updateItem(companyId: string, itemId: string, payload: Partial<ConsistenzeItem>): Promise<ConsistenzeItem> {
+  async updateItem(companyId: string, itemId: string, payload: Partial<ConsistenzeItem>, _g?: string | null): Promise<ConsistenzeItem> {
     const res = await apiClient.put<ApiResponse<ConsistenzeItem>>(
       `/companies/${companyId}/consistenze/items/${itemId}`,
       payload,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
   /** Delete an item */
-  async deleteItem(companyId: string, itemId: string): Promise<void> {
+  async deleteItem(companyId: string, itemId: string, _g?: string | null): Promise<void> {
     await apiClient.delete(
       `/companies/${companyId}/consistenze/items/${itemId}`,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
   },
 
   /** Get summary for a company */
-  async summary(companyId: string): Promise<ConsistenzeSummary> {
+  async summary(companyId: string, _g?: string | null): Promise<ConsistenzeSummary> {
     const res = await apiClient.get<ApiResponse<ConsistenzeSummary>>(
       `/companies/${companyId}/consistenze/summary`,
       undefined,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
   /** Update summary for a company */
-  async updateSummary(companyId: string, payload: Partial<ConsistenzeSummary>): Promise<ConsistenzeSummary> {
+  async updateSummary(companyId: string, payload: Partial<ConsistenzeSummary>, _g?: string | null): Promise<ConsistenzeSummary> {
     const res = await apiClient.put<ApiResponse<ConsistenzeSummary>>(
       `/companies/${companyId}/consistenze/summary`,
       payload,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },

@@ -10,11 +10,11 @@ const API_BASE_URL = import.meta.env.DEV
   ? "/api"
   : (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") || "https://hiapi.websoupcloud.it";
 
-const groupHeader = (companyId: string) => ({
-  headers: { "X-Group-Id": companyId },
+const _h = (companyId: string, groupId?: string | null) => ({
+  headers: { "X-Group-Id": groupId || companyId },
 });
 
-async function uploadMultipart(companyId: string, path: string, formData: FormData): Promise<DocumentResource> {
+async function uploadMultipart(companyId: string, path: string, formData: FormData, _g?: string | null): Promise<DocumentResource> {
   const token = getToken();
 
   const res = await fetch(`${API_BASE_URL}${path}`, {
@@ -38,31 +38,31 @@ async function uploadMultipart(companyId: string, path: string, formData: FormDa
 
 export const documentsApi = {
   /** List all documents for a company */
-  async list(companyId: string): Promise<DocumentResource[]> {
+  async list(companyId: string, _g?: string | null): Promise<DocumentResource[]> {
     const res = await apiClient.get<ApiResponse<DocumentResource[]>>(
       `/companies/${companyId}/documents`,
       undefined,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
   /** Get a single document by ID */
-  async get(companyId: string, documentId: string): Promise<DocumentResource> {
+  async get(companyId: string, documentId: string, _g?: string | null): Promise<DocumentResource> {
     const res = await apiClient.get<ApiResponse<DocumentResource>>(
       `/companies/${companyId}/documents/${documentId}`,
       undefined,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
   /** Create a new document (JSON metadata only, no file) */
-  async create(companyId: string, payload: StoreDocumentRequest): Promise<DocumentResource> {
+  async create(companyId: string, payload: StoreDocumentRequest, _g?: string | null): Promise<DocumentResource> {
     const res = await apiClient.post<ApiResponse<DocumentResource>>(
       `/companies/${companyId}/documents`,
       payload,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
@@ -90,29 +90,29 @@ export const documentsApi = {
   },
 
   /** Update document metadata */
-  async update(companyId: string, documentId: string, payload: UpdateDocumentRequest): Promise<DocumentResource> {
+  async update(companyId: string, documentId: string, payload: UpdateDocumentRequest, _g?: string | null): Promise<DocumentResource> {
     const res = await apiClient.put<ApiResponse<DocumentResource>>(
       `/companies/${companyId}/documents/${documentId}`,
       payload,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
   /** Delete a document */
-  async delete(companyId: string, documentId: string): Promise<void> {
+  async delete(companyId: string, documentId: string, _g?: string | null): Promise<void> {
     await apiClient.delete(
       `/companies/${companyId}/documents/${documentId}`,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
   },
 
   /** Get download URL or binary for a document */
-  async download(companyId: string, documentId: string): Promise<Blob> {
+  async download(companyId: string, documentId: string, _g?: string | null): Promise<Blob> {
     const res = await apiClient.get<Blob>(
       `/companies/${companyId}/documents/${documentId}/download`,
       undefined,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res;
   },
