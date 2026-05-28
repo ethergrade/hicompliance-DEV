@@ -151,10 +151,16 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 
   const updateDarkRiskTierMutation = useMutation({
     mutationFn: async (tier: 'standard' | 'extended') => {
-      const ts = [...tenantServices];
+      if (!organizationId) throw new Error('Nessuna azienda selezionata');
+      // Refetch to get fresh tenant-services after main toggle created the service
+      const { data: fresh } = await queryClient.fetchQuery({
+        queryKey: ['tenant-services-client', organizationId],
+        queryFn: () => tenantServicesApi.list(undefined, groupId),
+      });
+      const ts = fresh || [];
       let dr = ts.find(s => s.service_type === 'darkrisk');
       if (!dr) {
-        dr = await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'darkrisk', status: 'active', settings: { tier: 'standard' } }, groupId);
+        dr = await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'darkrisk', status: 'active', settings: { tier } }, groupId);
       }
       await tenantServicesApi.update(dr.id, { settings: { ...(dr.settings as any || {}), tier, enabled: true } }, groupId);
     },
@@ -408,9 +414,9 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                     checked={!!orgFlags?.dark_risk360_enabled}
                     disabled={updateFlagsMutation.isPending}
                     onCheckedChange={async (v) => {
-                      updateFlagsMutation.mutate({ dark_risk360_enabled: v });
+                      await updateFlagsMutation.mutateAsync({ dark_risk360_enabled: v });
                       if (v) {
-                        await updateDarkRiskTierMutation.mutateAsync(
+                        updateDarkRiskTierMutation.mutate(
                           (String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'extended' : 'standard')
                         );
                       }
