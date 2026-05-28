@@ -3,12 +3,15 @@
  import { useUserRoles } from '@/hooks/useUserRoles';
  import { tenantsApi } from '@/lib/api';
  import { authApi } from '@/lib/api/auth';
- import type { TenantResource } from '@/types/api';
+ import type { TenantResource, Group } from '@/types/api';
  
  interface ClientContextType {
    selectedOrganization: TenantResource | null;
    setSelectedOrganization: (org: TenantResource) => void;
    clearSelection: () => void;
+   selectedGroup: Group | null;
+   setSelectedGroup: (group: Group) => void;
+   groups: Group[];
    canManageMultipleClients: boolean;
    isLoadingClients: boolean;
    organizations: TenantResource[];
@@ -31,6 +34,8 @@
  export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
    const [selectedOrganization, setSelectedOrganizationState] = useState<TenantResource | null>(getStoredOrganization);
    const [organizations, setOrganizations] = useState<TenantResource[]>([]);
+   const [groups, setGroups] = useState<Group[]>([]);
+   const [selectedGroup, setSelectedGroupState] = useState<Group | null>(null);
    const [isLoadingClients, setIsLoadingClients] = useState(true);
    const [userOrganizationId, setUserOrganizationId] = useState<string | null>(null);
    const { user, loading: authLoading } = useAuth();
@@ -54,6 +59,10 @@
          try {
            const apiGroups = await authApi.groups();
            resolveGroupId = apiGroups[0]?.id || null;
+           setGroups(apiGroups);
+           if (apiGroups.length > 0 && !selectedGroup) {
+             setSelectedGroupState(apiGroups[0]);
+           }
          } catch { /* ignore */ }
        }
        setUserOrganizationId(resolveGroupId);
@@ -112,12 +121,20 @@
      }
    }, [user, rolesLoading, fetchOrganizations, authLoading]);
  
+   // Set selected group with persistence
+   const setSelectedGroup = useCallback((group: Group) => {
+     setSelectedGroupState(group);
+   }, []);
+ 
    return (
      <ClientContext.Provider
        value={{
          selectedOrganization,
          setSelectedOrganization,
          clearSelection,
+         selectedGroup,
+         setSelectedGroup,
+         groups,
          canManageMultipleClients,
          isLoadingClients,
          organizations,

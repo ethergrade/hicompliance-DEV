@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useClientContext } from '@/contexts/ClientContext';
 import { tenantServicesApi } from '@/lib/api/tenant-services';
 import { Badge } from '@/components/ui/badge';
-import { Building2 } from 'lucide-react';
+import { Building2, Users } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -23,16 +23,34 @@ export const ClientIndicator: React.FC = () => {
   const location = useLocation();
   const {
     selectedOrganization,
+    selectedGroup,
+    groups,
     canManageMultipleClients,
     organizations,
     setSelectedOrganization,
+    setSelectedGroup,
     isLoadingClients,
   } = useClientContext();
 
   if (!canManageMultipleClients) return null;
 
+  // Filter organizations by selected group
+  const filteredOrganizations = useMemo(() => {
+    if (!selectedGroup) return organizations;
+    return organizations.filter(org => org.group_id === selectedGroup.id);
+  }, [organizations, selectedGroup]);
+
+  const handleGroupChange = (groupId: string) => {
+    const group = groups.find((g) => g.id === groupId);
+    if (group) {
+      setSelectedGroup(group);
+      // Clear organization selection when group changes
+      // The user will need to select a new organization from the filtered list
+    }
+  };
+
   const handleOrganizationChange = async (organizationId: string) => {
-    const organization = organizations.find((org) => org.id === organizationId);
+    const organization = filteredOrganizations.find((org) => org.id === organizationId);
     if (!organization) return;
 
     // Update selected organization
@@ -67,23 +85,55 @@ export const ClientIndicator: React.FC = () => {
     }
   };
 
+  const showGroupSelector = groups.length > 1;
+
   return (
     <div className="flex flex-col gap-3 border-b border-border bg-primary/5 px-4 py-3 md:flex-row md:items-center">
+      {/* Group Selector - Only show if multiple groups */}
+      {showGroupSelector && (
+        <>
+          <div className="flex items-center gap-2 text-sm">
+            <Users className="w-4 h-4 text-primary" />
+            <span className="text-muted-foreground">Gruppo:</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <Select
+              value={selectedGroup?.id}
+              onValueChange={handleGroupChange}
+              disabled={isLoadingClients || groups.length === 0}
+            >
+              <SelectTrigger className="w-full max-w-[180px] bg-background">
+                <SelectValue placeholder="Seleziona gruppo" />
+              </SelectTrigger>
+              <SelectContent>
+                {groups.map((group) => (
+                  <SelectItem key={group.id} value={group.id}>
+                    {group.name || `Gruppo ${group.id.slice(0, 8)}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="hidden md:block w-px h-6 bg-border mx-2" />
+        </>
+      )}
+
+      {/* Organization/Client Selector */}
       <div className="flex items-center gap-2 text-sm">
         <Building2 className="w-4 h-4 text-primary" />
-        <span className="text-muted-foreground">Cliente:</span>
+        <span className="text-muted-foreground">Azienda:</span>
       </div>
       <div className="flex flex-1 items-center gap-3">
         <Select
           value={selectedOrganization?.id}
           onValueChange={handleOrganizationChange}
-          disabled={isLoadingClients || organizations.length === 0}
+          disabled={isLoadingClients || filteredOrganizations.length === 0}
         >
-          <SelectTrigger className="w-full max-w-md bg-background">
-            <SelectValue placeholder="Seleziona cliente" />
+          <SelectTrigger className="w-full max-w-[280px] bg-background">
+            <SelectValue placeholder={selectedGroup ? "Seleziona azienda" : "Seleziona prima un gruppo"} />
           </SelectTrigger>
           <SelectContent>
-            {organizations.map((organization) => (
+            {filteredOrganizations.map((organization) => (
               <SelectItem key={organization.id} value={organization.id}>
                 {organization.name}
               </SelectItem>
@@ -92,11 +142,11 @@ export const ClientIndicator: React.FC = () => {
         </Select>
 
         {selectedOrganization ? (
-          <Badge variant="secondary" className="font-medium">
+          <Badge variant="secondary" className="font-medium hidden sm:inline-flex">
             {selectedOrganization.name}
           </Badge>
         ) : (
-          <span className="text-sm italic text-muted-foreground">Nessun cliente selezionato</span>
+          <span className="text-sm italic text-muted-foreground hidden sm:inline">Nessuna azienda selezionata</span>
         )}
       </div>
     </div>
