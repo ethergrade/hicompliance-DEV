@@ -65,8 +65,8 @@ const navigation = [
 
 const hiComplianceModules = [
   { title: 'Assessment', href: '/assessment', icon: ClipboardCheck },
-  // { title: 'SurfaceScan360', href: '/surface-scan', icon: Globe }, // HIDDEN: supabase-only (PRODOTTO), no backend SurfaceScan controller
-  // { title: 'DarkRisk360', href: '/dark-risk', icon: Eye }, // HIDDEN: supabase-only (PRODOTTO), no backend DarkRisk360 controller
+  { title: 'SurfaceScan360', href: '/surface-scan', icon: Globe },
+  { title: 'DarkRisk360', href: '/dark-risk', icon: Eye },
   { title: 'Analisi', href: '/analytics', icon: BarChart3 },
   { title: 'Remediation', href: '/remediation', icon: Wrench },
   { title: 'Consistenze', href: '/consistenze', icon: Package },
@@ -120,9 +120,15 @@ export const AppSidebar: React.FC = () => {
         const hicomplianceActive = services.some(
           (s) => s.service_type === 'hicompliance' && s.status === 'active'
         );
-        return { hicompliance_enabled: hicomplianceActive };
+        const surfaceScanActive = services.some(
+          (s) => s.service_type === 'hitrack' && s.status === 'active'
+        );
+        const darkRiskActive = services.some(
+          (s) => s.service_type === 'darkrisk' && s.status === 'active'
+        );
+        return { hicompliance_enabled: hicomplianceActive, surface_scan360_enabled: surfaceScanActive, dark_risk360_enabled: darkRiskActive };
       } catch {
-        return { hicompliance_enabled: false };
+        return { hicompliance_enabled: false, surface_scan360_enabled: false, dark_risk360_enabled: false };
       }
     },
     enabled: !!selectedOrganization?.id,
@@ -131,9 +137,8 @@ export const AppSidebar: React.FC = () => {
   const forceDemoAccessForSalesCliente1 =
     isLockedSalesUser && String(selectedOrganization?.code || '').trim().toLowerCase() === 'cliente1';
   const hicomplianceOn = forceDemoAccessForSalesCliente1 ? true : !!orgFlags?.hicompliance_enabled;
-  // SurfaceScan360 and DarkRisk360 hidden — supabase-only PRODOTTO features, no backend API
-  const surfaceScanOn = false;
-  const darkRiskOn = false;
+  const surfaceScanOn = !!orgFlags?.surface_scan360_enabled;
+  const darkRiskOn = !!orgFlags?.dark_risk360_enabled;
   const { canViewRoute } = usePermissions();
 
   const isFeatureAllowed = (href: string) => {
