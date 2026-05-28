@@ -79,10 +79,13 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   const [apiUrl, setApiUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
 
-  // All tenant-services for this client
+  // All tenant-services for this client (backend ignores tenant_id, filter client-side)
   const { data: tenantServices = [], refetch: refetchServices } = useQuery({
     queryKey: ['tenant-services-client', organizationId],
-    queryFn: () => tenantServicesApi.listByOrganization(organizationId!, groupId),
+    queryFn: async () => {
+      const all = await tenantServicesApi.listByOrganization(organizationId!, groupId);
+      return all.filter(s => s.tenant_id === organizationId);
+    },
     enabled: open && !!organizationId && !!groupId,
   });
 
