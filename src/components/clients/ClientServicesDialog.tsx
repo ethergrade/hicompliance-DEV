@@ -146,6 +146,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     },
     onSuccess: () => {
       refetchServices();
+      queryClient.invalidateQueries({ queryKey: ['sidebar-org-flags'] });
       toast.success('Configurazione aggiornata');
     },
     onError: (err: Error) => toast.error(`Errore: ${err.message}`),
