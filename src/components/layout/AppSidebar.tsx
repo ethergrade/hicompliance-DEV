@@ -172,13 +172,15 @@ export const AppSidebar: React.FC = () => {
     item => isModuleEnabled(item.href) && isFeatureAllowed(item.href) && isUserAllowed(item.href)
   );
 
-  // Servizi Dark Risk e Surface Scan (dentro HiCompliance)
+  // Servizi Dark Risk e Surface Scan: 1 solo → Generale; entrambi → HiCompliance
   const visibleServices = hiComplianceServices.filter(
     item => isFeatureAllowed(item.href) && isUserAllowed(item.href)
   );
+  const servicesStandalone = visibleServices.length === 1 ? visibleServices : [];
+  const servicesInHiCompliance = visibleServices.length >= 2 ? visibleServices : [];
 
-  // HiCompliance mostra moduli base + servizi
-  const hiComplianceGroupVisible = visibleHiCompliance.length > 0 || visibleIncident.length > 0 || visibleServices.length > 0;
+  // HiCompliance mostra moduli base + servizi (se entrambi attivi)
+  const hiComplianceGroupVisible = visibleHiCompliance.length > 0 || visibleIncident.length > 0 || servicesInHiCompliance.length > 0;
 
   const hiComplianceActive = [...hiComplianceModules, ...incidentSubItems].some(
     item => location.pathname === item.href
@@ -237,6 +239,7 @@ export const AppSidebar: React.FC = () => {
           <SidebarGroupContent>
             <SidebarMenu>
               {filteredNavigation.map((item) => renderNavItem(item))}
+              {servicesStandalone.map((item) => renderNavItem(item))}
               {isModuleEnabled('/threat-management') && renderNavItem({ title: 'Threat Management', href: '/threat-management', icon: Shield })}
             </SidebarMenu>
           </SidebarGroupContent>
@@ -259,7 +262,7 @@ export const AppSidebar: React.FC = () => {
                 <SidebarGroupContent>
                   <SidebarMenu>
                     {visibleHiCompliance.map(item => renderNavItem(item))}
-                    {visibleServices.map(item => renderNavItem(item))}
+                    {servicesInHiCompliance.map(item => renderNavItem(item))}
 
                     {/* INCIDENT sub-collapsible */}
                     {visibleIncident.length > 0 && (
