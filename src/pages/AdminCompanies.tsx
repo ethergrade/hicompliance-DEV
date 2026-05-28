@@ -132,7 +132,7 @@ const AdminCompanies: React.FC = () => {
         <div className="w-72 shrink-0 flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold flex items-center gap-2">
-              <FolderKanban className="w-5 h-5" /> Gruppi
+              <FolderKanban className="w-5 h-5" /> Aziende
             </h2>
             <Button size="sm" variant="outline" onClick={() => setNewGroupOpen(true)}>
               <Plus className="w-4 h-4" />
@@ -147,7 +147,7 @@ const AdminCompanies: React.FC = () => {
                 </div>
               ) : groups.length === 0 ? (
                 <div className="text-center py-12 px-4 text-sm text-muted-foreground">
-                  Nessun gruppo. Creane uno per iniziare.
+                  Nessuna azienda. Creane una per iniziare.
                 </div>
               ) : (
                 <div className="divide-y divide-border">
@@ -173,7 +173,7 @@ const AdminCompanies: React.FC = () => {
                         size="icon"
                         className="shrink-0 h-7 w-7"
                         onClick={(e) => { e.stopPropagation(); handleDeleteGroup(g); }}
-                        title="Elimina gruppo"
+                        title="Elimina azienda"
                       >
                         <Trash2 className="w-3.5 h-3.5 text-destructive" />
                       </Button>
@@ -190,17 +190,17 @@ const AdminCompanies: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-foreground">
-                {selectedGroup ? selectedGroup.name : 'Gestione Aziende'}
+                {selectedGroup ? selectedGroup.name : 'Gestione Clienti'}
               </h1>
               <p className="text-muted-foreground">
                 {selectedGroup
-                  ? `Crea, modifica ed elimina le aziende del gruppo`
-                  : 'Seleziona un gruppo dalla sidebar per gestire le sue aziende'}
+                  ? `Crea, modifica ed elimina i clienti dell'azienda`
+                  : "Seleziona un'azienda dalla sidebar per gestire i suoi clienti"}
               </p>
             </div>
             {selectedGroup && (
               <Button onClick={handleCreate} className="gap-2">
-                <Plus className="w-4 h-4" /> Nuova Azienda
+                <Plus className="w-4 h-4" /> Nuovo Cliente
               </Button>
             )}
           </div>
@@ -209,14 +209,14 @@ const AdminCompanies: React.FC = () => {
             <Card>
               <CardContent className="py-16 text-center text-muted-foreground">
                 <Building2 className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                <p>Seleziona un gruppo dalla sidebar per visualizzare le sue aziende.</p>
+                <p>Seleziona un'azienda dalla sidebar per visualizzare i suoi clienti.</p>
               </CardContent>
             </Card>
           ) : (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Building2 className="w-5 h-5" /> Aziende ({tenants.length})
+                  <Building2 className="w-5 h-5" /> Clienti ({tenants.length})
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -226,7 +226,7 @@ const AdminCompanies: React.FC = () => {
                   </div>
                 ) : tenants.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
-                    Nessuna azienda in questo gruppo. Crea la prima!
+                    Nessun cliente in questa azienda. Crea il primo!
                   </div>
                 ) : (
                   <div className="overflow-x-auto">

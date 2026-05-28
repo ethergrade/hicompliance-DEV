@@ -85,7 +85,7 @@ export const ClientIndicator: React.FC = () => {
         <>
           <div className="flex items-center gap-2 text-sm">
             <Users className="w-4 h-4 text-primary" />
-            <span className="text-muted-foreground">Gruppo:</span>
+            <span className="text-muted-foreground">Aziende:</span>
           </div>
           <div className="flex items-center gap-3">
             <Select
@@ -112,7 +112,7 @@ export const ClientIndicator: React.FC = () => {
       {/* Organization/Client Selector */}
       <div className="flex items-center gap-2 text-sm">
         <Building2 className="w-4 h-4 text-primary" />
-        <span className="text-muted-foreground">Azienda:</span>
+        <span className="text-muted-foreground">Clienti:</span>
       </div>
       <div className="flex flex-1 items-center gap-3">
         <Select
