@@ -91,11 +91,12 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   const darkRiskEntitlement = deriveDarkRiskTier(tenantServices);
 
   const updateFlagsMutation = useMutation({
-    mutationFn: async (patch: Record<string, boolean>) => {
+    mutationFn: async (patch: Record<string, boolean | string>) => {
       if (!organizationId) {
         throw new Error('Nessuna azienda selezionata');
       }
       const ts = [...tenantServices];
+      const darkRiskTier = (patch.dark_risk_tier as string) || 'standard';
 
       // Handle deletions BEFORE updates so we don't try to update a deleted service
       // HiCompliance toggle OFF
@@ -133,7 +134,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
       if (patch.dark_risk360_enabled === true) {
         const dr = ts.find(s => s.service_type === 'darkrisk');
         if (!dr) {
-          await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'darkrisk', status: 'active', settings: { tier: 'standard' } }, groupId);
+          await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'darkrisk', status: 'active', settings: { tier: darkRiskTier } }, groupId);
         }
       }
 
@@ -426,12 +427,8 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                     checked={!!orgFlags?.dark_risk360_enabled}
                     disabled={updateFlagsMutation.isPending}
                     onCheckedChange={async (v) => {
-                      await updateFlagsMutation.mutateAsync({ dark_risk360_enabled: v });
-                      if (v) {
-                        updateDarkRiskTierMutation.mutate(
-                          (String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'extended' : 'standard')
-                        );
-                      }
+                      const tier = String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'extended' : 'standard';
+                      await updateFlagsMutation.mutateAsync({ dark_risk360_enabled: v, dark_risk_tier: tier });
                     }}
                   />
                 </div>
