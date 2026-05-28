@@ -16,6 +16,10 @@ export type DarkRiskOverviewResponse = {
     type: string | null;
     started_at: string | null;
     completed_at: string | null;
+    data_scan_id?: string | null;
+    data_scan_status?: string | null;
+    data_scan_at?: string | null;
+    using_last_good_fallback?: boolean;
   } | null;
   previous_scan: {
     id: string;

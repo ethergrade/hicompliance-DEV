@@ -97,6 +97,8 @@ const activeStatuses = new Set([
   'remediation_in_progress',
 ]);
 
+const goodSurfaceSnapshotStatuses = ['completed', 'partial', 'completed_with_warnings'];
+
 function normalizeFindingStatus(status: string | null | undefined): string {
   const normalized = String(status || 'new').toLowerCase();
   if (normalized === 'open') return 'new';
@@ -479,7 +481,7 @@ serve(async (req: Request) => {
       last_execution: latestDarkriskRun?.completed_at || latestDarkriskRun?.created_at || null,
     };
 
-    const latestJobQuery = adminClient
+    const latestLiveJobQuery = adminClient
       .from('surface_scan_jobs' as any)
       .select('id, created_at, completed_at, status, scan_profile, scan_type, summary')
       .eq('customer_id', customerId)
@@ -487,7 +489,7 @@ serve(async (req: Request) => {
       .limit(1)
       .maybeSingle();
 
-    const fallbackLatestJobQuery = adminClient
+    const fallbackLatestLiveJobQuery = adminClient
       .from('surface_scan_jobs' as any)
       .select('id, created_at, completed_at, status, scan_profile, scan_type, summary')
       .eq('organization_id', customerId)
@@ -495,25 +497,53 @@ serve(async (req: Request) => {
       .limit(1)
       .maybeSingle();
 
-    const [latestPrimaryRes, latestFallbackRes] = await Promise.all([
-      latestJobQuery,
-      fallbackLatestJobQuery,
+    const latestSnapshotJobQuery = adminClient
+      .from('surface_scan_jobs' as any)
+      .select('id, created_at, completed_at, status, scan_profile, scan_type, summary')
+      .eq('customer_id', customerId)
+      .in('status', goodSurfaceSnapshotStatuses)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const fallbackLatestSnapshotJobQuery = adminClient
+      .from('surface_scan_jobs' as any)
+      .select('id, created_at, completed_at, status, scan_profile, scan_type, summary')
+      .eq('organization_id', customerId)
+      .in('status', goodSurfaceSnapshotStatuses)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const [latestLivePrimaryRes, latestLiveFallbackRes, latestSnapshotPrimaryRes, latestSnapshotFallbackRes] = await Promise.all([
+      latestLiveJobQuery,
+      fallbackLatestLiveJobQuery,
+      latestSnapshotJobQuery,
+      fallbackLatestSnapshotJobQuery,
     ]);
 
-    const latestJob = latestPrimaryRes.data || latestFallbackRes.data || null;
+    const latestLiveJob = latestLivePrimaryRes.data || latestLiveFallbackRes.data || null;
+    const latestSnapshotJob = latestSnapshotPrimaryRes.data || latestSnapshotFallbackRes.data || null;
+    const dataJob = latestSnapshotJob || latestLiveJob || null;
+    const usingLastGoodFallback = Boolean(
+      latestLiveJob?.id &&
+      dataJob?.id &&
+      String(latestLiveJob.id) !== String(dataJob.id),
+    );
 
-    let previousJob: any = null;
-    if (latestJob?.created_at) {
-      const previousJobRes = await adminClient
+    let previousDataJob: any = null;
+    if (dataJob?.created_at) {
+      const previousDataJobRes = await adminClient
         .from('surface_scan_jobs' as any)
         .select('id, created_at, completed_at, status, scan_profile, scan_type')
         .eq('customer_id', customerId)
-        .lt('created_at', String(latestJob.created_at))
+        .in('status', goodSurfaceSnapshotStatuses)
+        .lt('created_at', String(dataJob.created_at))
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      previousJob = previousJobRes.data || null;
+      previousDataJob = previousDataJobRes.data || null;
     }
 
     const [
@@ -536,47 +566,47 @@ serve(async (req: Request) => {
         .from('surface_scan_monitored_ips' as any)
         .select('id, entry_type, input_value')
         .eq('organization_id', customerId),
-      latestJob?.id
+      dataJob?.id
         ? adminClient
             .from('surface_scan_module_results' as any)
             .select('module_key, module_label, status, completed_at, created_at')
-            .eq('scan_job_id', latestJob.id)
+            .eq('scan_job_id', dataJob.id)
         : Promise.resolve({ data: [], error: null }),
-      latestJob?.id
+      dataJob?.id
         ? adminClient
             .from('surface_findings' as any)
             .select('id, severity, title, finding_type, module, created_at, status, affected_asset, attribution_confidence')
-            .eq('scan_job_id', latestJob.id)
+            .eq('scan_job_id', dataJob.id)
             .order('created_at', { ascending: false })
             .limit(500)
         : Promise.resolve({ data: [], error: null }),
-      latestJob?.id
+      dataJob?.id
         ? adminClient
             .from('surface_exposure_findings' as any)
             .select('id, severity, title, finding_type, source, created_at, status, affected_host, affected_url')
-            .eq('scan_job_id', latestJob.id)
+            .eq('scan_job_id', dataJob.id)
             .order('created_at', { ascending: false })
             .limit(500)
         : Promise.resolve({ data: [], error: null }),
-      previousJob?.id
+      previousDataJob?.id
         ? adminClient
             .from('surface_findings' as any)
             .select('id, severity, title, finding_type, module, created_at, status, affected_asset, attribution_confidence')
-            .eq('scan_job_id', previousJob.id)
+            .eq('scan_job_id', previousDataJob.id)
             .limit(500)
         : Promise.resolve({ data: [], error: null }),
-      previousJob?.id
+      previousDataJob?.id
         ? adminClient
             .from('surface_exposure_findings' as any)
             .select('id, severity, title, finding_type, source, created_at, status, affected_host, affected_url')
-            .eq('scan_job_id', previousJob.id)
+            .eq('scan_job_id', previousDataJob.id)
             .limit(500)
         : Promise.resolve({ data: [], error: null }),
-      latestJob?.id
+      dataJob?.id
         ? adminClient
             .from('surface_open_ports' as any)
             .select('id, exposure_level')
-            .eq('scan_job_id', latestJob.id)
+            .eq('scan_job_id', dataJob.id)
         : Promise.resolve({ data: [], error: null }),
       latestDarkriskRun?.id
         ? adminClient
@@ -794,7 +824,7 @@ serve(async (req: Request) => {
     const coverageCompleted = coverageControls.filter((control) => control.status === 'completed').length;
     const coveragePartial = coverageControls.filter((control) => control.status === 'partial').length;
 
-    const previousScanEnd = previousJob?.completed_at || previousJob?.created_at || null;
+    const previousScanEnd = previousDataJob?.completed_at || previousDataJob?.created_at || null;
     const newAlertsSincePrevious = previousScanEnd
       ? activeLatest.filter((finding) => {
           if (!finding.created_at) return false;
@@ -812,21 +842,25 @@ serve(async (req: Request) => {
       customer_id: customerId,
       enabled: Boolean(darkRiskEnabled),
       tier: darkRiskTier,
-      latest_scan: latestJob
+      latest_scan: latestLiveJob
         ? {
-            id: latestJob.id,
-            status: String(latestJob.status || 'unknown').toLowerCase(),
-            profile: latestJob.scan_profile || null,
-            type: latestJob.scan_type || null,
-            started_at: latestJob.created_at || null,
-            completed_at: latestJob.completed_at || null,
+            id: latestLiveJob.id,
+            status: String(latestLiveJob.status || 'unknown').toLowerCase(),
+            profile: latestLiveJob.scan_profile || null,
+            type: latestLiveJob.scan_type || null,
+            started_at: latestLiveJob.created_at || null,
+            completed_at: latestLiveJob.completed_at || null,
+            data_scan_id: dataJob?.id || null,
+            data_scan_status: dataJob?.status ? String(dataJob.status).toLowerCase() : null,
+            data_scan_at: dataJob?.completed_at || dataJob?.created_at || null,
+            using_last_good_fallback: usingLastGoodFallback,
           }
         : null,
-      previous_scan: previousJob
+      previous_scan: previousDataJob
         ? {
-            id: previousJob.id,
-            started_at: previousJob.created_at || null,
-            completed_at: previousJob.completed_at || null,
+            id: previousDataJob.id,
+            started_at: previousDataJob.created_at || null,
+            completed_at: previousDataJob.completed_at || null,
           }
         : null,
       kpis: {
@@ -848,7 +882,7 @@ serve(async (req: Request) => {
           delta: risk.score - riskFromFindings(activePrevious).score,
         },
         last_scan: {
-          value: latestJob?.completed_at || latestJob?.created_at || null,
+          value: dataJob?.completed_at || dataJob?.created_at || latestLiveJob?.completed_at || latestLiveJob?.created_at || null,
           delta: null,
         },
         controls_coverage: {
