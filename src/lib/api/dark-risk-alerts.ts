@@ -6,56 +6,55 @@ import type {
   UpdateDarkRiskAlertRequest,
 } from "@/types/api";
 
-const groupHeader = (companyId: string) => ({
-  headers: { "X-Group-Id": companyId },
+const groupHeader = (groupId: string) => ({
+  headers: { "X-Group-Id": groupId },
 });
 
+const h = (companyId: string, groupId?: string | null) => {
+  const id = groupId || companyId;
+  return id ? groupHeader(id) : undefined;
+};
+
+const prefix = (companyId: string | null) =>
+  companyId ? `/companies/${companyId}` : "";
+
 export const darkRiskAlertsApi = {
-  async list(companyId?: string | null): Promise<DarkRiskAlert[]> {
+  async list(companyId?: string | null, groupId?: string | null): Promise<DarkRiskAlert[]> {
     const endpoint = companyId
       ? `/companies/${companyId}/dark-risk-alerts`
       : "/dark-risk-alerts";
-    const opts = companyId ? groupHeader(companyId) : undefined;
-    const res = await apiClient.get<ApiResponse<DarkRiskAlert[]>>(endpoint, undefined, opts);
+    const res = await apiClient.get<ApiResponse<DarkRiskAlert[]>>(endpoint, undefined, h(companyId, groupId));
     return res.data;
   },
 
-  async get(companyId: string | null, id: string): Promise<DarkRiskAlert> {
-    const prefix = companyId ? `/companies/${companyId}` : "";
-    const opts = companyId ? groupHeader(companyId) : undefined;
+  async get(companyId: string | null, id: string, groupId?: string | null): Promise<DarkRiskAlert> {
     const res = await apiClient.get<ApiResponse<DarkRiskAlert>>(
-      `${prefix}/dark-risk-alerts/${id}`,
+      `${prefix(companyId)}/dark-risk-alerts/${id}`,
       undefined,
-      opts
+      h(companyId, groupId)
     );
     return res.data;
   },
 
-  async create(companyId: string | null, payload: StoreDarkRiskAlertRequest): Promise<DarkRiskAlert> {
-    const prefix = companyId ? `/companies/${companyId}` : "";
-    const opts = companyId ? groupHeader(companyId) : undefined;
+  async create(companyId: string | null, payload: StoreDarkRiskAlertRequest, groupId?: string | null): Promise<DarkRiskAlert> {
     const res = await apiClient.post<ApiResponse<DarkRiskAlert>>(
-      `${prefix}/dark-risk-alerts`,
+      `${prefix(companyId)}/dark-risk-alerts`,
       payload,
-      opts
+      h(companyId, groupId)
     );
     return res.data;
   },
 
-  async update(companyId: string | null, id: string, payload: UpdateDarkRiskAlertRequest): Promise<DarkRiskAlert> {
-    const prefix = companyId ? `/companies/${companyId}` : "";
-    const opts = companyId ? groupHeader(companyId) : undefined;
+  async update(companyId: string | null, id: string, payload: UpdateDarkRiskAlertRequest, groupId?: string | null): Promise<DarkRiskAlert> {
     const res = await apiClient.put<ApiResponse<DarkRiskAlert>>(
-      `${prefix}/dark-risk-alerts/${id}`,
+      `${prefix(companyId)}/dark-risk-alerts/${id}`,
       payload,
-      opts
+      h(companyId, groupId)
     );
     return res.data;
   },
 
-  async delete(companyId: string | null, id: string): Promise<void> {
-    const prefix = companyId ? `/companies/${companyId}` : "";
-    const opts = companyId ? groupHeader(companyId) : undefined;
-    await apiClient.delete(`${prefix}/dark-risk-alerts/${id}`, opts);
+  async delete(companyId: string | null, id: string, groupId?: string | null): Promise<void> {
+    await apiClient.delete(`${prefix(companyId)}/dark-risk-alerts/${id}`, h(companyId, groupId));
   },
 };

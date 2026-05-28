@@ -6,51 +6,51 @@ import type {
   UpdateRiskAnalysisRequest,
 } from "@/types/api";
 
-const groupHeader = (companyId: string) => ({
-  headers: { "X-Group-Id": companyId },
+const _h = (companyId: string, groupId?: string | null) => ({
+  headers: { "X-Group-Id": groupId || companyId },
 });
 
 export const riskAnalysisApi = {
-  async list(companyId: string): Promise<RiskAnalysisItem[]> {
+  async list(companyId: string, _g?: string | null): Promise<RiskAnalysisItem[]> {
     const res = await apiClient.get<ApiResponse<RiskAnalysisItem[]>>(
       `/companies/${companyId}/risk-analysis`,
       undefined,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
-  async get(companyId: string, id: string): Promise<RiskAnalysisItem> {
+  async get(companyId: string, id: string, _g?: string | null): Promise<RiskAnalysisItem> {
     const res = await apiClient.get<ApiResponse<RiskAnalysisItem>>(
       `/companies/${companyId}/risk-analysis/${id}`,
       undefined,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
-  async create(companyId: string, payload: StoreRiskAnalysisRequest): Promise<RiskAnalysisItem> {
+  async create(companyId: string, payload: StoreRiskAnalysisRequest, _g?: string | null): Promise<RiskAnalysisItem> {
     const res = await apiClient.post<ApiResponse<RiskAnalysisItem>>(
       `/companies/${companyId}/risk-analysis`,
       payload,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
-  async update(companyId: string, id: string, payload: UpdateRiskAnalysisRequest): Promise<RiskAnalysisItem> {
+  async update(companyId: string, id: string, payload: UpdateRiskAnalysisRequest, _g?: string | null): Promise<RiskAnalysisItem> {
     const res = await apiClient.put<ApiResponse<RiskAnalysisItem>>(
       `/companies/${companyId}/risk-analysis/${id}`,
       payload,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
-  async delete(companyId: string, id: string): Promise<void> {
+  async delete(companyId: string, id: string, _g?: string | null): Promise<void> {
     await apiClient.delete(
       `/companies/${companyId}/risk-analysis/${id}`,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
   },
 };

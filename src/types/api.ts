@@ -81,21 +81,21 @@ export interface ChangePasswordRequest {
 // ─── User ─────────────────────────────────────────────────────────────────
 
 export interface UserResource {
-  id: string | number;
+  id: string;
   name: string;
   email: string;
-  tenant_id: string | null;
-  tenant_name: string | null;
+  /** Spatie role names */
   roles: string[];
+  /** Group memberships (loaded via pivot) */
+  groups?: Array<{ id: string; name: string; role: string }>;
   created_at: string;
 }
 
-export interface StoreUserRequest {
+export export interface StoreUserRequest {
   name: string;
   email: string;
   password: string;
   role?: string;
-  tenant_id?: string | null;
 }
 
 export interface UpdateUserRequest {

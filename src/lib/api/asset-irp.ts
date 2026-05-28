@@ -4,37 +4,37 @@ import type {
   AssetIrpItem,
 } from "@/types/api";
 
-const groupHeader = (companyId: string) => ({
-  headers: { "X-Group-Id": companyId },
+const _h = (companyId: string, groupId?: string | null) => ({
+  headers: { "X-Group-Id": groupId || companyId },
 });
 
 export const assetIrpApi = {
   /** List all asset IRP entries for a company */
-  async list(companyId: string): Promise<AssetIrpItem[]> {
+  async list(companyId: string, _g?: string | null): Promise<AssetIrpItem[]> {
     const res = await apiClient.get<ApiResponse<AssetIrpItem[]>>(
       `/companies/${companyId}/asset-irp`,
       undefined,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
   /** Sync asset IRP entries */
-  async sync(companyId: string): Promise<AssetIrpItem[]> {
+  async sync(companyId: string, _g?: string | null): Promise<AssetIrpItem[]> {
     const res = await apiClient.post<ApiResponse<AssetIrpItem[]>>(
       `/companies/${companyId}/asset-irp/sync`,
       undefined,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
 
   /** Update an asset IRP entry */
-  async update(companyId: string, assetIrpId: string, payload: Partial<AssetIrpItem>): Promise<AssetIrpItem> {
+  async update(companyId: string, assetIrpId: string, payload: Partial<AssetIrpItem>, _g?: string | null): Promise<AssetIrpItem> {
     const res = await apiClient.put<ApiResponse<AssetIrpItem>>(
       `/companies/${companyId}/asset-irp/${assetIrpId}`,
       payload,
-      groupHeader(companyId)
+      _h(companyId, _g)
     );
     return res.data;
   },
