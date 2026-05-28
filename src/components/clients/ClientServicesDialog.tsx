@@ -96,17 +96,48 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
         throw new Error('Nessuna azienda selezionata');
       }
       const ts = [...tenantServices];
-      // HiCompliance toggle
-      if ('hicompliance_enabled' in patch) {
+
+      // Handle deletions BEFORE updates so we don't try to update a deleted service
+      // HiCompliance toggle OFF
+      if (patch.hicompliance_enabled === false) {
         const hc = ts.find(s => s.service_type === 'hicompliance');
-        if (patch.hicompliance_enabled) {
-          if (!hc) {
-            await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'hicompliance', status: 'active', settings: { duration: '3', extended_range: false } }, groupId);
-          }
-        } else {
-          if (hc) await tenantServicesApi.delete(hc.id, groupId);
+        if (hc) await tenantServicesApi.delete(hc.id, groupId);
+      }
+      // SurfaceScan360 toggle OFF
+      if (patch.surface_scan360_enabled === false) {
+        const ht = ts.find(s => s.service_type === 'hitrack');
+        if (ht) await tenantServicesApi.delete(ht.id, groupId);
+      }
+      // DarkRisk360 toggle OFF
+      if (patch.dark_risk360_enabled === false) {
+        const dr = ts.find(s => s.service_type === 'darkrisk');
+        if (dr) await tenantServicesApi.delete(dr.id, groupId);
+      }
+
+      // Create new services
+      // HiCompliance toggle ON
+      if (patch.hicompliance_enabled === true) {
+        const hc = ts.find(s => s.service_type === 'hicompliance');
+        if (!hc) {
+          await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'hicompliance', status: 'active', settings: { duration: '3', extended_range: false } }, groupId);
         }
       }
+      // SurfaceScan360 toggle ON
+      if (patch.surface_scan360_enabled === true) {
+        const ht = ts.find(s => s.service_type === 'hitrack');
+        if (!ht) {
+          await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'hitrack', status: 'active', settings: { duration: '3', extended_range: false } }, groupId);
+        }
+      }
+      // DarkRisk360 toggle ON
+      if (patch.dark_risk360_enabled === true) {
+        const dr = ts.find(s => s.service_type === 'darkrisk');
+        if (!dr) {
+          await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'darkrisk', status: 'active', settings: { tier: 'standard' } }, groupId);
+        }
+      }
+
+      // Settings updates (only reachable if services still exist after creates)
       // IRP extended toggle
       if ('irp_extended' in patch) {
         const hc = ts.find(s => s.service_type === 'hicompliance');
@@ -114,33 +145,11 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
           await tenantServicesApi.update(hc.id, { settings: { ...(hc.settings as any || {}), extended_range: patch.irp_extended } }, groupId);
         }
       }
-      // SurfaceScan360 toggle
-      if ('surface_scan360_enabled' in patch) {
-        const ht = ts.find(s => s.service_type === 'hitrack');
-        if (patch.surface_scan360_enabled) {
-          if (!ht) {
-            await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'hitrack', status: 'active', settings: { duration: '3', extended_range: false } }, groupId);
-          }
-        } else {
-          if (ht) await tenantServicesApi.delete(ht.id, groupId);
-        }
-      }
-      // SurfaceScan extended toggle
-      if ('surface_scan_extended' in patch) {
+      // SurfaceScan extended toggle (skip if service was just toggled OFF)
+      if ('surface_scan_extended' in patch && patch.surface_scan360_enabled !== false) {
         const ht = ts.find(s => s.service_type === 'hitrack');
         if (ht) {
           await tenantServicesApi.update(ht.id, { settings: { ...(ht.settings as any || {}), extended_range: patch.surface_scan_extended } }, groupId);
-        }
-      }
-      // DarkRisk360 toggle
-      if ('dark_risk360_enabled' in patch) {
-        const dr = ts.find(s => s.service_type === 'darkrisk');
-        if (patch.dark_risk360_enabled) {
-          if (!dr) {
-            await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'darkrisk', status: 'active', settings: { tier: 'standard' } }, groupId);
-          }
-        } else {
-          if (dr) await tenantServicesApi.delete(dr.id, groupId);
         }
       }
     },
