@@ -34,6 +34,7 @@
 
    return {
      organizationId: effectiveOrganizationId,
+     groupId: selectedOrganization?.group_id ?? null,
      selectedOrganization,
      canManageMultipleClients,
      needsClientSelection,

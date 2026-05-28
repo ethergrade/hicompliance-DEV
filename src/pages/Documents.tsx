@@ -77,12 +77,12 @@ const Documents: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { contacts } = useContactDirectory();
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
 
   const fetchDocuments = async () => {
     if (!organizationId) return;
     try {
-      const docs = await documentsApi.list(organizationId);
+      const docs = await documentsApi.list(organizationId, groupId);
       setDocuments(docs);
     } catch (error) {
       console.error('Error fetching documents:', error);
@@ -148,7 +148,7 @@ const Documents: React.FC = () => {
         confidentiality: uploadForm.confidentiality,
         description: uploadForm.description,
         tags: uploadForm.tags,
-      });
+      }, groupId, groupId);
 
       toast({ title: "Successo", description: "Documento caricato con successo" });
       setSelectedFile(null);
@@ -169,7 +169,7 @@ const Documents: React.FC = () => {
   const handleDownload = async (doc: ISODocument) => {
     if (!organizationId) return;
     try {
-      const data = await documentsApi.download(organizationId, doc.id);
+      const data = await documentsApi.download(organizationId, doc.id, groupId);
       const url = URL.createObjectURL(data);
       const a = document.createElement('a');
       a.href = url;
@@ -189,7 +189,7 @@ const Documents: React.FC = () => {
     if (!confirm('Sei sicuro di voler eliminare questo documento?')) return;
     if (!organizationId) return;
     try {
-      await documentsApi.delete(organizationId, docId);
+      await documentsApi.delete(organizationId, docId, groupId);
       toast({ title: "Successo", description: "Documento eliminato" });
       fetchDocuments();
     } catch (error) {
@@ -214,7 +214,7 @@ const Documents: React.FC = () => {
         category: metadata.category,
         description: metadata.description,
         tags: metadata.tags,
-      });
+      }, groupId, groupId);
 
       toast({ title: "Successo", description: "Metadata aggiornati" });
       fetchDocuments();

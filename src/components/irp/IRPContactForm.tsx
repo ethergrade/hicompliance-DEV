@@ -42,7 +42,7 @@ export const IRPContactForm: React.FC<IRPContactFormProps> = ({
   });
   const { toast } = useToast();
   const { addContact: addToDirectory } = useContactDirectory();
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
 
   useEffect(() => {
     if (editContact) {
@@ -131,14 +131,14 @@ export const IRPContactForm: React.FC<IRPContactFormProps> = ({
       };
 
       if (editContact) {
-        await irpApi.updateContact(organizationId, editContact.id, contactData);
+        await irpApi.updateContact(organizationId, editContact.id, contactData, groupId);
 
         toast({
           title: "Successo",
           description: "Contatto aggiornato con successo"
         });
       } else {
-        await irpApi.createContact(organizationId, contactData);
+        await irpApi.createContact(organizationId, contactData, groupId);
 
         toast({
           title: "Successo",

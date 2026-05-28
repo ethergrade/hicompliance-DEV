@@ -11,7 +11,7 @@ interface SaveDocumentOptions {
 
 export const useDocumentSave = () => {
   const { user } = useAuth();
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
 
   const saveToDocuments = async ({ blob, fileName, category }: SaveDocumentOptions): Promise<boolean> => {
     try {
@@ -23,7 +23,7 @@ export const useDocumentSave = () => {
       await documentsApi.createWithFile(organizationId, blob, fileName, {
         name: fileName,
         category,
-      });
+      }, groupId, groupId);
 
       return true;
     } catch (error) {

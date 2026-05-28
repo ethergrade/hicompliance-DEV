@@ -48,7 +48,7 @@ export const useRiskAnalysis = () => {
       setLoading(true);
       setOrganizationId(clientOrgId);
 
-      const items = await riskAnalysisApi.list(clientOrgId);
+      const items = await riskAnalysisApi.list(clientOrgId, groupId);
       const parsedAssets = (items || []).map(item => toAsset(item, clientOrgId));
       setAssets(parsedAssets);
     } catch (error) {
@@ -97,7 +97,7 @@ export const useRiskAnalysis = () => {
         risk_score: 0,
       };
 
-      const created = await riskAnalysisApi.create(organizationId, payload);
+      const created = await riskAnalysisApi.create(organizationId, payload, groupId);
       const insertedAsset = toAsset(created, organizationId);
       
       setAssets(prev => [...prev, insertedAsset]);
@@ -163,7 +163,7 @@ export const useRiskAnalysis = () => {
         finalUpdates.risk_score = calculateRiskScore(updates.control_scores);
       }
 
-      await riskAnalysisApi.update(organizationId, id, finalUpdates as any);
+      await riskAnalysisApi.update(organizationId, id, finalUpdates as any, groupId);
 
       setAssets(prev => prev.map(asset => 
         asset.id === id ? { ...asset, ...updates, risk_score: finalUpdates.risk_score ?? updates.risk_score ?? asset.risk_score } : asset
@@ -198,7 +198,7 @@ export const useRiskAnalysis = () => {
     try {
       setSaving(true);
 
-      await riskAnalysisApi.delete(organizationId, id);
+      await riskAnalysisApi.delete(organizationId, id, groupId);
 
       setAssets(prev => prev.filter(a => a.id !== id));
       toast.success('Asset eliminato');
@@ -217,7 +217,7 @@ export const useRiskAnalysis = () => {
 
       const matching = assets.filter(a => a.asset_name === assetName);
       for (const a of matching) {
-        await riskAnalysisApi.delete(organizationId, a.id);
+        await riskAnalysisApi.delete(organizationId, a.id, groupId);
       }
 
       setAssets(prev => prev.filter(a => a.asset_name !== assetName));
