@@ -665,9 +665,8 @@ const Remediation: React.FC = () => {
           <Card className="border-border"><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Azioni Prioritarie</p><p className="text-xl font-bold text-orange-500">{actionableMetrics.highPriorityActions}</p></div><Wrench className="w-6 h-6 text-orange-500" /></div></CardContent></Card>
         </div>
 
-        <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="overview">Panoramica Remediation</TabsTrigger>
+        <Tabs defaultValue="gantt" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="gantt">GANTT Operativo</TabsTrigger>
             <TabsTrigger value="deleted" className="relative">
               Azioni Eliminate
@@ -675,42 +674,7 @@ const Remediation: React.FC = () => {
                 <Badge variant="destructive" className="ml-2 h-5 px-1.5 text-xs">{deletedTasksList.length}</Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="metrics">Metriche & KPI</TabsTrigger>
           </TabsList>
-
-          <TabsContent value="overview" className="space-y-6">
-            <Card className="border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center"><AlertTriangle className="w-5 h-5 mr-2 text-red-500" />Aree che Richiedono Remediation Immediata</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {criticalCategories.map((category, index) => (
-                    <div key={index} className="flex items-center justify-between p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors">
-                      <div className="flex items-center space-x-4">
-                        <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/20"><AlertTriangle className="w-5 h-5 text-red-500" /></div>
-                        <div className="flex-1">
-                          <h4 className="font-medium">{category.name}</h4>
-                          <p className="text-sm text-muted-foreground">Completamento: {category.completed}/{category.total} ({Math.round((category.completed/category.total)*100)}%)</p>
-                          <div className="mt-2"><Progress value={(category.completed/category.total)*100} className="h-1.5 w-64" /></div>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-4 text-right">
-                        <div>
-                          <div className={`text-sm font-medium ${getRiskColor(category.riskLevel)}`}>Rischio: {category.riskLevel}</div>
-                          <div className="text-xs text-muted-foreground">Team: {category.assignedTeam}</div>
-                          <div className="text-xs text-muted-foreground">Budget: {category.budget}</div>
-                          <div className="text-xs text-muted-foreground">Stima: {category.estimatedDays} giorni</div>
-                        </div>
-                        <Badge variant={getPriorityColor(category.priority) as any}>{category.priority}</Badge>
-                        <Button variant="outline" size="sm"><Wrench className="w-4 h-4 mr-1" />Pianifica</Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
 
           <TabsContent value="gantt" className="space-y-6">
             {loading ? (
@@ -778,37 +742,6 @@ const Remediation: React.FC = () => {
             </Card>
           </TabsContent>
 
-          <TabsContent value="metrics" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <Card className="border-border">
-                <CardHeader><CardTitle className="flex items-center text-blue-600"><BarChart3 className="w-5 h-5 mr-2" />Metriche IT</CardTitle></CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex justify-between"><span className="text-sm">Vulnerabilità Critiche</span><span className="font-bold text-red-500">12</span></div>
-                  <div className="flex justify-between"><span className="text-sm">Patch Missing</span><span className="font-bold text-yellow-500">23</span></div>
-                  <div className="flex justify-between"><span className="text-sm">Sistemi Non Conformi</span><span className="font-bold text-orange-500">8</span></div>
-                  <div className="flex justify-between"><span className="text-sm">Tempo Medio Remediation</span><span className="font-bold">15 giorni</span></div>
-                </CardContent>
-              </Card>
-              <Card className="border-border">
-                <CardHeader><CardTitle className="flex items-center text-green-600"><CheckCircle className="w-5 h-5 mr-2" />Metriche Compliance</CardTitle></CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex justify-between"><span className="text-sm">Conformità NIS2</span><span className="font-bold text-yellow-500">68%</span></div>
-                  <div className="flex justify-between"><span className="text-sm">Gap Identificati</span><span className="font-bold text-red-500">45</span></div>
-                  <div className="flex justify-between"><span className="text-sm">Controlli Implementati</span><span className="font-bold text-green-500">127</span></div>
-                  <div className="flex justify-between"><span className="text-sm">Audit Readiness</span><span className="font-bold text-yellow-500">72%</span></div>
-                </CardContent>
-              </Card>
-              <Card className="border-border">
-                <CardHeader><CardTitle className="flex items-center text-purple-600"><Users className="w-5 h-5 mr-2" />Metriche Direzione</CardTitle></CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex justify-between"><span className="text-sm">ROI Sicurezza</span><span className="font-bold text-green-500">3.2x</span></div>
-                  <div className="flex justify-between"><span className="text-sm">Rischio Residuo</span><span className="font-bold text-yellow-500">Medio</span></div>
-                  <div className="flex justify-between"><span className="text-sm">Costi Evitati</span><span className="font-bold text-green-500">€65K</span></div>
-                  <div className="flex justify-between"><span className="text-sm">Business Continuity</span><span className="font-bold text-green-500">94%</span></div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
         </Tabs>
       </div>
     </DashboardLayout>
