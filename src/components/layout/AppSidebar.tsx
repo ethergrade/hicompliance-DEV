@@ -65,11 +65,14 @@ const navigation = [
 
 const hiComplianceModules = [
   { title: 'Assessment', href: '/assessment', icon: ClipboardCheck },
-  { title: 'SurfaceScan360', href: '/surface-scan', icon: Globe },
-  { title: 'DarkRisk360', href: '/dark-risk', icon: Eye },
   { title: 'Analisi', href: '/analytics', icon: BarChart3 },
   { title: 'Remediation', href: '/remediation', icon: Wrench },
   { title: 'Consistenze', href: '/consistenze', icon: Package },
+];
+
+const hiComplianceServices = [
+  { title: 'SurfaceScan360', href: '/surface-scan', icon: Globe },
+  { title: 'DarkRisk360', href: '/dark-risk', icon: Eye },
 ];
 
 const incidentSubItems = [
@@ -166,7 +169,15 @@ export const AppSidebar: React.FC = () => {
   const visibleIncident = incidentSubItems.filter(
     item => isModuleEnabled(item.href) && isFeatureAllowed(item.href) && isUserAllowed(item.href)
   );
-  const hiComplianceGroupVisible = visibleHiCompliance.length > 0 || visibleIncident.length > 0;
+
+  // Services (SurfaceScan360, DarkRisk360): 1 solo → standalone sopra; entrambi → sotto HiCompliance
+  const visibleServices = hiComplianceServices.filter(
+    item => isFeatureAllowed(item.href) && isUserAllowed(item.href)
+  );
+  const servicesStandalone = visibleServices.length === 1 ? visibleServices : [];
+  const servicesUnderHiCompliance = visibleServices.length >= 2 ? visibleServices : [];
+
+  const hiComplianceGroupVisible = visibleHiCompliance.length > 0 || visibleIncident.length > 0 || servicesUnderHiCompliance.length > 0;
 
   const hiComplianceActive = [...hiComplianceModules, ...incidentSubItems].some(
     item => location.pathname === item.href
@@ -228,6 +239,17 @@ export const AppSidebar: React.FC = () => {
           </SidebarGroupContent>
         </SidebarGroup>
 
+        {/* Standalone services (only 1 active → above HiCompliance) */}
+        {servicesStandalone.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {servicesStandalone.map((item) => renderNavItem(item))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
         {/* HiCompliance collapsible group */}
         {hiComplianceGroupVisible && (
           <SidebarGroup>
@@ -245,6 +267,9 @@ export const AppSidebar: React.FC = () => {
                 <SidebarGroupContent>
                   <SidebarMenu>
                     {visibleHiCompliance.map(item => renderNavItem(item))}
+
+                    {/* Services (both active → sub-items under HiCompliance) */}
+                    {servicesUnderHiCompliance.map(item => renderNavItem(item))}
 
                     {/* INCIDENT sub-collapsible */}
                     {visibleIncident.length > 0 && (

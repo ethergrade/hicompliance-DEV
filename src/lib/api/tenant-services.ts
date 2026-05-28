@@ -28,35 +28,38 @@ export const tenantServicesApi = {
     return res.data;
   },
 
-  async get(id: string, groupId: string): Promise<TenantServiceResource> {
+  async get(id: string, groupId?: string | null): Promise<TenantServiceResource> {
     const res = await apiClient.get<ApiResponse<TenantServiceResource>>(
       `/tenant-services/${id}`,
       undefined,
-      { headers: groupHeader(groupId) }
+      groupId ? { headers: groupHeader(groupId) } : undefined
     );
     return res.data;
   },
 
-  async create(payload: StoreTenantServiceRequest, groupId: string): Promise<TenantServiceResource> {
+  async create(payload: StoreTenantServiceRequest, groupId?: string | null): Promise<TenantServiceResource> {
     const res = await apiClient.post<ApiResponse<TenantServiceResource>>(
       "/tenant-services",
       payload,
-      { headers: groupHeader(groupId) }
+      groupId ? { headers: groupHeader(groupId) } : undefined
     );
     return res.data;
   },
 
-  async update(id: string, payload: UpdateTenantServiceRequest, groupId: string): Promise<TenantServiceResource> {
+  async update(id: string, payload: UpdateTenantServiceRequest, groupId?: string | null): Promise<TenantServiceResource> {
     const res = await apiClient.put<ApiResponse<TenantServiceResource>>(
       `/tenant-services/${id}`,
       payload,
-      { headers: groupHeader(groupId) }
+      groupId ? { headers: groupHeader(groupId) } : undefined
     );
     return res.data;
   },
 
-  async delete(id: string, groupId: string): Promise<void> {
-    await apiClient.delete(`/tenant-services/${id}`, { headers: groupHeader(groupId) });
+  async delete(id: string, groupId?: string | null): Promise<void> {
+    await apiClient.delete(
+      `/tenant-services/${id}`,
+      groupId ? { headers: groupHeader(groupId) } : undefined
+    );
   },
 
   /** Service catalog from config endpoint */
