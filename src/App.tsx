@@ -37,6 +37,7 @@ import CyberNews from "./pages/CyberNews";
 // HIDDEN: supabase-only, no backend API
 // import AdminReporting from "./pages/AdminReporting";
 import Consistenze from "./pages/Consistenze";
+import AdminCompanies from "./pages/AdminCompanies";
 // HIDDEN: supabase-only (ai_ciso_conversations), no backend model
 // import AICiso from "./pages/AICiso";
 import HiConsoleLanding from "./pages/HiConsoleLanding";
@@ -83,6 +84,7 @@ const App = () => (
             {/* HIDDEN: supabase-only SurfaceScan alerts */}
             {/* <Route path="/settings/surface-scan-alerts" element={<ClientSelectionGuard><SurfaceScanSettings /></ClientSelectionGuard>} /> */}
             <Route path="/admin/role-settings" element={<ClientSelectionGuard><RoleSettings /></ClientSelectionGuard>} />
+            <Route path="/admin/companies" element={<AdminCompanies />} />
             {/* HIDDEN: supabase-only */}
             {/* <Route path="/admin/reporting" element={<AdminReporting />} /> */}
             <Route path="/consistenze" element={<ClientSelectionGuard><Consistenze /></ClientSelectionGuard>} />
