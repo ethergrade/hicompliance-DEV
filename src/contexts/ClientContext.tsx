@@ -121,10 +121,23 @@
      }
    }, [user, rolesLoading, fetchOrganizations, authLoading]);
  
-   // Set selected group with persistence
-   const setSelectedGroup = useCallback((group: Group) => {
+   // Set selected group and reload organizations for that group
+   const setSelectedGroup = useCallback(async (group: Group) => {
      setSelectedGroupState(group);
-   }, []);
+     setSelectedOrganizationState(null); // Clear org when group changes
+     
+     // Load organizations for the selected group
+     setIsLoadingClients(true);
+     try {
+       const tenants = await tenantsApi.listAll(group.id);
+       setOrganizations(tenants);
+     } catch (error) {
+       console.error('Error loading organizations for group:', error);
+       setOrganizations([]);
+     } finally {
+       setIsLoadingClients(false);
+     }
+   }, [setSelectedOrganizationState]);
  
    return (
      <ClientContext.Provider
