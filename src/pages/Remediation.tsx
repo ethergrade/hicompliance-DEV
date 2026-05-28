@@ -79,7 +79,7 @@ const GANTT_END = new Date('2026-12-31');
 
 /* ─── Component ─── */
 const Remediation: React.FC = () => {
-  const { organizationId: orgId } = useClientOrganization();
+  const { organizationId: orgId, groupId } = useClientOrganization();
 
   const defaultPrefs = useMemo(() => ({ selectedTimeframe: '90days', defaultView: 'gantt' }), []);
   const { preferences, updatePreferences } = useUserPreferences({
@@ -151,26 +151,24 @@ const Remediation: React.FC = () => {
     try {
       await assessmentApi.updateGantt(assessmentIdRef.current, {
         custom_gantt: newTasks.map(dbTaskToApiGantt),
-      });
+      }, groupId);
     } catch (err: any) {
       console.error('Error saving gantt:', err);
       toast({ title: 'Errore', description: 'Impossibile salvare le modifiche.', variant: 'destructive' });
       throw err;
     }
-  }, [dbTaskToApiGantt]);
+  }, [dbTaskToApiGantt, groupId]);
 
   const loadTasks = useCallback(async () => {
     if (!orgId) { setLoading(false); return; }
 
     try {
-      const assessments = await assessmentApi.list();
-      const assessment = assessments.find(a => a.tenant_id === orgId) || null;
+      const assessments = await assessmentApi.list(groupId);
+      let assessment = assessments.find(a => a.tenant_id === orgId) || null;
 
+      // Auto-create assessment if none exists for this company
       if (!assessment) {
-        setTasks([]);
-        assessmentIdRef.current = null;
-        setLoading(false);
-        return;
+        assessment = await assessmentApi.create({ tenant_id: orgId }, groupId);
       }
 
       assessmentIdRef.current = assessment.id;
@@ -189,7 +187,7 @@ const Remediation: React.FC = () => {
         }));
         await assessmentApi.updateGantt(assessment.id, {
           custom_gantt: seedRows.map(dbTaskToApiGantt),
-        });
+        }, groupId);
         setTasks(seedRows);
       } else {
         setTasks(gantt.map((item, idx) => apiGanttToDbTask(item, idx)));
@@ -201,7 +199,7 @@ const Remediation: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [orgId, apiGanttToDbTask, dbTaskToApiGantt]);
+  }, [orgId, apiGanttToDbTask, dbTaskToApiGantt, groupId]);
 
   useEffect(() => {
     loadTasks();

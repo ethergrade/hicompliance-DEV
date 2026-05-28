@@ -8,11 +8,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { assetInventoryApi } from '@/lib/api';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { useUserRoles } from '@/hooks/useUserRoles';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { Server, Network, HardDrive, Users as UsersIcon, MapPin, Save, FileSpreadsheet, ScrollText } from 'lucide-react';
-import { ClientSelector } from '@/components/asset-inventory/ClientSelector';
 import * as XLSX from 'xlsx';
 
 interface AssetInventoryData {
@@ -69,27 +66,18 @@ const INITIAL_DATA: AssetInventoryData = {
 
 const AssetInventory: React.FC = () => {
   const { toast } = useToast();
-  const { user } = useAuth();
-  const { isSuperAdmin, isSales } = useUserRoles();
-  const { groupId } = useClientOrganization();
+  const { groupId, organizationId } = useClientOrganization();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const [data, setData] = useState<AssetInventoryData>({ ...INITIAL_DATA });
 
   useEffect(() => {
-    if (isSuperAdmin || isSales) {
-      setLoading(false);
-    } else if (user?.groups?.[0]?.id) {
-      setSelectedOrgId(user.groups[0].id);
-    }
-  }, [user, isSuperAdmin, isSales]);
-
-  useEffect(() => {
-    if (selectedOrgId) {
+    if (organizationId) {
       loadData();
+    } else {
+      setLoading(false);
     }
-  }, [selectedOrgId]);
+  }, [organizationId]);
 
   useEffect(() => {
     const total = 
@@ -110,10 +98,10 @@ const AssetInventory: React.FC = () => {
   }, [data.va_ip_punctual_count, data.va_subnet_25_count, data.va_subnet_24_count, data.va_subnet_23_count, data.va_subnet_22_count, data.va_subnet_21_count]);
 
   const loadData = async () => {
-    if (!selectedOrgId) { setLoading(false); return; }
+    if (!organizationId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const existingData = await assetInventoryApi.getByOrganization(selectedOrgId, groupId);
+      const existingData = await assetInventoryApi.getByOrganization(organizationId, groupId);
       if (existingData) {
         setData({
           ...INITIAL_DATA,
@@ -132,7 +120,7 @@ const AssetInventory: React.FC = () => {
   };
 
   const handleSave = async () => {
-    if (!selectedOrgId) {
+    if (!organizationId) {
       toast({ title: "Errore", description: "Seleziona un cliente", variant: "destructive" });
       return;
     }
@@ -141,7 +129,7 @@ const AssetInventory: React.FC = () => {
       if (data.id) {
         await assetInventoryApi.update(data.id, data, groupId);
       } else {
-        const newData = await assetInventoryApi.create({ ...data, organization_id: selectedOrgId }, groupId);
+        const newData = await assetInventoryApi.create({ ...data, organization_id: organizationId }, groupId);
         if (newData) setData({ ...INITIAL_DATA, ...newData, notes: newData.notes ?? '', hilog_sharepoint_dlp_enabled: newData.hilog_sharepoint_dlp_enabled ?? false, hilog_entra_id_enabled: newData.hilog_entra_id_enabled ?? false });
       }
       toast({ title: "Successo", description: "Inventario salvato con successo" });
@@ -197,8 +185,6 @@ const AssetInventory: React.FC = () => {
     XLSX.writeFile(wb, `inventario_asset.xlsx`);
   };
 
-  const canManageClients = isSuperAdmin || isSales;
-
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -207,7 +193,7 @@ const AssetInventory: React.FC = () => {
             <h1 className="text-3xl font-bold text-foreground">Inventario Asset Tecnici</h1>
             <p className="text-muted-foreground">Gestisci le consistenze tecniche del cliente</p>
           </div>
-          {selectedOrgId && !loading && (
+          {organizationId && !loading && (
             <Button variant="outline" onClick={handleExportExcel}>
               <FileSpreadsheet className="w-4 h-4 mr-2" />
               Esporta Excel
@@ -215,27 +201,7 @@ const AssetInventory: React.FC = () => {
           )}
         </div>
 
-        {canManageClients && (
-          <Card className="border-border bg-card">
-            <CardHeader>
-              <CardTitle className="text-foreground">Cliente</CardTitle>
-              <CardDescription>Seleziona o crea un nuovo cliente</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ClientSelector selectedOrgId={selectedOrgId} onOrgChange={setSelectedOrgId} disabled={saving} groupId={groupId} />
-            </CardContent>
-          </Card>
-        )}
-
-        {!selectedOrgId && canManageClients && (
-          <Card className="border-border bg-card">
-            <CardContent className="py-8 text-center">
-              <p className="text-muted-foreground">Seleziona un cliente per visualizzare e modificare l'inventario</p>
-            </CardContent>
-          </Card>
-        )}
-
-        {selectedOrgId && (
+        {organizationId && (
           <>
             {loading ? (
               <Card className="border-border bg-card">
