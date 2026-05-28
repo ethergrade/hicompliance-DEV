@@ -82,8 +82,8 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   // All tenant-services for this client
   const { data: tenantServices = [], refetch: refetchServices } = useQuery({
     queryKey: ['tenant-services-client', organizationId],
-    queryFn: () => tenantServicesApi.list(undefined, groupId),
-    enabled: open && !!groupId,
+    queryFn: () => tenantServicesApi.listByOrganization(organizationId!, groupId),
+    enabled: open && !!organizationId && !!groupId,
   });
 
   // Feature flags derived from tenant-services
