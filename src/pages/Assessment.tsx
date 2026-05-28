@@ -437,11 +437,6 @@ const Assessment: React.FC = () => {
     }
   };
 
-  const overallProgress = Math.round(
-    (assessmentCategories.reduce((acc, cat) => acc + cat.completed, 0) / 
-     assessmentCategories.reduce((acc, cat) => acc + cat.questions, 0)) * 100
-  );
-
   const overallScore = useMemo(() => {
     const catsWithAnswers = assessmentCategories.filter(c => c.completed > 0);
     if (catsWithAnswers.length === 0) return 0;
@@ -505,6 +500,15 @@ const Assessment: React.FC = () => {
     () => assessmentCategories.reduce((acc, cat) => acc + cat.questions, 0),
     [assessmentCategories]
   );
+
+  // Ricalcolato dopo totalQuestions per evitare divisione per zero
+  const overallProgress = useMemo(() => 
+    totalQuestions > 0 
+      ? Math.round((assessmentCategories.reduce((acc, cat) => acc + cat.completed, 0) / totalQuestions) * 100)
+      : 0,
+    [assessmentCategories, totalQuestions]
+  );
+
   const shouldShowEmptyReviewState = isReadOnlyView && answeredQuestions === 0;
 
   const resumeMessage = useMemo(() => {
