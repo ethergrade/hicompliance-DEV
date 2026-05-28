@@ -48,12 +48,12 @@ import { useRolePermissions } from '@/hooks/useRolePermissions';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useClientContext } from '@/contexts/ClientContext';
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { tenantServicesApi } from '@/lib/api';
 
 const navigation = [
   { title: 'Home', href: '/', icon: Home },
   { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { title: 'AI CISO', href: '/ai-ciso', icon: Bot, superAdminOnly: true },
+  // { title: 'AI CISO', href: '/ai-ciso', icon: Bot, superAdminOnly: true }, // HIDDEN: supabase-only (ai_ciso_conversations), no backend API
   { title: 'CyberNews', href: '/cyber-news', icon: Newspaper },
   { title: 'Minacce', href: '/threats', icon: AlertTriangle },
   { title: 'Report', href: '/reports', icon: FileText },
@@ -64,8 +64,8 @@ const navigation = [
 
 const hiComplianceModules = [
   { title: 'Assessment', href: '/assessment', icon: ClipboardCheck },
-  { title: 'SurfaceScan360', href: '/surface-scan', icon: Globe },
-  { title: 'DarkRisk360', href: '/dark-risk', icon: Eye },
+  // { title: 'SurfaceScan360', href: '/surface-scan', icon: Globe }, // HIDDEN: supabase-only (PRODOTTO), no backend SurfaceScan controller
+  // { title: 'DarkRisk360', href: '/dark-risk', icon: Eye }, // HIDDEN: supabase-only (PRODOTTO), no backend DarkRisk360 controller
   { title: 'Analisi', href: '/analytics', icon: BarChart3 },
   { title: 'Remediation', href: '/remediation', icon: Wrench },
   { title: 'Consistenze', href: '/consistenze', icon: Package },
@@ -82,11 +82,7 @@ const adminNavigation = [
     href: '/admin/clients',
     icon: Building2,
   },
-  {
-    title: 'Reportistica Aggregata',
-    href: '/admin/reporting',
-    icon: PieChart,
-  },
+  // { title: 'Reportistica Aggregata', href: '/admin/reporting', icon: PieChart }, // HIDDEN: supabase-only, no backend API
   {
     title: 'Gestione Ruoli',
     href: '/admin/role-settings',
@@ -108,17 +104,20 @@ export const AppSidebar: React.FC = () => {
   const isLockedSalesUser = isSales && String(userProfile?.email || '').trim().toLowerCase() === 'sales@sales.com';
   const platformName = isConsoleUser ? 'HiSolution Console' : 'HiCompliance';
 
-  // Fetch feature flags of selected/active organization to gate sidebar modules
+  // Fetch HiCompliance service status from API to gate sidebar modules
   const { data: orgFlags } = useQuery({
     queryKey: ['sidebar-org-flags', selectedOrganization?.id],
     queryFn: async () => {
-      if (!selectedOrganization?.id) return null;
-      const { data } = await supabase
-        .from('organizations')
-        .select('hicompliance_enabled, surface_scan360_enabled, dark_risk360_enabled' as any)
-        .eq('id', selectedOrganization.id)
-        .maybeSingle();
-      return data as any;
+      if (!selectedOrganization?.id) return { hicompliance_enabled: false };
+      try {
+        const services = await tenantServicesApi.listByOrganization(selectedOrganization.id);
+        const hicomplianceActive = services.some(
+          (s) => s.service_type === 'hicompliance' && s.status === 'active'
+        );
+        return { hicompliance_enabled: hicomplianceActive };
+      } catch {
+        return { hicompliance_enabled: false };
+      }
     },
     enabled: !!selectedOrganization?.id,
   });
@@ -126,8 +125,9 @@ export const AppSidebar: React.FC = () => {
   const forceDemoAccessForSalesCliente1 =
     isLockedSalesUser && String(selectedOrganization?.code || '').trim().toLowerCase() === 'cliente1';
   const hicomplianceOn = forceDemoAccessForSalesCliente1 ? true : !!orgFlags?.hicompliance_enabled;
-  const surfaceScanOn = forceDemoAccessForSalesCliente1 ? true : !!orgFlags?.surface_scan360_enabled;
-  const darkRiskOn = forceDemoAccessForSalesCliente1 ? true : !!orgFlags?.dark_risk360_enabled;
+  // SurfaceScan360 and DarkRisk360 hidden — supabase-only PRODOTTO features, no backend API
+  const surfaceScanOn = false;
+  const darkRiskOn = false;
   const { canViewRoute } = usePermissions();
 
   const isFeatureAllowed = (href: string) => {
@@ -275,7 +275,7 @@ export const AppSidebar: React.FC = () => {
           </SidebarGroup>
         )}
 
-        {(isModuleEnabled('/settings/users') || isModuleEnabled('/settings/integrations') || isModuleEnabled('/settings/alerts') || isModuleEnabled('/settings/surface-scan-alerts')) && (
+        {(isModuleEnabled('/settings/users') || isModuleEnabled('/settings/alerts')) && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
               Impostazioni
@@ -295,45 +295,21 @@ export const AppSidebar: React.FC = () => {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 )}
-                {isModuleEnabled('/settings/integrations') && (
+                {isModuleEnabled('/settings/users') && (
                   <SidebarMenuItem>
                     <SidebarMenuButton 
                       asChild
                       className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                     >
-                      <NavLink to="/settings/integrations">
-                        <Network className="w-4 h-4" />
-                        {!collapsed && <span>Integrazioni</span>}
+                      <NavLink to="/settings/users">
+                        <Users className="w-4 h-4" />
+                        {!collapsed && <span>Utenti</span>}
                       </NavLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 )}
-                {isModuleEnabled('/settings/alerts') && (
-                  <SidebarMenuItem>
-                    <SidebarMenuButton 
-                      asChild
-                      className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                    >
-                      <NavLink to="/settings/alerts">
-                        <Bell className="w-4 h-4" />
-                        {!collapsed && <span>Alert DarkRisk</span>}
-                      </NavLink>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )}
-                {isModuleEnabled('/settings/surface-scan-alerts') && (
-                  <SidebarMenuItem>
-                    <SidebarMenuButton 
-                      asChild
-                      className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                    >
-                      <NavLink to="/settings/surface-scan-alerts">
-                        <Bell className="w-4 h-4" />
-                        {!collapsed && <span>Alert SurfaceScan</span>}
-                      </NavLink>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )}
+                {/* /settings/integrations — HIDDEN: supabase-only Integrations page, no backend API */}
+                {/* /settings/surface-scan-alerts — HIDDEN: supabase-only SurfaceScan alerts, no backend API */}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -375,7 +351,7 @@ export const AppSidebar: React.FC = () => {
                     </SidebarMenuItem>
                   );
                 })}
-                {isSuperAdmin && renderNavItem({ title: 'AI CISO Assistant', href: '/ai-ciso', icon: Bot })}
+                {/* AI CISO Assistant — HIDDEN: supabase-only (ai_ciso_conversations), no backend API */}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
