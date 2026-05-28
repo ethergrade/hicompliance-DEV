@@ -81,7 +81,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   // All tenant-services for this client
   const { data: tenantServices = [], refetch: refetchServices } = useQuery({
     queryKey: ['tenant-services-client', organizationId],
-    queryFn: () => tenantServicesApi.list(),
+    queryFn: () => tenantServicesApi.list(undefined, groupId),
     enabled: open && !!groupId,
   });
 
