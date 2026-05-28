@@ -121,13 +121,14 @@ export const AppSidebar: React.FC = () => {
       if (!selectedOrganization?.id) return { hicompliance_enabled: false };
       try {
         const services = await tenantServicesApi.listByOrganization(selectedOrganization.id, groupId);
-        const hicomplianceActive = services.some(
+        const orgServices = services.filter(s => s.tenant_id === selectedOrganization.id);
+        const hicomplianceActive = orgServices.some(
           (s) => s.service_type === 'hicompliance' && s.status === 'active'
         );
-        const surfaceScanActive = services.some(
+        const surfaceScanActive = orgServices.some(
           (s) => s.service_type === 'hitrack' && s.status === 'active'
         );
-        const darkRiskActive = services.some(
+        const darkRiskActive = orgServices.some(
           (s) => s.service_type === 'darkrisk' && s.status === 'active'
         );
         return { hicompliance_enabled: hicomplianceActive, surface_scan360_enabled: surfaceScanActive, dark_risk360_enabled: darkRiskActive };
