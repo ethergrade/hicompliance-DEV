@@ -139,6 +139,27 @@ export const irpApi = {
     return res.data;
   },
 
+  // ─── IRP Document Export ─────────────────────────────────────────────────
+
+  /** Export the IRP document as DOCX blob */
+  async exportDocument(companyId: string, companyName: string, _g?: string | null): Promise<void> {
+    const token = localStorage.getItem('auth_token');
+    const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/companies/${companyId}/irp/export`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-Group-Id': _g || companyId,
+      },
+    });
+    if (!res.ok) throw new Error('Errore durante il download del documento IRP');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `IRP_${companyName.replace(/\s+/g, '_')}.docx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
   // ─── Import Emergency Contacts from Directory ─────────────────────────────
 
   /** Import emergency contacts from the directory */

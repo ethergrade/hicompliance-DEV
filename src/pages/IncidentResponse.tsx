@@ -54,7 +54,7 @@ const IncidentResponse: React.FC = () => {
   const [playbookViewerOpen, setPlaybookViewerOpen] = useState(false);
   const [selectedPlaybook, setSelectedPlaybook] = useState<Playbook | null>(null);
   const { toast } = useToast();
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId, selectedOrganization } = useClientOrganization();
 
   // Handle navigation state to open a specific playbook
   useEffect(() => {
@@ -424,13 +424,22 @@ const IncidentResponse: React.FC = () => {
           </TabsList>
 
           <TabsContent value="procedures" className="space-y-6">
-            <Button 
-              className="w-full bg-primary text-primary-foreground"
-              onClick={() => setIrpEditorOpen(true)}
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Scarica Incident Response Plan Completo
-            </Button>
+            <div className="flex gap-2">
+              <Button 
+                className="flex-1 bg-primary text-primary-foreground"
+                onClick={() => irpApi.exportDocument(organizationId!, selectedOrganization?.name || 'documento', groupId)}
+                disabled={!organizationId}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Scarica Incident Response Plan Completo
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setIrpEditorOpen(true)}
+              >
+                Modifica
+              </Button>
+            </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {procedures.map((procedure) => (
