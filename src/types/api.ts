@@ -387,6 +387,7 @@ export interface TenantServiceResource {
 }
 
 export interface StoreTenantServiceRequest {
+  tenant_id?: string | null;
   site_id?: string | null;
   service_type: string;
   status?: "active" | "inactive" | null;
@@ -394,6 +395,7 @@ export interface StoreTenantServiceRequest {
 }
 
 export interface UpdateTenantServiceRequest {
+  tenant_id?: string | null;
   site_id?: string | null;
   service_type?: string;
   status?: "active" | "inactive";

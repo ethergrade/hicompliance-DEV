@@ -15,9 +15,11 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   organization?: { id: string; name: string; code: string } | null;
   onSaved: () => void;
+  /** Se fornito, usa questo groupId invece di prenderlo da useClientOrganization */
+  groupId?: string | null;
 }
 
-const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, onSaved }) => {
+const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, onSaved, groupId: explicitGroupId }) => {
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
   const { selectedOrganization } = useClientOrganization();
@@ -36,7 +38,7 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
       toast.error('Il nome è obbligatorio');
       return;
     }
-    const groupId = selectedOrganization?.group_id;
+    const groupId = explicitGroupId ?? selectedOrganization?.group_id;
     if (!groupId) {
       toast.error('Gruppo non trovato — impossibile salvare');
       return;

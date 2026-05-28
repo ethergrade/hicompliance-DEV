@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, Building2, Calendar, ArrowRight, Users, FileText, Server, Plug, Plus, Pencil, Trash2, ShieldCheck } from 'lucide-react';
+import { Search, Building2, Calendar, ArrowRight, Users, FileText, Server, Plug, Pencil, Trash2, ShieldCheck } from 'lucide-react';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
 import ClientProfileSheet from '@/components/clients/ClientProfileSheet';
@@ -77,11 +77,6 @@ const ClientSelection: React.FC = () => {
     setContactsOpen(true);
   };
 
-  const openCreate = () => {
-    setCrudOrg(null);
-    setCrudOpen(true);
-  };
-
   const openEdit = (e: React.MouseEvent, org: typeof organizations[0]) => {
     e.stopPropagation();
     setCrudOrg({ id: org.id, name: org.name, code: org.code });
@@ -126,12 +121,6 @@ const ClientSelection: React.FC = () => {
               Seleziona un cliente per visualizzare e gestire i suoi dati
             </p>
           </div>
-          {isSuperAdmin && (
-            <Button onClick={openCreate} className="gap-2">
-              <Plus className="w-4 h-4" />
-              Nuovo Cliente
-            </Button>
-          )}
         </div>
 
         {/* Search */}
