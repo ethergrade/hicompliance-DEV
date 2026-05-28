@@ -19,11 +19,12 @@ export const tenantServicesApi = {
   },
 
   /** List tenant services by organization/tenant ID */
-  async listByOrganization(organizationId: string): Promise<TenantServiceResource[]> {
+  async listByOrganization(organizationId: string, groupId?: string | null): Promise<TenantServiceResource[]> {
+    const effectiveGroup = groupId || organizationId;
     const res = await apiClient.get<ApiResponse<TenantServiceResource[]>>(
       `/tenant-services`,
       { tenant_id: organizationId },
-      { headers: groupHeader(organizationId) }
+      { headers: groupHeader(effectiveGroup) }
     );
     return res.data;
   },

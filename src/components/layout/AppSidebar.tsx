@@ -114,12 +114,13 @@ export const AppSidebar: React.FC = () => {
   const platformName = isConsoleUser ? 'HiSolution Console' : 'HiCompliance';
 
   // Fetch HiCompliance service status from API to gate sidebar modules
+  const groupId = selectedOrganization?.group_id ?? null;
   const { data: orgFlags } = useQuery({
-    queryKey: ['sidebar-org-flags', selectedOrganization?.id],
+    queryKey: ['sidebar-org-flags', selectedOrganization?.id, groupId],
     queryFn: async () => {
       if (!selectedOrganization?.id) return { hicompliance_enabled: false };
       try {
-        const services = await tenantServicesApi.listByOrganization(selectedOrganization.id);
+        const services = await tenantServicesApi.listByOrganization(selectedOrganization.id, groupId);
         const hicomplianceActive = services.some(
           (s) => s.service_type === 'hicompliance' && s.status === 'active'
         );
