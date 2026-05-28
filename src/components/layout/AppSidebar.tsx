@@ -236,24 +236,14 @@ export const AppSidebar: React.FC = () => {
           <SidebarGroupContent>
             <SidebarMenu>
               {filteredNavigation.map((item) => renderNavItem(item))}
+              {servicesStandalone.map((item) => renderNavItem(item))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Standalone services (only 1 active → above HiCompliance) */}
-        {servicesStandalone.length > 0 && (
-          <SidebarGroup className="py-0">
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {servicesStandalone.map((item) => renderNavItem(item))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-
         {/* HiCompliance collapsible group */}
         {hiComplianceGroupVisible && (
-          <SidebarGroup className="py-0">
+          <SidebarGroup>
             <Collapsible open={hiComplianceOpen} onOpenChange={setHiComplianceOpen}>
               <CollapsibleTrigger className="flex w-full items-center justify-between px-4 py-2 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors">
                 <div className="flex items-center gap-2">
@@ -268,8 +258,6 @@ export const AppSidebar: React.FC = () => {
                 <SidebarGroupContent>
                   <SidebarMenu>
                     {visibleHiCompliance.map(item => renderNavItem(item))}
-
-                    {/* Services (both active → sub-items under HiCompliance) */}
                     {servicesUnderHiCompliance.map(item => renderNavItem(item))}
 
                     {/* INCIDENT sub-collapsible */}
