@@ -14,6 +14,7 @@ import {
   Network,
   LogOut,
   Globe,
+  Building,
   Eye,
   ClipboardCheck,
   Home,
@@ -81,6 +82,11 @@ const adminNavigation = [
     title: 'Gestione Clienti',
     href: '/admin/clients',
     icon: Building2,
+  },
+  {
+    title: 'Aziende & Gruppi',
+    href: '/admin/companies',
+    icon: Building,
   },
   // { title: 'Reportistica Aggregata', href: '/admin/reporting', icon: PieChart }, // HIDDEN: supabase-only, no backend API
   {
