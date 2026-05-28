@@ -20,6 +20,7 @@ interface ClientServicesDialogProps {
   onOpenChange: (open: boolean) => void;
   organizationId?: string;
   organizationName?: string;
+  groupId?: string | null;
 }
 
 interface Integration {
@@ -68,11 +69,12 @@ function deriveDarkRiskTier(services: TenantServiceResource[]) {
 }
 
 const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
-  open, onOpenChange, organizationId: propOrgId, organizationName,
+  open, onOpenChange, organizationId: propOrgId, organizationName, groupId: propGroupId,
 }) => {
   const queryClient = useQueryClient();
-  const { organizationId: hookOrgId, groupId } = useClientOrganization();
+  const { organizationId: hookOrgId, groupId: hookGroupId } = useClientOrganization();
   const organizationId = propOrgId || hookOrgId;
+  const groupId = propGroupId ?? hookGroupId;
   const [connectingService, setConnectingService] = useState<{ id: string; name: string } | null>(null);
   const [apiUrl, setApiUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
