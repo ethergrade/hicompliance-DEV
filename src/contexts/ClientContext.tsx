@@ -2,6 +2,7 @@
  import { useAuth } from '@/components/auth/AuthProvider';
  import { useUserRoles } from '@/hooks/useUserRoles';
  import { tenantsApi } from '@/lib/api';
+ import { authApi } from '@/lib/api/auth';
  import type { TenantResource } from '@/types/api';
  
  interface ClientContextType {
@@ -43,13 +44,23 @@
      
      setIsLoadingClients(true);
      try {
-       // Use the first group's ID as the user's organization
-      const primaryGroup = user.groups?.[0];
-      setUserOrganizationId(primaryGroup?.id || null);
+       // Resolve group: use user.groups if present, else fetch from API for superadmins
+       let resolveGroupId: string | null = null;
+       const primaryGroup = user.groups?.[0];
+       if (primaryGroup?.id) {
+         resolveGroupId = primaryGroup.id;
+       } else if (canManageMultipleClients) {
+         // Superadmin without groups in /auth/me — fetch from /auth/groups
+         try {
+           const apiGroups = await authApi.groups();
+           resolveGroupId = apiGroups[0]?.id || null;
+         } catch { /* ignore */ }
+       }
+       setUserOrganizationId(resolveGroupId);
 
        if (canManageMultipleClients) {
-         // Super-admin/Sales: fetch all tenants
-         const tenants = await tenantsApi.listAll();
+         // Super-admin/Sales: fetch companies for the resolved group
+         const tenants = resolveGroupId ? await tenantsApi.listAll(resolveGroupId) : [];
          setOrganizations(tenants);
 
          // Restore from localStorage (already handled in useState init, but
@@ -59,14 +70,13 @@
            const fresh = tenants.find(t => t.id === stored.id);
            if (fresh) setSelectedOrganizationState(fresh);
          }
-       } else {
-         // Normal client: use their own tenant
-         const primaryGroup = user.groups?.[0];
-       if (primaryGroup?.id) {
-           const tenant = await tenantsApi.getOwn();
-           setOrganizations([tenant]);
-           setSelectedOrganizationState(tenant);
-         }
+       } else if (resolveGroupId) {
+         // Normal client: fetch their company by group
+         try {
+           const tenants = await tenantsApi.listAll(resolveGroupId);
+           setOrganizations(tenants);
+           if (tenants.length > 0) setSelectedOrganizationState(tenants[0]);
+         } catch { /* ignore */ }
        }
      } catch (error) {
        console.error('Error fetching organizations:', error);
