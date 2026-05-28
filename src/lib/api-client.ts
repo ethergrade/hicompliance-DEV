@@ -25,7 +25,7 @@ function setTokenExpiry(): void {
   localStorage.setItem(TOKEN_EXPIRY_KEY, String(Date.now() + TOKEN_TTL_MS));
 }
 
-function isTokenExpired(): boolean {
+export function isTokenExpired(): boolean {
   const expiry = getTokenExpiry();
   return expiry !== null && Date.now() >= expiry;
 }
@@ -63,7 +63,6 @@ function handleTokenExpired(): void {
   if (window.location.pathname === "/auth") return;
 
   window.dispatchEvent(new CustomEvent('auth:unauthorized'));
-  window.location.href = '/auth';
 }
 
 function handleUnauthorized(): void {

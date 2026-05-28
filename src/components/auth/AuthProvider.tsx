@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { authApi } from '@/lib/api/auth';
-import { getToken, clearToken, handleUnauthorized, ApiError } from '@/lib/api-client';
+import { getToken, clearToken, handleUnauthorized, ApiError, isTokenExpired } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
 import type { LoginUser } from '@/types/api';
 
@@ -34,7 +34,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Restore session from stored token on mount
   useEffect(() => {
     const token = getToken();
-    if (!token) {
+    if (!token || isTokenExpired()) {
+      clearToken();
       setLoading(false);
       return;
     }
@@ -59,6 +60,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         description: "Effettua nuovamente l'accesso",
         variant: "destructive",
       });
+      window.location.href = '/auth';
     };
 
     window.addEventListener('auth:unauthorized', handleAuthUnauthorized);
