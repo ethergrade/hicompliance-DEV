@@ -331,19 +331,6 @@ export const AppSidebar: React.FC = () => {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 )}
-                {isModuleEnabled('/settings/users') && (
-                  <SidebarMenuItem>
-                    <SidebarMenuButton 
-                      asChild
-                      className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                    >
-                      <NavLink to="/settings/users">
-                        <Users className="w-4 h-4" />
-                        {!collapsed && <span>Utenti</span>}
-                      </NavLink>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )}
                 {/* /settings/integrations — HIDDEN: supabase-only Integrations page, no backend API */}
                 {/* /settings/surface-scan-alerts — HIDDEN: supabase-only SurfaceScan alerts, no backend API */}
               </SidebarMenu>

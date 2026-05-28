@@ -10,13 +10,21 @@ import type {
 } from "@/types/api";
 
 export const assessmentApi = {
-  async list(): Promise<AssessmentData[]> {
-    const res = await apiClient.get<ApiResponse<AssessmentData[]>>("/assessments");
+  async list(groupId?: string | null): Promise<AssessmentData[]> {
+    const res = await apiClient.get<ApiResponse<AssessmentData[]>>(
+      "/assessments",
+      undefined,
+      groupId ? { headers: { "X-Group-Id": groupId } } : undefined
+    );
     return res.data;
   },
 
-  async create(payload: Partial<UpdateAssessmentRequest>): Promise<AssessmentData> {
-    const res = await apiClient.post<ApiResponse<AssessmentData>>("/assessments", payload);
+  async create(payload: Partial<UpdateAssessmentRequest>, groupId?: string | null): Promise<AssessmentData> {
+    const res = await apiClient.post<ApiResponse<AssessmentData>>(
+      "/assessments",
+      payload,
+      groupId ? { headers: { "X-Group-Id": groupId } } : undefined
+    );
     return res.data;
   },
 
@@ -30,8 +38,12 @@ export const assessmentApi = {
     return res.data;
   },
 
-  async updateGantt(id: AssessmentId, payload: UpdateGanttRequest): Promise<AssessmentData> {
-    const res = await apiClient.patch<ApiResponse<AssessmentData>>(`/assessments/${id}/gantt`, payload);
+  async updateGantt(id: AssessmentId, payload: UpdateGanttRequest, groupId?: string | null): Promise<AssessmentData> {
+    const res = await apiClient.patch<ApiResponse<AssessmentData>>(
+      `/assessments/${id}/gantt`,
+      payload,
+      groupId ? { headers: { "X-Group-Id": groupId } } : undefined
+    );
     return res.data;
   },
 
