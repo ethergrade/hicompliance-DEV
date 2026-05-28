@@ -230,7 +230,7 @@ const Dashboard: React.FC = () => {
                   </Button>
                 )}
                 {canManageIntegrationSettings && (
-                    <Button variant="outline" size="sm" onClick={() => navigate('/settings/integrations')}>
+                    <Button variant="outline" size="sm" onClick={() => setModulesDialogOpen(true)}>
                       <Settings className="w-4 h-4 mr-1" />
                       Impostazioni
                     </Button>
