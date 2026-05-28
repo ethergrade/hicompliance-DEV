@@ -113,7 +113,7 @@ const AssetInventory: React.FC = () => {
     if (!selectedOrgId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const existingData = await assetInventoryApi.getByOrganization(selectedOrgId);
+      const existingData = await assetInventoryApi.getByOrganization(selectedOrgId, groupId);
       if (existingData) {
         setData({
           ...INITIAL_DATA,
@@ -139,9 +139,9 @@ const AssetInventory: React.FC = () => {
     setSaving(true);
     try {
       if (data.id) {
-        await assetInventoryApi.update(data.id, data);
+        await assetInventoryApi.update(data.id, data, groupId);
       } else {
-        const newData = await assetInventoryApi.create({ ...data, organization_id: selectedOrgId });
+        const newData = await assetInventoryApi.create({ ...data, organization_id: selectedOrgId }, groupId);
         if (newData) setData({ ...INITIAL_DATA, ...newData, notes: newData.notes ?? '', hilog_sharepoint_dlp_enabled: newData.hilog_sharepoint_dlp_enabled ?? false, hilog_entra_id_enabled: newData.hilog_entra_id_enabled ?? false });
       }
       toast({ title: "Successo", description: "Inventario salvato con successo" });
