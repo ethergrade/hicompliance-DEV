@@ -9,8 +9,8 @@ const CSRF_URL = import.meta.env.DEV
 const TOKEN_KEY = import.meta.env.VITE_AUTH_TOKEN_KEY as string;
 const TOKEN_EXPIRY_KEY = `${TOKEN_KEY}_expiry`;
 
-/** Session window: 115 min (5 min before backend SESSION_LIFETIME default of 120 min) */
-const TOKEN_TTL_MS = 115 * 60 * 1000;
+/** Session window: 24 ore */
+const TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
 // ─── Token management ───────────────────────────────────────────────────────
 
