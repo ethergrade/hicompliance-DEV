@@ -237,6 +237,7 @@ export const AppSidebar: React.FC = () => {
             <SidebarMenu>
               {filteredNavigation.map((item) => renderNavItem(item))}
               {servicesStandalone.map((item) => renderNavItem(item))}
+              {isModuleEnabled('/threat-management') && renderNavItem({ title: 'Threat Management', href: '/threat-management', icon: Shield })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -285,18 +286,6 @@ export const AppSidebar: React.FC = () => {
                 </SidebarGroupContent>
               </CollapsibleContent>
             </Collapsible>
-          </SidebarGroup>
-        )}
-
-
-        {/* Threat Management */}
-        {isModuleEnabled('/threat-management') && (
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {renderNavItem({ title: 'Threat Management', href: '/threat-management', icon: Shield })}
-              </SidebarMenu>
-            </SidebarGroupContent>
           </SidebarGroup>
         )}
 
