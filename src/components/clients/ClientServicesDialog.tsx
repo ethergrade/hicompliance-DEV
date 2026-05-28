@@ -1,473 +1,439 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { Switch } from '@/components/ui/switch';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Loader2,
-  Plug,
-  ShieldCheck,
-  Radar,
-  Eye,
-  Shield,
-  Activity,
-  Server,
-  Mail,
-  Monitor,
-  Smartphone,
-  Search as SearchIcon,
-  Settings,
-  Save,
-} from 'lucide-react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { tenantServicesApi } from '@/lib/api/tenant-services';
-import { useClientOrganization } from '@/hooks/useClientOrganization';
-import type {
-  TenantServiceResource,
-  ServiceCatalog,
-  ServiceCatalogField,
-} from '@/types/api';
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Shield, Activity, Bug, Loader2, Save, Check } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { useClientOrganization } from "@/hooks/useClientOrganization";
+import { tenantServicesApi } from "@/lib/api";
+import type { TenantServiceResource, StoreTenantServiceRequest } from "@/types/api";
 
 interface ClientServicesDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  organizationName: string;
+  /** Client name for dialog title */
+  organizationName?: string;
 }
 
-const SERVICE_ICONS: Record<string, React.ReactNode> = {
-  hicompliance: <ShieldCheck className="w-4 h-4" />,
-  surfacescan360: <Radar className="w-4 h-4" />,
-  darkrisk360: <Eye className="w-4 h-4" />,
-  hipatch: <Shield className="w-4 h-4" />,
-  hifirewall: <Shield className="w-4 h-4" />,
-  hiendpoint: <Monitor className="w-4 h-4" />,
-  himail: <Mail className="w-4 h-4" />,
-  hitrack: <Activity className="w-4 h-4" />,
-  hilog: <Server className="w-4 h-4" />,
-  hidetect: <SearchIcon className="w-4 h-4" />,
-  himobile: <Smartphone className="w-4 h-4" />,
-};
+type Duration = "2" | "3" | "4" | "5";
 
-const SERVICE_ORDER = [
-  'HiCompliance',
-  'SurfaceScan360',
-  'DarkRisk360',
-  'HiPatch',
-  'HiTrack',
-  'HiLog',
-  'HiMail',
-  'HiEndpoint',
-  'HiFirewall',
-  'HiDetect',
-  'HiMobile',
-];
-
-function sortServiceTypes(types: string[]): string[] {
-  return [...types].sort((a, b) => {
-    const ia = SERVICE_ORDER.indexOf(a);
-    const ib = SERVICE_ORDER.indexOf(b);
-    if (ia !== -1 && ib !== -1) return ia - ib;
-    if (ia !== -1) return -1;
-    if (ib !== -1) return 1;
-    return a.localeCompare(b);
-  });
+interface HiComplianceSettings {
+  duration?: Duration;
+  extended_range?: boolean;
 }
 
-const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
-  open,
-  onOpenChange,
-  organizationName,
-}) => {
-  const queryClient = useQueryClient();
-  const { organizationId } = useClientOrganization();
+interface HiTrackSettings {
+  duration?: Duration;
+  extended_range?: boolean;
+}
 
-  const [localSettings, setLocalSettings] = useState<
-    Record<string, Record<string, unknown>>
-  >({});
-  const [dirty, setDirty] = useState<Set<string>>(new Set());
-  const initializedRef = React.useRef(false);
+interface HiPatchSettings {
+  connectsecure_company_id?: string;
+  ninjaone_organization_id?: string;
+  ninjaone_organization_id_client?: string;
+  ninjaone_organization_secret?: string;
+}
 
-  // Reset local state when dialog opens/closes
-  useEffect(() => {
-    if (!open) {
-      initializedRef.current = false;
-      setLocalSettings({});
-      setDirty(new Set());
-    }
-  }, [open]);
+interface ServiceData {
+  service_type: string;
+  active: boolean;
+  settings: HiComplianceSettings | HiTrackSettings | HiPatchSettings;
+  saved: boolean;
+  saving: boolean;
+}
 
-  const { data: catalog, isLoading: catalogLoading } = useQuery<ServiceCatalog>({
-    queryKey: ['tenant-services-catalog'],
-    queryFn: () => tenantServicesApi.catalog(),
-    enabled: open,
-    staleTime: 5 * 60 * 1000,
-  });
+const SERVICES = [
+  {
+    type: "hicompliance",
+    label: "HiCompliance",
+    subtitle: "NIS2 Assessment & Compliance",
+    icon: Shield,
+    defaultSettings: { duration: "3", extended_range: false } satisfies HiComplianceSettings,
+  },
+  {
+    type: "hitrack",
+    label: "HiTrack",
+    subtitle: "SurfaceScan 360 & Monitoring",
+    icon: Activity,
+    defaultSettings: { duration: "3", extended_range: false } satisfies HiTrackSettings,
+  },
+  {
+    type: "hipatch",
+    label: "HiPatch",
+    subtitle: "Vulnerability Assessment Continuativo",
+    icon: Bug,
+    defaultSettings: {
+      connectsecure_company_id: "",
+      ninjaone_organization_id: "",
+      ninjaone_organization_id_client: "",
+      ninjaone_organization_secret: "",
+    } satisfies HiPatchSettings,
+  },
+] as const;
 
-  const { data: tenantServices = [], isLoading: servicesLoading } = useQuery<
-    TenantServiceResource[]
-  >({
-    queryKey: ['tenant-services', organizationId],
-    queryFn: () => tenantServicesApi.listByOrganization(organizationId!),
-    enabled: open && !!organizationId,
-  });
+function parseDuration(v: unknown): Duration {
+  if (v === "2" || v === "3" || v === "4" || v === "5") return v;
+  return "3";
+}
 
-  // One-time init of local settings from fetched services
-  useEffect(() => {
-    if (!initializedRef.current && tenantServices.length > 0) {
-      const next: Record<string, Record<string, unknown>> = {};
-      tenantServices.forEach((s) => {
-        if (s.status === 'active') {
-          next[s.service_type] = (s.settings as Record<string, unknown>) || {};
-        }
-      });
-      setLocalSettings(next);
-      initializedRef.current = true;
-    }
-  }, [tenantServices]);
+function toServiceData(ts: TenantServiceResource | null): ServiceData {
+  const type = (ts?.service_type || "hicompliance") as ServiceData["service_type"];
+  const cfg = SERVICES.find((s) => s.type === type);
+  const defaults = cfg?.defaultSettings ?? {};
+  const raw = (ts?.settings as Record<string, unknown> | null) ?? {};
+  const settings = { ...defaults, ...raw };
 
-  const servicesMap = useMemo(() => {
-    const map = new Map<string, TenantServiceResource>();
-    tenantServices.forEach((s) => map.set(s.service_type, s));
-    return map;
-  }, [tenantServices]);
+  return {
+    service_type: type,
+    active: ts?.status === "active",
+    settings,
+    saved: true,
+    saving: false,
+  };
+}
 
-  const createMutation = useMutation({
-    mutationFn: (serviceType: string) =>
-      tenantServicesApi.create(
-        {
-          tenant_id: organizationId!,
-          service_type: serviceType,
-          status: 'active',
-          settings: {},
-        },
-        organizationId!
-      ),
-    onSuccess: (_, serviceType) => {
-      setLocalSettings((prev) => ({ ...prev, [serviceType]: {} }));
-      queryClient.invalidateQueries({
-        queryKey: ['tenant-services', organizationId],
-      });
-      toast.success('Servizio attivato');
-    },
-    onError: (err: Error) => toast.error(`Errore attivazione: ${err.message}`),
-  });
+function buildStorePayload(data: ServiceData): StoreTenantServiceRequest {
+  return {
+    service_type: data.service_type,
+    status: data.active ? "active" : "inactive",
+    settings: data.settings,
+  };
+}
 
-  const updateStatusMutation = useMutation({
-    mutationFn: ({
-      id,
-      status,
-    }: {
-      id: string;
-      status: 'active' | 'inactive';
-    }) => tenantServicesApi.update(id, { status }, organizationId!),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ['tenant-services', organizationId],
-      });
-      toast.success('Stato servizio aggiornato');
-    },
-    onError: (err: Error) =>
-      toast.error(`Errore aggiornamento stato: ${err.message}`),
-  });
+function DurationSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: Duration;
+  onChange: (v: Duration) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Label className="text-xs whitespace-nowrap">Durata (anni):</Label>
+      <select
+        className="h-8 rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+        value={value}
+        onChange={(e) => onChange(e.target.value as Duration)}
+        disabled={disabled}
+      >
+        {(["2", "3", "4", "5"] as Duration[]).map((d) => (
+          <option key={d} value={d}>
+            {d} anni
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => tenantServicesApi.delete(id, organizationId!),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ['tenant-services', organizationId],
-      });
-      toast.success('Servizio disattivato');
-    },
-    onError: (err: Error) =>
-      toast.error(`Errore disattivazione: ${err.message}`),
-  });
+function ExtendedToggle({
+  checked,
+  onChange,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <Label className="text-xs">Scope esteso</Label>
+      <Switch checked={checked} onCheckedChange={onChange} disabled={disabled} size="sm" />
+    </div>
+  );
+}
 
-  const updateSettingsMutation = useMutation({
-    mutationFn: ({
-      id,
-      settings,
-    }: {
-      id: string;
-      settings: Record<string, unknown>;
-    }) => tenantServicesApi.update(id, { settings }, organizationId!),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: ['tenant-services', organizationId],
-      });
-      toast.success('Configurazione salvata');
-      setDirty((prev) => {
-        const next = new Set(prev);
-        const serviceType = Object.keys(localSettings).find(
-          (k) => servicesMap.get(k)?.id === variables.id
-        );
-        if (serviceType) next.delete(serviceType);
-        return next;
-      });
-    },
-    onError: (err: Error) =>
-      toast.error(`Errore salvataggio: ${err.message}`),
-  });
+export default function ClientServicesDialog({ open, onOpenChange, organizationName }: ClientServicesDialogProps) {
+  const { toast } = useToast();
+  const { organizationId: companyId, groupId, isLoading: orgLoading } = useClientOrganization();
+  const [loading, setLoading] = useState(false);
+  const [savingAll, setSavingAll] = useState(false);
+  const [dataMap, setDataMap] = useState<Record<string, ServiceData>>({});
 
-  const handleToggle = (serviceType: string, checked: boolean) => {
-    const service = servicesMap.get(serviceType);
-    if (checked) {
-      if (service) {
-        if (service.status !== 'active') {
-          updateStatusMutation.mutate({ id: service.id, status: 'active' });
-        }
-      } else {
-        createMutation.mutate(serviceType);
+  const fetchServices = useCallback(async () => {
+    if (!companyId || orgLoading) return;
+    setLoading(true);
+    try {
+      const list = await tenantServicesApi.listByOrganization(companyId);
+      const map: Record<string, ServiceData> = {};
+      for (const s of SERVICES) {
+        const existing = list.find((ts) => ts.service_type === s.type);
+        map[s.type] = toServiceData(existing || null);
       }
-    } else {
-      if (service) {
-        deleteMutation.mutate(service.id);
-      }
+      setDataMap(map);
+    } catch (err: any) {
+      toast({ title: "Errore", description: err?.message || "Impossibile caricare i servizi", variant: "destructive" });
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [companyId, orgLoading, toast]);
 
-  const handleFieldChange = (
-    serviceType: string,
-    fieldKey: string,
-    value: unknown
-  ) => {
-    setLocalSettings((prev) => ({
-      ...prev,
-      [serviceType]: {
-        ...(prev[serviceType] || {}),
-        [fieldKey]: value,
-      },
-    }));
-    setDirty((prev) => new Set(prev).add(serviceType));
-  };
+  useEffect(() => {
+    if (open) fetchServices();
+  }, [open, fetchServices]);
 
-  const handleSaveSettings = (serviceType: string) => {
-    const service = servicesMap.get(serviceType);
-    if (!service) return;
-    const settings = localSettings[serviceType] || {};
-    updateSettingsMutation.mutate({ id: service.id, settings });
-  };
-
-  const isLoading = catalogLoading || servicesLoading;
-  const anyMutationPending =
-    createMutation.isPending ||
-    deleteMutation.isPending ||
-    updateStatusMutation.isPending ||
-    updateSettingsMutation.isPending;
-
-  const sortedServiceTypes = useMemo(
-    () => sortServiceTypes(Object.keys(catalog || {})),
-    [catalog]
+  const updateService = useCallback(
+    (type: string, patch: Partial<Omit<ServiceData, "service_type">>) => {
+      setDataMap((prev) => {
+        const cur = prev[type];
+        if (!cur) return prev;
+        return { ...prev, [type]: { ...cur, ...patch, saved: false } };
+      });
+    },
+    []
   );
 
-  const renderField = (
-    serviceType: string,
-    fieldKey: string,
-    field: ServiceCatalogField
-  ) => {
-    const inputId = `${serviceType}-${fieldKey}`;
-    const value = localSettings[serviceType]?.[fieldKey];
+  const saveService = useCallback(
+    async (type: string) => {
+      if (!companyId || !groupId) return;
+      setDataMap((prev) => ({ ...prev, [type]: { ...prev[type], saving: true } }));
+      try {
+        const data = dataMap[type];
+        const payload = buildStorePayload(data);
 
-    if (field.type === 'select' && field.options && field.options.length > 0) {
-      return (
-        <div className="space-y-1" key={fieldKey}>
-          <Label htmlFor={inputId}>{field.label}</Label>
-          <Select
-            value={String(value ?? '')}
-            onValueChange={(v) => handleFieldChange(serviceType, fieldKey, v)}
-          >
-            <SelectTrigger id={inputId} className="h-9">
-              <SelectValue placeholder={`Seleziona ${field.label}`} />
-            </SelectTrigger>
-            <SelectContent>
-              {field.options.map((opt) => (
-                <SelectItem key={opt} value={opt}>
-                  {opt}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      );
-    }
-
-    if (field.type === 'checkbox') {
-      return (
-        <div className="flex items-center justify-between py-1.5" key={fieldKey}>
-          <Label htmlFor={inputId} className="cursor-pointer">
-            {field.label}
-          </Label>
-          <Switch
-            id={inputId}
-            checked={!!value}
-            onCheckedChange={(v) =>
-              handleFieldChange(serviceType, fieldKey, v)
-            }
-            aria-label={field.label}
-          />
-        </div>
-      );
-    }
-
-    return (
-      <div className="space-y-1" key={fieldKey}>
-        <Label htmlFor={inputId}>{field.label}</Label>
-        <Input
-          id={inputId}
-          type={field.is_secret ? 'password' : 'text'}
-          value={String(value ?? '')}
-          onChange={(e) =>
-            handleFieldChange(serviceType, fieldKey, e.target.value)
+        if (data.saved && data.id) {
+          // Update existing — need the tenant service ID
+          const list = await tenantServicesApi.listByOrganization(companyId);
+          const existing = list.find((ts) => ts.service_type === type);
+          if (existing) {
+            await tenantServicesApi.update(existing.id, payload, groupId);
+          } else {
+            await tenantServicesApi.create(payload, groupId);
           }
-          className="h-9"
-          placeholder={field.label}
-          autoComplete="off"
-        />
-      </div>
-    );
-  };
+        } else {
+          await tenantServicesApi.create(payload, groupId);
+        }
+        setDataMap((prev) => ({
+          ...prev,
+          [type]: { ...prev[type], saved: true, saving: false },
+        }));
+        toast({ title: "Salvato", description: `${SERVICES.find((s) => s.type === type)?.label} aggiornato` });
+      } catch (err: any) {
+        setDataMap((prev) => ({ ...prev, [type]: { ...prev[type], saving: false } }));
+        toast({ title: "Errore", description: err?.message || `Impossibile salvare il servizio`, variant: "destructive" });
+      }
+    },
+    [companyId, groupId, dataMap, toast]
+  );
+
+  const saveAll = useCallback(async () => {
+    if (!companyId || !groupId) return;
+    setSavingAll(true);
+    try {
+      // Get current list to know what exists
+      const list = await tenantServicesApi.listByOrganization(companyId);
+      const existingMap: Record<string, TenantServiceResource> = {};
+      for (const ts of list) existingMap[ts.service_type] = ts;
+
+      for (const s of SERVICES) {
+        const data = dataMap[s.type];
+        if (!data) continue;
+        const payload = buildStorePayload(data);
+        const existing = existingMap[s.type];
+        if (existing) {
+          await tenantServicesApi.update(existing.id, payload, groupId);
+        } else {
+          await tenantServicesApi.create(payload, groupId);
+        }
+        setDataMap((prev) => ({
+          ...prev,
+          [s.type]: { ...prev[s.type], saved: true, saving: false },
+        }));
+      }
+      toast({ title: "Completato", description: "Tutti i servizi sono stati salvati" });
+    } catch (err: any) {
+      toast({ title: "Errore", description: err?.message || "Errore nel salvataggio", variant: "destructive" });
+    } finally {
+      setSavingAll(false);
+    }
+  }, [companyId, groupId, dataMap, toast]);
+
+  const isPristine = useMemo(() => {
+    return Object.values(dataMap).every((d) => d.saved);
+  }, [dataMap]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Plug className="w-5 h-5" />
-            Servizi API — {organizationName}
+      <DialogContent className="sm:max-w-xl max-h-[80vh] overflow-hidden p-0">
+        <DialogHeader className="px-6 pt-6 pb-2">
+          <DialogTitle className="flex items-center gap-2 text-lg">
+            <Shield className="w-5 h-5 text-primary" />
+            Attivazione Servizi
           </DialogTitle>
-          <DialogDescription>
-            Attiva o disattiva i servizi HiSolution per questo cliente e configura
-            i parametri richiesti
+          <DialogDescription className="text-sm text-muted-foreground">
+            Configura e attiva i servizi HiSolution per questo cliente
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="max-h-[520px] pr-2">
-          {isLoading ? (
-            <div className="flex justify-center py-10">
-              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+        <ScrollArea className="max-h-[60vh] px-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span>Caricamento servizi...</span>
             </div>
           ) : (
-            <div className="space-y-3">
-              {sortedServiceTypes.map((serviceType, idx) => {
-                const entry = catalog![serviceType];
-                const service = servicesMap.get(serviceType);
-                const isActive = service?.status === 'active';
-                const iconKey = serviceType.toLowerCase();
-                const icon =
-                  SERVICE_ICONS[iconKey] || (
-                    <Settings className="w-4 h-4" />
-                  );
-                const hasFields =
-                  entry.fields && Object.keys(entry.fields).length > 0;
-                const isDirty = dirty.has(serviceType);
-                const isSavingService =
-                  updateSettingsMutation.isPending &&
-                  service?.id === updateSettingsMutation.variables?.id;
+            <div className="space-y-4 pb-6">
+              {SERVICES.map((s) => {
+                const Icon = s.icon;
+                const data = dataMap[s.type];
+                if (!data) return null;
 
                 return (
-                  <div key={serviceType}>
-                    {idx > 0 && <Separator className="my-2" />}
-
-                    {/* Service row */}
-                    <div className="flex items-center justify-between rounded-md border p-3 gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div
-                          className={`p-1.5 rounded-md shrink-0 ${
-                            isActive
-                              ? 'bg-primary/10 text-primary'
-                              : 'bg-muted text-muted-foreground'
-                          }`}
-                        >
-                          {icon}
+                  <Card key={s.type} className={data.active ? "border-primary/40" : ""}>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded-lg ${data.active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                            <Icon className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <CardTitle className="text-sm">{s.label}</CardTitle>
+                            <CardDescription className="text-xs">{s.subtitle}</CardDescription>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">
-                            {entry.label || serviceType}
-                          </p>
-                          {isActive && (
-                            <p className="text-xs text-muted-foreground">
-                              Configurazione attiva
-                            </p>
-                          )}
-                        </div>
+                        <Switch
+                          checked={data.active}
+                          onCheckedChange={(v) => updateService(s.type, { active: v })}
+                          aria-label={`Attiva ${s.label}`}
+                        />
                       </div>
-                      <Switch
-                        checked={isActive}
-                        disabled={
-                          anyMutationPending || !organizationId
-                        }
-                        onCheckedChange={(v) => handleToggle(serviceType, v)}
-                        aria-label={`Attiva ${entry.label || serviceType}`}
-                      />
-                    </div>
+                    </CardHeader>
 
-                    {/* Expanded settings */}
-                    {isActive && hasFields && (
-                      <div className="ml-4 mt-2 space-y-3 border-l-2 border-primary/20 pl-3">
-                        <div className="space-y-3">
-                          {Object.entries(entry.fields).map(
-                            ([fieldKey, field]) =>
-                              renderField(serviceType, fieldKey, field)
-                          )}
-                        </div>
+                    {data.active && (
+                      <CardContent className="pt-0 pb-4 space-y-3">
+                        <Separator />
 
-                        <div className="flex justify-end pt-1">
+                        {(s.type === "hicompliance" || s.type === "hitrack") && (
+                          <div className="space-y-3">
+                            <DurationSelect
+                              value={parseDuration((data.settings as HiComplianceSettings).duration)}
+                              onChange={(v) =>
+                                updateService(s.type, {
+                                  settings: { ...(data.settings as HiComplianceSettings), duration: v },
+                                })
+                              }
+                              disabled={data.saving}
+                            />
+                            <ExtendedToggle
+                              checked={Boolean((data.settings as HiComplianceSettings).extended_range)}
+                              onChange={(v) =>
+                                updateService(s.type, {
+                                  settings: { ...(data.settings as HiComplianceSettings), extended_range: v },
+                                })
+                              }
+                              disabled={data.saving}
+                            />
+                          </div>
+                        )}
+
+                        {s.type === "hipatch" && (
+                          <div className="space-y-3">
+                            <div className="space-y-1">
+                              <Label className="text-xs">ConnectSecure Company ID</Label>
+                              <Input
+                                placeholder="ID azienda ConnectSecure"
+                                value={(data.settings as HiPatchSettings).connectsecure_company_id || ""}
+                                onChange={(e) =>
+                                  updateService(s.type, {
+                                    settings: { ...(data.settings as HiPatchSettings), connectsecure_company_id: e.target.value },
+                                  })
+                                }
+                                disabled={data.saving}
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">NinjaOne Organization ID</Label>
+                              <Input
+                                placeholder="ID organizzazione NinjaOne"
+                                value={(data.settings as HiPatchSettings).ninjaone_organization_id || ""}
+                                onChange={(e) =>
+                                  updateService(s.type, {
+                                    settings: { ...(data.settings as HiPatchSettings), ninjaone_organization_id: e.target.value },
+                                  })
+                                }
+                                disabled={data.saving}
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">NinjaOne Client ID (secret)</Label>
+                              <Input
+                                type="password"
+                                placeholder="Client ID segreto"
+                                value={(data.settings as HiPatchSettings).ninjaone_organization_id_client || ""}
+                                onChange={(e) =>
+                                  updateService(s.type, {
+                                    settings: { ...(data.settings as HiPatchSettings), ninjaone_organization_id_client: e.target.value },
+                                  })
+                                }
+                                disabled={data.saving}
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">NinjaOne Secret (secret)</Label>
+                              <Input
+                                type="password"
+                                placeholder="Chiave segreta NinjaOne"
+                                value={(data.settings as HiPatchSettings).ninjaone_organization_secret || ""}
+                                onChange={(e) =>
+                                  updateService(s.type, {
+                                    settings: { ...(data.settings as HiPatchSettings), ninjaone_organization_secret: e.target.value },
+                                  })
+                                }
+                                disabled={data.saving}
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex justify-end">
                           <Button
                             size="sm"
-                            className="h-8 text-xs"
-                            disabled={!isDirty || isSavingService}
-                            onClick={() => handleSaveSettings(serviceType)}
+                            variant="outline"
+                            onClick={() => saveService(s.type)}
+                            disabled={data.saved || data.saving || savingAll}
+                            className="gap-1"
                           >
-                            {isSavingService ? (
-                              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                            {data.saving ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : data.saved ? (
+                              <Check className="w-3 h-3" />
                             ) : (
-                              <Save className="w-3.5 h-3.5 mr-1.5" />
+                              <Save className="w-3 h-3" />
                             )}
-                            Salva configurazione
+                            {data.saving ? "Salvataggio..." : data.saved ? "Salvato" : "Salva"}
                           </Button>
                         </div>
-                      </div>
+                      </CardContent>
                     )}
-
-                    {isActive && !hasFields && (
-                      <div className="ml-4 mt-2 border-l-2 border-primary/20 pl-3 py-2">
-                        <Badge variant="outline" className="text-xs">
-                          Nessuna configurazione richiesta
-                        </Badge>
-                      </div>
-                    )}
-                  </div>
+                  </Card>
                 );
               })}
-
-              {sortedServiceTypes.length === 0 && !catalogLoading && (
-                <div className="text-center py-8 text-sm text-muted-foreground">
-                  Nessun servizio disponibile nel catalogo
-                </div>
-              )}
             </div>
           )}
         </ScrollArea>
+
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-muted/30">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Chiudi
+          </Button>
+          <Button onClick={saveAll} disabled={isPristine || savingAll || loading} className="gap-1">
+            {savingAll && <Loader2 className="w-4 h-4 animate-spin" />}
+            <Save className="w-4 h-4" />
+            Salva tutto
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );
-};
-
-export default ClientServicesDialog;
+}
