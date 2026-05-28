@@ -37,6 +37,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!token || isTokenExpired()) {
       clearToken();
       setLoading(false);
+      window.location.href = '/auth';
       return;
     }
 
