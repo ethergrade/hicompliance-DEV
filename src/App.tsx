@@ -11,10 +11,8 @@ import { ScrollToTop } from "@/components/ScrollToTop";
 import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
 import ServiceDashboard from "./pages/ServiceDashboard";
-// HIDDEN: supabase-only (PRODOTTO SurfaceScan360), no backend controller
-// import SurfaceScan360 from "./pages/SurfaceScan360";
-// HIDDEN: supabase-only (PRODOTTO DarkRisk360), no backend controller
-// import DarkRisk360 from "./pages/DarkRisk360";
+import SurfaceScan360 from "./pages/SurfaceScan360";
+import DarkRisk360 from "./pages/DarkRisk360";
 import Assessment from "./pages/Assessment";
 import Remediation from "./pages/Remediation";
 import Analytics from "./pages/Analytics";
@@ -62,11 +60,9 @@ const App = () => (
             <Route path="/dashboard" element={<ClientSelectionGuard><Dashboard /></ClientSelectionGuard>} />
             <Route path="/cyber-news" element={<ClientSelectionGuard><CyberNews /></ClientSelectionGuard>} />
             <Route path="/dashboard/service/:serviceCode" element={<ClientSelectionGuard><ServiceDashboard /></ClientSelectionGuard>} />
-            {/* HIDDEN: supabase-only SurfaceScan360 */}
-            {/* <Route path="/surface-scan" element={<ClientSelectionGuard><SurfaceScan360 /></ClientSelectionGuard>} /> */}
-            {/* <Route path="/surface-scan/exposure" element={<Navigate to="/surface-scan" replace />} /> */}
-            {/* HIDDEN: supabase-only DarkRisk360 */}
-            {/* <Route path="/dark-risk" element={<ClientSelectionGuard><DarkRisk360 /></ClientSelectionGuard>} /> */}
+            <Route path="/surface-scan" element={<ClientSelectionGuard><SurfaceScan360 /></ClientSelectionGuard>} />
+            <Route path="/surface-scan/exposure" element={<Navigate to="/surface-scan" replace />} />
+            <Route path="/dark-risk" element={<ClientSelectionGuard><DarkRisk360 /></ClientSelectionGuard>} />
             <Route path="/assessment" element={<ClientSelectionGuard><Assessment /></ClientSelectionGuard>} />
             <Route path="/remediation" element={<ClientSelectionGuard><Remediation /></ClientSelectionGuard>} />
             <Route path="/analytics" element={<ClientSelectionGuard><Analytics /></ClientSelectionGuard>} />
