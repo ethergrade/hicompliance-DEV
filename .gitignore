@@ -31,3 +31,5 @@ dashboard_snapshot.md
 snapshot.md
 test_roles.js
 .env
+.pi/
+graphify-out/

@@ -11,7 +11,9 @@
     "preview": "vite preview",
     "test:deno": "deno test supabase/functions/_shared",
     "qa:no-secrets": "node scripts/qa/no-secrets-check.mjs",
-    "qa:darkrisk": "npm run test:deno && npm run qa:no-secrets"
+    "qa:darkrisk": "npm run test:deno && npm run qa:no-secrets",
+    "check": "tsc --noEmit && vite build",
+    "check:fast": "tsc --noEmit"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
