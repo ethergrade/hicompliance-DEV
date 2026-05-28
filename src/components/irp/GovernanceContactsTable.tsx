@@ -41,7 +41,7 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
   const [showConfirmAllDialog, setShowConfirmAllDialog] = useState(false);
   const [directoryOpen, setDirectoryOpen] = useState(false);
   const { toast } = useToast();
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
   
   // Use organization profile hook for CISO substitute persistence
   const { formData, updateField, saving: savingProfile, lastSaved } = useOrganizationProfile();
@@ -57,7 +57,7 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
   const fetchContacts = async () => {
     if (!organizationId) { setLoading(false); return; }
     try {
-      const data = await irpApi.contacts(organizationId);
+      const data = await irpApi.contacts(organizationId, groupId);
 
       const mappedContacts: EmergencyContact[] = (data || []).map(contact => ({
         id: contact.id,
@@ -91,7 +91,7 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
   const handleDeleteContact = async (contactId: string) => {
     if (!organizationId) return;
     try {
-      await irpApi.deleteContact(organizationId, contactId);
+      await irpApi.deleteContact(organizationId, contactId, groupId);
 
       toast({
         title: "Successo",
@@ -138,7 +138,7 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
         email: exampleContact.email,
         responsibilities: exampleContact.responsibilities,
         category: 'governance',
-      });
+      }, groupId, groupId);
 
       toast({
         title: "Successo",
@@ -173,7 +173,7 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
           email: contact.email,
           responsibilities: contact.responsibilities,
           category: 'governance',
-        });
+        }, groupId, groupId);
       }
 
       toast({

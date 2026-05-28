@@ -77,7 +77,7 @@ export function useDarkRiskAlerts() {
 
     try {
       setLoading(true);
-      const list = await darkRiskAlertsApi.list(organizationId);
+      const list = await darkRiskAlertsApi.list(organizationId, groupId);
       setAlerts(list.map(apiAlertToBaseAlert));
     } catch {
       toast({
@@ -100,7 +100,7 @@ export function useDarkRiskAlerts() {
       await darkRiskAlertsApi.create(organizationId, {
         alert_email: data.alert_email,
         alert_types: alertTypesToStrings(data.alert_types),
-      });
+      }, groupId, groupId);
       toast({
         title: 'Alert creato',
         description: "L'alert è stato configurato con successo",
@@ -127,7 +127,7 @@ export function useDarkRiskAlerts() {
       await darkRiskAlertsApi.update(organizationId, id, {
         alert_email: data.alert_email,
         alert_types: alertTypesToStrings(data.alert_types),
-      });
+      }, groupId, groupId);
       toast({
         title: 'Alert aggiornato',
         description: 'Le modifiche sono state salvate',
@@ -147,7 +147,7 @@ export function useDarkRiskAlerts() {
   const deleteAlert = useCallback(async (id: string) => {
     try {
       if (!organizationId) throw new Error('Nessun cliente selezionato');
-      await darkRiskAlertsApi.delete(organizationId, id);
+      await darkRiskAlertsApi.delete(organizationId, id, groupId);
       toast({
         title: 'Alert eliminato',
         description: "L'alert è stato rimosso",
@@ -167,7 +167,7 @@ export function useDarkRiskAlerts() {
   const toggleAlertStatus = useCallback(async (id: string, isActive: boolean) => {
     try {
       if (!organizationId) throw new Error('Nessun cliente selezionato');
-      await darkRiskAlertsApi.update(organizationId, id, { is_active: isActive });
+      await darkRiskAlertsApi.update(organizationId, id, { is_active: isActive }, groupId);
       toast({
         title: isActive ? 'Alert attivato' : 'Alert disattivato',
         description: `L'alert è stato ${isActive ? 'attivato' : 'disattivato'}`,

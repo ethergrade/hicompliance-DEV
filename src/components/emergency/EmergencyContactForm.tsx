@@ -26,7 +26,7 @@ export const EmergencyContactForm: React.FC<EmergencyContactFormProps> = ({ onCo
     category: '',
     newCategory: ''
   });
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,7 +48,7 @@ export const EmergencyContactForm: React.FC<EmergencyContactFormProps> = ({ onCo
         phone: formData.phone,
         email: formData.email,
         category: finalCategory || undefined,
-      });
+      }, groupId, groupId);
 
       toast.success('Contatto di emergenza aggiunto con successo');
 

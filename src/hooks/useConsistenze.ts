@@ -59,7 +59,7 @@ function toItemPayload(item: Partial<ConsistenzeItem>): Record<string, unknown> 
 }
 
 export function useConsistenze() {
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
   const [cliente, setCliente] = useState<ConsistenzeCliente | null>(null);
   const [items, setItems] = useState<ConsistenzeItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,8 +72,8 @@ export function useConsistenze() {
     setLoading(true);
     try {
       const [summary, apiItems] = await Promise.all([
-        consistenzeApi.summary(organizationId).catch(() => null),
-        consistenzeApi.items(organizationId),
+        consistenzeApi.summary(organizationId, groupId).catch(() => null),
+        consistenzeApi.items(organizationId, groupId),
       ]);
 
       setCliente(summary ? toCliente(summary, organizationId) : {
@@ -109,11 +109,11 @@ export function useConsistenze() {
 
         if (cliente?.id) {
           // Update existing
-          const updated = await consistenzeApi.updateSummary(organizationId, payload);
+          const updated = await consistenzeApi.updateSummary(organizationId, payload, groupId);
           setCliente(toCliente(updated, organizationId));
         } else {
           // Create via PUT (upsert)
-          const created = await consistenzeApi.updateSummary(organizationId, payload);
+          const created = await consistenzeApi.updateSummary(organizationId, payload, groupId);
           setCliente(toCliente(created, organizationId));
         }
         setSaveStatus('saved');
@@ -144,7 +144,7 @@ export function useConsistenze() {
         fornitore: '',
         quantita: 0,
         metriche_json: {},
-      });
+      }, groupId);
       setItems(prev => [...prev, toLocalItem(created, organizationId)]);
     } catch (err: unknown) {
       console.error('Error adding item:', err);
@@ -161,7 +161,7 @@ export function useConsistenze() {
     debounceRef.current = setTimeout(async () => {
       try {
         const payload = toItemPayload(updates);
-        await consistenzeApi.updateItem(organizationId, id, payload);
+        await consistenzeApi.updateItem(organizationId, id, payload, groupId);
         setSaveStatus('saved');
       } catch (err: unknown) {
         console.error('Error updating item:', err);
@@ -174,7 +174,7 @@ export function useConsistenze() {
   const deleteItem = useCallback(async (id: string) => {
     if (!organizationId) return;
     try {
-      await consistenzeApi.deleteItem(organizationId, id);
+      await consistenzeApi.deleteItem(organizationId, id, groupId);
       setItems(prev => prev.filter(i => i.id !== id));
     } catch (err: unknown) {
       console.error('Error deleting item:', err);
