@@ -26,6 +26,7 @@ dist-ssr
 # Local agent / automation artifacts
 .sisyphus/
 .playwright-mcp/
+.engram/
 auth_snapshot.md
 dashboard_snapshot.md
 snapshot.md
