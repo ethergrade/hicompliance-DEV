@@ -18,12 +18,14 @@ interface ClientSelectorProps {
   selectedOrgId: string | null;
   onOrgChange: (orgId: string) => void;
   disabled?: boolean;
+  groupId?: string;
 }
 
 export const ClientSelector: React.FC<ClientSelectorProps> = ({ 
   selectedOrgId, 
   onOrgChange,
-  disabled = false 
+  disabled = false,
+  groupId,
 }) => {
   const { toast } = useToast();
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -34,12 +36,19 @@ export const ClientSelector: React.FC<ClientSelectorProps> = ({
   const [newOrgCode, setNewOrgCode] = useState('');
 
   useEffect(() => {
-    loadOrganizations();
-  }, []);
+    if (groupId) {
+      loadOrganizations();
+    }
+  }, [groupId]);
 
   const loadOrganizations = async () => {
+    if (!groupId) {
+      console.warn('ClientSelector: no groupId provided, skipping organization load');
+      setLoading(false);
+      return;
+    }
     try {
-      const tenants = await tenantsApi.listAll();
+      const tenants = await tenantsApi.listAll(groupId);
       setOrganizations(
         tenants
           .map(t => ({ id: String(t.id), name: t.name, code: t.ms_tenant_id || String(t.id) }))
@@ -72,7 +81,7 @@ export const ClientSelector: React.FC<ClientSelectorProps> = ({
       const created = await tenantsApi.create({
         name: newOrgName.trim(),
         ms_tenant_id: newOrgCode.trim(),
-      });
+      }, groupId!);
 
       toast({
         title: "Successo",

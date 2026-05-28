@@ -10,6 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { assetInventoryApi } from '@/lib/api';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { Server, Network, HardDrive, Users as UsersIcon, MapPin, Save, FileSpreadsheet, ScrollText } from 'lucide-react';
 import { ClientSelector } from '@/components/asset-inventory/ClientSelector';
 import * as XLSX from 'xlsx';
@@ -70,6 +71,7 @@ const AssetInventory: React.FC = () => {
   const { toast } = useToast();
   const { user } = useAuth();
   const { isSuperAdmin, isSales } = useUserRoles();
+  const { groupId } = useClientOrganization();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
@@ -220,7 +222,7 @@ const AssetInventory: React.FC = () => {
               <CardDescription>Seleziona o crea un nuovo cliente</CardDescription>
             </CardHeader>
             <CardContent>
-              <ClientSelector selectedOrgId={selectedOrgId} onOrgChange={setSelectedOrgId} disabled={saving} />
+              <ClientSelector selectedOrgId={selectedOrgId} onOrgChange={setSelectedOrgId} disabled={saving} groupId={groupId} />
             </CardContent>
           </Card>
         )}
