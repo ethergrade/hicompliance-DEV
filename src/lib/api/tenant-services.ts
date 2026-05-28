@@ -11,9 +11,10 @@ const groupHeader = (groupId: string) => ({ "X-Group-Id": groupId });
 
 export const tenantServicesApi = {
   /** List active tenant services (pass status query param to filter) */
-  async list(status?: "active" | "inactive"): Promise<TenantServiceResource[]> {
+  async list(status?: "active" | "inactive", groupId?: string | null): Promise<TenantServiceResource[]> {
     const params = status ? { status } : undefined;
-    const res = await apiClient.get<ApiResponse<TenantServiceResource[]>>("/tenant-services", params);
+    const opts = groupId ? { headers: groupHeader(groupId) } : undefined;
+    const res = await apiClient.get<ApiResponse<TenantServiceResource[]>>("/tenant-services", params, opts);
     return res.data;
   },
 
