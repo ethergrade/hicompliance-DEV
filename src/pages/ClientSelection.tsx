@@ -256,7 +256,7 @@ const ClientSelection: React.FC = () => {
       <ClientProfileSheet organizationId={editingOrgId} organizationName={editingOrgName} open={profileOpen} onOpenChange={setProfileOpen} />
       <ClientAssetSheet organizationId={editingOrgId} organizationName={editingOrgName} open={assetOpen} onOpenChange={setAssetOpen} />
       {isSuperAdmin && editingOrgId && (
-        <ClientServicesDialog organizationName={editingOrgName} open={servicesOpen} onOpenChange={setServicesOpen} />
+        <ClientServicesDialog organizationId={editingOrgId} organizationName={editingOrgName} open={servicesOpen} onOpenChange={setServicesOpen} />
       )}
       {editingOrgId && (
         <ClientContactsDialog organizationId={editingOrgId} organizationName={editingOrgName} open={contactsOpen} onOpenChange={setContactsOpen} />
