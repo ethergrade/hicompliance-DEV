@@ -71,9 +71,8 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   open, onOpenChange, organizationId: propOrgId, organizationName,
 }) => {
   const queryClient = useQueryClient();
-  const { organizationId: hookOrgId, selectedOrganization } = useClientOrganization();
+  const { organizationId: hookOrgId, groupId } = useClientOrganization();
   const organizationId = propOrgId || hookOrgId;
-  const groupId = selectedOrganization?.group_id || organizationId;
   const [connectingService, setConnectingService] = useState<{ id: string; name: string } | null>(null);
   const [apiUrl, setApiUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -91,13 +90,16 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 
   const updateFlagsMutation = useMutation({
     mutationFn: async (patch: Record<string, boolean>) => {
+      if (!organizationId) {
+        throw new Error('Nessuna azienda selezionata');
+      }
       const ts = [...tenantServices];
       // HiCompliance toggle
       if ('hicompliance_enabled' in patch) {
         const hc = ts.find(s => s.service_type === 'hicompliance');
         if (patch.hicompliance_enabled) {
           if (!hc) {
-            await tenantServicesApi.create({ service_type: 'hicompliance', status: 'active', settings: { duration: '3', extended_range: false } }, groupId);
+            await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'hicompliance', status: 'active', settings: { duration: '3', extended_range: false } }, groupId);
           }
         } else {
           if (hc) await tenantServicesApi.delete(hc.id, groupId);
@@ -115,7 +117,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
         const ht = ts.find(s => s.service_type === 'hitrack');
         if (patch.surface_scan360_enabled) {
           if (!ht) {
-            await tenantServicesApi.create({ service_type: 'hitrack', status: 'active', settings: { duration: '3', extended_range: false } }, groupId);
+            await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'hitrack', status: 'active', settings: { duration: '3', extended_range: false } }, groupId);
           }
         } else {
           if (ht) await tenantServicesApi.delete(ht.id, groupId);
@@ -133,7 +135,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
         const dr = ts.find(s => s.service_type === 'darkrisk');
         if (patch.dark_risk360_enabled) {
           if (!dr) {
-            await tenantServicesApi.create({ service_type: 'darkrisk', status: 'active', settings: { tier: 'standard' } }, groupId);
+            await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'darkrisk', status: 'active', settings: { tier: 'standard' } }, groupId);
           }
         } else {
           if (dr) await tenantServicesApi.delete(dr.id, groupId);
@@ -152,7 +154,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
       const ts = [...tenantServices];
       let dr = ts.find(s => s.service_type === 'darkrisk');
       if (!dr) {
-        dr = await tenantServicesApi.create({ service_type: 'darkrisk', status: 'active', settings: { tier: 'standard' } }, groupId);
+        dr = await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'darkrisk', status: 'active', settings: { tier: 'standard' } }, groupId);
       }
       await tenantServicesApi.update(dr.id, { settings: { ...(dr.settings as any || {}), tier, enabled: true } }, groupId);
     },
@@ -194,6 +196,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   const connectMutation = useMutation({
     mutationFn: async ({ serviceId, apiUrl: url, apiKey: key }: { serviceId: string; apiUrl: string; apiKey: string }) => {
       await tenantServicesApi.create({
+        tenant_id: organizationId,
         service_type: serviceId,
         status: 'active',
         settings: { api_url: url, api_key: key },
