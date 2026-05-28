@@ -160,42 +160,43 @@ const Remediation: React.FC = () => {
   }, [dbTaskToApiGantt, groupId]);
 
   const loadTasks = useCallback(async () => {
-    if (!orgId) { setLoading(false); return; }
+    if (!orgId) { 
+      setLoading(false); 
+      assessmentIdRef.current = null; // Reset quando non c'è orgId
+      return; 
+    }
+    
+    // Reset ref quando cambia orgId per evitare di usare assessment vecchi
+    assessmentIdRef.current = null;
+    setTasks([]); // Pulisci task precedenti mentre carichi
 
     try {
+      console.log('[Remediation] Loading tasks for orgId:', orgId);
       const assessments = await assessmentApi.list(groupId);
-      let assessment = assessments.find(a => a.tenant_id === orgId) || null;
+      console.log('[Remediation] Got assessments:', assessments.length, 'for group:', groupId);
+      
+      // Filtra solo assessment con tenant_id esattamente uguale
+      let assessment = assessments.find(a => a.tenant_id === orgId && a.tenant_id != null) || null;
+      console.log('[Remediation] Found assessment for tenant:', assessment?.id, 'tenant_id:', assessment?.tenant_id);
 
       // Auto-create assessment if none exists for this company
       if (!assessment) {
+        console.log('[Remediation] Creating new assessment for tenant:', orgId);
         assessment = await assessmentApi.create({ tenant_id: orgId }, groupId);
+        console.log('[Remediation] Created assessment:', assessment.id);
       }
 
       assessmentIdRef.current = assessment.id;
       const gantt = (assessment.custom_gantt as GanttItem[] | null) || [];
+      console.log('[Remediation] Got gantt tasks:', gantt.length);
 
-      const needsSeed = gantt.length === 0;
-
-      if (needsSeed) {
-        const seedRows = DEMO_TASKS.map((t, i) => ({
-          ...t,
-          organization_id: orgId,
-          display_order: i,
-          is_hidden: false,
-          is_deleted: false,
-          dependencies: [],
-        }));
-        await assessmentApi.updateGantt(assessment.id, {
-          custom_gantt: seedRows.map(dbTaskToApiGantt),
-        }, groupId);
-        setTasks(seedRows);
-      } else {
-        setTasks(gantt.map((item, idx) => apiGanttToDbTask(item, idx)));
-      }
+      // Non seediamo più task demo - lasciamo il Gantt vuoto
+      setTasks(gantt.map((item, idx) => apiGanttToDbTask(item, idx)));
     } catch (error) {
-      console.error('Error loading tasks:', error);
+      console.error('[Remediation] Error loading tasks:', error);
       toast({ title: 'Errore', description: 'Impossibile caricare i task.', variant: 'destructive' });
       setTasks([]);
+      assessmentIdRef.current = null;
     } finally {
       setLoading(false);
     }
@@ -206,7 +207,7 @@ const Remediation: React.FC = () => {
   }, [loadTasks]);
 
   /* ─── Derived data ─── */
-  const activeTasks = tasks.filter(t => !t.is_deleted);
+  const activeTasks = tasks.filter(t => !t.is_deleted && t.organization_id === orgId);
   const deletedTasksList = tasks.filter(t => t.is_deleted);
 
   const ganttData: GanttTask[] = activeTasks.map(t => {
