@@ -65,7 +65,7 @@ export function useDarkRiskAlerts() {
   const [alerts, setAlerts] = useState<DarkRiskAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
-  const { organizationId, isLoading: clientLoading } = useClientOrganization();
+  const { organizationId, groupId, isLoading: clientLoading } = useClientOrganization();
 
   const fetchAlerts = useCallback(async () => {
     if (clientLoading) return;
@@ -88,7 +88,7 @@ export function useDarkRiskAlerts() {
     } finally {
       setLoading(false);
     }
-  }, [clientLoading, organizationId, toast]);
+  }, [clientLoading, organizationId, groupId, toast]);
 
   const createAlert = useCallback(async (data: {
     alert_email: string;
@@ -116,7 +116,7 @@ export function useDarkRiskAlerts() {
       });
       return false;
     }
-  }, [organizationId, fetchAlerts, toast]);
+  }, [organizationId, groupId, fetchAlerts, toast]);
 
   const updateAlert = useCallback(async (id: string, data: {
     alert_email: string;
@@ -142,7 +142,7 @@ export function useDarkRiskAlerts() {
       });
       return false;
     }
-  }, [organizationId, fetchAlerts, toast]);
+  }, [organizationId, groupId, fetchAlerts, toast]);
 
   const deleteAlert = useCallback(async (id: string) => {
     try {
@@ -162,7 +162,7 @@ export function useDarkRiskAlerts() {
       });
       return false;
     }
-  }, [organizationId, fetchAlerts, toast]);
+  }, [organizationId, groupId, fetchAlerts, toast]);
 
   const toggleAlertStatus = useCallback(async (id: string, isActive: boolean) => {
     try {
@@ -182,7 +182,7 @@ export function useDarkRiskAlerts() {
       });
       return false;
     }
-  }, [organizationId, fetchAlerts, toast]);
+  }, [organizationId, groupId, fetchAlerts, toast]);
 
   useEffect(() => {
     fetchAlerts();
