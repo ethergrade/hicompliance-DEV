@@ -311,13 +311,18 @@ const DarkRisk360: React.FC = () => {
       'darkrisk360-findings',
       organizationId,
       overview.latest_scan?.id || null,
+      overview.latest_scan?.data_scan_id || null,
       overview.dti?.latest_scan_run_id || null,
     ],
     enabled: Boolean(organizationId),
     queryFn: async (): Promise<DarkRiskFindingRowExtended[]> => {
       if (!organizationId) return [];
 
-      const latestOverviewScanId = overview.latest_scan?.id ? String(overview.latest_scan.id) : '';
+      const latestOverviewScanId = overview.latest_scan?.data_scan_id
+        ? String(overview.latest_scan.data_scan_id)
+        : overview.latest_scan?.id
+          ? String(overview.latest_scan.id)
+          : '';
 
       const [findingsQueryRes, latestSurfaceRes, latestExposureRes] = await Promise.all([
         supabase
@@ -758,7 +763,7 @@ const DarkRisk360: React.FC = () => {
   );
 
   const filteredFindings = useMemo(() => {
-    const latestSurfaceScanId = String(overview.latest_scan?.id || '').trim();
+    const latestSurfaceScanId = String(overview.latest_scan?.data_scan_id || overview.latest_scan?.id || '').trim();
     const latestDarkRiskRunId = String(overview.dti?.latest_scan_run_id || '').trim();
 
     return findingRows
@@ -801,7 +806,7 @@ const DarkRisk360: React.FC = () => {
         }
         return b.risk_score - a.risk_score;
       });
-  }, [findingRows, findingFilter, overview.latest_scan?.id, overview.dti?.latest_scan_run_id]);
+  }, [findingRows, findingFilter, overview.latest_scan?.id, overview.latest_scan?.data_scan_id, overview.dti?.latest_scan_run_id]);
 
   const filteredAssets = useMemo(() => {
     return assetRows.filter((row) => {
