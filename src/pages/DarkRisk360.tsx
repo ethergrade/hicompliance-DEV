@@ -1197,7 +1197,7 @@ const DarkRisk360: React.FC = () => {
           </Card>
         )}
 
-        {isError && !isLoading && (
+        {isError && !isLoading && overview.enabled && (
           <Card className="border-red-500/40">
             <CardContent className="py-6 text-sm text-red-300">
               Impossibile caricare i dati DarkRisk360: {String((error as any)?.message || 'errore sconosciuto')}.

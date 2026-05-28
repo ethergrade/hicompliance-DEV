@@ -78,6 +78,10 @@
          if (stored && !selectedOrganization) {
            const fresh = tenants.find(t => t.id === stored.id);
            if (fresh) setSelectedOrganizationState(fresh);
+         } else if (!stored && tenants.length > 0 && !selectedOrganization) {
+           // Nessuna org in localStorage: seleziona automaticamente la prima
+           setSelectedOrganizationState(tenants[0]);
+           localStorage.setItem(STORAGE_KEY, JSON.stringify(tenants[0]));
          }
        } else if (resolveGroupId) {
          // Normal client: fetch their company by group
@@ -131,6 +135,11 @@
      try {
        const tenants = await tenantsApi.listAll(group.id);
        setOrganizations(tenants);
+       // Seleziona automaticamente il primo cliente del nuovo gruppo
+       if (tenants.length > 0) {
+         setSelectedOrganizationState(tenants[0]);
+         localStorage.setItem(STORAGE_KEY, JSON.stringify(tenants[0]));
+       }
      } catch (error) {
        console.error('Error loading organizations for group:', error);
        setOrganizations([]);

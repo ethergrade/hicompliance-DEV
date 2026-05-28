@@ -42,6 +42,11 @@ export const ClientIndicator: React.FC = () => {
     const group = groups.find((g) => g.id === groupId);
     if (group) {
       setSelectedGroup(group);
+      // Seleziona automaticamente la prima organizzazione del nuovo gruppo
+      const firstOrg = organizations.find((org) => org.group_id === group.id);
+      if (firstOrg) {
+        setSelectedOrganization(firstOrg);
+      }
     }
   };
 

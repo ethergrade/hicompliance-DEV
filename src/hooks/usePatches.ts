@@ -1,5 +1,7 @@
-import { useApiWithFallback } from './useApiWithFallback';
-import { patchesApi, type PatchDashboardData } from '@/lib/api/patches';
+import { useState, useEffect } from 'react';
+import { hipatchApi, type HipatchPending, type HipatchPerformed } from '@/lib/api/hipatch';
+import { useClientOrganization } from './useClientOrganization';
+import type { PatchDashboardData } from '@/lib/api/patches';
 
 const mockPatchData: PatchDashboardData = {
   stats: {
@@ -37,10 +39,99 @@ const mockPatchData: PatchDashboardData = {
   ],
 };
 
-export function usePatchDashboard(tenantId?: string) {
-  return useApiWithFallback(
-    () => patchesApi.dashboard(tenantId),
-    mockPatchData,
-    [tenantId],
-  );
+// Map backend CSV columns to frontend expected format
+function mapPendingToOsPending(pending: HipatchPending[]) {
+  return pending.map((p) => ({
+    systemName: p.system_name || p.systemName || 'Unknown',
+    patch: p.patch || 'Unknown',
+    description: p.description || '',
+    kbNumber: p.kb_number || p.kbNumber || '',
+    severity: (p.severity as 'Low' | 'Medium' | 'Important' | 'Critical') || 'Medium',
+  }));
 }
+
+function mapPerformedToOsInstalled(performed: HipatchPerformed[]) {
+  return performed.map((p) => ({
+    systemName: p.system_name || p.systemName || 'Unknown',
+    patch: p.patch || 'Unknown',
+    description: p.description || '',
+    kbNumber: p.kb_number || p.kbNumber || '',
+    status: p.status || 'Pending',
+    severity: (p.severity as 'Low' | 'Medium' | 'Important' | 'Critical') || 'Medium',
+  }));
+}
+
+interface UsePatchDashboardResult {
+  data: PatchDashboardData;
+  loading: boolean;
+  error: Error | null;
+  isMock: boolean;
+}
+
+export function usePatchDashboard(): UsePatchDashboardResult {
+  const { organizationId, groupId } = useClientOrganization();
+  const [data, setData] = useState<PatchDashboardData>({
+    stats: {
+      osPending: 0,
+      osInstalled: 0,
+      softwareAvailable: 0,
+      softwareInstalled: 0,
+      failedPatches: 0,
+    },
+    osPatchesPending: [],
+    osPatchesInstalled: [],
+    softwarePatchesAvailable: [],
+    softwarePatchesInstalled: [],
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  const [isMock, setIsMock] = useState(false);
+
+  useEffect(() => {
+    if (!organizationId) {
+      setLoading(false);
+      setIsMock(true);
+      return;
+    }
+
+    setLoading(true);
+    setIsMock(false);
+
+    hipatchApi
+      .dashboard(organizationId, groupId)
+      .then((result) => {
+        // Map backend data to PatchDashboardData format
+        const osPending = mapPendingToOsPending(result.pending || []);
+        const osInstalled = mapPerformedToOsInstalled(result.performed || []);
+        
+        // Software patches not available in hipatch backend - keep empty
+        const softwareAvailable: PatchDashboardData['softwarePatchesAvailable'] = [];
+        const softwareInstalled: PatchDashboardData['softwarePatchesInstalled'] = [];
+
+        setData({
+          stats: {
+            osPending: osPending.length,
+            osInstalled: osInstalled.length,
+            softwareAvailable: 0,
+            softwareInstalled: 0,
+            failedPatches: osInstalled.filter((p) => p.status === 'Failed').length,
+          },
+          osPatchesPending: osPending,
+          osPatchesInstalled: osInstalled,
+          softwarePatchesAvailable: softwareAvailable,
+          softwarePatchesInstalled: softwareInstalled,
+        });
+        
+        setError(null);
+      })
+      .catch((err) => {
+        setError(err);
+        // No mock fallback - show empty state
+      })
+      .finally(() => setLoading(false));
+  }, [organizationId, groupId]);
+
+  return { data, loading, error, isMock };
+}
+
+export { type PatchDashboardData } from '@/lib/api/patches';

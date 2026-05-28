@@ -31,15 +31,14 @@ import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { NIS2_LABELS } from '@/types/organization';
 import { useUserPreferences } from '@/hooks/useUserPreferences';
-import { assessmentV2Api } from '@/lib/api';
+import { assessmentV2Api, assessmentApi } from '@/lib/api';
 import { loadV2AssessmentData, mapToV2Status, mapToUiStatus } from '@/lib/assessmentV2Mapper';
-import { calculateCategoryScore, getRiskFromScore, CATEGORY_DESCRIPTIONS } from '@/data/assessmentQuestions';
+import { calculateCategoryScore, getRiskFromScore, CATEGORY_DESCRIPTIONS, ASSESSMENT_CATEGORIES } from '@/data/assessmentQuestions';
 import type { AssessmentCategory as UICategory } from '@/data/assessmentQuestions';
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { generateAssessmentPDF } from '@/components/assessment/AssessmentReportGenerator';
 import GapAnalysisSection from '@/components/assessment/GapAnalysisSection';
 import { AssessmentRadarChart } from '@/components/assessment/AssessmentRadarChart';
-import { assessmentApi } from '@/lib/api';
 import { moduleVisibility } from '@/config/moduleVisibility';
 
 // Local type for UI assessment response values
@@ -190,6 +189,8 @@ const Assessment: React.FC = () => {
   const loadedOrgRef = useRef<string | null>(null);
   const [v2Categories, setV2Categories] = useState<UICategory[]>([]);
   const [indexToUuid, setIndexToUuid] = useState<Record<number, string>>({});
+  const [isUsingFallbackData, setIsUsingFallbackData] = useState(false);
+  const [v1AssessmentId, setV1AssessmentId] = useState<string | null>(null);
   const categoriesLoaded = useRef(false);
   const guidedOrgRef = useRef<string | null>(null);
 
@@ -198,12 +199,102 @@ const Assessment: React.FC = () => {
     if (categoriesLoaded.current) return;
     categoriesLoaded.current = true;
     loadV2AssessmentData().then((data) => {
+      // Fallback ai dati statici se API v2 torna vuoto
+      if (!data.categories || data.categories.length === 0) {
+        console.log('API v2 empty, falling back to static assessment data');
+        // Importa dati statici da ASSESSMENT_CATEGORIES
+        const staticCategories = ASSESSMENT_CATEGORIES.map((cat) => ({
+          name: cat.name,
+          questions: cat.questions.map((q) => ({
+            id: q.id,
+            question: q.question,
+            priority: q.priority,
+          })),
+        }));
+        
+        // Build indexToUuid map (id -> fake UUID)
+        const staticIndexToUuid: Record<number, string> = {};
+        ASSESSMENT_CATEGORIES.forEach((cat) => {
+          cat.questions.forEach((q) => {
+            staticIndexToUuid[q.id] = `legacy-${q.id}`;
+          });
+        });
+        
+        setV2Categories(staticCategories as UICategory[]);
+        setIndexToUuid(staticIndexToUuid);
+        setIsUsingFallbackData(true);
+        
+        // Carica o crea assessment v1 per il salvataggio
+        const loadOrCreateV1Assessment = async () => {
+          try {
+            // Prova a caricare assessment v1 esistente per questa org
+            const groupId = selectedOrganization?.group_id;
+            const assessments = await assessmentApi.list(groupId);
+            if (assessments && assessments.length > 0) {
+              setV1AssessmentId(assessments[0].id);
+              console.log('Loaded v1 assessment:', assessments[0].id);
+            } else {
+              // Crea nuovo assessment v1
+              const newAss = await assessmentApi.create({ 
+                tenant_id: orgId,
+                status: 1 // in_progress
+              }, groupId);
+              setV1AssessmentId(newAss.id);
+              console.log('Created v1 assessment:', newAss.id);
+            }
+          } catch (err) {
+            console.error('Failed to load/create v1 assessment:', err);
+          }
+        };
+        loadOrCreateV1Assessment();
+        return;
+      }
       setV2Categories(data.categories);
       setIndexToUuid(data.indexToUuid);
     }).catch((err) => {
       console.error('Failed to load v2 assessment data:', err);
+      // Fallback anche in caso di errore
+      const staticCategories = ASSESSMENT_CATEGORIES.map((cat) => ({
+        name: cat.name,
+        questions: cat.questions.map((q) => ({
+          id: q.id,
+          question: q.question,
+          priority: q.priority,
+        })),
+      }));
+      const staticIndexToUuid: Record<number, string> = {};
+      ASSESSMENT_CATEGORIES.forEach((cat) => {
+        cat.questions.forEach((q) => {
+          staticIndexToUuid[q.id] = `legacy-${q.id}`;
+        });
+      });
+      setV2Categories(staticCategories as UICategory[]);
+      setIndexToUuid(staticIndexToUuid);
+      setIsUsingFallbackData(true);
+      
+      // Carica o crea assessment v1 per il salvataggio
+      const loadOrCreateV1Assessment = async () => {
+        try {
+          const groupId = selectedOrganization?.group_id;
+          const assessments = await assessmentApi.list(groupId);
+          if (assessments && assessments.length > 0) {
+            setV1AssessmentId(assessments[0].id);
+            console.log('Loaded v1 assessment:', assessments[0].id);
+          } else {
+            const newAss = await assessmentApi.create({ 
+              tenant_id: orgId,
+              status: 1
+            }, groupId);
+            setV1AssessmentId(newAss.id);
+            console.log('Created v1 assessment:', newAss.id);
+          }
+        } catch (e) {
+          console.error('Failed to load/create v1 assessment:', e);
+        }
+      };
+      loadOrCreateV1Assessment();
     });
-  }, []);
+  }, [orgId, selectedOrganization?.group_id]);
 
   // Load existing assessment responses from the v2 API
   useEffect(() => {
@@ -250,25 +341,46 @@ const Assessment: React.FC = () => {
     snapshotTimerRef.current = setTimeout(async () => {
       const currentResponses = responsesRef.current;
       try {
-        // Build v2 batch payload: map numeric IDs back to UUIDs
-        const responses = Object.entries(currentResponses)
-          .filter(([, value]) => value)
-          .map(([idx, value]) => ({
-            question_id: indexToUuid[Number(idx)],
-            status: mapToV2Status(value) ?? 'planned_in_progress',
-            notes: null,
-          }));
-        if (responses.length > 0) {
-          await assessmentV2Api.updateResponses(orgId, { responses });
+        if (isUsingFallbackData && v1AssessmentId) {
+          // Salva via API v1 legacy (formato q1, q2, ...)
+          const questionsPayload: Record<string, string> = {};
+          Object.entries(currentResponses).forEach(([idx, value]) => {
+            if (value) {
+              questionsPayload[`q${idx}`] = value === 'completato' ? '1' : 
+                                              value === 'pianificato_in_corso' ? '2' : 
+                                              value === 'non_iniziato' ? '3' :
+                                              value === 'non_applicabile' ? '0' : '3';
+            }
+          });
+          
+          if (Object.keys(questionsPayload).length > 0) {
+            await assessmentApi.update(v1AssessmentId, {
+              questions: questionsPayload,
+              status: 3 // in_progress with answers
+            });
+            console.log('Saved via v1 API:', questionsPayload);
+          }
+        } else {
+          // Salva via API v2 normale
+          const responses = Object.entries(currentResponses)
+            .filter(([, value]) => value)
+            .map(([idx, value]) => ({
+              question_id: indexToUuid[Number(idx)],
+              status: mapToV2Status(value) ?? 'planned_in_progress',
+              notes: null,
+            }));
+          if (responses.length > 0) {
+            await assessmentV2Api.updateResponses(orgId, { responses });
+          }
         }
         setSaveStatus('saved');
         setLastSaved(new Date());
       } catch (err) {
-        console.error('Auto-save v2 error:', err);
+        console.error('Auto-save error:', err);
         setSaveStatus('error');
       }
     }, 3000); // 3s debounce
-  }, [orgId, user, indexToUuid]);
+  }, [orgId, user, indexToUuid, isUsingFallbackData, v1AssessmentId]);
 
   const setResponse = useCallback((questionId: number, value: AssessmentResponse) => {
     if (isReadOnlyView) return;

@@ -28,3 +28,4 @@ export { consistenzeApi } from "./consistenze";
 export { criticalInfrastructureApi } from "./critical-infrastructure";
 export { assetIrpApi } from "./asset-irp";
 export { preferencesApi } from "./preferences";
+export { hipatchApi } from "./hipatch";
