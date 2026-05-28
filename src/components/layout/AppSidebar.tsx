@@ -87,7 +87,7 @@ const adminNavigation = [
     icon: Building2,
   },
   {
-    title: 'Aziende & Gruppi',
+    title: 'Aziende & Clienti',
     href: '/admin/companies',
     icon: Building,
   },
