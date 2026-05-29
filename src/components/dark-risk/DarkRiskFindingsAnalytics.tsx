@@ -353,6 +353,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
   const [sensitiveTagFilter, setSensitiveTagFilter] = useState<'all' | SensitiveTagKey>('all');
 
   const data = useMemo(() => {
+    const MAX_SENSITIVE_SAMPLES = 6000;
     const siteCategory = new Map<string, Record<string, number>>();
     const siteFindings = new Map<string, Row[]>();
     const categoryTotals = new Map<string, number>();
@@ -526,7 +527,18 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
       })
       .slice(0, 200);
 
-    const sensitiveSampleRows: SensitiveSampleViewRow[] = (dti?.sensitive_samples || []).map((sample, index) => {
+    const credentialCompromiseRows = rows
+      .filter((row) => {
+        const categoryKey = normalizeThreatCategoryKey(row.category || '');
+        const sourceText = `${row.finding_type || ''} ${row.title || ''} ${row.compromise_type || ''}`.toLowerCase();
+        return categoryKey === 'credenziali_compromesse'
+          || sourceText.includes('credential')
+          || sourceText.includes('credenzial')
+          || sourceText.includes('password');
+      })
+      .slice(0, 400);
+
+    const sensitiveSampleRows: SensitiveSampleViewRow[] = (dti?.sensitive_samples || []).slice(0, MAX_SENSITIVE_SAMPLES).map((sample, index) => {
       const tag = normalizeSensitiveTag(sample.tag || '');
       return {
         id: `${sample.query_kind || 'sample'}-${sample.asset_scope || 'asset'}-${sample.tag || 'tag'}-${index}`,
@@ -550,6 +562,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
       groupedAssetRows,
       identityRows,
       identityFindingRows,
+      credentialCompromiseRows,
       sensitiveSampleRows,
     };
   }, [rows, dti]);

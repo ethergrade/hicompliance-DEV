@@ -72,7 +72,7 @@ export const SurfaceScanTrendline: React.FC = () => {
           <div className="text-sm text-muted-foreground">Caricamento storico...</div>
         ) : chartData.length === 0 ? (
           <div className="text-sm text-muted-foreground p-6 text-center border border-dashed rounded-lg">
-            Nessuno snapshot ancora disponibile. Lancia una scansione manuale o attendi il prossimo cron settimanale.
+            Nessuno snapshot ancora disponibile. Dopo l'aggiunta dello scope viene creato automaticamente il primo snapshot, oppure puoi usare "Esegui ora".
           </div>
         ) : (
           <>

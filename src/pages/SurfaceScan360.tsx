@@ -45,6 +45,7 @@ import { useSurfaceScanMonitoredIps } from '@/hooks/useSurfaceScanMonitoredIps';
 import { useSurfaceScanEngine, type SurfaceScanProfile } from '@/hooks/useSurfaceScanEngine';
 import { useSurfaceScanDiscoveredAssets } from '@/hooks/useSurfaceScanDiscoveredAssets';
 import { useSurfaceScanFindings } from '@/hooks/useSurfaceScanFindings';
+import { triggerManualSurfaceScan } from '@/hooks/useSurfaceScanHistory';
 import { isIpInRange, parseMonitoredScopeMixedEntries } from '@/lib/ipRange';
 import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
@@ -595,6 +596,20 @@ const SurfaceScan360: React.FC = () => {
     if (successCount > 0) {
       toast.success(`Scope aggiornato: ${successCount} regole aggiunte`);
       setNewMonitoredIpInput('');
+
+      if (organizationId) {
+        try {
+          const snapshotResult = await triggerManualSurfaceScan(organizationId);
+          const assets = Number(snapshotResult?.results?.[0]?.total_assets ?? 0);
+          toast.success('Snapshot trendline creato automaticamente', {
+            description: `${assets} asset analizzati`,
+          });
+        } catch (snapshotError: any) {
+          toast.error('Scope salvato, ma snapshot automatico non completato', {
+            description: String(snapshotError?.message || 'Riprova con "Esegui ora" nella trendline'),
+          });
+        }
+      }
     }
 
     if (failedEntries.length > 0) {
