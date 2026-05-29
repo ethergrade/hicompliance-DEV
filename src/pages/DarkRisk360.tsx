@@ -267,7 +267,6 @@ const DarkRisk360: React.FC = () => {
     scope: 'all',
   });
   const [assetTypeFilter, setAssetTypeFilter] = useState<'all' | 'domain' | 'subdomain' | 'ip' | 'url' | 'email' | 'candidate'>('all');
-  const [showFindingsAnalytics, setShowFindingsAnalytics] = useState(false);
   const [identityEmailsInput, setIdentityEmailsInput] = useState('');
   const [identityScanning, setIdentityScanning] = useState(false);
   const [exportingReportId, setExportingReportId] = useState<string | null>(null);
@@ -1544,29 +1543,26 @@ const DarkRisk360: React.FC = () => {
                 </Card>
                 <Card className="border-border">
                   <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <CardTitle>Analytics Findings</CardTitle>
-                      <Button
-                        size="sm"
-                        variant={showFindingsAnalytics ? 'default' : 'outline'}
-                        onClick={() => setShowFindingsAnalytics((prev) => !prev)}
-                      >
-                        {showFindingsAnalytics ? 'Nascondi analytics' : 'Mostra analytics'}
-                      </Button>
-                    </div>
+                    <CardTitle>Analytics Findings</CardTitle>
                     <p className="text-xs text-muted-foreground">
                       Modalità performance: analytics su max 600 finding filtrati.
                     </p>
                   </CardHeader>
-                  {showFindingsAnalytics ? (
-                    <CardContent>
-                      <DarkRiskFindingsAnalytics
-                        rows={analyticsRows}
-                        extendedMode={overview.tier === 'extended'}
-                        dti={overview.dti}
-                      />
-                    </CardContent>
-                  ) : null}
+                  <CardContent className="space-y-3">
+                    {findingsLoading ? (
+                      <p className="text-xs text-muted-foreground">Caricamento analytics in corso...</p>
+                    ) : null}
+                    {!findingsLoading && analyticsRows.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Nessun dato analytics disponibile nel filtro corrente. Verifica filtri, scope o ultimo ciclo di scansione.
+                      </p>
+                    ) : null}
+                    <DarkRiskFindingsAnalytics
+                      rows={analyticsRows}
+                      extendedMode={overview.tier === 'extended'}
+                      dti={overview.dti}
+                    />
+                  </CardContent>
                 </Card>
                 <DarkRiskFindingsTable
                   rows={filteredFindings}

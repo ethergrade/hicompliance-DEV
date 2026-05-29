@@ -284,7 +284,16 @@ function shouldIgnoreSensitiveRow(row: DtiSensitiveHitRow): boolean {
     const rawValue = String(row.clear_value || row.masked_value || '');
     if (isInvalidPasswordEvidenceValue(rawValue)) return true;
     const policy = String((row as any).match_policy || '').toLowerCase();
-    if (policy && policy !== 'strict_pair') return true;
+    const queryKind = String(row.query_kind || '').toLowerCase();
+    const queryTerm = String(row.query_term || '').toLowerCase();
+    const inEmailSelectorContext = isEmailSelectorCoverageKind(queryKind, queryTerm);
+    const strictLike = policy.includes('strict_pair') || policy.startsWith('strict');
+    const fallbackAllowed =
+      inEmailSelectorContext &&
+      (policy === '' || policy.includes('legacy') || policy.includes('email_pair') || policy.includes('same_record') || policy.includes('fallback'));
+    const explicitlyWeakPolicy = policy.includes('metadata') || policy.includes('loose');
+    if (!strictLike && !fallbackAllowed) return true;
+    if (explicitlyWeakPolicy) return true;
     return false;
   }
   return false;
@@ -733,15 +742,37 @@ serve(async (req: Request) => {
       phone_numbers: 0,
     };
     const sensitiveByAsset = new Map<string, Record<string, number>>();
+    const uniquePasswordGlobal = new Set<string>();
+    const uniquePasswordByScope = new Map<string, Set<string>>();
     const sensitiveSampleRows: Array<Record<string, unknown>> = [];
     for (const row of dtiSensitiveRows) {
       if (shouldIgnoreSensitiveRow(row)) continue;
       const tag = normalizeSensitiveTag(row.tag);
       if (!tag) continue;
-      sensitiveTotals[tag] += 1;
       const scopeKey = String(row.asset_scope || row.query_term || 'n/a').toLowerCase();
       const current = sensitiveByAsset.get(scopeKey) || {};
-      current[tag] = Number(current[tag] || 0) + 1;
+
+      if (tag === 'passwords') {
+        const value = String(row.clear_value || row.masked_value || '').trim();
+        if (value) {
+          const globalKey = `${scopeKey}::${value}`;
+          if (!uniquePasswordGlobal.has(globalKey)) {
+            uniquePasswordGlobal.add(globalKey);
+            sensitiveTotals.passwords += 1;
+          }
+
+          const scopedSet = uniquePasswordByScope.get(scopeKey) || new Set<string>();
+          if (!scopedSet.has(value)) {
+            scopedSet.add(value);
+            current.passwords = Number(current.passwords || 0) + 1;
+          }
+          uniquePasswordByScope.set(scopeKey, scopedSet);
+        }
+      } else {
+        sensitiveTotals[tag] += 1;
+        current[tag] = Number(current[tag] || 0) + 1;
+      }
+
       sensitiveByAsset.set(scopeKey, current);
       if (sensitiveSampleRows.length < 120) {
         sensitiveSampleRows.push({

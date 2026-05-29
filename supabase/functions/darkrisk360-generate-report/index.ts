@@ -439,7 +439,16 @@ function shouldIgnoreSensitiveHit(hit: DtiSensitiveHitRow): boolean {
     const rawValue = String(hit.clear_value || hit.masked_value || '');
     if (isInvalidPasswordEvidenceValue(rawValue)) return true;
     const policy = String((hit as any).match_policy || '').toLowerCase();
-    if (policy && policy !== 'strict_pair') return true;
+    const queryKind = String(hit.query_kind || '').toLowerCase();
+    const queryTerm = String(hit.query_term || '').toLowerCase();
+    const inEmailSelectorContext = isEmailSelectorCoverageKind(queryKind, queryTerm);
+    const strictLike = policy.includes('strict_pair') || policy.startsWith('strict');
+    const fallbackAllowed =
+      inEmailSelectorContext &&
+      (policy === '' || policy.includes('legacy') || policy.includes('email_pair') || policy.includes('same_record') || policy.includes('fallback'));
+    const explicitlyWeakPolicy = policy.includes('metadata') || policy.includes('loose');
+    if (!strictLike && !fallbackAllowed) return true;
+    if (explicitlyWeakPolicy) return true;
     return false;
   }
   return false;
@@ -1077,11 +1086,11 @@ serve(async (req: Request) => {
       total: 0,
     };
     const dtiSensitiveByAssetMap = new Map<string, typeof dtiSensitiveTotals>();
+    const uniquePasswordGlobal = new Set<string>();
+    const uniquePasswordByScope = new Map<string, Set<string>>();
     for (const hit of dtiSensitiveHits) {
       const tag = normalizeSensitiveTag(hit.tag);
       if (!tag) continue;
-      dtiSensitiveTotals[tag] += 1;
-      dtiSensitiveTotals.total += 1;
       const scopeKey = safeText(String(hit.asset_scope || hit.query_term || 'n/a'), 160).toLowerCase() || 'n/a';
       const current = dtiSensitiveByAssetMap.get(scopeKey) || {
         domains: 0,
@@ -1091,8 +1100,32 @@ serve(async (req: Request) => {
         phone_numbers: 0,
         total: 0,
       };
-      current[tag] += 1;
-      current.total += 1;
+
+      if (tag === 'passwords') {
+        const value = safeText(String(hit.clear_value || hit.masked_value || ''), 180);
+        if (value) {
+          const globalKey = `${scopeKey}::${value}`;
+          if (!uniquePasswordGlobal.has(globalKey)) {
+            uniquePasswordGlobal.add(globalKey);
+            dtiSensitiveTotals.passwords += 1;
+            dtiSensitiveTotals.total += 1;
+          }
+
+          const scopedSet = uniquePasswordByScope.get(scopeKey) || new Set<string>();
+          if (!scopedSet.has(value)) {
+            scopedSet.add(value);
+            current.passwords += 1;
+            current.total += 1;
+          }
+          uniquePasswordByScope.set(scopeKey, scopedSet);
+        }
+      } else {
+        dtiSensitiveTotals[tag] += 1;
+        dtiSensitiveTotals.total += 1;
+        current[tag] += 1;
+        current.total += 1;
+      }
+
       dtiSensitiveByAssetMap.set(scopeKey, current);
     }
 

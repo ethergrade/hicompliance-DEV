@@ -122,6 +122,7 @@ type IdentityEvidenceRow = {
   identity: string;
   domains: number;
   passwords: number;
+  passwords_raw: number;
   addresses: number;
   credit_cards: number;
   phone_numbers: number;
@@ -304,6 +305,15 @@ function isIdentitySensitiveSample(row: DtiOverviewData['sensitive_samples'][num
   return isEmailSelectorCoverageKind(queryKind, String(row.query_term || '')) && Boolean(tag);
 }
 
+function shouldAcceptIdentityPasswordSample(sample: DtiOverviewData['sensitive_samples'][number]): boolean {
+  const value = String(sample.value || sample.masked_value || '').trim();
+  if (!isDisplayablePasswordValue(value)) return false;
+  const policy = String(sample.match_policy || '').toLowerCase();
+  if (!policy) return true;
+  if (policy.includes('strict_pair')) return true;
+  return false;
+}
+
 function normalizeSearchText(value: unknown): string {
   return String(value || '').trim().toLowerCase();
 }
@@ -470,6 +480,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
         identity,
         domains: 0,
         passwords: 0,
+        passwords_raw: 0,
         addresses: 0,
         credit_cards: 0,
         phone_numbers: 0,
@@ -481,12 +492,16 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
       };
       const sampleValue = String(sample.value || sample.masked_value || '').trim();
       if (tag === 'passwords') {
-        if (!isDisplayablePasswordValue(sampleValue)) continue;
+        if (!shouldAcceptIdentityPasswordSample(sample)) continue;
+        bucket.passwords_raw += 1;
         if (!bucket.passwordValues.includes(sampleValue)) {
           bucket.passwordValues.push(sampleValue);
         }
+        bucket.passwords = bucket.passwordValues.length;
+      } else {
+        bucket[tag] += 1;
       }
-      bucket[tag] += 1;
+      bucket.passwords = bucket.passwordValues.length;
       bucket.total += 1;
       const sourceLabel = displayDarkRiskSource(String(sample.source || 'DarkRisk360'));
       if (sourceLabel && !bucket.sourceLabels.includes(sourceLabel)) {
@@ -505,6 +520,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
       .slice(0, 12)
       .map((row) => ({
         ...row,
+        passwords: row.passwordValues.length,
         identityLabel: shortSiteLabel(row.identity),
       }));
 
@@ -583,6 +599,11 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
         </p>
       </CardHeader>
       <CardContent className="space-y-5">
+        {!dti ? (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+            Dati DTI non ancora disponibili o parziali: i grafici mostrano solo i finding normalizzati correnti.
+          </div>
+        ) : null}
         {dti ? (
           <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
             <div className="flex flex-wrap items-center gap-2">
