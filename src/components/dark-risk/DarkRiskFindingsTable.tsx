@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { presentDarkRiskFindingType, presentDarkRiskSource } from '@/lib/darkrisk/presentation';
@@ -49,6 +49,14 @@ export const DarkRiskFindingsTable: React.FC<{
   rows: DarkRiskFindingRow[];
   subtitle?: string;
 }> = ({ rows, subtitle }) => {
+  const PAGE_SIZE = 150;
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [rows.length]);
+  const visibleRows = useMemo(() => rows.slice(0, visibleCount), [rows, visibleCount]);
+  const hasMoreRows = rows.length > visibleRows.length;
+
   return (
     <Card className="border-border">
       <CardHeader className="pb-3">
@@ -62,60 +70,76 @@ export const DarkRiskFindingsTable: React.FC<{
             Sono stati comunque controllati domini, selector e postura esterna secondo il perimetro autorizzato.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1160px] text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-muted-foreground">
-                  <th className="py-2 pr-3">Severity</th>
-                  <th className="py-2 pr-3">Risk</th>
-                  <th className="py-2 pr-3">Titolo</th>
-                  <th className="py-2 pr-3">Asset</th>
-                  <th className="py-2 pr-3">Sito</th>
-                  <th className="py-2 pr-3">Scope</th>
-                  <th className="py-2 pr-3">Categoria</th>
-                  <th className="py-2 pr-3">Tipo</th>
-                  <th className="py-2 pr-3">Confidence</th>
-                  <th className="py-2 pr-3">Stato</th>
-                  <th className="py-2 pr-3">Marcato il</th>
-                  <th className="py-2 pr-3">Last seen</th>
-                  <th className="py-2">Source</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id} className="border-b border-border/60 align-top">
-                    <td className="py-2 pr-3"><Badge className={severityClasses[row.severity]}>{row.severity}</Badge></td>
-                    <td className="py-2 pr-3 font-semibold">{row.risk_score}</td>
-                    <td className="py-2 pr-3">
-                      <p className="font-medium">{row.title}</p>
-                      <p className="text-xs text-muted-foreground">{row.compromise_type}</p>
-                      {(row.sensitive_tags || []).length > 0 ? (
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {row.sensitive_tags?.map((tag) => (
-                            <Badge key={`${row.id}-${tag}`} variant="outline" className="text-[10px]">
-                              {tag}
-                            </Badge>
-                          ))}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="py-2 pr-3">{row.asset}</td>
-                    <td className="py-2 pr-3">{row.site || '-'}</td>
-                    <td className="py-2 pr-3">
-                      <Badge className={scopeClass(row.scope_status)}>{row.scope_status || 'unknown'}</Badge>
-                    </td>
-                    <td className="py-2 pr-3">{row.category || '-'}</td>
-                    <td className="py-2 pr-3">{presentDarkRiskFindingType(row.finding_type)}</td>
-                    <td className="py-2 pr-3">{row.confidence}</td>
-                    <td className="py-2 pr-3">{row.status}</td>
-                    <td className="py-2 pr-3 text-muted-foreground">{formatDateTime(row.first_seen_at)}</td>
-                    <td className="py-2 pr-3 text-muted-foreground">{formatDateTime(row.last_seen_at)}</td>
-                    <td className="py-2">{presentDarkRiskSource(row.source)}</td>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1160px] text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-muted-foreground">
+                    <th className="py-2 pr-3">Severity</th>
+                    <th className="py-2 pr-3">Risk</th>
+                    <th className="py-2 pr-3">Titolo</th>
+                    <th className="py-2 pr-3">Asset</th>
+                    <th className="py-2 pr-3">Sito</th>
+                    <th className="py-2 pr-3">Scope</th>
+                    <th className="py-2 pr-3">Categoria</th>
+                    <th className="py-2 pr-3">Tipo</th>
+                    <th className="py-2 pr-3">Confidence</th>
+                    <th className="py-2 pr-3">Stato</th>
+                    <th className="py-2 pr-3">Marcato il</th>
+                    <th className="py-2 pr-3">Last seen</th>
+                    <th className="py-2">Source</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {visibleRows.map((row) => (
+                    <tr key={row.id} className="border-b border-border/60 align-top">
+                      <td className="py-2 pr-3"><Badge className={severityClasses[row.severity]}>{row.severity}</Badge></td>
+                      <td className="py-2 pr-3 font-semibold">{row.risk_score}</td>
+                      <td className="py-2 pr-3">
+                        <p className="font-medium">{row.title}</p>
+                        <p className="text-xs text-muted-foreground">{row.compromise_type}</p>
+                        {(row.sensitive_tags || []).length > 0 ? (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {row.sensitive_tags?.map((tag) => (
+                              <Badge key={`${row.id}-${tag}`} variant="outline" className="text-[10px]">
+                                {tag}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="py-2 pr-3">{row.asset}</td>
+                      <td className="py-2 pr-3">{row.site || '-'}</td>
+                      <td className="py-2 pr-3">
+                        <Badge className={scopeClass(row.scope_status)}>{row.scope_status || 'unknown'}</Badge>
+                      </td>
+                      <td className="py-2 pr-3">{row.category || '-'}</td>
+                      <td className="py-2 pr-3">{presentDarkRiskFindingType(row.finding_type)}</td>
+                      <td className="py-2 pr-3">{row.confidence}</td>
+                      <td className="py-2 pr-3">{row.status}</td>
+                      <td className="py-2 pr-3 text-muted-foreground">{formatDateTime(row.first_seen_at)}</td>
+                      <td className="py-2 pr-3 text-muted-foreground">{formatDateTime(row.last_seen_at)}</td>
+                      <td className="py-2">{presentDarkRiskSource(row.source)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {hasMoreRows ? (
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  Visualizzati {visibleRows.length} di {rows.length} finding.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}
+                  className="text-xs font-medium text-primary hover:underline"
+                >
+                  Mostra altri {Math.min(PAGE_SIZE, rows.length - visibleRows.length)}
+                </button>
+              </div>
+            ) : null}
+          </>
         )}
       </CardContent>
     </Card>

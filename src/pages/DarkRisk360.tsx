@@ -267,6 +267,7 @@ const DarkRisk360: React.FC = () => {
     scope: 'all',
   });
   const [assetTypeFilter, setAssetTypeFilter] = useState<'all' | 'domain' | 'subdomain' | 'ip' | 'url' | 'email' | 'candidate'>('all');
+  const [showFindingsAnalytics, setShowFindingsAnalytics] = useState(false);
   const [identityEmailsInput, setIdentityEmailsInput] = useState('');
   const [identityScanning, setIdentityScanning] = useState(false);
   const [exportingReportId, setExportingReportId] = useState<string | null>(null);
@@ -317,6 +318,9 @@ const DarkRisk360: React.FC = () => {
     enabled: Boolean(organizationId),
     queryFn: async (): Promise<DarkRiskFindingRowExtended[]> => {
       if (!organizationId) return [];
+      const MAX_DARKRISK_FINDINGS = 320;
+      const MAX_LATEST_SURFACE_FINDINGS = 200;
+      const MAX_EVIDENCE_LOOKUP_IDS = 400;
 
       const latestOverviewScanId = overview.latest_scan?.data_scan_id
         ? String(overview.latest_scan.data_scan_id)
@@ -330,14 +334,14 @@ const DarkRisk360: React.FC = () => {
           .select('id, scan_run_id, title, finding_type, severity, confidence, status, risk_score, first_seen_at, last_seen_at, metadata, affected_asset_id, evidence_ids, description')
           .eq('organization_id', organizationId)
           .order('risk_score', { ascending: false })
-          .limit(400),
+          .limit(MAX_DARKRISK_FINDINGS),
         latestOverviewScanId
           ? supabase
               .from('surface_findings' as any)
               .select('id, title, finding_type, severity, status, created_at, module, affected_asset, affected_url')
               .eq('scan_job_id', latestOverviewScanId)
               .order('created_at', { ascending: false })
-              .limit(800)
+              .limit(MAX_LATEST_SURFACE_FINDINGS)
           : Promise.resolve({ data: [], error: null } as any),
         latestOverviewScanId
           ? supabase
@@ -345,7 +349,7 @@ const DarkRisk360: React.FC = () => {
               .select('id, title, finding_type, severity, status, created_at, source, affected_host, affected_url')
               .eq('scan_job_id', latestOverviewScanId)
               .order('created_at', { ascending: false })
-              .limit(800)
+              .limit(MAX_LATEST_SURFACE_FINDINGS)
           : Promise.resolve({ data: [], error: null } as any),
       ]);
 
@@ -470,7 +474,7 @@ const DarkRisk360: React.FC = () => {
             return raw.map((entry) => String(entry || '').trim()).filter(Boolean);
           }),
         ),
-      );
+      ).slice(0, MAX_EVIDENCE_LOOKUP_IDS);
 
       const evidenceMap = new Map<string, Record<string, any>>();
       if (evidenceIds.length > 0) {
@@ -516,9 +520,15 @@ const DarkRisk360: React.FC = () => {
           .map((tag) => normalizeSensitiveTagKey(tag))
           .filter(Boolean);
 
-        const fallbackSensitive = detectSensitiveIndicators(
-          `${title}\n${String(finding.description || '')}\n${assetValue}\n${evidenceRows.map((row) => `${String(row.title || '')}\n${String(row.summary || '')}\n${String(row.masked_value || '')}`).join('\n')}`.slice(0, 7000),
-        );
+        const fallbackSensitive = {
+          domains: 0,
+          passwords: 0,
+          addresses: 0,
+          credit_cards: 0,
+          phone_numbers: 0,
+          total_hits: 0,
+          tags: [],
+        };
 
         const sensitiveTags = Array.from(
           new Set(
@@ -807,6 +817,28 @@ const DarkRisk360: React.FC = () => {
         return b.risk_score - a.risk_score;
       });
   }, [findingRows, findingFilter, overview.latest_scan?.id, overview.latest_scan?.data_scan_id, overview.dti?.latest_scan_run_id]);
+
+  const analyticsRows = useMemo(
+    () =>
+      filteredFindings.slice(0, 600).map((row) => ({
+        id: row.id,
+        site: row.site || normalizeHost(row.asset),
+        scope_status: row.scope_status || 'unknown',
+        category: row.category || 'Minacce rilevate',
+        sensitive_tags: row.sensitive_tags || [],
+        severity: row.severity,
+        risk_score: row.risk_score,
+        title: row.title,
+        asset: row.asset,
+        finding_type: row.finding_type,
+        source: row.source,
+        query_kind: row.query_kind || '',
+        source_origin: row.source_origin || '',
+        first_seen_at: row.first_seen_at,
+        last_seen_at: row.last_seen_at,
+      })),
+    [filteredFindings],
+  );
 
   const filteredAssets = useMemo(() => {
     return assetRows.filter((row) => {
@@ -1510,27 +1542,32 @@ const DarkRisk360: React.FC = () => {
                     ) : null}
                   </CardContent>
                 </Card>
-                <DarkRiskFindingsAnalytics
-                  rows={filteredFindings.map((row) => ({
-                    id: row.id,
-                    site: row.site || normalizeHost(row.asset),
-                    scope_status: row.scope_status || 'unknown',
-                    category: row.category || 'Minacce rilevate',
-                    sensitive_tags: row.sensitive_tags || [],
-                    severity: row.severity,
-                    risk_score: row.risk_score,
-                    title: row.title,
-                    asset: row.asset,
-                    finding_type: row.finding_type,
-                    source: row.source,
-                    query_kind: row.query_kind || '',
-                    source_origin: row.source_origin || '',
-                    first_seen_at: row.first_seen_at,
-                    last_seen_at: row.last_seen_at,
-                  }))}
-                  extendedMode={overview.tier === 'extended'}
-                  dti={overview.dti}
-                />
+                <Card className="border-border">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <CardTitle>Analytics Findings</CardTitle>
+                      <Button
+                        size="sm"
+                        variant={showFindingsAnalytics ? 'default' : 'outline'}
+                        onClick={() => setShowFindingsAnalytics((prev) => !prev)}
+                      >
+                        {showFindingsAnalytics ? 'Nascondi analytics' : 'Mostra analytics'}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Modalità performance: analytics su max 600 finding filtrati.
+                    </p>
+                  </CardHeader>
+                  {showFindingsAnalytics ? (
+                    <CardContent>
+                      <DarkRiskFindingsAnalytics
+                        rows={analyticsRows}
+                        extendedMode={overview.tier === 'extended'}
+                        dti={overview.dti}
+                      />
+                    </CardContent>
+                  ) : null}
+                </Card>
                 <DarkRiskFindingsTable
                   rows={filteredFindings}
                   subtitle={findingsLoading ? 'Caricamento finding in corso...' : `${filteredFindings.length} finding filtrati`}

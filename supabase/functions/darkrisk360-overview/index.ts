@@ -98,6 +98,9 @@ const activeStatuses = new Set([
 ]);
 
 const goodSurfaceSnapshotStatuses = ['completed', 'partial', 'completed_with_warnings'];
+const DTI_SOURCE_RUNS_LIMIT = 700;
+const DTI_SENSITIVE_HITS_LIMIT = 1500;
+const DTI_LOOKBACK_DAYS = 45;
 
 function normalizeFindingStatus(status: string | null | undefined): string {
   const normalized = String(status || 'new').toLowerCase();
@@ -466,6 +469,7 @@ serve(async (req: Request) => {
       .maybeSingle();
     if (latestDarkriskRunRes.error) throw latestDarkriskRunRes.error;
     const latestDarkriskRun = latestDarkriskRunRes.data as any;
+    const dtiLookbackIso = new Date(Date.now() - DTI_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
     const latestDarkriskIntelxStats = latestDarkriskRun?.stats?.intelx || {};
     const intelxCoverage: IntelxCoverageInfo = {
       has_run: Boolean(latestDarkriskRun?.id),
@@ -607,22 +611,25 @@ serve(async (req: Request) => {
             .from('surface_open_ports' as any)
             .select('id, exposure_level')
             .eq('scan_job_id', dataJob.id)
+            .limit(1500)
         : Promise.resolve({ data: [], error: null }),
       latestDarkriskRun?.id
         ? adminClient
             .from('darkrisk_dti_source_runs' as any)
             .select('id, source, source_label, source_key, query_kind, query_term, asset_scope, selector_value, status, result_count, warning, error_message, completed_at, metadata')
             .eq('scan_run_id', latestDarkriskRun.id)
+            .gte('created_at', dtiLookbackIso)
             .order('created_at', { ascending: false })
-            .limit(1200)
+            .limit(DTI_SOURCE_RUNS_LIMIT)
         : Promise.resolve({ data: [], error: null }),
       latestDarkriskRun?.id
         ? adminClient
             .from('darkrisk_dti_sensitive_hits' as any)
             .select('id, source_run_id, source_record_id, finding_id, source, source_label, query_kind, query_term, asset_scope, tag, masked_value, clear_value, match_policy, extraction_confidence, evidence_scope, created_at')
             .eq('scan_run_id', latestDarkriskRun.id)
+            .gte('created_at', dtiLookbackIso)
             .order('created_at', { ascending: false })
-            .limit(3500)
+            .limit(DTI_SENSITIVE_HITS_LIMIT)
         : Promise.resolve({ data: [], error: null }),
     ]);
 

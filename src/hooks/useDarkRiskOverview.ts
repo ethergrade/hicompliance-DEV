@@ -185,6 +185,64 @@ const emptyData: DarkRiskOverviewResponse = {
   },
 };
 
+const normalizeOverviewPayload = (data: any): DarkRiskOverviewResponse => {
+  const payload = data && typeof data === 'object' ? data : {};
+  const payloadDti = payload.dti && typeof payload.dti === 'object' ? payload.dti : {};
+  const payloadSourceRuns =
+    payloadDti.source_runs && typeof payloadDti.source_runs === 'object'
+      ? payloadDti.source_runs
+      : {};
+  const payloadQueryCoverage =
+    payloadDti.query_coverage && typeof payloadDti.query_coverage === 'object'
+      ? payloadDti.query_coverage
+      : {};
+  const payloadSensitiveTotals =
+    payloadDti.sensitive_totals && typeof payloadDti.sensitive_totals === 'object'
+      ? payloadDti.sensitive_totals
+      : {};
+  const payloadIntelxStats =
+    payloadDti.intelx_stats && typeof payloadDti.intelx_stats === 'object'
+      ? payloadDti.intelx_stats
+      : {};
+  const payloadKpis = payload.kpis && typeof payload.kpis === 'object' ? payload.kpis : {};
+
+  return {
+    ...emptyData,
+    ...payload,
+    kpis: {
+      ...emptyData.kpis,
+      ...payloadKpis,
+    },
+    dti: {
+      ...emptyData.dti,
+      ...payloadDti,
+      source_runs: {
+        ...emptyData.dti.source_runs,
+        ...payloadSourceRuns,
+      },
+      query_coverage: {
+        ...emptyData.dti.query_coverage,
+        ...payloadQueryCoverage,
+      },
+      sensitive_totals: {
+        ...emptyData.dti.sensitive_totals,
+        ...payloadSensitiveTotals,
+      },
+      intelx_stats: {
+        ...emptyData.dti.intelx_stats,
+        ...payloadIntelxStats,
+      },
+      sensitive_by_asset: Array.isArray(payloadDti.sensitive_by_asset)
+        ? payloadDti.sensitive_by_asset
+        : [],
+      sensitive_samples: Array.isArray(payloadDti.sensitive_samples)
+        ? payloadDti.sensitive_samples
+        : [],
+      latest_scan_run_id: payloadDti.latest_scan_run_id || null,
+    },
+  } as DarkRiskOverviewResponse;
+};
+
 export const useDarkRiskOverview = () => {
   const { organizationId } = useClientOrganization();
 
@@ -208,10 +266,7 @@ export const useDarkRiskOverview = () => {
         throw new Error(String(data.error));
       }
 
-      return {
-        ...emptyData,
-        ...(data || {}),
-      } as DarkRiskOverviewResponse;
+      return normalizeOverviewPayload(data || {});
     },
     staleTime: 60_000,
     refetchInterval: 90_000,
