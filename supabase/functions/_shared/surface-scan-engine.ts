@@ -1259,15 +1259,27 @@ export async function runSurfaceScanEnrichment(
     const attemptedUrls: string[] = [];
     const candidates = buildHttpCandidateUrls();
     let lastError: unknown = null;
+    const httpAttemptTimeoutMs = Math.max(
+      5000,
+      Math.min(30000, Number(Deno.env.get("SURFACESCAN_HTTP_ATTEMPT_TIMEOUT_MS") || "15000")),
+    );
+    const httpMaxRedirects = Math.max(
+      3,
+      Math.min(15, Number(Deno.env.get("SURFACESCAN_HTTP_MAX_REDIRECTS") || "10")),
+    );
+    const httpMaxResponseBytes = Math.max(
+      100000,
+      Math.min(2000000, Number(Deno.env.get("SURFACESCAN_HTTP_MAX_RESPONSE_BYTES") || "350000")),
+    );
 
     for (const candidate of candidates) {
       attemptedUrls.push(candidate);
       try {
         const start = Date.now();
         const safeFetch = await fetchWithSsrfGuard(candidate, {}, {
-          timeoutMs: 10000,
-          maxRedirects: 10,
-          maxResponseBytes: 350000,
+          timeoutMs: httpAttemptTimeoutMs,
+          maxRedirects: httpMaxRedirects,
+          maxResponseBytes: httpMaxResponseBytes,
         });
         const response = safeFetch.response;
         const responseTimeMs = Date.now() - start;
@@ -6260,18 +6272,24 @@ export async function runSurfaceScanEnrichment(
     http_security: {
       key: "http_security",
       label: "HTTP Security",
-      timeoutMs: 18000,
+      timeoutMs: Math.max(
+        25000,
+        Math.min(90000, Number(Deno.env.get("SURFACESCAN_HTTP_MODULE_TIMEOUT_MS") || "50000")),
+      ),
       retryOnError: true,
-      maxRetries: 1,
-      retryBackoffMs: 750,
+      maxRetries: Math.max(1, Math.min(3, Number(Deno.env.get("SURFACESCAN_HTTP_MODULE_MAX_RETRIES") || "2"))),
+      retryBackoffMs: Math.max(500, Math.min(5000, Number(Deno.env.get("SURFACESCAN_HTTP_MODULE_RETRY_BACKOFF_MS") || "1250"))),
     },
     headers: {
       key: "headers",
       label: "HTTP Headers",
-      timeoutMs: 18000,
+      timeoutMs: Math.max(
+        25000,
+        Math.min(90000, Number(Deno.env.get("SURFACESCAN_HTTP_MODULE_TIMEOUT_MS") || "50000")),
+      ),
       retryOnError: true,
-      maxRetries: 1,
-      retryBackoffMs: 750,
+      maxRetries: Math.max(1, Math.min(3, Number(Deno.env.get("SURFACESCAN_HTTP_MODULE_MAX_RETRIES") || "2"))),
+      retryBackoffMs: Math.max(500, Math.min(5000, Number(Deno.env.get("SURFACESCAN_HTTP_MODULE_RETRY_BACKOFF_MS") || "1250"))),
     },
     robots: { key: "robots", label: "Robots.txt", timeoutMs: 12000 },
     security_txt: { key: "security_txt", label: "Security.txt", timeoutMs: 12000 },
