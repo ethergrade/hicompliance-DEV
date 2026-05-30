@@ -1097,12 +1097,61 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
   const passesValue = (observationByModule.passes?.value || {}) as Record<string, any>;
   const passItems = Array.isArray(passesValue?.passes) ? passesValue.passes : [];
 
-  const httpSecurity = (observationByModule.http_security?.value || {}) as Record<string, any>;
+  const dnsLookupSummary = useMemo(() => {
+    const row = selectedObservations.find((entry) =>
+      entry.module === 'dns_lookup' && entry.observation_type === 'dns_lookup_summary'
+    );
+    return (row?.value || {}) as Record<string, any>;
+  }, [selectedObservations]);
+
+  const dnsLookupFindings = useMemo(() => {
+    const row = selectedObservations.find((entry) =>
+      entry.module === 'dns_lookup' && entry.observation_type === 'dns_lookup_findings'
+    );
+    const findings = row?.value?.findings;
+    return Array.isArray(findings) ? findings as Array<Record<string, any>> : [];
+  }, [selectedObservations]);
+
+  const httpHeaderScannerSummary = useMemo(() => {
+    const row = selectedObservations.find((entry) =>
+      entry.module === 'http_security' && entry.observation_type === 'http_headers_scanner_summary'
+    );
+    return (row?.value || {}) as Record<string, any>;
+  }, [selectedObservations]);
+
+  const httpHeaderScannerFindings = useMemo(() => {
+    const row = selectedObservations.find((entry) =>
+      entry.module === 'headers' && entry.observation_type === 'http_headers_scanner_findings'
+    );
+    const findings = row?.value?.findings;
+    return Array.isArray(findings) ? findings as Array<Record<string, any>> : [];
+  }, [selectedObservations]);
+
+  const httpSecurity = (Object.keys(httpHeaderScannerSummary).length > 0
+    ? httpHeaderScannerSummary
+    : (observationByModule.http_security?.value || {})) as Record<string, any>;
   const httpChecks = (httpSecurity.checks || {}) as Record<string, boolean>;
+  const httpHeaderSummary = (httpSecurity.summary || {}) as Record<string, any>;
+  const httpHeaderTopMissing = useMemo(() => {
+    if (httpHeaderScannerFindings.length === 0) return null;
+    const missing = httpHeaderScannerFindings.filter((entry) => String(entry?.status || '').toLowerCase() === 'missing');
+    if (missing.length === 0) return null;
+    const counts = new Map<string, number>();
+    for (const entry of missing) {
+      const header = String(entry?.header || entry?.rule_id || '').trim();
+      if (!header) continue;
+      counts.set(header, (counts.get(header) || 0) + 1);
+    }
+    const ranked = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+    if (ranked.length === 0) return null;
+    return { header: ranked[0][0], count: ranked[0][1] };
+  }, [httpHeaderScannerFindings]);
   const httpSecurityOutcome = moduleOutcomes.http_security || 'success_no_data';
   const httpSecurityDiagnostic = moduleDiagnostics.http_security;
   const httpSecurityEvaluated = httpSecurityOutcome === 'success_with_data' || httpSecurityOutcome === 'success_no_data';
   const dnssec = (observationByModule.dnssec?.value || {}) as Record<string, any>;
+  const dnsLookupOutcome = moduleOutcomes.dns || 'success_no_data';
+  const dnsLookupDiagnostic = moduleDiagnostics.dns;
   const threats = (observationByModule.threats?.value || {}) as Record<string, any>;
   const iocFreshList = (threats?.ioc_fresh_list || threats?.intelguard || {}) as Record<string, any>;
   const iocLeaseMinutes = Number(iocFreshList?.lease_minutes || 0);
@@ -1445,7 +1494,19 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                   {statusLabel(httpSecurityOutcome)}
                 </Badge>
               </div>
-              <div className="text-xs text-muted-foreground">Score: {toPercent(httpSecurity.score)} / 100 · HTTP {httpSecurity.statusCode ?? '-'}</div>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-muted-foreground">Score: {toPercent(httpSecurity.score)} / 100</span>
+                <Badge variant="outline">Grade {String(httpSecurity.grade || '-')}</Badge>
+                <Badge variant="outline">HTTP {httpSecurity.statusCode ?? '-'}</Badge>
+                <Badge variant="outline">OK {Number(httpHeaderSummary.ok || 0)}</Badge>
+                <Badge variant="outline">Weak {Number(httpHeaderSummary.weak || 0)}</Badge>
+                <Badge variant="outline">Missing {Number(httpHeaderSummary.missing || 0)}</Badge>
+              </div>
+              {httpHeaderTopMissing && (
+                <div className="rounded-md border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-100">
+                  Most missing header: <span className="font-semibold">{httpHeaderTopMissing.header}</span> ({httpHeaderTopMissing.count})
+                </div>
+              )}
               {httpSecurityDiagnostic && (
                 <div className="rounded-md border border-red-500/25 bg-red-500/10 p-2 text-xs text-red-100">
                   <div className="font-medium text-red-200">Motivo errore</div>
@@ -1482,6 +1543,92 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                     </Tooltip>
                   );
                 })}
+              </div>
+              {httpHeaderScannerFindings.length > 0 && (
+                <div className="space-y-1 pt-1 border-t border-border/60">
+                  <div className="text-[11px] font-medium text-muted-foreground">Detailed header findings</div>
+                  <div className="max-h-28 overflow-auto pr-1 space-y-1">
+                    {httpHeaderScannerFindings
+                      .filter((entry) => String(entry?.status || '').toLowerCase() !== 'ok')
+                      .slice(0, 6)
+                      .map((entry, idx) => {
+                        const severity = String(entry?.severity || 'low').toLowerCase();
+                        return (
+                          <div key={`${entry?.rule_id || entry?.header || 'hdr'}-${idx}`} className="flex items-start justify-between gap-2 text-[11px]">
+                            <div className="min-w-0">
+                              <p className="truncate font-medium">{String(entry?.header || entry?.rule_id || 'Header')}</p>
+                              <p className="text-muted-foreground line-clamp-2">{String(entry?.note || entry?.recommendation || '-')}</p>
+                            </div>
+                            <Badge className={severityBadgeClass[severity] || severityBadgeClass.low}>
+                              {String(entry?.status || 'weak')}
+                            </Badge>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-lg border border-border p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="font-medium">DNS Posture</div>
+                <Badge className={statusBadgeClass[dnsLookupOutcome]}>
+                  {statusLabel(dnsLookupOutcome)}
+                </Badge>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-muted-foreground">Score: {toPercent(Number(dnsLookupSummary.score || 0))} / 100</span>
+                <Badge variant="outline">Grade {String(dnsLookupSummary.grade || '-')}</Badge>
+                <Badge variant="outline">SPF {dnsLookupSummary?.summary?.hasSpf ? 'OK' : 'Missing'}</Badge>
+                <Badge variant="outline">DMARC {dnsLookupSummary?.summary?.hasDmarc ? 'OK' : 'Missing'}</Badge>
+                <Badge variant="outline">CAA {dnsLookupSummary?.summary?.hasCaa ? 'OK' : 'Missing'}</Badge>
+                <Badge variant="outline">DNSSEC {dnsLookupSummary?.summary?.hasDnssecDelegation ? 'OK' : 'Missing'}</Badge>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded border border-border/70 p-2">
+                  <div className="text-muted-foreground">High/Critical</div>
+                  <div className="font-medium">{Number(dnsLookupSummary?.summary?.high || 0) + Number(dnsLookupSummary?.summary?.critical || 0)}</div>
+                </div>
+                <div className="rounded border border-border/70 p-2">
+                  <div className="text-muted-foreground">Medium</div>
+                  <div className="font-medium">{Number(dnsLookupSummary?.summary?.medium || 0)}</div>
+                </div>
+                <div className="rounded border border-border/70 p-2">
+                  <div className="text-muted-foreground">Low</div>
+                  <div className="font-medium">{Number(dnsLookupSummary?.summary?.low || 0)}</div>
+                </div>
+                <div className="rounded border border-border/70 p-2">
+                  <div className="text-muted-foreground">Info</div>
+                  <div className="font-medium">{Number(dnsLookupSummary?.summary?.info || 0)}</div>
+                </div>
+              </div>
+              {dnsLookupDiagnostic && (
+                <div className="rounded-md border border-red-500/25 bg-red-500/10 p-2 text-xs text-red-100">
+                  <div className="font-medium text-red-200">Motivo errore</div>
+                  <p className="mt-1 leading-relaxed">{dnsLookupDiagnostic}</p>
+                </div>
+              )}
+              <div className="space-y-1 max-h-28 overflow-auto pr-1">
+                {dnsLookupFindings
+                  .filter((entry) => {
+                    const status = String(entry?.status || '').toLowerCase();
+                    return status !== 'pass' && status !== 'info';
+                  })
+                  .slice(0, 4)
+                  .map((entry, idx) => (
+                    <div key={`${entry?.id || 'dns-f'}-${idx}`} className="text-[11px] rounded border border-border/60 p-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-medium">{String(entry?.title || entry?.id || 'Finding')}</span>
+                        <Badge className={severityBadgeClass[String(entry?.severity || 'low').toLowerCase()] || severityBadgeClass.low}>
+                          {String(entry?.status || 'warn')}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                {dnsLookupFindings.length === 0 && (
+                  <p className="text-xs text-muted-foreground">Nessun finding DNS aggiuntivo disponibile.</p>
+                )}
               </div>
             </div>
 

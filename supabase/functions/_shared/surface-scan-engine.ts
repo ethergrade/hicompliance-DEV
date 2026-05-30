@@ -14,6 +14,14 @@ import {
   toSeverity,
   TargetType,
 } from "./surface-scan-utils.ts";
+import {
+  evaluateHeaders,
+  type HttpHeaderScanReport,
+} from "./httpHeadersScanner.ts";
+import {
+  scanDnsLookup,
+  type DnsLookupResult,
+} from "./dnsLookupScanner.ts";
 
 interface SurfaceScanJob {
   id: string;
@@ -185,6 +193,9 @@ interface ModuleExecutionConfig {
   label: string;
   timeoutMs: number;
   featureFlag?: string;
+  retryOnError?: boolean;
+  maxRetries?: number;
+  retryBackoffMs?: number;
 }
 
 interface ModuleExecutionRecord {
@@ -475,34 +486,33 @@ export async function dispatchSurfaceScanQueue(
   const [stalePendingRes, staleRunningRes] = await Promise.all([
     adminClient
       .from("surface_scan_jobs" as any)
-      .select("id")
+      .select("id, error_message")
       .eq("organization_id", organizationId)
       .eq("status", "pending")
       .lt("created_at", stalePendingCutoff)
       .limit(50),
     adminClient
       .from("surface_scan_jobs" as any)
-      .select("id")
+      .select("id, error_message")
       .eq("organization_id", organizationId)
       .eq("status", "running")
       .lt("started_at", staleRunningCutoff)
       .limit(50),
   ]);
 
-  const stalePendingIds = (stalePendingRes.data || [])
-    .map((row: any) => String(row?.id || "").trim())
-    .filter(Boolean);
-  const staleRunningIds = (staleRunningRes.data || [])
-    .map((row: any) => String(row?.id || "").trim())
-    .filter(Boolean);
+  const stalePendingRows = (stalePendingRes.data || []) as Array<{ id?: string; error_message?: string | null }>;
+  const staleRunningRows = (staleRunningRes.data || []) as Array<{ id?: string; error_message?: string | null }>;
+  const stalePendingIds = stalePendingRows.map((row) => String(row?.id || "").trim()).filter(Boolean);
+  const staleRunningIds = staleRunningRows.map((row) => String(row?.id || "").trim()).filter(Boolean);
 
   if (stalePendingIds.length > 0) {
     await adminClient
       .from("surface_scan_jobs" as any)
       .update({
-        status: "failed",
-        completed_at: nowIso,
-        error_message: "Queue timeout while pending",
+        status: "queued",
+        started_at: null,
+        completed_at: null,
+        error_message: "pending_timeout_recovered_once",
       })
       .in("id", stalePendingIds);
 
@@ -510,30 +520,62 @@ export async function dispatchSurfaceScanQueue(
       stalePendingIds.map((id: string) => ({
         scan_job_id: id,
         user_id: options.initiatedByUserId || null,
-        action: "scan_auto_failed_pending_timeout",
-        details: { reason: "pending_timeout_10m" },
+        action: "scan_auto_requeued_pending_timeout",
+        details: { reason: "pending_timeout_10m", recovery: "queued_again" },
       })),
     );
   }
 
   if (staleRunningIds.length > 0) {
+    const recoverableRunning = staleRunningRows
+      .filter((row) => !String(row?.error_message || "").includes("running_timeout_recovered_once"))
+      .map((row) => String(row?.id || "").trim())
+      .filter(Boolean);
+    const terminalRunning = staleRunningRows
+      .filter((row) => String(row?.error_message || "").includes("running_timeout_recovered_once"))
+      .map((row) => String(row?.id || "").trim())
+      .filter(Boolean);
+
+    if (recoverableRunning.length > 0) {
+      await adminClient
+        .from("surface_scan_jobs" as any)
+        .update({
+          status: "queued",
+          started_at: null,
+          completed_at: null,
+          error_message: "running_timeout_recovered_once",
+        })
+        .in("id", recoverableRunning);
+
+      await adminClient.from("surface_scan_audit_log" as any).insert(
+        recoverableRunning.map((id: string) => ({
+          scan_job_id: id,
+          user_id: options.initiatedByUserId || null,
+          action: "scan_auto_requeued_running_timeout",
+          details: { reason: "running_timeout_45m", recovery: "queued_again" },
+        })),
+      );
+    }
+
+    if (terminalRunning.length > 0) {
     await adminClient
       .from("surface_scan_jobs" as any)
       .update({
         status: "failed",
         completed_at: nowIso,
-        error_message: "Scan timed out while running",
+        error_message: "running_timeout_after_retry",
       })
-      .in("id", staleRunningIds);
+      .in("id", terminalRunning);
 
     await adminClient.from("surface_scan_audit_log" as any).insert(
-      staleRunningIds.map((id: string) => ({
+      terminalRunning.map((id: string) => ({
         scan_job_id: id,
         user_id: options.initiatedByUserId || null,
         action: "scan_auto_failed_timeout",
-        details: { reason: "running_timeout_45m" },
+        details: { reason: "running_timeout_45m", recovery: "failed_after_retry" },
       })),
     );
+    }
   }
 
   const maxConcurrent = 3;
@@ -1256,6 +1298,19 @@ export async function runSurfaceScanEnrichment(
     throw lastError || new Error("HTTP fetch failed for all candidate URLs");
   };
 
+  const isRetryableModuleError = (error: unknown): boolean => {
+    const message = String((error as any)?.message || error || "").toLowerCase();
+    if (!message) return false;
+    if (message.includes("timeout")) return true;
+    if (message.includes("network")) return true;
+    if (message.includes("fetch failed")) return true;
+    if (message.includes("temporar")) return true;
+    if (message.includes("econnreset") || message.includes("econnrefused")) return true;
+    if (message.includes("tls")) return true;
+    if (message.includes("http fetch failed")) return true;
+    return false;
+  };
+
   const safeRun = async (config: ModuleExecutionConfig, fn: () => Promise<void>) => {
     if (!isFeatureEnabled(config.featureFlag, true)) {
       await upsertModuleResult(config, "skipped", {
@@ -1303,87 +1358,146 @@ export async function runSurfaceScanEnrichment(
     });
 
     const timeoutError = new Error(`Module timeout after ${config.timeoutMs}ms`);
-    let timeoutHandle: number | null = null;
+    const totalAttempts = config.retryOnError ? Math.max(1, Number(config.maxRetries || 0) + 1) : 1;
+    let attempt = 0;
+    let lastError: any = null;
 
-    try {
-      await Promise.race([
-        fn(),
-        new Promise<never>((_, reject) => {
-          timeoutHandle = setTimeout(() => reject(timeoutError), config.timeoutMs) as unknown as number;
-        }),
-      ]);
-      if (timeoutHandle !== null) clearTimeout(timeoutHandle);
+    while (attempt < totalAttempts) {
+      attempt += 1;
+      let timeoutHandle: number | null = null;
 
-      const completedAtIso = new Date().toISOString();
-      const durationMs = Date.now() - startedAtMs;
-      await upsertModuleResult(config, "success", {
-        severity: "info",
-        startedAt: startedAtIso,
-        completedAt: completedAtIso,
-        durationMs,
-        normalized: {
+      try {
+        await Promise.race([
+          fn(),
+          new Promise<never>((_, reject) => {
+            timeoutHandle = setTimeout(() => reject(timeoutError), config.timeoutMs) as unknown as number;
+          }),
+        ]);
+        if (timeoutHandle !== null) clearTimeout(timeoutHandle);
+
+        const completedAtIso = new Date().toISOString();
+        const durationMs = Date.now() - startedAtMs;
+        await upsertModuleResult(config, "success", {
+          severity: "info",
+          startedAt: startedAtIso,
+          completedAt: completedAtIso,
+          durationMs,
+          normalized: {
+            module: config.key,
+            status: "success",
+            duration_ms: durationMs,
+            attempts: attempt,
+            retry_enabled: totalAttempts > 1,
+          },
+        });
+        await logAudit("module_completed", {
           module: config.key,
+          duration_ms: durationMs,
+          attempts: attempt,
+        });
+        console.info("surface_scan_module_complete", {
+          scanRunId: job.id,
+          tenantId: organizationId,
+          moduleKey: config.key,
           status: "success",
-          duration_ms: durationMs,
-        },
-      });
-      await logAudit("module_completed", { module: config.key, duration_ms: durationMs });
-      console.info("surface_scan_module_complete", {
-        scanRunId: job.id,
-        tenantId: organizationId,
-        moduleKey: config.key,
-        status: "success",
-        durationMs,
-      });
-    } catch (error: any) {
-      if (timeoutHandle !== null) clearTimeout(timeoutHandle);
-      const completedAtIso = new Date().toISOString();
-      const durationMs = Date.now() - startedAtMs;
-      const isTimeout = error?.message === timeoutError.message;
-      const status: ModuleStatus = isTimeout ? "timeout" : "error";
-      const severity: "info" | "low" | "medium" = isTimeout ? "low" : "medium";
-      const errorMessage = error?.message || "Errore non gestito";
+          durationMs,
+          attempts: attempt,
+        });
+        return;
+      } catch (error: any) {
+        if (timeoutHandle !== null) clearTimeout(timeoutHandle);
+        lastError = error;
+        const isTimeout = error?.message === timeoutError.message;
+        const shouldRetry =
+          attempt < totalAttempts &&
+          config.retryOnError &&
+          (isTimeout || isRetryableModuleError(error));
 
-      await insertObservation({
-        module: config.key,
-        observation_type: isTimeout ? "module_timeout" : "module_error",
-        title: isTimeout ? `Timeout modulo ${config.label}` : `Errore modulo ${config.label}`,
-        value: { error: errorMessage, timeout_ms: config.timeoutMs },
-        severity,
-      });
+        if (!shouldRetry) {
+          break;
+        }
 
-      await upsertModuleResult(config, status, {
-        severity,
-        startedAt: startedAtIso,
-        completedAt: completedAtIso,
-        durationMs,
-        errorMessage,
-        normalized: {
+        const retryDelayMs = Math.max(250, Number(config.retryBackoffMs || 750) * attempt);
+        await insertObservation({
           module: config.key,
-          status,
-          timeout_ms: config.timeoutMs,
-          duration_ms: durationMs,
-        },
-        raw: {
-          error: errorMessage,
-        },
-      });
+          observation_type: "module_retry",
+          title: `Retry modulo ${config.label}`,
+          value: {
+            attempt,
+            max_attempts: totalAttempts,
+            retry_delay_ms: retryDelayMs,
+            reason: String(error?.message || "retryable_error"),
+          },
+          severity: "low",
+        });
+        await logAudit("module_retry_scheduled", {
+          module: config.key,
+          attempt,
+          max_attempts: totalAttempts,
+          retry_delay_ms: retryDelayMs,
+          reason: String(error?.message || "retryable_error"),
+        });
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
 
-      await logAudit("module_failed", {
+    const completedAtIso = new Date().toISOString();
+    const durationMs = Date.now() - startedAtMs;
+    const isTimeout = String(lastError?.message || "") === timeoutError.message;
+    const status: ModuleStatus = isTimeout ? "timeout" : "error";
+    const severity: "info" | "low" | "medium" = isTimeout ? "low" : "medium";
+    const errorMessage = lastError?.message || "Errore non gestito";
+
+    await insertObservation({
+      module: config.key,
+      observation_type: isTimeout ? "module_timeout" : "module_error",
+      title: isTimeout ? `Timeout modulo ${config.label}` : `Errore modulo ${config.label}`,
+      value: {
+        error: errorMessage,
+        timeout_ms: config.timeoutMs,
+        attempts: attempt,
+        max_attempts: totalAttempts,
+      },
+      severity,
+    });
+
+    await upsertModuleResult(config, status, {
+      severity,
+      startedAt: startedAtIso,
+      completedAt: completedAtIso,
+      durationMs,
+      errorMessage,
+      normalized: {
         module: config.key,
         status,
-        error: errorMessage,
+        timeout_ms: config.timeoutMs,
         duration_ms: durationMs,
-      });
-      console.warn("surface_scan_module_error", {
-        scanRunId: job.id,
-        tenantId: organizationId,
-        moduleKey: config.key,
-        status,
-        durationMs,
-        errorMessage,
-      });
-    }
+        attempts: attempt,
+        max_attempts: totalAttempts,
+      },
+      raw: {
+        error: errorMessage,
+      },
+    });
+
+    await logAudit("module_failed", {
+      module: config.key,
+      status,
+      error: errorMessage,
+      duration_ms: durationMs,
+      attempts: attempt,
+      max_attempts: totalAttempts,
+    });
+    console.warn("surface_scan_module_error", {
+      scanRunId: job.id,
+      tenantId: organizationId,
+      moduleKey: config.key,
+      status,
+      durationMs,
+      errorMessage,
+      attempts: attempt,
+      maxAttempts: totalAttempts,
+    });
   };
 
   const queryDnsJson = async (
@@ -1404,6 +1518,28 @@ export async function runSurfaceScanEnrichment(
 
   const runDnsModule = async () => {
     if (!hostname || !rootDomain) return;
+    let dnsLookupReport: DnsLookupResult | null = null;
+    try {
+      const lookupDomain = rootDomain || hostname;
+      dnsLookupReport = await scanDnsLookup({
+        domain: lookupDomain,
+        resolverUrl: Deno.env.get("DNS_LOOKUP_RESOLVER_URL") || undefined,
+        timeoutMs: Number(Deno.env.get("DNS_LOOKUP_TIMEOUT_MS") || 6000),
+        includeEmailSecurityChecks: true,
+        includeDkimSelectorChecks: false,
+        includeWildcardCheck: true,
+        userAgent: "SurfaceScan360-DNSLookup/1.0",
+      });
+    } catch (error) {
+      console.warn("surface_scan_dns_lookup_error", {
+        scanRunId: job.id,
+        tenantId: organizationId,
+        hostname,
+        rootDomain,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     const types = ["A", "AAAA", "MX", "TXT", "NS", "CNAME", "SOA", "CAA"];
     const records: Record<string, string[]> = {};
     for (const type of types) {
@@ -1666,6 +1802,135 @@ export async function runSurfaceScanEnrichment(
         bimi_records: bimiRecords,
       },
     });
+
+    if (dnsLookupReport) {
+      await insertObservation({
+        module: "dns_lookup",
+        observation_type: "dns_lookup_summary",
+        title: "DNS Lookup posture summary",
+        value: {
+          domain_scanned: dnsLookupReport.normalizedDomain,
+          score: dnsLookupReport.score,
+          grade: dnsLookupReport.grade,
+          resolver: dnsLookupReport.resolver,
+          duration_ms: dnsLookupReport.durationMs,
+          summary: dnsLookupReport.summary,
+        },
+      });
+
+      await insertObservation({
+        module: "dns_lookup_records",
+        observation_type: "dns_lookup_records_snapshot",
+        title: "DNS Lookup records snapshot",
+        value: {
+          domain_scanned: dnsLookupReport.normalizedDomain,
+          records: dnsLookupReport.records,
+          additional_records: dnsLookupReport.additionalRecords,
+        },
+      });
+
+      await insertObservation({
+        module: "dns_lookup",
+        observation_type: "dns_lookup_findings",
+        title: "DNS Lookup findings",
+        value: {
+          domain_scanned: dnsLookupReport.normalizedDomain,
+          findings: dnsLookupReport.findings.map((entry) => ({
+            id: entry.id,
+            category: entry.category,
+            title: entry.title,
+            severity: entry.severity,
+            status: entry.status,
+            recommendation: entry.recommendation,
+            report_summary: entry.reportSummary,
+            evidence: entry.evidence || {},
+          })),
+        },
+      });
+
+      try {
+        const reportSummary = dnsLookupReport.summary || ({} as Record<string, unknown>);
+        const summaryJson = reportSummary as unknown as Record<string, unknown>;
+        const recordsJson = (dnsLookupReport.records || {}) as unknown as Record<string, unknown>;
+        const additionalJson = (dnsLookupReport.additionalRecords || {}) as unknown as Record<string, unknown>;
+        const rawResultJson = dnsLookupReport as unknown as Record<string, unknown>;
+
+        const insertedResult = await adminClient
+          .from("surface_dns_lookup_results" as any)
+          .insert({
+            tenant_id: organizationId,
+            organization_id: organizationId,
+            customer_id: customerId,
+            scan_id: job.id,
+            asset_id: null,
+            domain: dnsLookupReport.domain,
+            normalized_domain: dnsLookupReport.normalizedDomain,
+            resolver: dnsLookupReport.resolver,
+            score: dnsLookupReport.score,
+            grade: dnsLookupReport.grade,
+            records: recordsJson,
+            additional_records: additionalJson,
+            summary: summaryJson,
+            raw_result: rawResultJson,
+            duration_ms: dnsLookupReport.durationMs,
+            scanned_at: dnsLookupReport.completedAt,
+          })
+          .select("id")
+          .maybeSingle();
+
+        const dnsResultId = String(insertedResult.data?.id || "").trim();
+        if (dnsResultId) {
+          const payload = dnsLookupReport.findings.map((entry) => ({
+            tenant_id: organizationId,
+            organization_id: organizationId,
+            customer_id: customerId,
+            dns_lookup_result_id: dnsResultId,
+            scan_id: job.id,
+            asset_id: null,
+            domain: dnsLookupReport.normalizedDomain,
+            finding_key: entry.id,
+            category: entry.category,
+            severity: entry.severity,
+            status: entry.status,
+            title: entry.title,
+            description: entry.description,
+            evidence: (entry.evidence || {}) as Record<string, unknown>,
+            recommendation: entry.recommendation,
+            report_summary: entry.reportSummary || null,
+          }));
+          if (payload.length > 0) {
+            await adminClient.from("surface_dns_lookup_findings" as any).insert(payload);
+          }
+        }
+      } catch (error) {
+        console.warn("surface_scan_dns_lookup_persist_error", {
+          scanRunId: job.id,
+          tenantId: organizationId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      for (const dnsFinding of dnsLookupReport.findings) {
+        const status = String(dnsFinding.status || "").toLowerCase();
+        if (status === "pass" || status === "info") continue;
+        const severity = toSeverity(dnsFinding.severity);
+        await insertFinding({
+          module: "dns_lookup",
+          finding_type: `dns_lookup_${dnsFinding.id}`,
+          severity,
+          title: dnsFinding.title,
+          description: dnsFinding.description,
+          affected_asset: dnsLookupReport.normalizedDomain,
+          evidence: {
+            category: dnsFinding.category,
+            status: dnsFinding.status,
+            report_summary: dnsFinding.reportSummary,
+            ...((dnsFinding.evidence || {}) as Record<string, unknown>),
+          },
+          remediation: dnsFinding.recommendation,
+        });
+      }
+    }
   };
 
   const runDnssecModule = async () => {
@@ -1832,34 +2097,28 @@ export async function runSurfaceScanEnrichment(
     const xXssLegacy = headerValue("x-xss-protection");
     const serverHeader = headerValue("server");
     const poweredByHeader = headerValue("x-powered-by");
+    const headerReport = evaluateHeaders(
+      snapshot.requestUrl,
+      snapshot.finalUrl || null,
+      Number.isFinite(snapshot.statusCode) ? snapshot.statusCode : null,
+      Number.isFinite(snapshot.responseTimeMs) ? snapshot.responseTimeMs : 0,
+      headers,
+    );
+    const findingByRule = new Map(headerReport.findings.map((entry) => [entry.ruleId, entry] as const));
 
     const checks = {
-      contentSecurityPolicy: Boolean(csp),
-      strictTransportSecurity: Boolean(hsts),
-      xContentTypeOptions: Boolean(xcto),
-      xFrameOptions: Boolean(xfo) || Boolean(csp && /frame-ancestors/i.test(csp)),
-      referrerPolicy: Boolean(referrer),
-      permissionsPolicy: Boolean(permissions),
-      crossOriginOpenerPolicy: Boolean(coop),
-      crossOriginResourcePolicy: Boolean(corp),
-      crossOriginEmbedderPolicy: Boolean(coep),
+      contentSecurityPolicy: findingByRule.get("csp")?.status === "ok",
+      strictTransportSecurity: findingByRule.get("hsts")?.status === "ok",
+      xContentTypeOptions: findingByRule.get("x-content-type-options")?.status === "ok",
+      xFrameOptions: findingByRule.get("frame-protection")?.status === "ok",
+      referrerPolicy: findingByRule.get("referrer-policy")?.status === "ok",
+      permissionsPolicy: findingByRule.get("permissions-policy")?.status === "ok",
+      crossOriginOpenerPolicy: findingByRule.get("coop")?.status === "ok",
+      crossOriginResourcePolicy: findingByRule.get("corp")?.status === "ok",
+      crossOriginEmbedderPolicy: findingByRule.get("coep")?.status === "ok",
       xXssProtectionLegacy: Boolean(xXssLegacy),
     };
-
-    const scoreWeights = {
-      contentSecurityPolicy: 20,
-      strictTransportSecurity: 20,
-      xContentTypeOptions: 10,
-      xFrameOptions: 10,
-      referrerPolicy: 10,
-      permissionsPolicy: 10,
-      crossOriginOpenerPolicy: 7,
-      crossOriginResourcePolicy: 7,
-      crossOriginEmbedderPolicy: 6,
-    };
-    const score = Object.entries(scoreWeights).reduce((acc, [key, weight]) => {
-      return checks[key as keyof typeof checks] ? acc + weight : acc;
-    }, 0);
+    const score = Number(headerReport.score || 0);
 
     await insertObservation({
       module: "http_status",
@@ -1932,6 +2191,148 @@ export async function runSurfaceScanEnrichment(
         source: "http_fetch",
       },
     });
+
+    await insertObservation({
+      module: "http_security",
+      observation_type: "http_headers_scanner_summary",
+      title: "HTTP header scanner summary",
+      value: {
+        url: snapshot.requestUrl,
+        finalUrl: headerReport.finalUrl,
+        statusCode: headerReport.statusCode,
+        checks,
+        headers: {
+          "content-security-policy": csp,
+          "strict-transport-security": hsts,
+          "x-content-type-options": xcto,
+          "x-frame-options": xfo,
+          "referrer-policy": referrer,
+          "permissions-policy": permissions,
+          "cross-origin-opener-policy": coop,
+          "cross-origin-resource-policy": corp,
+          "cross-origin-embedder-policy": coep,
+          "x-xss-protection": xXssLegacy,
+        },
+        scanner: headerReport.scanner,
+        scanner_version: headerReport.scannerVersion,
+        score: headerReport.score,
+        grade: headerReport.grade,
+        summary: headerReport.summary,
+        response_time_ms: headerReport.responseTimeMs,
+        status_code: headerReport.statusCode,
+        final_url: headerReport.finalUrl,
+        is_https: headerReport.isHttps,
+      },
+    });
+
+    await insertObservation({
+      module: "headers",
+      observation_type: "http_headers_scanner_findings",
+      title: "HTTP header scanner findings",
+      value: {
+        findings: headerReport.findings.map((entry) => ({
+          rule_id: entry.ruleId,
+          header: entry.header,
+          severity: entry.severity,
+          status: entry.status,
+          category: entry.category,
+          note: entry.note,
+          recommendation: entry.recommendation,
+          actual_value: entry.actualValue,
+          earned_points: entry.earnedPoints,
+          weight: entry.weight,
+          evidence: entry.evidence || {},
+        })),
+      },
+    });
+
+    const { data: insertedHeaderResult } = await adminClient
+      .from("surface_http_header_results" as any)
+      .insert({
+        organization_id: organizationId,
+        tenant_id: tenantId,
+        customer_id: customerId,
+        scan_id: job.id,
+        project_id: customerId || organizationId,
+        asset_id: null,
+        asset_type: parsedTarget.target_type === "url" ? "url" : "domain",
+        input_url: snapshot.requestUrl,
+        normalized_url: headerReport.normalizedUrl,
+        final_url: headerReport.finalUrl,
+        status_code: headerReport.statusCode,
+        is_https: headerReport.isHttps,
+        response_time_ms: headerReport.responseTimeMs,
+        score: headerReport.score,
+        grade: headerReport.grade,
+        ok_count: headerReport.summary.ok,
+        weak_count: headerReport.summary.weak,
+        missing_count: headerReport.summary.missing,
+        high_impact_open_count: headerReport.summary.highImpactOpen,
+        raw_headers: headerReport.rawHeaders,
+        error_message: headerReport.error || null,
+        scanned_at: headerReport.scannedAt,
+      })
+      .select("id")
+      .maybeSingle();
+
+    if (insertedHeaderResult?.id) {
+      const payload = headerReport.findings.map((entry) => ({
+        result_id: insertedHeaderResult.id,
+        scan_id: job.id,
+        project_id: customerId || organizationId,
+        organization_id: organizationId,
+        tenant_id: tenantId,
+        customer_id: customerId,
+        asset_id: null,
+        rule_id: entry.ruleId,
+        header_name: entry.header,
+        category: entry.category,
+        severity: entry.severity,
+        status: entry.status,
+        weight: entry.weight,
+        earned_points: entry.earnedPoints,
+        actual_value: entry.actualValue,
+        note: entry.note,
+        description: entry.description,
+        recommendation: entry.recommendation,
+        evidence: entry.evidence || {},
+      }));
+      if (payload.length > 0) {
+        await adminClient.from("surface_http_header_findings" as any).insert(payload);
+      }
+    }
+
+    const knownMissingFindingRules = new Set([
+      "csp",
+      "hsts",
+      "x-content-type-options",
+      "frame-protection",
+      "referrer-policy",
+      "permissions-policy",
+      "coop",
+      "corp",
+      "coep",
+    ]);
+    for (const entry of headerReport.findings) {
+      if (entry.status === "ok") continue;
+      if (entry.status === "missing" && knownMissingFindingRules.has(entry.ruleId)) continue;
+      await insertFinding({
+        module: "http_security",
+        finding_type: `http_header_${entry.ruleId}_${entry.status}`,
+        severity: entry.severity,
+        title: `${entry.header} ${entry.status === "missing" ? "missing" : "weak"}`,
+        description: entry.note,
+        remediation: entry.recommendation,
+        affected_url: snapshot.finalUrl || snapshot.requestUrl,
+        evidence: {
+          header: entry.header,
+          status: entry.status,
+          actual_value: entry.actualValue,
+          category: entry.category,
+          score_weight: entry.weight,
+        },
+      });
+    }
 
     if (snapshot.statusCode >= 500) {
       await insertFinding({
@@ -5830,28 +6231,47 @@ export async function runSurfaceScanEnrichment(
   };
 
   const modules: Record<string, ModuleExecutionConfig> = {
-    dns: { key: "dns", label: "DNS & Mail Intelligence", timeoutMs: 20000 },
+    dns: {
+      key: "dns",
+      label: "DNS & Mail Intelligence",
+      timeoutMs: 20000,
+      retryOnError: true,
+      maxRetries: 1,
+      retryBackoffMs: 500,
+    },
     dnssec: {
       key: "dnssec",
       label: "DNSSEC",
       timeoutMs: 8000,
       featureFlag: "SURFACESCAN_ENABLE_DNSSEC",
+      retryOnError: true,
+      maxRetries: 1,
+      retryBackoffMs: 500,
     },
     whois: {
       key: "whois",
       label: "Domain WHOIS/RDAP",
       timeoutMs: 12000,
       featureFlag: "SURFACESCAN_ENABLE_WEBCHECK_MODULES",
+      retryOnError: true,
+      maxRetries: 1,
+      retryBackoffMs: 600,
     },
     http_security: {
       key: "http_security",
       label: "HTTP Security",
       timeoutMs: 18000,
+      retryOnError: true,
+      maxRetries: 1,
+      retryBackoffMs: 750,
     },
     headers: {
       key: "headers",
       label: "HTTP Headers",
       timeoutMs: 18000,
+      retryOnError: true,
+      maxRetries: 1,
+      retryBackoffMs: 750,
     },
     robots: { key: "robots", label: "Robots.txt", timeoutMs: 12000 },
     security_txt: { key: "security_txt", label: "Security.txt", timeoutMs: 12000 },
@@ -5893,12 +6313,18 @@ export async function runSurfaceScanEnrichment(
       label: "Threat Checks",
       timeoutMs: 18000,
       featureFlag: "SURFACESCAN_ENABLE_THREATS",
+      retryOnError: true,
+      maxRetries: 1,
+      retryBackoffMs: 600,
     },
     dns_blocklists: {
       key: "dns_blocklists",
       label: "DNS Blocklists",
       timeoutMs: 15000,
       featureFlag: "SURFACESCAN_ENABLE_WEBCHECK_MODULES",
+      retryOnError: true,
+      maxRetries: 1,
+      retryBackoffMs: 700,
     },
     reverse_dns_and_dumpster: {
       key: "reverse_dns_and_dumpster",
