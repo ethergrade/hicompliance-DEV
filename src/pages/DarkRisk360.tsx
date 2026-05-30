@@ -1274,7 +1274,7 @@ const DarkRisk360: React.FC = () => {
           </Card>
         )}
 
-        {!isLoading && !isError && (
+        {!isLoading && (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               {kpiCards.map((card) => (

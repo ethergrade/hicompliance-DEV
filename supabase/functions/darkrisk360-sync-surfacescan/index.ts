@@ -91,6 +91,9 @@ const INTELX_DEEP_FETCH_MAX_CHARS = Math.max(
   800,
   Math.min(80_000, Number(Deno.env.get('INTELX_DEEP_FETCH_MAX_CHARS') || 16_000)),
 );
+const INTELX_HEALTHCHECK_TERM = normalizeText(String(
+  Deno.env.get('INTELX_HEALTHCHECK_TERM') || '@example.com',
+)) || '@example.com';
 const FIRECRAWL_API_KEY = String(Deno.env.get('FIRECRAWL_API_KEY') || '').trim();
 const FIRECRAWL_ENABLED = String(Deno.env.get('DARKRISK_FIRECRAWL_ENABLED') || 'true').toLowerCase() !== 'false';
 const FIRECRAWL_TIMEOUT_MS = Math.max(
@@ -315,6 +318,18 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function isIntelxConfigured(): boolean {
   return Boolean(INTELX_API_KEY && INTELX_API_URL);
+}
+
+function isAuthzLikeError(message: string | null | undefined): boolean {
+  const text = String(message || '').toLowerCase();
+  return text.includes(' 401')
+    || text.includes('(401)')
+    || text.includes('401:')
+    || text.includes(' 403')
+    || text.includes('(403)')
+    || text.includes('403:')
+    || text.includes('unauthorized')
+    || text.includes('forbidden');
 }
 
 function severityFromIntelxScore(score: number | null): 'info' | 'low' | 'medium' | 'high' | 'critical' {
@@ -884,7 +899,7 @@ async function intelxSubmitSearch(term: string): Promise<string | null> {
     const response = await fetch(`${INTELX_API_URL}/intelligent/search`, {
       method: 'POST',
       headers: {
-        'X-Key': INTELX_API_KEY,
+        'x-key': INTELX_API_KEY,
         'Content-Type': 'application/json',
         'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
       },
@@ -911,7 +926,7 @@ async function intelxFetchSearchResult(searchId: string): Promise<IntelxSearchRe
     const response = await fetch(url.toString(), {
       method: 'GET',
       headers: {
-        'X-Key': INTELX_API_KEY,
+        'x-key': INTELX_API_KEY,
         'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
       },
     });
@@ -930,10 +945,63 @@ async function intelxTerminateSearch(searchId: string): Promise<void> {
   await fetch(url.toString(), {
     method: 'GET',
     headers: {
-      'X-Key': INTELX_API_KEY,
+      'x-key': INTELX_API_KEY,
       'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
     },
   }).catch(() => undefined);
+}
+
+async function intelxSearchHealthCheck(
+  term = INTELX_HEALTHCHECK_TERM,
+): Promise<{ ok: boolean; warning?: string }> {
+  let searchId: string | null = null;
+  try {
+    searchId = await intelxSubmitSearch(term);
+    if (!searchId) {
+      return { ok: false, warning: 'DarkRisk360 health check: search ID non restituito dal provider.' };
+    }
+
+    const url = new URL(`${INTELX_API_URL}/intelligent/search/result`);
+    url.searchParams.set('id', searchId);
+    url.searchParams.set('limit', '10');
+    url.searchParams.set('statistics', '1');
+    url.searchParams.set('previewlines', '8');
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'x-key': INTELX_API_KEY,
+        'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return {
+        ok: false,
+        warning: `DarkRisk360 health check result failed (${response.status}): ${maskPotentialSecrets(errorText).slice(0, 140)}`,
+      };
+    }
+
+    const payload = (await response.json()) as IntelxSearchResponse;
+    if (Number(payload?.status) !== 0) {
+      return {
+        ok: false,
+        warning: `DarkRisk360 health check result non valido (status=${String(payload?.status ?? 'n/a')}).`,
+      };
+    }
+
+    return { ok: true };
+  } catch (err: any) {
+    return {
+      ok: false,
+      warning: maskPotentialSecrets(String(err?.message || 'DarkRisk360 health check failed')).slice(0, 160),
+    };
+  } finally {
+    if (searchId) {
+      await intelxTerminateSearch(searchId).catch(() => undefined);
+    }
+  }
 }
 
 async function runIntelxSearch(selector: string): Promise<Array<Record<string, unknown>>> {
@@ -973,7 +1041,7 @@ async function intelxSubmitPhonebookSearch(term: string): Promise<string | null>
     const response = await fetch(`${INTELX_API_URL}/phonebook/search`, {
       method: 'POST',
       headers: {
-        'X-Key': INTELX_API_KEY,
+        'x-key': INTELX_API_KEY,
         'Content-Type': 'application/json',
         'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
       },
@@ -1001,7 +1069,7 @@ async function intelxFetchPhonebookResult(searchId: string): Promise<IntelxSearc
   return intelxFetchWithBackoff(async () => {
     const response = await fetch(url.toString(), {
       method: 'GET',
-      headers: { 'X-Key': INTELX_API_KEY, 'User-Agent': 'HICONSOLE-DarkRisk360/1.0' },
+      headers: { 'x-key': INTELX_API_KEY, 'User-Agent': 'HICONSOLE-DarkRisk360/1.0' },
     });
     if (!response.ok) {
       const errorText = await response.text();
@@ -1923,6 +1991,8 @@ serve(async (req: Request) => {
     let intelxRecordsProcessedTotal = 0;
     const intelxWarnings: string[] = [];
     const runDeadlineTs = Date.now() + DARKRISK_RUN_BUDGET_MS;
+    let intelxSearchHealthy = false;
+    let intelxPhonebookDegraded = false;
 
     // Pre-compute recurrence counts to avoid O(n²) filter per finding
     const recurrenceMap = new Map<string, number>();
@@ -2121,6 +2191,14 @@ serve(async (req: Request) => {
     }
 
     if (includeDtiExtended && isIntelxConfigured()) {
+      const health = await intelxSearchHealthCheck();
+      intelxSearchHealthy = health.ok;
+      if (!health.ok) {
+        intelxWarnings.push(maskPotentialSecrets(String(health.warning || 'DarkRisk360 health check IntelX non superato.')).slice(0, 180));
+      }
+    }
+
+    if (includeDtiExtended && isIntelxConfigured() && intelxSearchHealthy) {
       for (const queryTerm of intelxQueryTerms) {
         if (Date.now() >= runDeadlineTs) {
           intelxWarnings.push('Run budget raggiunto: ciclo IntelX interrotto in modo controllato.');
@@ -2534,12 +2612,14 @@ serve(async (req: Request) => {
           dtiSourceRunsFailed += 1;
         }
       }
-    } else if (includeDtiExtended) {
+    } else if (includeDtiExtended && !isIntelxConfigured()) {
       intelxWarnings.push('DarkRisk360 intelligence non configurata: impostare la chiave provider nelle Edge Function secrets.');
+    } else if (includeDtiExtended && isIntelxConfigured() && !intelxSearchHealthy) {
+      intelxWarnings.push('DarkRisk360 intelligence degradato: search API non disponibile in questo ciclo.');
     }
 
     // Phonebook searches — extended tier only
-    if (includeDtiExtended && isIntelxConfigured() && entitlement.tier === 'extended') {
+    if (includeDtiExtended && isIntelxConfigured() && intelxSearchHealthy && entitlement.tier === 'extended') {
       const phonebookTerms = intelxQueryTerms.filter(
         (qt) => qt.kind === 'at_domain_tld' || qt.kind === 'selector' || qt.kind === 'email_selector',
       ).slice(0, Math.min(10, INTELX_MAX_QUERY_TERMS_PER_RUN));
@@ -2581,6 +2661,18 @@ serve(async (req: Request) => {
         } catch (pbErr: any) {
           const message = maskPotentialSecrets(normalizeText(pbErr?.message) || `Phonebook search failed on ${queryTerm.term}`);
           intelxWarnings.push(message);
+          if (isAuthzLikeError(message)) {
+            intelxPhonebookDegraded = true;
+            if (sourceRun?.id) {
+              await finalizeDtiSourceRun(
+                adminClient, sourceRun.id, sourceRun.started_at || sourceRunStartedAt,
+                'partial', 0, 'Phonebook degraded (401/403)', message,
+                { query_term: queryTerm.term, query_kind: queryTerm.kind, degraded: true, stage: 'phonebook' },
+              );
+            }
+            dtiSourceRunsPartial += 1;
+            break;
+          }
           if (sourceRun?.id) {
             await finalizeDtiSourceRun(
               adminClient, sourceRun.id, sourceRun.started_at || sourceRunStartedAt,
@@ -2906,6 +2998,7 @@ serve(async (req: Request) => {
             metadata_only_hits: metadataOnlyHits,
             at_domain_tld_queries: intelxAtDomainQueries,
             phonebook_searches_run: intelxPhonebookSearchesRun,
+            phonebook_degraded: intelxPhonebookDegraded,
             deep_fetches_run: intelxDeepFetchesRun,
             deep_fetch_warnings: intelxDeepFetchWarnings,
             source_records_created: intelxRecordsCreated,
@@ -3042,6 +3135,7 @@ serve(async (req: Request) => {
             metadata_only_hits: metadataOnlyHits,
             at_domain_tld_queries: intelxAtDomainQueries,
             phonebook_searches_run: intelxPhonebookSearchesRun,
+            phonebook_degraded: intelxPhonebookDegraded,
             deep_fetches_run: intelxDeepFetchesRun,
             deep_fetch_warnings: intelxDeepFetchWarnings,
             source_records_created: intelxRecordsCreated,

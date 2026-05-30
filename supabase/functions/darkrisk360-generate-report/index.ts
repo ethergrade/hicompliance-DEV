@@ -1160,16 +1160,14 @@ serve(async (req: Request) => {
       .map((hit) => {
         const tag = normalizeSensitiveTag(hit.tag);
         if (!tag) return null;
-        const clearValue = safeText(String(hit.clear_value || ''), 180);
         const maskedValue = safeText(String(hit.masked_value || ''), 180);
-        const value = clearValue || maskedValue;
         return {
           source: safeText(presentDarkRiskLabel(String(hit.source_label || hit.source || 'DarkRisk360')), 80),
           query_kind: safeText(String(hit.query_kind || '-'), 40),
           query_term: safeText(String(hit.query_term || '-'), 180),
           asset_scope: safeText(String(hit.asset_scope || hit.query_term || 'n/a'), 160),
           tag,
-          value: value || '-',
+          value: maskedValue || '-',
           masked_value: maskedValue || '-',
           match_policy: safeText(String(hit.match_policy || '-'), 40),
           extraction_confidence: safeText(String(hit.extraction_confidence || '-'), 20),
@@ -1197,7 +1195,7 @@ serve(async (req: Request) => {
     const runWarnings = toArray<string>((scanRun.warnings as unknown) || []).map((entry) => safeText(presentDarkRiskLabel(String(entry)), 200));
     const scopeLimitations = [
       'Report generato da snapshot persistito: nessuna chiamata live ai provider durante la generazione.',
-      'Evidenze sensibili: visualizzazione in chiaro attiva per analisi operativa DarkRisk360.',
+      'Evidenze sensibili: valori redatti nel report cliente per minimizzazione del rischio.',
       ...runWarnings,
     ];
 
