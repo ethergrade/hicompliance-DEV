@@ -434,6 +434,22 @@ async function refreshWeeklyScopeRepositoryReport(
     });
 
     const body = await response.json().catch(() => ({}));
+    const responseCode = String(body?.code || '').trim().toLowerCase();
+    const scopePending = response.status === 409 && responseCode === 'scope_incomplete_pending_targets';
+    if (scopePending) {
+      await supabase.from('external_scan_audit_log').insert({
+        organization_id: orgId,
+        actor_email: 'system:cron',
+        action: 'auto_scope_report_skipped',
+        details: {
+          reason: 'scope_incomplete_pending_targets',
+          pending_targets: Array.isArray(body?.pending_targets) ? body.pending_targets.slice(0, 50) : [],
+          required_targets_total: Number(body?.required_targets_total || 0),
+          completed_targets_total: Number(body?.completed_targets_total || 0),
+        },
+      });
+      return;
+    }
     if (!response.ok || body?.error) {
       await supabase.from('external_scan_audit_log').insert({
         organization_id: orgId,

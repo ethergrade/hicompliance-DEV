@@ -1002,6 +1002,17 @@ export async function runSurfaceScanEnrichment(
       });
 
       const reportBody = await reportRes.json().catch(() => ({}));
+      const reportCode = String(reportBody?.code || '').trim().toLowerCase();
+      const isScopePending = reportRes.status === 409 && reportCode === 'scope_incomplete_pending_targets';
+      if (isScopePending) {
+        await logAudit("scan_report_auto_skipped", {
+          reason: "scope_incomplete_pending_targets",
+          pending_targets: Array.isArray(reportBody?.pending_targets) ? reportBody.pending_targets.slice(0, 50) : [],
+          required_targets_total: Number(reportBody?.required_targets_total || 0),
+          completed_targets_total: Number(reportBody?.completed_targets_total || 0),
+        });
+        return;
+      }
       if (!reportRes.ok || reportBody?.error) {
         await logAudit("scan_report_auto_failed", {
           status: reportRes.status,

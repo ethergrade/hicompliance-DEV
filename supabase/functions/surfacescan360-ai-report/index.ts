@@ -600,6 +600,72 @@ function normalizeScanStatus(status: string): string {
   return 'unknown';
 }
 
+type ScopeGateTargetKind = 'domain' | 'ip';
+
+interface ScopeGateTarget {
+  key: string;
+  label: string;
+  kind: ScopeGateTargetKind;
+}
+
+function scopeGateKey(kind: ScopeGateTargetKind, value: string): string {
+  return `${kind}:${String(value || '').trim().toLowerCase()}`;
+}
+
+function normalizeScopeGateDomain(value: string): string | null {
+  const host = parseHostname(String(value || '').trim()) || normalizeHost(String(value || '').trim());
+  if (!host) return null;
+  return normalizeHost(host).replace(/^www\./, '') || null;
+}
+
+function normalizeScopeGateIp(value: string): string | null {
+  const candidate = String(value || '').trim().toLowerCase();
+  if (!candidate) return null;
+  if (isIpv4(candidate) || isIpv6(candidate)) return candidate;
+  const fromHost = parseHostname(candidate);
+  if (fromHost && (isIpv4(fromHost) || isIpv6(fromHost))) return fromHost.toLowerCase();
+  return null;
+}
+
+function buildScopeGateTargets(scopeRows: any[]): ScopeGateTarget[] {
+  const out = new Map<string, ScopeGateTarget>();
+  for (const row of scopeRows || []) {
+    const entryType = String(row?.entry_type || '').trim().toLowerCase();
+    if (entryType === 'domain') {
+      const domain = normalizeScopeGateDomain(String(row?.input_value || ''));
+      if (!domain) continue;
+      const key = scopeGateKey('domain', domain);
+      if (!out.has(key)) out.set(key, { key, label: domain, kind: 'domain' });
+      continue;
+    }
+    if (entryType === 'single') {
+      const ip = normalizeScopeGateIp(String(row?.ip_start || row?.input_value || ''));
+      if (!ip) continue;
+      const key = scopeGateKey('ip', ip);
+      if (!out.has(key)) out.set(key, { key, label: ip, kind: 'ip' });
+    }
+  }
+  return Array.from(out.values());
+}
+
+function scopeGateKeyFromJob(row: any): string | null {
+  const targetType = String(row?.target_type || '').trim().toLowerCase();
+  const rawTarget = String(row?.raw_target || row?.normalized_target || '').trim();
+  if (!rawTarget) return null;
+
+  if (targetType.includes('ip')) {
+    const ip = normalizeScopeGateIp(rawTarget);
+    return ip ? scopeGateKey('ip', ip) : null;
+  }
+
+  const ipFromTarget = normalizeScopeGateIp(rawTarget);
+  if (ipFromTarget) return scopeGateKey('ip', ipFromTarget);
+
+  const domain = normalizeScopeGateDomain(rawTarget);
+  if (!domain) return null;
+  return scopeGateKey('domain', domain);
+}
+
 function chunkArray<T>(items: T[], size: number): T[][] {
   if (size <= 0) return [items];
   const chunks: T[][] = [];
@@ -1028,6 +1094,7 @@ Deno.serve(async (req) => {
     const forceRegenerate = Boolean((body as any)?.force_regenerate);
     const requestedCreatedBy = String((body as any)?.created_by || '').trim() || null;
     const scopeMode = String((body as any)?.scope_mode || 'organization_scope').trim().toLowerCase();
+    const normalizedScopeMode = scopeMode === 'single_job' ? 'single_job' : 'organization_scope';
 
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
 
@@ -1072,6 +1139,62 @@ Deno.serve(async (req) => {
       return json({ error: 'organization_id mancante: passa organization_id nel body o associa l\'utente a un\'organizzazione' }, 400);
     }
 
+    // Gate report canonico: non generare finché tutti i target scansionabili in scope (domini + IP singoli)
+    // non hanno almeno un job completed/partial.
+    if (normalizedScopeMode === 'organization_scope') {
+      const [scopeRowsRes, allScopeJobsRes] = await Promise.all([
+        supabase
+          .from('surface_scan_monitored_ips')
+          .select('entry_type, input_value, ip_start, ip_end')
+          .eq('organization_id', organization_id),
+        supabase
+          .from('surface_scan_jobs')
+          .select('id, raw_target, normalized_target, target_type, status, created_at, completed_at, started_at')
+          .or(`organization_id.eq.${organization_id},customer_id.eq.${organization_id}`)
+          .order('created_at', { ascending: false })
+          .limit(4000),
+      ]);
+      if (scopeRowsRes.error) throw scopeRowsRes.error;
+      if (allScopeJobsRes.error) throw allScopeJobsRes.error;
+
+      const requiredTargets = buildScopeGateTargets(scopeRowsRes.data ?? []);
+      const latestByScopeKey = new Map<string, any>();
+      for (const row of allScopeJobsRes.data || []) {
+        const key = scopeGateKeyFromJob(row);
+        if (!key || latestByScopeKey.has(key)) continue;
+        latestByScopeKey.set(key, row);
+      }
+
+      const pendingScopeTargets = requiredTargets
+        .map((target) => {
+          const latest = latestByScopeKey.get(target.key) || null;
+          const latestStatus = latest ? normalizeScanStatus(String(latest?.status || '')) : 'not_started';
+          const completed = latestStatus === 'completed' || latestStatus === 'partial';
+          return {
+            target: target.label,
+            kind: target.kind,
+            latest_status: latestStatus,
+            latest_job_id: latest?.id || null,
+            latest_completed_at: latest?.completed_at || null,
+            pending: !completed,
+          };
+        })
+        .filter((entry) => entry.pending);
+
+      if (pendingScopeTargets.length > 0) {
+        return json({
+          ok: false,
+          code: 'scope_incomplete_pending_targets',
+          error: `Report canonico in attesa: ${pendingScopeTargets.length} target in scope non ancora completati`,
+          pending_targets: pendingScopeTargets,
+          required_targets_total: requiredTargets.length,
+          completed_targets_total: Math.max(0, requiredTargets.length - pendingScopeTargets.length),
+          scope_mode: normalizedScopeMode,
+          trigger_source: triggerSource,
+        }, 409);
+      }
+    }
+
     // Job set: scope completo organizzazione (default) o singolo job esplicito.
     const { data: scopedJobsData, error: scopedJobsError } = await supabase
       .from('surface_scan_jobs')
@@ -1098,7 +1221,6 @@ Deno.serve(async (req) => {
       anchorJob = explicitJob;
     }
 
-    const normalizedScopeMode = scopeMode === 'single_job' ? 'single_job' : 'organization_scope';
     const scopedJobs = normalizedScopeMode === 'single_job' ? [anchorJob] : allCompletedJobs;
     const scopedJobIds = Array.from(new Set(scopedJobs.map((entry: any) => String(entry?.id || '').trim()).filter(Boolean)));
     if (scopedJobIds.length === 0) {
