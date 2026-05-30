@@ -48,7 +48,7 @@ const INTERNAL_FUNCTIONS_API_KEY = String(
 ).trim();
 const DARKRISK_INTERNAL_SECRET = String(Deno.env.get('DARKRISK360_INTERNAL_SECRET') || '').trim();
 const DARKRISK_OPERATOR_SECRET = String(Deno.env.get('DARKRISK360_OPERATOR_SECRET') || '').trim();
-const INTELX_API_KEY = Deno.env.get('INTELX_API_KEY') || '';
+const INTELX_API_KEY = String(Deno.env.get('INTELX_API_KEY') || '').trim();
 const INTELX_API_URL = String(
   Deno.env.get('INTELX_API_URL') ||
   Deno.env.get('INTELX_BASE_URL') ||
