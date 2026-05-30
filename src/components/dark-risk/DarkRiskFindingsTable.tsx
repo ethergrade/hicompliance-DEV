@@ -45,10 +45,26 @@ const scopeClass = (scopeStatus: string | undefined): string => {
   return 'bg-slate-500/20 text-slate-300 border-slate-500/40';
 };
 
+const isRepositoryStyleTitle = (title: string): boolean => {
+  const normalized = String(title || '').trim().toLowerCase();
+  if (!normalized) return false;
+  if (/\[part\s+\d+\s+of\s+\d+\]/i.test(normalized)) return true;
+  if (/(\.txt|\.sql|\.csv|\.rar|\.zip|\.7z|\.log|\.json|\.xml|\.db|\.bak|\.xls|\.xlsx|\.doc|\.docx|\.pdf)\b/i.test(normalized)) return true;
+  if (normalized.includes('/')) return true;
+  return false;
+};
+
+const getRenderedTitle = (row: DarkRiskFindingRow, standardMode: boolean): string => {
+  if (!standardMode) return row.title;
+  if (!isRepositoryStyleTitle(row.title)) return row.title;
+  return 'Evidenza repository classificata (dettaglio disponibile in modalità estesa)';
+};
+
 export const DarkRiskFindingsTable: React.FC<{
   rows: DarkRiskFindingRow[];
   subtitle?: string;
-}> = ({ rows, subtitle }) => {
+  standardMode?: boolean;
+}> = ({ rows, subtitle, standardMode = false }) => {
   const PAGE_SIZE = 150;
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   useEffect(() => {
@@ -96,8 +112,10 @@ export const DarkRiskFindingsTable: React.FC<{
                       <td className="py-2 pr-3"><Badge className={severityClasses[row.severity]}>{row.severity}</Badge></td>
                       <td className="py-2 pr-3 font-semibold">{row.risk_score}</td>
                       <td className="py-2 pr-3">
-                        <p className="font-medium">{row.title}</p>
-                        <p className="text-xs text-muted-foreground">{row.compromise_type}</p>
+                        <p className="font-medium">{getRenderedTitle(row, standardMode)}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {standardMode && isRepositoryStyleTitle(row.title) ? 'repository_exposure_signal' : row.compromise_type}
+                        </p>
                         {(row.sensitive_tags || []).length > 0 ? (
                           <div className="flex flex-wrap gap-1 mt-1">
                             {row.sensitive_tags?.map((tag) => (

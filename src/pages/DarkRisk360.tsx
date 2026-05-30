@@ -775,7 +775,7 @@ const DarkRisk360: React.FC = () => {
     const latestSurfaceScanId = String(overview.latest_scan?.data_scan_id || overview.latest_scan?.id || '').trim();
     const latestDarkRiskRunId = String(overview.dti?.latest_scan_run_id || '').trim();
 
-    return findingRows
+    const sortedRows = findingRows
       .filter((row) => {
         if (findingFilter.scope === 'latest_overview') {
           const hasLatestReference = Boolean(latestSurfaceScanId || latestDarkRiskRunId);
@@ -815,7 +815,11 @@ const DarkRisk360: React.FC = () => {
         }
         return b.risk_score - a.risk_score;
       });
-  }, [findingRows, findingFilter, overview.latest_scan?.id, overview.latest_scan?.data_scan_id, overview.dti?.latest_scan_run_id]);
+    if (overview.tier !== 'extended' && sortedRows.length > 2000) {
+      return sortedRows.slice(0, 2000);
+    }
+    return sortedRows;
+  }, [findingRows, findingFilter, overview.latest_scan?.id, overview.latest_scan?.data_scan_id, overview.dti?.latest_scan_run_id, overview.tier]);
 
   const analyticsRows = useMemo(
     () =>
@@ -1567,6 +1571,7 @@ const DarkRisk360: React.FC = () => {
                 <DarkRiskFindingsTable
                   rows={filteredFindings}
                   subtitle={findingsLoading ? 'Caricamento finding in corso...' : `${filteredFindings.length} finding filtrati`}
+                  standardMode={overview.tier !== 'extended'}
                 />
               </TabsContent>
 

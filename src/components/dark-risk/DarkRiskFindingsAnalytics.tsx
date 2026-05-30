@@ -154,6 +154,7 @@ const invalidPasswordEvidenceTokens = new Set([
   '&apos;',
   '&quot;',
 ]);
+const MAX_PASSWORD_VALUES_PER_IDENTITY = 150;
 
 function isDisplayablePasswordValue(value: string | null | undefined): boolean {
   const normalized = String(value || '').trim();
@@ -310,8 +311,25 @@ function shouldAcceptIdentityPasswordSample(sample: DtiOverviewData['sensitive_s
   if (!isDisplayablePasswordValue(value)) return false;
   const policy = String(sample.match_policy || '').toLowerCase();
   if (!policy) return true;
-  if (policy.includes('strict_pair')) return true;
+  if (policy.includes('strict')) return true;
+  if (policy.includes('metadata') || policy.includes('loose')) return false;
+  if (policy.includes('fallback') || policy.includes('legacy') || policy.includes('same_record') || policy.includes('email_pair')) {
+    return true;
+  }
   return false;
+}
+
+function extractRepositoryKeyFromTitle(rawTitle: string): string | null {
+  const title = String(rawTitle || '').trim();
+  if (!title) return null;
+  const noPart = title.replace(/\s+\[part\s+\d+\s+of\s+\d+\]\s*$/i, '').trim();
+  const firstToken = noPart.split(/\s+/)[0]?.trim() || '';
+  if (!firstToken) return null;
+  const looksLikeRepositoryObject =
+    firstToken.includes('/')
+    || /\.(txt|sql|csv|rar|zip|7z|log|json|xml|db|bak|xls|xlsx|doc|docx|pdf)$/i.test(firstToken);
+  if (!looksLikeRepositoryObject) return null;
+  return firstToken.slice(0, 180);
 }
 
 function normalizeSearchText(value: unknown): string {
@@ -363,13 +381,15 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
   const [sensitiveTagFilter, setSensitiveTagFilter] = useState<'all' | SensitiveTagKey>('all');
 
   const data = useMemo(() => {
-    const MAX_SENSITIVE_SAMPLES = 6000;
+    const MAX_SENSITIVE_SAMPLES = extendedMode ? 3500 : 1500;
     const siteCategory = new Map<string, Record<string, number>>();
     const siteFindings = new Map<string, Row[]>();
     const categoryTotals = new Map<string, number>();
     const scopeTotals = new Map<string, number>();
     const sensitiveTotals = new Map<SensitiveTagKey, number>();
     const sensitiveDetails: SensitiveDetailRow[] = [];
+    const repositorySet = new Set<string>();
+    const repositoryContentCounts = new Map<SensitiveTagKey, number>();
 
     for (const row of rows) {
       const site = row.site || 'n/a';
@@ -386,6 +406,16 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
 
       if (!siteFindings.has(site)) siteFindings.set(site, []);
       siteFindings.get(site)!.push(row);
+
+      const repositoryKey = extractRepositoryKeyFromTitle(row.title);
+      if (repositoryKey) {
+        repositorySet.add(repositoryKey);
+        for (const tag of row.sensitive_tags || []) {
+          const normalizedTag = normalizeSensitiveTag(tag);
+          if (!normalizedTag) continue;
+          repositoryContentCounts.set(normalizedTag, (repositoryContentCounts.get(normalizedTag) || 0) + 1);
+        }
+      }
 
       const isScopeDomainIntelQuery = String(row.query_kind || '').toLowerCase() === 'at_domain_tld';
       for (const tag of row.sensitive_tags || []) {
@@ -494,7 +524,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
       if (tag === 'passwords') {
         if (!shouldAcceptIdentityPasswordSample(sample)) continue;
         bucket.passwords_raw += 1;
-        if (!bucket.passwordValues.includes(sampleValue)) {
+        if (!bucket.passwordValues.includes(sampleValue) && bucket.passwordValues.length < MAX_PASSWORD_VALUES_PER_IDENTITY) {
           bucket.passwordValues.push(sampleValue);
         }
         bucket.passwords = bucket.passwordValues.length;
@@ -580,8 +610,16 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
       identityFindingRows,
       credentialCompromiseRows,
       sensitiveSampleRows,
+      repositorySummary: {
+        total: repositorySet.size,
+        domains: repositoryContentCounts.get('domains') || 0,
+        passwords: repositoryContentCounts.get('passwords') || 0,
+        addresses: repositoryContentCounts.get('addresses') || 0,
+        credit_cards: repositoryContentCounts.get('credit_cards') || 0,
+        phone_numbers: repositoryContentCounts.get('phone_numbers') || 0,
+      },
     };
-  }, [rows, dti]);
+  }, [rows, dti, extendedMode]);
 
   const filteredSensitiveSampleRows = useMemo(() => {
     return data.sensitiveSampleRows.filter((row) => {
@@ -812,74 +850,76 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
           )}
         </div>
 
-        <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <p className="text-sm font-medium">Compromissioni credenziali rilevate (lista in chiaro per identity)</p>
-            <Badge variant="outline">{data.identityRows.filter((row) => row.passwordValues.length > 0).length}</Badge>
-          </div>
-          {data.identityRows.filter((row) => row.passwordValues.length > 0).length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Nessuna compromissione credenziale classificata nel filtro corrente.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1220px] text-xs">
-                <thead>
-                  <tr className="border-b border-border/60 text-left text-muted-foreground">
-                    <th className="py-2 pr-3">Identity (Email)</th>
-                    <th className="py-2 pr-3">Password valide</th>
-                    <th className="py-2 pr-3">Password in chiaro</th>
-                    <th className="py-2 pr-3">Domini</th>
-                    <th className="py-2 pr-3">Altri dati</th>
-                    <th className="py-2 pr-3">Marcato il</th>
-                    <th className="py-2">Source</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.identityRows
-                    .filter((row) => row.passwordValues.length > 0)
-                    .map((row) => (
-                    <tr key={`credential-identity-${row.identity}`} className="border-b border-border/40 align-top">
-                      <td className="py-2 pr-3 font-medium">{row.identity}</td>
-                      <td className="py-2 pr-3 font-semibold">{row.passwordValues.length}</td>
-                      <td className="py-2 pr-3">
-                        <div className="space-y-1">
-                          {row.passwordValues.slice(0, 30).map((value) => (
-                            <div key={`${row.identity}-clear-pwd-${value}`} className="font-mono text-[11px] break-all">
-                              {value}
+        {extendedMode ? (
+          <>
+            <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <p className="text-sm font-medium">Compromissioni credenziali rilevate (lista in chiaro per identity)</p>
+                <Badge variant="outline">{data.identityRows.filter((row) => row.passwordValues.length > 0).length}</Badge>
+              </div>
+              {data.identityRows.filter((row) => row.passwordValues.length > 0).length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Nessuna compromissione credenziale classificata nel filtro corrente.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1220px] text-xs">
+                    <thead>
+                      <tr className="border-b border-border/60 text-left text-muted-foreground">
+                        <th className="py-2 pr-3">Identity (Email)</th>
+                        <th className="py-2 pr-3">Password valide</th>
+                        <th className="py-2 pr-3">Password in chiaro</th>
+                        <th className="py-2 pr-3">Domini</th>
+                        <th className="py-2 pr-3">Altri dati</th>
+                        <th className="py-2 pr-3">Marcato il</th>
+                        <th className="py-2">Source</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.identityRows
+                        .filter((row) => row.passwordValues.length > 0)
+                        .map((row) => (
+                        <tr key={`credential-identity-${row.identity}`} className="border-b border-border/40 align-top">
+                          <td className="py-2 pr-3 font-medium">{row.identity}</td>
+                          <td className="py-2 pr-3 font-semibold">{row.passwordValues.length}</td>
+                          <td className="py-2 pr-3">
+                            <div className="space-y-1">
+                              {row.passwordValues.slice(0, 50).map((value) => (
+                                <div key={`${row.identity}-clear-pwd-${value}`} className="font-mono text-[11px] break-all">
+                                  {value}
+                                </div>
+                              ))}
+                              {row.passwordValues.length > 50 ? (
+                                <div className="text-[11px] text-muted-foreground">+{row.passwordValues.length - 50} altre password</div>
+                              ) : null}
                             </div>
-                          ))}
-                          {row.passwordValues.length > 30 ? (
-                            <div className="text-[11px] text-muted-foreground">+{row.passwordValues.length - 30} altre password</div>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="py-2 pr-3">{row.domains}</td>
-                      <td className="py-2 pr-3">{row.addresses + row.credit_cards + row.phone_numbers}</td>
-                      <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap">{formatDateTime(row.lastMarkedAt)}</td>
-                      <td className="py-2">{row.sourceLabels.join(', ') || 'DarkRisk360'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                          </td>
+                          <td className="py-2 pr-3">{row.domains}</td>
+                          <td className="py-2 pr-3">{row.addresses + row.credit_cards + row.phone_numbers}</td>
+                          <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap">{formatDateTime(row.lastMarkedAt)}</td>
+                          <td className="py-2">{row.sourceLabels.join(', ') || 'DarkRisk360'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <div>
-              <p className="text-sm font-medium">Identity con evidenza di credenziali</p>
-              <p className="text-xs text-muted-foreground">Distribuzione per email monitorata e dettaglio valori rilevati.</p>
-            </div>
-            <Badge variant="outline">{data.identityRows.length} identity</Badge>
-          </div>
-          {data.identityRows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Nessuna evidenza identity classificata dalle query email nel ciclo corrente.
-            </p>
-          ) : (
-            <>
+            <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <p className="text-sm font-medium">Identity con evidenza di credenziali</p>
+                  <p className="text-xs text-muted-foreground">Distribuzione per email monitorata e dettaglio valori rilevati.</p>
+                </div>
+                <Badge variant="outline">{data.identityRows.length} identity</Badge>
+              </div>
+              {data.identityRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Nessuna evidenza identity classificata dalle query email nel ciclo corrente.
+                </p>
+              ) : (
+                <>
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               <div className="rounded-md border border-border/60 bg-background/30 p-3">
                 <div className="h-[240px]">
@@ -981,9 +1021,43 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                 </tbody>
               </table>
             </div>
-            </>
-          )}
-        </div>
+                </>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <p className="text-sm font-medium">Repository exposure (modalità standard)</p>
+              <Badge variant="outline">{data.repositorySummary.total} repository totali</Badge>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className="rounded-md border border-border/60 bg-background/30 p-3">
+                <p className="text-xs text-muted-foreground">Password</p>
+                <p className="text-lg font-semibold">{data.repositorySummary.passwords}</p>
+              </div>
+              <div className="rounded-md border border-border/60 bg-background/30 p-3">
+                <p className="text-xs text-muted-foreground">Domini</p>
+                <p className="text-lg font-semibold">{data.repositorySummary.domains}</p>
+              </div>
+              <div className="rounded-md border border-border/60 bg-background/30 p-3">
+                <p className="text-xs text-muted-foreground">Indirizzi</p>
+                <p className="text-lg font-semibold">{data.repositorySummary.addresses}</p>
+              </div>
+              <div className="rounded-md border border-border/60 bg-background/30 p-3">
+                <p className="text-xs text-muted-foreground">Carte</p>
+                <p className="text-lg font-semibold">{data.repositorySummary.credit_cards}</p>
+              </div>
+              <div className="rounded-md border border-border/60 bg-background/30 p-3">
+                <p className="text-xs text-muted-foreground">Telefoni</p>
+                <p className="text-lg font-semibold">{data.repositorySummary.phone_numbers}</p>
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              In modalità standard mostriamo i conteggi aggregati per repository e tipologia evidenza. Il dettaglio operativo resta disponibile in DarkRisk360 Esteso.
+            </p>
+          </div>
+        )}
 
         <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
           <div className="flex items-center justify-between gap-3 mb-3">

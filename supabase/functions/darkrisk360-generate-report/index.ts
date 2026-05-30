@@ -320,6 +320,15 @@ function presentFindingType(value: string | null | undefined): string {
   return presentDarkRiskLabel(normalized.replace(/^intelx_/i, 'darkrisk_'));
 }
 
+function isRepositoryStyleFindingTitle(value: string | null | undefined): boolean {
+  const title = String(value || '').trim().toLowerCase();
+  if (!title) return false;
+  if (/\[part\s+\d+\s+of\s+\d+\]/i.test(title)) return true;
+  if (/(\.txt|\.sql|\.csv|\.rar|\.zip|\.7z|\.log|\.json|\.xml|\.db|\.bak|\.xls|\.xlsx|\.doc|\.docx|\.pdf)\b/i.test(title)) return true;
+  if (title.includes('/')) return true;
+  return false;
+}
+
 function toArray<T = string>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
@@ -511,6 +520,7 @@ function escapeHtml(value: string): string {
 }
 
 function buildReportHtml(report: DarkRiskReportJson): string {
+  const includeDetailedSensitiveTable = report.tier === 'extended';
   const findingRows = report.findings.slice(0, 50).map((finding) => {
     return `<tr>
       <td>${escapeHtml(finding.severity.toUpperCase())}</td>
@@ -557,6 +567,18 @@ function buildReportHtml(report: DarkRiskReportJson): string {
       <td>${escapeHtml(row.value || row.masked_value || '-')}</td>
       <td>${escapeHtml(row.source || 'DarkRisk360')}</td>
     </tr>`).join('\n');
+  const detailedSensitiveSection = includeDetailedSensitiveTable
+    ? `<h3>Evidenze sensibili (dettaglio operativo)</h3>
+  <table>
+    <thead>
+      <tr><th>Asset scope</th><th>Query kind</th><th>Query</th><th>Classe</th><th>Valore</th><th>Sorgente</th></tr>
+    </thead>
+    <tbody>
+      ${dtiSensitiveSampleRows || '<tr><td colspan="6">Nessuna evidenza dettagliata disponibile</td></tr>'}
+    </tbody>
+  </table>`
+    : `<h3>Evidenze sensibili (modalità standard)</h3>
+  <p class="muted">Nel report standard mostriamo riepilogo aggregato per repository/categoria. Il dettaglio operativo completo è disponibile solo nel report DarkRisk360 Esteso.</p>`;
 
   return `<!doctype html>
 <html lang="it">
@@ -656,15 +678,7 @@ function buildReportHtml(report: DarkRiskReportJson): string {
     </tbody>
   </table>
 
-  <h3>Evidenze sensibili (dettaglio operativo)</h3>
-  <table>
-    <thead>
-      <tr><th>Asset scope</th><th>Query kind</th><th>Query</th><th>Classe</th><th>Valore</th><th>Sorgente</th></tr>
-    </thead>
-    <tbody>
-      ${dtiSensitiveSampleRows || '<tr><td colspan="6">Nessuna evidenza dettagliata disponibile</td></tr>'}
-    </tbody>
-  </table>
+  ${detailedSensitiveSection}
 
   <p class="muted">Report snapshot immutabile: i dati riflettono lo stato al momento della generazione.</p>
 </body>
@@ -936,6 +950,11 @@ serve(async (req: Request) => {
     const reportFindings: ReportFinding[] = findings.map((finding) => {
       const findingAsset = finding.affected_asset_id ? assetById.get(finding.affected_asset_id) : null;
       const findingSelector = finding.affected_selector_id ? selectorById.get(finding.affected_selector_id) : null;
+      const rawFindingTitle = String(finding.title || finding.finding_type || 'Finding');
+      const reportFindingTitle =
+        reportMode === 'weekly' && isRepositoryStyleFindingTitle(rawFindingTitle)
+          ? 'Segnale repository classificato (dettaglio disponibile in modalità estesa)'
+          : rawFindingTitle;
 
       const evidenceSummary = Array.from(new Set(
         toArray<string>(finding.evidence_ids)
@@ -954,7 +973,7 @@ serve(async (req: Request) => {
 
       const base: ReportFinding = {
         id: finding.id,
-        title: safeText(String(finding.title || finding.finding_type || 'Finding'), 180),
+        title: safeText(reportFindingTitle, 180),
         type: safeText(presentFindingType(String(finding.finding_type || 'unknown')), 80),
         severity: normalizedSeverity,
         confidence: normalizeConfidence(finding.confidence),
