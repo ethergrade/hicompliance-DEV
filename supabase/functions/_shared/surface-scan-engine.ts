@@ -3470,6 +3470,7 @@ export async function runSurfaceScanEnrichment(
     let failedLookups = 0;
 
     for (const ip of scopedIps) {
+      let ipApiFallbackUsed = false;
       try {
         const geoRes = await fetchWithTimeout(`https://ipwho.is/${encodeURIComponent(ip)}`, {
           headers: { accept: "application/json" },
@@ -3493,6 +3494,9 @@ export async function runSurfaceScanEnrichment(
             is_hosting: Boolean((geoPayload as any)?.security?.hosting),
             is_tor: Boolean((geoPayload as any)?.security?.tor),
           };
+          if (!geo.country && !geo.org && !geo.asn) {
+            throw new Error("ipwhois_payload_missing_core_fields");
+          }
           geoSummaries.push(geo);
           if (geo.asn) {
             await insertAsset({
@@ -3520,7 +3524,67 @@ export async function runSurfaceScanEnrichment(
           }
         }
       } catch {
-        failedLookups += 1;
+        // Fallback engine aligned with WIP spec (best-effort, non-blocking).
+        try {
+          const ipApiRes = await fetchWithTimeout(
+            `http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,country,countryCode,regionName,city,lat,lon,timezone,isp,org,as,asname,mobile,proxy,hosting,query`,
+            { headers: { accept: "application/json" } },
+            10000,
+          );
+          if (ipApiRes.ok) {
+            const ipApiPayload = await ipApiRes.json().catch(() => ({}));
+            if (String((ipApiPayload as any)?.status || "").toLowerCase() === "success") {
+              ipApiFallbackUsed = true;
+              const geo = {
+                ip,
+                success: true,
+                country: String((ipApiPayload as any)?.country || "").trim() || null,
+                region: String((ipApiPayload as any)?.regionName || "").trim() || null,
+                city: String((ipApiPayload as any)?.city || "").trim() || null,
+                latitude: typeof (ipApiPayload as any)?.lat === "number" ? (ipApiPayload as any).lat : null,
+                longitude: typeof (ipApiPayload as any)?.lon === "number" ? (ipApiPayload as any).lon : null,
+                timezone: String((ipApiPayload as any)?.timezone || "").trim() || null,
+                isp: String((ipApiPayload as any)?.isp || "").trim() || null,
+                org: String((ipApiPayload as any)?.org || "").trim() || null,
+                asn: String((ipApiPayload as any)?.as || "").trim() || null,
+                is_proxy: Boolean((ipApiPayload as any)?.proxy),
+                is_hosting: Boolean((ipApiPayload as any)?.hosting),
+                is_tor: false,
+                source: "ip-api-fallback",
+              };
+              geoSummaries.push(geo);
+              if (geo.asn) {
+                await insertAsset({
+                  asset_type: "asn",
+                  asset_value: geo.asn,
+                  hostname: hostname || rootDomain || null,
+                  root_domain: rootDomain,
+                  ip,
+                  source: "ip_geo_asn",
+                  confidence: "medium",
+                  raw: { org: geo.org, isp: geo.isp, source: geo.source },
+                });
+              }
+              if (geo.is_proxy) {
+                await insertFinding({
+                  module: "ip_geo_asn",
+                  finding_type: "ip_proxy_reputation_flag",
+                  severity: "medium",
+                  title: "IP reputation indicates proxy usage",
+                  affected_asset: hostname || rootDomain || ip,
+                  ip,
+                  evidence: geo,
+                  remediation: "Verificare se l'IP è atteso nel deployment. Applicare allowlist/segregazione e monitoraggio attivo.",
+                });
+              }
+            }
+          }
+        } catch {
+          // no-op, counted below
+        }
+        if (!ipApiFallbackUsed) {
+          failedLookups += 1;
+        }
       }
 
       try {
@@ -4053,6 +4117,31 @@ export async function runSurfaceScanEnrichment(
       }
     }
 
+    let torExitMatches: string[] = [];
+    try {
+      const ipv4Candidates = [...discoveredIps]
+        .map((entry) => String(entry || "").trim())
+        .filter((entry) => /^\d{1,3}(\.\d{1,3}){3}$/.test(entry))
+        .slice(0, 80);
+      if (ipv4Candidates.length > 0) {
+        const torRes = await fetchWithTimeout("https://check.torproject.org/torbulkexitlist", {
+          headers: { accept: "text/plain" },
+        }, 10000);
+        if (torRes.ok) {
+          const torList = await torRes.text();
+          const lines = new Set(
+            torList
+              .split("\n")
+              .map((line) => line.trim())
+              .filter(Boolean),
+          );
+          torExitMatches = ipv4Candidates.filter((ip) => lines.has(ip));
+        }
+      }
+    } catch {
+      torExitMatches = [];
+    }
+
     const normalizeIocType = (value: string): "domain" | "ip" | "url" => {
       if (value.includes("://")) return "url";
       if (/^\d{1,3}(\.\d{1,3}){3}$/.test(value) || value.includes(":")) return "ip";
@@ -4453,6 +4542,13 @@ export async function runSurfaceScanEnrichment(
           total_pulse_count: otxDomainPulseCount + otxIpPulseCount,
           signals: otxSignals.slice(0, 40),
         },
+        tor_exit_nodes: {
+          checked: [...discoveredIps]
+            .map((entry) => String(entry || "").trim())
+            .filter((entry) => /^\d{1,3}(\.\d{1,3}){3}$/.test(entry)).length,
+          listed_count: torExitMatches.length,
+          listed_ips: torExitMatches.slice(0, 30),
+        },
         no_threat_matches: noThreatMatches,
       },
     });
@@ -4541,6 +4637,20 @@ export async function runSurfaceScanEnrichment(
           signals: otxSignals.slice(0, 30),
         },
         remediation: "Eseguire verifica IOC su asset esposti, validare exploitability e applicare containment dove necessario.",
+      });
+    }
+
+    if (torExitMatches.length > 0) {
+      await insertFinding({
+        module: "threats",
+        finding_type: "tor_exit_node_match",
+        severity: "high",
+        title: "In-scope IP detected in Tor exit node list",
+        affected_asset: hostname || rootDomain || null,
+        evidence: {
+          tor_exit_ips: torExitMatches.slice(0, 30),
+        },
+        remediation: "Confermare se gli IP Tor sono attesi. In caso contrario applicare filtering, hardening servizi esposti e monitoraggio antifrode.",
       });
     }
   };
