@@ -1,5 +1,11 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
-import { corsHeaders, makeSupabaseClients, getCallerProfile, assertCustomerAccess } from '../_shared/surface-scan-utils.ts';
+import {
+  corsHeaders,
+  makeSupabaseClients,
+  getCallerProfile,
+  assertCustomerAccess,
+  evaluateOrganizationServiceGate,
+} from '../_shared/surface-scan-utils.ts';
 import {
   PENTEST_TOOL_IDS,
   type SurfacePortTechScanRequest,
@@ -94,6 +100,25 @@ serve(async (req: Request) => {
     }
     if (!isServiceRoleInvocation && callerProfile) {
       assertCustomerAccess(callerProfile, input.customer_id);
+    }
+
+    const { data: orgRuntimeFlags, error: orgRuntimeError } = await adminClient
+      .from('organizations' as any)
+      .select(
+        'surface_scan360_enabled, services_paused, services_paused_at, services_pause_reason, surface_scan_contract_start, surface_scan_contract_years',
+      )
+      .eq('id', input.customer_id)
+      .maybeSingle();
+    if (orgRuntimeError) throw new Error(orgRuntimeError.message || 'Unable to validate service contract');
+    if (!orgRuntimeFlags) return jsonResponse({ error: 'Organization not found' }, 404);
+    const serviceGate = evaluateOrganizationServiceGate(orgRuntimeFlags as any, 'surface_scan360');
+    if (!serviceGate.allowed) {
+      return jsonResponse({
+        error: `SurfaceScan360 non eseguibile: ${serviceGate.reason}`,
+        code: serviceGate.code,
+        contract_start: serviceGate.contract_start,
+        contract_end: serviceGate.contract_end,
+      }, 403);
     }
 
     const { targets, rejected } = normalizeTargets(input);

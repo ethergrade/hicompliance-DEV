@@ -3,6 +3,7 @@ import {
   assertCustomerAccess,
   classifyTargetScope,
   corsHeaders,
+  evaluateOrganizationServiceGate,
   getCallerProfile,
   makeSupabaseClients,
   normalizeTargetInput,
@@ -1437,7 +1438,9 @@ serve(async (req: Request) => {
     const [orgFlagsRes, scopeRulesRes] = await Promise.all([
       adminClient
         .from('organizations' as any)
-        .select('surface_scan360_enabled, dark_risk360_enabled')
+        .select(
+          'surface_scan360_enabled, dark_risk360_enabled, services_paused, services_paused_at, services_pause_reason, surface_scan_contract_start, surface_scan_contract_years, dark_risk_contract_start, dark_risk_contract_years',
+        )
         .eq('id', customerId)
         .maybeSingle(),
       adminClient
@@ -1451,7 +1454,29 @@ serve(async (req: Request) => {
     const orgFlags = (orgFlagsRes.data || {}) as {
       surface_scan360_enabled?: boolean;
       dark_risk360_enabled?: boolean;
+      services_paused?: boolean;
+      services_pause_reason?: string | null;
+      surface_scan_contract_start?: string | null;
+      surface_scan_contract_years?: number | null;
+      dark_risk_contract_start?: string | null;
+      dark_risk_contract_years?: number | null;
     };
+    const darkRiskGate = evaluateOrganizationServiceGate(orgFlags as any, 'dark_risk360');
+    if (!darkRiskGate.allowed) {
+      return jsonResponse(
+        {
+          ok: false,
+          status: 'blocked',
+          error: `DarkRisk360 non eseguibile: ${darkRiskGate.reason}`,
+          code: darkRiskGate.code,
+          contract_start: darkRiskGate.contract_start,
+          contract_end: darkRiskGate.contract_end,
+        },
+        403,
+      );
+    }
+    const surfaceGate = evaluateOrganizationServiceGate(orgFlags as any, 'surface_scan360');
+
     const scopeRules = (scopeRulesRes.data || []) as ScopeRuleRow[];
     const { scopeDomains, ipScopeRules } = splitMonitoredScopeRules((scopeRules || []) as any[]);
     const scopeIps = Array.from(
@@ -1470,7 +1495,7 @@ serve(async (req: Request) => {
 
     const shouldAutoQueueScope =
       autoScopeScan
-      && Boolean(orgFlags.surface_scan360_enabled)
+      && surfaceGate.allowed
       && Boolean(SUPABASE_URL && SERVICE_ROLE)
       && (scopeDomains.length > 0 || scopeIps.length > 0);
 

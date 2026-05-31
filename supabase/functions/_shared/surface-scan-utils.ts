@@ -36,6 +36,36 @@ export interface CallerProfile {
   isAdminLike: boolean;
 }
 
+export type OrganizationServiceKind = "hicompliance" | "surface_scan360" | "dark_risk360";
+
+export interface OrganizationServiceRuntimeFlags {
+  hicompliance_enabled?: boolean | null;
+  surface_scan360_enabled?: boolean | null;
+  dark_risk360_enabled?: boolean | null;
+  services_paused?: boolean | null;
+  services_paused_at?: string | null;
+  services_pause_reason?: string | null;
+  hicompliance_contract_start?: string | null;
+  hicompliance_contract_years?: number | null;
+  surface_scan_contract_start?: string | null;
+  surface_scan_contract_years?: number | null;
+  dark_risk_contract_start?: string | null;
+  dark_risk_contract_years?: number | null;
+}
+
+export interface OrganizationServiceGateDecision {
+  allowed: boolean;
+  code:
+    | "ok"
+    | "service_disabled"
+    | "services_paused"
+    | "contract_not_started"
+    | "contract_expired";
+  reason: string;
+  contract_start: string | null;
+  contract_end: string | null;
+}
+
 export interface HostScopeClassification {
   host: string;
   normalizedHost: string;
@@ -67,6 +97,113 @@ const SALES_LOCK_ORG_CODE = "cliente1";
 
 export const isAllowedProfile = (profile: string): profile is ScanProfile =>
   (ALLOWED_PROFILES as readonly string[]).includes(profile);
+
+function parseDateOnly(value: string | null | undefined): Date | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const asIsoDate = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00.000Z` : raw;
+  const parsed = new Date(asIsoDate);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function addYearsSafe(value: Date, years: number): Date {
+  const copy = new Date(value.getTime());
+  copy.setUTCFullYear(copy.getUTCFullYear() + years);
+  return copy;
+}
+
+export function evaluateOrganizationServiceGate(
+  org: OrganizationServiceRuntimeFlags | null | undefined,
+  service: OrganizationServiceKind,
+  now: Date = new Date(),
+): OrganizationServiceGateDecision {
+  const row = (org || {}) as OrganizationServiceRuntimeFlags;
+  if (Boolean(row.services_paused)) {
+    return {
+      allowed: false,
+      code: "services_paused",
+      reason: row.services_pause_reason
+        ? `Servizi in pausa: ${row.services_pause_reason}`
+        : "Servizi in pausa per questo cliente",
+      contract_start: null,
+      contract_end: null,
+    };
+  }
+
+  const isEnabled = (() => {
+    if (service === "hicompliance") return Boolean(row.hicompliance_enabled);
+    if (service === "surface_scan360") return Boolean(row.surface_scan360_enabled);
+    return Boolean(row.dark_risk360_enabled);
+  })();
+
+  if (!isEnabled) {
+    return {
+      allowed: false,
+      code: "service_disabled",
+      reason: "Servizio disabilitato per questo cliente",
+      contract_start: null,
+      contract_end: null,
+    };
+  }
+
+  const contractStartRaw = (() => {
+    if (service === "hicompliance") return row.hicompliance_contract_start;
+    if (service === "surface_scan360") return row.surface_scan_contract_start;
+    return row.dark_risk_contract_start;
+  })();
+  const contractYearsRaw = (() => {
+    if (service === "hicompliance") return row.hicompliance_contract_years;
+    if (service === "surface_scan360") return row.surface_scan_contract_years;
+    return row.dark_risk_contract_years;
+  })();
+
+  const contractStartDate = parseDateOnly(contractStartRaw);
+  const contractYears = Number(contractYearsRaw ?? 0);
+
+  // Backward compatibility: legacy customers without explicit contract window remain active.
+  if (!contractStartDate || !Number.isFinite(contractYears) || contractYears <= 0) {
+    return {
+      allowed: true,
+      code: "ok",
+      reason: "Servizio attivo (finestra legacy senza scadenza esplicita)",
+      contract_start: null,
+      contract_end: null,
+    };
+  }
+
+  const contractEndDate = addYearsSafe(contractStartDate, Math.floor(contractYears));
+  const contractStartIso = contractStartDate.toISOString();
+  const contractEndIso = contractEndDate.toISOString();
+
+  if (now.getTime() < contractStartDate.getTime()) {
+    return {
+      allowed: false,
+      code: "contract_not_started",
+      reason: "Contratto non ancora avviato",
+      contract_start: contractStartIso,
+      contract_end: contractEndIso,
+    };
+  }
+
+  if (now.getTime() >= contractEndDate.getTime()) {
+    return {
+      allowed: false,
+      code: "contract_expired",
+      reason: "Contratto scaduto",
+      contract_start: contractStartIso,
+      contract_end: contractEndIso,
+    };
+  }
+
+  return {
+    allowed: true,
+    code: "ok",
+    reason: "Servizio attivo in finestra contrattuale",
+    contract_start: contractStartIso,
+    contract_end: contractEndIso,
+  };
+}
 
 function normalizeHostname(value: string): string {
   return value.trim().toLowerCase().replace(/\.$/, "");

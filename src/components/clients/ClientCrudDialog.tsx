@@ -19,7 +19,12 @@ interface Props {
   onSaved: () => void;
 }
 
+interface SupabaseEdgeErrorLike {
+  message?: string;
+}
+
 const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, onSaved }) => {
+  const todayDate = new Date().toISOString().slice(0, 10);
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [hicompliance, setHicompliance] = useState(false);
@@ -27,6 +32,12 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
   const [darkRisk, setDarkRisk] = useState(false);
   const [surfaceScanTier, setSurfaceScanTier] = useState<'standard' | 'extended'>('standard');
   const [darkRiskTier, setDarkRiskTier] = useState<'standard' | 'extended'>('standard');
+  const [hicomplianceStart, setHicomplianceStart] = useState(todayDate);
+  const [hicomplianceYears, setHicomplianceYears] = useState('1');
+  const [surfaceStart, setSurfaceStart] = useState(todayDate);
+  const [surfaceYears, setSurfaceYears] = useState('1');
+  const [darkRiskStart, setDarkRiskStart] = useState(todayDate);
+  const [darkRiskYears, setDarkRiskYears] = useState('1');
   const [saving, setSaving] = useState(false);
   const isEdit = !!organization;
 
@@ -42,8 +53,20 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
       setDarkRisk(false);
       setSurfaceScanTier('standard');
       setDarkRiskTier('standard');
+      setHicomplianceStart(todayDate);
+      setHicomplianceYears('1');
+      setSurfaceStart(todayDate);
+      setSurfaceYears('1');
+      setDarkRiskStart(todayDate);
+      setDarkRiskYears('1');
     }
-  }, [organization, open]);
+  }, [organization, open, todayDate]);
+
+  const parseContractYears = (value: string): number => {
+    const parsed = Number.parseInt(String(value || '1'), 10);
+    if (Number.isNaN(parsed)) return 1;
+    return Math.max(1, Math.min(10, parsed));
+  };
 
   const handleSave = async () => {
     if (!name.trim() || !code.trim()) {
@@ -70,14 +93,20 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
             surface_scan_extended: surfaceScan && surfaceScanTier === 'extended',
             pentest_tools_auto_validation: surfaceScan,
             dark_risk360_enabled: darkRisk,
-          } as any)
+            hicompliance_contract_start: hicompliance ? hicomplianceStart : null,
+            hicompliance_contract_years: hicompliance ? parseContractYears(hicomplianceYears) : null,
+            surface_scan_contract_start: surfaceScan ? surfaceStart : null,
+            surface_scan_contract_years: surfaceScan ? parseContractYears(surfaceYears) : null,
+            dark_risk_contract_start: darkRisk ? darkRiskStart : null,
+            dark_risk_contract_years: darkRisk ? parseContractYears(darkRiskYears) : null,
+          } as never)
           .select('id')
           .single();
         if (error) throw error;
 
         if (darkRisk && createdOrganization?.id) {
           const { error: tierError } = await supabase
-            .from('darkrisk_entitlements' as any)
+            .from('darkrisk_entitlements' as never)
             .upsert(
               {
                 organization_id: createdOrganization.id,
@@ -89,7 +118,7 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
             );
 
           if (tierError) {
-            const missingRelation = String((tierError as any)?.code || '') === '42P01';
+            const missingRelation = String((tierError as { code?: string } | null)?.code || '') === '42P01';
             if (!missingRelation) throw tierError;
           }
         }
@@ -98,8 +127,9 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
       }
       onSaved();
       onOpenChange(false);
-    } catch (err: any) {
-      toast.error(err.message || 'Errore nel salvataggio');
+    } catch (err: unknown) {
+      const message = (err as SupabaseEdgeErrorLike)?.message || 'Errore nel salvataggio';
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -140,6 +170,18 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
                   </div>
                   <Switch checked={hicompliance} onCheckedChange={setHicompliance} />
                 </div>
+                {hicompliance && (
+                  <div className="grid grid-cols-2 gap-2 rounded-md border p-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Inizio contratto</Label>
+                      <Input type="date" value={hicomplianceStart} onChange={(e) => setHicomplianceStart(e.target.value)} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Anni contratto</Label>
+                      <Input type="number" min={1} max={10} value={hicomplianceYears} onChange={(e) => setHicomplianceYears(e.target.value)} />
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex items-center justify-between rounded-md border p-3">
                   <div className="flex items-center gap-3">
@@ -165,6 +207,18 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
                     <Switch checked={surfaceScan} onCheckedChange={setSurfaceScan} />
                   </div>
                 </div>
+                {surfaceScan && (
+                  <div className="grid grid-cols-2 gap-2 rounded-md border p-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Inizio contratto SurfaceScan360</Label>
+                      <Input type="date" value={surfaceStart} onChange={(e) => setSurfaceStart(e.target.value)} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Anni contratto</Label>
+                      <Input type="number" min={1} max={10} value={surfaceYears} onChange={(e) => setSurfaceYears(e.target.value)} />
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex items-center justify-between rounded-md border p-3">
                   <div className="flex items-center gap-3">
@@ -190,6 +244,18 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
                     <Switch checked={darkRisk} onCheckedChange={setDarkRisk} />
                   </div>
                 </div>
+                {darkRisk && (
+                  <div className="grid grid-cols-2 gap-2 rounded-md border p-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Inizio contratto DarkRisk360</Label>
+                      <Input type="date" value={darkRiskStart} onChange={(e) => setDarkRiskStart(e.target.value)} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Anni contratto</Label>
+                      <Input type="number" min={1} max={10} value={darkRiskYears} onChange={(e) => setDarkRiskYears(e.target.value)} />
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}

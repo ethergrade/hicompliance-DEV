@@ -3,6 +3,7 @@ import {
   assertCustomerAccess,
   classifyTargetScope,
   corsHeaders,
+  evaluateOrganizationServiceGate,
   getCallerProfile,
   isAllowedProfile,
   makeSupabaseClients,
@@ -115,6 +116,35 @@ serve(async (req: Request) => {
 
     if (!isServiceRoleInvocation && caller) {
       assertCustomerAccess(caller, customerId);
+    }
+
+    const { data: orgRuntimeFlags, error: orgRuntimeError } = await adminClient
+      .from("organizations" as any)
+      .select(
+        "surface_scan360_enabled, services_paused, services_paused_at, services_pause_reason, surface_scan_contract_start, surface_scan_contract_years",
+      )
+      .eq("id", customerId)
+      .maybeSingle();
+    if (orgRuntimeError) {
+      throw new Error(orgRuntimeError.message || "Unable to validate organization service runtime flags");
+    }
+    if (!orgRuntimeFlags) {
+      return new Response(
+        JSON.stringify({ error: "Organization not found" }),
+        { status: 404, headers: { "Content-Type": "application/json", ...corsHeaders } },
+      );
+    }
+    const serviceGate = evaluateOrganizationServiceGate(orgRuntimeFlags as any, "surface_scan360");
+    if (!serviceGate.allowed) {
+      return new Response(
+        JSON.stringify({
+          error: `SurfaceScan360 non eseguibile: ${serviceGate.reason}`,
+          code: serviceGate.code,
+          contract_start: serviceGate.contract_start,
+          contract_end: serviceGate.contract_end,
+        }),
+        { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } },
+      );
     }
 
     // Admin-only scan start in v1

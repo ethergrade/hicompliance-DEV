@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Link2, Unlink, Plug, Shield, Mail, Monitor, Smartphone, Activity, Search as SearchIcon, Server, ShieldCheck, FileCheck, Eye, Radar } from 'lucide-react';
+import { Loader2, Link2, Unlink, Plug, Shield, Mail, Monitor, Smartphone, Activity, Search as SearchIcon, Server, ShieldCheck, FileCheck, Eye, Radar, Pause, Play } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -29,6 +29,44 @@ interface Integration {
   service_name?: string;
 }
 
+interface OrganizationFlags {
+  hicompliance_enabled: boolean;
+  irp_extended: boolean;
+  surface_scan_extended: boolean;
+  pentest_tools_auto_validation: boolean;
+  surface_scan360_enabled: boolean;
+  dark_risk360_enabled: boolean;
+  services_paused: boolean;
+  services_paused_at?: string | null;
+  services_pause_reason?: string | null;
+  hicompliance_contract_start?: string | null;
+  hicompliance_contract_years?: number | null;
+  surface_scan_contract_start?: string | null;
+  surface_scan_contract_years?: number | null;
+  dark_risk_contract_start?: string | null;
+  dark_risk_contract_years?: number | null;
+}
+
+interface DarkRiskEntitlement {
+  tier: 'standard' | 'extended';
+  enabled: boolean;
+}
+
+interface LifecycleResponse {
+  error?: string;
+}
+
+interface IntegrationRow {
+  id: string;
+  service_id: string;
+  api_url: string;
+  is_active: boolean;
+  hisolution_services?: {
+    code?: string;
+    name?: string;
+  } | null;
+}
+
 const SERVICE_ICONS: Record<string, React.ReactNode> = {
   hipatch: <Shield className="w-4 h-4" />,
   hifirewall: <Shield className="w-4 h-4" />,
@@ -47,46 +85,71 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   const [connectingService, setConnectingService] = useState<{ id: string; name: string } | null>(null);
   const [apiUrl, setApiUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [hicomplianceStart, setHicomplianceStart] = useState('');
+  const [hicomplianceYears, setHicomplianceYears] = useState('1');
+  const [surfaceStart, setSurfaceStart] = useState('');
+  const [surfaceYears, setSurfaceYears] = useState('1');
+  const [darkRiskStart, setDarkRiskStart] = useState('');
+  const [darkRiskYears, setDarkRiskYears] = useState('1');
 
   const { data: orgFlags } = useQuery({
     queryKey: ['org-feature-flags', organizationId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('organizations')
-        .select('hicompliance_enabled, irp_extended, surface_scan_extended, pentest_tools_auto_validation, surface_scan360_enabled, dark_risk360_enabled' as any)
+        .select('hicompliance_enabled, irp_extended, surface_scan_extended, pentest_tools_auto_validation, surface_scan360_enabled, dark_risk360_enabled, services_paused, services_paused_at, services_pause_reason, hicompliance_contract_start, hicompliance_contract_years, surface_scan_contract_start, surface_scan_contract_years, dark_risk_contract_start, dark_risk_contract_years')
         .eq('id', organizationId)
         .maybeSingle();
       if (error) throw error;
-      return (data as any) || { hicompliance_enabled: false, irp_extended: false, surface_scan_extended: false, pentest_tools_auto_validation: true, surface_scan360_enabled: false, dark_risk360_enabled: false };
+      return (data as OrganizationFlags | null) || {
+        hicompliance_enabled: false,
+        irp_extended: false,
+        surface_scan_extended: false,
+        pentest_tools_auto_validation: true,
+        surface_scan360_enabled: false,
+        dark_risk360_enabled: false,
+        services_paused: false,
+      };
     },
     enabled: open && !!organizationId,
   });
+
+  useEffect(() => {
+    if (!orgFlags) return;
+    const today = new Date().toISOString().slice(0, 10);
+    setHicomplianceStart(String(orgFlags.hicompliance_contract_start || today));
+    setHicomplianceYears(String(orgFlags.hicompliance_contract_years || 1));
+    setSurfaceStart(String(orgFlags.surface_scan_contract_start || today));
+    setSurfaceYears(String(orgFlags.surface_scan_contract_years || 1));
+    setDarkRiskStart(String(orgFlags.dark_risk_contract_start || today));
+    setDarkRiskYears(String(orgFlags.dark_risk_contract_years || 1));
+  }, [orgFlags]);
 
   const { data: darkRiskEntitlement } = useQuery({
     queryKey: ['darkrisk-entitlement', organizationId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('darkrisk_entitlements' as any)
+        .from('darkrisk_entitlements' as never)
         .select('tier, enabled')
         .eq('organization_id', organizationId)
         .maybeSingle();
 
       if (error) {
-        const missingRelation = String((error as any)?.code || '') === '42P01';
+        const missingRelation = String((error as { code?: string } | null)?.code || '') === '42P01';
         if (missingRelation) {
           return { tier: 'standard', enabled: Boolean(orgFlags?.dark_risk360_enabled) };
         }
         throw error;
       }
 
-      return (data as any) || { tier: 'standard', enabled: Boolean(orgFlags?.dark_risk360_enabled) };
+      return (data as DarkRiskEntitlement | null) || { tier: 'standard', enabled: Boolean(orgFlags?.dark_risk360_enabled) };
     },
     enabled: open && !!organizationId,
   });
 
   const updateFlagsMutation = useMutation({
-    mutationFn: async (patch: Record<string, boolean>) => {
-      const { error } = await supabase.from('organizations').update(patch as any).eq('id', organizationId);
+    mutationFn: async (patch: Record<string, unknown>) => {
+      const { error } = await supabase.from('organizations').update(patch as never).eq('id', organizationId);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -94,6 +157,34 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
       toast.success('Configurazione aggiornata');
     },
     onError: (err: Error) => toast.error(`Errore: ${err.message}`),
+  });
+
+  const parseContractYears = (value: string): number => {
+    const parsed = Number.parseInt(String(value || '1'), 10);
+    if (Number.isNaN(parsed)) return 1;
+    return Math.max(1, Math.min(10, parsed));
+  };
+
+  const lifecycleMutation = useMutation({
+    mutationFn: async (payload: { action: 'pause_all_services' | 'resume_all_services'; reason?: string }) => {
+      const { data, error } = await supabase.functions.invoke('client-services-lifecycle', {
+        body: {
+          action: payload.action,
+          organization_id: organizationId,
+          reason: payload.reason || null,
+        },
+      });
+      if (error) throw error;
+      const resultPayload = data as LifecycleResponse | null;
+      if (resultPayload?.error) throw new Error(resultPayload.error);
+      return data;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['org-feature-flags', organizationId] });
+      const actionLabel = variables.action === 'pause_all_services' ? 'Servizi fermati' : 'Servizi riattivati';
+      toast.success(actionLabel);
+    },
+    onError: (err: Error) => toast.error(`Errore lifecycle: ${err.message}`),
   });
 
   const updateDarkRiskTierMutation = useMutation({
@@ -106,7 +197,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
       };
 
       const { error } = await supabase
-        .from('darkrisk_entitlements' as any)
+        .from('darkrisk_entitlements' as never)
         .upsert(payload, { onConflict: 'organization_id' });
 
       if (error) throw error;
@@ -137,7 +228,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
         .eq('organization_id', organizationId)
         .eq('is_active', true);
       if (error) throw error;
-      return (data || []).map((item: any) => ({
+      return ((data || []) as IntegrationRow[]).map((item) => ({
         id: item.id,
         service_id: item.service_id,
         api_url: item.api_url,
@@ -237,6 +328,35 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
           <ScrollArea className="max-h-[500px] pr-2">
             {/* Top-level feature flags */}
             <div className="space-y-3 mb-4">
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <div>
+                  <p className="text-sm font-medium">Stato esecuzione servizi</p>
+                  <p className="text-xs text-muted-foreground">
+                    {orgFlags?.services_paused
+                      ? `In pausa${orgFlags?.services_pause_reason ? `: ${orgFlags.services_pause_reason}` : ''}`
+                      : 'Attivo: cron e scansioni automatiche abilitate'}
+                  </p>
+                </div>
+                <Button
+                  variant={orgFlags?.services_paused ? 'default' : 'destructive'}
+                  size="sm"
+                  onClick={() => lifecycleMutation.mutate({
+                    action: orgFlags?.services_paused ? 'resume_all_services' : 'pause_all_services',
+                    reason: orgFlags?.services_paused ? undefined : 'manual_stop_from_client_management',
+                  })}
+                  disabled={lifecycleMutation.isPending}
+                >
+                  {lifecycleMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : orgFlags?.services_paused ? (
+                    <Play className="w-4 h-4 mr-2" />
+                  ) : (
+                    <Pause className="w-4 h-4 mr-2" />
+                  )}
+                  {orgFlags?.services_paused ? 'Riattiva tutti i servizi' : 'Ferma tutti i servizi'}
+                </Button>
+              </div>
+
               {/* HiCompliance */}
               <div className="flex items-center justify-between rounded-md border p-3">
                 <div className="flex items-center gap-3">
@@ -252,8 +372,15 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                   checked={!!orgFlags?.hicompliance_enabled}
                   disabled={updateFlagsMutation.isPending}
                   onCheckedChange={(v) => {
-                    const patch: any = { hicompliance_enabled: v };
+                    const patch: Record<string, unknown> = { hicompliance_enabled: v };
                     if (!v) { patch.irp_extended = false; }
+                    if (!v) {
+                      patch.hicompliance_contract_start = null;
+                      patch.hicompliance_contract_years = null;
+                    } else {
+                      patch.hicompliance_contract_start = hicomplianceStart || new Date().toISOString().slice(0, 10);
+                      patch.hicompliance_contract_years = parseContractYears(hicomplianceYears);
+                    }
                     updateFlagsMutation.mutate(patch);
                   }}
                 />
@@ -261,6 +388,35 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 
               {orgFlags?.hicompliance_enabled && (
                 <div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
+                  <div className="grid grid-cols-2 gap-2 rounded-md border p-2.5">
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Data inizio contratto</p>
+                      <Input
+                        type="date"
+                        value={hicomplianceStart}
+                        onChange={(e) => setHicomplianceStart(e.target.value)}
+                        onBlur={() => updateFlagsMutation.mutate({
+                          hicompliance_contract_start: hicomplianceStart || null,
+                          hicompliance_contract_years: parseContractYears(hicomplianceYears),
+                        })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Durata (anni)</p>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={hicomplianceYears}
+                        onChange={(e) => setHicomplianceYears(e.target.value)}
+                        onBlur={() => updateFlagsMutation.mutate({
+                          hicompliance_contract_start: hicomplianceStart || null,
+                          hicompliance_contract_years: parseContractYears(hicomplianceYears),
+                        })}
+                      />
+                    </div>
+                  </div>
+
                   <div className="flex items-center justify-between rounded-md border p-2.5">
                     <div className="flex items-center gap-3">
                       <FileCheck className="w-4 h-4 text-muted-foreground" />
@@ -311,9 +467,16 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                     checked={!!orgFlags?.surface_scan360_enabled}
                     disabled={updateFlagsMutation.isPending}
                     onCheckedChange={(v) => {
-                      const patch: any = { surface_scan360_enabled: v };
+                      const patch: Record<string, unknown> = { surface_scan360_enabled: v };
                       if (v) { patch.pentest_tools_auto_validation = true; }
-                      if (!v) { patch.surface_scan_extended = false; }
+                      if (!v) {
+                        patch.surface_scan_extended = false;
+                        patch.surface_scan_contract_start = null;
+                        patch.surface_scan_contract_years = null;
+                      } else {
+                        patch.surface_scan_contract_start = surfaceStart || new Date().toISOString().slice(0, 10);
+                        patch.surface_scan_contract_years = parseContractYears(surfaceYears);
+                      }
                       updateFlagsMutation.mutate(patch);
                     }}
                   />
@@ -322,6 +485,35 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 
               {orgFlags?.surface_scan360_enabled && (
                 <div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
+                  <div className="grid grid-cols-2 gap-2 rounded-md border p-2.5">
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Data inizio contratto</p>
+                      <Input
+                        type="date"
+                        value={surfaceStart}
+                        onChange={(e) => setSurfaceStart(e.target.value)}
+                        onBlur={() => updateFlagsMutation.mutate({
+                          surface_scan_contract_start: surfaceStart || null,
+                          surface_scan_contract_years: parseContractYears(surfaceYears),
+                        })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Durata (anni)</p>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={surfaceYears}
+                        onChange={(e) => setSurfaceYears(e.target.value)}
+                        onBlur={() => updateFlagsMutation.mutate({
+                          surface_scan_contract_start: surfaceStart || null,
+                          surface_scan_contract_years: parseContractYears(surfaceYears),
+                        })}
+                      />
+                    </div>
+                  </div>
+
                   <div className="flex items-center justify-between rounded-md border p-2.5">
                     <div className="flex items-center gap-3">
                       <Radar className="w-4 h-4 text-muted-foreground" />
@@ -363,7 +555,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                 </div>
                 <div className="flex items-center gap-2">
                   <Select
-                    value={String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'extended' : 'standard'}
+                    value={String(darkRiskEntitlement?.tier || 'standard') === 'extended' ? 'extended' : 'standard'}
                     onValueChange={(value) =>
                       updateDarkRiskTierMutation.mutate(value === 'extended' ? 'extended' : 'standard')
                     }
@@ -380,11 +572,19 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                   <Switch
                     checked={!!orgFlags?.dark_risk360_enabled}
                     disabled={updateFlagsMutation.isPending}
-                    onCheckedChange={async (v) => {
-                      updateFlagsMutation.mutate({ dark_risk360_enabled: v });
+                  onCheckedChange={async (v) => {
+                      const patch: Record<string, unknown> = { dark_risk360_enabled: v };
+                      if (!v) {
+                        patch.dark_risk_contract_start = null;
+                        patch.dark_risk_contract_years = null;
+                      } else {
+                        patch.dark_risk_contract_start = darkRiskStart || new Date().toISOString().slice(0, 10);
+                        patch.dark_risk_contract_years = parseContractYears(darkRiskYears);
+                      }
+                      updateFlagsMutation.mutate(patch);
                       if (v) {
                         await updateDarkRiskTierMutation.mutateAsync(
-                          (String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'extended' : 'standard')
+                          (String(darkRiskEntitlement?.tier || 'standard') === 'extended' ? 'extended' : 'standard')
                         );
                       }
                     }}
@@ -394,6 +594,35 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 
               {orgFlags?.dark_risk360_enabled && (
                 <div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
+                  <div className="grid grid-cols-2 gap-2 rounded-md border p-2.5">
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Data inizio contratto</p>
+                      <Input
+                        type="date"
+                        value={darkRiskStart}
+                        onChange={(e) => setDarkRiskStart(e.target.value)}
+                        onBlur={() => updateFlagsMutation.mutate({
+                          dark_risk_contract_start: darkRiskStart || null,
+                          dark_risk_contract_years: parseContractYears(darkRiskYears),
+                        })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Durata (anni)</p>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={darkRiskYears}
+                        onChange={(e) => setDarkRiskYears(e.target.value)}
+                        onBlur={() => updateFlagsMutation.mutate({
+                          dark_risk_contract_start: darkRiskStart || null,
+                          dark_risk_contract_years: parseContractYears(darkRiskYears),
+                        })}
+                      />
+                    </div>
+                  </div>
+
                   <div className="flex items-center justify-between rounded-md border p-2.5">
                     <div className="flex items-center gap-3">
                       <Eye className="w-4 h-4 text-muted-foreground" />
@@ -403,7 +632,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                       </div>
                     </div>
                     <Badge variant="outline" className="text-xs">
-                      {String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'Estesa' : 'Standard'}
+                      {String(darkRiskEntitlement?.tier || 'standard') === 'extended' ? 'Estesa' : 'Standard'}
                     </Badge>
                   </div>
                 </div>

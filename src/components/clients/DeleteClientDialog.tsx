@@ -14,6 +14,10 @@ interface Props {
   onDeleted: () => void;
 }
 
+interface InvocationPayload {
+  error?: string;
+}
+
 const DeleteClientDialog: React.FC<Props> = ({ open, onOpenChange, organization, onDeleted }) => {
   const [confirm, setConfirm] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -22,16 +26,21 @@ const DeleteClientDialog: React.FC<Props> = ({ open, onOpenChange, organization,
     if (!organization) return;
     setDeleting(true);
     try {
-      const { error } = await supabase
-        .from('organizations')
-        .delete()
-        .eq('id', organization.id);
+      const { data, error } = await supabase.functions.invoke('client-services-lifecycle', {
+        body: {
+          action: 'delete_client',
+          organization_id: organization.id,
+        },
+      });
       if (error) throw error;
+      const payload = data as InvocationPayload | null;
+      if (payload?.error) throw new Error(payload.error);
       toast.success(`Cliente "${organization.name}" eliminato`);
       onDeleted();
       onOpenChange(false);
-    } catch (err: any) {
-      toast.error(err.message || 'Errore nell\'eliminazione');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Errore nell\'eliminazione';
+      toast.error(message);
     } finally {
       setDeleting(false);
       setConfirm('');

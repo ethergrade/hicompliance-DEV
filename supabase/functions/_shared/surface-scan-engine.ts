@@ -2,6 +2,7 @@ import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.50.3";
 import {
   classifyTargetScope,
   classifyHostForScope,
+  evaluateOrganizationServiceGate,
   fetchWithTimeout,
   fetchWithSsrfGuard,
   isIpWithinMonitoredScope,
@@ -479,6 +480,31 @@ export async function dispatchSurfaceScanQueue(
   organizationId: string,
   options: DispatchQueueOptions = {},
 ): Promise<string[]> {
+  const { data: orgRuntimeFlags, error: orgRuntimeErr } = await adminClient
+    .from("organizations" as any)
+    .select(
+      "surface_scan360_enabled, services_paused, services_paused_at, services_pause_reason, surface_scan_contract_start, surface_scan_contract_years",
+    )
+    .eq("id", organizationId)
+    .maybeSingle();
+  if (orgRuntimeErr) {
+    throw new Error(orgRuntimeErr.message || "Unable to validate organization runtime before queue dispatch");
+  }
+  const serviceGate = evaluateOrganizationServiceGate(orgRuntimeFlags as any, "surface_scan360");
+  if (!serviceGate.allowed) {
+    await adminClient
+      .from("surface_scan_jobs" as any)
+      .update({
+        status: "failed",
+        completed_at: new Date().toISOString(),
+        error_message: `service_gate_blocked:${serviceGate.code}`,
+      })
+      .eq("organization_id", organizationId)
+      .in("status", ["queued", "pending", "running"]);
+
+    return [];
+  }
+
   const nowIso = new Date().toISOString();
   const stalePendingCutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
   const staleRunningCutoff = new Date(Date.now() - 45 * 60 * 1000).toISOString();

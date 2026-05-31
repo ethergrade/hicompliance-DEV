@@ -4,6 +4,7 @@
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { dispatchSurfaceScanQueue } from '../_shared/surface-scan-engine.ts';
+import { evaluateOrganizationServiceGate } from '../_shared/surface-scan-utils.ts';
 
 interface MonitoredRule {
   id: string;
@@ -594,6 +595,20 @@ Deno.serve(async (req) => {
       byOrg.set(r.organization_id, arr);
     }
 
+    const orgIds = Array.from(byOrg.keys());
+    const { data: orgRuntimeRows, error: orgRuntimeErr } = orgIds.length > 0
+      ? await supabase
+          .from('organizations' as any)
+          .select(
+            'id, surface_scan360_enabled, dark_risk360_enabled, services_paused, services_paused_at, services_pause_reason, surface_scan_contract_start, surface_scan_contract_years, dark_risk_contract_start, dark_risk_contract_years',
+          )
+          .in('id', orgIds)
+      : { data: [], error: null };
+    if (orgRuntimeErr) throw orgRuntimeErr;
+    const orgRuntimeById = new Map<string, any>(
+      (orgRuntimeRows || []).map((row: any) => [String(row.id), row]),
+    );
+
     const results: any[] = [];
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -608,23 +623,61 @@ Deno.serve(async (req) => {
       internalSecret;
 
     for (const [orgId, orgRules] of byOrg.entries()) {
-      let queuedClassicStarted = 0;
-      try {
-        const startedClassicJobs = await dispatchSurfaceScanQueue(supabase, orgId, {
-          initiatedByUserId: null,
-          maxToStart: 3,
-        });
-        queuedClassicStarted = startedClassicJobs.length;
-      } catch (queueErr) {
-        console.error(`Classic SurfaceScan queue dispatch failed for org ${orgId}:`, queueErr);
+      const orgRuntime = orgRuntimeById.get(orgId) || null;
+      const surfaceGate = evaluateOrganizationServiceGate(orgRuntime, 'surface_scan360');
+      const darkRiskGate = evaluateOrganizationServiceGate(orgRuntime, 'dark_risk360');
+
+      if (!surfaceGate.allowed && !darkRiskGate.allowed) {
         await supabase.from('external_scan_audit_log').insert({
           organization_id: orgId,
           actor_email: 'system:cron',
-          action: 'auto_classic_queue_dispatch_failed',
+          action: 'auto_scope_cron_skipped',
           details: {
-            error: queueErr instanceof Error ? queueErr.message : String(queueErr),
+            surface_gate: {
+              code: surfaceGate.code,
+              reason: surfaceGate.reason,
+              contract_start: surfaceGate.contract_start,
+              contract_end: surfaceGate.contract_end,
+            },
+            darkrisk_gate: {
+              code: darkRiskGate.code,
+              reason: darkRiskGate.reason,
+              contract_start: darkRiskGate.contract_start,
+              contract_end: darkRiskGate.contract_end,
+            },
           },
         });
+
+        results.push({
+          orgId,
+          ok: true,
+          skipped: true,
+          reason: 'all_services_blocked',
+          surface_gate: surfaceGate.code,
+          darkrisk_gate: darkRiskGate.code,
+        });
+        continue;
+      }
+
+      let queuedClassicStarted = 0;
+      if (surfaceGate.allowed) {
+        try {
+          const startedClassicJobs = await dispatchSurfaceScanQueue(supabase, orgId, {
+            initiatedByUserId: null,
+            maxToStart: 3,
+          });
+          queuedClassicStarted = startedClassicJobs.length;
+        } catch (queueErr) {
+          console.error(`Classic SurfaceScan queue dispatch failed for org ${orgId}:`, queueErr);
+          await supabase.from('external_scan_audit_log').insert({
+            organization_id: orgId,
+            actor_email: 'system:cron',
+            action: 'auto_classic_queue_dispatch_failed',
+            details: {
+              error: queueErr instanceof Error ? queueErr.message : String(queueErr),
+            },
+          });
+        }
       }
 
       if (dispatchOnly) {
@@ -637,7 +690,15 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const { assets, truncated, perRule } = await scanOrganization(orgId, orgRules, SHODAN_API_KEY);
+      let assets: any[] = [];
+      let truncated: string[] = [];
+      let perRule: RuleScanResult[] = [];
+      if (surfaceGate.allowed) {
+        const scanRes = await scanOrganization(orgId, orgRules, SHODAN_API_KEY);
+        assets = scanRes.assets;
+        truncated = scanRes.truncated;
+        perRule = scanRes.perRule;
+      }
 
       const total = assets.length;
       const critical = assets.filter(a => a.status === 'Critico').length;
@@ -648,29 +709,43 @@ Deno.serve(async (req) => {
       const med = assets.reduce((s, a) => s + a.cves_medium, 0);
       const low = assets.reduce((s, a) => s + a.cves_low, 0);
 
-      const { error: insErr } = await supabase.from('surface_scan_history').insert({
-        organization_id: orgId,
-        total_assets: total,
-        critical_count: critical,
-        warning_count: warning,
-        safe_count: safe,
-        avg_score: Math.round(avg * 100) / 100,
-        high_cves: high,
-        medium_cves: med,
-        low_cves: low,
-        truncated_rules: truncated,
-        assets_snapshot: assets,
-        triggered_by: triggeredBy,
-      });
-      if (insErr) {
+      let insErr: any = null;
+      if (surfaceGate.allowed) {
+        const insertRes = await supabase.from('surface_scan_history').insert({
+          organization_id: orgId,
+          total_assets: total,
+          critical_count: critical,
+          warning_count: warning,
+          safe_count: safe,
+          avg_score: Math.round(avg * 100) / 100,
+          high_cves: high,
+          medium_cves: med,
+          low_cves: low,
+          truncated_rules: truncated,
+          assets_snapshot: assets,
+          triggered_by: triggeredBy,
+        });
+        insErr = insertRes.error;
+      }
+      if (surfaceGate.allowed && insErr) {
         console.error(`Insert failed for org ${orgId}:`, insErr);
         results.push({ orgId, ok: false, error: insErr.message, queued_classic_started: queuedClassicStarted });
       } else {
-        results.push({ orgId, ok: true, total_assets: total, critical, warning, safe, queued_classic_started: queuedClassicStarted });
+        results.push({
+          orgId,
+          ok: true,
+          total_assets: total,
+          critical,
+          warning,
+          safe,
+          queued_classic_started: queuedClassicStarted,
+          surface_gate: surfaceGate.code,
+          darkrisk_gate: darkRiskGate.code,
+        });
       }
 
       const pentestToolsEnabled = Deno.env.get('SURFACESCAN_ENABLE_PENTEST_TOOLS') === 'true';
-      if (pentestToolsEnabled) {
+      if (surfaceGate.allowed && pentestToolsEnabled) {
         // Pentest-Tools validation: attiva solo se SURFACESCAN_ENABLE_PENTEST_TOOLS=true
         await maybeTriggerAutoValidation(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, perRule);
         // Exposure full-scope: avvio automatico settimanale su tutti i domini/IP in scope.
@@ -679,9 +754,13 @@ Deno.serve(async (req) => {
         console.log(`[cron] pentest-tools disabled (SURFACESCAN_ENABLE_PENTEST_TOOLS != true) — skipping auto-validation and exposure scan for org=${orgId}`);
       }
       // Report repository canonico SurfaceScan360: refresh automatico settimanale.
-      await refreshWeeklyScopeRepositoryReport(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId);
+      if (surfaceGate.allowed) {
+        await refreshWeeklyScopeRepositoryReport(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId);
+      }
       // DarkRisk360 standard weekly sync: DTI esteso escluso dai run cron.
-      await triggerWeeklyDarkRiskStandardScan(supabase, supabaseUrl, serviceRoleKey, darkriskInternalSecret, orgId);
+      if (darkRiskGate.allowed) {
+        await triggerWeeklyDarkRiskStandardScan(supabase, supabaseUrl, serviceRoleKey, darkriskInternalSecret, orgId);
+      }
 
     }
 
