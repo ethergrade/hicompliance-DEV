@@ -52,6 +52,7 @@ interface LatestScanRow {
   status: string;
   created_at: string;
   completed_at: string | null;
+  error_message?: string | null;
   summary: Record<string, any> | null;
 }
 
@@ -120,6 +121,7 @@ interface ScopeTargetRow {
   liveStatus: string;
   liveJobId: string | null;
   liveCreatedAt: string | null;
+  liveErrorMessage: string | null;
   snapshotSource: 'live' | 'last_good';
   profile: string;
   score: number | null;
@@ -341,6 +343,7 @@ const outcomeFromJobStatus = (status: string): ModuleOutcomeStatus => {
   if (key === 'retry') return 'queued';
   if (key === 'queued' || key === 'pending') return 'queued';
   if (key === 'not_scanned') return 'queued';
+  if (key === 'not_existing') return 'error';
   if (key === 'failed' || key === 'error') return 'error';
   if (key === 'completed' || key === 'success' || key === 'partial') return 'success_with_data';
   return 'success_no_data';
@@ -353,6 +356,7 @@ const scanStatusLabel = (status: string): string => {
   if (key === 'waiting') return 'In attesa provider';
   if (key === 'retry') return 'Recovery retry';
   if (key === 'queued' || key === 'pending') return 'In coda';
+  if (key === 'not_existing') return 'NON ESISTENTE';
   if (key === 'failed' || key === 'error') return 'Fallito';
   if (key === 'not_scanned') return 'Da avviare';
   return 'N/D';
@@ -360,8 +364,32 @@ const scanStatusLabel = (status: string): string => {
 
 const FAILED_LIVE_STATUSES = new Set(['failed', 'error', 'stopped', 'aborted', 'timed out']);
 
+const isNonExistingTargetError = (message: string | null | undefined): boolean => {
+  const lowered = String(message || '').trim().toLowerCase();
+  if (!lowered) return false;
+  return [
+    'nxdomain',
+    'enotfound',
+    'name or service not known',
+    'no such host',
+    'could not resolve',
+    'cannot resolve',
+    'dns resolution failed',
+    'host not found',
+    'domain not found',
+    'target not resolvable',
+    'not resolvable',
+    'non risolto',
+    'dominio non risolto',
+    'ip non raggiungibile',
+  ].some((token) => lowered.includes(token));
+};
+
 const effectiveScopeStatus = (row: ScopeTargetRow): string => {
   const live = String(row.liveStatus || row.status || '').toLowerCase();
+  if (FAILED_LIVE_STATUSES.has(live) && isNonExistingTargetError(row.liveErrorMessage)) {
+    return 'not_existing';
+  }
   if (FAILED_LIVE_STATUSES.has(live) && row.snapshotSource === 'last_good') {
     return 'partial';
   }
@@ -369,6 +397,7 @@ const effectiveScopeStatus = (row: ScopeTargetRow): string => {
 };
 
 const scopeLiveReasonLabel = (row: ScopeTargetRow): string => {
+  if (effectiveScopeStatus(row) === 'not_existing') return 'target non esistente (DNS/IP non risolto)';
   const live = String(row.liveStatus || '').toLowerCase();
   if (live === 'not_scanned') return 'pending scan';
   if (live === 'queued' || live === 'pending') return 'pending scan';
@@ -504,7 +533,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
             .eq('organization_id', organizationId),
           supabase
             .from('surface_scan_jobs' as any)
-            .select('id, raw_target, normalized_target, scan_profile, status, created_at, completed_at, summary')
+            .select('id, raw_target, normalized_target, scan_profile, status, created_at, completed_at, error_message, summary')
             .or(scopeFilter)
             .in('status', ['completed', 'partial', 'queued', 'pending', 'running', 'failed'])
             .order('created_at', { ascending: false })
@@ -694,6 +723,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
         score: hasScore ? Math.round(score) : null,
         riskLevel,
         completedAt: job.completed_at,
+        liveErrorMessage: String(liveJob?.error_message || job.error_message || '').trim() || null,
         jobId: job.id,
       };
     });
@@ -717,6 +747,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
         liveStatus: 'not_scanned',
         liveJobId: null,
         liveCreatedAt: null,
+        liveErrorMessage: null,
         snapshotSource: 'live',
         profile: target.type === 'domain' ? 'domain_exposure' : target.type === 'ip' ? 'ip_exposure' : 'scope_rule',
         score: null,
@@ -1088,7 +1119,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
       counters.scanned += 1;
       if (status === 'running' || status === 'waiting') counters.running += 1;
       else if (status === 'queued' || status === 'pending' || status === 'retry') counters.queued += 1;
-      else if (status === 'failed' || status === 'error') counters.errors += 1;
+      else if (status === 'failed' || status === 'error' || status === 'not_existing') counters.errors += 1;
     }
 
     return counters;
