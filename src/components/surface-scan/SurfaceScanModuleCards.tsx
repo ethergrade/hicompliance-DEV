@@ -412,6 +412,7 @@ const moduleReasonLabel = (reason: string): string => {
   const key = String(reason || '').toLowerCase();
   if (key.includes('missing_google_cloud_api_key')) return 'Prerequisito mancante: GOOGLE_API_KEY per Quality.';
   if (key.includes('feature_flag_disabled')) return 'Modulo disabilitato da feature flag.';
+  if (key.includes('missing_root_domain')) return 'Target senza dominio registrabile: WHOIS applicabile solo a domini.';
   if (key.includes('rdap')) return 'RDAP temporaneamente non disponibile per WHOIS.';
   if (key.includes('server_location_no_ip')) return 'Nessun IP in-scope geolocalizzabile disponibile.';
   if (key.includes('open_ports_no_data')) return 'Nessun dato porte disponibile da scan classica/exposure.';
@@ -994,7 +995,9 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
       const hasPrereqSkip = obs.some((entry) => {
         if (entry.observation_type !== 'module_skipped') return false;
         const reason = String(entry.value?.reason || '').toLowerCase();
-        return reason.includes('missing_google_cloud_api_key') || reason.includes('feature_flag_disabled');
+        return reason.includes('missing_google_cloud_api_key')
+          || reason.includes('feature_flag_disabled')
+          || reason.includes('missing_root_domain');
       });
       const hasRdapUnavailable = moduleKey === 'whois'
         && obs.some((entry) => entry.observation_type === 'rdap_unavailable');
@@ -1772,6 +1775,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                 <div className="flex justify-between"><span>Registrar</span><span>{latestWhois.registrar || '-'}</span></div>
                 <div className="flex justify-between"><span>Scadenza</span><span>{latestWhois.days_to_expiry != null ? `${latestWhois.days_to_expiry} giorni` : '-'}</span></div>
                 <div className="flex justify-between"><span>DNSSEC (RDAP)</span><span>{latestWhois.dnssec || '-'}</span></div>
+                <div className="flex justify-between"><span>Source</span><span>{latestWhois.source || '-'}</span></div>
               </div>
               {whoisUnavailableCount > 0 && moduleOutcomes.whois !== 'skipped_prerequisite' && (
                 <p className="text-xs text-amber-300">RDAP temporaneamente non disponibile per WHOIS.</p>

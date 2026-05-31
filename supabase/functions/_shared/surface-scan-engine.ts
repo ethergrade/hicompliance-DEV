@@ -11,9 +11,11 @@ import {
   summarizeDnssecStatus,
   summarizeThreatSignals,
   summarizeWhoisRdap,
+  summarizeWhoisText,
   splitMonitoredScopeRules,
   toSeverity,
   TargetType,
+  type WhoisRdapSummary,
 } from "./surface-scan-utils.ts";
 import {
   evaluateHeaders,
@@ -23,6 +25,7 @@ import {
   scanDnsLookup,
   type DnsLookupResult,
 } from "./dnsLookupScanner.ts";
+import { firecrawlScrape } from "./darkrisk-dti-enrichment.ts";
 
 interface SurfaceScanJob {
   id: string;
@@ -2080,53 +2083,271 @@ export async function runSurfaceScanEnrichment(
   };
 
   const runWhoisModule = async () => {
-    if (!rootDomain) return;
-    const rdapUrl = `https://rdap.org/domain/${encodeURIComponent(rootDomain)}`;
-    const response = await fetchWithTimeout(rdapUrl, {
-      headers: {
-        accept: "application/rdap+json, application/json;q=0.9",
-        "user-agent": "SurfaceScan360/1.0",
-      },
-    }, 10000);
+    if (!rootDomain) {
+      await insertObservation({
+        module: "whois",
+        observation_type: "module_skipped",
+        title: "WHOIS module skipped",
+        value: {
+          reason: "missing_root_domain",
+          target_type: parsedTarget.target_type,
+          hostname: hostname || null,
+        },
+        severity: "info",
+      });
+      return;
+    }
 
-    if (!response.ok) {
+    const nowMs = Date.now();
+    const rdapUrl = `https://rdap.org/domain/${encodeURIComponent(rootDomain)}`;
+    const firecrawlApiKey = String(Deno.env.get("FIRECRAWL_API_KEY") || "").trim();
+    const firecrawlWhoisEnabled =
+      String(Deno.env.get("SURFACESCAN_WHOIS_FIRECRAWL_ENABLED") || "true").toLowerCase() !== "false";
+    const firecrawlWhoisTimeoutMs = Math.max(
+      2500,
+      Math.min(8000, Number(Deno.env.get("SURFACESCAN_WHOIS_FIRECRAWL_TIMEOUT_MS") || "6000")),
+    );
+    const firecrawlWhoisRetries = Math.max(
+      0,
+      Math.min(1, Number(Deno.env.get("SURFACESCAN_WHOIS_FIRECRAWL_RETRIES") || "0")),
+    );
+    const firecrawlWhoisMaxMarkdownChars = Math.max(
+      1000,
+      Math.min(50000, Number(Deno.env.get("SURFACESCAN_WHOIS_FIRECRAWL_MAX_CHARS") || "15000")),
+    );
+    const firecrawlMiskWhoisUrl = `https://www.misk.com/tools/#whois/${encodeURIComponent(rootDomain)}`;
+
+    type WhoisProviderResult = {
+      provider: string;
+      ok: boolean;
+      status: number | null;
+      error: string | null;
+      summary: WhoisRdapSummary | null;
+      details?: Record<string, unknown>;
+    };
+
+    const mergeWhoisSummaries = (primary: WhoisRdapSummary | null, fallback: WhoisRdapSummary | null): WhoisRdapSummary | null => {
+      if (!primary && !fallback) return null;
+      if (!primary) return fallback;
+      if (!fallback) return primary;
+
+      const expires = primary.expires || fallback.expires;
+      const expiryMs = expires ? Date.parse(expires) : Number.NaN;
+      const daysToExpiry = primary.days_to_expiry !== null
+        ? primary.days_to_expiry
+        : fallback.days_to_expiry !== null
+          ? fallback.days_to_expiry
+          : Number.isFinite(expiryMs)
+            ? Math.round((expiryMs - nowMs) / 86400000)
+            : null;
+
+      return {
+        domain: primary.domain || fallback.domain || rootDomain,
+        registrar: primary.registrar || fallback.registrar,
+        created: primary.created || fallback.created,
+        updated: primary.updated || fallback.updated,
+        expires,
+        days_to_expiry: daysToExpiry,
+        registration_valid: daysToExpiry === null ? false : daysToExpiry >= 0,
+        nameservers: Array.from(new Set([...(primary.nameservers || []), ...(fallback.nameservers || [])])),
+        dnssec: primary.dnssec || fallback.dnssec,
+      };
+    };
+
+    const rdapTask = (async (): Promise<WhoisProviderResult> => {
+      try {
+        const response = await fetchWithTimeout(
+          rdapUrl,
+          {
+            headers: {
+              accept: "application/rdap+json, application/json;q=0.9",
+              "user-agent": "SurfaceScan360/1.0",
+            },
+          },
+          10000,
+        );
+
+        if (!response.ok) {
+          return {
+            provider: "rdap.org",
+            ok: false,
+            status: response.status,
+            error: `rdap_http_${response.status}`,
+            summary: null,
+          };
+        }
+
+        const payload = await response.json().catch(() => ({}));
+        return {
+          provider: "rdap.org",
+          ok: true,
+          status: response.status,
+          error: null,
+          summary: summarizeWhoisRdap(payload, nowMs),
+          details: {
+            status: Array.isArray((payload as any)?.status) ? (payload as any).status : [],
+          },
+        };
+      } catch (error: any) {
+        return {
+          provider: "rdap.org",
+          ok: false,
+          status: null,
+          error: String(error?.message || "rdap_fetch_failed"),
+          summary: null,
+        };
+      }
+    })();
+
+    const firecrawlTask = (async (): Promise<WhoisProviderResult> => {
+      if (!firecrawlWhoisEnabled || !firecrawlApiKey) {
+        return {
+          provider: "misk.com/firecrawl",
+          ok: false,
+          status: null,
+          error: firecrawlWhoisEnabled ? "firecrawl_not_configured" : "firecrawl_disabled",
+          summary: null,
+        };
+      }
+
+      try {
+        const scrape = await firecrawlScrape({
+          apiKey: firecrawlApiKey,
+          targetUrl: firecrawlMiskWhoisUrl,
+          timeoutMs: firecrawlWhoisTimeoutMs,
+          retries: firecrawlWhoisRetries,
+          maxMarkdownChars: firecrawlWhoisMaxMarkdownChars,
+          onlyMainContent: false,
+          onlyCleanContent: false,
+          waitForMs: 1500,
+          actions: [
+            { type: "wait", milliseconds: 1000 },
+            { type: "click", selector: "input[name='domain']" },
+            { type: "write", text: rootDomain },
+            { type: "press", key: "Enter" },
+            { type: "wait", milliseconds: 1800 },
+          ],
+          requestHeaders: {
+            Referer: "https://www.misk.com/tools/",
+            Origin: "https://www.misk.com",
+          },
+        });
+
+        const rawText = `${scrape.title}\n${scrape.summary}\n${scrape.markdown}`.trim();
+        const parsedSummary = summarizeWhoisText(rawText, rootDomain, nowMs);
+        const hasCoreData =
+          Boolean(parsedSummary.registrar) ||
+          Boolean(parsedSummary.expires) ||
+          parsedSummary.days_to_expiry !== null ||
+          parsedSummary.nameservers.length > 0 ||
+          Boolean(parsedSummary.dnssec);
+
+        return {
+          provider: "misk.com/firecrawl",
+          ok: scrape.ok && hasCoreData,
+          status: scrape.status,
+          error: scrape.ok
+            ? (hasCoreData ? null : "firecrawl_whois_no_core_fields")
+            : String(scrape.error || "firecrawl_whois_failed"),
+          summary: hasCoreData ? parsedSummary : null,
+          details: {
+            source_url: scrape.sourceUrl,
+            warning: scrape.warning,
+            links_count: scrape.links.length,
+          },
+        };
+      } catch (error: any) {
+        return {
+          provider: "misk.com/firecrawl",
+          ok: false,
+          status: null,
+          error: String(error?.message || "firecrawl_whois_failed"),
+          summary: null,
+        };
+      }
+    })();
+
+    const [rdapResult, firecrawlResult] = await Promise.all([rdapTask, firecrawlTask]);
+    const mergedSummary = mergeWhoisSummaries(rdapResult.summary, firecrawlResult.summary);
+
+    if (!mergedSummary) {
       await insertObservation({
         module: "whois",
         observation_type: "rdap_unavailable",
-        title: "RDAP lookup unavailable",
+        title: "RDAP/WHOIS lookup unavailable",
         value: {
           domain: rootDomain,
           rdap_url: rdapUrl,
-          status: response.status,
+          rdap_status: rdapResult.status,
+          rdap_error: rdapResult.error,
+          fallback_provider: firecrawlResult.provider,
+          fallback_status: firecrawlResult.status,
+          fallback_error: firecrawlResult.error,
+          fallback_target_url: firecrawlMiskWhoisUrl,
         },
         severity: "low",
       });
       return;
     }
 
-    const payload = await response.json().catch(() => ({}));
-    const whoisSummary = summarizeWhoisRdap(payload);
+    if (!rdapResult.ok) {
+      await insertObservation({
+        module: "whois",
+        observation_type: "rdap_unavailable",
+        title: "RDAP lookup unavailable (fallback used)",
+        value: {
+          domain: rootDomain,
+          rdap_url: rdapUrl,
+          rdap_status: rdapResult.status,
+          rdap_error: rdapResult.error,
+          fallback_provider: firecrawlResult.provider,
+          fallback_status: firecrawlResult.status,
+          fallback_error: firecrawlResult.error,
+          fallback_target_url: firecrawlMiskWhoisUrl,
+        },
+        severity: "low",
+      });
+    }
+
+    const sourceLabel = (() => {
+      if (rdapResult.ok && firecrawlResult.ok) return "rdap.org+misk.com/firecrawl";
+      if (rdapResult.ok) return "rdap.org";
+      if (firecrawlResult.ok) return "misk.com/firecrawl";
+      return "unknown";
+    })();
 
     await insertObservation({
       module: "whois",
       observation_type: "whois_rdap",
       title: "Domain WHOIS via RDAP",
       value: {
-        domain: rootDomain,
-        registrar: whoisSummary.registrar,
-        created: whoisSummary.created,
-        updated: whoisSummary.updated,
-        expires: whoisSummary.expires,
-        days_to_expiry: whoisSummary.days_to_expiry,
-        registration_valid: whoisSummary.registration_valid,
-        nameservers: whoisSummary.nameservers,
-        status: Array.isArray(payload?.status) ? payload.status : [],
-        dnssec: whoisSummary.dnssec,
-        source: "rdap.org",
+        domain: mergedSummary.domain || rootDomain,
+        registrar: mergedSummary.registrar,
+        created: mergedSummary.created,
+        updated: mergedSummary.updated,
+        expires: mergedSummary.expires,
+        days_to_expiry: mergedSummary.days_to_expiry,
+        registration_valid: mergedSummary.registration_valid,
+        nameservers: mergedSummary.nameservers,
+        status: Array.isArray(rdapResult.details?.status) ? rdapResult.details?.status : [],
+        dnssec: mergedSummary.dnssec,
+        source: sourceLabel,
+        providers: {
+          rdap: {
+            ok: rdapResult.ok,
+            status: rdapResult.status,
+            error: rdapResult.error,
+          },
+          misk_firecrawl: {
+            ok: firecrawlResult.ok,
+            status: firecrawlResult.status,
+            error: firecrawlResult.error,
+          },
+        },
       },
     });
 
-    if (whoisSummary.days_to_expiry !== null && whoisSummary.days_to_expiry < 0) {
+    if (mergedSummary.days_to_expiry !== null && mergedSummary.days_to_expiry < 0) {
       await insertFinding({
         module: "whois",
         finding_type: "domain_expired",
@@ -2136,29 +2357,29 @@ export async function runSurfaceScanEnrichment(
         description: "Il dominio risulta scaduto secondo i dati RDAP.",
         remediation: "Rinnovare immediatamente il dominio e verificare stato presso il registrar.",
       });
-    } else if (whoisSummary.days_to_expiry !== null && whoisSummary.days_to_expiry < 30) {
+    } else if (mergedSummary.days_to_expiry !== null && mergedSummary.days_to_expiry < 30) {
       await insertFinding({
         module: "whois",
         finding_type: "domain_expiry_soon_30d",
         severity: "high",
         title: "Domain expires in less than 30 days",
         affected_asset: rootDomain,
-        description: `Scadenza dominio imminente (${whoisSummary.days_to_expiry} giorni).`,
+        description: `Scadenza dominio imminente (${mergedSummary.days_to_expiry} giorni).`,
         remediation: "Pianificare rinnovo immediato per evitare interruzioni operative.",
       });
-    } else if (whoisSummary.days_to_expiry !== null && whoisSummary.days_to_expiry < 90) {
+    } else if (mergedSummary.days_to_expiry !== null && mergedSummary.days_to_expiry < 90) {
       await insertFinding({
         module: "whois",
         finding_type: "domain_expiry_soon_90d",
         severity: "medium",
         title: "Domain expires in less than 90 days",
         affected_asset: rootDomain,
-        description: `Scadenza dominio nei prossimi ${whoisSummary.days_to_expiry} giorni.`,
+        description: `Scadenza dominio nei prossimi ${mergedSummary.days_to_expiry} giorni.`,
         remediation: "Programmare rinnovo dominio e verifica contatti amministrativi.",
       });
     }
 
-    if (!whoisSummary.registrar || !whoisSummary.expires) {
+    if (!mergedSummary.registrar || !mergedSummary.expires) {
       await insertFinding({
         module: "whois",
         finding_type: "whois_partial_data",

@@ -30,6 +30,61 @@ const severityClasses: Record<DarkRiskFindingRow['severity'], string> = {
   info: 'bg-slate-500/20 text-slate-300 border-slate-500/40',
 };
 
+const normalizeSeverity = (value: unknown): DarkRiskFindingRow['severity'] => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'critical') return 'critical';
+  if (normalized === 'high') return 'high';
+  if (normalized === 'medium') return 'medium';
+  if (normalized === 'low') return 'low';
+  return 'info';
+};
+
+const normalizeConfidence = (value: unknown): DarkRiskFindingRow['confidence'] => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'high') return 'high';
+  if (normalized === 'low') return 'low';
+  return 'medium';
+};
+
+const normalizeTags = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean)
+      .slice(0, 20);
+  }
+  if (typeof value === 'string') {
+    const text = value.trim();
+    return text ? [text] : [];
+  }
+  return [];
+};
+
+const normalizeRowsForRender = (rows: DarkRiskFindingRow[]): DarkRiskFindingRow[] => {
+  return (Array.isArray(rows) ? rows : []).map((row, index) => {
+    const safe = row && typeof row === 'object' ? row : ({} as Partial<DarkRiskFindingRow>);
+    const riskScore = Number((safe as any).risk_score);
+    return {
+      id: String((safe as any).id || `darkrisk-row-${index}`),
+      severity: normalizeSeverity((safe as any).severity),
+      risk_score: Number.isFinite(riskScore) ? riskScore : 0,
+      title: String((safe as any).title || 'Finding senza titolo'),
+      asset: String((safe as any).asset || '-'),
+      finding_type: String((safe as any).finding_type || 'darkrisk_signal'),
+      confidence: normalizeConfidence((safe as any).confidence),
+      status: String((safe as any).status || 'new'),
+      first_seen_at: String((safe as any).first_seen_at || ''),
+      last_seen_at: String((safe as any).last_seen_at || ''),
+      source: String((safe as any).source || 'DarkRisk360'),
+      compromise_type: String((safe as any).compromise_type || 'unknown'),
+      category: String((safe as any).category || ''),
+      site: String((safe as any).site || ''),
+      scope_status: String((safe as any).scope_status || 'unknown'),
+      sensitive_tags: normalizeTags((safe as any).sensitive_tags),
+    };
+  });
+};
+
 const formatDateTime = (value: string | null | undefined): string => {
   if (!value) return '-';
   const parsed = new Date(value);
@@ -67,11 +122,13 @@ export const DarkRiskFindingsTable: React.FC<{
 }> = ({ rows, subtitle, standardMode = false }) => {
   const PAGE_SIZE = 150;
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const safeRows = useMemo(() => normalizeRowsForRender(rows), [rows]);
+
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [rows.length]);
-  const visibleRows = useMemo(() => rows.slice(0, visibleCount), [rows, visibleCount]);
-  const hasMoreRows = rows.length > visibleRows.length;
+  }, [safeRows.length]);
+  const visibleRows = useMemo(() => safeRows.slice(0, visibleCount), [safeRows, visibleCount]);
+  const hasMoreRows = safeRows.length > visibleRows.length;
 
   return (
     <Card className="border-border">
@@ -80,7 +137,7 @@ export const DarkRiskFindingsTable: React.FC<{
         {subtitle ? <p className="text-xs text-muted-foreground">{subtitle}</p> : null}
       </CardHeader>
       <CardContent>
-        {rows.length === 0 ? (
+        {safeRows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             Nessuna minaccia critica rilevata nell'ultima scansione.
             Sono stati comunque controllati domini, selector e postura esterna secondo il perimetro autorizzato.
@@ -146,14 +203,14 @@ export const DarkRiskFindingsTable: React.FC<{
             {hasMoreRows ? (
               <div className="mt-3 flex items-center justify-between gap-2">
                 <p className="text-xs text-muted-foreground">
-                  Visualizzati {visibleRows.length} di {rows.length} finding.
+                  Visualizzati {visibleRows.length} di {safeRows.length} finding.
                 </p>
                 <button
                   type="button"
                   onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}
                   className="text-xs font-medium text-primary hover:underline"
                 >
-                  Mostra altri {Math.min(PAGE_SIZE, rows.length - visibleRows.length)}
+                  Mostra altri {Math.min(PAGE_SIZE, safeRows.length - visibleRows.length)}
                 </button>
               </div>
             ) : null}

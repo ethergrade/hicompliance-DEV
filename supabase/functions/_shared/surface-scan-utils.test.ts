@@ -9,6 +9,7 @@ import {
   summarizeDnssecStatus,
   summarizeThreatSignals,
   summarizeWhoisRdap,
+  summarizeWhoisText,
   type MonitoredScopeRule,
   type NormalizedTarget,
 } from "./surface-scan-utils.ts";
@@ -198,6 +199,54 @@ Deno.test("summarizeWhoisRdap extracts registrar, dates, nameservers and dnssec"
   assertEquals(summary.days_to_expiry !== null && summary.days_to_expiry > 0, true);
   assertEquals(summary.nameservers, ["ns1.hisolution.it", "ns2.hisolution.it"]);
   assertEquals(summary.dnssec, "signed");
+});
+
+Deno.test("summarizeWhoisRdap falls back to registrar field and alternate event names", () => {
+  const now = Date.parse("2026-05-24T00:00:00.000Z");
+  const payload = {
+    ldhName: "example.co.uk",
+    registrar: "Example Registrar Ltd",
+    events: [
+      { eventAction: "created", eventDate: "2020-02-10T00:00:00Z" },
+      { eventAction: "last update", eventDate: "2026-01-01T00:00:00Z" },
+      { eventAction: "expiry", eventDate: "2026-09-01T00:00:00Z" },
+    ],
+    secureDNS: { delegationSigned: false },
+    nameservers: [{ unicodeName: "NS1.EXAMPLE.CO.UK" }],
+    entities: [],
+  };
+
+  const summary = summarizeWhoisRdap(payload, now);
+  assertEquals(summary.registrar, "Example Registrar Ltd");
+  assertEquals(summary.created, "2020-02-10T00:00:00Z");
+  assertEquals(summary.updated, "2026-01-01T00:00:00Z");
+  assertEquals(summary.expires, "2026-09-01T00:00:00Z");
+  assertEquals(summary.nameservers, ["ns1.example.co.uk"]);
+  assertEquals(summary.dnssec, "unsigned");
+});
+
+Deno.test("summarizeWhoisText parses registrar, expiry, nameservers and dnssec from raw WHOIS text", () => {
+  const now = Date.parse("2026-05-24T00:00:00.000Z");
+  const text = `
+Domain Name: EXAMPLE.COM
+Domain Updated Date: 2026-01-16T18:26:50Z
+Domain Creation Date: 1995-08-14T04:00:00Z
+Domain Registry Expiration Date: 2026-08-13T04:00:00Z
+Registrar: RESERVED-Internet Assigned Numbers Authority
+Nameserver: ELLIOTT.NS.CLOUDFLARE.COM
+Name Server: HERA.NS.CLOUDFLARE.COM
+DNSSEC: signedDelegation
+`.trim();
+
+  const summary = summarizeWhoisText(text, "example.com", now);
+  assertEquals(summary.domain, "example.com");
+  assertEquals(summary.registrar, "RESERVED-Internet Assigned Numbers Authority");
+  assertEquals(summary.created, "1995-08-14T04:00:00.000Z");
+  assertEquals(summary.updated, "2026-01-16T18:26:50.000Z");
+  assertEquals(summary.expires, "2026-08-13T04:00:00.000Z");
+  assertEquals(summary.nameservers, ["elliott.ns.cloudflare.com", "hera.ns.cloudflare.com"]);
+  assertEquals(summary.dnssec, "signed");
+  assertEquals(summary.days_to_expiry !== null && summary.days_to_expiry > 0, true);
 });
 
 Deno.test("evaluateHttpSecurityHeaders handles all present and frame-ancestors fallback", () => {

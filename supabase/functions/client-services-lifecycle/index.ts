@@ -150,7 +150,13 @@ serve(async (req: Request) => {
       _organization_id: organizationId,
       _actor_id: caller.authUserId,
     });
-    if (deleteErr) throw deleteErr;
+    if (deleteErr) {
+      const details = [deleteErr.message, deleteErr.details, deleteErr.hint]
+        .map((part) => String(part || '').trim())
+        .filter(Boolean)
+        .join(' | ');
+      throw new Error(details || 'Organization deletion failed');
+    }
 
     return jsonResponse({ ok: true, action, organization_id: organizationId, result: deleteResult });
   } catch (error) {

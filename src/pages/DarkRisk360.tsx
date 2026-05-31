@@ -31,6 +31,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
 import { AlertConfigDialog } from '@/components/dark-risk/AlertConfigDialog';
+import { ResilientErrorBoundary } from '@/components/common/ResilientErrorBoundary';
 import { DarkRiskKpiCard } from '@/components/dark-risk/DarkRiskKpiCard';
 import { DarkRiskCoverageMatrix } from '@/components/dark-risk/DarkRiskCoverageMatrix';
 import { DarkRiskThreatGroups } from '@/components/dark-risk/DarkRiskThreatGroups';
@@ -171,6 +172,91 @@ const riskScoreFromSeverity = (severity: string): number => {
   if (normalized === 'medium') return 60;
   if (normalized === 'low') return 35;
   return 15;
+};
+
+const isPlainRecord = (value: unknown): value is Record<string, any> => {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+};
+
+const normalizeUiSeverity = (value: unknown): DarkRiskFindingRow['severity'] => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'critical') return 'critical';
+  if (normalized === 'high') return 'high';
+  if (normalized === 'medium') return 'medium';
+  if (normalized === 'low') return 'low';
+  return 'info';
+};
+
+const normalizeUiConfidence = (value: unknown): DarkRiskFindingRow['confidence'] => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'high') return 'high';
+  if (normalized === 'low') return 'low';
+  return 'medium';
+};
+
+const normalizeUiTags = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean)
+      .slice(0, 25);
+  }
+  if (typeof value === 'string') {
+    const text = value.trim();
+    return text ? [text] : [];
+  }
+  return [];
+};
+
+const finiteNumber = (value: unknown, fallback = 0): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const normalizeFindingRowForUi = (row: DarkRiskFindingRowExtended, index: number): DarkRiskFindingRowExtended => {
+  const safe = isPlainRecord(row) ? row : ({} as Record<string, any>);
+  const tags = normalizeUiTags(safe.sensitive_tags);
+  const category = String(safe.category || '').trim();
+  const source = String(safe.source || 'DarkRisk360');
+  const asset = String(safe.asset || '-');
+  const severity = normalizeUiSeverity(safe.severity);
+  const riskScore = finiteNumber(safe.risk_score, riskScoreFromSeverity(severity));
+
+  return {
+    id: String(safe.id || `darkrisk-finding-${index}`),
+    severity,
+    risk_score: riskScore,
+    title: String(safe.title || 'Finding senza titolo'),
+    asset,
+    finding_type: String(safe.finding_type || 'darkrisk_signal'),
+    confidence: normalizeUiConfidence(safe.confidence),
+    status: String(safe.status || 'new'),
+    first_seen_at: String(safe.first_seen_at || ''),
+    last_seen_at: String(safe.last_seen_at || ''),
+    source,
+    compromise_type: String(safe.compromise_type || 'unknown'),
+    category: category || classifyThreatCategory(String(safe.title || ''), String(safe.finding_type || ''), source),
+    category_key: normalizeThreatCategoryKey(String(safe.category_key || category || '')),
+    site: normalizeHost(String(safe.site || asset)),
+    scope_status: String(safe.scope_status || 'unknown'),
+    sensitive_tags: tags,
+    query_kind: String(safe.query_kind || ''),
+    query_term: String(safe.query_term || ''),
+    source_origin: String(safe.source_origin || ''),
+    source_module: String(safe.source_module || ''),
+    source_scan_job_id: String(safe.source_scan_job_id || '') || null,
+    scan_run_id: String(safe.scan_run_id || '') || null,
+    detail_only: Boolean(safe.detail_only),
+    sensitive_indicators: {
+      domains: finiteNumber((safe.sensitive_indicators as any)?.domains, 0),
+      passwords: finiteNumber((safe.sensitive_indicators as any)?.passwords, 0),
+      addresses: finiteNumber((safe.sensitive_indicators as any)?.addresses, 0),
+      credit_cards: finiteNumber((safe.sensitive_indicators as any)?.credit_cards, 0),
+      phone_numbers: finiteNumber((safe.sensitive_indicators as any)?.phone_numbers, 0),
+      total_hits: finiteNumber((safe.sensitive_indicators as any)?.total_hits, tags.length),
+      tags,
+    },
+  };
 };
 
 const roadmapStatusLabel: Record<string, string> = {
@@ -356,9 +442,11 @@ const DarkRisk360: React.FC = () => {
       if ((latestSurfaceRes as any).error) throw (latestSurfaceRes as any).error;
       if ((latestExposureRes as any).error) throw (latestExposureRes as any).error;
 
-      const findings = (findingsQueryRes.data || []) as Array<Record<string, any>>;
+      const findings = (((findingsQueryRes.data || []) as unknown[]) as Array<unknown>)
+        .filter(isPlainRecord);
 
-      const latestSurfaceRows = ((latestSurfaceRes as any).data || [])
+      const latestSurfaceRows = (((latestSurfaceRes as any).data || []) as unknown[])
+        .filter(isPlainRecord)
         .filter((row: Record<string, any>) => isActiveDarkRiskStatus(row.status))
         .map((row: Record<string, any>) => {
           const source = presentDarkRiskSource(String(row.module || 'surface_scan_engine'));
@@ -396,7 +484,8 @@ const DarkRisk360: React.FC = () => {
           } satisfies DarkRiskFindingRowExtended;
         });
 
-      const latestExposureRows = ((latestExposureRes as any).data || [])
+      const latestExposureRows = (((latestExposureRes as any).data || []) as unknown[])
+        .filter(isPlainRecord)
         .filter((row: Record<string, any>) => isActiveDarkRiskStatus(row.status))
         .map((row: Record<string, any>) => {
           const source = presentDarkRiskSource(String(row.source || 'surface_exposure_engine'));
@@ -437,7 +526,9 @@ const DarkRisk360: React.FC = () => {
       const latestOverviewRows = [...latestSurfaceRows, ...latestExposureRows];
 
       if (findings.length === 0) {
-        return latestOverviewRows.map((row) => ({ ...row, detail_only: false }));
+        return latestOverviewRows.map((row, index) =>
+          normalizeFindingRowForUi({ ...row, detail_only: false }, index),
+        );
       }
 
       const assetIds = Array.from(
@@ -468,7 +559,7 @@ const DarkRisk360: React.FC = () => {
 
       const evidenceIds = Array.from(
         new Set(
-          findings.flatMap((finding) => {
+          findings.flatMap((finding: Record<string, any>) => {
             const raw = Array.isArray(finding.evidence_ids) ? finding.evidence_ids : [];
             return raw.map((entry) => String(entry || '').trim()).filter(Boolean);
           }),
@@ -490,92 +581,91 @@ const DarkRisk360: React.FC = () => {
       }
 
       const darkRiskRows = findings
-        .filter((finding) => isActiveDarkRiskStatus(finding.status))
-        .map((finding) => {
-        const source = presentDarkRiskSource(String(
-          finding?.metadata?.source_module ||
-          finding?.metadata?.source_origin ||
-          'surface_scan_engine',
-        ));
-        const findingType = presentDarkRiskFindingType(String(finding.finding_type || 'unknown'));
-        const title = String(finding.title || findingType);
-        const categoryHint = String(finding?.metadata?.category_hint || '').trim();
-        const category = categoryHint || classifyThreatCategory(title, findingType, source);
-        const assetData = assetsMap.get(String(finding.affected_asset_id || ''));
-        const assetValue = assetData?.value || '-';
-        const scopeStatus = assetData?.scope_status || String(finding?.metadata?.scope_status || 'unknown');
+        .filter((finding: Record<string, any>) => isActiveDarkRiskStatus(finding.status))
+        .reduce<DarkRiskFindingRowExtended[]>((acc, finding, index) => {
+          try {
+            const metadata = isPlainRecord(finding.metadata) ? finding.metadata : {};
+            const sensitiveIndicators = isPlainRecord(metadata.sensitive_indicators) ? metadata.sensitive_indicators : {};
+            const source = presentDarkRiskSource(String(
+              metadata.source_module ||
+              metadata.source_origin ||
+              'surface_scan_engine',
+            ));
+            const findingType = presentDarkRiskFindingType(String(finding.finding_type || 'unknown'));
+            const title = String(finding.title || findingType);
+            const categoryHint = String(metadata.category_hint || '').trim();
+            const category = categoryHint || classifyThreatCategory(title, findingType, source);
+            const assetData = assetsMap.get(String(finding.affected_asset_id || ''));
+            const assetValue = assetData?.value || '-';
+            const scopeStatus = assetData?.scope_status || String(metadata.scope_status || 'unknown');
 
-        const findingSensitiveTags = extractSensitiveTags(finding?.metadata?.sensitive_indicators)
-          .map((tag) => normalizeSensitiveTagKey(tag))
-          .filter(Boolean);
-        const evidenceRows = (Array.isArray(finding.evidence_ids) ? finding.evidence_ids : [])
-          .map((id: unknown) => evidenceMap.get(String(id || '').trim()))
-          .filter(Boolean) as Array<Record<string, any>>;
+            const findingSensitiveTags = extractSensitiveTags(sensitiveIndicators)
+              .map((tag) => normalizeSensitiveTagKey(tag))
+              .filter(Boolean);
+            const evidenceRows = (Array.isArray(finding.evidence_ids) ? finding.evidence_ids : [])
+              .map((id: unknown) => evidenceMap.get(String(id || '').trim()))
+              .filter(Boolean) as Array<Record<string, any>>;
 
-        const evidenceSensitiveTags = evidenceRows.flatMap((evidenceRow) =>
-          extractSensitiveTags(evidenceRow?.metadata?.sensitive_indicators),
-        );
-        const normalizedEvidenceSensitiveTags = evidenceSensitiveTags
-          .map((tag) => normalizeSensitiveTagKey(tag))
-          .filter(Boolean);
+            const evidenceSensitiveTags = evidenceRows.flatMap((evidenceRow) =>
+              extractSensitiveTags(evidenceRow?.metadata?.sensitive_indicators),
+            );
+            const normalizedEvidenceSensitiveTags = evidenceSensitiveTags
+              .map((tag) => normalizeSensitiveTagKey(tag))
+              .filter(Boolean);
 
-        const fallbackSensitive = {
-          domains: 0,
-          passwords: 0,
-          addresses: 0,
-          credit_cards: 0,
-          phone_numbers: 0,
-          total_hits: 0,
-          tags: [],
-        };
+            const sensitiveTags = Array.from(
+              new Set(
+                [
+                  ...findingSensitiveTags,
+                  ...normalizedEvidenceSensitiveTags,
+                ].map((tag) => normalizeSensitiveTagKey(String(tag))),
+              ),
+            ).filter(Boolean);
 
-        const sensitiveTags = Array.from(
-          new Set(
-            [
-              ...findingSensitiveTags,
-              ...normalizedEvidenceSensitiveTags,
-              ...(Array.isArray(fallbackSensitive.tags) ? fallbackSensitive.tags : []),
-            ].map((tag) => normalizeSensitiveTagKey(String(tag))),
-          ),
-        ).filter(Boolean);
+            acc.push({
+              id: String(finding.id || `darkrisk-db-${index}`),
+              severity: normalizeUiSeverity(finding.severity),
+              risk_score: finiteNumber(finding.risk_score, 0),
+              title,
+              asset: assetValue,
+              finding_type: findingType,
+              confidence: normalizeUiConfidence(finding.confidence),
+              status: String(finding.status || 'new'),
+              first_seen_at: String(finding.first_seen_at || ''),
+              last_seen_at: String(finding.last_seen_at || ''),
+              source,
+              compromise_type: String(metadata.compromise_type || 'unknown'),
+              category,
+              category_key: normalizeThreatCategoryKey(category),
+              site: normalizeHost(assetValue),
+              scope_status: scopeStatus,
+              sensitive_tags: sensitiveTags,
+              query_kind: String(metadata.query_kind || ''),
+              query_term: String(metadata.query_term || ''),
+              source_origin: String(metadata.source_origin || ''),
+              source_module: String(metadata.source_module || ''),
+              source_scan_job_id: String(metadata.source_scan_job_id || '') || null,
+              scan_run_id: String(finding.scan_run_id || '') || null,
+              sensitive_indicators: {
+                domains: finiteNumber(sensitiveIndicators.domains, 0),
+                passwords: finiteNumber(sensitiveIndicators.passwords, 0),
+                addresses: finiteNumber(sensitiveIndicators.addresses, 0),
+                credit_cards: finiteNumber(sensitiveIndicators.credit_cards, 0),
+                phone_numbers: finiteNumber(sensitiveIndicators.phone_numbers, 0),
+                total_hits: finiteNumber(sensitiveIndicators.total_hits, 0),
+                tags: sensitiveTags,
+              },
+            });
+          } catch (rowError) {
+            console.error('[darkrisk360-findings] skipped malformed finding row', {
+              row_id: String((finding as any)?.id || ''),
+              error: rowError,
+            });
+          }
+          return acc;
+        }, []);
 
-        return {
-          id: String(finding.id),
-          severity: String(finding.severity || 'info') as DarkRiskFindingRow['severity'],
-          risk_score: Number(finding.risk_score || 0),
-          title,
-          asset: assetValue,
-          finding_type: findingType,
-          confidence: String(finding.confidence || 'medium') as DarkRiskFindingRow['confidence'],
-          status: String(finding.status || 'new'),
-          first_seen_at: String(finding.first_seen_at || ''),
-          last_seen_at: String(finding.last_seen_at || ''),
-          source,
-          compromise_type: String(finding?.metadata?.compromise_type || 'unknown'),
-          category,
-          category_key: normalizeThreatCategoryKey(category),
-          site: normalizeHost(assetValue),
-          scope_status: scopeStatus,
-          sensitive_tags: sensitiveTags,
-          query_kind: String(finding?.metadata?.query_kind || ''),
-          query_term: String(finding?.metadata?.query_term || ''),
-          source_origin: String(finding?.metadata?.source_origin || ''),
-          source_module: String(finding?.metadata?.source_module || ''),
-          source_scan_job_id: String(finding?.metadata?.source_scan_job_id || '') || null,
-          scan_run_id: String(finding?.scan_run_id || '') || null,
-          sensitive_indicators: {
-            domains: Number(finding?.metadata?.sensitive_indicators?.domains || fallbackSensitive.domains || 0),
-            passwords: Number(finding?.metadata?.sensitive_indicators?.passwords || fallbackSensitive.passwords || 0),
-            addresses: Number(finding?.metadata?.sensitive_indicators?.addresses || fallbackSensitive.addresses || 0),
-            credit_cards: Number(finding?.metadata?.sensitive_indicators?.credit_cards || fallbackSensitive.credit_cards || 0),
-            phone_numbers: Number(finding?.metadata?.sensitive_indicators?.phone_numbers || fallbackSensitive.phone_numbers || 0),
-            total_hits: Number(finding?.metadata?.sensitive_indicators?.total_hits || fallbackSensitive.total_hits || 0),
-            tags: sensitiveTags,
-          },
-        };
-      });
-
-      return [...darkRiskRows, ...latestOverviewRows];
+      return [...darkRiskRows, ...latestOverviewRows].map((row, index) => normalizeFindingRowForUi(row, index));
     },
     staleTime: 60_000,
   });
@@ -1561,18 +1651,58 @@ const DarkRisk360: React.FC = () => {
                         Nessun dato analytics disponibile nel filtro corrente. Verifica filtri, scope o ultimo ciclo di scansione.
                       </p>
                     ) : null}
-                    <DarkRiskFindingsAnalytics
-                      rows={analyticsRows}
-                      extendedMode={overview.tier === 'extended'}
-                      dti={overview.dti}
-                    />
+                    <ResilientErrorBoundary
+                      resetKeys={[organizationId || 'no-org', analyticsRows.length, overview.tier, Boolean(overview.dti)]}
+                      onError={(boundaryError) => {
+                        console.error('[darkrisk360-findings] analytics render crash recovered', boundaryError);
+                      }}
+                      fallback={(
+                        <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-200">
+                          <div className="flex items-center gap-2 font-medium">
+                            <AlertTriangle className="h-4 w-4" />
+                            Analytics momentaneamente non disponibile
+                          </div>
+                          <p className="mt-1 text-red-200/90">
+                            Un record anomalo ha causato un errore di rendering. I finding restano disponibili nella tabella sotto.
+                          </p>
+                        </div>
+                      )}
+                    >
+                      <DarkRiskFindingsAnalytics
+                        rows={analyticsRows}
+                        extendedMode={overview.tier === 'extended'}
+                        dti={overview.dti}
+                      />
+                    </ResilientErrorBoundary>
                   </CardContent>
                 </Card>
-                <DarkRiskFindingsTable
-                  rows={filteredFindings}
-                  subtitle={findingsLoading ? 'Caricamento finding in corso...' : `${filteredFindings.length} finding filtrati`}
-                  standardMode={overview.tier !== 'extended'}
-                />
+                <ResilientErrorBoundary
+                  resetKeys={[organizationId || 'no-org', filteredFindings.length, overview.tier]}
+                  onError={(boundaryError) => {
+                    console.error('[darkrisk360-findings] table render crash recovered', boundaryError);
+                  }}
+                  fallback={(
+                    <Card className="border-red-500/40 bg-red-500/5">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-red-200 flex items-center gap-2">
+                          <AlertTriangle className="h-4 w-4" />
+                          Tabella findings non disponibile
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-sm text-red-200/90">
+                          È stato intercettato un errore di rendering nella tabella. Ricarica la pagina o aggiorna i filtri: i dati backend non sono stati persi.
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )}
+                >
+                  <DarkRiskFindingsTable
+                    rows={filteredFindings}
+                    subtitle={findingsLoading ? 'Caricamento finding in corso...' : `${filteredFindings.length} finding filtrati`}
+                    standardMode={overview.tier !== 'extended'}
+                  />
+                </ResilientErrorBoundary>
               </TabsContent>
 
               <TabsContent value="assets" className="space-y-4">

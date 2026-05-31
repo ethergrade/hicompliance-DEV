@@ -292,6 +292,12 @@ export async function firecrawlScrape(params: {
   timeoutMs: number;
   retries: number;
   maxMarkdownChars: number;
+  actions?: Array<Record<string, unknown>>;
+  waitForMs?: number;
+  onlyMainContent?: boolean;
+  onlyCleanContent?: boolean;
+  requestHeaders?: Record<string, string>;
+  mobile?: boolean;
 }): Promise<FirecrawlScrapeResult> {
   const url = 'https://api.firecrawl.dev/v2/scrape';
   const targetUrl = normalizeText(params.targetUrl);
@@ -311,6 +317,28 @@ export async function firecrawlScrape(params: {
     };
   }
 
+  const payloadBody: Record<string, unknown> = {
+    url: targetUrl,
+    formats: ['markdown', 'links', 'summary'],
+    onlyMainContent: params.onlyMainContent ?? true,
+    onlyCleanContent: params.onlyCleanContent ?? true,
+    timeout: params.timeoutMs,
+    storeInCache: true,
+  };
+
+  if (Number.isFinite(params.waitForMs) && Number(params.waitForMs) > 0) {
+    payloadBody.waitFor = Math.min(60_000, Math.max(0, Number(params.waitForMs)));
+  }
+  if (typeof params.mobile === 'boolean') {
+    payloadBody.mobile = params.mobile;
+  }
+  if (params.requestHeaders && Object.keys(params.requestHeaders).length > 0) {
+    payloadBody.headers = params.requestHeaders;
+  }
+  if (Array.isArray(params.actions) && params.actions.length > 0) {
+    payloadBody.actions = params.actions.slice(0, 50);
+  }
+
   const response = await fetchWithRetry(
     url,
     {
@@ -320,14 +348,7 @@ export async function firecrawlScrape(params: {
         'Content-Type': 'application/json',
         'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
       },
-      body: JSON.stringify({
-        url: targetUrl,
-        formats: ['markdown', 'links', 'summary'],
-        onlyMainContent: true,
-        onlyCleanContent: true,
-        timeout: params.timeoutMs,
-        storeInCache: true,
-      }),
+      body: JSON.stringify(payloadBody),
     },
     {
       retries: params.retries,

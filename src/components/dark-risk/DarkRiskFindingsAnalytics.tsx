@@ -28,6 +28,7 @@ type Row = {
   asset: string;
   finding_type: string;
   source: string;
+  compromise_type?: string;
   confidence?: 'low' | 'medium' | 'high';
   query_kind?: string;
   query_term?: string;
@@ -210,6 +211,68 @@ const severityTone: Record<Row['severity'], string> = {
   info: 'bg-slate-500/20 text-slate-300 border-slate-500/40',
 };
 
+function normalizeSeverity(value: unknown): Row['severity'] {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'critical') return 'critical';
+  if (normalized === 'high') return 'high';
+  if (normalized === 'medium') return 'medium';
+  if (normalized === 'low') return 'low';
+  return 'info';
+}
+
+function normalizeTags(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean)
+      .slice(0, 25);
+  }
+  if (typeof value === 'string') {
+    const text = value.trim();
+    return text ? [text] : [];
+  }
+  return [];
+}
+
+function normalizeScopeStatus(value: unknown): string {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'approved' || normalized === 'candidate' || normalized === 'excluded') return normalized;
+  return 'unknown';
+}
+
+function finiteNumber(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeRowsForAnalytics(rows: Row[]): Row[] {
+  return (Array.isArray(rows) ? rows : []).map((row, index) => {
+    const safe = row && typeof row === 'object' ? row : ({} as Partial<Row>);
+    return {
+      id: String((safe as any).id || `darkrisk-analytics-row-${index}`),
+      site: String((safe as any).site || (safe as any).asset || 'n/a'),
+      scope_status: normalizeScopeStatus((safe as any).scope_status),
+      category: String((safe as any).category || 'Minacce rilevate'),
+      sensitive_tags: normalizeTags((safe as any).sensitive_tags),
+      severity: normalizeSeverity((safe as any).severity),
+      risk_score: finiteNumber((safe as any).risk_score, 0),
+      title: String((safe as any).title || 'Finding senza titolo'),
+      asset: String((safe as any).asset || '-'),
+      finding_type: String((safe as any).finding_type || 'darkrisk_signal'),
+      source: String((safe as any).source || 'DarkRisk360'),
+      compromise_type: String((safe as any).compromise_type || 'unknown'),
+      confidence: ['low', 'medium', 'high'].includes(String((safe as any).confidence || '').toLowerCase())
+        ? (String((safe as any).confidence || '').toLowerCase() as Row['confidence'])
+        : 'medium',
+      query_kind: String((safe as any).query_kind || ''),
+      query_term: String((safe as any).query_term || ''),
+      source_origin: String((safe as any).source_origin || ''),
+      first_seen_at: String((safe as any).first_seen_at || ''),
+      last_seen_at: String((safe as any).last_seen_at || ''),
+    };
+  });
+}
+
 const scopeTone: Record<string, string> = {
   approved: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
   candidate: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
@@ -379,6 +442,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
 }) => {
   const [sensitivePowerQuery, setSensitivePowerQuery] = useState('');
   const [sensitiveTagFilter, setSensitiveTagFilter] = useState<'all' | SensitiveTagKey>('all');
+  const safeRows = useMemo(() => normalizeRowsForAnalytics(rows), [rows]);
 
   const data = useMemo(() => {
     const MAX_SENSITIVE_SAMPLES = extendedMode ? 3500 : 1500;
@@ -391,7 +455,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
     const repositorySet = new Set<string>();
     const repositoryContentCounts = new Map<SensitiveTagKey, number>();
 
-    for (const row of rows) {
+    for (const row of safeRows) {
       const site = row.site || 'n/a';
       const category = row.category || 'Minacce rilevate';
       const scope = (row.scope_status || 'unknown').toLowerCase();
@@ -554,7 +618,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
         identityLabel: shortSiteLabel(row.identity),
       }));
 
-    const identityFindingRows = rows
+    const identityFindingRows = safeRows
       .filter((row) => isEmailSelectorCoverageKind(row.query_kind, row.query_term || row.asset))
       .map((row) => ({
         email: String(row.query_term || row.asset || row.site || '-').toLowerCase(),
@@ -573,7 +637,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
       })
       .slice(0, 200);
 
-    const credentialCompromiseRows = rows
+    const credentialCompromiseRows = safeRows
       .filter((row) => {
         const categoryKey = normalizeThreatCategoryKey(row.category || '');
         const sourceText = `${row.finding_type || ''} ${row.title || ''} ${row.compromise_type || ''}`.toLowerCase();
@@ -619,7 +683,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
         phone_numbers: repositoryContentCounts.get('phone_numbers') || 0,
       },
     };
-  }, [rows, dti, extendedMode]);
+  }, [safeRows, dti, extendedMode]);
 
   const filteredSensitiveSampleRows = useMemo(() => {
     return data.sensitiveSampleRows.filter((row) => {
@@ -645,10 +709,10 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
         {dti ? (
           <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">Query @domain.tld: {dti.query_coverage.at_domain_tld || 0}</Badge>
-              <Badge variant="outline">Query selector: {dti.query_coverage.selector || 0}</Badge>
-              <Badge variant="outline">Query email: {dti.query_coverage.email_selector || 0}</Badge>
-              <Badge variant="outline">Source run: {dti.source_runs.completed}/{dti.source_runs.total} completed</Badge>
+              <Badge variant="outline">Query @domain.tld: {dti?.query_coverage?.at_domain_tld || 0}</Badge>
+              <Badge variant="outline">Query selector: {dti?.query_coverage?.selector || 0}</Badge>
+              <Badge variant="outline">Query email: {dti?.query_coverage?.email_selector || 0}</Badge>
+              <Badge variant="outline">Source run: {dti?.source_runs?.completed || 0}/{dti?.source_runs?.total || 0} completed</Badge>
               <Badge variant="outline">Email query run: {Number(dti.intelx_stats?.email_queries_run || 0)}</Badge>
               <Badge variant="outline">Strict password hit: {Number(dti.intelx_stats?.strict_password_hits || 0)}</Badge>
               {Number(dti.intelx_stats?.metadata_only_hits || 0) > 0 ? (
@@ -656,8 +720,8 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                   metadata-only excluded {Number(dti.intelx_stats?.metadata_only_hits || 0)}
                 </Badge>
               ) : null}
-              {dti.source_runs.partial > 0 ? <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40">partial {dti.source_runs.partial}</Badge> : null}
-              {dti.source_runs.failed > 0 ? <Badge className="bg-red-500/20 text-red-300 border-red-500/40">failed {dti.source_runs.failed}</Badge> : null}
+              {(dti?.source_runs?.partial || 0) > 0 ? <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40">partial {dti?.source_runs?.partial || 0}</Badge> : null}
+              {(dti?.source_runs?.failed || 0) > 0 ? <Badge className="bg-red-500/20 text-red-300 border-red-500/40">failed {dti?.source_runs?.failed || 0}</Badge> : null}
             </div>
           </div>
         ) : null}

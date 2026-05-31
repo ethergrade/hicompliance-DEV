@@ -886,13 +886,36 @@ function asDnsAuthority(payload: unknown): DnsJsonAnswer[] {
   return Array.isArray(value) ? value : [];
 }
 
-function parseRdapEventDate(events: unknown, eventAction: string): string | null {
+function parseRdapEventDate(events: unknown, eventAction: string | string[]): string | null {
   if (!Array.isArray(events)) return null;
+  const accepted = (Array.isArray(eventAction) ? eventAction : [eventAction])
+    .map((entry) => String(entry || "").trim().toLowerCase())
+    .filter(Boolean);
+  if (accepted.length === 0) return null;
+
   const row = events.find((entry: any) =>
-    String(entry?.eventAction || "").trim().toLowerCase() === eventAction.toLowerCase()
+    accepted.includes(String(entry?.eventAction || "").trim().toLowerCase())
   ) as Record<string, unknown> | undefined;
   const rawDate = String(row?.eventDate || "").trim();
   return rawDate || null;
+}
+
+function extractWhoisValue(text: string, patterns: RegExp[]): string | null {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    const value = String(match?.[1] || "").trim();
+    if (value) return value;
+  }
+  return null;
+}
+
+function normalizeWhoisDate(value: string | null): string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const cleaned = raw.replace(/\s+\(.*?\)\s*$/, "").trim();
+  const parsedMs = Date.parse(cleaned);
+  if (!Number.isFinite(parsedMs)) return cleaned || null;
+  return new Date(parsedMs).toISOString();
 }
 
 function normalizeHeaderMap(
@@ -940,7 +963,7 @@ export function summarizeWhoisRdap(payload: unknown, nowMs = Date.now()): WhoisR
 
   const nameservers = Array.isArray(data.nameservers)
     ? data.nameservers
-      .map((entry: any) => String(entry?.ldhName || "").trim().toLowerCase())
+      .map((entry: any) => String(entry?.ldhName || entry?.unicodeName || "").trim().toLowerCase())
       .filter(Boolean)
     : [];
 
@@ -949,17 +972,18 @@ export function summarizeWhoisRdap(payload: unknown, nowMs = Date.now()): WhoisR
   );
 
   const registrarName = (() => {
+    const fallbackRegistrarText = String(data?.registrar || data?.name || "").trim();
     const vcard = Array.isArray((registrarEntity as any)?.vcardArray) ? (registrarEntity as any).vcardArray[1] : [];
-    if (!Array.isArray(vcard)) return null;
+    if (!Array.isArray(vcard)) return fallbackRegistrarText || null;
     const fnEntry = vcard.find((entry: any) => Array.isArray(entry) && String(entry?.[0] || "").toLowerCase() === "fn");
-    if (!Array.isArray(fnEntry)) return null;
+    if (!Array.isArray(fnEntry)) return fallbackRegistrarText || null;
     const candidate = String(fnEntry?.[3] || "").trim();
-    return candidate || null;
+    return candidate || fallbackRegistrarText || null;
   })();
 
-  const created = parseRdapEventDate(events, "registration");
-  const updated = parseRdapEventDate(events, "last changed");
-  const expires = parseRdapEventDate(events, "expiration");
+  const created = parseRdapEventDate(events, ["registration", "registered", "creation", "created"]);
+  const updated = parseRdapEventDate(events, ["last changed", "last changed date", "last update"]);
+  const expires = parseRdapEventDate(events, ["expiration", "expiry", "expires", "expiration date"]);
   const expirationMs = expires ? Date.parse(expires) : Number.NaN;
   const daysToExpiry = Number.isFinite(expirationMs)
     ? Math.round((expirationMs - nowMs) / 86400000)
@@ -978,6 +1002,92 @@ export function summarizeWhoisRdap(payload: unknown, nowMs = Date.now()): WhoisR
     registration_valid: daysToExpiry === null ? false : daysToExpiry >= 0,
     nameservers,
     dnssec: secureDnsSigned === true ? "signed" : secureDnsSigned === false ? "unsigned" : null,
+  };
+}
+
+export function summarizeWhoisText(
+  rawText: string,
+  fallbackDomain: string | null = null,
+  nowMs = Date.now(),
+): WhoisRdapSummary {
+  const text = String(rawText || "").replace(/\r/g, "\n");
+  const domain = (() => {
+    const domainRaw = extractWhoisValue(text, [
+      /^\s*Domain Name:\s*(.+)$/im,
+      /^\s*domain:\s*(.+)$/im,
+      /^\s*Domain:\s*(.+)$/im,
+    ]) || fallbackDomain;
+    const cleaned = String(domainRaw || "").trim().toLowerCase().replace(/\.$/, "");
+    return cleaned || null;
+  })();
+
+  const registrar = extractWhoisValue(text, [
+    /^\s*Registrar:\s*(.+)$/im,
+    /^\s*Sponsoring Registrar:\s*(.+)$/im,
+    /^\s*registrar:\s*(.+)$/im,
+  ]);
+
+  const created = normalizeWhoisDate(extractWhoisValue(text, [
+    /^\s*Domain Creation Date:\s*(.+)$/im,
+    /^\s*Creation Date:\s*(.+)$/im,
+    /^\s*Created On:\s*(.+)$/im,
+    /^\s*created:\s*(.+)$/im,
+  ]));
+
+  const updated = normalizeWhoisDate(extractWhoisValue(text, [
+    /^\s*Domain Updated Date:\s*(.+)$/im,
+    /^\s*Updated Date:\s*(.+)$/im,
+    /^\s*Last Updated On:\s*(.+)$/im,
+    /^\s*changed:\s*(.+)$/im,
+  ]));
+
+  const expires = normalizeWhoisDate(extractWhoisValue(text, [
+    /^\s*Domain Registry Expiration Date:\s*(.+)$/im,
+    /^\s*Registrar Registration Expiration Date:\s*(.+)$/im,
+    /^\s*Registry Expiry Date:\s*(.+)$/im,
+    /^\s*Expiration Date:\s*(.+)$/im,
+    /^\s*Expiry Date:\s*(.+)$/im,
+    /^\s*Expires On:\s*(.+)$/im,
+    /^\s*paid-till:\s*(.+)$/im,
+    /^\s*expire:\s*(.+)$/im,
+  ]));
+
+  const nameservers = Array.from(
+    text.matchAll(/^\s*(?:Name Server|Nameserver):\s*([^\s#]+)\s*$/gim),
+  )
+    .map((match) => String(match?.[1] || "").trim().toLowerCase().replace(/\.$/, ""))
+    .filter(Boolean);
+
+  const dnssecRaw = extractWhoisValue(text, [
+    /^\s*DNSSEC:\s*(.+)$/im,
+    /^\s*dnssec:\s*(.+)$/im,
+  ]);
+
+  let dnssec: "signed" | "unsigned" | null = null;
+  if (dnssecRaw) {
+    const normalized = dnssecRaw.toLowerCase();
+    if (normalized.includes("unsigned") || normalized.includes("not signed") || normalized === "false") {
+      dnssec = "unsigned";
+    } else if (normalized.includes("signed")) {
+      dnssec = "signed";
+    }
+  }
+
+  const expirationMs = expires ? Date.parse(expires) : Number.NaN;
+  const daysToExpiry = Number.isFinite(expirationMs)
+    ? Math.round((expirationMs - nowMs) / 86400000)
+    : null;
+
+  return {
+    domain,
+    registrar: registrar || null,
+    created,
+    updated,
+    expires,
+    days_to_expiry: daysToExpiry,
+    registration_valid: daysToExpiry === null ? false : daysToExpiry >= 0,
+    nameservers,
+    dnssec,
   };
 }
 
