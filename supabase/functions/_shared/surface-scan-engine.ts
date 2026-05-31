@@ -211,6 +211,32 @@ interface ModuleExecutionRecord {
   source?: string | null;
 }
 
+type SurfaceEngineStatus = "success" | "partial" | "failed" | "skipped";
+
+type SurfaceEngineEnvelope = {
+  engine: string;
+  target: string;
+  status: SurfaceEngineStatus;
+  durationMs: number;
+  error?: string | null;
+  summary?: Record<string, unknown>;
+};
+
+let dnsDumpsterLastRequestAt = 0;
+
+const waitMs = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const asStringArray = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry || "").trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+  return [];
+};
+
 function severityRank(severity: string): number {
   switch (toSeverity(severity)) {
     case "critical":
@@ -935,6 +961,24 @@ export async function runSurfaceScanEnrichment(
       user_id: options.initiatedByUserId || job.requested_by,
       action,
       details,
+    });
+  };
+
+  const emitEngineEnvelope = async (envelope: SurfaceEngineEnvelope) => {
+    await insertObservation({
+      module: "engine_orchestrator",
+      observation_type: "engine_run",
+      title: `${envelope.engine} • ${envelope.status}`,
+      value: {
+        engine: envelope.engine,
+        target: envelope.target,
+        status: envelope.status,
+        duration_ms: envelope.durationMs,
+        error: envelope.error || null,
+        summary: envelope.summary || {},
+      },
+      severity: envelope.status === "failed" ? "medium" : envelope.status === "partial" ? "low" : "info",
+      confidence: envelope.status === "failed" ? "low" : "high",
     });
   };
 
@@ -3405,6 +3449,258 @@ export async function runSurfaceScanEnrichment(
     });
   };
 
+  const runIpGeoAndAsnModule = async () => {
+    const startedAt = Date.now();
+    const scopedIps = [...discoveredIps]
+      .filter((ip) => isIpAllowedInScope(ip))
+      .slice(0, 25);
+    if (scopedIps.length === 0) {
+      await emitEngineEnvelope({
+        engine: "ip_geo_asn",
+        target: hostname || rootDomain || job.normalized_target,
+        status: "skipped",
+        durationMs: 0,
+        summary: { reason: "no_in_scope_ips" },
+      });
+      return;
+    }
+
+    const geoSummaries: Array<Record<string, unknown>> = [];
+    const asnSummaries: Array<Record<string, unknown>> = [];
+    let failedLookups = 0;
+
+    for (const ip of scopedIps) {
+      try {
+        const geoRes = await fetchWithTimeout(`https://ipwho.is/${encodeURIComponent(ip)}`, {
+          headers: { accept: "application/json" },
+        }, 10000);
+        if (geoRes.ok) {
+          const geoPayload = await geoRes.json().catch(() => ({}));
+          const success = Boolean((geoPayload as any)?.success !== false);
+          const geo = {
+            ip,
+            success,
+            country: String((geoPayload as any)?.country || "").trim() || null,
+            region: String((geoPayload as any)?.region || "").trim() || null,
+            city: String((geoPayload as any)?.city || "").trim() || null,
+            latitude: typeof (geoPayload as any)?.latitude === "number" ? (geoPayload as any).latitude : null,
+            longitude: typeof (geoPayload as any)?.longitude === "number" ? (geoPayload as any).longitude : null,
+            timezone: String((geoPayload as any)?.timezone?.id || "").trim() || null,
+            isp: String((geoPayload as any)?.connection?.isp || "").trim() || null,
+            org: String((geoPayload as any)?.connection?.org || "").trim() || null,
+            asn: String((geoPayload as any)?.connection?.asn || "").trim() || null,
+            is_proxy: Boolean((geoPayload as any)?.security?.proxy),
+            is_hosting: Boolean((geoPayload as any)?.security?.hosting),
+            is_tor: Boolean((geoPayload as any)?.security?.tor),
+          };
+          geoSummaries.push(geo);
+          if (geo.asn) {
+            await insertAsset({
+              asset_type: "asn",
+              asset_value: geo.asn,
+              hostname: hostname || rootDomain || null,
+              root_domain: rootDomain,
+              ip,
+              source: "ip_geo_asn",
+              confidence: "medium",
+              raw: { org: geo.org, isp: geo.isp },
+            });
+          }
+          if (geo.is_proxy || geo.is_tor) {
+            await insertFinding({
+              module: "ip_geo_asn",
+              finding_type: geo.is_tor ? "ip_tor_exit_node" : "ip_proxy_reputation_flag",
+              severity: geo.is_tor ? "high" : "medium",
+              title: geo.is_tor ? "IP detected as Tor exit node" : "IP reputation indicates proxy usage",
+              affected_asset: hostname || rootDomain || ip,
+              ip,
+              evidence: geo,
+              remediation: "Verificare se l'IP è atteso nel deployment. Applicare allowlist/segregazione e monitoraggio attivo.",
+            });
+          }
+        }
+      } catch {
+        failedLookups += 1;
+      }
+
+      try {
+        const bgpRes = await fetchWithTimeout(`https://api.bgpview.io/ip/${encodeURIComponent(ip)}`, {
+          headers: { accept: "application/json" },
+        }, 10000);
+        if (!bgpRes.ok) continue;
+        const bgpPayload = await bgpRes.json().catch(() => ({}));
+        const data = ((bgpPayload as any)?.data || {}) as Record<string, unknown>;
+        const asnObj = ((data as any)?.prefixes || [])[0]?.asn || (data as any)?.asn || null;
+        const asnNumber = String((asnObj as any)?.asn || "").trim();
+        const asnName = String((asnObj as any)?.name || "").trim();
+        const prefix = String(((data as any)?.prefixes || [])[0]?.prefix || "").trim();
+        const summary = {
+          ip,
+          asn: asnNumber ? `AS${asnNumber}` : null,
+          asn_name: asnName || null,
+          prefix: prefix || null,
+        };
+        asnSummaries.push(summary);
+        if (summary.asn) {
+          await insertAsset({
+            asset_type: "asn",
+            asset_value: summary.asn,
+            hostname: hostname || rootDomain || null,
+            root_domain: rootDomain,
+            ip,
+            source: "bgp_asn_lookup",
+            confidence: "high",
+            raw: { asn_name: summary.asn_name, prefix: summary.prefix },
+          });
+        }
+        if (summary.prefix) {
+          await insertAsset({
+            asset_type: "netblock",
+            asset_value: summary.prefix,
+            hostname: hostname || rootDomain || null,
+            root_domain: rootDomain,
+            ip,
+            source: "bgp_asn_lookup",
+            confidence: "medium",
+            raw: { asn: summary.asn, asn_name: summary.asn_name },
+          });
+        }
+      } catch {
+        failedLookups += 1;
+      }
+    }
+
+    await insertObservation({
+      module: "ip_geo_asn",
+      observation_type: "ip_geo_asn_summary",
+      title: "IP geolocation, reputation and ASN summary",
+      value: {
+        checked_ips: scopedIps,
+        geo: geoSummaries,
+        asn: asnSummaries,
+        failed_lookups: failedLookups,
+      },
+      severity: failedLookups > 0 ? "low" : "info",
+    });
+
+    await insertExternalIntel(
+      "ip_geo_asn",
+      hostname || rootDomain || job.normalized_target,
+      geoSummaries.length > 0 || asnSummaries.length > 0,
+      {
+        ips_checked: scopedIps.length,
+        geo_records: geoSummaries.length,
+        asn_records: asnSummaries.length,
+        failed_lookups: failedLookups,
+      },
+      {
+        geo: geoSummaries,
+        asn: asnSummaries,
+      },
+      failedLookups > 0 ? "medium" : "high",
+    );
+
+    await emitEngineEnvelope({
+      engine: "ip_geo_asn",
+      target: hostname || rootDomain || job.normalized_target,
+      status: failedLookups > 0 ? "partial" : "success",
+      durationMs: Date.now() - startedAt,
+      summary: {
+        ips_checked: scopedIps.length,
+        failed_lookups: failedLookups,
+      },
+    });
+  };
+
+  const runCveIntelModule = async () => {
+    const startedAt = Date.now();
+    const cveFindingRes = await adminClient
+      .from("surface_findings" as any)
+      .select("cve")
+      .eq("scan_job_id", job.id)
+      .not("cve", "is", null)
+      .limit(2000);
+    const cveSet = new Set<string>();
+    for (const row of (cveFindingRes.data || []) as Array<Record<string, unknown>>) {
+      const cveList = asStringArray(row?.cve);
+      for (const cve of cveList) {
+        const normalized = cve.trim().toUpperCase();
+        if (/^CVE-\d{4}-\d{4,7}$/.test(normalized)) cveSet.add(normalized);
+      }
+    }
+    const cves = [...cveSet].slice(0, 60);
+    if (cves.length === 0) {
+      await emitEngineEnvelope({
+        engine: "cve_intel",
+        target: hostname || rootDomain || job.normalized_target,
+        status: "skipped",
+        durationMs: 0,
+        summary: { reason: "no_cves_in_findings" },
+      });
+      return;
+    }
+
+    const intelRows: Array<Record<string, unknown>> = [];
+    let failed = 0;
+    for (const cve of cves) {
+      try {
+        const cveRes = await fetchWithTimeout(`https://cve.circl.lu/api/cve/${encodeURIComponent(cve)}`, {
+          headers: { accept: "application/json" },
+        }, 10000);
+        if (!cveRes.ok) {
+          failed += 1;
+          continue;
+        }
+        const payload = await cveRes.json().catch(() => ({}));
+        const summary = {
+          cve,
+          cvss: Number((payload as any)?.cvss || 0) || null,
+          cwe: String((payload as any)?.cwe || "").trim() || null,
+          published: String((payload as any)?.Published || "").trim() || null,
+          modified: String((payload as any)?.Modified || "").trim() || null,
+          references_count: Array.isArray((payload as any)?.references) ? (payload as any).references.length : 0,
+          summary: String((payload as any)?.summary || "").trim().slice(0, 800),
+        };
+        intelRows.push(summary);
+        await insertExternalIntel(
+          "cve_intel_circl",
+          cve,
+          true,
+          summary,
+          payload as Record<string, unknown>,
+          "high",
+        );
+      } catch {
+        failed += 1;
+      }
+    }
+
+    await insertObservation({
+      module: "cve_intel",
+      observation_type: "cve_intel_summary",
+      title: "CVE intelligence enrichment summary",
+      value: {
+        total_cves: cves.length,
+        enriched_cves: intelRows.length,
+        failed_cves: failed,
+        sample: intelRows.slice(0, 30),
+      },
+      severity: failed > 0 ? "low" : "info",
+    });
+
+    await emitEngineEnvelope({
+      engine: "cve_intel",
+      target: hostname || rootDomain || job.normalized_target,
+      status: failed > 0 ? "partial" : "success",
+      durationMs: Date.now() - startedAt,
+      summary: {
+        total_cves: cves.length,
+        enriched_cves: intelRows.length,
+        failed_cves: failed,
+      },
+    });
+  };
+
   const runTechStackModule = async () => {
     for (const entry of shodanHostPayloads) {
       const payload = entry.payload as Record<string, unknown>;
@@ -4014,6 +4310,85 @@ export async function runSurfaceScanEnrichment(
       matchedIocIndicators.push(...fallback);
     }
 
+    const otxDomainTarget = String(rootDomain || hostname || "").trim().toLowerCase();
+    const otxIpTargets = [...iocContext.ipCandidates].slice(0, 8);
+    let otxDomainPulseCount = 0;
+    let otxIpPulseCount = 0;
+    const otxSignals: Array<Record<string, unknown>> = [];
+    if (otxDomainTarget) {
+      const pullOtx = async (url: string) => {
+        const res = await fetchWithTimeout(url, { headers: { accept: "application/json" } }, 12000);
+        if (!res.ok) return null;
+        const payload = await res.json().catch(() => ({}));
+        return payload && typeof payload === "object" ? (payload as Record<string, unknown>) : null;
+      };
+
+      try {
+        const domainPayload = await pullOtx(
+          `https://otx.alienvault.com/api/v1/indicators/domain/${encodeURIComponent(otxDomainTarget)}/general`,
+        );
+        if (domainPayload) {
+          const pulseCount = Number((domainPayload as any)?.pulse_info?.count || 0);
+          if (Number.isFinite(pulseCount) && pulseCount > 0) {
+            otxDomainPulseCount = pulseCount;
+            otxSignals.push({
+              type: "domain",
+              target: otxDomainTarget,
+              pulse_count: pulseCount,
+              reputation: Number((domainPayload as any)?.reputation || 0) || null,
+            });
+            await insertExternalIntel(
+              "otx",
+              otxDomainTarget,
+              true,
+              {
+                pulse_count: pulseCount,
+                reputation: Number((domainPayload as any)?.reputation || 0) || null,
+              },
+              domainPayload as Record<string, unknown>,
+              pulseCount >= 10 ? "high" : pulseCount > 0 ? "medium" : "low",
+            );
+          }
+        }
+      } catch {
+        // non-blocking by design
+      }
+
+      for (const ip of otxIpTargets) {
+        if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) continue;
+        try {
+          const ipPayload = await pullOtx(
+            `https://otx.alienvault.com/api/v1/indicators/IPv4/${encodeURIComponent(ip)}/general`,
+          );
+          if (!ipPayload) continue;
+          const pulseCount = Number((ipPayload as any)?.pulse_info?.count || 0);
+          if (!Number.isFinite(pulseCount) || pulseCount <= 0) continue;
+          otxIpPulseCount += pulseCount;
+          otxSignals.push({
+            type: "ip",
+            target: ip,
+            pulse_count: pulseCount,
+            reputation: Number((ipPayload as any)?.reputation || 0) || null,
+            country: String((ipPayload as any)?.country_name || "").trim() || null,
+            asn: String((ipPayload as any)?.asn || "").trim() || null,
+          });
+          await insertExternalIntel(
+            "otx",
+            ip,
+            true,
+            {
+              pulse_count: pulseCount,
+              reputation: Number((ipPayload as any)?.reputation || 0) || null,
+            },
+            ipPayload as Record<string, unknown>,
+            pulseCount >= 10 ? "high" : pulseCount > 0 ? "medium" : "low",
+          );
+        } catch {
+          // non-blocking by design
+        }
+      }
+    }
+
     const internalHighConfidence = matchedIocIndicators.filter((entry) => (entry.confidence || 0) >= 90);
     const internalMediumConfidence = matchedIocIndicators.filter((entry) => (entry.confidence || 0) >= 70 && (entry.confidence || 0) < 90);
 
@@ -4070,6 +4445,13 @@ export async function runSurfaceScanEnrichment(
         intelguard: {
           matched: matchedIocIndicators.length > 0,
           indicators: matchedIocIndicators.slice(0, 30),
+        },
+        otx: {
+          domain_target: otxDomainTarget || null,
+          domain_pulse_count: otxDomainPulseCount,
+          ip_pulse_count: otxIpPulseCount,
+          total_pulse_count: otxDomainPulseCount + otxIpPulseCount,
+          signals: otxSignals.slice(0, 40),
         },
         no_threat_matches: noThreatMatches,
       },
@@ -4142,6 +4524,23 @@ export async function runSurfaceScanEnrichment(
           indicators: internalMediumConfidence.slice(0, 20),
         },
         remediation: "Validare IOC con controlli aggiuntivi (DNS, proxy, EDR) e confermare attribuzione.",
+      });
+    }
+
+    if (otxDomainPulseCount + otxIpPulseCount > 0) {
+      await insertFinding({
+        module: "threats",
+        finding_type: "otx_pulse_match",
+        severity: otxDomainPulseCount + otxIpPulseCount >= 15 ? "high" : "medium",
+        title: "OTX threat pulse correlation detected",
+        affected_asset: hostname || rootDomain || null,
+        affected_url: targetUrlCandidate,
+        evidence: {
+          domain_pulse_count: otxDomainPulseCount,
+          ip_pulse_count: otxIpPulseCount,
+          signals: otxSignals.slice(0, 30),
+        },
+        remediation: "Eseguire verifica IOC su asset esposti, validare exploitability e applicare containment dove necessario.",
       });
     }
   };
@@ -4791,6 +5190,278 @@ export async function runSurfaceScanEnrichment(
           title: "Subdomain discovery failed",
           value: { root_domain: rootDomain },
           severity: "low",
+        });
+      }
+
+      const dnsDumpsterApiKey = String(Deno.env.get("DNSDUMPSTER_API_KEY") || "").trim();
+      if (dnsDumpsterApiKey) {
+        const dnsDumpsterStartedAt = Date.now();
+        const dnsDumpUrl = `https://api.dnsdumpster.com/domain/${encodeURIComponent(rootDomain)}`;
+        let dnsDumpStatus = "failed";
+        let dnsDumpError: string | null = null;
+        let dnsDumpSummary: Record<string, unknown> = {};
+        try {
+          const minDelayMs = 2000;
+          const elapsedSinceLast = Date.now() - dnsDumpsterLastRequestAt;
+          if (dnsDumpsterLastRequestAt > 0 && elapsedSinceLast < minDelayMs) {
+            await waitMs(minDelayMs - elapsedSinceLast);
+          }
+
+          let dnsPayload: Record<string, unknown> | null = null;
+          let httpStatus = 0;
+          let attempts = 0;
+          while (attempts < 3 && !dnsPayload) {
+            attempts += 1;
+            const response = await fetchWithTimeout(
+              dnsDumpUrl,
+              {
+                headers: {
+                  "X-API-Key": dnsDumpsterApiKey,
+                  accept: "application/json",
+                  "user-agent": "SurfaceScan360/1.0",
+                },
+              },
+              10000,
+            );
+            dnsDumpsterLastRequestAt = Date.now();
+            httpStatus = response.status;
+
+            if (response.status === 429 && attempts < 3) {
+              await waitMs(2000 * attempts);
+              continue;
+            }
+
+            if (!response.ok) {
+              dnsDumpError = `dnsdumpster_http_${response.status}`;
+              break;
+            }
+
+            const parsed = await response.json().catch(() => ({}));
+            dnsPayload = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+          }
+
+          if (!dnsPayload) {
+            dnsDumpStatus = "partial";
+            dnsDumpSummary = {
+              root_domain: rootDomain,
+              status: "no_payload",
+              http_status: httpStatus || null,
+              attempts,
+              reason: dnsDumpError || "dnsdumpster_unavailable",
+            };
+          } else {
+            const hostSet = new Set<string>();
+            const ipSet = new Set<string>();
+            const mxSet = new Set<string>();
+            const nsSet = new Set<string>();
+            const txtRecords = new Set<string>();
+            const asnSet = new Set<string>();
+            const netblockSet = new Set<string>();
+            const countrySet = new Set<string>();
+
+            const inspectValue = (value: unknown, parentKey = "") => {
+              if (value === null || value === undefined) return;
+              if (typeof value === "string") {
+                const candidate = value.trim();
+                if (!candidate) return;
+                if (candidate.includes(rootDomain) && isValidHostnameCandidate(candidate.replace(/\.$/, ""))) {
+                  hostSet.add(candidate.replace(/\.$/, "").toLowerCase());
+                }
+                if (/^\d{1,3}(\.\d{1,3}){3}$/.test(candidate) || candidate.includes(":")) {
+                  ipSet.add(candidate.toLowerCase());
+                }
+                if (parentKey.includes("asn")) asnSet.add(candidate.toUpperCase());
+                if (parentKey.includes("net") || parentKey.includes("prefix")) netblockSet.add(candidate);
+                if (parentKey.includes("country")) countrySet.add(candidate);
+                if (parentKey.includes("txt")) txtRecords.add(candidate);
+                return;
+              }
+              if (Array.isArray(value)) {
+                for (const entry of value) inspectValue(entry, parentKey);
+                return;
+              }
+              if (typeof value === "object") {
+                const obj = value as Record<string, unknown>;
+                const hostCandidate = String(
+                  obj.host || obj.hostname || obj.domain || obj.subdomain || obj.name || obj.target || "",
+                )
+                  .trim()
+                  .toLowerCase()
+                  .replace(/\.$/, "");
+                if (hostCandidate && hostCandidate.includes(rootDomain) && isValidHostnameCandidate(hostCandidate)) {
+                  hostSet.add(hostCandidate);
+                }
+                const ipCandidate = String(obj.ip || obj.address || obj.ipv4 || obj.ipv6 || "").trim().toLowerCase();
+                if (ipCandidate && (ipCandidate.includes(":") || /^\d{1,3}(\.\d{1,3}){3}$/.test(ipCandidate))) {
+                  ipSet.add(ipCandidate);
+                }
+                const mxCandidate = String(obj.mx || "").trim().toLowerCase().replace(/\.$/, "");
+                if (mxCandidate) mxSet.add(mxCandidate);
+                const nsCandidate = String(obj.ns || obj.nameserver || "").trim().toLowerCase().replace(/\.$/, "");
+                if (nsCandidate) nsSet.add(nsCandidate);
+                const asnCandidate = String(obj.asn || "").trim();
+                if (asnCandidate) asnSet.add(asnCandidate.toUpperCase());
+                const netblockCandidate = String(obj.netblock || obj.prefix || "").trim();
+                if (netblockCandidate) netblockSet.add(netblockCandidate);
+                const countryCandidate = String(obj.country || "").trim();
+                if (countryCandidate) countrySet.add(countryCandidate);
+                const txtCandidate = String(obj.txt || "").trim();
+                if (txtCandidate) txtRecords.add(txtCandidate);
+                for (const [k, v] of Object.entries(obj)) inspectValue(v, k.toLowerCase());
+              }
+            };
+
+            inspectValue(dnsPayload);
+
+            for (const subdomain of Array.from(hostSet).slice(0, 250)) {
+              if (!shouldAcceptScannableHost(subdomain)) {
+                const exclusionReason = scopeReasonFromHost(subdomain) || "scope_excluded_domain";
+                await insertAsset({
+                  asset_type: "subdomain",
+                  asset_value: subdomain,
+                  hostname: subdomain,
+                  root_domain: rootDomain,
+                  source: "dnsdumpster",
+                  confidence: "low",
+                  raw: {
+                    _scope_excluded: true,
+                    _scope_exclusion_reason: exclusionReason,
+                    _scope_excluded_at: new Date().toISOString(),
+                  },
+                });
+                continue;
+              }
+              discoveredHostnames.add(subdomain);
+              await insertAsset({
+                asset_type: "subdomain",
+                asset_value: subdomain,
+                hostname: subdomain,
+                root_domain: rootDomain,
+                source: "dnsdumpster",
+                confidence: "medium",
+              });
+            }
+
+            for (const ip of Array.from(ipSet).slice(0, 250)) {
+              discoveredIps.add(ip);
+              await insertAsset({
+                asset_type: "ip",
+                asset_value: ip,
+                hostname: hostname || rootDomain,
+                root_domain: rootDomain,
+                ip,
+                source: "dnsdumpster",
+                confidence: isIpAllowedInScope(ip) ? "medium" : "low",
+                raw: {
+                  in_scope: isIpAllowedInScope(ip),
+                },
+              });
+            }
+
+            for (const mx of Array.from(mxSet).slice(0, 100)) {
+              await insertAsset({
+                asset_type: "mx_host",
+                asset_value: mx,
+                hostname: mx,
+                root_domain: rootDomain,
+                source: "dnsdumpster",
+                confidence: "medium",
+              });
+            }
+
+            for (const ns of Array.from(nsSet).slice(0, 100)) {
+              await insertAsset({
+                asset_type: "ns_host",
+                asset_value: ns,
+                hostname: ns,
+                root_domain: rootDomain,
+                source: "dnsdumpster",
+                confidence: "medium",
+              });
+            }
+
+            dnsDumpStatus = "success";
+            dnsDumpSummary = {
+              root_domain: rootDomain,
+              subdomains_found: hostSet.size,
+              ip_found: ipSet.size,
+              mx_found: mxSet.size,
+              ns_found: nsSet.size,
+              txt_found: txtRecords.size,
+              asn_found: asnSet.size,
+              netblocks_found: netblockSet.size,
+              countries_found: countrySet.size,
+            };
+
+            await insertObservation({
+              module: "dns_dumpster",
+              observation_type: "dnsdumpster_summary",
+              title: "DNSDumpster discovery summary",
+              value: {
+                ...dnsDumpSummary,
+                sample_subdomains: Array.from(hostSet).slice(0, 80),
+                sample_ips: Array.from(ipSet).slice(0, 80),
+                sample_asn: Array.from(asnSet).slice(0, 40),
+                sample_netblocks: Array.from(netblockSet).slice(0, 40),
+                sample_countries: Array.from(countrySet).slice(0, 20),
+                sample_txt: Array.from(txtRecords).slice(0, 80),
+              },
+              severity: "info",
+            });
+
+            await insertExternalIntel(
+              "dnsdumpster",
+              rootDomain,
+              true,
+              dnsDumpSummary,
+              dnsPayload,
+              hostSet.size > 0 || ipSet.size > 0 ? "high" : "medium",
+            );
+          }
+        } catch (error: any) {
+          dnsDumpStatus = "partial";
+          dnsDumpError = error?.message || String(error);
+          dnsDumpSummary = {
+            root_domain: rootDomain,
+            reason: dnsDumpError,
+          };
+          await insertObservation({
+            module: "dns_dumpster",
+            observation_type: "dnsdumpster_error",
+            title: "DNSDumpster lookup failed",
+            value: {
+              root_domain: rootDomain,
+              error: dnsDumpError,
+            },
+            severity: "low",
+          });
+        } finally {
+          await emitEngineEnvelope({
+            engine: "dnsdumpster",
+            target: rootDomain,
+            status: dnsDumpStatus as SurfaceEngineStatus,
+            durationMs: Date.now() - dnsDumpsterStartedAt,
+            error: dnsDumpError,
+            summary: dnsDumpSummary,
+          });
+        }
+      } else {
+        await insertObservation({
+          module: "dns_dumpster",
+          observation_type: "dnsdumpster_skipped",
+          title: "DNSDumpster skipped",
+          value: {
+            reason: "missing_api_key",
+            root_domain: rootDomain,
+          },
+          severity: "info",
+        });
+        await emitEngineEnvelope({
+          engine: "dnsdumpster",
+          target: rootDomain,
+          status: "skipped",
+          durationMs: 0,
+          summary: { reason: "missing_api_key" },
         });
       }
     }
@@ -6352,6 +7023,14 @@ export async function runSurfaceScanEnrichment(
       label: "Server Location",
       timeoutMs: 12000,
     },
+    ip_geo_asn: {
+      key: "ip_geo_asn",
+      label: "IP Geo & ASN Intelligence",
+      timeoutMs: 30000,
+      retryOnError: true,
+      maxRetries: 1,
+      retryBackoffMs: 700,
+    },
     tech_stack: {
       key: "tech_stack",
       label: "Tech Stack",
@@ -6401,6 +7080,14 @@ export async function runSurfaceScanEnrichment(
       timeoutMs: 30000,
       featureFlag: "SURFACESCAN_ENABLE_OPEN_PORTS",
     },
+    cve_intel: {
+      key: "cve_intel",
+      label: "CVE Intelligence (CIRCL)",
+      timeoutMs: 45000,
+      retryOnError: true,
+      maxRetries: 1,
+      retryBackoffMs: 900,
+    },
     passes: {
       key: "passes",
       label: "Passes Summary",
@@ -6437,6 +7124,7 @@ export async function runSurfaceScanEnrichment(
       const phase3: Promise<void>[] = [
         safeRun(modules.reverse_dns_and_dumpster, runReverseAndDumpsterModule),
         safeRun(modules.shodan, runShodanModule),
+        safeRun(modules.ip_geo_asn, runIpGeoAndAsnModule),
       ];
       if (["domain_exposure", "cve_api_validation"].includes(job.scan_profile)) {
         phase3.push(safeRun(modules.urlscan, runUrlscanModule));
@@ -6445,6 +7133,7 @@ export async function runSurfaceScanEnrichment(
       await safeRun(modules.pentest_tools, runPentestToolsModule);
     }
     await safeRun(modules.open_ports, runOpenPortsModule);
+    await safeRun(modules.cve_intel, runCveIntelModule);
 
     await Promise.allSettled([
       safeRun(modules.ssl_certificate, runSslCertificateModule),
