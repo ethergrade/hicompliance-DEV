@@ -99,15 +99,15 @@ const FIRECRAWL_API_KEY = String(Deno.env.get('FIRECRAWL_API_KEY') || '').trim()
 const FIRECRAWL_ENABLED = String(Deno.env.get('DARKRISK_FIRECRAWL_ENABLED') || 'true').toLowerCase() !== 'false';
 const FIRECRAWL_TIMEOUT_MS = Math.max(
   2_500,
-  Math.min(40_000, Number(Deno.env.get('DARKRISK_FIRECRAWL_TIMEOUT_MS') || 9_000)),
+  Math.min(40_000, Number(Deno.env.get('DARKRISK_FIRECRAWL_TIMEOUT_MS') || 15_000)),
 );
 const FIRECRAWL_RETRIES = Math.max(
   0,
-  Math.min(4, Number(Deno.env.get('DARKRISK_FIRECRAWL_RETRIES') || 1)),
+  Math.min(4, Number(Deno.env.get('DARKRISK_FIRECRAWL_RETRIES') || 2)),
 );
 const FIRECRAWL_MAX_TARGETS = Math.max(
   1,
-  Math.min(500, Number(Deno.env.get('DARKRISK_FIRECRAWL_MAX_TARGETS') || 120)),
+  Math.min(500, Number(Deno.env.get('DARKRISK_FIRECRAWL_MAX_TARGETS') || 200)),
 );
 const FIRECRAWL_MAX_MARKDOWN_CHARS = Math.max(
   2_000,
