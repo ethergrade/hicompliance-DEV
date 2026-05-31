@@ -1284,7 +1284,7 @@ serve(async (req: Request) => {
     const requestedCustomerId = normalizeText(body?.customer_id);
     const requestedScanJobId = normalizeText(body?.scan_job_id);
     const triggerType = normalizeText(body?.trigger_type) || 'manual';
-    const includeDtiExtended = body?.include_dti_extended === undefined
+    const includeDtiExtendedRequested = body?.include_dti_extended === undefined
       ? !triggerType.startsWith('cron_weekly')
       : Boolean(body?.include_dti_extended);
     const manualIdentityEmails = parseIdentityEmailSelectors(body?.identity_emails);
@@ -1318,6 +1318,12 @@ serve(async (req: Request) => {
     if (!entitlement?.enabled) {
       return jsonResponse({ error: 'DarkRisk360 not enabled for customer' }, 403);
     }
+
+    const normalizedTier = String(entitlement.tier || 'standard').toLowerCase() === 'extended'
+      ? 'extended'
+      : 'standard';
+    const hasExtendedEntitlement = normalizedTier === 'extended';
+    const includeDtiExtended = includeDtiExtendedRequested && hasExtendedEntitlement;
 
     const autoScopeScan = body?.auto_scope_scan !== false;
     const forceScopeRefresh = body?.force_scope_refresh === undefined
@@ -1655,7 +1661,7 @@ serve(async (req: Request) => {
       .insert({
         organization_id: customerId,
         tenant_id: customerId,
-        tier: String(entitlement.tier || 'standard').toLowerCase() === 'extended' ? 'extended' : 'standard',
+        tier: normalizedTier,
         status: 'running',
         trigger_type: triggerType,
         requested_by: actorUserId,
@@ -2213,6 +2219,10 @@ serve(async (req: Request) => {
 
         if (!alertErr) alertsCreated += 1;
       }
+    }
+
+    if (includeDtiExtendedRequested && !hasExtendedEntitlement) {
+      intelxWarnings.push('DTI esteso richiesto ma non abilitato sul cliente: eseguito run standard settimanale.');
     }
 
     if (includeDtiExtended && isIntelxConfigured()) {
