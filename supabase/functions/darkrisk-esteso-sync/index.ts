@@ -67,7 +67,7 @@ const INTELX_MAX_POLL_ROUNDS = Math.max(
 );
 const INTELX_REQUEST_INTERVAL_MS = Math.max(
   800,
-  Math.min(2500, Number(Deno.env.get('DARKRISK_ESTESO_INTELX_REQUEST_INTERVAL_MS') || 1100)),
+  Math.min(2500, Number(Deno.env.get('DARKRISK_ESTESO_INTELX_REQUEST_INTERVAL_MS') || 850)),
 );
 const INTELX_MAX_QUERY_TERMS_PER_RUN = Math.max(
   5,
@@ -88,6 +88,14 @@ const INTELX_HTTP_TIMEOUT_MS = Math.max(
 const INTELX_MAX_SELECTORS_PER_RUN = Math.max(
   5,
   Math.min(120, Number(Deno.env.get('DARKRISK_ESTESO_MAX_SELECTORS_PER_RUN') || 40)),
+);
+const INTELX_PHONEBOOK_TARGET = Math.max(
+  0,
+  Math.min(3, Number(Deno.env.get('DARKRISK_ESTESO_PHONEBOOK_TARGET') || 0)),
+);
+const INTELX_PHONEBOOK_MAX_TERMS = Math.max(
+  1,
+  Math.min(20, Number(Deno.env.get('DARKRISK_ESTESO_PHONEBOOK_MAX_TERMS') || 8)),
 );
 const SURFACE_AUTOSTART_TIMEOUT_MS = Math.max(
   12_000,
@@ -128,6 +136,45 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isUuidLike(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function isInvalidSearchIdLike(input: unknown): boolean {
+  const msg = String(input || '').toLowerCase();
+  return msg.includes('invalid search id') || msg.includes('search id not found');
+}
+
+function pushWarningUnique(warnings: string[], message: string): void {
+  const normalized = normalizeText(message);
+  if (!normalized) return;
+  if (!warnings.includes(normalized)) warnings.push(normalized);
+}
+
+async function intelxFetchWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+): Promise<T> {
+  for (let attempt = 0; attempt < maxRetries; attempt += 1) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const msg = String(err?.message || '').toLowerCase();
+      const retryable =
+        msg.includes('429')
+        || msg.includes('too many')
+        || msg.includes('rate limit')
+        || msg.includes('max concurrent searches');
+      if (retryable && attempt < maxRetries - 1) {
+        await wait(600 * Math.pow(2, attempt));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error('IntelX max retries exceeded');
 }
 
 function escapeRegex(value: string): string {
@@ -303,25 +350,43 @@ async function intelxSearchSubmit(term: string): Promise<string | null> {
     terminate: [],
   };
 
-  const response = await withRateLimit(() =>
-    fetchWithTimeout(`${ESTESO_SEARCH_API_URL}/intelligent/search`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'HICONSOLE-DARKRISK-ESTESO/1.0',
-        'x-key': ESTESO_SEARCH_API_KEY,
-      },
-      body: JSON.stringify(payload),
-    }),
-  );
+  return intelxFetchWithBackoff(async () => {
+    const response = await withRateLimit(() =>
+      fetchWithTimeout(`${ESTESO_SEARCH_API_URL}/intelligent/search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'HICONSOLE-DARKRISK-ESTESO/1.0',
+          'x-key': ESTESO_SEARCH_API_KEY,
+        },
+        body: JSON.stringify(payload),
+      }),
+    );
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`IntelX search submit failed (${response.status}): ${text.slice(0, 180)}`);
-  }
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`IntelX search submit failed (${response.status}): ${text.slice(0, 180)}`);
+    }
 
-  const data = (await response.json()) as IntelxSearchResponse;
-  return normalizeText(String(data?.id || '')) || null;
+    const data = (await response.json()) as IntelxSearchResponse;
+    const status = Number(data?.status ?? Number.NaN);
+    if (Number.isFinite(status)) {
+      if (status === 1) return null; // invalid selector
+      if (status === 2) {
+        throw new Error('IntelX search submit rejected: max concurrent searches per API key');
+      }
+      if (status !== 0) {
+        throw new Error(`IntelX search submit returned unexpected status ${status}`);
+      }
+    }
+
+    const id = normalizeText(String(data?.id || ''));
+    if (!id) return null;
+    if (!isUuidLike(id)) {
+      throw new Error(`IntelX search submit returned invalid search id: ${id.slice(0, 80)}`);
+    }
+    return id;
+  });
 }
 
 async function intelxSearchResult(searchId: string, endpoint: 'intelligent/search/result' | 'phonebook/search/result'):
@@ -330,21 +395,23 @@ async function intelxSearchResult(searchId: string, endpoint: 'intelligent/searc
   url.searchParams.set('id', searchId);
   url.searchParams.set('limit', String(INTELX_MAX_RESULTS_PER_QUERY));
 
-  const response = await withRateLimit(() =>
-    fetchWithTimeout(url.toString(), {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'HICONSOLE-DARKRISK-ESTESO/1.0',
-        'x-key': ESTESO_SEARCH_API_KEY,
-      },
-    }),
-  );
+  return intelxFetchWithBackoff(async () => {
+    const response = await withRateLimit(() =>
+      fetchWithTimeout(url.toString(), {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'HICONSOLE-DARKRISK-ESTESO/1.0',
+          'x-key': ESTESO_SEARCH_API_KEY,
+        },
+      }),
+    );
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`IntelX result failed (${response.status}): ${text.slice(0, 180)}`);
-  }
-  return (await response.json()) as IntelxSearchResponse;
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`IntelX result failed (${response.status}): ${text.slice(0, 180)}`);
+    }
+    return (await response.json()) as IntelxSearchResponse;
+  });
 }
 
 async function intelxSearchTerminate(searchId: string): Promise<void> {
@@ -390,62 +457,87 @@ async function runIntelxSearch(term: string): Promise<Array<Record<string, unkno
 }
 
 async function intelxPhonebookSubmit(term: string): Promise<string | null> {
-  const payload = {
-    term,
-    maxresults: INTELX_MAX_RESULTS_PER_QUERY,
-    timeout: Math.max(3, Math.ceil((INTELX_MAX_POLL_ROUNDS * INTELX_REQUEST_INTERVAL_MS) / 1000)),
-    target: 2,
-  };
+  const timeoutSec = Math.max(3, Math.ceil((INTELX_MAX_POLL_ROUNDS * INTELX_REQUEST_INTERVAL_MS) / 1000));
+  const url = new URL(`${ESTESO_SEARCH_API_URL}/phonebook/search`);
+  url.searchParams.set('term', term);
+  url.searchParams.set('target', String(INTELX_PHONEBOOK_TARGET));
+  url.searchParams.set('maxresults', String(INTELX_MAX_RESULTS_PER_QUERY));
+  url.searchParams.set('timeout', String(timeoutSec));
+  url.searchParams.set('media', '0');
 
-  const response = await withRateLimit(() =>
-    fetchWithTimeout(`${ESTESO_SEARCH_API_URL}/phonebook/search`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'HICONSOLE-DARKRISK-ESTESO/1.0',
-        'x-key': ESTESO_SEARCH_API_KEY,
-      },
-      body: JSON.stringify(payload),
-    }),
-  );
+  return intelxFetchWithBackoff(async () => {
+    const response = await withRateLimit(() =>
+      fetchWithTimeout(url.toString(), {
+        method: 'POST',
+        headers: {
+          'User-Agent': 'HICONSOLE-DARKRISK-ESTESO/1.0',
+          'x-key': ESTESO_SEARCH_API_KEY,
+        },
+      }),
+    );
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`IntelX phonebook submit failed (${response.status}): ${text.slice(0, 180)}`);
-  }
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`IntelX phonebook submit failed (${response.status}): ${text.slice(0, 180)}`);
+    }
 
-  const data = (await response.json()) as IntelxSearchResponse;
-  return normalizeText(String(data?.id || '')) || null;
+    const data = (await response.json()) as IntelxSearchResponse;
+    const status = Number(data?.status ?? Number.NaN);
+    if (Number.isFinite(status)) {
+      if (status === 1) return null; // invalid selector
+      if (status === 2) {
+        throw new Error('IntelX phonebook submit rejected: max concurrent searches per API key');
+      }
+      if (status !== 0) {
+        throw new Error(`IntelX phonebook submit returned unexpected status ${status}`);
+      }
+    }
+
+    const id = normalizeText(String(data?.id || ''));
+    if (!id) return null;
+    if (!isUuidLike(id)) {
+      throw new Error(`IntelX phonebook submit returned invalid search id: ${id.slice(0, 80)}`);
+    }
+    return id;
+  });
 }
 
 async function runIntelxPhonebook(term: string): Promise<Array<Record<string, unknown>>> {
-  const searchId = await intelxPhonebookSubmit(term);
-  if (!searchId) return [];
-
   const out: Array<Record<string, unknown>> = [];
   const dedupe = new Set<string>();
+  let retriedAfterInvalidId = false;
 
-  try {
-    for (let i = 0; i < INTELX_MAX_POLL_ROUNDS; i += 1) {
-      const res = await intelxSearchResult(searchId, 'phonebook/search/result');
-      const status = Number(res?.status ?? 3);
-      const records = Array.isArray(res?.records) ? res.records : [];
+  while (true) {
+    const searchId = await intelxPhonebookSubmit(term);
+    if (!searchId) return out.slice(0, INTELX_MAX_RESULTS_PER_QUERY);
 
-      for (const record of records) {
-        const key = normalizeIntelxRecordKey(term, record);
-        if (dedupe.has(key)) continue;
-        dedupe.add(key);
-        out.push(record);
+    try {
+      for (let i = 0; i < INTELX_MAX_POLL_ROUNDS; i += 1) {
+        const res = await intelxSearchResult(searchId, 'phonebook/search/result');
+        const status = Number(res?.status ?? 3);
+        const records = Array.isArray(res?.records) ? res.records : [];
+
+        for (const record of records) {
+          const key = normalizeIntelxRecordKey(term, record);
+          if (dedupe.has(key)) continue;
+          dedupe.add(key);
+          out.push(record);
+        }
+
+        if (status === 1 || status === 2) break;
+        if (status === 0 && records.length === 0) break;
       }
-
-      if (status === 1 || status === 2) break;
-      if (status === 0 && records.length === 0) break;
+      return out.slice(0, INTELX_MAX_RESULTS_PER_QUERY);
+    } catch (err) {
+      if (!retriedAfterInvalidId && isInvalidSearchIdLike(err)) {
+        retriedAfterInvalidId = true;
+        continue;
+      }
+      throw err;
+    } finally {
+      await intelxSearchTerminate(searchId);
     }
-  } finally {
-    await intelxSearchTerminate(searchId);
   }
-
-  return out.slice(0, INTELX_MAX_RESULTS_PER_QUERY);
 }
 
 async function leaksSubmit(selector: string): Promise<string | null> {
@@ -482,22 +574,24 @@ async function leaksResult(searchId: string): Promise<IntelxSearchResponse> {
   url.searchParams.set('format', '1');
   url.searchParams.set('limit', String(Math.min(INTELX_MAX_RESULTS_PER_QUERY, 120)));
 
-  const response = await withRateLimit(() =>
-    fetchWithTimeout(url.toString(), {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'HICONSOLE-DARKRISK-ESTESO/1.0',
-        'x-key': ESTESO_LEAKS_API_KEY,
-      },
-    }),
-  );
+  return intelxFetchWithBackoff(async () => {
+    const response = await withRateLimit(() =>
+      fetchWithTimeout(url.toString(), {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'HICONSOLE-DARKRISK-ESTESO/1.0',
+          'x-key': ESTESO_LEAKS_API_KEY,
+        },
+      }),
+    );
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`IntelX leaks result failed (${response.status}): ${text.slice(0, 180)}`);
-  }
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`IntelX leaks result failed (${response.status}): ${text.slice(0, 180)}`);
+    }
 
-  return (await response.json()) as IntelxSearchResponse;
+    return (await response.json()) as IntelxSearchResponse;
+  });
 }
 
 async function leaksTerminate(searchId: string): Promise<void> {
@@ -1630,7 +1724,7 @@ serve(async (req: Request) => {
 
     for (const query of queryTerms) {
       if (recordsCreated >= INTELX_MAX_RECORDS_PER_RUN) {
-        warnings.push(`Limite record per run raggiunto (${INTELX_MAX_RECORDS_PER_RUN}).`);
+        pushWarningUnique(warnings, `Limite record per run raggiunto (${INTELX_MAX_RECORDS_PER_RUN}).`);
         break;
       }
 
@@ -1683,7 +1777,7 @@ serve(async (req: Request) => {
         }
       } catch (err) {
         const message = maskedError(err, `Search failed on ${query.term}`);
-        warnings.push(message);
+        pushWarningUnique(warnings, message);
         if (sourceRun?.id) {
           await finalizeSourceRun(
             adminClient,
@@ -1701,9 +1795,11 @@ serve(async (req: Request) => {
 
     const phonebookTerms = queryTerms
       .filter((query) => query.kind === 'at_domain_tld' || query.kind === 'email_selector' || query.kind === 'selector')
-      .slice(0, Math.min(12, queryTerms.length));
+      .slice(0, Math.min(INTELX_PHONEBOOK_MAX_TERMS, queryTerms.length));
+    let phonebookDegraded = false;
 
     for (const query of phonebookTerms) {
+      if (phonebookDegraded) break;
       if (recordsCreated >= INTELX_MAX_RECORDS_PER_RUN) break;
 
       const sourceRun = await createSourceRun(adminClient, {
@@ -1753,23 +1849,32 @@ serve(async (req: Request) => {
         }
       } catch (err) {
         const message = maskedError(err, `Phonebook failed on ${query.term}`);
-        warnings.push(message);
+        const isInvalidSearchId = isInvalidSearchIdLike(message);
+        if (isInvalidSearchId) {
+          pushWarningUnique(
+            warnings,
+            'IntelX Phonebook disattivato in questa run: provider ha restituito Search ID non valido.',
+          );
+          phonebookDegraded = true;
+        } else {
+          pushWarningUnique(warnings, message);
+        }
 
         if (sourceRun?.id) {
-          const status = isAuthzLikeError(message) ? 'partial' : 'failed';
+          const status = (isAuthzLikeError(message) || isInvalidSearchId) ? 'partial' : 'failed';
           await finalizeSourceRun(
             adminClient,
             sourceRun.id,
             sourceRun.started_at,
             status,
             recordsCount,
-            isAuthzLikeError(message) ? 'Phonebook degraded (401/403)' : null,
+            (isAuthzLikeError(message) || isInvalidSearchId) ? 'Phonebook degraded' : null,
             message,
             { stage: 'phonebook', query_term: query.term, query_kind: query.kind },
           );
         }
 
-        if (isAuthzLikeError(message)) break;
+        if (isAuthzLikeError(message) || isInvalidSearchId) break;
       }
     }
 
@@ -1828,7 +1933,7 @@ serve(async (req: Request) => {
         }
       } catch (err) {
         const message = maskedError(err, `Leaks failed on ${query.term}`);
-        warnings.push(message);
+        pushWarningUnique(warnings, message);
 
         if (sourceRun?.id) {
           await finalizeSourceRun(
@@ -1859,6 +1964,7 @@ serve(async (req: Request) => {
       intelx: {
         searches_run: searchesRun,
         phonebook_searches_run: phonebookRun,
+        phonebook_degraded: phonebookDegraded,
         leaks_searches_run: leaksRun,
         search_records_ingested: searchRecordsIngested,
         phonebook_records_ingested: phonebookRecordsIngested,
@@ -1903,13 +2009,13 @@ serve(async (req: Request) => {
         if (!reportResponse.ok) {
           const text = await reportResponse.text();
           reportMode = 'failed';
-          warnings.push(`Report generation failed: ${maskPotentialSecrets(text).slice(0, 220)}`);
+          pushWarningUnique(warnings, `Report generation failed: ${maskPotentialSecrets(text).slice(0, 220)}`);
         } else {
           reportMode = 'generated';
         }
       } catch (err) {
         reportMode = 'failed';
-        warnings.push(`Report generation failed: ${maskedError(err).slice(0, 220)}`);
+        pushWarningUnique(warnings, `Report generation failed: ${maskedError(err).slice(0, 220)}`);
       }
     }
 

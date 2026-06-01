@@ -164,8 +164,18 @@ const DarkRiskEsteso: React.FC = () => {
       ]);
     } catch (err: any) {
       const message = String(err?.message || 'Errore durante esecuzione DARKRISK_ESTESO');
-      toast.error(message);
-      setLastRunResponse({ ok: false, error: message });
+      const likelyTransportError = message.toLowerCase().includes('failed to send a request to the edge function');
+      if (likelyTransportError) {
+        toast.warning('Timeout lato client: la run potrebbe essere partita. Controlla Run Recenti tra pochi secondi.');
+        await queryClient.invalidateQueries({ queryKey: ['darkrisk-esteso-runs', organizationId] });
+      } else {
+        toast.error(message);
+      }
+      setLastRunResponse({
+        ok: false,
+        error: message,
+        ...(likelyTransportError ? { hint: 'Possibile timeout client: verifica lo storico Run Recenti.' } : {}),
+      });
     } finally {
       setRunning(false);
     }

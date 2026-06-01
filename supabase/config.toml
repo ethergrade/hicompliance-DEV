@@ -49,3 +49,6 @@ verify_jwt = false
 
  [functions.darkrisk360-generate-report]
  verify_jwt = false
+
+ [functions.darkrisk-esteso-sync]
+ verify_jwt = false
