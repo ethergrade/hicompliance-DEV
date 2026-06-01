@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { ShieldCheck, Globe, Eye } from 'lucide-react';
+import { ShieldCheck, Globe, Eye, ShieldAlert } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -30,6 +30,7 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
   const [hicompliance, setHicompliance] = useState(false);
   const [surfaceScan, setSurfaceScan] = useState(false);
   const [darkRisk, setDarkRisk] = useState(false);
+  const [darkRiskEsteso, setDarkRiskEsteso] = useState(false);
   const [surfaceScanTier, setSurfaceScanTier] = useState<'standard' | 'extended'>('standard');
   const [darkRiskTier, setDarkRiskTier] = useState<'standard' | 'extended'>('standard');
   const [hicomplianceStart, setHicomplianceStart] = useState(todayDate);
@@ -51,6 +52,7 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
       setHicompliance(false);
       setSurfaceScan(false);
       setDarkRisk(false);
+      setDarkRiskEsteso(false);
       setSurfaceScanTier('standard');
       setDarkRiskTier('standard');
       setHicomplianceStart(todayDate);
@@ -92,19 +94,20 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
             surface_scan360_enabled: surfaceScan,
             surface_scan_extended: surfaceScan && surfaceScanTier === 'extended',
             pentest_tools_auto_validation: surfaceScan,
-            dark_risk360_enabled: darkRisk,
+            dark_risk360_enabled: darkRisk || darkRiskEsteso,
+            darkrisk_esteso_enabled: darkRiskEsteso,
             hicompliance_contract_start: hicompliance ? hicomplianceStart : null,
             hicompliance_contract_years: hicompliance ? parseContractYears(hicomplianceYears) : null,
             surface_scan_contract_start: surfaceScan ? surfaceStart : null,
             surface_scan_contract_years: surfaceScan ? parseContractYears(surfaceYears) : null,
-            dark_risk_contract_start: darkRisk ? darkRiskStart : null,
-            dark_risk_contract_years: darkRisk ? parseContractYears(darkRiskYears) : null,
+            dark_risk_contract_start: (darkRisk || darkRiskEsteso) ? darkRiskStart : null,
+            dark_risk_contract_years: (darkRisk || darkRiskEsteso) ? parseContractYears(darkRiskYears) : null,
           } as never)
           .select('id')
           .single();
         if (error) throw error;
 
-        if (darkRisk && createdOrganization?.id) {
+        if ((darkRisk || darkRiskEsteso) && createdOrganization?.id) {
           const { error: tierError } = await supabase
             .from('darkrisk_entitlements' as never)
             .upsert(
@@ -120,6 +123,26 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
           if (tierError) {
             const missingRelation = String((tierError as { code?: string } | null)?.code || '') === '42P01';
             if (!missingRelation) throw tierError;
+          }
+        }
+
+        if (darkRiskEsteso && createdOrganization?.id) {
+          const { error: estesoProfileError } = await supabase
+            .from('darkrisk_esteso_profiles' as never)
+            .upsert(
+              {
+                organization_id: createdOrganization.id,
+                enabled: true,
+                manual_only: true,
+                identity_model_valid_until: '2026-06-10',
+                updated_at: new Date().toISOString(),
+              } as never,
+              { onConflict: 'organization_id' },
+            );
+
+          if (estesoProfileError) {
+            const missingRelation = String((estesoProfileError as { code?: string } | null)?.code || '') === '42P01';
+            if (!missingRelation) throw estesoProfileError;
           }
         }
 
@@ -256,6 +279,23 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
                     </div>
                   </div>
                 )}
+
+                <div className="flex items-center justify-between rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+                  <div className="flex items-center gap-3">
+                    <ShieldAlert className="w-4 h-4 text-amber-500" />
+                    <div>
+                      <p className="text-sm font-medium">DARKRISK_ESTESO (Super Admin)</p>
+                      <p className="text-xs text-muted-foreground">MVP manuale: IntelX Search + Leaks, senza Firecrawl, valido fino al 10/06/2026.</p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={darkRiskEsteso}
+                    onCheckedChange={(value) => {
+                      setDarkRiskEsteso(value);
+                      if (value) setDarkRisk(true);
+                    }}
+                  />
+                </div>
               </div>
             </>
           )}

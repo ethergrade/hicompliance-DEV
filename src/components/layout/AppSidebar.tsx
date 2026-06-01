@@ -66,6 +66,7 @@ const hiComplianceModules = [
   { title: 'Assessment', href: '/assessment', icon: ClipboardCheck },
   { title: 'SurfaceScan360', href: '/surface-scan', icon: Globe },
   { title: 'DarkRisk360', href: '/dark-risk', icon: Eye },
+  { title: 'DARKRISK_ESTESO', href: '/dark-risk-esteso', icon: Eye, superAdminOnly: true },
   { title: 'Analisi', href: '/analytics', icon: BarChart3 },
   { title: 'Remediation', href: '/remediation', icon: Wrench },
   { title: 'Consistenze', href: '/consistenze', icon: Package },
@@ -115,7 +116,7 @@ export const AppSidebar: React.FC = () => {
       if (!selectedOrganization?.id) return null;
       const { data } = await supabase
         .from('organizations')
-        .select('hicompliance_enabled, surface_scan360_enabled, dark_risk360_enabled' as any)
+        .select('hicompliance_enabled, surface_scan360_enabled, dark_risk360_enabled, darkrisk_esteso_enabled' as any)
         .eq('id', selectedOrganization.id)
         .maybeSingle();
       return data as any;
@@ -128,6 +129,7 @@ export const AppSidebar: React.FC = () => {
   const hicomplianceOn = forceDemoAccessForSalesCliente1 ? true : !!orgFlags?.hicompliance_enabled;
   const surfaceScanOn = forceDemoAccessForSalesCliente1 ? true : !!orgFlags?.surface_scan360_enabled;
   const darkRiskOn = forceDemoAccessForSalesCliente1 ? true : !!orgFlags?.dark_risk360_enabled;
+  const darkRiskEstesoOn = forceDemoAccessForSalesCliente1 ? true : !!orgFlags?.darkrisk_esteso_enabled;
   const { canViewRoute } = usePermissions();
 
   const isFeatureAllowed = (href: string) => {
@@ -135,6 +137,7 @@ export const AppSidebar: React.FC = () => {
     if (isConsoleUser && !selectedOrganization) return true;
     if (href === '/surface-scan' || href === '/surface-scan/exposure') return surfaceScanOn;
     if (href === '/dark-risk') return darkRiskOn;
+    if (href === '/dark-risk-esteso') return darkRiskEstesoOn && isSuperAdmin;
     // HiCompliance core modules
     if (['/assessment', '/analytics', '/remediation', '/incident-response', '/compliance-events'].includes(href)) {
       return hicomplianceOn;
@@ -149,9 +152,10 @@ export const AppSidebar: React.FC = () => {
     return isModuleEnabled(item.href) && isUserAllowed(item.href);
   });
 
-  const visibleHiCompliance = hiComplianceModules.filter(
-    item => isModuleEnabled(item.href) && isFeatureAllowed(item.href) && isUserAllowed(item.href)
-  );
+  const visibleHiCompliance = hiComplianceModules.filter((item) => {
+    if ((item as any).superAdminOnly && !isSuperAdmin) return false;
+    return isModuleEnabled(item.href) && isFeatureAllowed(item.href) && isUserAllowed(item.href);
+  });
   const visibleIncident = incidentSubItems.filter(
     item => isModuleEnabled(item.href) && isFeatureAllowed(item.href) && isUserAllowed(item.href)
   );

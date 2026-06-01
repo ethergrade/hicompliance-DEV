@@ -13,6 +13,7 @@ import Dashboard from "./pages/Dashboard";
 import ServiceDashboard from "./pages/ServiceDashboard";
 import SurfaceScan360 from "./pages/SurfaceScan360";
 import DarkRisk360 from "./pages/DarkRisk360";
+import DarkRiskEsteso from "./pages/DarkRiskEsteso";
 import Assessment from "./pages/Assessment";
 import Remediation from "./pages/Remediation";
 import Analytics from "./pages/Analytics";
@@ -58,6 +59,7 @@ const App = () => (
             <Route path="/surface-scan" element={<ClientSelectionGuard><SurfaceScan360 /></ClientSelectionGuard>} />
             <Route path="/surface-scan/exposure" element={<Navigate to="/surface-scan" replace />} />
             <Route path="/dark-risk" element={<ClientSelectionGuard><DarkRisk360 /></ClientSelectionGuard>} />
+            <Route path="/dark-risk-esteso" element={<ClientSelectionGuard><DarkRiskEsteso /></ClientSelectionGuard>} />
             <Route path="/assessment" element={<ClientSelectionGuard><Assessment /></ClientSelectionGuard>} />
             <Route path="/remediation" element={<ClientSelectionGuard><Remediation /></ClientSelectionGuard>} />
             <Route path="/analytics" element={<ClientSelectionGuard><Analytics /></ClientSelectionGuard>} />

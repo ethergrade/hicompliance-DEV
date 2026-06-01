@@ -52,6 +52,12 @@ export const PERMISSION_CATALOG: ModuleDef[] = [
     subsections: [{ key: '_root', label: 'Monitoraggio Dark Web' }],
   },
   {
+    key: 'dark_risk_esteso',
+    label: 'DARKRISK_ESTESO',
+    routes: ['/dark-risk-esteso'],
+    subsections: [{ key: '_root', label: 'IntelX Identity Esteso', actions: ['view'] }],
+  },
+  {
     key: 'irp',
     label: 'Incident Response',
     routes: ['/incident-response'],

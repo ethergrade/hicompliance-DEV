@@ -8,7 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Link2, Unlink, Plug, Shield, Mail, Monitor, Smartphone, Activity, Search as SearchIcon, Server, ShieldCheck, FileCheck, Eye, Radar, Pause, Play } from 'lucide-react';
+import { Loader2, Link2, Unlink, Plug, Shield, Mail, Monitor, Smartphone, Activity, Search as SearchIcon, Server, ShieldCheck, FileCheck, Eye, Radar, Pause, Play, ShieldAlert } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -36,6 +36,7 @@ interface OrganizationFlags {
   pentest_tools_auto_validation: boolean;
   surface_scan360_enabled: boolean;
   dark_risk360_enabled: boolean;
+  darkrisk_esteso_enabled: boolean;
   services_paused: boolean;
   services_paused_at?: string | null;
   services_pause_reason?: string | null;
@@ -50,6 +51,12 @@ interface OrganizationFlags {
 interface DarkRiskEntitlement {
   tier: 'standard' | 'extended';
   enabled: boolean;
+}
+
+interface DarkRiskEstesoProfile {
+  enabled: boolean;
+  manual_only: boolean;
+  identity_model_valid_until: string;
 }
 
 interface LifecycleResponse {
@@ -97,7 +104,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     queryFn: async () => {
       const { data, error } = await supabase
         .from('organizations')
-        .select('hicompliance_enabled, irp_extended, surface_scan_extended, pentest_tools_auto_validation, surface_scan360_enabled, dark_risk360_enabled, services_paused, services_paused_at, services_pause_reason, hicompliance_contract_start, hicompliance_contract_years, surface_scan_contract_start, surface_scan_contract_years, dark_risk_contract_start, dark_risk_contract_years')
+        .select('hicompliance_enabled, irp_extended, surface_scan_extended, pentest_tools_auto_validation, surface_scan360_enabled, dark_risk360_enabled, darkrisk_esteso_enabled, services_paused, services_paused_at, services_pause_reason, hicompliance_contract_start, hicompliance_contract_years, surface_scan_contract_start, surface_scan_contract_years, dark_risk_contract_start, dark_risk_contract_years')
         .eq('id', organizationId)
         .maybeSingle();
       if (error) throw error;
@@ -108,6 +115,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
         pentest_tools_auto_validation: true,
         surface_scan360_enabled: false,
         dark_risk360_enabled: false,
+        darkrisk_esteso_enabled: false,
         services_paused: false,
       };
     },
@@ -143,6 +151,37 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
       }
 
       return (data as DarkRiskEntitlement | null) || { tier: 'standard', enabled: Boolean(orgFlags?.dark_risk360_enabled) };
+    },
+    enabled: open && !!organizationId,
+  });
+
+  const { data: darkRiskEstesoProfile } = useQuery({
+    queryKey: ['darkrisk-esteso-profile', organizationId],
+    queryFn: async (): Promise<DarkRiskEstesoProfile> => {
+      const { data, error } = await supabase
+        .from('darkrisk_esteso_profiles' as never)
+        .select('enabled, manual_only, identity_model_valid_until')
+        .eq('organization_id', organizationId)
+        .maybeSingle();
+
+      if (error) {
+        const missingRelation = String((error as { code?: string } | null)?.code || '') === '42P01';
+        if (missingRelation) {
+          return {
+            enabled: Boolean(orgFlags?.darkrisk_esteso_enabled),
+            manual_only: true,
+            identity_model_valid_until: '2026-06-10',
+          };
+        }
+        throw error;
+      }
+
+      const row = (data as Partial<DarkRiskEstesoProfile> | null) || null;
+      return {
+        enabled: Boolean(row?.enabled ?? orgFlags?.darkrisk_esteso_enabled),
+        manual_only: Boolean(row?.manual_only ?? true),
+        identity_model_valid_until: String(row?.identity_model_valid_until || '2026-06-10'),
+      };
     },
     enabled: open && !!organizationId,
   });
@@ -207,6 +246,28 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
       toast.success('Tier DarkRisk360 aggiornato');
     },
     onError: (err: Error) => toast.error(`Errore tier DarkRisk360: ${err.message}`),
+  });
+
+  const updateDarkRiskEstesoProfileMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const payload = {
+        organization_id: organizationId,
+        enabled,
+        manual_only: true,
+        identity_model_valid_until: '2026-06-10',
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('darkrisk_esteso_profiles' as never)
+        .upsert(payload, { onConflict: 'organization_id' });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['darkrisk-esteso-profile', organizationId] });
+      toast.success('Profilo DARKRISK_ESTESO aggiornato');
+    },
+    onError: (err: Error) => toast.error(`Errore profilo DARKRISK_ESTESO: ${err.message}`),
   });
 
   const { data: services = [] } = useQuery({
@@ -577,15 +638,18 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                       if (!v) {
                         patch.dark_risk_contract_start = null;
                         patch.dark_risk_contract_years = null;
+                        patch.darkrisk_esteso_enabled = false;
                       } else {
                         patch.dark_risk_contract_start = darkRiskStart || new Date().toISOString().slice(0, 10);
                         patch.dark_risk_contract_years = parseContractYears(darkRiskYears);
                       }
-                      updateFlagsMutation.mutate(patch);
+                      await updateFlagsMutation.mutateAsync(patch);
                       if (v) {
                         await updateDarkRiskTierMutation.mutateAsync(
                           (String(darkRiskEntitlement?.tier || 'standard') === 'extended' ? 'extended' : 'standard')
                         );
+                      } else {
+                        await updateDarkRiskEstesoProfileMutation.mutateAsync(false);
                       }
                     }}
                   />
@@ -634,6 +698,48 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                     <Badge variant="outline" className="text-xs">
                       {String(darkRiskEntitlement?.tier || 'standard') === 'extended' ? 'Estesa' : 'Standard'}
                     </Badge>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-md border border-amber-500/30 bg-amber-500/5 p-2.5">
+                    <div className="flex items-center gap-3">
+                      <ShieldAlert className="w-4 h-4 text-amber-500" />
+                      <div>
+                        <p className="text-sm font-medium">DARKRISK_ESTESO (MVP)</p>
+                        <p className="text-xs text-muted-foreground">Manual-only, usa IntelX Search + Leaks senza Firecrawl.</p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={!!orgFlags?.darkrisk_esteso_enabled}
+                      disabled={updateFlagsMutation.isPending || updateDarkRiskEstesoProfileMutation.isPending}
+                      onCheckedChange={async (v) => {
+                        const patch: Record<string, unknown> = { darkrisk_esteso_enabled: v };
+                        if (v) {
+                          patch.dark_risk360_enabled = true;
+                          patch.dark_risk_contract_start = darkRiskStart || new Date().toISOString().slice(0, 10);
+                          patch.dark_risk_contract_years = parseContractYears(darkRiskYears);
+                        }
+                        await updateFlagsMutation.mutateAsync(patch);
+                        await updateDarkRiskEstesoProfileMutation.mutateAsync(v);
+                      }}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-md border p-2.5">
+                    <div className="flex items-center gap-3">
+                      <ShieldAlert className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium">Profilo esteso</p>
+                        <p className="text-xs text-muted-foreground">Scadenza modello identity e policy operativa.</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs">
+                        manual_only: {String(darkRiskEstesoProfile?.manual_only ?? true)}
+                      </Badge>
+                      <Badge variant="outline" className="text-xs">
+                        valid_until: {darkRiskEstesoProfile?.identity_model_valid_until || '2026-06-10'}
+                      </Badge>
+                    </div>
                   </div>
                 </div>
               )}
