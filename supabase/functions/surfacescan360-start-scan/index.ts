@@ -10,6 +10,7 @@ import {
   normalizeTargetInput,
   resolveWithDnsOverHttps,
   splitMonitoredScopeRules,
+  toErrorResponsePayload,
 } from "../_shared/surface-scan-utils.ts";
 import { dispatchSurfaceScanQueue } from "../_shared/surface-scan-engine.ts";
 
@@ -410,12 +411,11 @@ serve(async (req: Request) => {
       },
     );
   } catch (error: any) {
+    const { status, body } = toErrorResponsePayload(error, "Internal error");
     return new Response(
-      JSON.stringify({
-        error: error?.message || "Internal error",
-      }),
+      JSON.stringify(body),
       {
-        status: 500,
+        status,
         headers: { "Content-Type": "application/json", ...corsHeaders },
       },
     );

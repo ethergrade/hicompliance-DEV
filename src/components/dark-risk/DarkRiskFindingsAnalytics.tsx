@@ -89,6 +89,20 @@ type DtiOverviewData = {
   latest_scan_run_id: string | null;
 };
 
+type SafeSensitiveSample = {
+  source: string;
+  query_kind: string;
+  query_term: string;
+  asset_scope: string;
+  tag: string;
+  value: string;
+  masked_value: string;
+  match_policy?: string;
+  extraction_confidence?: string;
+  evidence_scope?: string;
+  created_at: string | null;
+};
+
 type ScopePieRow = {
   scope: string;
   count: number;
@@ -128,10 +142,50 @@ type IdentityEvidenceRow = {
   credit_cards: number;
   phone_numbers: number;
   total: number;
-  samples: DtiOverviewData['sensitive_samples'];
+  samples: SafeSensitiveSample[];
   passwordValues: string[];
   sourceLabels: string[];
   lastMarkedAt: string | null;
+};
+
+type GroupedAssetRow = {
+  site: string;
+  scope_status: string;
+  total: number;
+  maxSeverity: Row['severity'];
+  rows: Row[];
+};
+
+type IdentityFindingRow = {
+  email: string;
+  severity: Row['severity'];
+  confidence: string;
+  riskScore: number;
+  title: string;
+  source: string;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+};
+
+type AnalyticsData = {
+  topCategories: string[];
+  siteRows: Array<Record<string, number | string>>;
+  scopeRows: ScopePieRow[];
+  sensitiveRows: Array<{ tag: SensitiveTagKey; label: string; count: number }>;
+  detailedSensitiveRows: SensitiveDetailRow[];
+  groupedAssetRows: GroupedAssetRow[];
+  identityRows: Array<IdentityEvidenceRow & { identityLabel: string }>;
+  identityFindingRows: IdentityFindingRow[];
+  credentialCompromiseRows: Row[];
+  sensitiveSampleRows: SensitiveSampleViewRow[];
+  repositorySummary: {
+    total: number;
+    domains: number;
+    passwords: number;
+    addresses: number;
+    credit_cards: number;
+    phone_numbers: number;
+  };
 };
 
 const invalidPasswordEvidenceTokens = new Set([
@@ -245,6 +299,39 @@ function finiteNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+const invalidDynamicChartKeys = new Set(['__proto__', 'prototype', 'constructor']);
+
+function normalizeCategoryLabel(value: unknown): string {
+  const normalized = String(value || '').trim().replace(/\s+/g, ' ');
+  if (!normalized) return 'Minacce rilevate';
+  const safeValue = normalized.slice(0, 120);
+  if (invalidDynamicChartKeys.has(safeValue.toLowerCase())) return 'Minacce rilevate';
+  return safeValue;
+}
+
+function normalizeSensitiveSamples(value: unknown): SafeSensitiveSample[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry) => entry && typeof entry === 'object')
+    .map((entry) => {
+      const sample = entry as Record<string, unknown>;
+      const createdAtRaw = String(sample.created_at || '').trim();
+      return {
+        source: String(sample.source || 'DarkRisk360'),
+        query_kind: String(sample.query_kind || ''),
+        query_term: String(sample.query_term || ''),
+        asset_scope: String(sample.asset_scope || ''),
+        tag: String(sample.tag || ''),
+        value: String(sample.value || ''),
+        masked_value: String(sample.masked_value || ''),
+        match_policy: String(sample.match_policy || ''),
+        extraction_confidence: String(sample.extraction_confidence || ''),
+        evidence_scope: String(sample.evidence_scope || ''),
+        created_at: createdAtRaw && Number.isFinite(Date.parse(createdAtRaw)) ? createdAtRaw : null,
+      };
+    });
+}
+
 function normalizeRowsForAnalytics(rows: Row[]): Row[] {
   return (Array.isArray(rows) ? rows : []).map((row, index) => {
     const safe = row && typeof row === 'object' ? row : ({} as Partial<Row>);
@@ -252,7 +339,7 @@ function normalizeRowsForAnalytics(rows: Row[]): Row[] {
       id: String((safe as any).id || `darkrisk-analytics-row-${index}`),
       site: String((safe as any).site || (safe as any).asset || 'n/a'),
       scope_status: normalizeScopeStatus((safe as any).scope_status),
-      category: String((safe as any).category || 'Minacce rilevate'),
+      category: normalizeCategoryLabel((safe as any).category),
       sensitive_tags: normalizeTags((safe as any).sensitive_tags),
       severity: normalizeSeverity((safe as any).severity),
       risk_score: finiteNumber((safe as any).risk_score, 0),
@@ -363,13 +450,13 @@ function isEmailSelectorCoverageKind(queryKind: string | undefined, queryTerm: s
   return false;
 }
 
-function isIdentitySensitiveSample(row: DtiOverviewData['sensitive_samples'][number]): boolean {
+function isIdentitySensitiveSample(row: SafeSensitiveSample): boolean {
   const queryKind = String(row.query_kind || '').toLowerCase();
   const tag = normalizeSensitiveTag(row.tag || '');
   return isEmailSelectorCoverageKind(queryKind, String(row.query_term || '')) && Boolean(tag);
 }
 
-function shouldAcceptIdentityPasswordSample(sample: DtiOverviewData['sensitive_samples'][number]): boolean {
+function shouldAcceptIdentityPasswordSample(sample: SafeSensitiveSample): boolean {
   const value = String(sample.value || sample.masked_value || '').trim();
   if (!isDisplayablePasswordValue(value)) return false;
   const policy = String(sample.match_policy || '').toLowerCase();
@@ -435,6 +522,33 @@ function matchesSensitivePowerQuery(row: SensitiveSampleViewRow, query: string):
   });
 }
 
+function emptyAnalyticsData(): AnalyticsData {
+  return {
+    topCategories: [],
+    siteRows: [],
+    scopeRows: [],
+    sensitiveRows: (Object.keys(sensitiveLabel) as SensitiveTagKey[]).map((tag) => ({
+      tag,
+      label: sensitiveLabel[tag],
+      count: 0,
+    })),
+    detailedSensitiveRows: [],
+    groupedAssetRows: [],
+    identityRows: [],
+    identityFindingRows: [],
+    credentialCompromiseRows: [],
+    sensitiveSampleRows: [],
+    repositorySummary: {
+      total: 0,
+      domains: 0,
+      passwords: 0,
+      addresses: 0,
+      credit_cards: 0,
+      phone_numbers: 0,
+    },
+  };
+}
+
 export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: boolean; dti?: DtiOverviewData | null }> = ({
   rows,
   extendedMode = false,
@@ -443,64 +557,86 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
   const [sensitivePowerQuery, setSensitivePowerQuery] = useState('');
   const [sensitiveTagFilter, setSensitiveTagFilter] = useState<'all' | SensitiveTagKey>('all');
   const safeRows = useMemo(() => normalizeRowsForAnalytics(rows), [rows]);
+  const dtiStats = useMemo(() => {
+    const safe = dti && typeof dti === 'object' ? (dti as any) : {};
+    const queryCoverage = safe.query_coverage && typeof safe.query_coverage === 'object' ? safe.query_coverage : {};
+    const sourceRuns = safe.source_runs && typeof safe.source_runs === 'object' ? safe.source_runs : {};
+    const intelxStats = safe.intelx_stats && typeof safe.intelx_stats === 'object' ? safe.intelx_stats : {};
+    const sensitiveSamples = Array.isArray(safe.sensitive_samples) ? safe.sensitive_samples : [];
+    return {
+      atDomainTld: finiteNumber(queryCoverage.at_domain_tld, 0),
+      selector: finiteNumber(queryCoverage.selector, 0),
+      emailSelector: finiteNumber(queryCoverage.email_selector, 0),
+      sourceCompleted: finiteNumber(sourceRuns.completed, 0),
+      sourcePartial: finiteNumber(sourceRuns.partial, 0),
+      sourceFailed: finiteNumber(sourceRuns.failed, 0),
+      sourceTotal: finiteNumber(sourceRuns.total, 0),
+      emailQueriesRun: finiteNumber(intelxStats.email_queries_run, 0),
+      strictPasswordHits: finiteNumber(intelxStats.strict_password_hits, 0),
+      metadataOnlyHits: finiteNumber(intelxStats.metadata_only_hits, 0),
+      sensitiveSamplesCount: sensitiveSamples.length,
+    };
+  }, [dti]);
 
-  const data = useMemo(() => {
-    const MAX_SENSITIVE_SAMPLES = extendedMode ? 3500 : 1500;
-    const siteCategory = new Map<string, Record<string, number>>();
-    const siteFindings = new Map<string, Row[]>();
-    const categoryTotals = new Map<string, number>();
-    const scopeTotals = new Map<string, number>();
-    const sensitiveTotals = new Map<SensitiveTagKey, number>();
-    const sensitiveDetails: SensitiveDetailRow[] = [];
-    const repositorySet = new Set<string>();
-    const repositoryContentCounts = new Map<SensitiveTagKey, number>();
+  const data = useMemo<AnalyticsData>(() => {
+    try {
+      const MAX_SENSITIVE_SAMPLES = extendedMode ? 3500 : 1500;
+      const safeSensitiveSamples = normalizeSensitiveSamples(dti?.sensitive_samples);
+      const siteCategory = new Map<string, Record<string, number>>();
+      const siteFindings = new Map<string, Row[]>();
+      const categoryTotals = new Map<string, number>();
+      const scopeTotals = new Map<string, number>();
+      const sensitiveTotals = new Map<SensitiveTagKey, number>();
+      const sensitiveDetails: SensitiveDetailRow[] = [];
+      const repositorySet = new Set<string>();
+      const repositoryContentCounts = new Map<SensitiveTagKey, number>();
 
-    for (const row of safeRows) {
-      const site = row.site || 'n/a';
-      const category = row.category || 'Minacce rilevate';
-      const scope = (row.scope_status || 'unknown').toLowerCase();
+      for (const row of safeRows) {
+        const site = row.site || 'n/a';
+        const category = row.category || 'Minacce rilevate';
+        const scope = (row.scope_status || 'unknown').toLowerCase();
 
-      if (!siteCategory.has(site)) siteCategory.set(site, { total: 0 });
-      const siteBucket = siteCategory.get(site)!;
-      siteBucket[category] = (siteBucket[category] || 0) + 1;
-      siteBucket.total = (siteBucket.total || 0) + 1;
+        if (!siteCategory.has(site)) siteCategory.set(site, { total: 0 });
+        const siteBucket = siteCategory.get(site)!;
+        siteBucket[category] = (siteBucket[category] || 0) + 1;
+        siteBucket.total = (siteBucket.total || 0) + 1;
 
-      categoryTotals.set(category, (categoryTotals.get(category) || 0) + 1);
-      scopeTotals.set(scope, (scopeTotals.get(scope) || 0) + 1);
+        categoryTotals.set(category, (categoryTotals.get(category) || 0) + 1);
+        scopeTotals.set(scope, (scopeTotals.get(scope) || 0) + 1);
 
-      if (!siteFindings.has(site)) siteFindings.set(site, []);
-      siteFindings.get(site)!.push(row);
+        if (!siteFindings.has(site)) siteFindings.set(site, []);
+        siteFindings.get(site)!.push(row);
 
-      const repositoryKey = extractRepositoryKeyFromTitle(row.title);
-      if (repositoryKey) {
-        repositorySet.add(repositoryKey);
+        const repositoryKey = extractRepositoryKeyFromTitle(row.title);
+        if (repositoryKey) {
+          repositorySet.add(repositoryKey);
+          for (const tag of row.sensitive_tags || []) {
+            const normalizedTag = normalizeSensitiveTag(tag);
+            if (!normalizedTag) continue;
+            repositoryContentCounts.set(normalizedTag, (repositoryContentCounts.get(normalizedTag) || 0) + 1);
+          }
+        }
+
+        const isScopeDomainIntelQuery = String(row.query_kind || '').toLowerCase() === 'at_domain_tld';
         for (const tag of row.sensitive_tags || []) {
           const normalizedTag = normalizeSensitiveTag(tag);
           if (!normalizedTag) continue;
-          repositoryContentCounts.set(normalizedTag, (repositoryContentCounts.get(normalizedTag) || 0) + 1);
+          if (isScopeDomainIntelQuery) {
+            sensitiveTotals.set(normalizedTag, (sensitiveTotals.get(normalizedTag) || 0) + 1);
+            sensitiveDetails.push({
+              tag: normalizedTag,
+              site,
+              severity: row.severity,
+              risk_score: Number(row.risk_score || 0),
+              title: row.title,
+              asset: row.asset,
+              finding_type: row.finding_type,
+              source: displayDarkRiskSource(row.source),
+              markedAt: row.first_seen_at || row.last_seen_at || null,
+            });
+          }
         }
       }
-
-      const isScopeDomainIntelQuery = String(row.query_kind || '').toLowerCase() === 'at_domain_tld';
-      for (const tag of row.sensitive_tags || []) {
-        const normalizedTag = normalizeSensitiveTag(tag);
-        if (!normalizedTag) continue;
-        if (isScopeDomainIntelQuery) {
-          sensitiveTotals.set(normalizedTag, (sensitiveTotals.get(normalizedTag) || 0) + 1);
-          sensitiveDetails.push({
-            tag: normalizedTag,
-            site,
-            severity: row.severity,
-            risk_score: Number(row.risk_score || 0),
-            title: row.title,
-            asset: row.asset,
-            finding_type: row.finding_type,
-            source: displayDarkRiskSource(row.source),
-            markedAt: row.first_seen_at || row.last_seen_at || null,
-          });
-        }
-      }
-    }
 
     const topCategories = Array.from(categoryTotals.entries())
       .sort((a, b) => b[1] - a[1])
@@ -526,163 +662,167 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
       .map(([scope, count]) => ({ scope, count }))
       .sort((a, b) => b.count - a.count);
 
-    const sensitiveRows = (Object.keys(sensitiveLabel) as SensitiveTagKey[]).map((tag) => {
-      const dtiCount = dti?.sensitive_totals?.[tag];
-      return {
-        tag,
-        label: sensitiveLabel[tag],
-        count: typeof dtiCount === 'number' ? dtiCount : (sensitiveTotals.get(tag) || 0),
-      };
-    });
-
-    const detailedSensitiveRows = sensitiveDetails
-      .sort((a, b) => {
-        const severityDelta = severityRank[b.severity] - severityRank[a.severity];
-        if (severityDelta !== 0) return severityDelta;
-        return b.risk_score - a.risk_score;
-      })
-      .slice(0, 80);
-
-    const groupedAssetRows = Array.from(siteFindings.entries())
-      .map(([site, groupedRows]) => {
-        const sorted = [...groupedRows].sort((a, b) => {
-          const severityDelta = severityRank[b.severity] - severityRank[a.severity];
-          if (severityDelta !== 0) return severityDelta;
-          return Number(b.risk_score || 0) - Number(a.risk_score || 0);
-        });
+      const sensitiveRows = (Object.keys(sensitiveLabel) as SensitiveTagKey[]).map((tag) => {
+        const dtiCount = finiteNumber((dti as any)?.sensitive_totals?.[tag], Number.NaN);
         return {
-          site,
-          scope_status: String(sorted[0]?.scope_status || 'unknown').toLowerCase(),
-          total: sorted.length,
-          maxSeverity: sorted[0]?.severity || 'info',
-          rows: sorted,
+          tag,
+          label: sensitiveLabel[tag],
+          count: Number.isFinite(dtiCount) ? dtiCount : (sensitiveTotals.get(tag) || 0),
         };
-      })
-      .sort((a, b) => {
-        const severityDelta = severityRank[b.maxSeverity] - severityRank[a.maxSeverity];
-        if (severityDelta !== 0) return severityDelta;
-        return b.total - a.total;
       });
 
-    const identityMap = new Map<string, IdentityEvidenceRow>();
-    for (const sample of dti?.sensitive_samples || []) {
-      if (!isIdentitySensitiveSample(sample)) continue;
-      const tag = normalizeSensitiveTag(sample.tag || '');
-      if (!tag) continue;
-      const identity = String(sample.query_term || sample.asset_scope || 'n/a').toLowerCase();
-      const bucket = identityMap.get(identity) || {
-        identity,
-        domains: 0,
-        passwords: 0,
-        passwords_raw: 0,
-        addresses: 0,
-        credit_cards: 0,
-        phone_numbers: 0,
-        total: 0,
-        samples: [],
-        passwordValues: [],
-        sourceLabels: [],
-        lastMarkedAt: null,
-      };
-      const sampleValue = String(sample.value || sample.masked_value || '').trim();
-      if (tag === 'passwords') {
-        if (!shouldAcceptIdentityPasswordSample(sample)) continue;
-        bucket.passwords_raw += 1;
-        if (!bucket.passwordValues.includes(sampleValue) && bucket.passwordValues.length < MAX_PASSWORD_VALUES_PER_IDENTITY) {
-          bucket.passwordValues.push(sampleValue);
+      const detailedSensitiveRows = sensitiveDetails
+        .sort((a, b) => {
+          const severityDelta = (severityRank[b.severity] || 0) - (severityRank[a.severity] || 0);
+          if (severityDelta !== 0) return severityDelta;
+          return b.risk_score - a.risk_score;
+        })
+        .slice(0, 80);
+
+      const groupedAssetRows = Array.from(siteFindings.entries())
+        .map(([site, groupedRows]) => {
+          const sorted = [...groupedRows].sort((a, b) => {
+            const severityDelta = (severityRank[b.severity] || 0) - (severityRank[a.severity] || 0);
+            if (severityDelta !== 0) return severityDelta;
+            return Number(b.risk_score || 0) - Number(a.risk_score || 0);
+          });
+          return {
+            site,
+            scope_status: String(sorted[0]?.scope_status || 'unknown').toLowerCase(),
+            total: sorted.length,
+            maxSeverity: sorted[0]?.severity || 'info',
+            rows: sorted,
+          } as GroupedAssetRow;
+        })
+        .sort((a, b) => {
+          const severityDelta = (severityRank[b.maxSeverity] || 0) - (severityRank[a.maxSeverity] || 0);
+          if (severityDelta !== 0) return severityDelta;
+          return b.total - a.total;
+        });
+
+      const identityMap = new Map<string, IdentityEvidenceRow>();
+      for (const sample of safeSensitiveSamples) {
+        if (!isIdentitySensitiveSample(sample)) continue;
+        const tag = normalizeSensitiveTag(sample.tag || '');
+        if (!tag) continue;
+        const identity = String(sample.query_term || sample.asset_scope || 'n/a').toLowerCase();
+        const bucket = identityMap.get(identity) || {
+          identity,
+          domains: 0,
+          passwords: 0,
+          passwords_raw: 0,
+          addresses: 0,
+          credit_cards: 0,
+          phone_numbers: 0,
+          total: 0,
+          samples: [],
+          passwordValues: [],
+          sourceLabels: [],
+          lastMarkedAt: null,
+        };
+        const sampleValue = String(sample.value || sample.masked_value || '').trim();
+        if (tag === 'passwords') {
+          if (!shouldAcceptIdentityPasswordSample(sample)) continue;
+          bucket.passwords_raw += 1;
+          if (!bucket.passwordValues.includes(sampleValue) && bucket.passwordValues.length < MAX_PASSWORD_VALUES_PER_IDENTITY) {
+            bucket.passwordValues.push(sampleValue);
+          }
+          bucket.passwords = bucket.passwordValues.length;
+        } else {
+          bucket[tag] += 1;
         }
         bucket.passwords = bucket.passwordValues.length;
-      } else {
-        bucket[tag] += 1;
+        bucket.total += 1;
+        const sourceLabel = displayDarkRiskSource(String(sample.source || 'DarkRisk360'));
+        if (sourceLabel && !bucket.sourceLabels.includes(sourceLabel)) {
+          bucket.sourceLabels.push(sourceLabel);
+        }
+        const sampleTs = sample.created_at && Number.isFinite(Date.parse(sample.created_at)) ? sample.created_at : null;
+        if (sampleTs && (!bucket.lastMarkedAt || Date.parse(sampleTs) > Date.parse(bucket.lastMarkedAt))) {
+          bucket.lastMarkedAt = sampleTs;
+        }
+        if (bucket.samples.length < 40) bucket.samples.push(sample);
+        identityMap.set(identity, bucket);
       }
-      bucket.passwords = bucket.passwordValues.length;
-      bucket.total += 1;
-      const sourceLabel = displayDarkRiskSource(String(sample.source || 'DarkRisk360'));
-      if (sourceLabel && !bucket.sourceLabels.includes(sourceLabel)) {
-        bucket.sourceLabels.push(sourceLabel);
-      }
-      const sampleTs = sample.created_at && Number.isFinite(Date.parse(sample.created_at)) ? sample.created_at : null;
-      if (sampleTs && (!bucket.lastMarkedAt || Date.parse(sampleTs) > Date.parse(bucket.lastMarkedAt))) {
-        bucket.lastMarkedAt = sampleTs;
-      }
-      if (bucket.samples.length < 40) bucket.samples.push(sample);
-      identityMap.set(identity, bucket);
-    }
 
-    const identityRows = Array.from(identityMap.values())
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 12)
-      .map((row) => ({
-        ...row,
-        passwords: row.passwordValues.length,
-        identityLabel: shortSiteLabel(row.identity),
-      }));
+      const identityRows = Array.from(identityMap.values())
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 12)
+        .map((row) => ({
+          ...row,
+          passwords: row.passwordValues.length,
+          identityLabel: shortSiteLabel(row.identity),
+        }));
 
-    const identityFindingRows = safeRows
-      .filter((row) => isEmailSelectorCoverageKind(row.query_kind, row.query_term || row.asset))
-      .map((row) => ({
-        email: String(row.query_term || row.asset || row.site || '-').toLowerCase(),
-        severity: row.severity,
-        confidence: String(row.confidence || 'medium'),
-        riskScore: Number(row.risk_score || 0),
-        title: row.title,
-        source: displayDarkRiskSource(row.source),
-        firstSeenAt: row.first_seen_at || null,
-        lastSeenAt: row.last_seen_at || null,
-      }))
-      .sort((a, b) => {
-        const severityDelta = severityRank[b.severity] - severityRank[a.severity];
-        if (severityDelta !== 0) return severityDelta;
-        return b.riskScore - a.riskScore;
-      })
-      .slice(0, 200);
+      const identityFindingRows = safeRows
+        .filter((row) => isEmailSelectorCoverageKind(row.query_kind, row.query_term || row.asset))
+        .map((row) => ({
+          email: String(row.query_term || row.asset || row.site || '-').toLowerCase(),
+          severity: row.severity,
+          confidence: String(row.confidence || 'medium'),
+          riskScore: Number(row.risk_score || 0),
+          title: row.title,
+          source: displayDarkRiskSource(row.source),
+          firstSeenAt: row.first_seen_at || null,
+          lastSeenAt: row.last_seen_at || null,
+        }))
+        .sort((a, b) => {
+          const severityDelta = (severityRank[b.severity] || 0) - (severityRank[a.severity] || 0);
+          if (severityDelta !== 0) return severityDelta;
+          return b.riskScore - a.riskScore;
+        })
+        .slice(0, 200);
 
-    const credentialCompromiseRows = safeRows
-      .filter((row) => {
-        const categoryKey = normalizeThreatCategoryKey(row.category || '');
-        const sourceText = `${row.finding_type || ''} ${row.title || ''} ${row.compromise_type || ''}`.toLowerCase();
-        return categoryKey === 'credenziali_compromesse'
-          || sourceText.includes('credential')
-          || sourceText.includes('credenzial')
-          || sourceText.includes('password');
-      })
-      .slice(0, 400);
+      const credentialCompromiseRows = safeRows
+        .filter((row) => {
+          const categoryKey = normalizeThreatCategoryKey(row.category || '');
+          const sourceText = `${row.finding_type || ''} ${row.title || ''} ${row.compromise_type || ''}`.toLowerCase();
+          return categoryKey === 'credenziali_compromesse'
+            || sourceText.includes('credential')
+            || sourceText.includes('credenzial')
+            || sourceText.includes('password');
+        })
+        .slice(0, 400);
 
-    const sensitiveSampleRows: SensitiveSampleViewRow[] = (dti?.sensitive_samples || []).slice(0, MAX_SENSITIVE_SAMPLES).map((sample, index) => {
-      const tag = normalizeSensitiveTag(sample.tag || '');
+      const sensitiveSampleRows: SensitiveSampleViewRow[] = safeSensitiveSamples.slice(0, MAX_SENSITIVE_SAMPLES).map((sample, index) => {
+        const tag = normalizeSensitiveTag(sample.tag || '');
+        return {
+          id: `${sample.query_kind || 'sample'}-${sample.asset_scope || 'asset'}-${sample.tag || 'tag'}-${index}`,
+          tag,
+          categoryLabel: tag ? sensitiveLabel[tag] : String(sample.tag || 'Altro'),
+          assetScope: String(sample.asset_scope || '-'),
+          queryTerm: String(sample.query_term || '-'),
+          value: String(sample.value || sample.masked_value || '-'),
+          source: displayDarkRiskSource(String(sample.source || 'DarkRisk360')),
+          queryKind: String(sample.query_kind || '-'),
+          createdAt: sample.created_at || null,
+        };
+      });
+
       return {
-        id: `${sample.query_kind || 'sample'}-${sample.asset_scope || 'asset'}-${sample.tag || 'tag'}-${index}`,
-        tag,
-        categoryLabel: tag ? sensitiveLabel[tag] : String(sample.tag || 'Altro'),
-        assetScope: String(sample.asset_scope || '-'),
-        queryTerm: String(sample.query_term || '-'),
-        value: String(sample.value || sample.masked_value || '-'),
-        source: displayDarkRiskSource(String(sample.source || 'DarkRisk360')),
-        queryKind: String(sample.query_kind || '-'),
-        createdAt: sample.created_at || null,
+        topCategories,
+        siteRows,
+        scopeRows,
+        sensitiveRows,
+        detailedSensitiveRows,
+        groupedAssetRows,
+        identityRows,
+        identityFindingRows,
+        credentialCompromiseRows,
+        sensitiveSampleRows,
+        repositorySummary: {
+          total: repositorySet.size,
+          domains: repositoryContentCounts.get('domains') || 0,
+          passwords: repositoryContentCounts.get('passwords') || 0,
+          addresses: repositoryContentCounts.get('addresses') || 0,
+          credit_cards: repositoryContentCounts.get('credit_cards') || 0,
+          phone_numbers: repositoryContentCounts.get('phone_numbers') || 0,
+        },
       };
-    });
-
-    return {
-      topCategories,
-      siteRows,
-      scopeRows,
-      sensitiveRows,
-      detailedSensitiveRows,
-      groupedAssetRows,
-      identityRows,
-      identityFindingRows,
-      credentialCompromiseRows,
-      sensitiveSampleRows,
-      repositorySummary: {
-        total: repositorySet.size,
-        domains: repositoryContentCounts.get('domains') || 0,
-        passwords: repositoryContentCounts.get('passwords') || 0,
-        addresses: repositoryContentCounts.get('addresses') || 0,
-        credit_cards: repositoryContentCounts.get('credit_cards') || 0,
-        phone_numbers: repositoryContentCounts.get('phone_numbers') || 0,
-      },
-    };
+    } catch (analyticsError) {
+      console.error('[darkrisk360-findings] analytics compute failed, returning safe fallback', analyticsError);
+      return emptyAnalyticsData();
+    }
   }, [safeRows, dti, extendedMode]);
 
   const filteredSensitiveSampleRows = useMemo(() => {
@@ -709,19 +849,19 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
         {dti ? (
           <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">Query @domain.tld: {dti?.query_coverage?.at_domain_tld || 0}</Badge>
-              <Badge variant="outline">Query selector: {dti?.query_coverage?.selector || 0}</Badge>
-              <Badge variant="outline">Query email: {dti?.query_coverage?.email_selector || 0}</Badge>
-              <Badge variant="outline">Source run: {dti?.source_runs?.completed || 0}/{dti?.source_runs?.total || 0} completed</Badge>
-              <Badge variant="outline">Email query run: {Number(dti.intelx_stats?.email_queries_run || 0)}</Badge>
-              <Badge variant="outline">Strict password hit: {Number(dti.intelx_stats?.strict_password_hits || 0)}</Badge>
-              {Number(dti.intelx_stats?.metadata_only_hits || 0) > 0 ? (
+              <Badge variant="outline">Query @domain.tld: {dtiStats.atDomainTld}</Badge>
+              <Badge variant="outline">Query selector: {dtiStats.selector}</Badge>
+              <Badge variant="outline">Query email: {dtiStats.emailSelector}</Badge>
+              <Badge variant="outline">Source run: {dtiStats.sourceCompleted}/{dtiStats.sourceTotal} completed</Badge>
+              <Badge variant="outline">Email query run: {dtiStats.emailQueriesRun}</Badge>
+              <Badge variant="outline">Strict password hit: {dtiStats.strictPasswordHits}</Badge>
+              {dtiStats.metadataOnlyHits > 0 ? (
                 <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40">
-                  metadata-only excluded {Number(dti.intelx_stats?.metadata_only_hits || 0)}
+                  metadata-only excluded {dtiStats.metadataOnlyHits}
                 </Badge>
               ) : null}
-              {(dti?.source_runs?.partial || 0) > 0 ? <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40">partial {dti?.source_runs?.partial || 0}</Badge> : null}
-              {(dti?.source_runs?.failed || 0) > 0 ? <Badge className="bg-red-500/20 text-red-300 border-red-500/40">failed {dti?.source_runs?.failed || 0}</Badge> : null}
+              {dtiStats.sourcePartial > 0 ? <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40">partial {dtiStats.sourcePartial}</Badge> : null}
+              {dtiStats.sourceFailed > 0 ? <Badge className="bg-red-500/20 text-red-300 border-red-500/40">failed {dtiStats.sourceFailed}</Badge> : null}
             </div>
           </div>
         ) : null}
@@ -861,7 +1001,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                   ) : null}
                 </div>
               </div>
-              {(dti?.sensitive_samples?.length || 0) === 0 && data.detailedSensitiveRows.length === 0 ? (
+              {dtiStats.sensitiveSamplesCount === 0 && data.detailedSensitiveRows.length === 0 ? (
                 <p className="text-xs text-muted-foreground">Nessuna evidenza sensibile classificata nel ciclo corrente.</p>
               ) : data.sensitiveSampleRows.length > 0 && filteredSensitiveSampleRows.length === 0 ? (
                 <p className="text-xs text-muted-foreground">Nessuna evidenza corrisponde ai filtri PowerQuery impostati.</p>

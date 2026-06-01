@@ -174,7 +174,8 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
   const [customPorts, setCustomPorts] = useState('top1000');
   const [scopeDomains, setScopeDomains] = useState<string[]>([]);
   const [scopePublicIps, setScopePublicIps] = useState<string[]>([]);
-  const autoStartAttemptedRef = useRef(false);
+  const autoStartInFlightKeyRef = useRef('');
+  const autoStartFailedKeyRef = useRef('');
 
   const fullControls = useMemo(
     () => ({
@@ -332,10 +333,14 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
   }, [refreshData]);
 
   const runExposureScan = useCallback(
-    async (payload: ExposureStartRequest, options?: { auto?: boolean }) => {
+    async (payload: ExposureStartRequest, options?: { auto?: boolean; autoKey?: string }) => {
       setStartingScan(true);
       try {
         const result = await startExposureScan(payload);
+        if (options?.auto) {
+          autoStartInFlightKeyRef.current = '';
+          autoStartFailedKeyRef.current = '';
+        }
         setSelectedJobId(String(result?.job_id || ''));
         toast.success(options?.auto ? 'Scansione scope avviata automaticamente' : 'Scansione exposure avviata', {
           description: `Job ${result?.job_id || '-'} • Queue: ${result?.queue?.total || 0}`,
@@ -351,8 +356,9 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
         await refreshData();
         return result;
       } catch (error: any) {
-        if (options?.auto) {
-          autoStartAttemptedRef.current = false;
+        if (options?.auto && options.autoKey) {
+          autoStartInFlightKeyRef.current = '';
+          autoStartFailedKeyRef.current = options.autoKey;
         }
         toast.error(options?.auto ? 'Auto-avvio scope non riuscito' : 'Avvio scansione non riuscito', {
           description: error?.message || 'Errore durante avvio',
@@ -403,7 +409,6 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
 
   useEffect(() => {
     if (!isAdmin || !organizationId) return;
-    if (autoStartAttemptedRef.current) return;
     if (loading || startingScan) return;
 
     const scopeHasTargets = scopeDomains.length > 0 || scopePublicIps.length > 0;
@@ -438,7 +443,23 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       || hasFailedLatestTargets;
     if (!shouldAutoStart) return;
 
-    autoStartAttemptedRef.current = true;
+    const autoStartKey = [
+      organizationId,
+      [...scopeDomains].sort().join(','),
+      [...scopePublicIps].sort().join(','),
+      jobs
+        .slice(0, 8)
+        .map((job) => `${String(job?.id || '')}:${String(job?.status || '')}`)
+        .join('|'),
+      targetSnapshots
+        .map((snapshot) => `${String(snapshot?.target_key || '')}:${String(snapshot?.live?.status || '')}:${String(snapshot?.last_good?.job_id || '')}`)
+        .sort()
+        .join('|'),
+    ].join('::');
+
+    if (autoStartInFlightKeyRef.current === autoStartKey) return;
+    if (autoStartFailedKeyRef.current === autoStartKey) return;
+    autoStartInFlightKeyRef.current = autoStartKey;
 
     const payload: ExposureStartRequest = {
       tenant_id: organizationId,
@@ -461,7 +482,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       traceroute: fullControls.traceroute,
     };
 
-    void runExposureScan(payload, { auto: true });
+    void runExposureScan(payload, { auto: true, autoKey: autoStartKey });
   }, [
     isAdmin,
     organizationId,

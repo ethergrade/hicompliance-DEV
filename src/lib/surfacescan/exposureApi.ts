@@ -213,31 +213,67 @@ export type ExposureFindingRow = {
   created_at: string;
 };
 
+type EdgeFunctionPayload = {
+  error?: string;
+  message?: string;
+  code?: string;
+};
+
+const toEdgeFunctionError = async (error: any): Promise<Error> => {
+  const fallbackMessage =
+    String(error?.message || 'Edge Function request failed').trim() || 'Edge Function request failed';
+  const response = error?.context;
+
+  if (response && typeof response.clone === 'function') {
+    try {
+      const payload = (await response.clone().json()) as EdgeFunctionPayload;
+      const detailedMessage = String(payload?.error || payload?.message || '').trim();
+      if (detailedMessage) {
+        const enriched = new Error(detailedMessage);
+        (enriched as any).code = payload?.code;
+        (enriched as any).cause = error;
+        return enriched;
+      }
+    } catch {
+      // fall through to text body parsing
+    }
+
+    try {
+      const text = String(await response.clone().text()).trim();
+      if (text) {
+        const enriched = new Error(text);
+        (enriched as any).cause = error;
+        return enriched;
+      }
+    } catch {
+      // ignore unreadable body
+    }
+  }
+
+  return error instanceof Error ? error : new Error(fallbackMessage);
+};
+
+async function invokeFunctionJson<T>(name: string, body: unknown): Promise<T> {
+  const { data, error } = await supabase.functions.invoke(name, { body });
+  if (error) throw await toEdgeFunctionError(error);
+  if ((data as any)?.error) {
+    const enriched = new Error(String((data as any).error || 'Edge Function request failed'));
+    (enriched as any).code = (data as any)?.code;
+    throw enriched;
+  }
+  return data as T;
+}
+
 export async function startExposureScan(input: ExposureStartRequest) {
-  const { data, error } = await supabase.functions.invoke('ptools-start-exposure-scan', {
-    body: input,
-  });
-  if (error) throw error;
-  if ((data as any)?.error) throw new Error((data as any).error);
-  return data;
+  return await invokeFunctionJson<any>('ptools-start-exposure-scan', input);
 }
 
 export async function triggerExposurePoll() {
-  const { data, error } = await supabase.functions.invoke('ptools-poll-scans', {
-    body: { trigger: 'manual_ui' },
-  });
-  if (error) throw error;
-  if ((data as any)?.error) throw new Error((data as any).error);
-  return data;
+  return await invokeFunctionJson<any>('ptools-poll-scans', { trigger: 'manual_ui' });
 }
 
 export async function resyncExposureJob(jobId: string) {
-  const { data, error } = await supabase.functions.invoke('ptools-resync-job', {
-    body: { job_id: jobId },
-  });
-  if (error) throw error;
-  if ((data as any)?.error) throw new Error((data as any).error);
-  return data;
+  return await invokeFunctionJson<any>('ptools-resync-job', { job_id: jobId });
 }
 
 export async function fetchExposureSummary(params: {
@@ -245,16 +281,11 @@ export async function fetchExposureSummary(params: {
   jobId?: string;
   scopeMode?: 'single_job' | 'scope_latest_per_target';
 }): Promise<ExposureSummary> {
-  const { data, error } = await supabase.functions.invoke('surface-exposure-summary', {
-    body: {
-      customer_id: params.customerId,
-      job_id: params.jobId || undefined,
-      scope_mode: params.scopeMode || (params.jobId ? 'single_job' : 'scope_latest_per_target'),
-    },
+  return await invokeFunctionJson<ExposureSummary>('surface-exposure-summary', {
+    customer_id: params.customerId,
+    job_id: params.jobId || undefined,
+    scope_mode: params.scopeMode || (params.jobId ? 'single_job' : 'scope_latest_per_target'),
   });
-  if (error) throw error;
-  if ((data as any)?.error) throw new Error((data as any).error);
-  return data as ExposureSummary;
 }
 
 export async function fetchExposureJobs(customerId: string, limit = 20): Promise<any[]> {

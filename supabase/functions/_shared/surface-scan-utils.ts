@@ -94,9 +94,194 @@ const BLOCKED_HOSTS = new Set(["localhost"]);
 const BLOCKED_SCHEMES = new Set(["file:", "ftp:", "ws:", "wss:"]);
 const SALES_LOCK_EMAIL = "sales@sales.com";
 const SALES_LOCK_ORG_CODE = "cliente1";
+const KNOWN_USER_BOOTSTRAP: Record<string, {
+  fullName: string;
+  userType: "admin" | "client";
+  role?: "super_admin" | "sales";
+  organizationCode?: string;
+}> = {
+  "superadmin@superadmin.com": {
+    fullName: "Super Administrator",
+    userType: "admin",
+    role: "super_admin",
+  },
+  "admin@admin.com": {
+    fullName: "Administrator",
+    userType: "admin",
+    role: "super_admin",
+  },
+  [SALES_LOCK_EMAIL]: {
+    fullName: "Sales User",
+    userType: "client",
+    role: "sales",
+    organizationCode: SALES_LOCK_ORG_CODE,
+  },
+};
+
+export class SurfaceScanHttpError extends Error {
+  status: number;
+  code: string;
+  details: Record<string, unknown>;
+
+  constructor(
+    status: number,
+    message: string,
+    code = "request_error",
+    details: Record<string, unknown> = {},
+  ) {
+    super(message);
+    this.name = "SurfaceScanHttpError";
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
 
 export const isAllowedProfile = (profile: string): profile is ScanProfile =>
   (ALLOWED_PROFILES as readonly string[]).includes(profile);
+
+async function findOrganizationIdByCode(
+  adminClient: SupabaseClient,
+  code: string | undefined,
+): Promise<string | null> {
+  const normalizedCode = String(code || "").trim().toLowerCase();
+  if (!normalizedCode) return null;
+
+  const { data, error } = await adminClient
+    .from("organizations")
+    .select("id")
+    .eq("code", normalizedCode)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || `Unable to resolve organization "${normalizedCode}"`);
+  }
+
+  return data?.id ? String(data.id) : null;
+}
+
+async function ensureKnownUserProfile(
+  adminClient: SupabaseClient,
+  authUserId: string,
+  email: string,
+): Promise<{
+  auth_user_id: string | null;
+  email: string;
+  user_type: string;
+  organization_id: string | null;
+} | null> {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const seed = KNOWN_USER_BOOTSTRAP[normalizedEmail];
+  if (!seed) return null;
+
+  const organizationId = await findOrganizationIdByCode(adminClient, seed.organizationCode);
+  const { data: existingRow, error: existingError } = await adminClient
+    .from("users")
+    .select("id, auth_user_id, email, full_name, user_type, organization_id")
+    .eq("email", normalizedEmail)
+    .maybeSingle();
+
+  if (existingError) {
+    throw new Error(existingError.message || "Unable to inspect user bootstrap row");
+  }
+
+  if (existingRow?.id) {
+    const patch: Record<string, unknown> = {};
+    if (String(existingRow.auth_user_id || "") !== authUserId) {
+      patch.auth_user_id = authUserId;
+    }
+    if (String(existingRow.user_type || "") !== seed.userType) {
+      patch.user_type = seed.userType;
+    }
+    if (!String(existingRow.full_name || "").trim()) {
+      patch.full_name = seed.fullName;
+    }
+    if (
+      seed.organizationCode
+      && String(existingRow.organization_id || "") !== String(organizationId || "")
+    ) {
+      patch.organization_id = organizationId;
+    }
+
+    if (Object.keys(patch).length > 0) {
+      const { error: updateError } = await adminClient
+        .from("users")
+        .update(patch)
+        .eq("id", existingRow.id);
+      if (updateError) {
+        throw new Error(updateError.message || "Unable to repair existing user bootstrap row");
+      }
+    }
+  } else {
+    const { error: insertError } = await adminClient
+      .from("users")
+      .insert({
+        auth_user_id: authUserId,
+        email: normalizedEmail,
+        full_name: seed.fullName,
+        user_type: seed.userType,
+        organization_id: organizationId,
+      });
+    if (insertError) {
+      throw new Error(insertError.message || "Unable to insert missing user bootstrap row");
+    }
+  }
+
+  if (seed.role) {
+    const { error: roleError } = await adminClient
+      .from("user_roles")
+      .upsert(
+        {
+          user_id: authUserId,
+          role: seed.role,
+        },
+        {
+          onConflict: "user_id,role",
+        },
+      );
+    if (roleError) {
+      throw new Error(roleError.message || "Unable to repair bootstrap role mapping");
+    }
+  }
+
+  const { data: repairedRow, error: repairedError } = await adminClient
+    .from("users")
+    .select("auth_user_id, email, user_type, organization_id")
+    .eq("auth_user_id", authUserId)
+    .maybeSingle();
+
+  if (repairedError) {
+    throw new Error(repairedError.message || "Unable to load repaired user row");
+  }
+
+  return repairedRow || null;
+}
+
+export function toErrorResponsePayload(
+  error: unknown,
+  fallbackMessage = "Internal error",
+): {
+  status: number;
+  body: Record<string, unknown>;
+} {
+  if (error instanceof SurfaceScanHttpError) {
+    return {
+      status: error.status,
+      body: {
+        error: error.message,
+        code: error.code,
+        ...error.details,
+      },
+    };
+  }
+
+  return {
+    status: 500,
+    body: {
+      error: error instanceof Error ? error.message : fallbackMessage,
+    },
+  };
+}
 
 function parseDateOnly(value: string | null | undefined): Date | null {
   const raw = String(value || "").trim();
@@ -634,14 +819,14 @@ export async function getCallerProfile(
   adminClient: SupabaseClient,
   authUserId: string,
 ): Promise<CallerProfile> {
-  const { data: userRow, error: userError } = await adminClient
+  let { data: userRow, error: userError } = await adminClient
     .from("users")
     .select("auth_user_id, email, user_type, organization_id")
     .eq("auth_user_id", authUserId)
-    .single();
+    .maybeSingle();
 
-  if (userError || !userRow) {
-    throw new Error("Profilo utente non trovato");
+  if (userError) {
+    throw new Error(userError.message || "Unable to load caller profile");
   }
 
   const [manageRes, roleRes] = await Promise.all([
@@ -649,8 +834,47 @@ export async function getCallerProfile(
     adminClient.rpc("has_role", { _user_id: authUserId, _role: "super_admin" }),
   ]);
 
+  let normalizedEmail = String(userRow?.email || "").toLowerCase();
+
+  if (!userRow) {
+    const { data: authLookup, error: authLookupError } = await adminClient.auth.admin.getUserById(authUserId);
+    if (authLookupError) {
+      throw new Error(authLookupError.message || "Unable to resolve auth user");
+    }
+
+    normalizedEmail = String(authLookup.user?.email || "").trim().toLowerCase();
+    if (normalizedEmail) {
+      userRow = await ensureKnownUserProfile(adminClient, authUserId, normalizedEmail);
+    }
+  }
+
+  if (!userRow) {
+    const canManageAllOrganizations = Boolean(manageRes.data);
+    const isSuperAdmin = Boolean(roleRes.data);
+    if (canManageAllOrganizations || isSuperAdmin) {
+      return {
+        authUserId,
+        email: normalizedEmail,
+        userType: "admin",
+        organizationId: null,
+        canManageAllOrganizations,
+        isSuperAdmin,
+        isAdminLike: true,
+      };
+    }
+
+    throw new SurfaceScanHttpError(
+      403,
+      "Profilo utente non sincronizzato",
+      "user_profile_not_synced",
+      {
+        auth_user_id: authUserId,
+      },
+    );
+  }
+
   let callerOrganizationId = userRow.organization_id;
-  const normalizedEmail = String(userRow.email || "").toLowerCase();
+  normalizedEmail = String(userRow.email || normalizedEmail || "").toLowerCase();
   if (normalizedEmail === SALES_LOCK_EMAIL) {
     const { data: salesOrg } = await adminClient
       .from("organizations")
@@ -682,12 +906,12 @@ export function assertCustomerAccess(
   const isLockedSalesUser = caller.email === SALES_LOCK_EMAIL;
 
   if (isLockedSalesUser && callerOrgId !== normalizedCustomerId) {
-    throw new Error("Accesso cliente non autorizzato");
+    throw new SurfaceScanHttpError(403, "Accesso cliente non autorizzato", "customer_access_denied");
   }
 
   const canAccess = caller.canManageAllOrganizations || callerOrgId === normalizedCustomerId;
   if (!canAccess) {
-    throw new Error("Accesso cliente non autorizzato");
+    throw new SurfaceScanHttpError(403, "Accesso cliente non autorizzato", "customer_access_denied");
   }
 }
 

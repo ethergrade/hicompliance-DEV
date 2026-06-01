@@ -8,6 +8,7 @@ import {
   isIpWithinMonitoredScope,
   isValidIPv4,
   splitMonitoredScopeRules,
+  toErrorResponsePayload,
 } from '../_shared/surface-scan-utils.ts';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -771,6 +772,7 @@ serve(async (req: Request) => {
       diff,
     });
   } catch (error: any) {
-    return jsonResponse({ error: error?.message || 'Internal error' }, 500);
+    const { status, body } = toErrorResponsePayload(error, 'Internal error');
+    return jsonResponse(body, status);
   }
 });

@@ -5,6 +5,7 @@ import {
   getCallerProfile,
   assertCustomerAccess,
   evaluateOrganizationServiceGate,
+  toErrorResponsePayload,
 } from '../_shared/surface-scan-utils.ts';
 import {
   PENTEST_TOOL_IDS,
@@ -290,6 +291,7 @@ serve(async (req: Request) => {
       },
     });
   } catch (error: any) {
-    return jsonResponse({ error: error?.message || 'Internal error' }, 500);
+    const { status, body } = toErrorResponsePayload(error, 'Internal error');
+    return jsonResponse(body, status);
   }
 });
