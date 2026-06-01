@@ -76,8 +76,10 @@ export const AlertConfigDialog: React.FC<AlertConfigDialogProps> = ({
   mode = 'create',
 }) => {
   const { userProfile } = useAuth();
-  const { users, loading: usersLoading } = useOrganizationUsers();
   const isAdmin = userProfile?.user_type === 'admin';
+  const { users, loading: usersLoading } = useOrganizationUsers({
+    enabled: open && isAdmin && mode === 'create',
+  });
 
   const form = useForm<AlertFormValues>({
     resolver: zodResolver(alertFormSchema),
@@ -158,6 +160,11 @@ export const AlertConfigDialog: React.FC<AlertConfigDialogProps> = ({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
+                        {usersLoading ? (
+                          <SelectItem value="__loading__" disabled>
+                            Caricamento utenti...
+                          </SelectItem>
+                        ) : null}
                         {users.map((user) => (
                           <SelectItem key={user.auth_user_id} value={user.auth_user_id}>
                             {user.full_name} ({user.email})

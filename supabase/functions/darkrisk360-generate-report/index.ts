@@ -793,7 +793,7 @@ serve(async (req: Request) => {
 
     const scanRun = scanRunRes.data as any;
 
-    if (!forceRegenerate || reportMode === 'extended') {
+    if (!forceRegenerate) {
       let existingReportQuery = adminClient
         .from('darkrisk_report_snapshots' as any)
         .select('id, generated_at, title, classification, tier, html_storage_path, json_storage_path, pdf_storage_path, model_metadata')
@@ -801,8 +801,13 @@ serve(async (req: Request) => {
         .eq('tier', tier)
         .eq('classification', requestedClassification);
 
-      if (reportMode === 'weekly') {
+      if (requestedScanRunId) {
+        existingReportQuery = existingReportQuery.eq('scan_run_id', scanRun.id);
+      } else if (reportMode === 'weekly') {
         existingReportQuery = existingReportQuery.gte('generated_at', startOfCurrentUtcWeekIso());
+      } else {
+        // Extended reports are reusable only for the same scan run.
+        existingReportQuery = existingReportQuery.eq('scan_run_id', scanRun.id);
       }
 
       const existingReportRes = await existingReportQuery
@@ -1344,7 +1349,7 @@ serve(async (req: Request) => {
         model_metadata: {
           report_mode: reportMode,
           report_period: reportMode === 'weekly' ? 'weekly' : 'final_extended',
-          generated_policy: reportMode === 'extended' ? 'single_final_per_customer' : 'one_per_customer_week',
+          generated_policy: reportMode === 'extended' ? 'single_final_per_scan_run' : 'one_per_customer_week',
           report_schema_version: REPORT_SCHEMA_VERSION,
           prompt_version: primaryRecommendation?.prompt_version || null,
           model: primaryRecommendation?.model || null,

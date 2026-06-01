@@ -135,6 +135,10 @@ const DARKRISK_RUN_BUDGET_MS = Math.max(
   30_000,
   Math.min(300_000, Number(Deno.env.get('DARKRISK_RUN_BUDGET_MS') || 120_000)),
 );
+const DARKRISK_INTERNAL_CHAIN_TIMEOUT_MS = Math.max(
+  5_000,
+  Math.min(90_000, Number(Deno.env.get('DARKRISK_INTERNAL_CHAIN_TIMEOUT_MS') || 30_000)),
+);
 
 function extractBearerToken(req: Request): string {
   const auth = String(req.headers.get('authorization') || '');
@@ -316,6 +320,27 @@ const intelxAllowedSelectorTypes = new Set([
 ]);
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function fetchWithTimeout(
+  input: string | URL | Request,
+  init: RequestInit = {},
+  timeoutMs = DARKRISK_INTERNAL_CHAIN_TIMEOUT_MS,
+): Promise<Response> {
+  const timeout = Math.max(1_000, Number(timeoutMs || 0));
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeout);
+  try {
+    return await fetch(input, { ...init, signal: ctrl.signal });
+  } catch (err: any) {
+    if (String(err?.name || '').toLowerCase() === 'aborterror') {
+      const target = typeof input === 'string' ? input : String((input as URL)?.toString?.() || 'request');
+      throw new Error(`Request timeout after ${timeout}ms: ${target.slice(0, 180)}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function isIntelxConfigured(): boolean {
   return Boolean(INTELX_API_KEY && INTELX_API_URL);
@@ -881,6 +906,16 @@ const INTELX_SERVER_TIMEOUT_S = Math.max(
   3,
   Math.ceil((INTELX_MAX_POLL_ROUNDS * INTELX_REQUEST_INTERVAL_MS) / 1000),
 );
+const INTELX_HTTP_TIMEOUT_MS = Math.max(
+  5_000,
+  Math.min(
+    120_000,
+    Number(
+      Deno.env.get('INTELX_HTTP_TIMEOUT_MS')
+      || (INTELX_SERVER_TIMEOUT_S * 1000 + 8_000),
+    ),
+  ),
+);
 
 async function intelxSubmitSearch(term: string): Promise<string | null> {
   const payload = {
@@ -897,7 +932,7 @@ async function intelxSubmitSearch(term: string): Promise<string | null> {
   };
 
   return intelxFetchWithBackoff(async () => {
-    const response = await fetch(`${INTELX_API_URL}/intelligent/search`, {
+    const response = await fetchWithTimeout(`${INTELX_API_URL}/intelligent/search`, {
       method: 'POST',
       headers: {
         'x-key': INTELX_API_KEY,
@@ -905,7 +940,7 @@ async function intelxSubmitSearch(term: string): Promise<string | null> {
         'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
       },
       body: JSON.stringify(payload),
-    });
+    }, INTELX_HTTP_TIMEOUT_MS);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -924,13 +959,13 @@ async function intelxFetchSearchResult(searchId: string): Promise<IntelxSearchRe
   url.searchParams.set('limit', String(INTELX_MAX_RESULTS_PER_SELECTOR));
 
   return intelxFetchWithBackoff(async () => {
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithTimeout(url.toString(), {
       method: 'GET',
       headers: {
         'x-key': INTELX_API_KEY,
         'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
       },
-    });
+    }, INTELX_HTTP_TIMEOUT_MS);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -943,13 +978,13 @@ async function intelxFetchSearchResult(searchId: string): Promise<IntelxSearchRe
 async function intelxTerminateSearch(searchId: string): Promise<void> {
   const url = new URL(`${INTELX_API_URL}/intelligent/search/terminate`);
   url.searchParams.set('id', searchId);
-  await fetch(url.toString(), {
+  await fetchWithTimeout(url.toString(), {
     method: 'GET',
     headers: {
       'x-key': INTELX_API_KEY,
       'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
     },
-  }).catch(() => undefined);
+  }, Math.min(INTELX_HTTP_TIMEOUT_MS, 8_000)).catch(() => undefined);
 }
 
 async function intelxSearchHealthCheck(
@@ -968,13 +1003,13 @@ async function intelxSearchHealthCheck(
     url.searchParams.set('statistics', '1');
     url.searchParams.set('previewlines', '8');
 
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithTimeout(url.toString(), {
       method: 'GET',
       headers: {
         'x-key': INTELX_API_KEY,
         'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
       },
-    });
+    }, INTELX_HTTP_TIMEOUT_MS);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -1039,7 +1074,7 @@ async function runIntelxSearch(selector: string): Promise<Array<Record<string, u
 
 async function intelxSubmitPhonebookSearch(term: string): Promise<string | null> {
   return intelxFetchWithBackoff(async () => {
-    const response = await fetch(`${INTELX_API_URL}/phonebook/search`, {
+    const response = await fetchWithTimeout(`${INTELX_API_URL}/phonebook/search`, {
       method: 'POST',
       headers: {
         'x-key': INTELX_API_KEY,
@@ -1052,7 +1087,7 @@ async function intelxSubmitPhonebookSearch(term: string): Promise<string | null>
         timeout: INTELX_SERVER_TIMEOUT_S,
         target: 2,
       }),
-    });
+    }, INTELX_HTTP_TIMEOUT_MS);
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`DarkRisk360 phonebook search submit failed (${response.status}): ${errorText.slice(0, 180)}`);
@@ -1068,10 +1103,10 @@ async function intelxFetchPhonebookResult(searchId: string): Promise<IntelxSearc
   url.searchParams.set('id', searchId);
   url.searchParams.set('limit', String(INTELX_MAX_RESULTS_PER_SELECTOR));
   return intelxFetchWithBackoff(async () => {
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithTimeout(url.toString(), {
       method: 'GET',
       headers: { 'x-key': INTELX_API_KEY, 'User-Agent': 'HICONSOLE-DarkRisk360/1.0' },
-    });
+    }, INTELX_HTTP_TIMEOUT_MS);
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`DarkRisk360 phonebook result failed (${response.status}): ${errorText.slice(0, 180)}`);
@@ -2022,6 +2057,18 @@ serve(async (req: Request) => {
     let intelxRecordsProcessedTotal = 0;
     const intelxWarnings: string[] = [];
     const runDeadlineTs = Date.now() + DARKRISK_RUN_BUDGET_MS;
+    let runBudgetStage: string | null = null;
+    const shouldStopForRunBudget = (stage: string, minRemainingMs = 0): boolean => {
+      const remainingMs = runDeadlineTs - Date.now();
+      if (remainingMs > minRemainingMs) return false;
+      if (!runBudgetStage) {
+        runBudgetStage = normalizeText(stage) || 'pipeline';
+        intelxWarnings.push(
+          `Run budget raggiunto (${Math.round(DARKRISK_RUN_BUDGET_MS / 1000)}s) in ${runBudgetStage}: scan finalizzata con risultati parziali.`,
+        );
+      }
+      return true;
+    };
     let intelxSearchHealthy = false;
     let intelxPhonebookDegraded = false;
 
@@ -2033,6 +2080,7 @@ serve(async (req: Request) => {
     }
 
     for (const finding of canonicalFindings) {
+      if (shouldStopForRunBudget('surface_ingestion')) break;
       const affectedNormalized = normalizeAssetValue(finding.affected_asset);
       const existingAssetRef = affectedNormalized ? assetByNormalized.get(affectedNormalized) : undefined;
 
@@ -2235,10 +2283,7 @@ serve(async (req: Request) => {
 
     if (includeDtiExtended && isIntelxConfigured() && intelxSearchHealthy) {
       for (const queryTerm of intelxQueryTerms) {
-        if (Date.now() >= runDeadlineTs) {
-          intelxWarnings.push('Run budget raggiunto: ciclo IntelX interrotto in modo controllato.');
-          break;
-        }
+        if (shouldStopForRunBudget('intelx_search')) break;
         if (isEmailSelectorCoverageKind(queryTerm.kind, queryTerm.term)) identityEmailQueriesRun += 1;
         const sourceRunStartedAt = new Date().toISOString();
         const sourceRun = await createDtiSourceRun(adminClient, {
@@ -2308,7 +2353,7 @@ serve(async (req: Request) => {
           const linkedAssetId = assetRef?.id || null;
 
           for (const record of recordsToProcess) {
-            if (Date.now() >= runDeadlineTs) {
+            if (shouldStopForRunBudget('intelx_record_processing')) {
               runWarnings.push('Run budget raggiunto durante processing IntelX.');
               break;
             }
@@ -2660,6 +2705,7 @@ serve(async (req: Request) => {
       ).slice(0, Math.min(10, INTELX_MAX_QUERY_TERMS_PER_RUN));
 
       for (const queryTerm of phonebookTerms) {
+        if (shouldStopForRunBudget('intelx_phonebook')) break;
         if (isEmailSelectorCoverageKind(queryTerm.kind, queryTerm.term)) identityEmailQueriesRun += 1;
         const sourceRunStartedAt = new Date().toISOString();
         const sourceRun = await createDtiSourceRun(adminClient, {
@@ -2722,6 +2768,7 @@ serve(async (req: Request) => {
 
     if (includeDtiExtended && FIRECRAWL_ENABLED && FIRECRAWL_API_KEY && firecrawlTargets.length > 0) {
       for (const target of firecrawlTargets) {
+        if (shouldStopForRunBudget('firecrawl_ingestion', FIRECRAWL_TIMEOUT_MS + 1_500)) break;
         if (isEmailSelectorCoverageKind(target.queryKind, target.queryTerm)) identityEmailQueriesRun += 1;
         firecrawlSourcesRun += 1;
         const sourceRun = await createDtiSourceRun(adminClient, {
@@ -3067,65 +3114,83 @@ serve(async (req: Request) => {
 
     const aiEnabled = entitlement?.enable_ai_recommendations !== false;
     if (aiEnabled && SUPABASE_URL && SERVICE_ROLE) {
-      try {
-        const recoRes = await fetch(`${SUPABASE_URL}/functions/v1/darkrisk360-generate-recommendations`, {
-          method: 'POST',
-          headers: {
-            Authorization: relayAuthorization,
-            apikey: relayApiKey,
-            'Content-Type': 'application/json',
-            ...(DARKRISK_INTERNAL_SECRET ? { 'x-darkrisk-internal-secret': DARKRISK_INTERNAL_SECRET } : {}),
-          },
-          body: JSON.stringify({
-            customer_id: customerId,
-            scan_run_id: scanRunId,
-            trigger_type: 'auto_after_sync',
-          }),
-        });
-
-        if (!recoRes.ok) {
-          const text = await recoRes.text();
-          recommendationMode = 'failed';
-          recommendationWarning = maskPotentialSecrets(`AI recommendation generation failed: ${text.slice(0, 280)}`);
-        } else {
-          recommendationMode = 'generated';
-        }
-      } catch (recoErr: any) {
+      const recommendationTimeoutMs = Math.min(
+        DARKRISK_INTERNAL_CHAIN_TIMEOUT_MS,
+        Math.max(0, runDeadlineTs - Date.now() - 750),
+      );
+      if (recommendationTimeoutMs < 3_000) {
         recommendationMode = 'failed';
-        recommendationWarning = maskPotentialSecrets(normalizeText(recoErr?.message) || 'AI recommendation generation failed');
+        recommendationWarning = 'AI recommendation generation skipped: insufficient run budget window.';
+      } else {
+        try {
+          const recoRes = await fetchWithTimeout(`${SUPABASE_URL}/functions/v1/darkrisk360-generate-recommendations`, {
+            method: 'POST',
+            headers: {
+              Authorization: relayAuthorization,
+              apikey: relayApiKey,
+              'Content-Type': 'application/json',
+              ...(DARKRISK_INTERNAL_SECRET ? { 'x-darkrisk-internal-secret': DARKRISK_INTERNAL_SECRET } : {}),
+            },
+            body: JSON.stringify({
+              customer_id: customerId,
+              scan_run_id: scanRunId,
+              trigger_type: 'auto_after_sync',
+            }),
+          }, recommendationTimeoutMs);
+
+          if (!recoRes.ok) {
+            const text = await recoRes.text();
+            recommendationMode = 'failed';
+            recommendationWarning = maskPotentialSecrets(`AI recommendation generation failed: ${text.slice(0, 280)}`);
+          } else {
+            recommendationMode = 'generated';
+          }
+        } catch (recoErr: any) {
+          recommendationMode = 'failed';
+          recommendationWarning = maskPotentialSecrets(normalizeText(recoErr?.message) || 'AI recommendation generation failed');
+        }
       }
     } else if (!aiEnabled) {
       recommendationMode = 'disabled';
     }
 
     if (SUPABASE_URL && SERVICE_ROLE) {
-      try {
-        const reportRes = await fetch(`${SUPABASE_URL}/functions/v1/darkrisk360-generate-report`, {
-          method: 'POST',
-          headers: {
-            Authorization: relayAuthorization,
-            apikey: relayApiKey,
-            'Content-Type': 'application/json',
-            ...(DARKRISK_INTERNAL_SECRET ? { 'x-darkrisk-internal-secret': DARKRISK_INTERNAL_SECRET } : {}),
-          },
-          body: JSON.stringify({
-            customer_id: customerId,
-            scan_run_id: scanRunId,
-            classification: 'confidential',
-            report_mode: includeDtiExtended ? 'extended' : 'weekly',
-          }),
-        });
-        if (!reportRes.ok) {
-          const text = await reportRes.text();
-          reportMode = 'failed';
-          reportWarning = maskPotentialSecrets(`DarkRisk report generation failed: ${text.slice(0, 280)}`);
-        } else {
-          const payload = await reportRes.json().catch(() => ({}));
-          reportMode = payload?.reused ? 'reused' : 'generated';
-        }
-      } catch (reportErr: any) {
+      const reportTimeoutMs = Math.min(
+        DARKRISK_INTERNAL_CHAIN_TIMEOUT_MS,
+        Math.max(0, runDeadlineTs - Date.now() - 750),
+      );
+      if (reportTimeoutMs < 3_000) {
         reportMode = 'failed';
-        reportWarning = maskPotentialSecrets(normalizeText(reportErr?.message) || 'DarkRisk report generation failed');
+        reportWarning = 'DarkRisk report generation skipped: insufficient run budget window.';
+      } else {
+        try {
+          const reportRes = await fetchWithTimeout(`${SUPABASE_URL}/functions/v1/darkrisk360-generate-report`, {
+            method: 'POST',
+            headers: {
+              Authorization: relayAuthorization,
+              apikey: relayApiKey,
+              'Content-Type': 'application/json',
+              ...(DARKRISK_INTERNAL_SECRET ? { 'x-darkrisk-internal-secret': DARKRISK_INTERNAL_SECRET } : {}),
+            },
+            body: JSON.stringify({
+              customer_id: customerId,
+              scan_run_id: scanRunId,
+              classification: 'confidential',
+              report_mode: includeDtiExtended ? 'extended' : 'weekly',
+            }),
+          }, reportTimeoutMs);
+          if (!reportRes.ok) {
+            const text = await reportRes.text();
+            reportMode = 'failed';
+            reportWarning = maskPotentialSecrets(`DarkRisk report generation failed: ${text.slice(0, 280)}`);
+          } else {
+            const payload = await reportRes.json().catch(() => ({}));
+            reportMode = payload?.reused ? 'reused' : 'generated';
+          }
+        } catch (reportErr: any) {
+          reportMode = 'failed';
+          reportWarning = maskPotentialSecrets(normalizeText(reportErr?.message) || 'DarkRisk report generation failed');
+        }
       }
     } else {
       reportMode = 'disabled';
