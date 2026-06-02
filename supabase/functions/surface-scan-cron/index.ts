@@ -745,18 +745,29 @@ Deno.serve(async (req) => {
       }
 
       const pentestToolsEnabled = Deno.env.get('SURFACESCAN_ENABLE_PENTEST_TOOLS') === 'true';
-      if (surfaceGate.allowed && pentestToolsEnabled) {
-        // Pentest-Tools validation: attiva solo se SURFACESCAN_ENABLE_PENTEST_TOOLS=true
-        await maybeTriggerAutoValidation(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, perRule);
-        // Exposure full-scope: avvio automatico settimanale su tutti i domini/IP in scope.
-        await triggerWeeklyScopeExposureScan(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, orgRules);
-      } else {
-        console.log(`[cron] pentest-tools disabled (SURFACESCAN_ENABLE_PENTEST_TOOLS != true) — skipping auto-validation and exposure scan for org=${orgId}`);
-      }
-      // Report repository canonico SurfaceScan360: refresh automatico settimanale.
+
       if (surfaceGate.allowed) {
+        // Exposure full-scope: avvio automatico settimanale indipendente da PentestTools validation.
+        // Richiede SURFACESCAN_ENABLE_PENTEST_TOOLS=true per partire (usa la stessa infra ptools).
+        if (pentestToolsEnabled) {
+          // PentestTools recon validation su ogni asset rilevato da Shodan
+          await maybeTriggerAutoValidation(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, perRule);
+          // Exposure port/tech scan su tutti i domini e IP in scope
+          await triggerWeeklyScopeExposureScan(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, orgRules);
+        } else {
+          console.log(`[cron] pentest-tools disabled — skipping auto-validation and exposure scan for org=${orgId}`);
+          await supabase.from('external_scan_audit_log').insert({
+            organization_id: orgId,
+            actor_email: 'system:cron',
+            action: 'auto_scope_exposure_skipped',
+            details: { reason: 'pentest_tools_not_enabled', env_flag: 'SURFACESCAN_ENABLE_PENTEST_TOOLS' },
+          });
+        }
+
+        // Report repository canonico SurfaceScan360: refresh automatico settimanale.
         await refreshWeeklyScopeRepositoryReport(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId);
       }
+
       // DarkRisk360 standard weekly sync: DTI esteso escluso dai run cron.
       if (darkRiskGate.allowed) {
         await triggerWeeklyDarkRiskStandardScan(supabase, supabaseUrl, serviceRoleKey, darkriskInternalSecret, orgId);

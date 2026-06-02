@@ -104,6 +104,14 @@ export const useSurfaceScanEngine = () => {
 
   useEffect(() => {
     if (!organizationId) return;
+
+    // Debounce: both channels watch the same org rows; deduplicate to avoid double fetch.
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedFetch = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => { void fetchJobs({ background: true }); }, 200);
+    };
+
     const customerChannel = supabase
       .channel(`surface-scan-jobs-${organizationId}`)
       .on(
@@ -115,7 +123,7 @@ export const useSurfaceScanEngine = () => {
           filter: `customer_id=eq.${organizationId}`,
         },
         (_payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
-          void fetchJobs({ background: true });
+          debouncedFetch();
         },
       )
       .subscribe();
@@ -131,12 +139,13 @@ export const useSurfaceScanEngine = () => {
           filter: `organization_id=eq.${organizationId}`,
         },
         (_payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
-          void fetchJobs({ background: true });
+          debouncedFetch();
         },
       )
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(customerChannel);
       supabase.removeChannel(orgChannel);
     };

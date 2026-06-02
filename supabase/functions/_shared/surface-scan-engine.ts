@@ -538,41 +538,51 @@ export async function dispatchSurfaceScanQueue(
   const stalePendingCutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
   const staleRunningCutoff = new Date(Date.now() - 45 * 60 * 1000).toISOString();
 
+  // Max 1 recovery attempt per job (uses recovery_attempt_count column, not fragile string check)
+  const MAX_RECOVERY_ATTEMPTS = 1;
+
   const [stalePendingRes, staleRunningRes] = await Promise.all([
     adminClient
       .from("surface_scan_jobs" as any)
-      .select("id, error_message")
+      .select("id, recovery_attempt_count")
       .eq("organization_id", organizationId)
       .eq("status", "pending")
       .lt("created_at", stalePendingCutoff)
       .limit(50),
     adminClient
       .from("surface_scan_jobs" as any)
-      .select("id, error_message")
+      .select("id, recovery_attempt_count")
       .eq("organization_id", organizationId)
       .eq("status", "running")
       .lt("started_at", staleRunningCutoff)
       .limit(50),
   ]);
 
-  const stalePendingRows = (stalePendingRes.data || []) as Array<{ id?: string; error_message?: string | null }>;
-  const staleRunningRows = (staleRunningRes.data || []) as Array<{ id?: string; error_message?: string | null }>;
-  const stalePendingIds = stalePendingRows.map((row) => String(row?.id || "").trim()).filter(Boolean);
-  const staleRunningIds = staleRunningRows.map((row) => String(row?.id || "").trim()).filter(Boolean);
+  const stalePendingRows = (stalePendingRes.data || []) as Array<{ id?: string; recovery_attempt_count?: number }>;
+  const staleRunningRows = (staleRunningRes.data || []) as Array<{ id?: string; recovery_attempt_count?: number }>;
 
-  if (stalePendingIds.length > 0) {
+  // Pending: recover once, then fail
+  const recoverablePending = stalePendingRows
+    .filter((row) => (row?.recovery_attempt_count ?? 0) < MAX_RECOVERY_ATTEMPTS)
+    .map((row) => String(row?.id || "").trim()).filter(Boolean);
+  const terminalPending = stalePendingRows
+    .filter((row) => (row?.recovery_attempt_count ?? 0) >= MAX_RECOVERY_ATTEMPTS)
+    .map((row) => String(row?.id || "").trim()).filter(Boolean);
+
+  if (recoverablePending.length > 0) {
     await adminClient
       .from("surface_scan_jobs" as any)
       .update({
         status: "queued",
         started_at: null,
         completed_at: null,
-        error_message: "pending_timeout_recovered_once",
+        error_message: null,
+        recovery_attempt_count: MAX_RECOVERY_ATTEMPTS,
       })
-      .in("id", stalePendingIds);
+      .in("id", recoverablePending);
 
     await adminClient.from("surface_scan_audit_log" as any).insert(
-      stalePendingIds.map((id: string) => ({
+      recoverablePending.map((id: string) => ({
         scan_job_id: id,
         user_id: options.initiatedByUserId || null,
         action: "scan_auto_requeued_pending_timeout",
@@ -581,13 +591,32 @@ export async function dispatchSurfaceScanQueue(
     );
   }
 
-  if (staleRunningIds.length > 0) {
+  if (terminalPending.length > 0) {
+    await adminClient
+      .from("surface_scan_jobs" as any)
+      .update({
+        status: "failed",
+        completed_at: nowIso,
+        error_message: "pending_timeout_no_recovery_left",
+      })
+      .in("id", terminalPending);
+    await adminClient.from("surface_scan_audit_log" as any).insert(
+      terminalPending.map((id: string) => ({
+        scan_job_id: id,
+        user_id: options.initiatedByUserId || null,
+        action: "scan_auto_failed_pending_timeout",
+        details: { reason: "pending_timeout_max_recovery" },
+      })),
+    );
+  }
+
+  if (staleRunningRows.length > 0) {
     const recoverableRunning = staleRunningRows
-      .filter((row) => !String(row?.error_message || "").includes("running_timeout_recovered_once"))
+      .filter((row) => (row?.recovery_attempt_count ?? 0) < MAX_RECOVERY_ATTEMPTS)
       .map((row) => String(row?.id || "").trim())
       .filter(Boolean);
     const terminalRunning = staleRunningRows
-      .filter((row) => String(row?.error_message || "").includes("running_timeout_recovered_once"))
+      .filter((row) => (row?.recovery_attempt_count ?? 0) >= MAX_RECOVERY_ATTEMPTS)
       .map((row) => String(row?.id || "").trim())
       .filter(Boolean);
 
@@ -598,7 +627,8 @@ export async function dispatchSurfaceScanQueue(
           status: "queued",
           started_at: null,
           completed_at: null,
-          error_message: "running_timeout_recovered_once",
+          error_message: null,
+          recovery_attempt_count: MAX_RECOVERY_ATTEMPTS,
         })
         .in("id", recoverableRunning);
 
@@ -613,23 +643,23 @@ export async function dispatchSurfaceScanQueue(
     }
 
     if (terminalRunning.length > 0) {
-    await adminClient
-      .from("surface_scan_jobs" as any)
-      .update({
-        status: "failed",
-        completed_at: nowIso,
-        error_message: "running_timeout_after_retry",
-      })
-      .in("id", terminalRunning);
+      await adminClient
+        .from("surface_scan_jobs" as any)
+        .update({
+          status: "failed",
+          completed_at: nowIso,
+          error_message: "running_timeout_max_recovery",
+        })
+        .in("id", terminalRunning);
 
-    await adminClient.from("surface_scan_audit_log" as any).insert(
-      terminalRunning.map((id: string) => ({
-        scan_job_id: id,
-        user_id: options.initiatedByUserId || null,
-        action: "scan_auto_failed_timeout",
-        details: { reason: "running_timeout_45m", recovery: "failed_after_retry" },
-      })),
-    );
+      await adminClient.from("surface_scan_audit_log" as any).insert(
+        terminalRunning.map((id: string) => ({
+          scan_job_id: id,
+          user_id: options.initiatedByUserId || null,
+          action: "scan_auto_failed_timeout",
+          details: { reason: "running_timeout_45m", recovery: "failed_after_retry" },
+        })),
+      );
     }
   }
 
@@ -680,8 +710,29 @@ export async function dispatchSurfaceScanQueue(
     const runTask = runSurfaceScanEnrichment(adminClient, claimedJob as SurfaceScanJob, {
       initiatedByUserId: options.initiatedByUserId || claimedJob.requested_by || null,
       force: false,
-    }).catch((error) => {
-      console.error("[surface-scan-queue] run task failed:", error);
+    }).catch(async (error) => {
+      const message = error instanceof Error ? error.message : String(error ?? "unknown");
+      console.error("[surface-scan-queue] run task failed for job", claimedJob.id, ":", message);
+      // Mark job as failed — prevents it from being stuck in pending indefinitely
+      try {
+        await adminClient
+          .from("surface_scan_jobs" as any)
+          .update({
+            status: "failed",
+            completed_at: new Date().toISOString(),
+            error_message: `queue_dispatch_error:${message.slice(0, 400)}`,
+          })
+          .eq("id", claimedJob.id)
+          .in("status", ["pending", "running"]);
+        await adminClient.from("surface_scan_audit_log" as any).insert({
+          scan_job_id: claimedJob.id,
+          user_id: options.initiatedByUserId || null,
+          action: "scan_failed_queue_dispatch_error",
+          details: { error: message.slice(0, 400) },
+        });
+      } catch (dbErr) {
+        console.error("[surface-scan-queue] failed to mark job as failed:", dbErr);
+      }
     });
 
     if (!enqueueBackgroundTask(runTask)) {
