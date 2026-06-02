@@ -1,0 +1,240 @@
+// surface-graph-seed: Popola il grafo dai dati esistenti SurfaceScan360.
+// Legge surface_assets, surface_open_ports, surface_scan_history, darkrisk_findings
+// e crea nodi/archi nell'investigazione specificata.
+import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
+
+const SUPABASE_URL = String(Deno.env.get('SUPABASE_URL') || '').trim();
+const SERVICE_ROLE = String(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '').trim();
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+}
+
+const NODE_COLORS: Record<string, string> = {
+  Domain: '#3b82f6', Subdomain: '#6366f1', Ip: '#10b981', Asn: '#8b5cf6',
+  Email: '#f59e0b', Port: '#ef4444', Certificate: '#0ea5e9', DnsRecord: '#64748b',
+  Credential: '#dc2626', Breach: '#b91c1c', Leak: '#ea580c', Organization: '#0ea5e9',
+  Location: '#84cc16', Website: '#3b82f6', Cve: '#f97316', Technology: '#a78bfa',
+};
+const NODE_ICONS: Record<string, string> = {
+  Domain: 'Globe', Subdomain: 'Link', Ip: 'Server', Asn: 'Network', Email: 'Mail',
+  Port: 'Plug', Certificate: 'Shield', DnsRecord: 'FileText', Credential: 'Key',
+  Breach: 'AlertTriangle', Leak: 'Droplets', Organization: 'Building2',
+  Location: 'MapPin', Website: 'Globe2', Cve: 'Bug', Technology: 'Cpu',
+};
+const NODE_SHAPES: Record<string, string> = {
+  Credential: 'triangle', Breach: 'triangle', Leak: 'triangle', Cve: 'hexagon',
+  Asn: 'hexagon', Organization: 'square',
+};
+const NODE_SIZES: Record<string, number> = { Domain: 6, Subdomain: 4, Ip: 5, Asn: 7, Email: 5, Port: 3, Credential: 4, Breach: 5 };
+
+function makeNodeId(type: string, value: string) {
+  return `${type.toLowerCase()}:${value.toLowerCase().trim()}`;
+}
+
+function buildNode(type: string, value: string, label: string, props: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: makeNodeId(type, value), nodeType: type, nodeLabel: label,
+    nodeProperties: { value, ...props },
+    nodeSize: NODE_SIZES[type] ?? 5,
+    nodeColor: NODE_COLORS[type] ?? '#0074D9',
+    nodeIcon: NODE_ICONS[type] ?? 'Circle',
+    nodeImage: null, nodeFlag: null,
+    nodeShape: NODE_SHAPES[type] ?? 'circle',
+    nodeMetadata: {}, x: Math.random() * 400 - 200, y: Math.random() * 400 - 200,
+  };
+}
+
+function buildEdge(src: string, tgt: string, label: string): Record<string, unknown> {
+  return { id: `${src}--${label}--${tgt}`, source: src, target: tgt, label };
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+  if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
+
+  const authHeader = req.headers.get('Authorization') || '';
+  const anonKey = String(Deno.env.get('SUPABASE_ANON_KEY') || '');
+  const userClient = createClient(SUPABASE_URL, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+    auth: { persistSession: false },
+  });
+  const { data: authData, error: authError } = await userClient.auth.getUser();
+  if (authError || !authData.user) return json({ ok: false, error: 'Unauthorized' }, 401);
+
+  const body = await req.json().catch(() => ({}));
+  const investigationId = String(body?.investigation_id || '').trim();
+  const organizationId  = String(body?.organization_id || '').trim();
+  if (!investigationId || !organizationId) return json({ ok: false, error: 'investigation_id and organization_id required' }, 400);
+
+  const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+
+  const nodeMap = new Map<string, Record<string, unknown>>();
+  const edgeMap = new Map<string, Record<string, unknown>>();
+
+  const addNode = (n: Record<string, unknown>) => { nodeMap.set(n.id as string, n); };
+  const addEdge = (e: Record<string, unknown>) => { edgeMap.set(e.id as string, e); };
+
+  // 1. Monitored IPs / domains (root nodes)
+  const { data: monitored } = await adminClient
+    .from('surface_scan_monitored_ips')
+    .select('entry_type, input_value')
+    .eq('organization_id', organizationId);
+
+  for (const m of (monitored || []) as any[]) {
+    const val = String(m.input_value || '').trim().toLowerCase();
+    if (!val) continue;
+    if (m.entry_type === 'domain') addNode(buildNode('Domain', val, val, { is_root: true, source: 'monitored_scope' }));
+    else if (m.entry_type === 'single' && /^(\d{1,3}\.){3}\d{1,3}$/.test(val)) addNode(buildNode('Ip', val, val, { is_root: true, source: 'monitored_scope' }));
+  }
+
+  // 2. Surface assets (subdomains, IPs)
+  const { data: assets } = await adminClient
+    .from('surface_assets')
+    .select('asset_type, asset_value, normalized_value, metadata')
+    .or(`customer_id.eq.${organizationId},organization_id.eq.${organizationId}`)
+    .in('asset_type', ['subdomain', 'reverse_dns_hostname', 'domain', 'ip'])
+    .order('created_at', { ascending: false })
+    .limit(500);
+
+  for (const a of (assets || []) as any[]) {
+    const val = String(a.normalized_value || a.asset_value || '').trim().toLowerCase();
+    if (!val) continue;
+    if (a.asset_type === 'subdomain' || a.asset_type === 'reverse_dns_hostname') {
+      const node = buildNode('Subdomain', val, val, { source: 'surfacescan360' });
+      addNode(node);
+      // Find parent domain
+      const parts = val.split('.');
+      if (parts.length > 2) {
+        const parent = parts.slice(1).join('.');
+        const parentId = makeNodeId('Domain', parent);
+        if (nodeMap.has(parentId)) addEdge(buildEdge(parentId, node.id as string, 'HAS_SUBDOMAIN'));
+      }
+    } else if (a.asset_type === 'ip') {
+      addNode(buildNode('Ip', val, val, { source: 'surfacescan360' }));
+    }
+  }
+
+  // 3. Open ports (from Shodan sync)
+  const { data: ports } = await adminClient
+    .from('surface_open_ports')
+    .select('host, ip, port, protocol, service_name, service_product, service_version, exposure_level')
+    .eq('customer_id', organizationId)
+    .order('exposure_level', { ascending: false })
+    .limit(200);
+
+  for (const p of (ports || []) as any[]) {
+    const host = String(p.host || p.ip || '').trim().toLowerCase();
+    if (!host) continue;
+    const portLabel = p.service_product ? `${p.port}/${p.service_product}` : String(p.port);
+    const portNode = buildNode('Port', `${host}:${p.port}`, portLabel, {
+      port: p.port, protocol: p.protocol, service: p.service_name || p.service_product,
+      version: p.service_version, exposure_level: p.exposure_level, source: 'shodan',
+    });
+    addNode(portNode);
+    // Connect to IP or subdomain node
+    const hostId = /^(\d{1,3}\.){3}\d{1,3}$/.test(host) ? makeNodeId('Ip', host) : makeNodeId('Subdomain', host);
+    if (nodeMap.has(hostId)) addEdge(buildEdge(hostId, portNode.id as string, 'HAS_PORT'));
+    else {
+      // Create IP node if missing
+      if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host)) {
+        addNode(buildNode('Ip', host, host, { source: 'shodan_port' }));
+        addEdge(buildEdge(makeNodeId('Ip', host), portNode.id as string, 'HAS_PORT'));
+      }
+    }
+  }
+
+  // 4. DarkRisk identity leaks (IntelX findings)
+  const { data: findings } = await adminClient
+    .from('darkrisk_findings')
+    .select('finding_type, title, severity, metadata')
+    .eq('organization_id', organizationId)
+    .ilike('finding_type', '%intelx%')
+    .in('finding_type', ['intelx_identity_leak', 'intelx_credential_exposure', 'intelx_identity_exposure'])
+    .order('risk_score', { ascending: false })
+    .limit(100);
+
+  for (const f of (findings || []) as any[]) {
+    const isLeak = f.finding_type?.includes('leak');
+    const type = isLeak ? 'Breach' : 'Leak';
+    const title = String(f.title || 'IntelX finding').slice(0, 80);
+    const key = title.toLowerCase().replace(/\s+/g, '_');
+    const node = buildNode(type, key, title, {
+      severity: f.severity, source: 'intelx', finding_type: f.finding_type,
+      query_term: f.metadata?.query_term || null,
+    });
+    addNode(node);
+    // Connect to email if email selector
+    const qt = String(f.metadata?.query_term || '');
+    if (qt.includes('@')) {
+      const emailId = makeNodeId('Email', qt);
+      if (!nodeMap.has(emailId)) addNode(buildNode('Email', qt, qt, { source: 'intelx_selector' }));
+      addEdge(buildEdge(emailId, node.id as string, 'FOUND_IN_BREACH'));
+    } else if (qt) {
+      const scope = qt.replace(/^@/, '').toLowerCase();
+      const domainId = makeNodeId('Domain', scope);
+      if (nodeMap.has(domainId)) addEdge(buildEdge(domainId, node.id as string, 'HAS_LEAK'));
+    }
+  }
+
+  // 5. Selectors (emails)
+  const { data: selectors } = await adminClient
+    .from('darkrisk_selectors')
+    .select('selector_type, normalized_value')
+    .eq('organization_id', organizationId)
+    .eq('selector_type', 'email')
+    .in('status', ['approved', 'candidate'])
+    .limit(50);
+
+  for (const s of (selectors || []) as any[]) {
+    const email = String(s.normalized_value || '').trim().toLowerCase();
+    if (!email || !email.includes('@')) continue;
+    addNode(buildNode('Email', email, email, { source: 'selector' }));
+    const domain = email.split('@')[1];
+    const domainId = makeNodeId('Domain', domain);
+    if (nodeMap.has(domainId)) addEdge(buildEdge(makeNodeId('Email', email), domainId, 'BELONGS_TO_DOMAIN'));
+  }
+
+  // Persist
+  const allNodes = Array.from(nodeMap.values());
+  const allEdges = Array.from(edgeMap.values());
+  let nodesCreated = 0, edgesCreated = 0;
+
+  if (allNodes.length > 0) {
+    const CHUNK = 200;
+    for (let i = 0; i < allNodes.length; i += CHUNK) {
+      const chunk = allNodes.slice(i, i + CHUNK).map((n: any) => ({
+        id: n.id, investigation_id: investigationId, organization_id: organizationId, node_data: n,
+      }));
+      const { error } = await adminClient.from('surface_graph_nodes')
+        .upsert(chunk, { onConflict: 'id,investigation_id', ignoreDuplicates: false });
+      if (!error) nodesCreated += chunk.length;
+    }
+  }
+
+  if (allEdges.length > 0) {
+    const CHUNK = 200;
+    for (let i = 0; i < allEdges.length; i += CHUNK) {
+      const chunk = allEdges.slice(i, i + CHUNK).map((e: any) => ({
+        investigation_id: investigationId, organization_id: organizationId,
+        source_node_id: String(e.source), target_node_id: String(e.target), edge_data: e,
+      }));
+      const { error } = await adminClient.from('surface_graph_edges')
+        .upsert(chunk, { onConflict: 'investigation_id,source_node_id,target_node_id,(edge_data->>\'label\')', ignoreDuplicates: true });
+      if (!error) edgesCreated += chunk.length;
+    }
+  }
+
+  const now = new Date().toISOString();
+  await adminClient.from('surface_graph_investigations')
+    .update({ node_count: nodesCreated, edge_count: edgesCreated, updated_at: now })
+    .eq('id', investigationId);
+
+  return json({ ok: true, nodes_created: nodesCreated, edges_created: edgesCreated });
+});

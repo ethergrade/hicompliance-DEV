@@ -33,6 +33,7 @@ import ComplianceEvents from "./pages/ComplianceEvents";
 import CyberNews from "./pages/CyberNews";
 import AdminReporting from "./pages/AdminReporting";
 import AdminDarkRiskEsteso from "./pages/AdminDarkRiskEsteso";
+import SurfaceGraph from "./pages/SurfaceGraph";
 import Consistenze from "./pages/Consistenze";
 import AICiso from "./pages/AICiso";
 import HiConsoleLanding from "./pages/HiConsoleLanding";
@@ -61,6 +62,7 @@ const App = () => (
             <Route path="/surface-scan/exposure" element={<Navigate to="/surface-scan" replace />} />
             <Route path="/dark-risk" element={<ClientSelectionGuard><DarkRisk360 /></ClientSelectionGuard>} />
             <Route path="/dark-risk-esteso" element={<ClientSelectionGuard><DarkRiskEsteso /></ClientSelectionGuard>} />
+            <Route path="/surface-graph" element={<ClientSelectionGuard><SurfaceGraph /></ClientSelectionGuard>} />
             <Route path="/assessment" element={<ClientSelectionGuard><Assessment /></ClientSelectionGuard>} />
             <Route path="/remediation" element={<ClientSelectionGuard><Remediation /></ClientSelectionGuard>} />
             <Route path="/analytics" element={<ClientSelectionGuard><Analytics /></ClientSelectionGuard>} />

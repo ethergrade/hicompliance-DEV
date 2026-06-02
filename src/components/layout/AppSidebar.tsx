@@ -67,6 +67,7 @@ const hiComplianceModules = [
   { title: 'SurfaceScan360', href: '/surface-scan', icon: Globe },
   { title: 'DarkRisk360', href: '/dark-risk', icon: Eye },
   { title: 'DARKRISK_ESTESO', href: '/dark-risk-esteso', icon: Eye, superAdminOnly: true },
+  { title: 'Surface Graph', href: '/surface-graph', icon: Network },
   { title: 'Analisi', href: '/analytics', icon: BarChart3 },
   { title: 'Remediation', href: '/remediation', icon: Wrench },
   { title: 'Consistenze', href: '/consistenze', icon: Package },
