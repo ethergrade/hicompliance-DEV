@@ -850,6 +850,1261 @@ export type Database = {
           },
         ]
       }
+      darkrisk_alerts: {
+        Row: {
+          acknowledged_at: string | null
+          acknowledged_by: string | null
+          alert_type: string
+          created_at: string
+          finding_id: string | null
+          id: string
+          message: string | null
+          metadata: Json
+          occurred_at: string
+          organization_id: string
+          severity: Database["public"]["Enums"]["darkrisk_severity"]
+          status: string
+          tenant_id: string | null
+          title: string
+        }
+        Insert: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          alert_type: string
+          created_at?: string
+          finding_id?: string | null
+          id?: string
+          message?: string | null
+          metadata?: Json
+          occurred_at?: string
+          organization_id: string
+          severity: Database["public"]["Enums"]["darkrisk_severity"]
+          status?: string
+          tenant_id?: string | null
+          title: string
+        }
+        Update: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          alert_type?: string
+          created_at?: string
+          finding_id?: string | null
+          id?: string
+          message?: string | null
+          metadata?: Json
+          occurred_at?: string
+          organization_id?: string
+          severity?: Database["public"]["Enums"]["darkrisk_severity"]
+          status?: string
+          tenant_id?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "darkrisk_alerts_finding_id_fkey"
+            columns: ["finding_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_findings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_alerts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      darkrisk_assets: {
+        Row: {
+          asset_type: Database["public"]["Enums"]["darkrisk_asset_type"]
+          created_at: string
+          first_seen_at: string
+          id: string
+          last_seen_at: string | null
+          metadata: Json
+          normalized_value: string
+          organization_id: string
+          scope_status: string
+          source: Database["public"]["Enums"]["darkrisk_source"]
+          tenant_id: string | null
+          updated_at: string
+          value: string
+        }
+        Insert: {
+          asset_type: Database["public"]["Enums"]["darkrisk_asset_type"]
+          created_at?: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string | null
+          metadata?: Json
+          normalized_value: string
+          organization_id: string
+          scope_status?: string
+          source?: Database["public"]["Enums"]["darkrisk_source"]
+          tenant_id?: string | null
+          updated_at?: string
+          value: string
+        }
+        Update: {
+          asset_type?: Database["public"]["Enums"]["darkrisk_asset_type"]
+          created_at?: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string | null
+          metadata?: Json
+          normalized_value?: string
+          organization_id?: string
+          scope_status?: string
+          source?: Database["public"]["Enums"]["darkrisk_source"]
+          tenant_id?: string | null
+          updated_at?: string
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "darkrisk_assets_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      darkrisk_audit_log: {
+        Row: {
+          action: string
+          actor_id: string | null
+          created_at: string
+          entity_id: string | null
+          entity_type: string
+          id: string
+          ip_address: unknown
+          metadata: Json
+          organization_id: string | null
+          reason: string | null
+          tenant_id: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          created_at?: string
+          entity_id?: string | null
+          entity_type: string
+          id?: string
+          ip_address?: unknown
+          metadata?: Json
+          organization_id?: string | null
+          reason?: string | null
+          tenant_id?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string
+          id?: string
+          ip_address?: unknown
+          metadata?: Json
+          organization_id?: string | null
+          reason?: string | null
+          tenant_id?: string | null
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "darkrisk_audit_log_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      darkrisk_dti_sensitive_hits: {
+        Row: {
+          asset_scope: string | null
+          clear_value: string | null
+          confidence: Database["public"]["Enums"]["darkrisk_confidence"]
+          context_excerpt: string | null
+          created_at: string
+          evidence_id: string | null
+          evidence_scope: string | null
+          extraction_confidence: string | null
+          extraction_source: string | null
+          finding_id: string | null
+          id: string
+          masked_value: string
+          match_policy: string | null
+          match_type: string | null
+          metadata: Json
+          organization_id: string
+          query_kind: string | null
+          query_term: string | null
+          scan_run_id: string
+          selector_value: string | null
+          source: Database["public"]["Enums"]["darkrisk_source"]
+          source_label: string | null
+          source_record_id: string | null
+          source_run_id: string | null
+          tag: string
+          tenant_id: string | null
+        }
+        Insert: {
+          asset_scope?: string | null
+          clear_value?: string | null
+          confidence?: Database["public"]["Enums"]["darkrisk_confidence"]
+          context_excerpt?: string | null
+          created_at?: string
+          evidence_id?: string | null
+          evidence_scope?: string | null
+          extraction_confidence?: string | null
+          extraction_source?: string | null
+          finding_id?: string | null
+          id?: string
+          masked_value: string
+          match_policy?: string | null
+          match_type?: string | null
+          metadata?: Json
+          organization_id: string
+          query_kind?: string | null
+          query_term?: string | null
+          scan_run_id: string
+          selector_value?: string | null
+          source: Database["public"]["Enums"]["darkrisk_source"]
+          source_label?: string | null
+          source_record_id?: string | null
+          source_run_id?: string | null
+          tag: string
+          tenant_id?: string | null
+        }
+        Update: {
+          asset_scope?: string | null
+          clear_value?: string | null
+          confidence?: Database["public"]["Enums"]["darkrisk_confidence"]
+          context_excerpt?: string | null
+          created_at?: string
+          evidence_id?: string | null
+          evidence_scope?: string | null
+          extraction_confidence?: string | null
+          extraction_source?: string | null
+          finding_id?: string | null
+          id?: string
+          masked_value?: string
+          match_policy?: string | null
+          match_type?: string | null
+          metadata?: Json
+          organization_id?: string
+          query_kind?: string | null
+          query_term?: string | null
+          scan_run_id?: string
+          selector_value?: string | null
+          source?: Database["public"]["Enums"]["darkrisk_source"]
+          source_label?: string | null
+          source_record_id?: string | null
+          source_run_id?: string | null
+          tag?: string
+          tenant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "darkrisk_dti_sensitive_hits_evidence_id_fkey"
+            columns: ["evidence_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_evidence"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_dti_sensitive_hits_finding_id_fkey"
+            columns: ["finding_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_findings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_dti_sensitive_hits_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_dti_sensitive_hits_scan_run_id_fkey"
+            columns: ["scan_run_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_scan_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_dti_sensitive_hits_source_record_id_fkey"
+            columns: ["source_record_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_source_records"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_dti_sensitive_hits_source_run_id_fkey"
+            columns: ["source_run_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_dti_source_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      darkrisk_dti_source_runs: {
+        Row: {
+          asset_scope: string | null
+          completed_at: string | null
+          created_at: string
+          duration_ms: number | null
+          error_message: string | null
+          id: string
+          metadata: Json
+          organization_id: string
+          query_kind: string | null
+          query_term: string | null
+          result_count: number
+          scan_run_id: string
+          selector_value: string | null
+          source: Database["public"]["Enums"]["darkrisk_source"]
+          source_key: string
+          source_kind: string
+          source_label: string | null
+          started_at: string
+          status: string
+          target_url: string | null
+          tenant_id: string | null
+          updated_at: string
+          warning: string | null
+        }
+        Insert: {
+          asset_scope?: string | null
+          completed_at?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          metadata?: Json
+          organization_id: string
+          query_kind?: string | null
+          query_term?: string | null
+          result_count?: number
+          scan_run_id: string
+          selector_value?: string | null
+          source: Database["public"]["Enums"]["darkrisk_source"]
+          source_key: string
+          source_kind?: string
+          source_label?: string | null
+          started_at?: string
+          status?: string
+          target_url?: string | null
+          tenant_id?: string | null
+          updated_at?: string
+          warning?: string | null
+        }
+        Update: {
+          asset_scope?: string | null
+          completed_at?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          metadata?: Json
+          organization_id?: string
+          query_kind?: string | null
+          query_term?: string | null
+          result_count?: number
+          scan_run_id?: string
+          selector_value?: string | null
+          source?: Database["public"]["Enums"]["darkrisk_source"]
+          source_key?: string
+          source_kind?: string
+          source_label?: string | null
+          started_at?: string
+          status?: string
+          target_url?: string | null
+          tenant_id?: string | null
+          updated_at?: string
+          warning?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "darkrisk_dti_source_runs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_dti_source_runs_scan_run_id_fkey"
+            columns: ["scan_run_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_scan_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      darkrisk_entitlements: {
+        Row: {
+          created_at: string
+          enable_ai_recommendations: boolean
+          enable_phonebook: boolean
+          enable_raw_evidence: boolean
+          enabled: boolean
+          id: string
+          max_intelx_results_per_selector: number
+          organization_id: string
+          raw_evidence_retention_days: number
+          retention_days: number
+          scan_frequency: string
+          tier: Database["public"]["Enums"]["darkrisk_tier"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          enable_ai_recommendations?: boolean
+          enable_phonebook?: boolean
+          enable_raw_evidence?: boolean
+          enabled?: boolean
+          id?: string
+          max_intelx_results_per_selector?: number
+          organization_id: string
+          raw_evidence_retention_days?: number
+          retention_days?: number
+          scan_frequency?: string
+          tier?: Database["public"]["Enums"]["darkrisk_tier"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          enable_ai_recommendations?: boolean
+          enable_phonebook?: boolean
+          enable_raw_evidence?: boolean
+          enabled?: boolean
+          id?: string
+          max_intelx_results_per_selector?: number
+          organization_id?: string
+          raw_evidence_retention_days?: number
+          retention_days?: number
+          scan_frequency?: string
+          tier?: Database["public"]["Enums"]["darkrisk_tier"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "darkrisk_entitlements_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      darkrisk_esteso_profiles: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          cron_enabled: boolean
+          enabled: boolean
+          identity_model_valid_until: string
+          last_cron_run_at: string | null
+          manual_only: boolean
+          next_cron_run_at: string | null
+          notes: string | null
+          organization_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          cron_enabled?: boolean
+          enabled?: boolean
+          identity_model_valid_until?: string
+          last_cron_run_at?: string | null
+          manual_only?: boolean
+          next_cron_run_at?: string | null
+          notes?: string | null
+          organization_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          cron_enabled?: boolean
+          enabled?: boolean
+          identity_model_valid_until?: string
+          last_cron_run_at?: string | null
+          manual_only?: boolean
+          next_cron_run_at?: string | null
+          notes?: string | null
+          organization_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "darkrisk_esteso_profiles_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      darkrisk_evidence: {
+        Row: {
+          asset_id: string | null
+          confidence: Database["public"]["Enums"]["darkrisk_confidence"]
+          contains_sensitive_data: boolean
+          created_at: string
+          evidence_class: string
+          first_seen_at: string
+          id: string
+          last_seen_at: string
+          masked_value: string | null
+          metadata: Json
+          observed_at: string
+          organization_id: string
+          raw_evidence_ref: string | null
+          scan_run_id: string
+          selector_id: string | null
+          severity_hint: Database["public"]["Enums"]["darkrisk_severity"]
+          source: Database["public"]["Enums"]["darkrisk_source"]
+          source_record_id: string | null
+          summary: string | null
+          tenant_id: string | null
+          title: string
+          visibility: Database["public"]["Enums"]["darkrisk_visibility"]
+        }
+        Insert: {
+          asset_id?: string | null
+          confidence?: Database["public"]["Enums"]["darkrisk_confidence"]
+          contains_sensitive_data?: boolean
+          created_at?: string
+          evidence_class: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          masked_value?: string | null
+          metadata?: Json
+          observed_at?: string
+          organization_id: string
+          raw_evidence_ref?: string | null
+          scan_run_id: string
+          selector_id?: string | null
+          severity_hint?: Database["public"]["Enums"]["darkrisk_severity"]
+          source: Database["public"]["Enums"]["darkrisk_source"]
+          source_record_id?: string | null
+          summary?: string | null
+          tenant_id?: string | null
+          title: string
+          visibility?: Database["public"]["Enums"]["darkrisk_visibility"]
+        }
+        Update: {
+          asset_id?: string | null
+          confidence?: Database["public"]["Enums"]["darkrisk_confidence"]
+          contains_sensitive_data?: boolean
+          created_at?: string
+          evidence_class?: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          masked_value?: string | null
+          metadata?: Json
+          observed_at?: string
+          organization_id?: string
+          raw_evidence_ref?: string | null
+          scan_run_id?: string
+          selector_id?: string | null
+          severity_hint?: Database["public"]["Enums"]["darkrisk_severity"]
+          source?: Database["public"]["Enums"]["darkrisk_source"]
+          source_record_id?: string | null
+          summary?: string | null
+          tenant_id?: string | null
+          title?: string
+          visibility?: Database["public"]["Enums"]["darkrisk_visibility"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "darkrisk_evidence_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_evidence_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_evidence_scan_run_id_fkey"
+            columns: ["scan_run_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_scan_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_evidence_selector_id_fkey"
+            columns: ["selector_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_selectors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_evidence_source_record_id_fkey"
+            columns: ["source_record_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_source_records"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      darkrisk_findings: {
+        Row: {
+          affected_asset_id: string | null
+          affected_selector_id: string | null
+          confidence: Database["public"]["Enums"]["darkrisk_confidence"]
+          created_at: string
+          description: string | null
+          evidence_ids: string[]
+          finding_type: string
+          first_seen_at: string
+          id: string
+          last_seen_at: string
+          metadata: Json
+          organization_id: string
+          resolved_at: string | null
+          risk_dimensions: Json
+          risk_score: number
+          scan_run_id: string | null
+          severity: Database["public"]["Enums"]["darkrisk_severity"]
+          source_record_key: string | null
+          status: Database["public"]["Enums"]["darkrisk_finding_status"]
+          tenant_id: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          affected_asset_id?: string | null
+          affected_selector_id?: string | null
+          confidence?: Database["public"]["Enums"]["darkrisk_confidence"]
+          created_at?: string
+          description?: string | null
+          evidence_ids?: string[]
+          finding_type: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          metadata?: Json
+          organization_id: string
+          resolved_at?: string | null
+          risk_dimensions?: Json
+          risk_score?: number
+          scan_run_id?: string | null
+          severity: Database["public"]["Enums"]["darkrisk_severity"]
+          source_record_key?: string | null
+          status?: Database["public"]["Enums"]["darkrisk_finding_status"]
+          tenant_id?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          affected_asset_id?: string | null
+          affected_selector_id?: string | null
+          confidence?: Database["public"]["Enums"]["darkrisk_confidence"]
+          created_at?: string
+          description?: string | null
+          evidence_ids?: string[]
+          finding_type?: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          metadata?: Json
+          organization_id?: string
+          resolved_at?: string | null
+          risk_dimensions?: Json
+          risk_score?: number
+          scan_run_id?: string | null
+          severity?: Database["public"]["Enums"]["darkrisk_severity"]
+          source_record_key?: string | null
+          status?: Database["public"]["Enums"]["darkrisk_finding_status"]
+          tenant_id?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "darkrisk_findings_affected_asset_id_fkey"
+            columns: ["affected_asset_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_findings_affected_selector_id_fkey"
+            columns: ["affected_selector_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_selectors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_findings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_findings_scan_run_id_fkey"
+            columns: ["scan_run_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_scan_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      darkrisk_raw_evidence_refs: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          encryption_context: Json
+          evidence_id: string
+          id: string
+          last_reveal_reason: string | null
+          last_revealed_at: string | null
+          last_revealed_by: string | null
+          organization_id: string
+          retention_until: string | null
+          reveal_count: number
+          sha256: string | null
+          size_bytes: number | null
+          storage_path: string
+          storage_provider: string
+          tenant_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          encryption_context?: Json
+          evidence_id: string
+          id?: string
+          last_reveal_reason?: string | null
+          last_revealed_at?: string | null
+          last_revealed_by?: string | null
+          organization_id: string
+          retention_until?: string | null
+          reveal_count?: number
+          sha256?: string | null
+          size_bytes?: number | null
+          storage_path: string
+          storage_provider?: string
+          tenant_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          encryption_context?: Json
+          evidence_id?: string
+          id?: string
+          last_reveal_reason?: string | null
+          last_revealed_at?: string | null
+          last_revealed_by?: string | null
+          organization_id?: string
+          retention_until?: string | null
+          reveal_count?: number
+          sha256?: string | null
+          size_bytes?: number | null
+          storage_path?: string
+          storage_provider?: string
+          tenant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "darkrisk_raw_evidence_refs_evidence_id_fkey"
+            columns: ["evidence_id"]
+            isOneToOne: true
+            referencedRelation: "darkrisk_evidence"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_raw_evidence_refs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      darkrisk_recommendations: {
+        Row: {
+          actions: Json
+          confidence: Database["public"]["Enums"]["darkrisk_confidence"]
+          created_at: string
+          expected_outcome: string | null
+          finding_id: string | null
+          grounded_on_evidence_ids: string[]
+          id: string
+          metadata: Json
+          model: string | null
+          organization_id: string
+          output_schema_version: string | null
+          priority: string
+          prompt_version: string | null
+          source: Database["public"]["Enums"]["darkrisk_source"]
+          tenant_id: string | null
+          title: string
+          why_it_matters: string | null
+        }
+        Insert: {
+          actions?: Json
+          confidence?: Database["public"]["Enums"]["darkrisk_confidence"]
+          created_at?: string
+          expected_outcome?: string | null
+          finding_id?: string | null
+          grounded_on_evidence_ids?: string[]
+          id?: string
+          metadata?: Json
+          model?: string | null
+          organization_id: string
+          output_schema_version?: string | null
+          priority: string
+          prompt_version?: string | null
+          source?: Database["public"]["Enums"]["darkrisk_source"]
+          tenant_id?: string | null
+          title: string
+          why_it_matters?: string | null
+        }
+        Update: {
+          actions?: Json
+          confidence?: Database["public"]["Enums"]["darkrisk_confidence"]
+          created_at?: string
+          expected_outcome?: string | null
+          finding_id?: string | null
+          grounded_on_evidence_ids?: string[]
+          id?: string
+          metadata?: Json
+          model?: string | null
+          organization_id?: string
+          output_schema_version?: string | null
+          priority?: string
+          prompt_version?: string | null
+          source?: Database["public"]["Enums"]["darkrisk_source"]
+          tenant_id?: string | null
+          title?: string
+          why_it_matters?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "darkrisk_recommendations_finding_id_fkey"
+            columns: ["finding_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_findings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_recommendations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      darkrisk_report_snapshots: {
+        Row: {
+          classification: string
+          created_at: string
+          generated_at: string
+          generated_by: string | null
+          html_storage_path: string | null
+          id: string
+          json_storage_path: string | null
+          model_metadata: Json
+          organization_id: string
+          pdf_storage_path: string | null
+          report_json: Json
+          scan_run_id: string | null
+          status: string
+          tenant_id: string | null
+          tier: Database["public"]["Enums"]["darkrisk_tier"]
+          title: string
+        }
+        Insert: {
+          classification?: string
+          created_at?: string
+          generated_at?: string
+          generated_by?: string | null
+          html_storage_path?: string | null
+          id?: string
+          json_storage_path?: string | null
+          model_metadata?: Json
+          organization_id: string
+          pdf_storage_path?: string | null
+          report_json: Json
+          scan_run_id?: string | null
+          status?: string
+          tenant_id?: string | null
+          tier?: Database["public"]["Enums"]["darkrisk_tier"]
+          title: string
+        }
+        Update: {
+          classification?: string
+          created_at?: string
+          generated_at?: string
+          generated_by?: string | null
+          html_storage_path?: string | null
+          id?: string
+          json_storage_path?: string | null
+          model_metadata?: Json
+          organization_id?: string
+          pdf_storage_path?: string | null
+          report_json?: Json
+          scan_run_id?: string | null
+          status?: string
+          tenant_id?: string | null
+          tier?: Database["public"]["Enums"]["darkrisk_tier"]
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "darkrisk_report_snapshots_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_report_snapshots_scan_run_id_fkey"
+            columns: ["scan_run_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_scan_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      darkrisk_scan_locks: {
+        Row: {
+          locked_at: string
+          organization_id: string
+        }
+        Insert: {
+          locked_at?: string
+          organization_id: string
+        }
+        Update: {
+          locked_at?: string
+          organization_id?: string
+        }
+        Relationships: []
+      }
+      darkrisk_scan_runs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          error_message: string | null
+          id: string
+          organization_id: string
+          requested_by: string | null
+          sources: Json
+          started_at: string | null
+          stats: Json
+          status: Database["public"]["Enums"]["darkrisk_scan_status"]
+          surface_scan_job_id: string | null
+          tenant_id: string | null
+          tier: Database["public"]["Enums"]["darkrisk_tier"]
+          trigger_type: string
+          updated_at: string
+          warnings: Json
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          organization_id: string
+          requested_by?: string | null
+          sources?: Json
+          started_at?: string | null
+          stats?: Json
+          status?: Database["public"]["Enums"]["darkrisk_scan_status"]
+          surface_scan_job_id?: string | null
+          tenant_id?: string | null
+          tier?: Database["public"]["Enums"]["darkrisk_tier"]
+          trigger_type?: string
+          updated_at?: string
+          warnings?: Json
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          organization_id?: string
+          requested_by?: string | null
+          sources?: Json
+          started_at?: string | null
+          stats?: Json
+          status?: Database["public"]["Enums"]["darkrisk_scan_status"]
+          surface_scan_job_id?: string | null
+          tenant_id?: string | null
+          tier?: Database["public"]["Enums"]["darkrisk_tier"]
+          trigger_type?: string
+          updated_at?: string
+          warnings?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "darkrisk_scan_runs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      darkrisk_selectors: {
+        Row: {
+          asset_id: string | null
+          created_at: string
+          discovered_from: string | null
+          id: string
+          metadata: Json
+          normalized_value: string
+          organization_id: string
+          selector_type: Database["public"]["Enums"]["darkrisk_selector_type"]
+          sensitivity: string
+          source: Database["public"]["Enums"]["darkrisk_source"]
+          status: string
+          tenant_id: string | null
+          updated_at: string
+          value: string
+        }
+        Insert: {
+          asset_id?: string | null
+          created_at?: string
+          discovered_from?: string | null
+          id?: string
+          metadata?: Json
+          normalized_value: string
+          organization_id: string
+          selector_type: Database["public"]["Enums"]["darkrisk_selector_type"]
+          sensitivity?: string
+          source?: Database["public"]["Enums"]["darkrisk_source"]
+          status?: string
+          tenant_id?: string | null
+          updated_at?: string
+          value: string
+        }
+        Update: {
+          asset_id?: string | null
+          created_at?: string
+          discovered_from?: string | null
+          id?: string
+          metadata?: Json
+          normalized_value?: string
+          organization_id?: string
+          selector_type?: Database["public"]["Enums"]["darkrisk_selector_type"]
+          sensitivity?: string
+          source?: Database["public"]["Enums"]["darkrisk_source"]
+          status?: string
+          tenant_id?: string | null
+          updated_at?: string
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "darkrisk_selectors_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_selectors_discovered_from_fkey"
+            columns: ["discovered_from"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_selectors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_selectors_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      darkrisk_source_config: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          id: string
+          key: string
+          requires_extended: boolean
+          source: Database["public"]["Enums"]["darkrisk_source"]
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          key: string
+          requires_extended?: boolean
+          source: Database["public"]["Enums"]["darkrisk_source"]
+          updated_at?: string
+          value: Json
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          key?: string
+          requires_extended?: boolean
+          source?: Database["public"]["Enums"]["darkrisk_source"]
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
+      darkrisk_source_records: {
+        Row: {
+          asset_id: string | null
+          asset_scope: string | null
+          created_at: string
+          description: string | null
+          extraction_error: string | null
+          extraction_source: string | null
+          extraction_status: string
+          id: string
+          organization_id: string
+          preview_hash: string | null
+          query_kind: string | null
+          query_term: string | null
+          raw_metadata: Json
+          safe_preview: string | null
+          scan_run_id: string
+          selector_id: string | null
+          source: Database["public"]["Enums"]["darkrisk_source"]
+          source_added_at: string | null
+          source_bucket: string | null
+          source_date: string | null
+          source_media: string | null
+          source_record_key: string | null
+          source_score: number | null
+          source_simhash: string | null
+          source_storage_id: string | null
+          source_system_id: string | null
+          source_type: string | null
+          source_url: string | null
+          tenant_id: string | null
+          title: string | null
+        }
+        Insert: {
+          asset_id?: string | null
+          asset_scope?: string | null
+          created_at?: string
+          description?: string | null
+          extraction_error?: string | null
+          extraction_source?: string | null
+          extraction_status?: string
+          id?: string
+          organization_id: string
+          preview_hash?: string | null
+          query_kind?: string | null
+          query_term?: string | null
+          raw_metadata?: Json
+          safe_preview?: string | null
+          scan_run_id: string
+          selector_id?: string | null
+          source: Database["public"]["Enums"]["darkrisk_source"]
+          source_added_at?: string | null
+          source_bucket?: string | null
+          source_date?: string | null
+          source_media?: string | null
+          source_record_key?: string | null
+          source_score?: number | null
+          source_simhash?: string | null
+          source_storage_id?: string | null
+          source_system_id?: string | null
+          source_type?: string | null
+          source_url?: string | null
+          tenant_id?: string | null
+          title?: string | null
+        }
+        Update: {
+          asset_id?: string | null
+          asset_scope?: string | null
+          created_at?: string
+          description?: string | null
+          extraction_error?: string | null
+          extraction_source?: string | null
+          extraction_status?: string
+          id?: string
+          organization_id?: string
+          preview_hash?: string | null
+          query_kind?: string | null
+          query_term?: string | null
+          raw_metadata?: Json
+          safe_preview?: string | null
+          scan_run_id?: string
+          selector_id?: string | null
+          source?: Database["public"]["Enums"]["darkrisk_source"]
+          source_added_at?: string | null
+          source_bucket?: string | null
+          source_date?: string | null
+          source_media?: string | null
+          source_record_key?: string | null
+          source_score?: number | null
+          source_simhash?: string | null
+          source_storage_id?: string | null
+          source_system_id?: string | null
+          source_type?: string | null
+          source_url?: string | null
+          tenant_id?: string | null
+          title?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "darkrisk_source_records_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_source_records_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_source_records_scan_run_id_fkey"
+            columns: ["scan_run_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_scan_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_source_records_selector_id_fkey"
+            columns: ["selector_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_selectors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       emergency_contacts: {
         Row: {
           category: string
@@ -1791,14 +3046,24 @@ export type Database = {
         Row: {
           code: string
           created_at: string
+          dark_risk_contract_start: string | null
+          dark_risk_contract_years: number | null
           dark_risk360_enabled: boolean
+          darkrisk_esteso_enabled: boolean
+          hicompliance_contract_start: string | null
+          hicompliance_contract_years: number | null
           hicompliance_enabled: boolean
           id: string
           irp_extended: boolean
           name: string
           pentest_tools_auto_validation: boolean
+          services_pause_reason: string | null
+          services_paused: boolean
+          services_paused_at: string | null
           subdomain_dump_depth: number
           subdomain_dump_enabled: boolean
+          surface_scan_contract_start: string | null
+          surface_scan_contract_years: number | null
           surface_scan_extended: boolean
           surface_scan360_enabled: boolean
           updated_at: string
@@ -1806,14 +3071,24 @@ export type Database = {
         Insert: {
           code: string
           created_at?: string
+          dark_risk_contract_start?: string | null
+          dark_risk_contract_years?: number | null
           dark_risk360_enabled?: boolean
+          darkrisk_esteso_enabled?: boolean
+          hicompliance_contract_start?: string | null
+          hicompliance_contract_years?: number | null
           hicompliance_enabled?: boolean
           id?: string
           irp_extended?: boolean
           name: string
           pentest_tools_auto_validation?: boolean
+          services_pause_reason?: string | null
+          services_paused?: boolean
+          services_paused_at?: string | null
           subdomain_dump_depth?: number
           subdomain_dump_enabled?: boolean
+          surface_scan_contract_start?: string | null
+          surface_scan_contract_years?: number | null
           surface_scan_extended?: boolean
           surface_scan360_enabled?: boolean
           updated_at?: string
@@ -1821,19 +3096,122 @@ export type Database = {
         Update: {
           code?: string
           created_at?: string
+          dark_risk_contract_start?: string | null
+          dark_risk_contract_years?: number | null
           dark_risk360_enabled?: boolean
+          darkrisk_esteso_enabled?: boolean
+          hicompliance_contract_start?: string | null
+          hicompliance_contract_years?: number | null
           hicompliance_enabled?: boolean
           id?: string
           irp_extended?: boolean
           name?: string
           pentest_tools_auto_validation?: boolean
+          services_pause_reason?: string | null
+          services_paused?: boolean
+          services_paused_at?: string | null
           subdomain_dump_depth?: number
           subdomain_dump_enabled?: boolean
+          surface_scan_contract_start?: string | null
+          surface_scan_contract_years?: number | null
           surface_scan_extended?: boolean
           surface_scan360_enabled?: boolean
           updated_at?: string
         }
         Relationships: []
+      }
+      pentest_tools_scans: {
+        Row: {
+          created_at: string
+          customer_id: string
+          error_message: string | null
+          finished_at: string | null
+          id: string
+          next_retry_at: string | null
+          organization_id: string | null
+          phase: string
+          progress: number | null
+          raw_output: Json | null
+          remote_scan_id: number | null
+          remote_target_id: number | null
+          retry_count: number
+          scan_job_id: string
+          started_at: string | null
+          status: string
+          target_id: string | null
+          target_name: string
+          tenant_id: string | null
+          tool_id: number
+          tool_name: string
+          tool_params: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          customer_id: string
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          next_retry_at?: string | null
+          organization_id?: string | null
+          phase: string
+          progress?: number | null
+          raw_output?: Json | null
+          remote_scan_id?: number | null
+          remote_target_id?: number | null
+          retry_count?: number
+          scan_job_id: string
+          started_at?: string | null
+          status?: string
+          target_id?: string | null
+          target_name: string
+          tenant_id?: string | null
+          tool_id: number
+          tool_name: string
+          tool_params?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          customer_id?: string
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          next_retry_at?: string | null
+          organization_id?: string | null
+          phase?: string
+          progress?: number | null
+          raw_output?: Json | null
+          remote_scan_id?: number | null
+          remote_target_id?: number | null
+          retry_count?: number
+          scan_job_id?: string
+          started_at?: string | null
+          status?: string
+          target_id?: string | null
+          target_name?: string
+          tenant_id?: string | null
+          tool_id?: number
+          tool_name?: string
+          tool_params?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pentest_tools_scans_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pentest_tools_scans_target_id_fkey"
+            columns: ["target_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_targets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       playbook_completions: {
         Row: {
@@ -2266,6 +3644,7 @@ export type Database = {
           asset_type: string
           asset_value: string
           confidence: string
+          customer_id: string | null
           first_seen: string
           hostname: string | null
           id: string
@@ -2276,11 +3655,13 @@ export type Database = {
           root_domain: string | null
           scan_job_id: string
           source: string
+          tenant_id: string | null
         }
         Insert: {
           asset_type: string
           asset_value: string
           confidence?: string
+          customer_id?: string | null
           first_seen?: string
           hostname?: string | null
           id?: string
@@ -2291,11 +3672,13 @@ export type Database = {
           root_domain?: string | null
           scan_job_id: string
           source: string
+          tenant_id?: string | null
         }
         Update: {
           asset_type?: string
           asset_value?: string
           confidence?: string
+          customer_id?: string | null
           first_seen?: string
           hostname?: string | null
           id?: string
@@ -2306,6 +3689,7 @@ export type Database = {
           root_domain?: string | null
           scan_job_id?: string
           source?: string
+          tenant_id?: string | null
         }
         Relationships: [
           {
@@ -2317,10 +3701,242 @@ export type Database = {
           },
         ]
       }
+      surface_dns_lookup_findings: {
+        Row: {
+          asset_id: string | null
+          category: string
+          created_at: string
+          customer_id: string | null
+          description: string
+          dns_lookup_result_id: string
+          domain: string
+          evidence: Json
+          finding_key: string
+          id: string
+          organization_id: string | null
+          recommendation: string
+          report_summary: string | null
+          scan_id: string | null
+          severity: string
+          status: string
+          tenant_id: string
+          title: string
+        }
+        Insert: {
+          asset_id?: string | null
+          category: string
+          created_at?: string
+          customer_id?: string | null
+          description: string
+          dns_lookup_result_id: string
+          domain: string
+          evidence?: Json
+          finding_key: string
+          id?: string
+          organization_id?: string | null
+          recommendation: string
+          report_summary?: string | null
+          scan_id?: string | null
+          severity: string
+          status: string
+          tenant_id: string
+          title: string
+        }
+        Update: {
+          asset_id?: string | null
+          category?: string
+          created_at?: string
+          customer_id?: string | null
+          description?: string
+          dns_lookup_result_id?: string
+          domain?: string
+          evidence?: Json
+          finding_key?: string
+          id?: string
+          organization_id?: string | null
+          recommendation?: string
+          report_summary?: string | null
+          scan_id?: string | null
+          severity?: string
+          status?: string
+          tenant_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_dns_lookup_findings_dns_lookup_result_id_fkey"
+            columns: ["dns_lookup_result_id"]
+            isOneToOne: false
+            referencedRelation: "surface_dns_lookup_results"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      surface_dns_lookup_results: {
+        Row: {
+          additional_records: Json
+          asset_id: string | null
+          created_at: string
+          customer_id: string | null
+          domain: string
+          duration_ms: number | null
+          grade: string
+          id: string
+          normalized_domain: string
+          organization_id: string | null
+          raw_result: Json
+          records: Json
+          resolver: string
+          scan_id: string | null
+          scanned_at: string
+          score: number
+          summary: Json
+          tenant_id: string
+        }
+        Insert: {
+          additional_records?: Json
+          asset_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          domain: string
+          duration_ms?: number | null
+          grade: string
+          id?: string
+          normalized_domain: string
+          organization_id?: string | null
+          raw_result?: Json
+          records?: Json
+          resolver: string
+          scan_id?: string | null
+          scanned_at?: string
+          score: number
+          summary?: Json
+          tenant_id: string
+        }
+        Update: {
+          additional_records?: Json
+          asset_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          domain?: string
+          duration_ms?: number | null
+          grade?: string
+          id?: string
+          normalized_domain?: string
+          organization_id?: string | null
+          raw_result?: Json
+          records?: Json
+          resolver?: string
+          scan_id?: string | null
+          scanned_at?: string
+          score?: number
+          summary?: Json
+          tenant_id?: string
+        }
+        Relationships: []
+      }
+      surface_exposure_findings: {
+        Row: {
+          affected_host: string | null
+          affected_port: number | null
+          affected_url: string | null
+          created_at: string
+          customer_id: string
+          cve_ids: string[] | null
+          cvss: number | null
+          description: string | null
+          evidence: string | null
+          finding_type: string
+          id: string
+          organization_id: string | null
+          raw: Json
+          recommendation: string | null
+          scan_job_id: string
+          severity: string
+          source: string
+          source_scan_id: string | null
+          status: string
+          target_id: string | null
+          tenant_id: string | null
+          title: string
+        }
+        Insert: {
+          affected_host?: string | null
+          affected_port?: number | null
+          affected_url?: string | null
+          created_at?: string
+          customer_id: string
+          cve_ids?: string[] | null
+          cvss?: number | null
+          description?: string | null
+          evidence?: string | null
+          finding_type: string
+          id?: string
+          organization_id?: string | null
+          raw?: Json
+          recommendation?: string | null
+          scan_job_id: string
+          severity?: string
+          source?: string
+          source_scan_id?: string | null
+          status?: string
+          target_id?: string | null
+          tenant_id?: string | null
+          title: string
+        }
+        Update: {
+          affected_host?: string | null
+          affected_port?: number | null
+          affected_url?: string | null
+          created_at?: string
+          customer_id?: string
+          cve_ids?: string[] | null
+          cvss?: number | null
+          description?: string | null
+          evidence?: string | null
+          finding_type?: string
+          id?: string
+          organization_id?: string | null
+          raw?: Json
+          recommendation?: string | null
+          scan_job_id?: string
+          severity?: string
+          source?: string
+          source_scan_id?: string | null
+          status?: string
+          target_id?: string | null
+          tenant_id?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_exposure_findings_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_exposure_findings_source_scan_id_fkey"
+            columns: ["source_scan_id"]
+            isOneToOne: false
+            referencedRelation: "pentest_tools_scans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_exposure_findings_target_id_fkey"
+            columns: ["target_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_targets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       surface_external_intel: {
         Row: {
           confidence: string
           created_at: string
+          customer_id: string | null
           found: boolean
           id: string
           organization_id: string
@@ -2329,10 +3945,12 @@ export type Database = {
           scan_job_id: string
           summary: Json | null
           target: string
+          tenant_id: string | null
         }
         Insert: {
           confidence?: string
           created_at?: string
+          customer_id?: string | null
           found?: boolean
           id?: string
           organization_id: string
@@ -2341,10 +3959,12 @@ export type Database = {
           scan_job_id: string
           summary?: Json | null
           target: string
+          tenant_id?: string | null
         }
         Update: {
           confidence?: string
           created_at?: string
+          customer_id?: string | null
           found?: boolean
           id?: string
           organization_id?: string
@@ -2353,6 +3973,7 @@ export type Database = {
           scan_job_id?: string
           summary?: Json | null
           target?: string
+          tenant_id?: string | null
         }
         Relationships: [
           {
@@ -2371,6 +3992,7 @@ export type Database = {
           attribution_confidence: string
           cisa_kev: boolean
           created_at: string
+          customer_id: string | null
           cve: string[]
           cvss: number | null
           cwe: string[]
@@ -2389,6 +4011,7 @@ export type Database = {
           scan_job_id: string
           severity: string
           status: string
+          tenant_id: string | null
           title: string
         }
         Insert: {
@@ -2397,6 +4020,7 @@ export type Database = {
           attribution_confidence?: string
           cisa_kev?: boolean
           created_at?: string
+          customer_id?: string | null
           cve?: string[]
           cvss?: number | null
           cwe?: string[]
@@ -2415,6 +4039,7 @@ export type Database = {
           scan_job_id: string
           severity?: string
           status?: string
+          tenant_id?: string | null
           title: string
         }
         Update: {
@@ -2423,6 +4048,7 @@ export type Database = {
           attribution_confidence?: string
           cisa_kev?: boolean
           created_at?: string
+          customer_id?: string | null
           cve?: string[]
           cvss?: number | null
           cwe?: string[]
@@ -2441,6 +4067,7 @@ export type Database = {
           scan_job_id?: string
           severity?: string
           status?: string
+          tenant_id?: string | null
           title?: string
         }
         Relationships: [
@@ -2453,17 +4080,350 @@ export type Database = {
           },
         ]
       }
+      surface_graph_edges: {
+        Row: {
+          created_at: string
+          edge_data: Json
+          id: string
+          investigation_id: string
+          organization_id: string
+          source_node_id: string
+          target_node_id: string
+        }
+        Insert: {
+          created_at?: string
+          edge_data: Json
+          id?: string
+          investigation_id: string
+          organization_id: string
+          source_node_id: string
+          target_node_id: string
+        }
+        Update: {
+          created_at?: string
+          edge_data?: Json
+          id?: string
+          investigation_id?: string
+          organization_id?: string
+          source_node_id?: string
+          target_node_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_graph_edges_investigation_id_fkey"
+            columns: ["investigation_id"]
+            isOneToOne: false
+            referencedRelation: "surface_graph_investigations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      surface_graph_enricher_runs: {
+        Row: {
+          completed_at: string | null
+          edges_created: number
+          enricher_name: string
+          error_message: string | null
+          id: string
+          input_node_ids: string[]
+          investigation_id: string
+          nodes_created: number
+          organization_id: string
+          started_at: string
+          status: string
+        }
+        Insert: {
+          completed_at?: string | null
+          edges_created?: number
+          enricher_name: string
+          error_message?: string | null
+          id?: string
+          input_node_ids?: string[]
+          investigation_id: string
+          nodes_created?: number
+          organization_id: string
+          started_at?: string
+          status?: string
+        }
+        Update: {
+          completed_at?: string | null
+          edges_created?: number
+          enricher_name?: string
+          error_message?: string | null
+          id?: string
+          input_node_ids?: string[]
+          investigation_id?: string
+          nodes_created?: number
+          organization_id?: string
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_graph_enricher_runs_investigation_id_fkey"
+            columns: ["investigation_id"]
+            isOneToOne: false
+            referencedRelation: "surface_graph_investigations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      surface_graph_investigations: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          edge_count: number
+          id: string
+          name: string
+          node_count: number
+          organization_id: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          edge_count?: number
+          id?: string
+          name: string
+          node_count?: number
+          organization_id: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          edge_count?: number
+          id?: string
+          name?: string
+          node_count?: number
+          organization_id?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_graph_investigations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      surface_graph_nodes: {
+        Row: {
+          created_at: string
+          id: string
+          investigation_id: string
+          node_data: Json
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id: string
+          investigation_id: string
+          node_data: Json
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          investigation_id?: string
+          node_data?: Json
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_graph_nodes_investigation_id_fkey"
+            columns: ["investigation_id"]
+            isOneToOne: false
+            referencedRelation: "surface_graph_investigations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      surface_http_header_findings: {
+        Row: {
+          actual_value: string | null
+          asset_id: string | null
+          category: string
+          created_at: string
+          customer_id: string | null
+          description: string
+          earned_points: number
+          evidence: Json
+          header_name: string
+          id: string
+          note: string
+          organization_id: string | null
+          project_id: string
+          recommendation: string
+          result_id: string
+          rule_id: string
+          scan_id: string
+          severity: string
+          status: string
+          tenant_id: string | null
+          weight: number
+        }
+        Insert: {
+          actual_value?: string | null
+          asset_id?: string | null
+          category: string
+          created_at?: string
+          customer_id?: string | null
+          description: string
+          earned_points?: number
+          evidence?: Json
+          header_name: string
+          id?: string
+          note: string
+          organization_id?: string | null
+          project_id: string
+          recommendation: string
+          result_id: string
+          rule_id: string
+          scan_id: string
+          severity: string
+          status: string
+          tenant_id?: string | null
+          weight?: number
+        }
+        Update: {
+          actual_value?: string | null
+          asset_id?: string | null
+          category?: string
+          created_at?: string
+          customer_id?: string | null
+          description?: string
+          earned_points?: number
+          evidence?: Json
+          header_name?: string
+          id?: string
+          note?: string
+          organization_id?: string | null
+          project_id?: string
+          recommendation?: string
+          result_id?: string
+          rule_id?: string
+          scan_id?: string
+          severity?: string
+          status?: string
+          tenant_id?: string | null
+          weight?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_http_header_findings_result_id_fkey"
+            columns: ["result_id"]
+            isOneToOne: false
+            referencedRelation: "surface_http_header_results"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      surface_http_header_results: {
+        Row: {
+          asset_id: string | null
+          asset_type: string
+          created_at: string
+          customer_id: string | null
+          error_message: string | null
+          final_url: string | null
+          grade: string
+          high_impact_open_count: number
+          id: string
+          input_url: string
+          is_https: boolean
+          missing_count: number
+          normalized_url: string
+          ok_count: number
+          organization_id: string | null
+          project_id: string
+          raw_headers: Json
+          response_time_ms: number
+          scan_id: string
+          scanned_at: string
+          score: number
+          status_code: number | null
+          tenant_id: string | null
+          weak_count: number
+        }
+        Insert: {
+          asset_id?: string | null
+          asset_type: string
+          created_at?: string
+          customer_id?: string | null
+          error_message?: string | null
+          final_url?: string | null
+          grade: string
+          high_impact_open_count?: number
+          id?: string
+          input_url: string
+          is_https?: boolean
+          missing_count?: number
+          normalized_url: string
+          ok_count?: number
+          organization_id?: string | null
+          project_id: string
+          raw_headers?: Json
+          response_time_ms?: number
+          scan_id: string
+          scanned_at?: string
+          score: number
+          status_code?: number | null
+          tenant_id?: string | null
+          weak_count?: number
+        }
+        Update: {
+          asset_id?: string | null
+          asset_type?: string
+          created_at?: string
+          customer_id?: string | null
+          error_message?: string | null
+          final_url?: string | null
+          grade?: string
+          high_impact_open_count?: number
+          id?: string
+          input_url?: string
+          is_https?: boolean
+          missing_count?: number
+          normalized_url?: string
+          ok_count?: number
+          organization_id?: string | null
+          project_id?: string
+          raw_headers?: Json
+          response_time_ms?: number
+          scan_id?: string
+          scanned_at?: string
+          score?: number
+          status_code?: number | null
+          tenant_id?: string | null
+          weak_count?: number
+        }
+        Relationships: []
+      }
       surface_observations: {
         Row: {
           asset_id: string | null
           confidence: string
           created_at: string
+          customer_id: string | null
           id: string
           module: string
           observation_type: string
           organization_id: string
           scan_job_id: string
           severity: string
+          tenant_id: string | null
           title: string | null
           value: Json
         }
@@ -2471,12 +4431,14 @@ export type Database = {
           asset_id?: string | null
           confidence?: string
           created_at?: string
+          customer_id?: string | null
           id?: string
           module: string
           observation_type: string
           organization_id: string
           scan_job_id: string
           severity?: string
+          tenant_id?: string | null
           title?: string | null
           value: Json
         }
@@ -2484,12 +4446,14 @@ export type Database = {
           asset_id?: string | null
           confidence?: string
           created_at?: string
+          customer_id?: string | null
           id?: string
           module?: string
           observation_type?: string
           organization_id?: string
           scan_job_id?: string
           severity?: string
+          tenant_id?: string | null
           title?: string | null
           value?: Json
         }
@@ -2499,6 +4463,118 @@ export type Database = {
             columns: ["scan_job_id"]
             isOneToOne: false
             referencedRelation: "surface_scan_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      surface_open_ports: {
+        Row: {
+          banner: string | null
+          business_risk: string | null
+          customer_id: string
+          exposure_level: string
+          first_seen_at: string
+          host: string
+          id: string
+          ip: string | null
+          is_tls: boolean
+          is_web: boolean
+          last_seen_at: string
+          organization_id: string | null
+          os_guess: string | null
+          port: number
+          protocol: string
+          raw: Json
+          remediation_hint: string | null
+          scan_job_id: string | null
+          service_extra_info: string | null
+          service_name: string | null
+          service_product: string | null
+          service_version: string | null
+          source: string
+          source_scan_id: string | null
+          state: string
+          target_id: string | null
+          tenant_id: string | null
+        }
+        Insert: {
+          banner?: string | null
+          business_risk?: string | null
+          customer_id: string
+          exposure_level?: string
+          first_seen_at?: string
+          host: string
+          id?: string
+          ip?: string | null
+          is_tls?: boolean
+          is_web?: boolean
+          last_seen_at?: string
+          organization_id?: string | null
+          os_guess?: string | null
+          port: number
+          protocol?: string
+          raw?: Json
+          remediation_hint?: string | null
+          scan_job_id?: string | null
+          service_extra_info?: string | null
+          service_name?: string | null
+          service_product?: string | null
+          service_version?: string | null
+          source?: string
+          source_scan_id?: string | null
+          state: string
+          target_id?: string | null
+          tenant_id?: string | null
+        }
+        Update: {
+          banner?: string | null
+          business_risk?: string | null
+          customer_id?: string
+          exposure_level?: string
+          first_seen_at?: string
+          host?: string
+          id?: string
+          ip?: string | null
+          is_tls?: boolean
+          is_web?: boolean
+          last_seen_at?: string
+          organization_id?: string | null
+          os_guess?: string | null
+          port?: number
+          protocol?: string
+          raw?: Json
+          remediation_hint?: string | null
+          scan_job_id?: string | null
+          service_extra_info?: string | null
+          service_name?: string | null
+          service_product?: string | null
+          service_version?: string | null
+          source?: string
+          source_scan_id?: string | null
+          state?: string
+          target_id?: string | null
+          tenant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_open_ports_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_open_ports_source_scan_id_fkey"
+            columns: ["source_scan_id"]
+            isOneToOne: false
+            referencedRelation: "pentest_tools_scans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_open_ports_target_id_fkey"
+            columns: ["target_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_targets"
             referencedColumns: ["id"]
           },
         ]
@@ -2578,30 +4654,36 @@ export type Database = {
         Row: {
           action: string
           created_at: string
+          customer_id: string | null
           details: Json | null
           id: string
           organization_id: string | null
           scan_job_id: string | null
+          tenant_id: string | null
           user_email: string | null
           user_id: string | null
         }
         Insert: {
           action: string
           created_at?: string
+          customer_id?: string | null
           details?: Json | null
           id?: string
           organization_id?: string | null
           scan_job_id?: string | null
+          tenant_id?: string | null
           user_email?: string | null
           user_id?: string | null
         }
         Update: {
           action?: string
           created_at?: string
+          customer_id?: string | null
           details?: Json | null
           id?: string
           organization_id?: string | null
           scan_job_id?: string | null
+          tenant_id?: string | null
           user_email?: string | null
           user_id?: string | null
         }
@@ -2661,11 +4743,113 @@ export type Database = {
         }
         Relationships: []
       }
+      surface_scan_ioc_fresh_config: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          is_enabled: boolean
+          last_refreshed_at: string | null
+          lease_minutes: number
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_enabled?: boolean
+          last_refreshed_at?: string | null
+          lease_minutes?: number
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_enabled?: boolean
+          last_refreshed_at?: string | null
+          lease_minutes?: number
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_scan_ioc_fresh_config_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      surface_scan_ioc_fresh_items: {
+        Row: {
+          confidence: number
+          created_at: string
+          created_by: string | null
+          expires_at: string | null
+          id: string
+          ioc_type: string
+          ioc_value: string
+          is_active: boolean
+          notes: string | null
+          organization_id: string
+          severity: string
+          source: string
+          synced_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          confidence?: number
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          ioc_type: string
+          ioc_value: string
+          is_active?: boolean
+          notes?: string | null
+          organization_id: string
+          severity?: string
+          source?: string
+          synced_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          confidence?: number
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          ioc_type?: string
+          ioc_value?: string
+          is_active?: boolean
+          notes?: string | null
+          organization_id?: string
+          severity?: string
+          source?: string
+          synced_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_scan_ioc_fresh_items_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       surface_scan_jobs: {
         Row: {
           authorization_confirmed: boolean
           completed_at: string | null
+          config: Json
           created_at: string
+          customer_id: string | null
           error_message: string | null
           hosting_context: string
           hostname: string | null
@@ -2675,19 +4859,28 @@ export type Database = {
           port: number | null
           protocol: string | null
           raw_target: string
+          recovery_attempt_count: number
           requested_by: string | null
           resolved_ips: string[]
           root_domain: string | null
+          scan_name: string | null
           scan_profile: string
+          scan_type: string
+          scope_guard: Json
           shodan_status: string
           started_at: string | null
           status: string
+          summary: Json
           target_type: string
+          tenant_id: string | null
+          updated_at: string
         }
         Insert: {
           authorization_confirmed?: boolean
           completed_at?: string | null
+          config?: Json
           created_at?: string
+          customer_id?: string | null
           error_message?: string | null
           hosting_context?: string
           hostname?: string | null
@@ -2697,19 +4890,28 @@ export type Database = {
           port?: number | null
           protocol?: string | null
           raw_target: string
+          recovery_attempt_count?: number
           requested_by?: string | null
           resolved_ips?: string[]
           root_domain?: string | null
+          scan_name?: string | null
           scan_profile?: string
+          scan_type?: string
+          scope_guard?: Json
           shodan_status?: string
           started_at?: string | null
           status?: string
+          summary?: Json
           target_type: string
+          tenant_id?: string | null
+          updated_at?: string
         }
         Update: {
           authorization_confirmed?: boolean
           completed_at?: string | null
+          config?: Json
           created_at?: string
+          customer_id?: string | null
           error_message?: string | null
           hosting_context?: string
           hostname?: string | null
@@ -2719,16 +4921,97 @@ export type Database = {
           port?: number | null
           protocol?: string | null
           raw_target?: string
+          recovery_attempt_count?: number
           requested_by?: string | null
           resolved_ips?: string[]
           root_domain?: string | null
+          scan_name?: string | null
           scan_profile?: string
+          scan_type?: string
+          scope_guard?: Json
           shodan_status?: string
           started_at?: string | null
           status?: string
+          summary?: Json
           target_type?: string
+          tenant_id?: string | null
+          updated_at?: string
         }
         Relationships: []
+      }
+      surface_scan_module_results: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          customer_id: string | null
+          duration_ms: number | null
+          error_message: string | null
+          id: string
+          module_key: string
+          module_label: string
+          normalized: Json
+          organization_id: string | null
+          raw: Json
+          scan_job_id: string
+          score: number | null
+          severity: string
+          source: string | null
+          started_at: string | null
+          status: string
+          tenant_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          customer_id?: string | null
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          module_key: string
+          module_label: string
+          normalized?: Json
+          organization_id?: string | null
+          raw?: Json
+          scan_job_id: string
+          score?: number | null
+          severity?: string
+          source?: string | null
+          started_at?: string | null
+          status: string
+          tenant_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          customer_id?: string | null
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          module_key?: string
+          module_label?: string
+          normalized?: Json
+          organization_id?: string | null
+          raw?: Json
+          scan_job_id?: string
+          score?: number | null
+          severity?: string
+          source?: string | null
+          started_at?: string | null
+          status?: string
+          tenant_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_scan_module_results_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       surface_scan_monitored_ips: {
         Row: {
@@ -2771,6 +5054,232 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      surface_scan_targets: {
+        Row: {
+          created_at: string
+          customer_id: string
+          id: string
+          is_authorized: boolean
+          organization_id: string | null
+          resolved_ips: string[] | null
+          root_domain: string | null
+          scan_job_id: string
+          source: string
+          target_type: string
+          target_value: string
+          tenant_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          customer_id: string
+          id?: string
+          is_authorized?: boolean
+          organization_id?: string | null
+          resolved_ips?: string[] | null
+          root_domain?: string | null
+          scan_job_id: string
+          source?: string
+          target_type: string
+          target_value: string
+          tenant_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          customer_id?: string
+          id?: string
+          is_authorized?: boolean
+          organization_id?: string | null
+          resolved_ips?: string[] | null
+          root_domain?: string | null
+          scan_job_id?: string
+          source?: string
+          target_type?: string
+          target_value?: string
+          tenant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_scan_targets_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      surface_ssl_results: {
+        Row: {
+          certificate_issuer: string | null
+          certificate_not_after: string | null
+          certificate_not_before: string | null
+          certificate_subject: string | null
+          created_at: string
+          customer_id: string
+          grade: string | null
+          host: string
+          id: string
+          organization_id: string | null
+          port: number
+          raw: Json
+          scan_job_id: string | null
+          source_scan_id: string | null
+          target_id: string | null
+          tenant_id: string | null
+          url: string
+          weak_ciphers: string[] | null
+          weak_protocols: string[] | null
+        }
+        Insert: {
+          certificate_issuer?: string | null
+          certificate_not_after?: string | null
+          certificate_not_before?: string | null
+          certificate_subject?: string | null
+          created_at?: string
+          customer_id: string
+          grade?: string | null
+          host: string
+          id?: string
+          organization_id?: string | null
+          port: number
+          raw?: Json
+          scan_job_id?: string | null
+          source_scan_id?: string | null
+          target_id?: string | null
+          tenant_id?: string | null
+          url: string
+          weak_ciphers?: string[] | null
+          weak_protocols?: string[] | null
+        }
+        Update: {
+          certificate_issuer?: string | null
+          certificate_not_after?: string | null
+          certificate_not_before?: string | null
+          certificate_subject?: string | null
+          created_at?: string
+          customer_id?: string
+          grade?: string | null
+          host?: string
+          id?: string
+          organization_id?: string | null
+          port?: number
+          raw?: Json
+          scan_job_id?: string | null
+          source_scan_id?: string | null
+          target_id?: string | null
+          tenant_id?: string | null
+          url?: string
+          weak_ciphers?: string[] | null
+          weak_protocols?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_ssl_results_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_ssl_results_source_scan_id_fkey"
+            columns: ["source_scan_id"]
+            isOneToOne: false
+            referencedRelation: "pentest_tools_scans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_ssl_results_target_id_fkey"
+            columns: ["target_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_targets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      surface_web_technologies: {
+        Row: {
+          category: string | null
+          confidence: number | null
+          created_at: string
+          customer_id: string
+          host: string
+          id: string
+          organization_id: string | null
+          port: number | null
+          raw: Json
+          scan_job_id: string | null
+          source: string
+          source_provider: string
+          source_scan_id: string | null
+          target_id: string | null
+          technology_name: string
+          technology_version: string | null
+          tenant_id: string | null
+          url: string
+        }
+        Insert: {
+          category?: string | null
+          confidence?: number | null
+          created_at?: string
+          customer_id: string
+          host: string
+          id?: string
+          organization_id?: string | null
+          port?: number | null
+          raw?: Json
+          scan_job_id?: string | null
+          source?: string
+          source_provider?: string
+          source_scan_id?: string | null
+          target_id?: string | null
+          technology_name: string
+          technology_version?: string | null
+          tenant_id?: string | null
+          url: string
+        }
+        Update: {
+          category?: string | null
+          confidence?: number | null
+          created_at?: string
+          customer_id?: string
+          host?: string
+          id?: string
+          organization_id?: string | null
+          port?: number | null
+          raw?: Json
+          scan_job_id?: string | null
+          source?: string
+          source_provider?: string
+          source_scan_id?: string | null
+          target_id?: string | null
+          technology_name?: string
+          technology_version?: string | null
+          tenant_id?: string | null
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_web_technologies_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_web_technologies_source_scan_id_fkey"
+            columns: ["source_scan_id"]
+            isOneToOne: false
+            referencedRelation: "pentest_tools_scans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_web_technologies_target_id_fkey"
+            columns: ["target_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_targets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_preferences: {
         Row: {
@@ -2874,9 +5383,91 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      surface_dns_lookup_scan_summary: {
+        Row: {
+          average_score: number | null
+          customer_id: string | null
+          last_scanned_at: string | null
+          scan_id: string | null
+          secure_assets: number | null
+          total_assets: number | null
+          weak_assets: number | null
+        }
+        Relationships: []
+      }
+      surface_http_header_scan_summary: {
+        Row: {
+          average_score: number | null
+          customer_id: string | null
+          high_impact_open_total: number | null
+          last_scanned_at: string | null
+          project_id: string | null
+          scan_id: string | null
+          secure_assets: number | null
+          total_assets: number | null
+          weak_assets: number | null
+        }
+        Relationships: []
+      }
+      surface_open_ports_latest: {
+        Row: {
+          banner: string | null
+          business_risk: string | null
+          customer_id: string | null
+          exposure_level: string | null
+          first_seen_at: string | null
+          host: string | null
+          id: string | null
+          ip: string | null
+          is_tls: boolean | null
+          is_web: boolean | null
+          last_seen_at: string | null
+          organization_id: string | null
+          os_guess: string | null
+          port: number | null
+          protocol: string | null
+          raw: Json | null
+          remediation_hint: string | null
+          scan_job_id: string | null
+          service_extra_info: string | null
+          service_name: string | null
+          service_product: string | null
+          service_version: string | null
+          source_scan_id: string | null
+          state: string | null
+          target_id: string | null
+          tenant_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_open_ports_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_open_ports_source_scan_id_fkey"
+            columns: ["source_scan_id"]
+            isOneToOne: false
+            referencedRelation: "pentest_tools_scans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_open_ports_target_id_fkey"
+            columns: ["target_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_targets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
+      admin_delete_organization_robust: {
+        Args: { _actor_id?: string; _organization_id: string }
+        Returns: Json
+      }
       calc_risk_intrinseco: {
         Args: { criticita: number; esposizione: number; superficie: number }
         Returns: number
@@ -2884,6 +5475,15 @@ export type Database = {
       can_manage_all_organizations: {
         Args: { _user_id: string }
         Returns: boolean
+      }
+      darkrisk_apply_retention: { Args: { _org_id?: string }; Returns: Json }
+      darkrisk_is_analyst: {
+        Args: { _organization_id: string; _user_id: string }
+        Returns: boolean
+      }
+      darkrisk_qa_security_snapshot: {
+        Args: { _org_id: string }
+        Returns: Json
       }
       enqueue_cve_enrichment: {
         Args: { _cves: string[]; _org_id: string; _source: string }
@@ -2911,6 +5511,11 @@ export type Database = {
         }
         Returns: boolean
       }
+      surface_scan_can_access_customer: {
+        Args: { _customer_id: string; _user_id: string }
+        Returns: boolean
+      }
+      surface_scan_is_admin: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
       app_role: "super_admin" | "sales" | "client"
@@ -2919,6 +5524,64 @@ export type Database = {
         | "planned_in_progress"
         | "completed"
         | "not_started"
+      darkrisk_asset_type:
+        | "domain"
+        | "subdomain"
+        | "url"
+        | "ip"
+        | "cidr"
+        | "email"
+        | "mx"
+        | "ns"
+        | "host"
+        | "service"
+        | "certificate"
+        | "unknown"
+      darkrisk_confidence: "low" | "medium" | "high"
+      darkrisk_finding_status:
+        | "new"
+        | "triaged"
+        | "validated"
+        | "false_positive"
+        | "accepted_risk"
+        | "remediation_in_progress"
+        | "resolved"
+        | "suppressed"
+      darkrisk_scan_status:
+        | "queued"
+        | "running"
+        | "completed"
+        | "completed_with_warnings"
+        | "failed"
+        | "cancelled"
+      darkrisk_selector_type:
+        | "email"
+        | "domain"
+        | "wildcard_domain"
+        | "url"
+        | "ipv4"
+        | "ipv6"
+        | "cidrv4"
+        | "cidrv6"
+        | "phone"
+        | "bitcoin"
+        | "mac"
+        | "ipfs"
+        | "uuid"
+        | "storageid"
+        | "systemid"
+        | "simhash"
+        | "credit_card"
+        | "iban"
+      darkrisk_severity: "info" | "low" | "medium" | "high" | "critical"
+      darkrisk_source:
+        | "surfacescan360"
+        | "intelx"
+        | "openai"
+        | "manual"
+        | "firecrawl"
+      darkrisk_tier: "standard" | "extended"
+      darkrisk_visibility: "customer" | "analyst" | "admin"
       document_category:
         | "Piano Generale"
         | "Checklist / OPL / SOP"
@@ -3067,6 +5730,69 @@ export const Constants = {
         "completed",
         "not_started",
       ],
+      darkrisk_asset_type: [
+        "domain",
+        "subdomain",
+        "url",
+        "ip",
+        "cidr",
+        "email",
+        "mx",
+        "ns",
+        "host",
+        "service",
+        "certificate",
+        "unknown",
+      ],
+      darkrisk_confidence: ["low", "medium", "high"],
+      darkrisk_finding_status: [
+        "new",
+        "triaged",
+        "validated",
+        "false_positive",
+        "accepted_risk",
+        "remediation_in_progress",
+        "resolved",
+        "suppressed",
+      ],
+      darkrisk_scan_status: [
+        "queued",
+        "running",
+        "completed",
+        "completed_with_warnings",
+        "failed",
+        "cancelled",
+      ],
+      darkrisk_selector_type: [
+        "email",
+        "domain",
+        "wildcard_domain",
+        "url",
+        "ipv4",
+        "ipv6",
+        "cidrv4",
+        "cidrv6",
+        "phone",
+        "bitcoin",
+        "mac",
+        "ipfs",
+        "uuid",
+        "storageid",
+        "systemid",
+        "simhash",
+        "credit_card",
+        "iban",
+      ],
+      darkrisk_severity: ["info", "low", "medium", "high", "critical"],
+      darkrisk_source: [
+        "surfacescan360",
+        "intelx",
+        "openai",
+        "manual",
+        "firecrawl",
+      ],
+      darkrisk_tier: ["standard", "extended"],
+      darkrisk_visibility: ["customer", "analyst", "admin"],
       document_category: [
         "Piano Generale",
         "Checklist / OPL / SOP",
