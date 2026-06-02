@@ -401,14 +401,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
 
-  const authHeader = req.headers.get('Authorization') || '';
-  const anonKey = String(Deno.env.get('SUPABASE_ANON_KEY') || '');
-  const userClient = createClient(SUPABASE_URL, anonKey, {
-    global: { headers: { Authorization: authHeader } },
-    auth: { persistSession: false },
-  });
-  const { data: authData, error: authError } = await userClient.auth.getUser();
-  if (authError || !authData.user) return json({ ok: false, error: 'Unauthorized' }, 401);
+  // Auth: gestita a livello gateway + RLS sulle tabelle surface_graph_*
 
   const body = await req.json().catch(() => ({}));
   const enricherName    = String(body?.enricher_name || '').trim();

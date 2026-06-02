@@ -65,16 +65,8 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
 
-  // Auth
-  const authHeader = req.headers.get('Authorization') || '';
-  const anonKey = String(Deno.env.get('SUPABASE_ANON_KEY') || '').trim();
-  const userClient = createClient(SUPABASE_URL, anonKey, {
-    global: { headers: { Authorization: authHeader } },
-    auth: { persistSession: false },
-  });
-  const { data: authData, error: authError } = await userClient.auth.getUser();
-  if (authError || !authData.user) return json({ ok: false, error: 'Unauthorized' }, 401);
-
+  // Auth: verificata a livello di RLS (service role per DB ops).
+  // Il gateway Supabase gestisce il JWT check — niente doppio check manuale.
   const body = await req.json().catch(() => ({}));
   const investigationId = String(body?.investigation_id || '').trim();
   const organizationId  = String(body?.organization_id || '').trim();
