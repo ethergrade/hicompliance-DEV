@@ -89,6 +89,11 @@ const adminNavigation = [
     icon: PieChart,
   },
   {
+    title: 'DARKRISK_ESTESO Admin',
+    href: '/admin/darkrisk-esteso',
+    icon: Eye,
+  },
+  {
     title: 'Gestione Ruoli',
     href: '/admin/role-settings',
     icon: Settings,

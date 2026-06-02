@@ -1202,24 +1202,44 @@ serve(async (req: Request) => {
     const { userClient, adminClient } = makeSupabaseClients(req);
     lockAdminClient = adminClient;
 
-    const { data: authData, error: authError } = await userClient.auth.getUser();
-    if (authError || !authData.user) return jsonResponse({ ok: false, error: 'Unauthorized' }, 401);
-
-    const caller = await getCallerProfile(adminClient, authData.user.id);
-    if (!caller.canManageAllOrganizations) {
-      return jsonResponse({ ok: false, error: 'Only super admin can use DARKRISK_ESTESO.' }, 403);
-    }
-
+    // Parse body first so we can use it in both cron and user paths
     const body = await req.json().catch(() => ({}));
-    const requestedCustomerId = normalizeText(String(body?.customer_id || caller.organizationId || ''));
+
+    // ── Cron bypass: internal secret allows automated calls without user session ──
+    const cronSecretHeader = req.headers.get('x-darkrisk-esteso-cron-secret');
+    const isCronMode = Boolean(
+      cronSecretHeader
+      && DARKRISK_INTERNAL_SECRET
+      && cronSecretHeader === DARKRISK_INTERNAL_SECRET,
+    );
+
+    let actorUserId: string;
+
+    if (isCronMode) {
+      actorUserId = 'system:darkrisk-esteso-cron';
+    } else {
+      const { data: authData, error: authError } = await userClient.auth.getUser();
+      if (authError || !authData.user) return jsonResponse({ ok: false, error: 'Unauthorized' }, 401);
+      actorUserId = authData.user.id;
+
+      const caller = await getCallerProfile(adminClient, actorUserId);
+      if (!caller.canManageAllOrganizations) {
+        return jsonResponse({ ok: false, error: 'Only super admin can use DARKRISK_ESTESO.' }, 403);
+      }
+      assertCustomerAccess(caller, normalizeText(String(body?.customer_id || caller.organizationId || '')));
+    }
+    // ── End cron bypass ──────────────────────────────────────────────────────────
+
+    const requestedCustomerId = normalizeText(String(body?.customer_id || ''));
     if (!requestedCustomerId) {
       return jsonResponse({ ok: false, error: 'customer_id is required' }, 400);
     }
 
-    assertCustomerAccess(caller, requestedCustomerId);
+    const triggerType = isCronMode
+      ? 'cron'
+      : normalizeText(String(body?.trigger_type || 'manual'));
 
-    const triggerType = normalizeText(String(body?.trigger_type || 'manual'));
-    if (triggerType !== 'manual') {
+    if (!isCronMode && triggerType !== 'manual') {
       return jsonResponse({
         ok: false,
         code: 'darkrisk_esteso_manual_only',
@@ -1235,7 +1255,7 @@ serve(async (req: Request) => {
       await writeAudit(
         adminClient,
         requestedCustomerId,
-        authData.user.id,
+        actorUserId,
         'darkrisk_esteso_blocked_invalid_endpoint',
         null,
         endpointValidation.code,
@@ -1328,7 +1348,7 @@ serve(async (req: Request) => {
       await writeAudit(
         adminClient,
         requestedCustomerId,
-        authData.user.id,
+        actorUserId,
         'darkrisk_esteso_blocked_expiry',
         null,
         'identity_model_expired',
@@ -1382,7 +1402,7 @@ serve(async (req: Request) => {
       scopeDomains: normalizedScopeDomains,
       scopeIps,
       customerId: requestedCustomerId,
-      actorUserId: authData.user.id,
+      actorUserId,
     });
 
     const latestCompletedJobsRes = await adminClient
@@ -1423,7 +1443,7 @@ serve(async (req: Request) => {
         tier: 'extended',
         status: 'running',
         trigger_type: 'darkrisk_esteso_manual',
-        requested_by: authData.user.id,
+        requested_by: actorUserId,
         surface_scan_job_id: sourceScanJobId,
         started_at: new Date().toISOString(),
         sources: ['surfacescan360', 'intelx'],
@@ -1438,7 +1458,7 @@ serve(async (req: Request) => {
     await writeAudit(
       adminClient,
       requestedCustomerId,
-      authData.user.id,
+      actorUserId,
       'darkrisk_esteso_scan_started',
       scanRunId,
       triggerType,
@@ -2036,7 +2056,7 @@ serve(async (req: Request) => {
     await writeAudit(
       adminClient,
       requestedCustomerId,
-      authData.user.id,
+      actorUserId,
       'darkrisk_esteso_scan_completed',
       scanRunId,
       warnings.length > 0 ? 'completed_with_warnings' : 'completed',
