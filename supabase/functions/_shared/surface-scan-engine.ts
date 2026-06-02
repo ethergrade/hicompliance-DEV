@@ -3980,9 +3980,66 @@ export async function runSurfaceScanEnrichment(
     let failed = 0;
     for (const cve of cves) {
       try {
+        let enriched = false;
+
+        // ── Primary: MITRE CVE AWG (CVE 5.0 format, CVSSv3.1, CWE IDs, affected products) ──
+        try {
+          const mitreRes = await fetchWithTimeout(
+            `https://cveawg.mitre.org/api/cve/${encodeURIComponent(cve)}`,
+            { headers: { accept: "application/json", "user-agent": "SurfaceScan360/1.0" } },
+            10_000,
+          );
+          if (mitreRes.ok) {
+            const mitreData = await mitreRes.json().catch(() => null);
+            if (mitreData?.cveMetadata?.cveId) {
+              const cna = mitreData.containers?.cna;
+              const metrics = (cna?.metrics as any[] | undefined) || [];
+              let cvss: number | null = null;
+              let cvss_vector: string | null = null;
+              let cvss_version = "";
+              for (const m of metrics) {
+                const v31 = m.cvssV3_1 || m.cvssV3_0 || m.cvssV31;
+                if (v31) { cvss = v31.baseScore ?? null; cvss_vector = v31.vectorString ?? null; cvss_version = "3.1"; break; }
+                const v2 = m.cvssV2_0 || m.cvssV2;
+                if (v2) { cvss = v2.baseScore ?? null; cvss_vector = v2.vectorString ?? null; cvss_version = "2.0"; break; }
+              }
+              const problemTypes = (cna?.problemTypes as any[] | undefined) || [];
+              const cweId = problemTypes[0]?.descriptions?.[0]?.cweId
+                || problemTypes[0]?.descriptions?.[0]?.description
+                || null;
+              const affected = ((cna?.affected as any[] | undefined) || []).slice(0, 5).map((a: any) => ({
+                vendor: a.vendor || "Unknown",
+                product: a.product || "Unknown",
+                versions: ((a.versions as any[] | undefined) || []).slice(0, 3).map((v: any) => v.version).filter(Boolean),
+              }));
+              const description = ((cna?.descriptions as any[] | undefined) || []).find((d: any) => d.lang === "en")?.value
+                || (cna?.descriptions as any[])?.[0]?.value || "";
+              const summary = {
+                cve,
+                cvss,
+                cvss_vector,
+                cvss_version,
+                cwe: cweId,
+                published: mitreData.cveMetadata?.datePublished || null,
+                modified: mitreData.cveMetadata?.dateUpdated || null,
+                references_count: ((cna?.references as any[] | undefined) || []).length,
+                summary: description.slice(0, 800),
+                affected: affected.slice(0, 5),
+                source: "mitre",
+              };
+              intelRows.push(summary);
+              await insertExternalIntel("cve_intel_mitre", cve, true, summary, mitreData as Record<string, unknown>, "high");
+              enriched = true;
+            }
+          }
+        } catch { /* fall through to CIRCL */ }
+
+        if (enriched) continue;
+
+        // ── Fallback: CIRCL CVE API ──────────────────────────────────────────────────────
         const cveRes = await fetchWithTimeout(`https://cve.circl.lu/api/cve/${encodeURIComponent(cve)}`, {
           headers: { accept: "application/json" },
-        }, 10000);
+        }, 10_000);
         if (!cveRes.ok) {
           failed += 1;
           continue;
@@ -3991,21 +4048,16 @@ export async function runSurfaceScanEnrichment(
         const summary = {
           cve,
           cvss: Number((payload as any)?.cvss || 0) || null,
+          cvss_version: "2.0",
           cwe: String((payload as any)?.cwe || "").trim() || null,
           published: String((payload as any)?.Published || "").trim() || null,
           modified: String((payload as any)?.Modified || "").trim() || null,
           references_count: Array.isArray((payload as any)?.references) ? (payload as any).references.length : 0,
           summary: String((payload as any)?.summary || "").trim().slice(0, 800),
+          source: "circl",
         };
         intelRows.push(summary);
-        await insertExternalIntel(
-          "cve_intel_circl",
-          cve,
-          true,
-          summary,
-          payload as Record<string, unknown>,
-          "high",
-        );
+        await insertExternalIntel("cve_intel_circl", cve, true, summary, payload as Record<string, unknown>, "high");
       } catch {
         failed += 1;
       }
@@ -7464,8 +7516,8 @@ export async function runSurfaceScanEnrichment(
     },
     cve_intel: {
       key: "cve_intel",
-      label: "CVE Intelligence (CIRCL)",
-      timeoutMs: 45000,
+      label: "CVE Intelligence (MITRE+CIRCL)",
+      timeoutMs: 60000,
       retryOnError: true,
       maxRetries: 1,
       retryBackoffMs: 900,

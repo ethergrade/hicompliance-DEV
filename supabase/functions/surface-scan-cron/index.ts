@@ -655,6 +655,95 @@ async function triggerWeeklyDarkRiskStandardScan(
   }
 }
 
+// Ensures all scope domains have a recent classic surface scan job.
+// Creates new scan jobs for domains not scanned in the last 7 days, so the
+// full engine (DNS, RDAP, OTX, CVE-MITRE+CIRCL, BGP, Tor, crt.sh, etc.) runs weekly.
+async function triggerWeeklyClassicScopeScans(
+  supabase: any,
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  internalSecret: string | null,
+  orgId: string,
+  rules: MonitoredRule[],
+): Promise<{ queued: number; skipped: number; failed: number }> {
+  const domains = rules
+    .filter((r) => r.entry_type === 'domain' && r.input_value)
+    .map((r) => String(r.input_value).trim().toLowerCase())
+    .filter(Boolean);
+  const ips = rules
+    .filter((r) => r.entry_type === 'single' && isIp(String(r.input_value || '')))
+    .map((r) => String(r.input_value).trim())
+    .filter(Boolean);
+
+  const targets = [
+    ...domains.map((t) => ({ target: t, profile: 'domain_exposure' })),
+    ...ips.map((t) => ({ target: t, profile: 'ip_exposure' })),
+  ].slice(0, 30);
+
+  if (targets.length === 0) return { queued: 0, skipped: 0, failed: 0 };
+
+  // Check which targets have a recent scan (last 7 days) to avoid duplicates
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: recentJobs } = await supabase
+    .from('surface_scan_jobs')
+    .select('normalized_target, status, completed_at')
+    .eq('organization_id', orgId)
+    .in('status', ['completed', 'running', 'pending', 'queued'])
+    .gte('created_at', sevenDaysAgo)
+    .limit(200);
+
+  const recentTargets = new Set<string>(
+    ((recentJobs || []) as any[]).map((j: any) => String(j.normalized_target || '').toLowerCase())
+  );
+
+  let queued = 0, skipped = 0, failed = 0;
+
+  for (const item of targets) {
+    const normalizedTarget = item.target.replace(/^https?:\/\//, '').replace(/\/.*$/, '').toLowerCase();
+    if (recentTargets.has(normalizedTarget)) {
+      skipped++;
+      continue;
+    }
+
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 20_000);
+    try {
+      const res = await fetch(`${supabaseUrl}/functions/v1/surfacescan360-start-scan`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${serviceRoleKey}`,
+          ...(internalSecret ? { 'x-surface-internal-secret': internalSecret } : {}),
+        },
+        body: JSON.stringify({
+          target: item.target,
+          customer_id: orgId,
+          scan_profile: item.profile,
+          authorization_confirmed: true,
+          ownership_proof: 'cron_weekly_surface_scan',
+          force_refresh: false,
+        }),
+        signal: ctrl.signal,
+      });
+      clearTimeout(t);
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && !body?.error) {
+        queued++;
+        recentTargets.add(normalizedTarget); // prevent duplicates within same run
+      } else if (res.status === 429 || res.status === 200) {
+        skipped++; // cooldown active or already queued
+      } else {
+        failed++;
+      }
+    } catch {
+      clearTimeout(t);
+      failed++;
+    }
+  }
+
+  return { queued, skipped, failed };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -755,6 +844,26 @@ Deno.serve(async (req) => {
 
       let queuedClassicStarted = 0;
       if (surfaceGate.allowed) {
+        // Step 0: Create new scan jobs for scope domains not scanned in the last 7 days.
+        // This ensures all engine modules run weekly (DNS, RDAP/WHOIS, OTX, CVE-MITRE+CIRCL,
+        // BGP/ASN, Tor exit node, crt.sh, IP-geo, DNSDumpster, HTTP headers, etc.)
+        try {
+          const scanTriggerResult = await triggerWeeklyClassicScopeScans(
+            supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, orgRules,
+          );
+          if (scanTriggerResult.queued > 0 || scanTriggerResult.failed > 0) {
+            await supabase.from('external_scan_audit_log').insert({
+              organization_id: orgId,
+              actor_email: 'system:cron',
+              action: 'auto_classic_scope_scans_triggered',
+              details: scanTriggerResult,
+            });
+          }
+        } catch (triggerErr) {
+          console.error(`Weekly scope scan trigger failed for org ${orgId}:`, triggerErr);
+        }
+
+        // Step 1: Dispatch any existing queued jobs (including newly created ones)
         try {
           const startedClassicJobs = await dispatchSurfaceScanQueue(supabase, orgId, {
             initiatedByUserId: null,
