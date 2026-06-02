@@ -1092,6 +1092,8 @@ Deno.serve(async (req) => {
     let organization_id = String((body as any)?.organization_id || '').trim() || undefined;
     const triggerSource = String((body as any)?.trigger_source || 'manual').trim() || 'manual';
     const forceRegenerate = Boolean((body as any)?.force_regenerate);
+    // force_generate=true bypasses the scope completeness gate (used for manual triggers)
+    const forceGenerate = Boolean((body as any)?.force_generate) || triggerSource === 'manual';
     const requestedCreatedBy = String((body as any)?.created_by || '').trim() || null;
     const scopeMode = String((body as any)?.scope_mode || 'organization_scope').trim().toLowerCase();
     const normalizedScopeMode = scopeMode === 'single_job' ? 'single_job' : 'organization_scope';
@@ -1141,7 +1143,7 @@ Deno.serve(async (req) => {
 
     // Gate report canonico: non generare finché tutti i target scansionabili in scope (domini + IP singoli)
     // non hanno almeno un job completed/partial.
-    if (normalizedScopeMode === 'organization_scope') {
+    if (normalizedScopeMode === 'organization_scope' && !forceGenerate) {
       const [scopeRowsRes, allScopeJobsRes] = await Promise.all([
         supabase
           .from('surface_scan_monitored_ips')
