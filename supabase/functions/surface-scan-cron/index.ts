@@ -277,6 +277,100 @@ async function maybeTriggerAutoValidation(
   }
 }
 
+// --- Shodan-based exposure sync (replaces PentestTools for port/tech data) ---
+
+const SENSITIVE_PORTS = new Set([21, 22, 23, 25, 110, 135, 139, 143, 445, 1433, 1521, 3306, 3389, 5432, 5900, 6379, 8080, 8443, 8888, 9200, 11211, 27017]);
+const WEB_PORTS = new Set([80, 443, 8000, 8080, 8443, 8888]);
+
+function portExposureLevel(port: number, hasCve: boolean): string {
+  if (hasCve) return 'critical';
+  if (SENSITIVE_PORTS.has(port)) return 'high';
+  if (!WEB_PORTS.has(port)) return 'medium';
+  return 'info';
+}
+
+async function syncExposureFromShodanAssets(
+  supabase: any,
+  orgId: string,
+  assets: any[],
+): Promise<{ ports: number; techs: number }> {
+  if (!assets.length) return { ports: 0, techs: 0 };
+
+  const now = new Date().toISOString();
+  const portRows: any[] = [];
+  const techRows: any[] = [];
+
+  for (const asset of assets) {
+    const host = String(asset.ip || asset.hostname || '').trim();
+    if (!host) continue;
+    const ip = isIp(host) ? host : String(asset.ip || '').trim();
+    const hasCve = (asset.cves_high ?? 0) > 0;
+
+    for (const port of (asset.ports as number[] | undefined) ?? []) {
+      if (!Number.isFinite(port)) continue;
+      portRows.push({
+        organization_id: orgId,
+        tenant_id: orgId,
+        customer_id: orgId,
+        scan_job_id: null,
+        host,
+        ip: ip || null,
+        port,
+        protocol: 'tcp',
+        state: 'open',
+        service_name: null,
+        is_web: WEB_PORTS.has(port),
+        is_tls: port === 443 || port === 8443,
+        exposure_level: portExposureLevel(port, hasCve),
+        source: 'shodan',
+        last_seen_at: now,
+        first_seen_at: now,
+        raw: { ip, port, hostname: asset.hostname },
+      });
+    }
+
+    for (const svc of (asset.services as string[] | undefined) ?? []) {
+      if (!svc) continue;
+      techRows.push({
+        organization_id: orgId,
+        tenant_id: orgId,
+        customer_id: orgId,
+        scan_job_id: null,
+        url: `https://${host}`,
+        host,
+        technology_name: svc,
+        category: 'service',
+        confidence: 80,
+        source_provider: 'shodan',
+        raw: { ip, hostname: asset.hostname, service: svc },
+      });
+    }
+  }
+
+  let ports = 0;
+  let techs = 0;
+
+  if (portRows.length > 0) {
+    const { error } = await supabase
+      .from('surface_open_ports')
+      .upsert(portRows, { onConflict: 'customer_id,host,port,protocol', ignoreDuplicates: false });
+    if (!error) ports = portRows.length;
+    else console.warn('[shodan-exposure-sync] port upsert failed:', error.message);
+  }
+
+  if (techRows.length > 0) {
+    const { error } = await supabase
+      .from('surface_web_technologies')
+      .upsert(techRows, { onConflict: 'customer_id,host,technology_name', ignoreDuplicates: false });
+    if (!error) techs = techRows.length;
+    else console.warn('[shodan-exposure-sync] tech upsert failed:', error.message);
+  }
+
+  return { ports, techs };
+}
+
+// ---------------------------------------------------------------------------
+
 function splitScopeTargetsForExposure(rules: MonitoredRule[]): { domains: string[]; publicIps: string[] } {
   const domains = new Set<string>();
   const publicIps = new Set<string>();
@@ -747,21 +841,24 @@ Deno.serve(async (req) => {
       const pentestToolsEnabled = Deno.env.get('SURFACESCAN_ENABLE_PENTEST_TOOLS') === 'true';
 
       if (surfaceGate.allowed) {
-        // Exposure full-scope: avvio automatico settimanale indipendente da PentestTools validation.
-        // Richiede SURFACESCAN_ENABLE_PENTEST_TOOLS=true per partire (usa la stessa infra ptools).
-        if (pentestToolsEnabled) {
-          // PentestTools recon validation su ogni asset rilevato da Shodan
-          await maybeTriggerAutoValidation(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, perRule);
-          // Exposure port/tech scan su tutti i domini e IP in scope
-          await triggerWeeklyScopeExposureScan(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, orgRules);
-        } else {
-          console.log(`[cron] pentest-tools disabled — skipping auto-validation and exposure scan for org=${orgId}`);
+        // Sync exposure port/tech data from Shodan results (no PentestTools needed)
+        if (assets.length > 0) {
+          const syncResult = await syncExposureFromShodanAssets(supabase, orgId, assets);
+          console.log(`[shodan-exposure-sync] org=${orgId} ports=${syncResult.ports} techs=${syncResult.techs}`);
           await supabase.from('external_scan_audit_log').insert({
             organization_id: orgId,
             actor_email: 'system:cron',
-            action: 'auto_scope_exposure_skipped',
-            details: { reason: 'pentest_tools_not_enabled', env_flag: 'SURFACESCAN_ENABLE_PENTEST_TOOLS' },
+            action: 'auto_shodan_exposure_synced',
+            details: { ports_synced: syncResult.ports, techs_synced: syncResult.techs, assets_count: assets.length },
           });
+        }
+
+        // PentestTools: solo se esplicitamente abilitato e token disponibili
+        if (pentestToolsEnabled) {
+          await maybeTriggerAutoValidation(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, perRule);
+          await triggerWeeklyScopeExposureScan(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, orgRules);
+        } else {
+          console.log(`[cron] pentest-tools disabled — using Shodan as exposure source for org=${orgId}`);
         }
 
         // Report repository canonico SurfaceScan360: refresh automatico settimanale.
