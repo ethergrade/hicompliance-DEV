@@ -1,12 +1,17 @@
-// useSurfaceGraph — React Query hook per load/save del grafo via Supabase
+// useSurfaceGraph — React Query v5 compatible (no onSuccess/onError on useQuery)
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useSurfaceGraphStore } from '@/stores/surface-graph-store';
-import { useCallback } from 'react';
 import type { GraphInvestigation, GraphNode, GraphEdge, GraphEnricherRun } from '@/types/surface-graph';
 import { toast } from 'sonner';
-import { v4 as uuidv4 } from 'uuid';
+
+function genId(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
 
 export function useSurfaceGraph() {
   const { organizationId } = useClientOrganization();
@@ -28,7 +33,8 @@ export function useSurfaceGraph() {
   const investigationsQuery = useQuery({
     queryKey: ['surface-graph-investigations', organizationId],
     enabled: Boolean(organizationId),
-    queryFn: async () => {
+    queryFn: async (): Promise<GraphInvestigation[]> => {
+      if (!organizationId) return [];
       const { data, error } = await (supabase.from('surface_graph_investigations' as any) as any)
         .select('*')
         .eq('organization_id', organizationId)
@@ -36,18 +42,25 @@ export function useSurfaceGraph() {
       if (error) throw error;
       return (data || []) as GraphInvestigation[];
     },
-    onSuccess: (data: GraphInvestigation[]) => {
-      setInvestigations(data);
-      if (!currentInvestigationId && data.length > 0) setCurrentId(data[0].id);
-    },
     staleTime: 30_000,
   });
+
+  // React Query v5: use useEffect instead of onSuccess
+  useEffect(() => {
+    const data = investigationsQuery.data;
+    if (!data) return;
+    setInvestigations(data);
+    if (!currentInvestigationId && data.length > 0) {
+      setCurrentId(data[0].id);
+    }
+  }, [investigationsQuery.data]);
 
   // ── Load graph for current investigation ───────────────────────────────────
   const graphQuery = useQuery({
     queryKey: ['surface-graph-data', currentInvestigationId],
     enabled: Boolean(currentInvestigationId),
-    queryFn: async () => {
+    queryFn: async (): Promise<{ nodes: GraphNode[]; edges: GraphEdge[] }> => {
+      if (!currentInvestigationId) return { nodes: [], edges: [] };
       const [nodesRes, edgesRes] = await Promise.all([
         (supabase.from('surface_graph_nodes' as any) as any)
           .select('id, node_data')
@@ -60,21 +73,26 @@ export function useSurfaceGraph() {
       ]);
       if (nodesRes.error) throw nodesRes.error;
       if (edgesRes.error) throw edgesRes.error;
-      const nodes = (nodesRes.data || []).map((r: any) => r.node_data as GraphNode);
-      const edges = (edgesRes.data || []).map((r: any) => r.edge_data as GraphEdge);
+      const nodes = ((nodesRes.data || []) as any[]).map((r) => r.node_data as GraphNode);
+      const edges = ((edgesRes.data || []) as any[]).map((r) => r.edge_data as GraphEdge);
       return { nodes, edges };
-    },
-    onSuccess: ({ nodes, edges }: { nodes: GraphNode[]; edges: GraphEdge[] }) => {
-      setNodes(nodes);
-      setEdges(edges);
-      rebuildFilters(nodes);
     },
     staleTime: 10_000,
   });
 
+  // React Query v5: use useEffect instead of onSuccess
+  useEffect(() => {
+    const data = graphQuery.data;
+    if (!data) return;
+    setNodes(data.nodes);
+    setEdges(data.edges);
+    rebuildFilters(data.nodes);
+  }, [graphQuery.data]);
+
   // ── Create investigation ───────────────────────────────────────────────────
   const createInvestigationMutation = useMutation({
-    mutationFn: async (name: string) => {
+    mutationFn: async (name: string): Promise<GraphInvestigation> => {
+      if (!organizationId) throw new Error('No organization selected');
       const { data, error } = await (supabase.from('surface_graph_investigations' as any) as any)
         .insert({ organization_id: organizationId, tenant_id: organizationId, name })
         .select('*')
@@ -93,12 +111,13 @@ export function useSurfaceGraph() {
 
   // ── Delete investigation ───────────────────────────────────────────────────
   const deleteInvestigationMutation = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async (id: string): Promise<string> => {
       const { error } = await (supabase.from('surface_graph_investigations' as any) as any)
         .delete().eq('id', id);
       if (error) throw error;
+      return id;
     },
-    onSuccess: (_, id) => {
+    onSuccess: (id: string) => {
       qc.invalidateQueries({ queryKey: ['surface-graph-investigations', organizationId] });
       if (currentInvestigationId === id) setCurrentId(null);
       toast.success('Investigazione eliminata.');
@@ -110,9 +129,9 @@ export function useSurfaceGraph() {
   const runEnricherMutation = useMutation({
     mutationFn: async ({ enricherName, nodeIds }: { enricherName: string; nodeIds: string[] }) => {
       if (!currentInvestigationId || !organizationId) throw new Error('No investigation selected.');
-
+      const runId = genId();
       const run: GraphEnricherRun = {
-        id: uuidv4(), investigation_id: currentInvestigationId, organization_id: organizationId,
+        id: runId, investigation_id: currentInvestigationId, organization_id: organizationId,
         enricher_name: enricherName, input_node_ids: nodeIds, status: 'running',
         nodes_created: 0, edges_created: 0, error_message: null,
         started_at: new Date().toISOString(), completed_at: null,
@@ -125,25 +144,32 @@ export function useSurfaceGraph() {
           input_node_ids: nodeIds,
           investigation_id: currentInvestigationId,
           organization_id: organizationId,
-          run_id: run.id,
+          run_id: runId,
         },
       });
 
       if (error) throw error;
       if ((data as any)?.error) throw new Error(String((data as any).error));
-      return { run, data };
+      return { run, data: data as any };
     },
     onSuccess: ({ run, data }: { run: GraphEnricherRun; data: any }) => {
-      updateEnricherRun(run.id, { status: 'completed', nodes_created: data.nodes_created, edges_created: data.edges_created, completed_at: new Date().toISOString() });
-      if (data.nodes?.length) addNodes(data.nodes as GraphNode[]);
-      if (data.edges?.length) addEdges(data.edges as GraphEdge[]);
-      if (data.nodes?.length) rebuildFilters(useSurfaceGraphStore.getState().nodes);
+      updateEnricherRun(run.id, {
+        status: 'completed',
+        nodes_created: data.nodes_created ?? 0,
+        edges_created: data.edges_created ?? 0,
+        completed_at: new Date().toISOString(),
+      });
+      if (Array.isArray(data.nodes) && data.nodes.length) addNodes(data.nodes as GraphNode[]);
+      if (Array.isArray(data.edges) && data.edges.length) addEdges(data.edges as GraphEdge[]);
+      if (Array.isArray(data.nodes) && data.nodes.length) {
+        rebuildFilters(useSurfaceGraphStore.getState().nodes);
+      }
       qc.invalidateQueries({ queryKey: ['surface-graph-investigations', organizationId] });
-      const nc = data.nodes_created || 0, ec = data.edges_created || 0;
+      const nc = data.nodes_created ?? 0, ec = data.edges_created ?? 0;
       if (nc > 0 || ec > 0) toast.success(`Enrichment completato: +${nc} nodi, +${ec} archi.`);
       else toast.info('Enrichment completato: nessun nuovo dato trovato.');
     },
-    onError: (err: any, vars: any) => {
+    onError: (err: any, vars: { enricherName: string; nodeIds: string[] }) => {
       toast.error(`Enrichment fallito: ${String(err?.message || 'errore sconosciuto')}`);
     },
   });
@@ -157,12 +183,12 @@ export function useSurfaceGraph() {
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error(String((data as any).error));
-      return data;
+      return data as any;
     },
     onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: ['surface-graph-data', currentInvestigationId] });
       qc.invalidateQueries({ queryKey: ['surface-graph-investigations', organizationId] });
-      toast.success(`Seed completato: ${data.nodes_created} nodi, ${data.edges_created} archi.`);
+      toast.success(`Seed completato: ${data.nodes_created ?? 0} nodi, ${data.edges_created ?? 0} archi.`);
     },
     onError: (err: any) => toast.error(`Seed fallito: ${String(err?.message || 'errore sconosciuto')}`),
   });
@@ -171,13 +197,14 @@ export function useSurfaceGraph() {
     organizationId,
     currentInvestigationId,
     setCurrentId,
-    investigations: investigationsQuery.data || [],
+    investigations: investigationsQuery.data ?? [],
     isLoadingInvestigations: investigationsQuery.isLoading,
     isLoadingGraph: graphQuery.isLoading,
     createInvestigation: (name: string) => createInvestigationMutation.mutate(name),
     deleteInvestigation: (id: string) => deleteInvestigationMutation.mutate(id),
     isCreating: createInvestigationMutation.isPending,
-    runEnricher: (name: string, nodeIds: string[]) => runEnricherMutation.mutate({ enricherName: name, nodeIds }),
+    runEnricher: (name: string, nodeIds: string[]) =>
+      runEnricherMutation.mutate({ enricherName: name, nodeIds }),
     isEnriching: runEnricherMutation.isPending,
     seedFromScan: () => seedFromScanMutation.mutate(),
     isSeedingFromScan: seedFromScanMutation.isPending,

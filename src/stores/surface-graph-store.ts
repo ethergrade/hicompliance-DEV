@@ -1,7 +1,6 @@
 // SurfaceGraph Zustand store — adapted from Flowsint graph-store.ts
 // Manages graph state without TanStack Router; uses Supabase for persistence.
 import { create } from 'zustand';
-import { v4 as uuidv4 } from 'uuid';
 import type {
   GraphNode,
   GraphEdge,
@@ -9,6 +8,7 @@ import type {
   GraphEnricherRun,
   FlagColor,
 } from '@/types/surface-graph';
+import { NODE_TYPE_COLORS } from '@/types/surface-graph';
 
 interface GraphFilters {
   types: Array<{ type: string; checked: boolean; color: string }>;
@@ -278,7 +278,6 @@ export const useSurfaceGraphStore = create<SurfaceGraphState>()((set, get) => ({
 
 // Rebuild type filters from current nodes (add new types, preserve checked state)
 function rebuildFiltersFromNodes(nodes: GraphNode[], current: GraphFilters): GraphFilters {
-  const { NODE_TYPE_COLORS } = require('@/types/surface-graph');
   const typeSet = new Set(nodes.map((n) => n.nodeType));
   const existingTypes = new Map(current.types.map((t) => [t.type, t.checked]));
   const types = Array.from(typeSet).map((type) => ({
