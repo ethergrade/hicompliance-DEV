@@ -314,7 +314,6 @@ interface GraphSettingsState {
   setShowMinimap:        (v: boolean) => void;
   setAllowForces:        (v: boolean) => void;
   getSettingValue:       (category: string, key: string) => any;
-  forceSettings:         Record<string, { value: any }>;
   setImportModalOpen:    (v: boolean) => void;
 }
 
@@ -358,25 +357,26 @@ export const useGraphSettingsStore = create<GraphSettingsState>()((set, get) => 
     return map[category]?.[key] ?? null;
   },
 
-  get forceSettings() {
-    const s = get();
-    return {
-      dotStyle:                  { value: s.dotStyle },
-      nodeOutlined:              { value: s.nodeOutlined },
-      nodeSize:                  { value: s.nodeSize },
-      nodeWeightMultiplierSize:  { value: s.nodeWeightMultiplierSize },
-      linkWidth:                 { value: s.linkWidth },
-      linkDirectionalArrowLength:{ value: s.linkDirectionalArrowLength },
-      cooldownTicks:             { value: s.cooldownTicks },
-      cooldownTime:              { value: s.cooldownTime },
-      warmupTicks:               { value: s.warmupTicks },
-      d3AlphaDecay:              { value: s.d3AlphaDecay },
-      d3AlphaMin:                { value: s.d3AlphaMin },
-      d3VelocityDecay:           { value: s.d3VelocityDecay },
-      dagLevelDistance:          { value: s.dagLevelDistance },
-      nodeLabelFontSize:         { value: s.nodeLabelFontSize },
-      linkLabelFontSize:         { value: s.linkLabelFontSize },
-      linkLabelHorizontal:       { value: s.linkLabelHorizontal },
-    };
-  },
 }));
+
+// Static force settings constant — use this instead of a store getter
+// to avoid re-render loops from unstable object references.
+export const GRAPH_FORCE_SETTINGS = {
+  dotStyle:                   { value: true },
+  nodeOutlined:               { value: false },
+  nodeSize:                   { value: 30 },
+  nodeWeightMultiplierSize:   { value: 1.2 },
+  linkWidth:                  { value: 0.8 },
+  linkDirectionalArrowLength: { value: 3.5 },
+  cooldownTicks:              { value: 100 },
+  cooldownTime:               { value: 3000 },
+  warmupTicks:                { value: 0 },
+  d3AlphaDecay:               { value: 0.0228 },
+  d3AlphaMin:                 { value: 0 },
+  d3VelocityDecay:            { value: 0.4 },
+  dagLevelDistance:           { value: 50 },
+  nodeLabelFontSize:          { value: 60 },
+  linkLabelFontSize:          { value: 60 },
+  linkLabelHorizontal:        { value: false },
+} as const satisfies Record<string, { value: unknown }>;
+

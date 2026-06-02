@@ -1,8 +1,8 @@
 // Main graph canvas — adapted from Flowsint graph/index.tsx
-// Wraps react-force-graph-2d with our stores and renderers.
-import React, { useCallback, useMemo, useEffect, useState, useRef } from 'react';
-import ForceGraph2D from 'react-force-graph-2d';
-import { useSurfaceGraphStore, useGraphSettingsStore } from '@/stores/surface-graph-store';
+// Uses GRAPH_FORCE_SETTINGS constant (not a store getter) to avoid re-render loops.
+import React, { useCallback, useMemo, useEffect, useState, useRef, lazy, Suspense } from 'react';
+import { useSurfaceGraphStore } from '@/stores/surface-graph-store';
+import { GRAPH_FORCE_SETTINGS } from '@/stores/surface-graph-store';
 import { CONSTANTS } from './utils/constants';
 import { renderNode } from './node/node-renderer';
 import { renderLink } from './edge/link-renderer';
@@ -13,6 +13,38 @@ import {
   preloadImage, preloadIconByName, preloadExternalImage, preloadFlagImage,
 } from './utils/image-cache';
 import type { GraphNode, GraphEdge } from '@/types/surface-graph';
+import { Loader2 } from 'lucide-react';
+
+// Polyfill ctx.roundRect for browsers that don't support it (Safari < 15.4, Firefox < 112)
+if (typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function (
+    x: number, y: number, width: number, height: number, radii?: number | number[]
+  ) {
+    const r = typeof radii === 'number' ? radii : Array.isArray(radii) ? radii[0] ?? 0 : 0;
+    const rr = Math.min(r, width / 2, height / 2);
+    this.moveTo(x + rr, y);
+    this.lineTo(x + width - rr, y);
+    this.arcTo(x + width, y, x + width, y + rr, rr);
+    this.lineTo(x + width, y + height - rr);
+    this.arcTo(x + width, y + height, x + width - rr, y + height, rr);
+    this.lineTo(x + rr, y + height);
+    this.arcTo(x, y + height, x, y + height - rr, rr);
+    this.lineTo(x, y + rr);
+    this.arcTo(x, y, x + rr, y, rr);
+    this.closePath();
+  };
+}
+
+// Lazy-load react-force-graph-2d to avoid module-load-time browser API access
+const ForceGraph2DLazy = lazy(() => import('react-force-graph-2d').then(m => ({ default: m.default ?? m })));
+
+const FLAG_PRELOAD = [
+  { stroke: '#f87171', fill: '#fecaca' },
+  { stroke: '#fb923c', fill: '#fed7aa' },
+  { stroke: '#60a5fa', fill: '#bfdbfe' },
+  { stroke: '#4ade80', fill: '#bbf7d0' },
+  { stroke: '#facc15', fill: '#fef08a' },
+];
 
 interface SurfaceGraphCanvasProps {
   investigationId: string;
@@ -22,14 +54,6 @@ interface SurfaceGraphCanvasProps {
   onBackgroundClick?: () => void;
   className?: string;
 }
-
-const FLAG_COLORS = [
-  { stroke: '#f87171', fill: '#fecaca' },
-  { stroke: '#fb923c', fill: '#fed7aa' },
-  { stroke: '#60a5fa', fill: '#bfdbfe' },
-  { stroke: '#4ade80', fill: '#bbf7d0' },
-  { stroke: '#facc15', fill: '#fef08a' },
-];
 
 const SurfaceGraphCanvas: React.FC<SurfaceGraphCanvasProps> = ({
   investigationId, onNodeClick, onNodeRightClick, onEdgeClick, onBackgroundClick, className = '',
@@ -50,10 +74,10 @@ const SurfaceGraphCanvas: React.FC<SurfaceGraphCanvasProps> = ({
   const toggleEdgeSel    = useSurfaceGraphStore((s) => s.toggleEdgeSelection);
   const clearSelEdges    = useSurfaceGraphStore((s) => s.clearSelectedEdges);
 
-  const forceSettings = useGraphSettingsStore((s) => s.forceSettings);
-  const showMinimap   = useGraphSettingsStore((s) => s.showMinimap);
-  const autoColorLinks = useGraphSettingsStore((s) => s.autoColorLinks);
-  const allowForces   = useGraphSettingsStore((s) => s.allowForces);
+  // Use stable settings constant — never causes re-renders
+  const forceSettings = GRAPH_FORCE_SETTINGS;
+  const allowForces = true;
+  const autoColorLinks = true;
 
   // Container size
   useEffect(() => {
@@ -69,7 +93,6 @@ const SurfaceGraphCanvas: React.FC<SurfaceGraphCanvasProps> = ({
     return () => { ro.disconnect(); window.removeEventListener('resize', update); };
   }, []);
 
-  // Reset zoom on investigation change
   useEffect(() => { hasZoomedRef.current = false; }, [investigationId]);
 
   // Preload icons
@@ -84,16 +107,18 @@ const SurfaceGraphCanvas: React.FC<SurfaceGraphCanvasProps> = ({
         preloadImage(n.nodeType, '#000000').catch(() => {});
       }
     });
-    FLAG_COLORS.forEach(({ stroke, fill }) => preloadFlagImage(stroke, fill).catch(() => {}));
+    FLAG_PRELOAD.forEach(({ stroke, fill }) => preloadFlagImage(stroke, fill).catch(() => {}));
   }, [filteredNodes]);
 
-  const graphData = useMemo(() => transformGraphData({ nodes: filteredNodes, edges: filteredEdges }), [filteredNodes, filteredEdges]);
-  const edgeMap   = useMemo(() => new Map(filteredEdges.map((e) => [e.id, e])), [filteredEdges]);
+  const graphData = useMemo(
+    () => transformGraphData({ nodes: filteredNodes, edges: filteredEdges }),
+    [filteredNodes, filteredEdges],
+  );
+  const edgeMap = useMemo(() => new Map(filteredEdges.map((e) => [e.id, e])), [filteredEdges]);
 
   const { highlightNodes, highlightLinks, hoverNode, handleNodeHover, handleLinkHover, clearHighlights } = useHighlightState();
   useEffect(() => { clearHighlights(); }, [filteredNodes.length, filteredEdges.length]);
 
-  // Current node persistent highlight
   const currentNodeHighlights = useMemo(() => {
     const nodes = new Set<string>(), links = new Set<string>();
     if (!currentNodeId) return { nodes, links };
@@ -119,35 +144,41 @@ const SurfaceGraphCanvas: React.FC<SurfaceGraphCanvasProps> = ({
     return new Set<string>(currentNodeHighlights.links);
   }, [hoverNode, highlightLinks, currentNodeHighlights.links]);
 
-  // Render context (per-frame cache)
   const rcRef = useRef<{ rc: RenderContext | null; key: string }>({ rc: null, key: '' });
-  const rcVersion = useMemo(() => JSON.stringify([mergedHighlightNodes.size, mergedHighlightLinks.size, selectedEdges.length]), [mergedHighlightNodes, mergedHighlightLinks, selectedEdges]);
 
   const getOrCreateRC = useCallback((globalScale: number): RenderContext => {
-    const key = `${globalScale}:${rcVersion}`;
+    const key = `${globalScale}:${mergedHighlightNodes.size}:${mergedHighlightLinks.size}:${selectedEdges.length}`;
     if (rcRef.current.key !== key || !rcRef.current.rc) {
       rcRef.current.rc = createRenderContext(globalScale, mergedHighlightNodes, mergedHighlightLinks, selectedEdges, 'dark');
       rcRef.current.key = key;
     }
     return rcRef.current.rc!;
-  }, [mergedHighlightNodes, mergedHighlightLinks, selectedEdges, rcVersion]);
+  }, [mergedHighlightNodes, mergedHighlightLinks, selectedEdges]);
 
-  const currentEdge = useMemo(() => getCurrentEdge(), [getCurrentEdge, filteredEdges]);
+  const currentEdge = useMemo(() => getCurrentEdge(), [getCurrentEdge, filteredEdges.length]);
 
   const renderNodeCb = useCallback((node: any, ctx: CanvasRenderingContext2D, gs: number) => {
-    renderNode({ node, ctx, globalScale: gs, forceSettings, showLabels: true, showIcons: true,
-      isCurrent: (id) => id === currentNodeId, isSelected: () => false,
-      theme: 'dark', highlightNodes: mergedHighlightNodes, highlightLinks: mergedHighlightLinks,
-      hoverNode, rc: getOrCreateRC(gs) });
-  }, [forceSettings, currentNodeId, mergedHighlightNodes, mergedHighlightLinks, hoverNode, getOrCreateRC]);
+    renderNode({
+      node, ctx, globalScale: gs, forceSettings,
+      showLabels: true, showIcons: true,
+      isCurrent: (id) => id === currentNodeId,
+      isSelected: () => false,
+      theme: 'dark',
+      highlightNodes: mergedHighlightNodes, highlightLinks: mergedHighlightLinks,
+      hoverNode, rc: getOrCreateRC(gs),
+    });
+  }, [currentNodeId, mergedHighlightNodes, mergedHighlightLinks, hoverNode, getOrCreateRC]);
 
   const renderLinkCb = useCallback((link: any, ctx: CanvasRenderingContext2D, gs: number) => {
-    renderLink({ link, ctx, globalScale: gs, forceSettings, theme: 'dark',
+    renderLink({
+      link, ctx, globalScale: gs, forceSettings, theme: 'dark',
       highlightLinks: mergedHighlightLinks, highlightNodes: mergedHighlightNodes,
-      selectedEdges, currentEdge, autoColorLinksByNodeType: autoColorLinks, rc: getOrCreateRC(gs) });
-  }, [forceSettings, mergedHighlightLinks, mergedHighlightNodes, selectedEdges, currentEdge, autoColorLinks, getOrCreateRC]);
+      selectedEdges, currentEdge, autoColorLinksByNodeType: autoColorLinks,
+      rc: getOrCreateRC(gs),
+    });
+  }, [mergedHighlightLinks, mergedHighlightNodes, selectedEdges, currentEdge, getOrCreateRC]);
 
-  const handleNodeClick = useCallback((node: any, ev: MouseEvent) => {
+  const handleNodeClick = useCallback((node: any) => {
     setCurrentNodeId(node.id);
     clearSelEdges();
     onNodeClick?.(node as GraphNode);
@@ -167,16 +198,19 @@ const SurfaceGraphCanvas: React.FC<SurfaceGraphCanvasProps> = ({
   const handleEngineStop = useCallback(() => {
     if (!hasZoomedRef.current && graphRef.current) {
       hasZoomedRef.current = true;
-      graphRef.current.zoomToFit?.(400);
+      try { graphRef.current.zoomToFit?.(400); } catch { /* ignore */ }
     }
   }, []);
 
   if (!filteredNodes.length) {
     return (
       <div ref={containerRef} className={`flex items-center justify-center h-full ${className}`} style={{ background: '#0f172a' }}>
-        <div className="text-center text-muted-foreground space-y-2">
-          <p className="text-lg font-medium">Grafo vuoto</p>
-          <p className="text-sm">Aggiungi nodi o usa "Seed from Scan" per popolare il grafo.</p>
+        <div className="text-center text-muted-foreground space-y-3 p-8">
+          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+            <svg className="w-8 h-8 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M3 12h3m12 0h3M12 3v3m0 12v3M5.64 5.64l2.12 2.12m8.48 8.48 2.12 2.12M5.64 18.36l2.12-2.12m8.48-8.48 2.12-2.12"/></svg>
+          </div>
+          <p className="font-medium">Grafo vuoto</p>
+          <p className="text-sm">Clicca <strong>Seed da Scan</strong> nella toolbar per popolare il grafo con i dati di SurfaceScan360.</p>
         </div>
       </div>
     );
@@ -185,36 +219,42 @@ const SurfaceGraphCanvas: React.FC<SurfaceGraphCanvasProps> = ({
   return (
     <div ref={containerRef} className={`relative w-full h-full ${className}`} style={{ background: '#0f172a' }}>
       {containerSize.width > 0 && (
-        <ForceGraph2D
-          ref={graphRef}
-          width={containerSize.width}
-          height={containerSize.height}
-          graphData={graphData}
-          maxZoom={CONSTANTS.MAX_ZOOM}
-          minZoom={CONSTANTS.MIN_ZOOM}
-          nodeLabel={() => ''}
-          nodeRelSize={3}
-          onNodeClick={handleNodeClick}
-          onNodeRightClick={(node, ev) => onNodeRightClick?.(node as GraphNode, ev)}
-          onBackgroundClick={handleBackgroundClick}
-          onLinkClick={handleEdgeClick}
-          nodeCanvasObject={renderNodeCb}
-          linkCanvasObject={renderLinkCb}
-          onEngineStop={handleEngineStop}
-          cooldownTicks={allowForces ? (forceSettings.cooldownTicks?.value ?? 100) : 0}
-          cooldownTime={forceSettings.cooldownTime?.value ?? 3000}
-          d3AlphaDecay={forceSettings.d3AlphaDecay?.value ?? 0.0228}
-          d3AlphaMin={forceSettings.d3AlphaMin?.value ?? 0}
-          d3VelocityDecay={forceSettings.d3VelocityDecay?.value ?? 0.4}
-          warmupTicks={forceSettings.warmupTicks?.value ?? 0}
-          dagLevelDistance={forceSettings.dagLevelDistance?.value ?? 50}
-          backgroundColor="transparent"
-          linkCurvature={(link: any) => link.curvature || 0}
-          enableNodeDrag={true}
-          autoPauseRedraw={true}
-          onNodeHover={handleNodeHover}
-          onLinkHover={handleLinkHover}
-        />
+        <Suspense fallback={
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          </div>
+        }>
+          <ForceGraph2DLazy
+            ref={graphRef}
+            width={containerSize.width}
+            height={containerSize.height}
+            graphData={graphData}
+            maxZoom={CONSTANTS.MAX_ZOOM}
+            minZoom={CONSTANTS.MIN_ZOOM}
+            nodeLabel={() => ''}
+            nodeRelSize={3}
+            onNodeClick={handleNodeClick}
+            onNodeRightClick={(node: any, ev: MouseEvent) => onNodeRightClick?.(node as GraphNode, ev)}
+            onBackgroundClick={handleBackgroundClick}
+            onLinkClick={handleEdgeClick}
+            nodeCanvasObject={renderNodeCb}
+            linkCanvasObject={renderLinkCb}
+            onEngineStop={handleEngineStop}
+            cooldownTicks={allowForces ? 100 : 0}
+            cooldownTime={3000}
+            d3AlphaDecay={0.0228}
+            d3AlphaMin={0}
+            d3VelocityDecay={0.4}
+            warmupTicks={0}
+            dagLevelDistance={50}
+            backgroundColor="transparent"
+            linkCurvature={(link: any) => link.curvature ?? 0}
+            enableNodeDrag={true}
+            autoPauseRedraw={true}
+            onNodeHover={handleNodeHover}
+            onLinkHover={handleLinkHover}
+          />
+        </Suspense>
       )}
     </div>
   );
