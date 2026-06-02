@@ -39,6 +39,8 @@ import {
   Eye,
   Globe,
   Timer,
+  FileText,
+  ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -159,6 +161,8 @@ const AdminDarkRiskEsteso: React.FC = () => {
   const [configTab, setConfigTab] = useState<'settings' | 'emails'>('settings');
   const [newEmail, setNewEmail] = useState('');
   const [runningIds, setRunningIds] = useState<Set<string>>(new Set());
+  const [generatingReportIds, setGeneratingReportIds] = useState<Set<string>>(new Set());
+  const [reportUrls, setReportUrls] = useState<Record<string, string>>({});
   const [findingOrgFilter, setFindingOrgFilter] = useState<string>('all');
   const [findingSevFilter, setFindingSevFilter] = useState<string>('all');
 
@@ -329,6 +333,28 @@ const AdminDarkRiskEsteso: React.FC = () => {
     },
     onError: (err: any) => toast.error(String(err?.message || 'Errore rimozione email.')),
   });
+
+  const generateDtiReport = useCallback(async (orgId: string) => {
+    setGeneratingReportIds((prev) => new Set([...prev, orgId]));
+    try {
+      const { data, error } = await supabase.functions.invoke('darkrisk-dti-esteso-report', {
+        body: { customer_id: orgId },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error(String((data as any).error));
+      const url = (data as any)?.signed_url;
+      if (url) {
+        setReportUrls((prev) => ({ ...prev, [orgId]: url }));
+        toast.success('Report DTI Esteso generato. Clicca "Apri Report" per visualizzarlo.');
+      } else {
+        toast.warning('Report generato ma URL non disponibile. Controlla lo storage.');
+      }
+    } catch (err: any) {
+      toast.error(`Errore generazione report: ${String(err?.message || 'errore sconosciuto')}`);
+    } finally {
+      setGeneratingReportIds((prev) => { const next = new Set(prev); next.delete(orgId); return next; });
+    }
+  }, []);
 
   const runScanForClient = useCallback(async (orgId: string) => {
     setRunningIds((prev) => new Set([...prev, orgId]));
@@ -557,7 +583,7 @@ const AdminDarkRiskEsteso: React.FC = () => {
                                 )}
                               </td>
                               <td className="text-right py-3 px-4">
-                                <div className="flex items-center justify-end gap-2">
+                                <div className="flex items-center justify-end gap-2 flex-wrap">
                                   <Button
                                     variant="outline"
                                     size="sm"
@@ -565,6 +591,30 @@ const AdminDarkRiskEsteso: React.FC = () => {
                                   >
                                     Configura
                                   </Button>
+                                  {reportUrls[client.id] ? (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      asChild
+                                    >
+                                      <a href={reportUrls[client.id]} target="_blank" rel="noopener noreferrer">
+                                        <ExternalLink className="w-3.5 h-3.5 mr-1" />
+                                        Apri Report
+                                      </a>
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={generatingReportIds.has(client.id) || !profileEnabled}
+                                      onClick={() => generateDtiReport(client.id)}
+                                    >
+                                      {generatingReportIds.has(client.id)
+                                        ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                                        : <FileText className="w-3.5 h-3.5 mr-1" />}
+                                      {generatingReportIds.has(client.id) ? 'Generando...' : 'Report DTI'}
+                                    </Button>
+                                  )}
                                   <Button
                                     size="sm"
                                     disabled={isRunning || !profileEnabled || expired}

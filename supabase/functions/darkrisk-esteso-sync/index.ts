@@ -2003,6 +2003,65 @@ serve(async (req: Request) => {
       },
     };
 
+    // ── Fire subdomain discovery for all scope domains (engine orchestration) ──
+    if (normalizedScopeDomains.length > 0 && SUPABASE_URL && INTERNAL_FUNCTIONS_API_KEY) {
+      const subdomainPromises = normalizedScopeDomains.slice(0, 10).map((domain) =>
+        fetchWithTimeout(
+          `${SUPABASE_URL}/functions/v1/subdomain-dump`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${INTERNAL_FUNCTIONS_API_KEY}`,
+              apikey: INTERNAL_FUNCTIONS_API_KEY,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              organization_id: requestedCustomerId,
+              root_domain: domain,
+              triggered_by: 'darkrisk_esteso_sync',
+            }),
+          },
+          15_000,
+        ).catch(() => undefined),
+      );
+      Promise.allSettled(subdomainPromises).catch(() => undefined);
+    }
+
+    // ── Generate DTI Esteso Report (content-rich) ────────────────────────────
+    let dtiEstesoReportUrl: string | null = null;
+    if (SUPABASE_URL && INTERNAL_FUNCTIONS_API_KEY) {
+      try {
+        const dtiReportResponse = await fetchWithTimeout(
+          `${SUPABASE_URL}/functions/v1/darkrisk-dti-esteso-report`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${SERVICE_ROLE}`,
+              'Content-Type': 'application/json',
+              ...(DARKRISK_INTERNAL_SECRET ? { 'x-darkrisk-internal-secret': DARKRISK_INTERNAL_SECRET } : {}),
+            },
+            body: JSON.stringify({
+              customer_id: requestedCustomerId,
+              scan_run_id: scanRunId,
+            }),
+          },
+          55_000,
+        );
+        if (dtiReportResponse.ok) {
+          const dtiReportData = await dtiReportResponse.json().catch(() => ({}));
+          dtiEstesoReportUrl = dtiReportData?.signed_url || null;
+        } else {
+          const errText = await dtiReportResponse.text().catch(() => '');
+          pushWarningUnique(warnings, `DTI Esteso report generation failed: ${maskPotentialSecrets(errText).slice(0, 200)}`);
+        }
+      } catch (dtiErr) {
+        pushWarningUnique(warnings, `DTI Esteso report generation failed: ${maskedError(dtiErr).slice(0, 200)}`);
+      }
+      if (dtiEstesoReportUrl) {
+        (runStats as Record<string, unknown>).dti_esteso_report_url = dtiEstesoReportUrl;
+      }
+    }
+
     let reportMode: 'generated' | 'failed' | 'skipped' = 'skipped';
     if (SUPABASE_URL && INTERNAL_FUNCTIONS_API_KEY) {
       try {
