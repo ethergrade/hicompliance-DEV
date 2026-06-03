@@ -1,3 +1,16 @@
+/**
+ * darkrisk-esteso-admin-cron
+ *
+ * Orchestratore settimanale DarkRisk360 — gestisce ENTRAMBI i tier (standard + extended).
+ * Schedulo: ogni lunedì 02:00 UTC via pg_cron.
+ *
+ * Scalabilità 100+ clienti:
+ *   - Processa i clienti in batch da BATCH_SIZE (default 5)
+ *   - Stagger di BATCH_DELAY_MS (default 60s) tra batch
+ *   - IntelX vede max 5 clienti concorrenti = ~5 req/sec
+ *   - 100 clienti / 5 batch / 60s = ~19 minuti totali
+ */
+
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 
@@ -8,11 +21,15 @@ const ESTESO_IDENTITY_VALID_UNTIL = String(
   Deno.env.get('DARKRISK_ESTESO_IDENTITY_VALID_UNTIL') || '2026-06-10',
 ).trim().slice(0, 10);
 
-const FIRE_TIMEOUT_MS = 18_000;
+// Configurabili via env per tuning in produzione
+const FIRE_TIMEOUT_MS = 20_000;
+const BATCH_SIZE = Math.max(1, Number(Deno.env.get('DARKRISK_CRON_BATCH_SIZE') ?? '5'));
+const BATCH_DELAY_MS = Math.max(5000, Number(Deno.env.get('DARKRISK_CRON_BATCH_DELAY_MS') ?? '60000'));
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-darkrisk-esteso-cron-secret',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type, x-darkrisk-esteso-cron-secret',
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -22,20 +39,20 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   if (req.method !== 'POST') return jsonResponse({ ok: false, error: 'Method not allowed' }, 405);
 
-  // Verify internal secret (sent by pg_cron or internal callers)
+  // Auth: secret interno o service role
   const cronSecret = req.headers.get('x-darkrisk-esteso-cron-secret');
   const authHeader = req.headers.get('Authorization') || '';
   const bearerKey = authHeader.replace(/^Bearer\s+/i, '').trim();
 
-  const isTrustedCron = Boolean(
-    DARKRISK_INTERNAL_SECRET
-    && cronSecret
-    && cronSecret === DARKRISK_INTERNAL_SECRET,
-  );
+  const isTrustedCron = Boolean(DARKRISK_INTERNAL_SECRET && cronSecret && cronSecret === DARKRISK_INTERNAL_SECRET);
   const isTrustedServiceRole = Boolean(SERVICE_ROLE && bearerKey === SERVICE_ROLE);
 
   if (!isTrustedCron && !isTrustedServiceRole) {
@@ -52,35 +69,49 @@ serve(async (req: Request) => {
 
   const today = new Date().toISOString().slice(0, 10);
 
-  // Load all profiles where cron_enabled = true
-  const { data: profiles, error: profilesErr } = await adminClient
+  // --- Raccogli candidati da ENTRAMBE le sorgenti ---
+
+  // 1. Profili esteso (tier=extended con cron_enabled)
+  const { data: estosoProfiles } = await adminClient
     .from('darkrisk_esteso_profiles' as any)
-    .select('organization_id, enabled, cron_enabled, identity_model_valid_until, last_cron_run_at')
+    .select('organization_id, enabled, cron_enabled, identity_model_valid_until')
     .eq('cron_enabled', true)
     .eq('enabled', true);
 
-  if (profilesErr) {
-    return jsonResponse({ ok: false, error: String(profilesErr.message || 'DB error') }, 500);
-  }
+  const estosoOrgIds = new Set<string>(
+    ((estosoProfiles || []) as Array<Record<string, unknown>>)
+      .filter((p) => {
+        const validUntil = String(p.identity_model_valid_until || ESTESO_IDENTITY_VALID_UNTIL).slice(0, 10);
+        return today <= validUntil;
+      })
+      .map((p) => String(p.organization_id || ''))
+      .filter(Boolean),
+  );
 
-  const candidates = ((profiles || []) as Array<Record<string, unknown>>).filter((p) => {
-    const validUntil = String(p.identity_model_valid_until || ESTESO_IDENTITY_VALID_UNTIL).slice(0, 10);
-    if (today > validUntil) return false;
-    return true;
-  });
+  // 2. Tutti i clienti con DarkRisk360 abilitato (sia standard che extended)
+  const { data: entitlements } = await adminClient
+    .from('darkrisk_entitlements' as any)
+    .select('organization_id, tier, enabled')
+    .eq('enabled', true);
 
-  if (candidates.length === 0) {
+  const allEnabledOrgIds = Array.from(new Set<string>(
+    ((entitlements || []) as Array<Record<string, unknown>>)
+      .map((e) => String(e.organization_id || ''))
+      .filter(Boolean),
+  ));
+
+  // Merge: unifica profili esteso + entitlements abilitati
+  const allCandidates = Array.from(new Set([...estosoOrgIds, ...allEnabledOrgIds]));
+
+  if (allCandidates.length === 0) {
     return jsonResponse({ ok: true, triggered: 0, message: 'No eligible clients for cron run.' });
   }
 
   const triggeredIds: string[] = [];
   const failedIds: string[] = [];
 
-  // Fire scans concurrently, with per-client short timeout (fire-and-forget pattern)
-  const promises = candidates.map(async (profile) => {
-    const orgId = String(profile.organization_id || '');
-    if (!orgId) return;
-
+  // Funzione per triggerare un singolo client
+  const fireScanForOrg = async (orgId: string): Promise<void> => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), FIRE_TIMEOUT_MS);
 
@@ -94,13 +125,12 @@ serve(async (req: Request) => {
         },
         body: JSON.stringify({
           customer_id: orgId,
-          trigger_type: 'cron',
+          trigger_type: 'weekly_cron',
           include_surface_sync: true,
         }),
         signal: ctrl.signal,
       });
       clearTimeout(timer);
-
       if (res.ok) {
         triggeredIds.push(orgId);
       } else {
@@ -108,19 +138,58 @@ serve(async (req: Request) => {
       }
     } catch {
       clearTimeout(timer);
-      // Timeout or network error — scan may still be running in the background
+      // Timeout = scan probabilmente avviato, lo contiamo come triggered
       triggeredIds.push(orgId);
     }
 
-    // Update last_cron_run_at regardless of outcome
-    await adminClient
-      .from('darkrisk_esteso_profiles' as any)
-      .update({ last_cron_run_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-      .eq('organization_id', orgId)
-      .catch(() => undefined);
-  });
+    // Aggiorna last_cron_run_at su profilo esteso se esiste
+    if (estosoOrgIds.has(orgId)) {
+      await adminClient
+        .from('darkrisk_esteso_profiles' as any)
+        .update({ last_cron_run_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('organization_id', orgId)
+        .catch(() => undefined);
+    }
+  };
 
-  await Promise.allSettled(promises);
+  // --- Batch processing con stagger ---
+  for (let batchStart = 0; batchStart < allCandidates.length; batchStart += BATCH_SIZE) {
+    const batch = allCandidates.slice(batchStart, batchStart + BATCH_SIZE);
+    await Promise.allSettled(batch.map(fireScanForOrg));
+
+    // Stagger tra batch (non sull'ultimo)
+    if (batchStart + BATCH_SIZE < allCandidates.length) {
+      await wait(BATCH_DELAY_MS);
+    }
+  }
+
+  // --- Weekly summary email per tutti i clienti con summary abilitata ---
+  if (DARKRISK_INTERNAL_SECRET) {
+    const { data: summaryConfigs } = await adminClient
+      .from('darkrisk360_notification_configs' as any)
+      .select('organization_id, weekly_summary_enabled, recipient_emails')
+      .eq('weekly_summary_enabled', true);
+
+    for (const cfg of (summaryConfigs || []) as Array<Record<string, unknown>>) {
+      const orgId = String(cfg.organization_id || '');
+      const emails = (cfg.recipient_emails as string[]) ?? [];
+      if (!orgId || emails.length === 0) continue;
+
+      void fetch(`${SUPABASE_URL}/functions/v1/darkrisk360-notify`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(10_000),
+        headers: {
+          'Authorization': `Bearer ${SERVICE_ROLE}`,
+          'x-darkrisk360-internal-secret': DARKRISK_INTERNAL_SECRET,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          organization_id: orgId,
+          notify_type: 'weekly_summary',
+        }),
+      }).catch(() => undefined);
+    }
+  }
 
   return jsonResponse({
     ok: true,
@@ -128,6 +197,8 @@ serve(async (req: Request) => {
     failed: failedIds.length,
     triggered_ids: triggeredIds,
     failed_ids: failedIds,
+    total_candidates: allCandidates.length,
+    batch_size: BATCH_SIZE,
     today,
   });
 });

@@ -39,6 +39,12 @@ import { DarkRiskRecentAlerts } from '@/components/dark-risk/DarkRiskRecentAlert
 import { DarkRiskFindingsTable, type DarkRiskFindingRow } from '@/components/dark-risk/DarkRiskFindingsTable';
 import { DarkRiskFindingsAnalytics } from '@/components/dark-risk/DarkRiskFindingsAnalytics';
 import { DarkRiskWeeklyTrend } from '@/components/dark-risk/DarkRiskWeeklyTrend';
+import { DarkRiskSourcePieChart } from '@/components/dark-risk/DarkRiskSourcePieChart';
+import { DarkRiskFiletypePieChart } from '@/components/dark-risk/DarkRiskFiletypePieChart';
+import { DarkRiskCalendarHeatmap } from '@/components/dark-risk/DarkRiskCalendarHeatmap';
+import { DarkRiskManualTargetManager } from '@/components/dark-risk/DarkRiskManualTargetManager';
+import { DarkRiskNotificationConfig } from '@/components/dark-risk/DarkRiskNotificationConfig';
+import { useDarkRiskSnapshot } from '@/hooks/useDarkRiskSnapshot';
 import { DarkRiskAssetsTable, type DarkRiskAssetRow } from '@/components/dark-risk/DarkRiskAssetsTable';
 import { useDarkRiskAlerts } from '@/hooks/useDarkRiskAlerts';
 import { useDarkRiskOverview } from '@/hooks/useDarkRiskOverview';
@@ -55,7 +61,7 @@ import { generateSurfaceScan360Docx } from '@/lib/surfaceScan360DocxReport';
 import { adaptDarkRiskReportToSurfaceScanTemplate } from '@/lib/darkrisk/darkriskReportExportAdapter';
 import { parseMonitoredScopeMixedEntries } from '@/lib/ipRange';
 
-type DashboardTab = 'overview' | 'roadmap' | 'findings' | 'assets' | 'surface' | 'identity' | 'reports';
+type DashboardTab = 'overview' | 'roadmap' | 'findings' | 'assets' | 'surface' | 'identity' | 'reports' | 'settings';
 type DarkRiskReportMode = 'weekly' | 'extended';
 
 type FindingFilterState = {
@@ -342,6 +348,7 @@ const DarkRisk360: React.FC = () => {
   const { alerts, createAlert, loading: alertsLoading } = useDarkRiskAlerts();
   const { data: overview, isLoading, isError, error, refetch, isFetching } = useDarkRiskOverview();
   const { organizationId } = useClientOrganization();
+  const { snapshot } = useDarkRiskSnapshot();
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
   const [syncingScan, setSyncingScan] = useState(false);
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
@@ -1391,6 +1398,7 @@ const DarkRisk360: React.FC = () => {
                 <TabsTrigger value="surface">Surface</TabsTrigger>
                 <TabsTrigger value="identity">Identity</TabsTrigger>
                 <TabsTrigger value="reports">Reports</TabsTrigger>
+                <TabsTrigger value="settings">Impostazioni</TabsTrigger>
               </TabsList>
 
               <TabsContent value="overview" className="space-y-4">
@@ -1497,6 +1505,17 @@ const DarkRisk360: React.FC = () => {
                     )}
                   </CardContent>
                 </Card>
+
+                {/* Intelligence Signals: pie charts + calendar heatmap */}
+                {(snapshot?.total_records ?? 0) > 0 && (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <DarkRiskSourcePieChart data={snapshot?.results_by_source ?? {}} />
+                      <DarkRiskFiletypePieChart data={snapshot?.results_by_filetype ?? {}} />
+                    </div>
+                    <DarkRiskCalendarHeatmap data={snapshot?.results_by_day ?? {}} />
+                  </>
+                )}
 
                 <DarkRiskWeeklyTrend />
                 <DarkRiskCoverageMatrix controls={overview.coverage_controls} />
@@ -1983,6 +2002,18 @@ const DarkRisk360: React.FC = () => {
                     )}
                   </CardContent>
                 </Card>
+              </TabsContent>
+
+              <TabsContent value="settings" className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Target manuali: mostrati quando SurfaceScan360 non è attivo */}
+                  {!overview?.tier || overview.tier !== undefined ? (
+                    <DarkRiskManualTargetManager organizationId={organizationId ?? ''} />
+                  ) : null}
+                  {organizationId && (
+                    <DarkRiskNotificationConfig organizationId={organizationId} />
+                  )}
+                </div>
               </TabsContent>
             </Tabs>
           </>

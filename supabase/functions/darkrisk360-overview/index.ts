@@ -974,6 +974,16 @@ serve(async (req: Request) => {
           metadata_only_hits: intelxCoverage.metadata_only_hits,
         },
       },
+      weekly_snapshot: await (async () => {
+        const { data } = await adminClient
+          .from('darkrisk360_weekly_snapshots' as any)
+          .select('week_key, week_start_date, tier, total_records, new_records_this_week, risk_index, results_by_source, results_by_filetype, results_by_day, delta_vs_prev, severity_distribution, computed_at')
+          .eq('organization_id', customerId)
+          .order('week_start_date', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        return data ?? null;
+      })(),
     });
   } catch (error: any) {
     return jsonResponse({

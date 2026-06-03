@@ -782,7 +782,11 @@ function buildAtDomainTerms(scopeDomains: string[]): string[] {
   const normalizedDomains = Array.from(
     new Set(
       scopeDomains
-        .map((entry) => normalizeScopeDomain(entry))
+        .map((entry) => {
+          const n = normalizeScopeDomain(entry);
+          // Stripping www. per generare @apex (es. www.cereriaterenzi.it → @cereriaterenzi.it)
+          return n.startsWith('www.') ? n.slice(4) : n;
+        })
         .filter((entry) => Boolean(entry && isDomainLike(entry))),
     ),
   );
@@ -792,6 +796,18 @@ function buildAtDomainTerms(scopeDomains: string[]): string[] {
 function buildQueryTerms(selectors: SelectorDef[], scopeDomains: string[]): QueryTerm[] {
   const out: QueryTerm[] = [];
   const seen = new Set<string>();
+
+  // Bare domain terms: www.cereriaterenzi.it → [www.cereriaterenzi.it, cereriaterenzi.it]
+  for (const rawDomain of scopeDomains) {
+    const cleaned = normalizeScopeDomain(rawDomain);
+    if (!cleaned || !isDomainLike(cleaned)) continue;
+    for (const term of Array.from(new Set([cleaned, cleaned.startsWith('www.') ? cleaned.slice(4) : null].filter(Boolean) as string[]))) {
+      const key = `selector:${term}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ term, kind: 'selector', selectorNormalized: term, assetScope: term.startsWith('www.') ? term.slice(4) : term });
+    }
+  }
 
   for (const atDomain of buildAtDomainTerms(scopeDomains)) {
     const clean = normalizeText(atDomain).toLowerCase();
@@ -1309,6 +1325,8 @@ serve(async (req: Request) => {
 
     const orgFlags = (orgRes.data || {}) as Record<string, unknown>;
     const darkRiskEnabled = Boolean(entitlementRes.data?.enabled ?? orgFlags?.dark_risk360_enabled);
+    // Tier gate: 'extended' abilita Leaks API e Phonebook IntelX
+    const isExtendedTier = String(entitlementRes.data?.tier ?? 'standard') === 'extended';
     if (!darkRiskEnabled) {
       return jsonResponse({
         ok: false,
@@ -1394,13 +1412,40 @@ serve(async (req: Request) => {
       ),
     );
 
-    const normalizedScopeDomains = Array.from(new Set(scopeDomains.map((entry) => normalizeScopeDomain(entry)).filter(isDomainLike)));
+    let normalizedScopeDomains = Array.from(new Set(scopeDomains.map((entry) => normalizeScopeDomain(entry)).filter(isDomainLike)));
+    let effectiveScopeIps = [...scopeIps];
+
+    // Fallback manuale: se no SurfaceScan360 attivo e nessun dato scope, usa darkrisk360_manual_targets
+    const hasSurfaceScopeData = (scopeRes.data?.length ?? 0) > 0;
+    const isSurfaceScanEnabled = Boolean(orgFlags?.surface_scan360_enabled);
+    if (!hasSurfaceScopeData && !isSurfaceScanEnabled) {
+      const manualRes = await adminClient
+        .from('darkrisk360_manual_targets' as any)
+        .select('target_type, value, normalized_value')
+        .eq('organization_id', requestedCustomerId)
+        .eq('enabled', true);
+      if (!manualRes.error && manualRes.data?.length) {
+        const manualData = manualRes.data as Array<{ target_type: string; value: string; normalized_value: string }>;
+        normalizedScopeDomains = Array.from(new Set(
+          manualData
+            .filter((r) => r.target_type === 'domain')
+            .map((r) => normalizeScopeDomain(r.normalized_value || r.value))
+            .filter(isDomainLike),
+        ));
+        effectiveScopeIps = Array.from(new Set(
+          manualData
+            .filter((r) => r.target_type === 'ip' || r.target_type === 'cidr')
+            .map((r) => normalizeText(r.normalized_value || r.value))
+            .filter(Boolean),
+        ));
+      }
+    }
 
     const surfaceSyncRes = await maybeAutoQueueSurfaceScope({
       includeSurfaceSync,
       orgFlags,
       scopeDomains: normalizedScopeDomains,
-      scopeIps,
+      scopeIps: effectiveScopeIps,
       customerId: requestedCustomerId,
       actorUserId,
     });
@@ -1466,7 +1511,7 @@ serve(async (req: Request) => {
         include_surface_sync: includeSurfaceSync,
         identity_emails: manualIdentityEmails.length,
         scope_domains: normalizedScopeDomains.length,
-        scope_ips: scopeIps.length,
+        scope_ips: effectiveScopeIps.length,
         surface_auto_queue: {
           queued_classic: surfaceSyncRes.queuedClassic,
           failed_classic: surfaceSyncRes.failedClassic,
@@ -1479,7 +1524,7 @@ serve(async (req: Request) => {
       requestedCustomerId,
       sourceScanJobId,
       normalizedScopeDomains,
-      scopeIps,
+      effectiveScopeIps,
       manualIdentityEmails,
     );
 
@@ -1813,9 +1858,12 @@ serve(async (req: Request) => {
       }
     }
 
-    const phonebookTerms = queryTerms
-      .filter((query) => query.kind === 'at_domain_tld' || query.kind === 'email_selector' || query.kind === 'selector')
-      .slice(0, Math.min(INTELX_PHONEBOOK_MAX_TERMS, queryTerms.length));
+    // Phonebook: solo per tier extended
+    const phonebookTerms = isExtendedTier
+      ? queryTerms
+          .filter((query) => query.kind === 'at_domain_tld' || query.kind === 'email_selector' || query.kind === 'selector')
+          .slice(0, Math.min(INTELX_PHONEBOOK_MAX_TERMS, queryTerms.length))
+      : [];
     let phonebookDegraded = false;
 
     for (const query of phonebookTerms) {
@@ -1898,9 +1946,12 @@ serve(async (req: Request) => {
       }
     }
 
-    const leaksTerms = queryTerms
-      .filter((query) => query.kind === 'email_selector' || query.kind === 'at_domain_tld')
-      .slice(0, Math.min(20, queryTerms.length));
+    // Leaks API (3.intelx.io): solo per tier extended
+    const leaksTerms = isExtendedTier
+      ? queryTerms
+          .filter((query) => query.kind === 'email_selector' || query.kind === 'at_domain_tld')
+          .slice(0, Math.min(20, queryTerms.length))
+      : [];
 
     for (const query of leaksTerms) {
       if (recordsCreated >= INTELX_MAX_RECORDS_PER_RUN) break;
@@ -2111,6 +2162,22 @@ serve(async (req: Request) => {
         updated_at: new Date().toISOString(),
       })
       .eq('id', scanRunId);
+
+    // Post-scan: fire-and-forget snapshot (aggrega stats + triggera notify se nuovi finding)
+    if (SUPABASE_URL && SERVICE_ROLE && DARKRISK_INTERNAL_SECRET) {
+      void fetch(`${SUPABASE_URL}/functions/v1/darkrisk360-snapshot`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(12_000),
+        headers: {
+          Authorization: `Bearer ${SERVICE_ROLE}`,
+          'x-darkrisk360-internal-secret': DARKRISK_INTERNAL_SECRET,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ organization_id: requestedCustomerId, scan_run_id: scanRunId }),
+      }).catch((err) => {
+        console.warn('[darkrisk-esteso-sync] snapshot hook failed:', String(err));
+      });
+    }
 
     await writeAudit(
       adminClient,

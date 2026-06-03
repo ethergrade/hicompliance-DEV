@@ -147,20 +147,89 @@ export function adaptDarkRiskReportToSurfaceScanTemplate(reportJson: any): Surfa
       executive_summary: reportJson?.executive_summary?.text || '',
       risk_score: reportJson?.executive_summary?.risk_score ?? null,
       risk_level: reportJson?.executive_summary?.risk_level || null,
-      top_recommendations: recommendations.slice(0, 10).map((entry: any, index: number) => ({
-        priority: index + 1,
-        title: String(entry?.title || `Raccomandazione ${index + 1}`),
-        rationale: String(entry?.why_it_matters || ''),
-        action: Array.isArray(entry?.actions) ? entry.actions.join('; ') : String(entry?.actions || ''),
-        affected_assets: Array.isArray(scopeAssets) ? scopeAssets.slice(0, 10) : [],
-        severity: entry?.priority === 'immediate' ? 'critical' : entry?.priority === 'short_term' ? 'high' : entry?.priority === 'mid_term' ? 'medium' : 'low',
-      })),
-      correlations: Array.isArray(reportJson?.executive_summary?.top_drivers)
-        ? reportJson.executive_summary.top_drivers.slice(0, 5)
-        : [],
+      top_recommendations: buildTopRecommendations(reportJson, recommendations, scopeAssets),
+      correlations: buildCorrelations(reportJson),
       compliance_notes: 'Analisi DarkRisk360 normalizzata su template SurfaceScan360 per reporting unificato.',
     },
     ai_error: null,
+    // Sezione DTI (solo tier extended): credenziali esposte
+    dti_credentials: buildDtiCredentialsSection(reportJson),
+    dti_risk_index: reportJson?.risk_index ?? reportJson?.executive_summary?.risk_score ?? null,
   };
+}
+
+function buildTopRecommendations(reportJson: any, recommendations: any[], scopeAssets: string[]): any[] {
+  const tier = String(reportJson?.tier ?? 'standard');
+  const allRecs = [...recommendations];
+
+  // Per tier extended, aggiungi raccomandazioni prioritizzate da DTI
+  if (tier === 'extended') {
+    const dtiRecs = Array.isArray(reportJson?.dti_intelligence?.recommendations)
+      ? reportJson.dti_intelligence.recommendations
+      : [];
+    allRecs.push(...dtiRecs);
+  }
+
+  return allRecs
+    .sort((a, b) => {
+      const priorityOrder: Record<string, number> = { immediate: 0, short_term: 1, mid_term: 2, long_term: 3 };
+      return (priorityOrder[a?.priority] ?? 4) - (priorityOrder[b?.priority] ?? 4);
+    })
+    .slice(0, 10)
+    .map((entry: any, index: number) => ({
+      priority: index + 1,
+      title: String(entry?.title || `Raccomandazione ${index + 1}`),
+      rationale: String(entry?.why_it_matters || entry?.rationale || ''),
+      action: Array.isArray(entry?.actions) ? entry.actions.join('; ') : String(entry?.actions || ''),
+      affected_assets: Array.isArray(scopeAssets) ? scopeAssets.slice(0, 10) : [],
+      severity: entry?.priority === 'immediate' ? 'critical' : entry?.priority === 'short_term' ? 'high' : entry?.priority === 'mid_term' ? 'medium' : 'low',
+    }));
+}
+
+function buildCorrelations(reportJson: any): string[] {
+  const baseCorrelations = Array.isArray(reportJson?.executive_summary?.top_drivers)
+    ? reportJson.executive_summary.top_drivers.slice(0, 5)
+    : [];
+
+  const tier = String(reportJson?.tier ?? 'standard');
+  if (tier !== 'extended') return baseCorrelations;
+
+  // Per tier extended: aggiungi summary credenziali esposte come correlazione
+  const sensitiveHits = Array.isArray(reportJson?.dti_intelligence?.sensitive_hits)
+    ? reportJson.dti_intelligence.sensitive_hits
+    : [];
+  const pwdCount = sensitiveHits.filter((h: any) => String(h?.tag || '') === 'passwords').length;
+  const cardCount = sensitiveHits.filter((h: any) => String(h?.tag || '') === 'credit_cards').length;
+
+  const dtiCorrelations: string[] = [];
+  if (pwdCount > 0) dtiCorrelations.push(`${pwdCount} credenziali con password in chiaro identificate`);
+  if (cardCount > 0) dtiCorrelations.push(`${cardCount} dati carta di credito rilevati`);
+
+  return [...baseCorrelations, ...dtiCorrelations].slice(0, 8);
+}
+
+/**
+ * Sezione credenziali DTI per il report Esteso.
+ * Mostra la password in chiaro (clear_value) quando disponibile — è il dato utile per il cliente.
+ * Fallback su masked_value se clear_value non è presente.
+ */
+function buildDtiCredentialsSection(reportJson: any): any[] {
+  const tier = String(reportJson?.tier ?? 'standard');
+  if (tier !== 'extended') return [];
+
+  const hits = Array.isArray(reportJson?.dti_intelligence?.sensitive_hits)
+    ? reportJson.dti_intelligence.sensitive_hits
+    : [];
+
+  return hits
+    .filter((h: any) => String(h?.tag || '') === 'passwords' && (h?.clear_value || h?.masked_value))
+    .slice(0, 50)
+    .map((h: any) => ({
+      email: String(h?.selector_value || h?.asset_scope || '').slice(0, 120),
+      password: String(h?.clear_value || h?.masked_value || ''),
+      source: String(h?.source_bucket || h?.source || 'intelx'),
+      date: String(h?.source_date || h?.first_seen_at || '').slice(0, 10),
+      password_type: String(h?.password_type || 'plaintext'),
+    }));
 }
 
