@@ -2,6 +2,12 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 
+export interface AssetBreakdown {
+  total: number;
+  by_source: Record<string, number>;
+  by_filetype: Record<string, number>;
+}
+
 export interface DarkRiskWeeklySnapshot {
   id: string;
   organization_id: string;
@@ -15,6 +21,7 @@ export interface DarkRiskWeeklySnapshot {
   results_by_source: Record<string, number>;
   results_by_filetype: Record<string, number>;
   results_by_day: Record<string, number>;
+  results_by_asset: Record<string, AssetBreakdown>;
   delta_vs_prev: {
     total_records?: number;
     risk_index?: number;

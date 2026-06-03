@@ -468,7 +468,7 @@ async function intelxPhonebookSubmit(term: string): Promise<string | null> {
   return intelxFetchWithBackoff(async () => {
     const response = await withRateLimit(() =>
       fetchWithTimeout(url.toString(), {
-        method: 'POST',
+        method: 'GET',
         headers: {
           'User-Agent': 'HICONSOLE-DARKRISK-ESTESO/1.0',
           'x-key': ESTESO_SEARCH_API_KEY,

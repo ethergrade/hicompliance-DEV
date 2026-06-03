@@ -100,18 +100,30 @@ export const INTELX_MEDIA_LABELS: Record<number, string> = {
  * Label UI per bucket IntelX (results_by_source).
  */
 export const INTELX_BUCKET_LABELS: Record<string, string> = {
-  leaks_restricted: 'Leaks › Restricted',
-  leaks_logs:       'Leaks › Logs',
-  leaks_public:     'Leaks › Public',
-  dns:              'DNS',
-  '.com':           'Web: .com',
-  '.it':            'Web: .it',
-  '.org':           'Web: .org',
-  '.net':           'Web: .net',
-  paste:            'Paste Sites',
-  social:           'Social Media',
-  forum:            'Forum',
-  darkweb:          'Dark Web',
+  // underscore form
+  leaks_restricted:      'Leaks › Restricted',
+  leaks_logs:            'Leaks › Logs',
+  leaks_public:          'Leaks › Public',
+  // dot form (IntelX API actual values)
+  'leaks.logs':          'Leaks › Logs',
+  'leaks.private.general': 'Leaks › Private',
+  'leaks.public.general':  'Leaks › Public',
+  'leaks.restricted':    'Leaks › Restricted',
+  'web.public.com':      'Web: .com',
+  'web.public.it':       'Web: .it',
+  'web.public.org':      'Web: .org',
+  'web.public.net':      'Web: .net',
+  whois:                 'WHOIS',
+  dns:                   'DNS',
+  DNS:                   'DNS',
+  paste:                 'Paste Sites',
+  social:                'Social Media',
+  forum:                 'Forum',
+  darkweb:               'Dark Web',
+  '.com':                'Web: .com',
+  '.it':                 'Web: .it',
+  '.org':                'Web: .org',
+  '.net':                'Web: .net',
 };
 
 export function mediaLabel(mediaInt: number | null | undefined): string {

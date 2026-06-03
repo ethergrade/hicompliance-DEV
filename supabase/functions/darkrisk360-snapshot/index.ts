@@ -108,17 +108,24 @@ serve(async (req: Request) => {
     }
 
     // 4. Aggrega per media type (results_by_filetype)
+    // source_media è text in DB (es. "1", "2", "0") — convertiamo a number prima del mapping
     const { data: mediaRows } = await adminClient
       .from('darkrisk_source_records' as any)
       .select('source_media')
       .eq('organization_id', orgId)
       .eq('source', 'intelx')
-      .not('source_media', 'is', null);
+      .not('source_media', 'is', null)
+      .neq('source_media', '');
 
     const resultsByFiletype: Record<string, number> = {};
-    for (const row of (mediaRows ?? []) as Array<{ source_media: number }>) {
-      const label = mediaLabel(row.source_media);
-      resultsByFiletype[label] = (resultsByFiletype[label] ?? 0) + 1;
+    for (const row of (mediaRows ?? []) as Array<{ source_media: string }>) {
+      const raw = row.source_media;
+      // Tenta conversione numerica (IntelX restituisce interi: 0=unknown,1=html,2=text,4=csv...)
+      const asNum = Number(raw);
+      const label = Number.isFinite(asNum) ? mediaLabel(asNum) : (raw || 'unknown');
+      // Raggruppa media=0 (unknown) in bucket esplicito solo se è l'unico tipo
+      const displayLabel = (label === 'unknown' && asNum === 0) ? 'other' : label;
+      resultsByFiletype[displayLabel] = (resultsByFiletype[displayLabel] ?? 0) + 1;
     }
 
     // 5. Aggrega per giorno — ultimi 365gg (usa source_date per data reale del leak)
@@ -135,6 +142,32 @@ serve(async (req: Request) => {
     for (const row of (dayRows ?? []) as Array<{ source_date: string }>) {
       const day = String(row.source_date).slice(0, 10);
       if (day) resultsByDay[day] = (resultsByDay[day] ?? 0) + 1;
+    }
+
+    // 5b. Aggrega per asset scope (per breakdown collassabile per dominio)
+    const { data: assetRows } = await adminClient
+      .from('darkrisk_source_records' as any)
+      .select('asset_scope, source_bucket, source_media')
+      .eq('organization_id', orgId)
+      .eq('source', 'intelx')
+      .not('asset_scope', 'is', null)
+      .neq('asset_scope', '');
+
+    const resultsByAsset: Record<string, { total: number; by_source: Record<string, number>; by_filetype: Record<string, number> }> = {};
+    for (const row of (assetRows ?? []) as Array<{ asset_scope: string; source_bucket: string | null; source_media: string | null }>) {
+      const asset = row.asset_scope;
+      if (!resultsByAsset[asset]) resultsByAsset[asset] = { total: 0, by_source: {}, by_filetype: {} };
+      resultsByAsset[asset].total += 1;
+      if (row.source_bucket) {
+        const b = row.source_bucket;
+        resultsByAsset[asset].by_source[b] = (resultsByAsset[asset].by_source[b] ?? 0) + 1;
+      }
+      if (row.source_media) {
+        const asNum = Number(row.source_media);
+        const label = Number.isFinite(asNum) ? mediaLabel(asNum) : (row.source_media || 'unknown');
+        const displayLabel = (label === 'unknown' && asNum === 0) ? 'other' : label;
+        resultsByAsset[asset].by_filetype[displayLabel] = (resultsByAsset[asset].by_filetype[displayLabel] ?? 0) + 1;
+      }
     }
 
     // 6. Distribuzione severity dai finding attivi
@@ -204,6 +237,7 @@ serve(async (req: Request) => {
           results_by_source: resultsBySource,
           results_by_filetype: resultsByFiletype,
           results_by_day: resultsByDay,
+          results_by_asset: resultsByAsset,
           delta_vs_prev: deltaVsPrev,
           severity_distribution: severityDistribution,
           computed_at: now.toISOString(),

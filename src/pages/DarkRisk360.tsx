@@ -42,6 +42,8 @@ import { DarkRiskWeeklyTrend } from '@/components/dark-risk/DarkRiskWeeklyTrend'
 import { DarkRiskSourcePieChart } from '@/components/dark-risk/DarkRiskSourcePieChart';
 import { DarkRiskFiletypePieChart } from '@/components/dark-risk/DarkRiskFiletypePieChart';
 import { DarkRiskCalendarHeatmap } from '@/components/dark-risk/DarkRiskCalendarHeatmap';
+import { DarkRiskAssetBreakdown } from '@/components/dark-risk/DarkRiskAssetBreakdown';
+import { DarkRiskCredentialLeaks } from '@/components/dark-risk/DarkRiskCredentialLeaks';
 import { DarkRiskManualTargetManager } from '@/components/dark-risk/DarkRiskManualTargetManager';
 import { DarkRiskNotificationConfig } from '@/components/dark-risk/DarkRiskNotificationConfig';
 import { useDarkRiskSnapshot } from '@/hooks/useDarkRiskSnapshot';
@@ -1506,6 +1508,11 @@ const DarkRisk360: React.FC = () => {
                   </CardContent>
                 </Card>
 
+                {/* Credenziali esposte — in primo piano se tier extended */}
+                {overview.tier === 'extended' && organizationId && (
+                  <DarkRiskCredentialLeaks organizationId={organizationId} />
+                )}
+
                 {/* Intelligence Signals: pie charts + calendar heatmap */}
                 {(snapshot?.total_records ?? 0) > 0 && (
                   <>
@@ -1514,6 +1521,10 @@ const DarkRisk360: React.FC = () => {
                       <DarkRiskFiletypePieChart data={snapshot?.results_by_filetype ?? {}} />
                     </div>
                     <DarkRiskCalendarHeatmap data={snapshot?.results_by_day ?? {}} />
+                    {/* Breakdown collassabile per asset */}
+                    {Object.keys(snapshot?.results_by_asset ?? {}).length > 0 && (
+                      <DarkRiskAssetBreakdown data={snapshot.results_by_asset} />
+                    )}
                   </>
                 )}
 
