@@ -1147,6 +1147,8 @@ async function maybeAutoQueueSurfaceScope(
           Authorization: `Bearer ${INTERNAL_FUNCTIONS_API_KEY}`,
           apikey: INTERNAL_FUNCTIONS_API_KEY,
           'Content-Type': 'application/json',
+          // Header DarkRisk360 — bypassa il gate contratto SurfaceScan360
+          ...(DARKRISK_INTERNAL_SECRET ? { 'x-darkrisk360-internal-secret': DARKRISK_INTERNAL_SECRET } : {}),
           ...(SURFACESCAN_INTERNAL_SECRET ? { 'x-surface-internal-secret': SURFACESCAN_INTERNAL_SECRET } : {}),
         },
         body: JSON.stringify({
@@ -1154,7 +1156,7 @@ async function maybeAutoQueueSurfaceScope(
           customer_id: params.customerId,
           scan_profile: item.profile,
           authorization_confirmed: true,
-          ownership_proof: 'darkrisk_esteso_manual',
+          ownership_proof: 'darkrisk360_coverage',
           force_refresh: true,
           requested_by: params.actorUserId,
         }),
@@ -1162,10 +1164,20 @@ async function maybeAutoQueueSurfaceScope(
       });
       clearTimeout(timeout);
       const payload = await response.json().catch(() => ({}));
-      if (response.ok && !payload?.error) queuedClassic += 1;
-      else failedClassic += 1;
-    } catch {
+      if (response.ok && !payload?.error) {
+        queuedClassic += 1;
+      } else {
+        // Log dettagliato per diagnosi
+        console.warn(
+          `[maybeAutoQueueSurfaceScope] target=${item.target} HTTP=${response.status} error=${
+            String(payload?.error || payload?.code || 'unknown').slice(0, 200)
+          }`,
+        );
+        failedClassic += 1;
+      }
+    } catch (err) {
       clearTimeout(timeout);
+      console.warn(`[maybeAutoQueueSurfaceScope] target=${item.target} exception=${String(err).slice(0, 200)}`);
       failedClassic += 1;
     }
   }

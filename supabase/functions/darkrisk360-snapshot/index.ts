@@ -251,7 +251,23 @@ serve(async (req: Request) => {
       console.error('[darkrisk360-snapshot] upsert error:', upsertError);
     }
 
-    // 11. Fire-and-forget notify se ci sono nuovi findings da questo run
+    // 11. Fire-and-forget orchestrate-coverage: controlla e triggera scan mancanti
+    if (SUPABASE_FUNCTIONS_URL && INTERNAL_SECRET) {
+      void fetch(`${SUPABASE_FUNCTIONS_URL}/darkrisk360-orchestrate-coverage`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(12_000),
+        headers: {
+          Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+          'x-darkrisk360-internal-secret': INTERNAL_SECRET,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ organization_id: orgId, scan_run_id: scanRunId ?? null }),
+      }).catch((err) => {
+        console.warn('[darkrisk360-snapshot] orchestrate-coverage fire failed:', String(err));
+      });
+    }
+
+    // 12. Fire-and-forget notify se ci sono nuovi findings da questo run
     if (scanRunId && SUPABASE_FUNCTIONS_URL && INTERNAL_SECRET) {
       const hasNewFindings = (newThisWeek ?? 0) > 0 || deltaVsPrev.total_records > 0;
       if (hasNewFindings) {

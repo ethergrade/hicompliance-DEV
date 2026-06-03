@@ -38,6 +38,10 @@ const INTERNAL_CRON_SECRET = String(
   || Deno.env.get("SURFACESCAN_INTERNAL_SECRET")
   || "",
 ).trim();
+// DarkRisk360 può triggerare SurfaceScan360 come dipendenza interna
+const DARKRISK360_INTERNAL_SECRET = String(
+  Deno.env.get("DARKRISK360_INTERNAL_SECRET") || "",
+).trim();
 const DEFAULT_SCAN_PROFILE = (() => {
   const configured = String(Deno.env.get("SURFACESCAN_DEFAULT_SCAN_PROFILE") || "").trim().toLowerCase();
   if (isAllowedProfile(configured)) return configured;
@@ -63,13 +67,20 @@ serve(async (req: Request) => {
       || req.headers.get("x-cron-secret")
       || "",
     ).trim();
+    const darkrisk360SecretHeader = String(
+      req.headers.get("x-darkrisk360-internal-secret") || "",
+    ).trim();
     const isServiceRoleToken =
       Boolean(SERVICE_ROLE_KEY)
       && bearerToken === SERVICE_ROLE_KEY;
     const isInternalSecretInvocation =
       Boolean(INTERNAL_CRON_SECRET)
       && cronSecretHeader === INTERNAL_CRON_SECRET;
-    const isServiceRoleInvocation = isServiceRoleToken || isInternalSecretInvocation;
+    // DarkRisk360 chiama SurfaceScan360 come dipendenza — trusted senza service gate contratto
+    const isDarkRisk360Invocation =
+      Boolean(DARKRISK360_INTERNAL_SECRET)
+      && darkrisk360SecretHeader === DARKRISK360_INTERNAL_SECRET;
+    const isServiceRoleInvocation = isServiceRoleToken || isInternalSecretInvocation || isDarkRisk360Invocation;
 
     let actorUserId: string | null = null;
     let caller: Awaited<ReturnType<typeof getCallerProfile>> | null = null;
@@ -136,7 +147,16 @@ serve(async (req: Request) => {
       );
     }
     const serviceGate = evaluateOrganizationServiceGate(orgRuntimeFlags as any, "surface_scan360");
-    if (!serviceGate.allowed) {
+    // DarkRisk360 bypassa il controllo contratto: ha il suo entitlement separato
+    // ma rispetta comunque il blocco services_paused
+    const isPaused = Boolean((orgRuntimeFlags as any)?.services_paused);
+    if (isPaused) {
+      return new Response(
+        JSON.stringify({ error: "Servizi sospesi per questa organizzazione", code: "services_paused" }),
+        { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } },
+      );
+    }
+    if (!isDarkRisk360Invocation && !serviceGate.allowed) {
       return new Response(
         JSON.stringify({
           error: `SurfaceScan360 non eseguibile: ${serviceGate.reason}`,

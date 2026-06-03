@@ -163,6 +163,25 @@ serve(async (req: Request) => {
     }
   }
 
+  // --- Orchestrate coverage per tutti i clienti triggered ---
+  // Stagger 5s tra le call per non sovraccaricare SurfaceScan360
+  if (DARKRISK_INTERNAL_SECRET) {
+    for (const orgId of triggeredIds.slice(0, 50)) { // max 50 in un cron
+      void fetch(`${SUPABASE_URL}/functions/v1/darkrisk360-orchestrate-coverage`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(10_000),
+        headers: {
+          'Authorization': `Bearer ${SERVICE_ROLE}`,
+          'Content-Type': 'application/json',
+          'x-darkrisk360-internal-secret': DARKRISK_INTERNAL_SECRET,
+        },
+        body: JSON.stringify({ organization_id: orgId }),
+      }).catch(() => undefined);
+      // piccolo stagger
+      await wait(5_000);
+    }
+  }
+
   // --- Weekly summary email per tutti i clienti con summary abilitata ---
   if (DARKRISK_INTERNAL_SECRET) {
     const { data: summaryConfigs } = await adminClient
