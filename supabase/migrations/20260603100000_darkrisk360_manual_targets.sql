@@ -20,47 +20,20 @@ CREATE INDEX IF NOT EXISTS idx_darkrisk360_manual_targets_org
 -- RLS
 ALTER TABLE public.darkrisk360_manual_targets ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "org members can read manual targets"
+CREATE POLICY "manual targets read"
   ON public.darkrisk360_manual_targets
   FOR SELECT
   USING (
-    organization_id IN (
-      SELECT organization_id FROM public.organization_members
-      WHERE user_id = auth.uid()
-    )
+    can_manage_all_organizations(auth.uid())
+    OR organization_id IN (SELECT u.organization_id FROM public.users u WHERE u.auth_user_id = auth.uid())
   );
 
-CREATE POLICY "admin can insert manual targets"
+CREATE POLICY "manual targets write"
   ON public.darkrisk360_manual_targets
-  FOR INSERT
-  WITH CHECK (
-    organization_id IN (
-      SELECT organization_id FROM public.organization_members
-      WHERE user_id = auth.uid()
-        AND role IN ('admin', 'owner')
-    )
-  );
-
-CREATE POLICY "admin can update manual targets"
-  ON public.darkrisk360_manual_targets
-  FOR UPDATE
+  FOR ALL
   USING (
-    organization_id IN (
-      SELECT organization_id FROM public.organization_members
-      WHERE user_id = auth.uid()
-        AND role IN ('admin', 'owner')
-    )
-  );
-
-CREATE POLICY "admin can delete manual targets"
-  ON public.darkrisk360_manual_targets
-  FOR DELETE
-  USING (
-    organization_id IN (
-      SELECT organization_id FROM public.organization_members
-      WHERE user_id = auth.uid()
-        AND role IN ('admin', 'owner')
-    )
+    can_manage_all_organizations(auth.uid())
+    OR organization_id IN (SELECT u.organization_id FROM public.users u WHERE u.auth_user_id = auth.uid())
   );
 
 CREATE POLICY "service role bypass for manual targets"
