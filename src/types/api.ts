@@ -65,6 +65,8 @@ export interface LoginUser {
   email: string;
   is_super_admin: boolean;
   groups: Group[];
+  /** Capabilities map from /auth/me. Superadmins with empty groups get all true. */
+  capabilities?: Record<string, boolean>;
 }
 
 export interface LoginData {
