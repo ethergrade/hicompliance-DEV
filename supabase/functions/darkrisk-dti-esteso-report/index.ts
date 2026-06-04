@@ -503,7 +503,7 @@ async function buildDtiEstesoReport(
               <tr class="${/saintsrow|password|123456|qwerty|admin|presezzi/i.test(h.masked_value || h.clear_value || '') ? 'cred-row-high' : 'cred-row-med'}">
                 <td style="padding:5px 10px;border:1px solid #374151;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(h.collection_title)}">${escHtml((h.collection_title || '—').slice(0, 70))}</td>
                 <td style="padding:5px 10px;border:1px solid #374151;white-space:nowrap">${fmtDate(h.data_collection)}</td>
-                <td style="padding:5px 10px;border:1px solid #374151;font-family:monospace;font-size:11px">${escHtml(h.masked_value || h.clear_value || '—')}</td>
+                <td style="padding:5px 10px;border:1px solid #374151;font-family:monospace;font-size:11px">${escHtml(h.clear_value || h.masked_value || '—')}</td>
                 <td style="padding:5px 10px;border:1px solid #374151;text-align:center">1</td>
                 <td style="padding:5px 10px;border:1px solid #374151;font-size:11px;color:#94a3b8">${escHtml((h.context_excerpt || '').slice(0, 80))}</td>
               </tr>

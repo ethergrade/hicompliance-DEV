@@ -391,32 +391,69 @@ const buildFallbackAi = (report: SurfaceScan360Report) => {
   const totalSub = (report.subdomain_dumps || []).reduce((sum, dump: any) => {
     return sum + Number(dump?.total_returned || (Array.isArray(dump?.results) ? dump.results.length : 0) || 0);
   }, 0);
+
+  // Detect dominant finding category to tailor priorities
+  const allF = report.findings || [];
+  const credentialFindings = allF.filter((f: any) =>
+    /intelx|darkrisk|credential|leak|identity|password|stealer/i.test(String(f.finding_type || f.title || ‘’))
+  );
+  const cveFindings = allF.filter((f: any) => Array.isArray((f as any).cve) && (f as any).cve.length > 0);
+  const highSev = allF.filter((f: any) => f.severity === ‘high’ || f.severity === ‘critical’);
+  const isCredentialDominant = credentialFindings.length > totalFindings * 0.4;
+  const hasCriticalCve = cveFindings.some((f: any) => f.severity === ‘critical’ || f.severity === ‘high’);
+
+  const credentialRecs = [
+    { priority: 1, title: ‘Reset immediato password esposte nei leak’, rationale: `${credentialFindings.filter((f: any) => /password|credential|stealer/i.test(String(f.finding_type || ‘’))).length} credenziali esposte rilevate: il riutilizzo su altri servizi è il vettore di attacco più probabile.`, action: ‘Forzare il cambio password per tutti gli account presenti nei leak, disabilitare le sessioni attive e revocare i token OAuth/SAML compromessi.’, severity: ‘critical’, affected_assets: [] },
+    { priority: 2, title: ‘Abilitare MFA obbligatoria su tutti gli accessi esterni’, rationale: ‘Credenziali esposte senza MFA consentono accesso immediato ad attaccanti in possesso della password.’, action: ‘Abilitare MFA (TOTP o push) su Microsoft 365, VPN, portali web e tutti gli accessi Internet-facing. Bloccare gli accessi legacy che non supportano MFA.’, severity: ‘critical’, affected_assets: [] },
+    { priority: 3, title: ‘Bloccare riutilizzo password con policy e blocklist’, rationale: ‘Le password esposte potrebbero essere riutilizzate su altri servizi aziendali.’, action: ‘Implementare una password blocklist (HIBP o analoga) e una policy di complessità minima ≥12 char. Vietare il riutilizzo degli ultimi 10 password.’, severity: ‘high’, affected_assets: [] },
+    { priority: 4, title: ‘Revoca credenziali API e token di servizio’, rationale: ‘I leak possono includere token API, service account e credenziali di sistema oltre alle password utente.’, action: ‘Inventariare e ruotare tutti i secret, API key, token di integrazione e credenziali di servizio del dominio esposto.’, severity: ‘high’, affected_assets: [] },
+    { priority: 5, title: ‘Rollout DMARC enforcement (p=reject)’, rationale: ‘Domini senza DMARC in enforcement sono vettori di spoofing e phishing verso clienti e partner.’, action: ‘Configurare DMARC p=quarantine → p=reject con reporting RUA/RUF. Validare SPF (<10 lookup) e abilitare DKIM con selector aggiornato.’, severity: ‘high’, affected_assets: [] },
+    { priority: 6, title: ‘Monitoraggio continuo leak identity e alerting’, rationale: ‘Nuovi leak compaiono quotidianamente; il monitoraggio reattivo riduce il tempo di esposizione.’, action: ‘Attivare alerting automatico su nuove esposizioni dei domini e delle email aziendali. Integrare nel ciclo DarkRisk360 settimanale.’, severity: ‘medium’, affected_assets: [] },
+    { priority: 7, title: ‘Hardening TLS e header di sicurezza HTTP’, rationale: ‘Controlli TLS deboli e header mancanti amplificano il rischio di MITM e session hijacking.’, action: ‘Abilitare HSTS (includeSubDomains), CSP, X-Frame-Options, aggiornare cipher suite TLS (TLS 1.3, disabilitare TLS 1.0/1.1).’, severity: ‘medium’, affected_assets: [] },
+    { priority: 8, title: ‘Separazione domini su IP/hosting distinti’, rationale: ‘Blast radius elevato: un attacco su un dominio può compromettere tutti i domini condivisi sulla stessa infrastruttura.’, action: ‘Separare i domini collaterali su IP e provider distinti. Applicare network segmentation tra ambienti produzione e staging.’, severity: ‘medium’, affected_assets: [] },
+    { priority: 9, title: ‘EDR aggiornato e protezione anti-infostealer’, rationale: ‘Stealer log rilevati indicano compromissioni endpoint che esfiltrano cookie e credenziali browser.’, action: ‘Verificare copertura EDR su tutti gli endpoint. Vietare il salvataggio di credenziali nei browser aziendali. Aggiornare definizioni anti-malware.’, severity: ‘medium’, affected_assets: [] },
+    { priority: 10, title: ‘Validazione post-remediation con nuova scansione’, rationale: ‘La remediation non verificata lascia il rischio residuo potenzialmente invariato.’, action: ‘Eseguire una nuova scansione DarkRisk360 a 30 giorni per confermare la riduzione delle esposizioni e aggiornare il risk score.’, severity: ‘low’, affected_assets: [] },
+  ];
+
+  const genericRecs = [
+    { priority: 1, title: hasCriticalCve ? ‘Patching urgente CVE critiche’ : ‘Riduzione esposizione prioritaria’, rationale: hasCriticalCve ? `${cveFindings.length} CVE rilevate, alcune critiche: finestra di sfruttamento attiva.` : `${highSev.length} finding ad alta severità richiedono intervento tempestivo.`, action: hasCriticalCve ? ‘Applicare patch per le CVE critiche/alte entro 7 giorni. Isolare i sistemi non patchabili in attesa di mitigazioni.’ : ‘Chiudere i punti di esposizione più critici con remediation tracciata e verificata.’, severity: hasCriticalCve ? ‘critical’ : ‘high’, affected_assets: [] },
+    { priority: 2, title: ‘Gestione vulnerabilità per impatto e sfruttabilità’, rationale: ‘Le CVE presenti richiedono ordine di esecuzione basato su CVSS + EPSS + contesto operativo.’, action: ‘Applicare patch/mitigazioni prioritizzando per CVSS ≥7 e EPSS > 1%. Validare con nuova scansione dopo ogni batch.’, severity: ‘high’, affected_assets: [] },
+    { priority: 3, title: ‘Hardening configurativo sui servizi esposti’, rationale: ‘Controlli web e rete non uniformi aumentano il rischio operativo e il blast radius.’, action: ‘Allineare la baseline di sicurezza su tutti gli asset pubblici: TLS 1.3, header HTTP, cipher suite aggiornate.’, severity: ‘medium’, affected_assets: [] },
+    { priority: 4, title: ‘Controllo perimetro e discovery sottodomini’, rationale: ‘La variazione del perimetro modifica il rischio esposto. Sottodomini dimenticati sono vettori di attacco frequenti.’, action: ‘Eseguire subdomain enumeration periodica, verificare i DNS shadow e disabilitare i sottodomini non più in uso.’, severity: ‘medium’, affected_assets: [] },
+    { priority: 5, title: ‘Email security: SPF/DKIM/DMARC su tutti i domini’, rationale: ‘Domini senza enforcement DMARC sono esposti a spoofing e phishing verso clienti e partner.’, action: ‘Configurare DMARC p=quarantine su tutti i domini principali e collaterali. Abilitare DKIM e validare SPF.’, severity: ‘high’, affected_assets: [] },
+    { priority: 6, title: ‘Chiusura porte non necessarie e firewall review’, rationale: `${highSev.length} finding ad alto rischio: alcuni potrebbero includere servizi di gestione esposti.`, action: ‘Revisione firewall: bloccare porte 21/23/8080/3389 da Internet pubblico. Consentire accesso amministrativo solo da IP autorizzati o VPN.’, severity: ‘high’, affected_assets: [] },
+    { priority: 7, title: ‘Rafforzamento controlli di accesso e IAM’, rationale: ‘Asset pubblici con controlli deboli favoriscono accessi non autorizzati e lateral movement.’, action: ‘Applicare MFA su tutti gli accessi Internet-facing. Implementare Conditional Access Policy e revisione periodica dei privilegi.’, severity: ‘medium’, affected_assets: [] },
+    { priority: 8, title: ‘Monitoraggio continuo e alerting automatico’, rationale: ‘La sicurezza esterna richiede controllo ricorrente: le minacce evolvono tra una scansione e l’altra.’, action: ‘Implementare alerting su variazioni DNS, nuovi servizi esposti e nuove evidenze di compromissione. Integrare con SIEM.’, severity: ‘medium’, affected_assets: [] },
+    { priority: 9, title: ‘Ciclo patch strutturato con SLA per severità’, rationale: ‘Il ritardo nel patching incrementa la finestra di esposizione ai threat actor e aumenta la probabilità di sfruttamento.’, action: ‘Definire SLA: critiche ≤72h, alte ≤7gg, medie ≤30gg, basse ≤90gg. Monitorare compliance e documentare le eccezioni.’, severity: ‘low’, affected_assets: [] },
+    { priority: 10, title: ‘Validazione post-remediation con nuova scansione’, rationale: ‘La remediation non verificata lascia il rischio residuo potenzialmente invariato.’, action: ‘Eseguire scansioni di conferma dopo ogni remediation e mantenere storico delle evidenze risolte.’, severity: ‘low’, affected_assets: [] },
+  ];
+
   return {
     executive_summary:
-      `Analisi consulenziale aggiornata su asset esterni: ${totalFindings} evidenze rilevate, ` +
-      `scope monitorato con ${totalScope} regole e ${totalSub} sottodomini osservati. ` +
-      `Priorità su riduzione esposizione e chiusura vulnerabilità aperte.`,
+      isCredentialDominant
+        ? `Analisi DarkRisk360: ${credentialFindings.length} evidenze di esposizione credenziali/identità rilevate su ${totalScope} asset monitorati. ` +
+          `Rischio complessivo ${risk.level}: priorità immediata su reset password, abilitazione MFA e monitoraggio identity continuo.`
+        : `Analisi consulenziale aggiornata su asset esterni: ${totalFindings} evidenze rilevate, ` +
+          `scope monitorato con ${totalScope} regole e ${totalSub} sottodomini osservati. ` +
+          `Priorità su riduzione esposizione e chiusura vulnerabilità aperte.`,
     risk_score: risk.score,
     risk_level: risk.level,
-    top_recommendations: [
-      { priority: 1, title: 'Riduzione esposizione prioritaria', rationale: 'Le evidenze a severità alta/media richiedono intervento tempestivo.', action: 'Chiudere i punti di esposizione più critici con remediation tracciata.', severity: 'high', affected_assets: [] },
-      { priority: 2, title: 'Gestione vulnerabilità per impatto', rationale: 'Le CVE presenti richiedono ordine di esecuzione per rischio.', action: 'Applicare patch/mitigazioni e validare con nuova scansione.', severity: 'high', affected_assets: [] },
-      { priority: 3, title: 'Hardening configurativo', rationale: 'Controlli web e rete non uniformi aumentano il rischio operativo.', action: 'Allineare baseline di sicurezza su asset pubblici.', severity: 'medium', affected_assets: [] },
-      { priority: 4, title: 'Controllo perimetro e sottodomini', rationale: 'La variazione del perimetro modifica il rischio esposto.', action: 'Rieseguire discovery periodica e allineare continuamente lo scope.', severity: 'medium', affected_assets: [] },
-      { priority: 5, title: 'Governance e verifica continua', rationale: 'La sicurezza esterna richiede controllo ricorrente.', action: 'Programmare ciclo continuo: analisi, remediation, verifica.', severity: 'low', affected_assets: [] },
-      { priority: 6, title: 'Risoluzione finding ad alta frequenza', rationale: 'Findings ripetuti indicano fragilità strutturali del perimetro esterno.', action: 'Aggregare i finding ricorrenti e pianificare azioni risolutive per classe di problema.', severity: 'medium', affected_assets: [] },
-      { priority: 7, title: 'Riduzione superficie servizi esposti', rationale: 'Servizi non indispensabili aumentano il rischio di attacco opportunistico.', action: 'Disabilitare i servizi non necessari e limitare l’esposizione alle sole sorgenti autorizzate.', severity: 'medium', affected_assets: [] },
-      { priority: 8, title: 'Rafforzamento controlli di accesso', rationale: 'Asset pubblici con controlli deboli possono favorire accessi non autorizzati.', action: 'Applicare policy di accesso restrittive, MFA e segmentazione sui sistemi Internet-facing.', severity: 'medium', affected_assets: [] },
-      { priority: 9, title: 'Controllo continuo del ciclo patch', rationale: 'Il ritardo nel patching incrementa la finestra di esposizione ai threat actor.', action: 'Definire SLA di patching per severità e verificare periodicamente lo stato di applicazione.', severity: 'low', affected_assets: [] },
-      { priority: 10, title: 'Validazione periodica post-remediation', rationale: 'La remediation non verificata può lasciare il rischio residuo invariato.', action: 'Eseguire scansioni di conferma dopo ogni remediation e mantenere storico evidenze.', severity: 'low', affected_assets: [] },
-    ],
-    correlations: [
-      'La severità aggregata riflette la priorità operativa di remediation.',
-      'Scope e sottodomini rilevati influenzano direttamente il volume dei finding.',
-      'La riduzione dell’esposizione esterna migliora il profilo di rischio complessivo.',
-    ],
+    top_recommendations: isCredentialDominant ? credentialRecs : genericRecs,
+    correlations: isCredentialDominant
+      ? [
+          ‘Le credenziali esposte senza MFA rappresentano il vettore di attacco a più alta probabilità di sfruttamento.’,
+          `${credentialFindings.length} evidenze di leak su ${totalScope} domini: il rischio di riutilizzo password è elevato.`,
+          ‘La presenza di stealer log indica compromissione endpoint: intervenire su EDR prima di forzare il solo reset password.’,
+        ]
+      : [
+          ‘La severità aggregata riflette la priorità operativa di remediation.’,
+          ‘Scope e sottodomini rilevati influenzano direttamente il volume dei finding.’,
+          ‘La riduzione dell’esposizione esterna migliora il profilo di rischio complessivo.’,
+        ],
     compliance_notes:
-      'Le azioni suggerite supportano un percorso coerente con i requisiti di gestione del rischio e miglioramento continuo previsti dai principali framework di sicurezza.',
+      isCredentialDominant
+        ? ‘Le azioni suggerite sono allineate ai controlli NIST CSF (ID.RA, PR.AC, DE.CM), ISO 27001 A.9 e ai requisiti GDPR in caso di breach di credenziali personali.’
+        : ‘Le azioni suggerite supportano un percorso coerente con i requisiti di gestione del rischio e miglioramento continuo previsti dai principali framework di sicurezza.’,
   };
 };
 
@@ -1117,15 +1154,18 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     const k = pickReportAsset(f.affected_asset, f.affected_url, f.ip, s.target);
     (byAsset[k] ||= []).push(f);
   });
-  const assetEntries = Object.entries(byAsset).sort((a, b) => b[1].length - a[1].length);
+  // Escludi asset non identificabili (n/d)
+  const assetEntries = Object.entries(byAsset)
+    .filter(([asset]) => asset !== 'n/d' && asset !== '')
+    .sort((a, b) => b[1].length - a[1].length);
 
   if (assetEntries.length === 0) {
     text('Nessun finding rilevato.', { color: [MUTED.r, MUTED.g, MUTED.b], size: 9 });
   } else {
-    // Tabella riepilogo per asset
+    // Tabella riepilogo per asset: solo conteggi per severità
     const sumRows = assetEntries.map(([asset, list]) => {
       const cnt = { critical: 0, high: 0, medium: 0, low: 0, info: 0 } as Record<string, number>;
-      list.forEach((f) => { cnt[f.severity] = (cnt[f.severity] || 0) + 1; });
+      list.forEach((f) => { cnt[String(f.severity || 'info')] = (cnt[String(f.severity || 'info')] || 0) + 1; });
       return [
         asset,
         String(list.length),
@@ -1140,40 +1180,43 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     y += 2;
     drawTable(['Asset', 'Tot', 'Crit', 'High', 'Med', 'Low', 'Info'], sumRows, [225, 40, 50, 50, 50, 50, 50]);
 
-    // Dettaglio per asset
+    // Dettaglio per asset: solo CVE e finding tecnici (no DARKRISK/IntelX generici)
     y += 6;
     assetEntries.forEach(([asset, list]) => {
+      const technicalFindings = list.filter((f: any) => {
+        const ft = String(f.finding_type || '').toLowerCase();
+        const title = String(f.title || '').toLowerCase();
+        // Escludi finding generici IntelX/DARKRISK con titoli da collection name
+        if (/intelx|darkrisk|leaks.signal/.test(ft)) return false;
+        if (/\[part\s+\d+\s+of\s+\d+\]/i.test(title)) return false;
+        if (/(\.txt|\.csv|\.rar|\.zip|\.7z|\.log)\b/i.test(title)) return false;
+        if (Array.isArray(f.cve) && f.cve.length > 0) return true;
+        if (/cve|open.port|security.header|ssl|tls|http/i.test(ft)) return true;
+        return Boolean(f.cvss || f.cwe?.length);
+      });
+      if (technicalFindings.length === 0) return;
       ensure(40);
       text(asset, { bold: true, size: 11, color: [BRAND.r, BRAND.g, BRAND.b] });
-      list.sort((a, b) => {
-        const r = { critical: 5, high: 4, medium: 3, low: 2, info: 1 } as Record<string, number>;
-        return (r[b.severity] || 0) - (r[a.severity] || 0);
-      }).forEach((f: any) => {
-        ensure(28);
-        const badgeW = severityBadge(f.severity);
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9);
-        doc.setTextColor(DARK.r, DARK.g, DARK.b);
-        const titleLines = doc.splitTextToSize(redactReportWords(f.title || '(senza titolo)'), w - margin * 2 - badgeW - 10);
-        doc.text(titleLines[0], margin + badgeW + 6, y);
-        y += 12;
-        for (let i = 1; i < titleLines.length; i++) { ensure(12); doc.text(titleLines[i], margin + badgeW + 6, y); y += 12; }
-        const cweValues = Array.isArray(f.cwe) ? f.cwe.map((entry: any) => String(entry || '').trim()).filter(Boolean) : [];
-        const owaspLabel = [f.owasp, f.owasp_label].filter(Boolean).join(' · ');
-        if (Array.isArray(f.cve) && f.cve.length) text(`CVE: ${f.cve.join(', ')}${f.cvss ? '  ·  CVSS ' + f.cvss : ''}`, { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] });
-        if (owaspLabel || cweValues.length > 0) {
-          const mapping = [
-            owaspLabel ? `OWASP: ${owaspLabel}` : null,
-            cweValues.length > 0 ? `CWE: ${cweValues.slice(0, 5).join(', ')}` : null,
-          ].filter(Boolean).join('  ·  ');
-          if (mapping) text(mapping, { size: 8, color: [MUTED.r, MUTED.g, MUTED.b] });
-        }
-        if (Number(f.occurrence_count || 0) > 1) {
-          text(`Occorrenze aggregate: ${Number(f.occurrence_count)}`, { size: 8, color: [MUTED.r, MUTED.g, MUTED.b] });
-        }
-        if (f.remediation) text(`Remediation: ${redactReportWords(f.remediation)}`, { size: 9 });
-        y += 3;
-      });
+      technicalFindings
+        .sort((a: any, b: any) => {
+          const r: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
+          return (r[b.severity] || 0) - (r[a.severity] || 0);
+        })
+        .forEach((f: any) => {
+          ensure(28);
+          const badgeW = severityBadge(f.severity);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(9);
+          doc.setTextColor(DARK.r, DARK.g, DARK.b);
+          const titleLines = doc.splitTextToSize(redactReportWords(f.title || '(senza titolo)'), w - margin * 2 - badgeW - 10);
+          doc.text(titleLines[0], margin + badgeW + 6, y);
+          y += 12;
+          for (let i = 1; i < titleLines.length; i++) { ensure(12); doc.text(titleLines[i], margin + badgeW + 6, y); y += 12; }
+          const cweValues = Array.isArray(f.cwe) ? f.cwe.map((entry: any) => String(entry || '').trim()).filter(Boolean) : [];
+          if (Array.isArray(f.cve) && f.cve.length) text(`CVE: ${f.cve.join(', ')}${f.cvss ? '  ·  CVSS ' + f.cvss : ''}`, { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] });
+          if (cweValues.length > 0) text(`CWE: ${cweValues.slice(0, 5).join(', ')}`, { size: 8, color: [MUTED.r, MUTED.g, MUTED.b] });
+          y += 3;
+        });
       y += 4;
     });
   }

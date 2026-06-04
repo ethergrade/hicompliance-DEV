@@ -13,6 +13,7 @@ import {
   Eye,
   UserX,
   Shield,
+  ShieldAlert,
   TrendingDown,
   Activity,
   Clock3,
@@ -745,6 +746,38 @@ const DarkRisk360: React.FC = () => {
         .order('updated_at', { ascending: false })
         .limit(80);
       if (queryError) throw queryError;
+      return (data || []) as Array<Record<string, any>>;
+    },
+    staleTime: 60_000,
+  });
+
+  // Findings per email identity (per grafici e tabella)
+  const {
+    data: identityFindings = [],
+    isLoading: identityFindingsLoading,
+  } = useQuery({
+    queryKey: ['darkrisk360-identity-findings', organizationId],
+    enabled: Boolean(organizationId),
+    queryFn: async () => {
+      if (!organizationId) return [];
+      const { data, error: queryError } = await supabase
+        .from('darkrisk_findings' as any)
+        .select('id, title, finding_type, severity, confidence, risk_score, first_seen_at, last_seen_at, metadata, affected_selector_id')
+        .eq('organization_id', organizationId)
+        .ilike('finding_type', '%identity%')
+        .order('risk_score', { ascending: false })
+        .limit(500);
+      if (queryError) {
+        // Fallback: fetch intelx findings che contengono email selectors
+        const { data: fallbackData } = await supabase
+          .from('darkrisk_findings' as any)
+          .select('id, title, finding_type, severity, confidence, risk_score, first_seen_at, last_seen_at, metadata, affected_selector_id')
+          .eq('organization_id', organizationId)
+          .not('affected_selector_id', 'is', null)
+          .order('risk_score', { ascending: false })
+          .limit(500);
+        return (fallbackData || []) as Array<Record<string, any>>;
+      }
       return (data || []) as Array<Record<string, any>>;
     },
     staleTime: 60_000,
@@ -1906,19 +1939,138 @@ const DarkRisk360: React.FC = () => {
                         <p className="text-sm text-muted-foreground">Nessuna email monitorata. Inserisci un set iniziale per avviare controlli mirati.</p>
                       ) : (
                         <div className="space-y-2">
-                          {identityEmailSelectors.map((selector) => (
-                            <div key={String(selector.id)} className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-muted/20 px-3 py-2">
-                              <span className="text-sm font-medium">{String(selector.normalized_value || selector.value || '-')}</span>
-                              <div className="flex items-center gap-2">
-                                <Badge variant="outline">{String(selector.status || 'approved')}</Badge>
-                                <span className="text-xs text-muted-foreground">{formatDateTime(selector.updated_at)}</span>
+                          {identityEmailSelectors.map((selector) => {
+                            const selectorId = String(selector.id);
+                            const emailFindings = identityFindings.filter(
+                              (f) => String(f.affected_selector_id || '') === selectorId
+                            );
+                            const emailHigh = emailFindings.filter((f) => f.severity === 'high' || f.severity === 'critical').length;
+                            const emailMed = emailFindings.filter((f) => f.severity === 'medium').length;
+                            const emailLow = emailFindings.filter((f) => f.severity === 'low' || f.severity === 'info').length;
+                            return (
+                              <div key={selectorId} className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-2">
+                                <div className="flex items-center justify-between gap-3 flex-wrap">
+                                  <span className="text-sm font-medium">{String(selector.normalized_value || selector.value || '-')}</span>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <Badge variant="outline">{String(selector.status || 'approved')}</Badge>
+                                    {emailHigh > 0 && <Badge className="bg-red-600 text-white text-xs">HIGH {emailHigh}</Badge>}
+                                    {emailMed > 0 && <Badge className="bg-yellow-500 text-black text-xs">MED {emailMed}</Badge>}
+                                    {emailLow > 0 && <Badge variant="secondary" className="text-xs">LOW {emailLow}</Badge>}
+                                    {emailFindings.length === 0 && <Badge variant="outline" className="text-xs text-muted-foreground">Nessun finding</Badge>}
+                                    <span className="text-xs text-muted-foreground">{formatDateTime(selector.updated_at)}</span>
+                                  </div>
+                                </div>
+                                {emailFindings.length > 0 && (
+                                  <div className="rounded border border-border/40 overflow-auto max-h-52">
+                                    <table className="w-full text-xs">
+                                      <thead>
+                                        <tr className="bg-muted/40">
+                                          <th className="text-left px-2 py-1 font-medium">Sev</th>
+                                          <th className="text-left px-2 py-1 font-medium">Tipo</th>
+                                          <th className="text-left px-2 py-1 font-medium">Titolo</th>
+                                          <th className="text-left px-2 py-1 font-medium">Score</th>
+                                          <th className="text-left px-2 py-1 font-medium">Prima vista</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {emailFindings.slice(0, 20).map((f) => (
+                                          <tr key={String(f.id)} className="border-t border-border/30 hover:bg-muted/20">
+                                            <td className="px-2 py-1">
+                                              <span className={`font-bold ${f.severity === 'critical' || f.severity === 'high' ? 'text-red-400' : f.severity === 'medium' ? 'text-yellow-400' : 'text-muted-foreground'}`}>
+                                                {String(f.severity || 'info').toUpperCase()}
+                                              </span>
+                                            </td>
+                                            <td className="px-2 py-1 text-muted-foreground max-w-[100px] truncate">
+                                              {String(f.finding_type || '—').replace(/^intelx_/, '').replace(/_/g, ' ')}
+                                            </td>
+                                            <td className="px-2 py-1 max-w-[200px] truncate" title={String(f.title || '')}>
+                                              {String(f.title || '—').slice(0, 60)}
+                                            </td>
+                                            <td className="px-2 py-1 text-muted-foreground">{f.risk_score ?? '—'}</td>
+                                            <td className="px-2 py-1 text-muted-foreground whitespace-nowrap">
+                                              {f.first_seen_at ? new Date(String(f.first_seen_at)).toLocaleDateString('it-IT') : '—'}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                        {emailFindings.length > 20 && (
+                                          <tr>
+                                            <td colSpan={5} className="px-2 py-1 text-center text-muted-foreground italic">
+                                              … e altri {emailFindings.length - 20} findings
+                                            </td>
+                                          </tr>
+                                        )}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </CardContent>
                   </Card>
+
+                  {/* Grafici sintetici identity findings */}
+                  {identityFindings.length > 0 && (
+                    <Card className="border-border">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="flex items-center gap-2">
+                          <ShieldAlert className="w-4 h-4 text-red-400" />
+                          Distribuzione findings Identity
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {identityFindingsLoading ? (
+                          <p className="text-sm text-muted-foreground">Caricamento...</p>
+                        ) : (
+                          <div className="space-y-3">
+                            {/* Counts per severità */}
+                            <div className="grid grid-cols-4 gap-3">
+                              {(['critical', 'high', 'medium', 'low'] as const).map((sev) => {
+                                const cnt = identityFindings.filter((f) => f.severity === sev).length;
+                                const colorMap: Record<string, string> = {
+                                  critical: 'bg-red-600/15 border-red-500/30 text-red-300',
+                                  high: 'bg-orange-600/15 border-orange-500/30 text-orange-300',
+                                  medium: 'bg-yellow-600/15 border-yellow-500/30 text-yellow-300',
+                                  low: 'bg-blue-600/15 border-blue-500/30 text-blue-300',
+                                };
+                                return (
+                                  <div key={sev} className={`rounded-lg border p-3 text-center ${colorMap[sev]}`}>
+                                    <p className="text-2xl font-bold">{cnt}</p>
+                                    <p className="text-xs uppercase tracking-wide mt-1">{sev}</p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            {/* Barre per email */}
+                            {identityEmailSelectors.length > 0 && (
+                              <div className="space-y-1">
+                                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Findings per email</p>
+                                {identityEmailSelectors.map((selector) => {
+                                  const selectorId = String(selector.id);
+                                  const cnt = identityFindings.filter((f) => String(f.affected_selector_id || '') === selectorId).length;
+                                  const maxCnt = Math.max(1, ...identityEmailSelectors.map((s) =>
+                                    identityFindings.filter((f) => String(f.affected_selector_id || '') === String(s.id)).length
+                                  ));
+                                  const pct = Math.round((cnt / maxCnt) * 100);
+                                  return (
+                                    <div key={selectorId} className="flex items-center gap-3">
+                                      <span className="text-xs text-muted-foreground w-40 truncate">{String(selector.normalized_value || selector.value || '-')}</span>
+                                      <div className="flex-1 h-4 bg-muted/30 rounded overflow-hidden">
+                                        <div className="h-full bg-primary/60 rounded" style={{ width: `${pct}%` }} />
+                                      </div>
+                                      <span className="text-xs font-medium w-8 text-right">{cnt}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
                 </div>
               </TabsContent>
 
@@ -1983,17 +2135,17 @@ const DarkRisk360: React.FC = () => {
                               <div>
                                 <p className="text-sm font-semibold text-foreground">ESTESO · DTI ESTESO</p>
                                 <p className="text-xs text-muted-foreground">
-                                  Report finale unico: viene creato una sola volta e poi riutilizzato, senza duplicati a ogni scansione.
+                                  Report DTI Esteso: rigenerabile in qualsiasi momento con i dati più recenti.
                                 </p>
                               </div>
                               <Button
                                 variant="outline"
                                 size="sm"
-                                disabled={!organizationId || generateReportMutation.isPending || Boolean(reportRepository.extended)}
+                                disabled={!organizationId || generateReportMutation.isPending}
                                 onClick={() => generateReportMutation.mutate('extended')}
                               >
                                 <FileText className="w-4 h-4 mr-2" />
-                                {reportRepository.extended ? 'Esteso già generato' : 'Genera esteso'}
+                                {generateReportMutation.isPending ? 'Generazione...' : reportRepository.extended ? 'Rigenera esteso' : 'Genera esteso'}
                               </Button>
                             </div>
                             {reportRepository.extended ? (
