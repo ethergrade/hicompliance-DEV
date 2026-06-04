@@ -842,20 +842,22 @@ serve(async (req: Request) => {
 
     if (htmlUpload.error) throw htmlUpload.error;
 
-    // Save report snapshot
+    // Save report snapshot — report_json è NOT NULL, passiamo il summary del json
     const { data: snapshotRow, error: snapshotErr } = await adminClient
       .from('darkrisk_report_snapshots' as any)
       .insert({
         organization_id: orgId,
         tenant_id: orgId,
         scan_run_id: scanRunId,
-        title: `DTI Esteso Report — ${new Date().toLocaleDateString('it-IT')}`,
+        title: `HiConsole - DARKRISK360 - ${String((await adminClient.from('organizations' as any).select('name').eq('id', orgId).maybeSingle()).data?.name || orgId.slice(0, 8))} - ${now.toLocaleDateString('it-IT')}`,
         tier: 'extended',
         classification: 'confidential',
+        status: 'published',
         generated_at: now.toISOString(),
         html_storage_path: htmlPath,
         json_storage_path: jsonPath,
-        model_metadata: { generator: 'darkrisk-dti-esteso-report', version: '1.0' },
+        report_json: json,
+        model_metadata: { generator: 'darkrisk-dti-esteso-report', version: '1.1' },
       })
       .select('id')
       .single();
