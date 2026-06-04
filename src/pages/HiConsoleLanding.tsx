@@ -216,6 +216,37 @@ const HiConsoleLanding: React.FC = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Servizi HiSolution — subito sotto la Remediation, stesso contenitore */}
+        <div className="max-w-6xl mx-auto mt-10">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="h-px flex-1 bg-border/60" />
+            <Badge variant="secondary" className="shrink-0">Servizi HiSolution collegabili</Badge>
+            <div className="h-px flex-1 bg-border/60" />
+          </div>
+          <div className="text-center mb-6 space-y-1">
+            <h3 className="text-xl font-semibold">Integra l'intero ecosistema HiSolution</h3>
+            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
+              Collega i servizi gestiti alla console: stato in tempo reale, metriche, alert e correlazione log — tutto sotto un unico tetto.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {hiSolutionServices.map((s) => (
+              <Card key={s.name} className="relative overflow-hidden border-border/50 hover:border-primary/40 transition-colors group">
+                <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                <CardContent className="relative p-4 flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                    <s.icon className="w-4 h-4 text-primary" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-semibold text-sm">{s.name}</div>
+                    <div className="text-xs text-muted-foreground leading-relaxed mt-0.5">{s.desc}</div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
       </section>
 
       {/* True Risk Score */}
@@ -310,34 +341,6 @@ const HiConsoleLanding: React.FC = () => {
                 </Card>
               ))}
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* HiSolution services */}
-      <section className="bg-muted/20 border-y border-border/40 py-20">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-12 space-y-3">
-            <Badge variant="secondary">Servizi HiSolution collegabili</Badge>
-            <h2 className="text-3xl md:text-4xl font-bold">Integra l'intero ecosistema HiSolution</h2>
-            <p className="text-muted-foreground max-w-2xl mx-auto">
-              Collega i servizi gestiti HiSolution alla console: stato in tempo reale, metriche, alert e correlazione log.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-w-5xl mx-auto">
-            {hiSolutionServices.map((s) => (
-              <Card key={s.name} className="border-border/50 hover:border-primary/50 transition-colors">
-                <CardContent className="p-4 flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <s.icon className="w-5 h-5 text-primary" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-semibold text-sm">{s.name}</div>
-                    <div className="text-xs text-muted-foreground">{s.desc}</div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
           </div>
         </div>
       </section>
