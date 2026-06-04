@@ -333,7 +333,8 @@ export const AppSidebar: React.FC = () => {
               {adminNavigation.filter(item => {
                   // Capability-based gating (takes priority when capabilities data exists)
                   const hasCompanyMgmt = hasCapability('can_manage_companies');
-                  const hasRoleMgmt = hasCapability('can_manage_roles');
+                  // Role management is gated by can_manage_users (Luca's backend doesn't expose can_manage_roles)
+                  const hasUserMgmt = hasCapability('can_manage_users');
 
                   // Show "Selezione Clienti" only for sales/admin who can manage multiple clients
                   if (item.href === '/admin/clients') return canManageMultipleClients && hasCompanyMgmt;
@@ -341,8 +342,8 @@ export const AppSidebar: React.FC = () => {
                   if (item.href === '/admin/companies') return (isAdmin || isSuperAdmin) && hasCompanyMgmt;
                   // Show "Reportistica Aggregata" for admin/sales who can manage multiple clients
                   if (item.href === '/admin/reporting') return canManageMultipleClients;
-                  // Show "Gestione Ruoli" only with role management capability
-                  if (item.href === '/admin/role-settings') return (isAdmin || isSuperAdmin) && hasRoleMgmt;
+                  // Show "Gestione Ruoli" only with user management capability
+                  if (item.href === '/admin/role-settings') return (isAdmin || isSuperAdmin) && hasUserMgmt;
                   // Show other admin items only for admin/superadmin
                   return isAdmin || isSuperAdmin;
                 }).map((item) => {
