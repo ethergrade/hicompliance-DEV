@@ -94,7 +94,7 @@ const HiConsoleLanding: React.FC = () => {
       </header>
 
       {/* Hero */}
-      <section className="container mx-auto px-4 py-20 md:py-28">
+      <section className="container mx-auto px-4 pt-16 pb-10 md:pt-20 md:pb-12">
         <div className="max-w-4xl mx-auto text-center space-y-6">
           <Badge variant="outline" className="px-3 py-1">
             <Zap className="w-3 h-3 mr-1.5 text-primary" />
@@ -127,7 +127,7 @@ const HiConsoleLanding: React.FC = () => {
               </Button>
             </a>
           </div>
-          <div className="flex flex-wrap items-center justify-center gap-3 pt-8">
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-4">
             <span className="flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-400">
               <Shield className="w-3.5 h-3.5" />NIS2 ready
             </span>
@@ -145,7 +145,7 @@ const HiConsoleLanding: React.FC = () => {
       </section>
 
       {/* Modules */}
-      <section id="moduli" className="container mx-auto px-4 py-16">
+      <section id="moduli" className="container mx-auto px-4 pt-10 pb-16">
         <div className="text-center mb-12 space-y-3">
           <Badge variant="secondary" className="text-sm px-3 py-1">I moduli integrabili</Badge>
           <h2 className="text-3xl md:text-5xl font-bold">I moduli che puoi attivare</h2>
