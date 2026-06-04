@@ -43,6 +43,10 @@ export const useCriticalInfrastructure = () => {
   }, [assets]);
 
   const addAsset = useCallback(async () => {
+    if (clientLoading) {
+      toast.info('Caricamento organizzazione in corso...');
+      return null;
+    }
     if (!clientOrgId) {
       toast.error('Organizzazione non trovata');
       return null;

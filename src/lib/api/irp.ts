@@ -141,12 +141,11 @@ export const irpApi = {
 
   // ─── IRP Document Export ─────────────────────────────────────────────────
 
-  /** Export the IRP document as DOCX blob */
+  /** Export the IRP document as DOCX blob (uses cookie-based auth) */
   async exportDocument(companyId: string, companyName: string, _g?: string | null): Promise<void> {
-    const token = localStorage.getItem('auth_token');
     const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/companies/${companyId}/irp/export`, {
+      credentials: 'include', // Cookie-based auth - no manual Authorization header
       headers: {
-        Authorization: `Bearer ${token}`,
         'X-Group-Id': _g || companyId,
       },
     });

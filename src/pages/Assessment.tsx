@@ -394,6 +394,22 @@ const Assessment: React.FC = () => {
     triggerAutoSave();
   }, [isReadOnlyView, orgId, user, triggerAutoSave]);
 
+  // Flush pending saves before unload/page navigation
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (snapshotTimerRef.current) {
+        // Force immediate save by clearing timeout and triggering sync save
+        clearTimeout(snapshotTimerRef.current);
+        snapshotTimerRef.current = null;
+        triggerAutoSave(); // Trigger immediate save
+        // Note: Can't make async operation sync, but we clear the timer so it won't be lost
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [triggerAutoSave]);
+
   // Compute counts per category from responses
   const getCategoryCounts = useCallback((categoryName: string) => {
     const cat = (v2Categories.length > 0 ? v2Categories : []).find(c => c.name === categoryName);
@@ -646,12 +662,17 @@ const Assessment: React.FC = () => {
   }, [answeredQuestions, totalQuestions, isReadOnlyView, lastSaved, selectedOrganization?.name]);
 
   const continueToNextCategory = useCallback((categoryName: string) => {
-    const currentIndex = assessmentCategories.findIndex(category => category.name === categoryName);
+    // Use filteredAndSortedCategories for navigation to match rendered order
+    const currentIndex = filteredAndSortedCategories.findIndex(category => category.name === categoryName);
     const nextIndex = currentIndex + 1;
-    if (currentIndex === -1 || nextIndex >= assessmentCategories.length) return;
+    if (currentIndex === -1 || nextIndex >= filteredAndSortedCategories.length) return;
 
-    selectGuidedCategory(nextIndex);
-  }, [assessmentCategories, selectGuidedCategory]);
+    const nextCategory = filteredAndSortedCategories[nextIndex];
+    const nextCanonicalIndex = assessmentCategories.findIndex(category => category.name === nextCategory.name);
+    if (nextCanonicalIndex !== -1) {
+      selectGuidedCategory(nextCanonicalIndex);
+    }
+  }, [filteredAndSortedCategories, assessmentCategories, selectGuidedCategory]);
 
   return (
     <DashboardLayout>
