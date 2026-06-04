@@ -1233,18 +1233,39 @@ serve(async (req: Request) => {
     // Parse body first so we can use it in both cron and user paths
     const body = await req.json().catch(() => ({}));
 
-    // ── Cron bypass: internal secret allows automated calls without user session ──
+    // ── Auth: cron secret, service role bearer, o user session ──
     const cronSecretHeader = req.headers.get('x-darkrisk-esteso-cron-secret');
+    const authorizationHeader = req.headers.get('Authorization') || '';
+    const bearerToken = authorizationHeader.replace(/^Bearer\s+/i, '').trim();
+
     const isCronMode = Boolean(
       cronSecretHeader
       && DARKRISK_INTERNAL_SECRET
       && cronSecretHeader === DARKRISK_INTERNAL_SECRET,
     );
 
+    // Service role: accetta sia JWT legacy (role=service_role nel payload) che sb_secret_* format
+    const isServiceRoleMode = (() => {
+      if (!bearerToken) return false;
+      // Check 1: confronto diretto con SERVICE_ROLE (funziona per sb_secret_* auto-injected)
+      if (SERVICE_ROLE && bearerToken === SERVICE_ROLE) return true;
+      // Check 2: JWT decode per chiavi legacy JWT con role=service_role nel payload
+      try {
+        const parts = bearerToken.split('.');
+        if (parts.length !== 3) return false;
+        const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
+        const payload = JSON.parse(atob(padded));
+        return payload?.role === 'service_role';
+      } catch {
+        return false;
+      }
+    })();
+
     let actorUserId: string;
 
-    if (isCronMode) {
-      actorUserId = 'system:darkrisk-esteso-cron';
+    if (isCronMode || isServiceRoleMode) {
+      actorUserId = isCronMode ? 'system:darkrisk-esteso-cron' : 'system:service-role';
     } else {
       const { data: authData, error: authError } = await userClient.auth.getUser();
       if (authError || !authData.user) return jsonResponse({ ok: false, error: 'Unauthorized' }, 401);
@@ -1256,7 +1277,7 @@ serve(async (req: Request) => {
       }
       assertCustomerAccess(caller, normalizeText(String(body?.customer_id || caller.organizationId || '')));
     }
-    // ── End cron bypass ──────────────────────────────────────────────────────────
+    // ── End auth ─────────────────────────────────────────────────────────────────
 
     const requestedCustomerId = normalizeText(String(body?.customer_id || ''));
     if (!requestedCustomerId) {

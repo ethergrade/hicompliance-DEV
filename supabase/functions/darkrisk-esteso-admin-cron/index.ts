@@ -47,18 +47,6 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   if (req.method !== 'POST') return jsonResponse({ ok: false, error: 'Method not allowed' }, 405);
 
-  // Auth: secret interno o service role
-  const cronSecret = req.headers.get('x-darkrisk-esteso-cron-secret');
-  const authHeader = req.headers.get('Authorization') || '';
-  const bearerKey = authHeader.replace(/^Bearer\s+/i, '').trim();
-
-  const isTrustedCron = Boolean(DARKRISK_INTERNAL_SECRET && cronSecret && cronSecret === DARKRISK_INTERNAL_SECRET);
-  const isTrustedServiceRole = Boolean(SERVICE_ROLE && bearerKey === SERVICE_ROLE);
-
-  if (!isTrustedCron && !isTrustedServiceRole) {
-    return jsonResponse({ ok: false, error: 'Unauthorized: cron secret required' }, 401);
-  }
-
   if (!SUPABASE_URL || !SERVICE_ROLE) {
     return jsonResponse({ ok: false, error: 'Supabase credentials not configured' }, 503);
   }
@@ -66,6 +54,35 @@ serve(async (req: Request) => {
   const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE, {
     auth: { persistSession: false },
   });
+
+  // Auth: secret interno o service role o db_trigger_id (one-shot nonce da darkrisk360_scan_triggers)
+  const cronSecret = req.headers.get('x-darkrisk-esteso-cron-secret');
+  const authHeader = req.headers.get('Authorization') || '';
+  const bearerKey = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+  let body: Record<string, unknown> = {};
+  try { body = await req.json(); } catch { /* ok, body opzionale */ }
+
+  const dbTriggerId = String(body?.db_trigger_id || '').trim();
+
+  const isTrustedCron = Boolean(DARKRISK_INTERNAL_SECRET && cronSecret && cronSecret === DARKRISK_INTERNAL_SECRET);
+  const isTrustedServiceRole = Boolean(SERVICE_ROLE && bearerKey === SERVICE_ROLE);
+
+  // db_trigger_id: nonce one-shot inserito via SQL con service_role (sicuro: richiede accesso DB)
+  let isTrustedDbNonce = false;
+  if (!isTrustedCron && !isTrustedServiceRole && dbTriggerId) {
+    const { data: nonceRow } = await adminClient
+      .from('darkrisk360_scan_triggers' as any)
+      .select('id, status')
+      .eq('id', dbTriggerId)
+      .eq('status', 'pending')
+      .maybeSingle();
+    isTrustedDbNonce = Boolean(nonceRow);
+  }
+
+  if (!isTrustedCron && !isTrustedServiceRole && !isTrustedDbNonce) {
+    return jsonResponse({ ok: false, error: 'Unauthorized: cron secret required' }, 401);
+  }
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -100,8 +117,28 @@ serve(async (req: Request) => {
       .filter(Boolean),
   ));
 
-  // Merge: unifica profili esteso + entitlements abilitati
-  const allCandidates = Array.from(new Set([...estosoOrgIds, ...allEnabledOrgIds]));
+  // 3. Raccoglie trigger manuali one-shot da darkrisk360_scan_triggers
+  const { data: pendingTriggers } = await adminClient
+    .from('darkrisk360_scan_triggers' as any)
+    .select('id, organization_id, trigger_type, include_surface_sync')
+    .eq('status', 'pending')
+    .order('requested_at', { ascending: true })
+    .limit(20);
+
+  const manualOrgIds = ((pendingTriggers || []) as Array<Record<string, unknown>>)
+    .map((t) => String(t.organization_id || ''))
+    .filter(Boolean);
+
+  // Merge: unifica profili esteso + entitlements abilitati + trigger manuali
+  const allCandidates = Array.from(new Set([...estosoOrgIds, ...allEnabledOrgIds, ...manualOrgIds]));
+
+  // Segna i trigger come picked_up
+  if ((pendingTriggers || []).length > 0) {
+    await adminClient
+      .from('darkrisk360_scan_triggers' as any)
+      .update({ status: 'picked_up', picked_up_at: new Date().toISOString() })
+      .eq('status', 'pending');
+  }
 
   if (allCandidates.length === 0) {
     return jsonResponse({ ok: true, triggered: 0, message: 'No eligible clients for cron run.' });
