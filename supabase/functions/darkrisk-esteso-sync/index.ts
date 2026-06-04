@@ -97,9 +97,10 @@ const INTELX_PHONEBOOK_MAX_TERMS = Math.max(
   1,
   Math.min(20, Number(Deno.env.get('DARKRISK_ESTESO_PHONEBOOK_MAX_TERMS') || 8)),
 );
+// Timeout ridotto: 5 domini × 8s = 40s max — permette completamento entro il limite Supabase (150s)
 const SURFACE_AUTOSTART_TIMEOUT_MS = Math.max(
-  12_000,
-  Math.min(90_000, Number(Deno.env.get('SURFACESCAN_SCOPE_AUTOSTART_TIMEOUT_MS') || 35_000)),
+  5_000,
+  Math.min(15_000, Number(Deno.env.get('SURFACESCAN_SCOPE_AUTOSTART_TIMEOUT_MS') || 8_000)),
 );
 
 type Json = Record<string, unknown>;
@@ -1163,11 +1164,11 @@ async function maybeAutoQueueSurfaceScope(
         signal: ctrl.signal,
       });
       clearTimeout(timeout);
-      const payload = await response.json().catch(() => ({}));
+      let payload: Record<string, unknown> = {};
+      try { payload = await response.json(); } catch { /* body non-JSON, ignora */ }
       if (response.ok && !payload?.error) {
         queuedClassic += 1;
       } else {
-        // Log dettagliato per diagnosi
         console.warn(
           `[maybeAutoQueueSurfaceScope] target=${item.target} HTTP=${response.status} error=${
             String(payload?.error || payload?.code || 'unknown').slice(0, 200)
@@ -1244,28 +1245,10 @@ serve(async (req: Request) => {
       && cronSecretHeader === DARKRISK_INTERNAL_SECRET,
     );
 
-    // Service role: accetta sia JWT legacy (role=service_role nel payload) che sb_secret_* format
-    const isServiceRoleMode = (() => {
-      if (!bearerToken) return false;
-      // Check 1: confronto diretto con SERVICE_ROLE (funziona per sb_secret_* auto-injected)
-      if (SERVICE_ROLE && bearerToken === SERVICE_ROLE) return true;
-      // Check 2: JWT decode per chiavi legacy JWT con role=service_role nel payload
-      try {
-        const parts = bearerToken.split('.');
-        if (parts.length !== 3) return false;
-        const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-        const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
-        const payload = JSON.parse(atob(padded));
-        return payload?.role === 'service_role';
-      } catch {
-        return false;
-      }
-    })();
-
     let actorUserId: string;
 
-    if (isCronMode || isServiceRoleMode) {
-      actorUserId = isCronMode ? 'system:darkrisk-esteso-cron' : 'system:service-role';
+    if (isCronMode) {
+      actorUserId = 'system:darkrisk-esteso-cron';
     } else {
       const { data: authData, error: authError } = await userClient.auth.getUser();
       if (authError || !authData.user) return jsonResponse({ ok: false, error: 'Unauthorized' }, 401);
@@ -1284,8 +1267,9 @@ serve(async (req: Request) => {
       return jsonResponse({ ok: false, error: 'customer_id is required' }, 400);
     }
 
+    // In cron mode: permetti al body di specificare 'manual' per chiamate interne privilegiate
     const triggerType = isCronMode
-      ? 'cron'
+      ? (normalizeText(String(body?.trigger_type || '')) === 'manual' ? 'manual' : 'cron')
       : normalizeText(String(body?.trigger_type || 'manual'));
 
     if (!isCronMode && triggerType !== 'manual') {
@@ -1513,6 +1497,13 @@ serve(async (req: Request) => {
     const scopeJobIds = scopeJobs.map((row) => String(row.id || '')).filter(Boolean);
     const sourceScanJobId = scopeJobIds[0] || null;
 
+    // requested_by è UUID nel DB — passa null per chiamate di sistema (cron/service)
+    const requestedByUuid = (() => {
+      if (!actorUserId) return null;
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      return UUID_RE.test(actorUserId) ? actorUserId : null;
+    })();
+
     const scanRunInsert = await adminClient
       .from('darkrisk_scan_runs' as any)
       .insert({
@@ -1521,7 +1512,7 @@ serve(async (req: Request) => {
         tier: 'extended',
         status: 'running',
         trigger_type: 'darkrisk_esteso_manual',
-        requested_by: actorUserId,
+        requested_by: requestedByUuid,
         surface_scan_job_id: sourceScanJobId,
         started_at: new Date().toISOString(),
         sources: ['surfacescan360', 'intelx'],
