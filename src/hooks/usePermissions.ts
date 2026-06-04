@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { useCapabilities } from '@/hooks/useCapabilities';
 import { ROUTE_TO_MODULE, PermAction } from '@/lib/permissions/catalog';
 
 type PermMap = Record<string, any>;
@@ -29,6 +30,7 @@ export function usePermissions() {
 
   const perms: PermMap = data ?? {};
   const accountDisabled = perms?.__disabled === true;
+  const { hasCapability, hasAllCapabilities, hasAnyCapability } = useCapabilities();
 
   const check = (module: string, subsection: string | undefined, action: PermAction): boolean => {
     if (bypass) return true;
@@ -68,5 +70,8 @@ export function usePermissions() {
     can: check,
     canViewRoute,
     canExportRoute,
+    hasCapability,
+    hasAllCapabilities,
+    hasAnyCapability,
   };
 }
