@@ -148,7 +148,7 @@ export const AppSidebar: React.FC = () => {
   const hicomplianceOn = forceDemoAccessForSalesCliente1 ? true : !!orgFlags?.hicompliance_enabled;
   const surfaceScanOn = !!orgFlags?.surface_scan360_enabled;
   const darkRiskOn = !!orgFlags?.dark_risk360_enabled;
-  const { canViewRoute } = usePermissions();
+  const { canViewRoute, hasCapability } = usePermissions();
 
   const isFeatureAllowed = (href: string) => {
     // SuperAdmin/Sales without a selected org see everything (console view)
@@ -331,10 +331,18 @@ export const AppSidebar: React.FC = () => {
             <SidebarGroupContent>
               <SidebarMenu>
               {adminNavigation.filter(item => {
+                  // Capability-based gating (takes priority when capabilities data exists)
+                  const hasCompanyMgmt = hasCapability('can_manage_companies');
+                  const hasRoleMgmt = hasCapability('can_manage_roles');
+
                   // Show "Selezione Clienti" only for sales/admin who can manage multiple clients
-                  if (item.href === '/admin/clients') return canManageMultipleClients;
+                  if (item.href === '/admin/clients') return canManageMultipleClients && hasCompanyMgmt;
+                  // Show "Aziende & Clienti" only with company management capability
+                  if (item.href === '/admin/companies') return (isAdmin || isSuperAdmin) && hasCompanyMgmt;
                   // Show "Reportistica Aggregata" for admin/sales who can manage multiple clients
                   if (item.href === '/admin/reporting') return canManageMultipleClients;
+                  // Show "Gestione Ruoli" only with role management capability
+                  if (item.href === '/admin/role-settings') return (isAdmin || isSuperAdmin) && hasRoleMgmt;
                   // Show other admin items only for admin/superadmin
                   return isAdmin || isSuperAdmin;
                 }).map((item) => {
