@@ -7,7 +7,8 @@ import {
   Shield, Globe, Eye, AlertTriangle, ClipboardCheck, Bot, ArrowRight,
   Server, Lock, Mail, Monitor, Activity, Search, Smartphone, FileCheck,
   CheckCircle2, Network, Zap, LineChart, Users, BookOpen, Siren,
-  Wrench, Wallet, Gauge, Target, TrendingUp, CalendarClock
+  Wrench, Wallet, Gauge, Target, TrendingUp, CalendarClock,
+  Award, MapPin, Layers
 } from 'lucide-react';
 import logoHi from '@/assets/logo-hi.png';
 
@@ -16,7 +17,7 @@ const modules = [
     icon: ClipboardCheck,
     title: 'HiCompliance',
     tag: 'Assessment NIST / NIS2 / ISO 27001',
-    desc: 'Questionario guidato di 132 controlli mappati su NIST CSF, NIS2 e ISO 27001. Genera Gap Analysis, snapshot storici per misurare i miglioramenti nel tempo, report PDF ready-to-audit e remediation prioritizzata per criticità e impatto.',
+    desc: 'Questionario guidato di 132 controlli mappati su NIST CSF, NIS2 e ISO 27001. Genera Gap Analysis, snapshot storici per misurare i miglioramenti nel tempo, report PDF pronti per audit interni ed esterni, e remediation prioritizzata per criticità e impatto.',
     bullets: ['132 controlli con scoring per area', 'Snapshot automatici per Gap/Gain Analysis', 'Report PDF e radar di conformità in tempo reale'],
     color: 'from-blue-500/20 to-blue-700/10',
   },
@@ -45,6 +46,16 @@ const irpFeatures = [
   { icon: Users, title: 'Governance & Rubrica', desc: 'CISO sostituto, ruoli IRP, contatti emergenza e fornitori esterni. Rubrica centralizzata riutilizzata nei playbook.' },
   { icon: FileCheck, title: 'Documento IRP esteso', desc: 'Generazione DOCX dinamica con docxtemplater: copertina, governance, classificazione NIS2, asset critici, playbook, allegati. Pronto per il deposito ACN.' },
   { icon: Siren, title: 'Eventi compliance', desc: 'Log temporale degli eventi (incident, esercitazioni, audit) con archiviazione automatica dei playbook eseguiti e tracciabilità completa.' },
+];
+
+const partnerLogos = [
+  { name: 'Sophos',      src: 'https://logo.clearbit.com/sophos.com' },
+  { name: 'Bitdefender', src: 'https://logo.clearbit.com/bitdefender.com' },
+  { name: 'ESET',        src: 'https://logo.clearbit.com/eset.com' },
+  { name: 'Fortinet',    src: 'https://logo.clearbit.com/fortinet.com' },
+  { name: 'Darktrace',   src: 'https://logo.clearbit.com/darktrace.com' },
+  { name: 'Domotz',      src: 'https://logo.clearbit.com/domotz.com' },
+  { name: 'ServiceNow',  src: 'https://logo.clearbit.com/servicenow.com' },
 ];
 
 const hiSolutionServices = [
@@ -95,10 +106,12 @@ const HiConsoleLanding: React.FC = () => {
               compliance, attack surface e incident response
             </span>
           </h1>
-          <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            <strong>HiSolution Console</strong> è la piattaforma unificata HiCompliance per gestire IT e cybersecurity dei tuoi clienti:
-            assessment normativi, monitoraggio della superficie d'attacco, threat intelligence sul dark web,
-            risposta agli incidenti e <strong>remediation pianificata con budget</strong> — tutto in un unico posto.
+          <p className="text-lg md:text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
+            <strong>HiSolution Console</strong> è la piattaforma unificata HiSolution per gestire la serenità tecnologica.{' '}
+            IT e cybersecurity: assessment normativi, monitoraggio della superficie d'attacco, threat intelligence sul dark web,
+            risposta agli incidenti, remediation pianificata con budget, Endpoint e Firewall Dashboard,
+            monitoraggio dei dispositivi, patch e log management, SIEM/SOAR con PowerQuery semplificato.{' '}
+            <strong>Tutto in un unico posto.</strong>
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
             <Link to="/auth?role=admin">
@@ -114,11 +127,19 @@ const HiConsoleLanding: React.FC = () => {
               </Button>
             </a>
           </div>
-          <div className="flex flex-wrap items-center justify-center gap-4 pt-8 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />NIS2 ready</span>
-            <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />ISO 27001 compliant</span>
-            <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />Multi-tenant RLS</span>
-            <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />Made in Italy</span>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-8">
+            <span className="flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-400">
+              <Shield className="w-3.5 h-3.5" />NIS2 ready
+            </span>
+            <span className="flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-400">
+              <Award className="w-3.5 h-3.5" />ISO 27001 compliant
+            </span>
+            <span className="flex items-center gap-2 rounded-full border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-xs font-medium text-purple-400">
+              <Layers className="w-3.5 h-3.5" />Multi-tenant RLS
+            </span>
+            <span className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400">
+              <MapPin className="w-3.5 h-3.5" />Made in Italy
+            </span>
           </div>
         </div>
       </section>
@@ -177,7 +198,7 @@ const HiConsoleLanding: React.FC = () => {
                 <p className="text-sm text-muted-foreground leading-relaxed max-w-3xl">
                   Trasforma findings e gap di compliance in un <strong>piano operativo con tempi, owner e costi</strong>.
                   Ogni intervento ha priorità, effort stimato, budget allocato e stato avanzamento.
-                  Vedi a colpo d'occhio quanto stai investendo, quanto rischio stai abbattendo e quando sarai conforme.
+                  Vedi a colpo d'occhio quanto stai investendo, quanto rischio stai abbattendo e a che punto sei nel percorso verso l'obiettivo.
                 </p>
                 <ul className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm pt-1">
                   <li className="flex items-start gap-2"><CalendarClock className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" /><span>Roadmap con milestone trimestrali</span></li>
@@ -316,6 +337,49 @@ const HiConsoleLanding: React.FC = () => {
                   </div>
                 </CardContent>
               </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Partner Integrations */}
+      <section className="py-16 bg-muted/10 border-y border-border/40 overflow-hidden">
+        <style>{`
+          @keyframes marquee-logos {
+            from { transform: translateX(0); }
+            to   { transform: translateX(-50%); }
+          }
+          .logos-marquee { animation: marquee-logos 28s linear infinite; }
+          .logos-marquee:hover { animation-play-state: paused; }
+        `}</style>
+        <div className="container mx-auto px-4 text-center mb-10 space-y-3">
+          <Badge variant="secondary">Ecosistema tecnologico</Badge>
+          <h2 className="text-2xl md:text-3xl font-bold">Le nostre integrazioni</h2>
+          <p className="text-muted-foreground max-w-2xl mx-auto text-sm leading-relaxed">
+            HiSolution Console orchestra i principali vendor di cybersecurity e IT service management:
+            Sophos, BitDefender, ESET, Fortinet, Darktrace, Domotz, ServiceNow e altri.
+            Un'unica piattaforma per leggere lo stato reale di tutte le protezioni dei tuoi clienti.
+          </p>
+        </div>
+        <div className="overflow-hidden select-none">
+          <div className="logos-marquee flex gap-8 items-center w-max">
+            {[...partnerLogos, ...partnerLogos].map((logo, i) => (
+              <div
+                key={i}
+                className="flex flex-col items-center gap-2.5 bg-background border border-border/50 rounded-2xl px-8 py-5 min-w-[130px] shadow-sm"
+              >
+                <img
+                  src={logo.src}
+                  alt={logo.name}
+                  className="h-9 w-24 object-contain opacity-60 hover:opacity-100 transition-opacity duration-300"
+                  onError={(e) => {
+                    const img = e.target as HTMLImageElement;
+                    img.style.display = 'none';
+                    if (img.nextSibling) (img.nextSibling as HTMLElement).style.display = 'block';
+                  }}
+                />
+                <span className="text-xs font-semibold text-muted-foreground tracking-wide">{logo.name}</span>
+              </div>
             ))}
           </div>
         </div>
