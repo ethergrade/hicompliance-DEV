@@ -765,15 +765,45 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   if (req.method !== 'POST') return jsonResponse({ ok: false, error: 'Method not allowed' }, 405);
 
-  // Auth: user JWT or internal secret
+  // Auth: internal secret, service role bearer, db_trigger_id nonce, o user JWT
   const internalSecretHeader = req.headers.get('x-darkrisk-internal-secret') || req.headers.get('x-darkrisk-esteso-cron-secret');
   const isTrustedInternal = Boolean(INTERNAL_SECRET && internalSecretHeader === INTERNAL_SECRET);
+
+  if (!SUPABASE_URL || !SERVICE_ROLE) {
+    return jsonResponse({ ok: false, error: 'Supabase credentials not configured' }, 503);
+  }
+
+  const body = await req.json().catch(() => ({}));
+  const orgId = String(body?.customer_id || body?.organization_id || '').trim();
+  const scanRunId = String(body?.scan_run_id || '').trim() || null;
+  const dbTriggerId = String(body?.db_trigger_id || '').trim();
 
   if (!isTrustedInternal) {
     const authHeader = req.headers.get('Authorization') || '';
     const bearerKey = authHeader.replace(/^Bearer\s+/i, '').trim();
     const isTrustedService = Boolean(SERVICE_ROLE && bearerKey === SERVICE_ROLE);
-    if (!isTrustedService) {
+
+    // db_trigger_id: nonce one-shot su darkrisk360_scan_triggers (inserito via SQL con service_role)
+    let isTrustedDbNonce = false;
+    if (!isTrustedService && dbTriggerId) {
+      const adminClientCheck = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+      const { data: nonceRow } = await adminClientCheck
+        .from('darkrisk360_scan_triggers' as any)
+        .select('id, status, organization_id')
+        .eq('id', dbTriggerId)
+        .eq('status', 'pending')
+        .maybeSingle();
+      if (nonceRow && (!orgId || String((nonceRow as any).organization_id) === orgId)) {
+        isTrustedDbNonce = true;
+        // Consuma il nonce
+        await adminClientCheck
+          .from('darkrisk360_scan_triggers' as any)
+          .update({ status: 'picked_up', picked_up_at: new Date().toISOString() })
+          .eq('id', dbTriggerId);
+      }
+    }
+
+    if (!isTrustedService && !isTrustedDbNonce) {
       // Check user JWT
       const anonKey = String(Deno.env.get('SUPABASE_ANON_KEY') || '').trim();
       const userClient = createClient(SUPABASE_URL, anonKey, {
@@ -784,14 +814,6 @@ serve(async (req: Request) => {
       if (authError || !authData.user) return jsonResponse({ ok: false, error: 'Unauthorized' }, 401);
     }
   }
-
-  if (!SUPABASE_URL || !SERVICE_ROLE) {
-    return jsonResponse({ ok: false, error: 'Supabase credentials not configured' }, 503);
-  }
-
-  const body = await req.json().catch(() => ({}));
-  const orgId = String(body?.customer_id || body?.organization_id || '').trim();
-  const scanRunId = String(body?.scan_run_id || '').trim() || null;
 
   if (!orgId) return jsonResponse({ ok: false, error: 'customer_id required' }, 400);
 
