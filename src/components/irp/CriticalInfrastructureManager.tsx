@@ -145,7 +145,7 @@ export const CriticalInfrastructureManager = () => {
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg">Asset Critici</CardTitle>
-            <Button onClick={addAsset} size="sm">
+            <Button onClick={addAsset} size="sm" disabled={loading}>
               <Plus className="h-4 w-4 mr-2" />
               Aggiungi Asset
             </Button>
