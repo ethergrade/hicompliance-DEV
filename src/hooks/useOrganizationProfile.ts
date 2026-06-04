@@ -222,6 +222,27 @@ export function useOrganizationProfile() {
     await saveProfile(currentData);
   }, [organizationId, saveProfile]);
 
+  // ─── Before unload handler to prevent data loss ────────────────────────
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const currentData = latestFormDataRef.current;
+      const currentHash = JSON.stringify(currentData);
+      const hasPendingChanges = currentHash !== lastPersistedHashRef.current;
+
+      if (hasPendingChanges) {
+        // Trigger save (may not complete before page unload)
+        void saveProfileRef.current(currentData);
+        // Show warning
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
   // ─── Update field with auto-save ───────────────────────────────────────
 
   const updateField = useCallback((field: keyof ProfileFormData, value: string | NIS2Classification | null) => {
