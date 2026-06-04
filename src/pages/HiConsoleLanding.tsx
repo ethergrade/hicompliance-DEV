@@ -49,13 +49,13 @@ const irpFeatures = [
 ];
 
 const partnerLogos = [
-  { name: 'Sophos',      src: 'https://logo.clearbit.com/sophos.com' },
-  { name: 'Bitdefender', src: 'https://logo.clearbit.com/bitdefender.com' },
-  { name: 'ESET',        src: 'https://logo.clearbit.com/eset.com' },
-  { name: 'Fortinet',    src: 'https://logo.clearbit.com/fortinet.com' },
-  { name: 'Darktrace',   src: 'https://logo.clearbit.com/darktrace.com' },
-  { name: 'Domotz',      src: 'https://logo.clearbit.com/domotz.com' },
-  { name: 'ServiceNow',  src: 'https://logo.clearbit.com/servicenow.com' },
+  { name: 'Sophos',      src: '/logos/sophos.svg' },
+  { name: 'Bitdefender', src: '/logos/bitdefender.svg' },
+  { name: 'ESET',        src: '/logos/eset.svg' },
+  { name: 'Fortinet',    src: '/logos/fortinet.svg' },
+  { name: 'Darktrace',   src: '/logos/darktrace.png' },
+  { name: 'Domotz',      src: '/logos/domotz.svg' },
+  { name: 'ServiceNow',  src: '/logos/servicenow.svg' },
 ];
 
 const hiSolutionServices = [
@@ -366,19 +366,28 @@ const HiConsoleLanding: React.FC = () => {
             {[...partnerLogos, ...partnerLogos].map((logo, i) => (
               <div
                 key={i}
-                className="flex flex-col items-center gap-2.5 bg-background border border-border/50 rounded-2xl px-8 py-5 min-w-[130px] shadow-sm"
+                className="flex flex-col items-center gap-3 rounded-2xl px-8 py-5 min-w-[140px] shadow-sm transition-all duration-300 hover:scale-105"
+                style={{ background: '#ffffff', border: '1px solid rgba(255,255,255,0.15)' }}
               >
                 <img
                   src={logo.src}
                   alt={logo.name}
-                  className="h-9 w-24 object-contain opacity-60 hover:opacity-100 transition-opacity duration-300"
+                  className="h-8 w-28 object-contain"
+                  style={{ filter: 'none' }}
                   onError={(e) => {
                     const img = e.target as HTMLImageElement;
                     img.style.display = 'none';
-                    if (img.nextSibling) (img.nextSibling as HTMLElement).style.display = 'block';
+                    const fallback = img.nextElementSibling as HTMLElement;
+                    if (fallback) fallback.style.display = 'flex';
                   }}
                 />
-                <span className="text-xs font-semibold text-muted-foreground tracking-wide">{logo.name}</span>
+                <span
+                  className="text-xs font-bold tracking-wide"
+                  style={{ display: 'none', color: '#333', alignItems: 'center' }}
+                >
+                  {logo.name}
+                </span>
+                <span className="text-[10px] font-medium text-gray-500 tracking-widest uppercase">{logo.name}</span>
               </div>
             ))}
           </div>
