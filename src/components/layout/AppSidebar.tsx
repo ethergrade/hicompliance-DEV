@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
 import {
   LayoutDashboard,
   Shield,
@@ -27,6 +28,7 @@ import {
   PieChart,
   ChevronDown,
   Bot,
+  KeyRound,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -44,6 +46,7 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { LogoutButton } from '@/components/auth/LogoutButton';
+import { ChangePasswordDialog } from '@/components/auth/ChangePasswordDialog';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useRolePermissions } from '@/hooks/useRolePermissions';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -107,6 +110,7 @@ export const AppSidebar: React.FC = () => {
   const { isSuperAdmin, isSales } = useUserRoles();
   const { isModuleEnabled } = useRolePermissions();
   const { selectedOrganization, canManageMultipleClients } = useClientContext();
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
 
   const isAdmin = userProfile?.user_type === 'admin';
   const isConsoleUser = isSuperAdmin || isSales;
@@ -376,6 +380,15 @@ export const AppSidebar: React.FC = () => {
                 {isSuperAdmin ? 'Super Admin' : isSales ? 'Sales' : isAdmin ? 'Amministratore' : 'Cliente'}
               </p>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full text-sidebar-foreground/80 border-sidebar-border hover:bg-sidebar-accent hover:text-sidebar-foreground"
+              onClick={() => setPasswordDialogOpen(true)}
+            >
+              <KeyRound className="w-4 h-4 mr-2" />
+              Cambia Password
+            </Button>
             <LogoutButton 
               variant="outline" 
               size="sm" 
@@ -393,6 +406,8 @@ export const AppSidebar: React.FC = () => {
           />
         )}
       </SidebarFooter>
+
+      <ChangePasswordDialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen} />
     </Sidebar>
   );
 };
