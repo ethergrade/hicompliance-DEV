@@ -1,4 +1,5 @@
 import jsPDF from 'jspdf';
+import { COVER_BG_JPEG_B64, HISOLUTION_LOGO_PNG_B64 } from './reportCoverAssets';
 
 interface RemediationTask {
   id: string;
@@ -598,43 +599,85 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     y += 14;
   };
 
-  // ===== COVER =====
-  doc.setFillColor(15, 23, 42);
-  doc.rect(0, 0, w, 180, 'F');
-  doc.setFillColor(BRAND.r, BRAND.g, BRAND.b);
-  doc.rect(0, 175, w, 5, 'F');
-  doc.setTextColor(255, 255, 255);
-  drawHiSolutionLogo(doc, margin, 26);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.setTextColor(180, 200, 230);
-  doc.text('HiSolution', margin + 24, 39);
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text(getSurfaceScanBrandTitle(report), margin, 58);
-  doc.setFontSize(24);
-  doc.text('Report Attack Surface', margin, 96);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(12);
+  // ===== COVER — Template HiSolution =====
   const o = report.organization || {};
-  doc.text(o.legal_name || o.name || 'Cliente', margin, 121);
-  doc.setFontSize(10);
-  doc.setTextColor(180, 200, 230);
-  doc.text(`Generato: ${new Date(report.generated_at).toLocaleString('it-IT')}`, margin, 146);
+  const clientLabel = (o.legal_name || o.name || 'Cliente').slice(0, 55);
+  const brandTitle = getSurfaceScanBrandTitle(report);
+
+  // 1. Sfondo fotografico full-page (edificio/cupola HiSolution template)
+  doc.addImage(COVER_BG_JPEG_B64, 'JPEG', 0, 0, w, h);
+
+  // 2. Overlay scuro in alto (logo area)
+  doc.setFillColor(8, 15, 32);
+  doc.rect(0, 0, w, 72, 'F');
+  // 3. Overlay scuro in basso (text area)
+  doc.setFillColor(8, 15, 32);
+  doc.rect(0, h * 0.62, w, h * 0.38, 'F');
+  // 4. Barra accent blu
+  doc.setFillColor(BRAND.r, BRAND.g, BRAND.b);
+  doc.rect(0, 70, w, 3, 'F');
+
+  // 5. Logo HiSolution (top-left)
+  doc.addImage(HISOLUTION_LOGO_PNG_B64, 'PNG', margin, 15, 130, 37);
+  // Brand label (top-right)
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(140, 175, 225);
+  doc.text('HiSolution Srl  ·  support@hisolution.it', w - margin, 38, { align: 'right' });
+
+  // 6. Titolo servizio
+  const titleY = h * 0.665;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(30);
+  doc.setTextColor(255, 255, 255);
+  doc.text('SurfaceScan360', margin, titleY);
+
+  // 7. Sottotitolo
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(13);
+  doc.setTextColor(160, 200, 255);
+  doc.text('Vulnerability Surface Scan  ·  Report Completo', margin, titleY + 22);
+
+  // 8. Separatore accent
+  doc.setFillColor(BRAND.r, BRAND.g, BRAND.b);
+  doc.rect(margin, titleY + 33, 44, 2, 'F');
+
+  // 9. Nome cliente
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(17);
+  doc.setTextColor(255, 255, 255);
+  doc.text(clientLabel, margin, titleY + 56);
+
+  // 10. Variante brand + data
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(130, 170, 220);
+  doc.text(brandTitle, margin, titleY + 74);
+  doc.text(`Generato il ${new Date(report.generated_at).toLocaleDateString('it-IT')}`, margin, titleY + 87);
+
+  // 11. Risk Score badge (right side)
   if (aiData?.risk_score != null) {
     const score = aiData.risk_score;
     const level = aiData.risk_level || '';
-    const label = `Risk Score ${score}/100 · ${level}`;
+    const label = `Risk Score ${score}/100  ·  ${level}`;
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
+    doc.setFontSize(10);
     const tw = doc.getTextWidth(label) + 20;
     doc.setFillColor(BRAND.r, BRAND.g, BRAND.b);
-    doc.roundedRect(w - margin - tw, 130, tw, 22, 4, 4, 'F');
+    doc.roundedRect(w - margin - tw, titleY + 42, tw, 22, 4, 4, 'F');
     doc.setTextColor(255, 255, 255);
-    doc.text(label, w - margin - tw + 10, 145);
+    doc.text(label, w - margin - tw + 10, titleY + 57);
   }
-  y = 210;
+
+  // 12. Footer cover: classificazione + contatti
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 140, 195);
+  doc.text('Pubblico ( )  ·  Privato ( )  ·  Confidenziale ( ✓ )', margin, h - 34);
+  doc.text('Il seguente rapporto contiene informazioni riservate. Non distribuire senza autorizzazione.', margin, h - 22);
+  doc.text('Via Della Canapiglia 5, Vecchiano (PI)', w - margin, h - 22, { align: 'right' });
+
+  y = h + 1;
   newPage();
   const tocPage = pageNum;
   newPage();
