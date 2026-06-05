@@ -424,7 +424,7 @@ const buildFallbackAi = (report: SurfaceScan360Report) => {
     { priority: 5, title: 'Email security: SPF/DKIM/DMARC su tutti i domini', rationale: 'Domini senza enforcement DMARC sono esposti a spoofing e phishing verso clienti e partner.', action: 'Configurare DMARC p=quarantine su tutti i domini principali e collaterali. Abilitare DKIM e validare SPF.', severity: 'high', affected_assets: [] },
     { priority: 6, title: 'Chiusura porte non necessarie e firewall review', rationale: `${highSev.length} finding ad alto rischio: alcuni potrebbero includere servizi di gestione esposti.`, action: 'Revisione firewall: bloccare porte 21/23/8080/3389 da Internet pubblico. Consentire accesso amministrativo solo da IP autorizzati o VPN.', severity: 'high', affected_assets: [] },
     { priority: 7, title: 'Rafforzamento controlli di accesso e IAM', rationale: 'Asset pubblici con controlli deboli favoriscono accessi non autorizzati e lateral movement.', action: 'Applicare MFA su tutti gli accessi Internet-facing. Implementare Conditional Access Policy e revisione periodica dei privilegi.', severity: 'medium', affected_assets: [] },
-    { priority: 8, title: 'Monitoraggio continuo e alerting automatico', rationale: 'La sicurezza esterna richiede controllo ricorrente: le minacce evolvono tra una scansione e l'altra.', action: 'Implementare alerting su variazioni DNS, nuovi servizi esposti e nuove evidenze di compromissione. Integrare con SIEM.', severity: 'medium', affected_assets: [] },
+    { priority: 8, title: 'Monitoraggio continuo e alerting automatico', rationale: 'La sicurezza esterna richiede controllo ricorrente: le minacce evolvono tra una scansione e l\'altra.', action: 'Implementare alerting su variazioni DNS, nuovi servizi esposti e nuove evidenze di compromissione. Integrare con SIEM.', severity: 'medium', affected_assets: [] },
     { priority: 9, title: 'Ciclo patch strutturato con SLA per severità', rationale: 'Il ritardo nel patching incrementa la finestra di esposizione ai threat actor e aumenta la probabilità di sfruttamento.', action: 'Definire SLA: critiche ≤72h, alte ≤7gg, medie ≤30gg, basse ≤90gg. Monitorare compliance e documentare le eccezioni.', severity: 'low', affected_assets: [] },
     { priority: 10, title: 'Validazione post-remediation con nuova scansione', rationale: 'La remediation non verificata lascia il rischio residuo potenzialmente invariato.', action: 'Eseguire scansioni di conferma dopo ogni remediation e mantenere storico delle evidenze risolte.', severity: 'low', affected_assets: [] },
   ];
@@ -449,7 +449,7 @@ const buildFallbackAi = (report: SurfaceScan360Report) => {
       : [
           'La severità aggregata riflette la priorità operativa di remediation.',
           'Scope e sottodomini rilevati influenzano direttamente il volume dei finding.',
-          'La riduzione dell'esposizione esterna migliora il profilo di rischio complessivo.',
+          'La riduzione dell\'esposizione esterna migliora il profilo di rischio complessivo.',
         ],
     compliance_notes:
       isCredentialDominant
