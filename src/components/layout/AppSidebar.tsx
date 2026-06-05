@@ -297,14 +297,14 @@ export const AppSidebar: React.FC = () => {
           </SidebarGroup>
         )}
 
-        {(isModuleEnabled('/settings/users') || isModuleEnabled('/settings/alerts')) && (
+        {((isModuleEnabled('/settings/users') && isUserAllowed('/settings/users')) || (isModuleEnabled('/settings/integrations') && isUserAllowed('/settings/integrations')) || (isModuleEnabled('/settings/alerts') && isUserAllowed('/settings/alerts'))) && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-sidebar-foreground/60 px-4 py-2">
               Impostazioni
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {isModuleEnabled('/settings/users') && (
+                {isModuleEnabled('/settings/users') && isUserAllowed('/settings/users') && (
                   <SidebarMenuItem>
                     <SidebarMenuButton 
                       asChild
@@ -317,7 +317,7 @@ export const AppSidebar: React.FC = () => {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 )}
-                {isModuleEnabled('/settings/integrations') && (
+                {isModuleEnabled('/settings/integrations') && isUserAllowed('/settings/integrations') && (
                   <SidebarMenuItem>
                     <SidebarMenuButton 
                       asChild

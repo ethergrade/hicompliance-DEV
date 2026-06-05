@@ -38,6 +38,7 @@ const ROUTE_CAPABILITIES: Record<string, RouteCapabilities> = {
   '/admin/companies': { view: ['companies.manage'] },
   '/admin/role-settings': { view: ['users.manage'] },
   '/settings/users': { view: ['users.manage'] },
+  '/settings/integrations': { view: ['services.manage'] },
 };
 
 /**
