@@ -29,7 +29,7 @@ jobs:
         run: npm run build
 
       - name: Deploy to DEV
-        uses: easingthemes/ssh-deploy@v5
+        uses: easingthemes/ssh-deploy@v6
         with:
           SSH_PRIVATE_KEY: ${{ secrets.DEV_SSH_KEY }}
           REMOTE_HOST: hi.websoupcloud.it
