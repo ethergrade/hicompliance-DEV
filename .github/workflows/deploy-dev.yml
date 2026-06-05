@@ -1,0 +1,43 @@
+name: Deploy to DEV
+
+on:
+  push:
+    branches: [imnick]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+      - name: Deploy to DEV
+        uses: easingthemes/ssh-deploy@v5
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.DEV_SSH_KEY }}
+          REMOTE_HOST: hi.websoupcloud.it
+          REMOTE_USER: websoupnick
+          SOURCE: dist/
+          TARGET: web/
+          ARGS: -rltgoDzvO
+          SCRIPT_BEFORE: |
+            mkdir -p web
+          SCRIPT_AFTER: |
+            echo "Deploy completato $(date)"
