@@ -169,11 +169,10 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     mutationFn: async (tier: 'standard' | 'extended') => {
       if (!organizationId) throw new Error('Nessuna azienda selezionata');
       // Refetch to get fresh tenant-services after main toggle created the service
-      const { data: fresh } = await queryClient.fetchQuery({
+      const ts = await queryClient.fetchQuery({
         queryKey: ['tenant-services-client', organizationId],
-        queryFn: () => tenantServicesApi.list(undefined, groupId),
+        queryFn: () => tenantServicesApi.listByOrganization(organizationId!, groupId),
       });
-      const ts = fresh || [];
       let dr = ts.find(s => s.service_type === 'darkrisk');
       if (!dr) {
         dr = await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'darkrisk', status: 'active', settings: { tier } }, groupId);
