@@ -85,6 +85,11 @@ const adminNavigation = [
     icon: Building2,
   },
   {
+    title: 'Sales — Remediation',
+    href: '/admin/sales',
+    icon: Users,
+  },
+  {
     title: 'Reportistica Aggregata',
     href: '/admin/reporting',
     icon: PieChart,
