@@ -794,6 +794,45 @@ const DarkRisk360: React.FC = () => {
     isError: qaError,
   } = useDarkRiskQaStatus();
 
+  // Raccomandazioni AI (OpenAI)
+  const {
+    data: aiRecommendations = [],
+    isLoading: recoLoading,
+    refetch: refetchRecos,
+  } = useQuery({
+    queryKey: ['darkrisk360-recommendations', organizationId],
+    enabled: Boolean(organizationId),
+    queryFn: async () => {
+      if (!organizationId) return [];
+      const { data, error: queryError } = await supabase
+        .from('darkrisk_recommendations' as any)
+        .select('id, finding_id, title, priority, why_it_matters, actions, expected_outcome, confidence, model, created_at')
+        .eq('organization_id', organizationId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (queryError) throw queryError;
+      return (data || []) as Array<Record<string, any>>;
+    },
+    staleTime: 60_000,
+  });
+
+  const generateRecoMutation = useMutation({
+    mutationFn: async () => {
+      if (!organizationId) throw new Error('Nessun cliente selezionato');
+      const { data, error: invokeError } = await supabase.functions.invoke('darkrisk360-generate-recommendations', {
+        body: { customer_id: organizationId, tier: 'extended' },
+      });
+      if (invokeError) throw invokeError;
+      if ((data as any)?.error) throw new Error(String((data as any).error));
+      return data;
+    },
+    onSuccess: async (data: any) => {
+      toast.success(`${data?.total_recommendations ?? 0} raccomandazioni AI generate (${data?.mode ?? 'ai'})`);
+      await refetchRecos();
+    },
+    onError: (err: any) => toast.error(`Errore generazione raccomandazioni: ${String(err?.message || 'errore sconosciuto')}`),
+  });
+
   const generateReportMutation = useMutation({
     mutationFn: async (mode: DarkRiskReportMode) => {
       if (!organizationId) throw new Error('Nessun cliente selezionato');
@@ -1432,6 +1471,14 @@ const DarkRisk360: React.FC = () => {
                 <TabsTrigger value="assets">Assets</TabsTrigger>
                 <TabsTrigger value="surface">Surface</TabsTrigger>
                 <TabsTrigger value="identity">Identity</TabsTrigger>
+                <TabsTrigger value="ai">
+                  AI
+                  {aiRecommendations.length > 0 && (
+                    <span className="ml-1.5 rounded-full bg-primary/20 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                      {aiRecommendations.length}
+                    </span>
+                  )}
+                </TabsTrigger>
                 <TabsTrigger value="reports">Reports</TabsTrigger>
                 <TabsTrigger value="settings">Impostazioni</TabsTrigger>
               </TabsList>
@@ -2072,6 +2119,105 @@ const DarkRisk360: React.FC = () => {
                     </Card>
                   )}
                 </div>
+              </TabsContent>
+
+              {/* ──── TAB AI RECOMMENDATIONS ──────────────────────────────── */}
+              <TabsContent value="ai" className="space-y-4">
+                <Card className="border-border">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div>
+                        <CardTitle className="flex items-center gap-2">
+                          <ShieldAlert className="w-4 h-4 text-primary" />
+                          Raccomandazioni AI (OpenAI)
+                        </CardTitle>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Generate automaticamente da GPT-4o-mini su finding e evidenze del ciclo corrente.
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!organizationId || generateRecoMutation.isPending}
+                        onClick={() => generateRecoMutation.mutate()}
+                      >
+                        {generateRecoMutation.isPending ? (
+                          <><span className="animate-spin mr-2">⟳</span>Generazione...</>
+                        ) : (
+                          <>&#x2728; Rigenera raccomandazioni AI</>
+                        )}
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {recoLoading ? (
+                      <p className="text-sm text-muted-foreground">Caricamento...</p>
+                    ) : aiRecommendations.length === 0 ? (
+                      <div className="space-y-3">
+                        <p className="text-sm text-muted-foreground">
+                          Nessuna raccomandazione disponibile. Esegui una scan e clicca &quot;Rigenera raccomandazioni AI&quot;.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {aiRecommendations.map((rec) => {
+                          const priorityColor: Record<string, string> = {
+                            immediate: 'border-red-500/40 bg-red-500/5',
+                            short_term: 'border-orange-500/40 bg-orange-500/5',
+                            mid_term: 'border-yellow-500/40 bg-yellow-500/5',
+                            long_term: 'border-blue-500/40 bg-blue-500/5',
+                          };
+                          const priorityLabel: Record<string, string> = {
+                            immediate: 'Immediata',
+                            short_term: 'Breve termine',
+                            mid_term: 'Medio termine',
+                            long_term: 'Lungo termine',
+                          };
+                          const actions: string[] = Array.isArray(rec.actions) ? rec.actions : [];
+                          return (
+                            <div
+                              key={String(rec.id)}
+                              className={`rounded-lg border p-4 space-y-2 ${priorityColor[String(rec.priority)] || 'border-border bg-muted/10'}`}
+                            >
+                              <div className="flex items-start justify-between gap-3 flex-wrap">
+                                <p className="text-sm font-semibold">{String(rec.title || '')}</p>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <Badge variant="outline" className="text-[10px]">
+                                    {priorityLabel[String(rec.priority)] || String(rec.priority)}
+                                  </Badge>
+                                  <Badge variant="secondary" className="text-[10px]">
+                                    confidenza: {String(rec.confidence || '—')}
+                                  </Badge>
+                                </div>
+                              </div>
+                              {rec.why_it_matters && (
+                                <p className="text-xs text-muted-foreground">{String(rec.why_it_matters)}</p>
+                              )}
+                              {actions.length > 0 && (
+                                <ul className="space-y-1">
+                                  {actions.map((action, idx) => (
+                                    <li key={idx} className="text-xs flex gap-2">
+                                      <span className="text-primary shrink-0">›</span>
+                                      <span>{action}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                              {rec.expected_outcome && (
+                                <p className="text-xs text-muted-foreground border-t border-border/30 pt-2 mt-2">
+                                  <strong>Outcome atteso:</strong> {String(rec.expected_outcome)}
+                                </p>
+                              )}
+                              <p className="text-[9px] text-muted-foreground">
+                                Modello: {String(rec.model || 'ai')} · {rec.created_at ? new Date(String(rec.created_at)).toLocaleDateString('it-IT') : '—'}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
               </TabsContent>
 
               <TabsContent value="reports" className="space-y-4">

@@ -689,11 +689,31 @@ serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const requestedCustomerId = normalizeText(body?.customer_id || body?.organization_id);
     const requestedScanRunId = normalizeText(body?.scan_run_id);
+    const dbTriggerId = normalizeText(body?.db_trigger_id);
 
     let customerId = requestedCustomerId;
     let actorUserId: string | null = isInternal ? normalizeText(body?.actor_user_id) || null : null;
 
-    if (!isInternal) {
+    // db_trigger_id: nonce one-shot su darkrisk360_scan_triggers (identico pattern admin-cron)
+    let isTrustedDbNonce = false;
+    if (!isInternal && dbTriggerId) {
+      const { data: nonceRow } = await adminClient
+        .from('darkrisk360_scan_triggers' as any)
+        .select('id, status, organization_id')
+        .eq('id', dbTriggerId)
+        .eq('status', 'pending')
+        .maybeSingle();
+      if (nonceRow) {
+        isTrustedDbNonce = true;
+        customerId = customerId || normalizeText((nonceRow as any).organization_id);
+        await adminClient
+          .from('darkrisk360_scan_triggers' as any)
+          .update({ status: 'picked_up', picked_up_at: new Date().toISOString() })
+          .eq('id', dbTriggerId);
+      }
+    }
+
+    if (!isInternal && !isTrustedDbNonce) {
       const { data: authData, error: authError } = await userClient.auth.getUser();
       if (authError || !authData.user) {
         return jsonResponse({ ok: false, error: 'Unauthorized' }, 401);

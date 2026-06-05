@@ -341,7 +341,16 @@ async function buildDtiEstesoReport(
     /\[sk\]|\[it\]|\[us\]|\[ng\]|freelog|chrome.*profile|autofill/i.test(h.collection_title || '')
   );
 
-  // ── 11. Build JSON payload ─────────────────────────────────────────────────
+  // ── 11. AI Recommendations ────────────────────────────────────────────────
+  const { data: recoRows } = await adminClient
+    .from('darkrisk_recommendations' as any)
+    .select('id, finding_id, title, priority, why_it_matters, actions, expected_outcome, confidence, model, created_at')
+    .eq('organization_id', orgId)
+    .order('created_at', { ascending: false })
+    .limit(20);
+  const aiRecos = (recoRows || []) as any[];
+
+  // ── 12. Build JSON payload ─────────────────────────────────────────────────
   const json = {
     generated_at: genAt,
     organization_id: orgId,
@@ -770,6 +779,29 @@ async function buildDtiEstesoReport(
       ${ul(recs90d)}
     `)}
   </div>
+
+  <!-- SECTION 9: AI RECOMMENDATIONS -->
+  ${aiRecos.length > 0 ? `
+  <div class="page-break">
+    ${section('9. Raccomandazioni AI (OpenAI)', `
+      <p style="color:#94a3b8;font-size:12px;margin-bottom:12px">Generate da GPT-4o-mini su finding e evidenze del ciclo corrente. Modello: ${escHtml(aiRecos[0]?.model || 'gpt-4o-mini')} &nbsp;·&nbsp; ${escHtml(aiRecos.length)} raccomandazioni totali.</p>
+      ${aiRecos.map((rec: any) => {
+        const priorityColor = { immediate: '#ef4444', short_term: '#f97316', mid_term: '#eab308', long_term: '#3b82f6' }[String(rec.priority)] || '#6b7280';
+        const priorityLabel = { immediate: 'IMMEDIATA', short_term: 'BREVE TERMINE', mid_term: 'MEDIO TERMINE', long_term: 'LUNGO TERMINE' }[String(rec.priority)] || String(rec.priority).toUpperCase();
+        const actions: string[] = Array.isArray(rec.actions) ? rec.actions : [];
+        return `<div style="border-left:4px solid ${priorityColor};background:rgba(255,255,255,0.03);padding:14px 18px;border-radius:0 8px 8px 0;margin:10px 0">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+            <p style="color:#f8fafc;font-weight:700;margin:0 0 4px">${escHtml(rec.title || '')}</p>
+            <span style="background:${priorityColor};color:#fff;padding:2px 10px;border-radius:12px;font-size:10px;font-weight:700;white-space:nowrap">${escHtml(priorityLabel)}</span>
+          </div>
+          ${rec.why_it_matters ? `<p style="color:#94a3b8;font-size:12px;margin:6px 0 8px">${escHtml(rec.why_it_matters)}</p>` : ''}
+          ${actions.length > 0 ? `<ul style="color:#d1d5db;padding-left:18px;margin:6px 0;font-size:13px">${actions.map((a: string) => `<li style="margin:3px 0">${escHtml(a)}</li>`).join('')}</ul>` : ''}
+          ${rec.expected_outcome ? `<p style="color:#6b7280;font-size:11px;margin:8px 0 0;border-top:1px solid #374151;padding-top:6px"><strong>Outcome atteso:</strong> ${escHtml(rec.expected_outcome)}</p>` : ''}
+        </div>`;
+      }).join('')}
+    `)}
+  </div>
+  ` : ''}
 
   <!-- FOOTER -->
   <div style="margin-top:48px;padding-top:16px;border-top:1px solid #374151;text-align:center;color:#4b5563;font-size:12px">

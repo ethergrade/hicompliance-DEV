@@ -2175,6 +2175,40 @@ serve(async (req: Request) => {
 
     (runStats as Record<string, unknown>).report_mode = reportMode;
 
+    // ── Generate AI Recommendations (OpenAI) ────────────────────────────────
+    let recoCount = 0;
+    if (SUPABASE_URL && DARKRISK_INTERNAL_SECRET) {
+      try {
+        const recoResponse = await fetchWithTimeout(
+          `${SUPABASE_URL}/functions/v1/darkrisk360-generate-recommendations`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${SERVICE_ROLE}`,
+              'x-darkrisk-internal-secret': DARKRISK_INTERNAL_SECRET,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              customer_id: requestedCustomerId,
+              scan_run_id: scanRunId,
+              tier: 'extended',
+            }),
+          },
+          45_000,
+        );
+        if (recoResponse.ok) {
+          const recoData = await recoResponse.json().catch(() => ({}));
+          recoCount = Number(recoData?.recommendations?.length || recoData?.saved || 0);
+          (runStats as Record<string, unknown>).recommendations_generated = recoCount;
+        } else {
+          const errText = await recoResponse.text().catch(() => '');
+          pushWarningUnique(warnings, `Recommendations generation failed: ${maskPotentialSecrets(errText).slice(0, 200)}`);
+        }
+      } catch (recoErr) {
+        pushWarningUnique(warnings, `Recommendations generation failed: ${maskedError(recoErr).slice(0, 200)}`);
+      }
+    }
+
     await adminClient
       .from('darkrisk_scan_runs' as any)
       .update({
