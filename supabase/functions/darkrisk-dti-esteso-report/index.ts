@@ -283,18 +283,26 @@ async function buildDtiEstesoReport(
   }
 
   // ── 10. Credential / sensitive hits ───────────────────────────────────────
-  // Join with source records for collection title + date
-  const { data: sensitiveHitsRaw } = await adminClient
-    .from('darkrisk_dti_sensitive_hits' as any)
-    .select(`
-      id, tag, masked_value, clear_value, context_excerpt,
-      query_term, asset_scope, source_label, query_kind,
-      source_record_id, created_at
-    `)
-    .eq('organization_id', orgId)
-    .order('created_at', { ascending: false })
-    .limit(1500);
-  const sensitiveHits = (sensitiveHitsRaw || []) as any[];
+  // Carica passwords e credit_cards separatamente (query prioritizzata)
+  // per non perdere hit critici quando la tabella è grande (>2500 record)
+  const FIELDS = `id, tag, masked_value, clear_value, context_excerpt, query_term, asset_scope, source_label, query_kind, source_record_id, created_at`;
+  const [pwRes, ccRes, otherRes] = await Promise.all([
+    adminClient.from('darkrisk_dti_sensitive_hits' as any)
+      .select(FIELDS).eq('organization_id', orgId).eq('tag', 'passwords')
+      .order('created_at', { ascending: false }).limit(500),
+    adminClient.from('darkrisk_dti_sensitive_hits' as any)
+      .select(FIELDS).eq('organization_id', orgId).eq('tag', 'credit_cards')
+      .order('created_at', { ascending: false }).limit(100),
+    adminClient.from('darkrisk_dti_sensitive_hits' as any)
+      .select(FIELDS).eq('organization_id', orgId)
+      .in('tag', ['domains', 'phone_numbers', 'addresses'])
+      .order('created_at', { ascending: false }).limit(1000),
+  ]);
+  const sensitiveHits = [
+    ...((pwRes.data || []) as any[]),
+    ...((ccRes.data || []) as any[]),
+    ...((otherRes.data || []) as any[]),
+  ];
 
   // Gather source_record_ids and fetch titles/dates
   const srIds = [...new Set(sensitiveHits.map((h) => h.source_record_id).filter(Boolean))];
@@ -882,8 +890,9 @@ serve(async (req: Request) => {
     const bucketName = 'darkrisk-reports';
     const now = new Date();
     const dateSlug = now.toISOString().slice(0, 10).replace(/-/g, '');
-    const htmlPath = `${orgId}/dti-esteso-${dateSlug}-${Date.now()}.html`;
-    const jsonPath = `${orgId}/dti-esteso-${dateSlug}-${Date.now()}.json`;
+    const fileTs = now.getTime(); // unico timestamp per html e json
+    const htmlPath = `${orgId}/dti-esteso-${dateSlug}-${fileTs}.html`;
+    const jsonPath = `${orgId}/dti-esteso-${dateSlug}-${fileTs}.json`;
 
     const [htmlUpload, jsonUpload] = await Promise.all([
       adminClient.storage.from(bucketName).upload(htmlPath, html, {

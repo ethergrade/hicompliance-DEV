@@ -389,7 +389,7 @@ const DarkRisk360: React.FC = () => {
       if (!organizationId) return [];
       const { data, error: queryError } = await supabase
         .from('darkrisk_report_snapshots' as any)
-        .select('id, title, tier, classification, status, generated_at, scan_run_id, html_storage_path, json_storage_path, pdf_storage_path, model_metadata')
+        .select('id, title, tier, classification, status, generated_at, scan_run_id, html_storage_path, json_storage_path, pdf_storage_path, model_metadata, report_json')
         .eq('organization_id', organizationId)
         .order('generated_at', { ascending: false })
         .limit(12);
@@ -816,6 +816,24 @@ const DarkRisk360: React.FC = () => {
     staleTime: 60_000,
   });
 
+  // Mutation dedicata per rigenerare il DTI Esteso (darkrisk-dti-esteso-report)
+  const regenerateDtiMutation = useMutation({
+    mutationFn: async () => {
+      if (!organizationId) throw new Error('Nessun cliente selezionato');
+      const { data, error: invokeError } = await supabase.functions.invoke('darkrisk-dti-esteso-report', {
+        body: { customer_id: organizationId },
+      });
+      if (invokeError) throw invokeError;
+      if ((data as any)?.error) throw new Error(String((data as any).error));
+      return data;
+    },
+    onSuccess: async (data: any) => {
+      toast.success(`Report DTI Esteso rigenerato — ${data?.stats?.creds ?? 0} credenziali, ${data?.stats?.domains ?? 0} domini`);
+      await refetchReports();
+    },
+    onError: (err: any) => toast.error(`Errore rigenera DTI: ${String(err?.message || 'errore sconosciuto')}`),
+  });
+
   const generateRecoMutation = useMutation({
     mutationFn: async () => {
       if (!organizationId) throw new Error('Nessun cliente selezionato');
@@ -1239,10 +1257,13 @@ const DarkRisk360: React.FC = () => {
   const loadReportJsonSnapshot = async (report: Record<string, any>) => {
     if (!organizationId) throw new Error('Nessun cliente selezionato');
 
-    if (report?.report_json && typeof report.report_json === 'object') {
-      return report.report_json;
-    }
+    // Usa report_json inline solo se ha la struttura DarkRisk360 completa (findings o scope.authorized_assets)
+    const inlineJson = report?.report_json;
+    const hasFullStructure = inlineJson && typeof inlineJson === 'object' &&
+      (Array.isArray(inlineJson.findings) || Array.isArray(inlineJson?.scope?.authorized_assets));
+    if (hasFullStructure) return inlineJson;
 
+    // Altrimenti scarica il JSON dal percorso di storage tramite signed URL
     const { data, error: invokeError } = await supabase.functions.invoke('darkrisk360-report-access', {
       body: {
         customer_id: organizationId,
@@ -1251,9 +1272,9 @@ const DarkRisk360: React.FC = () => {
         reason: 'manual_export_surface_template',
       },
     });
-    if (invokeError) throw invokeError;
+    if (invokeError) throw new Error(`Accesso report fallito: ${String(invokeError.message || invokeError)}`);
     if (!data?.ok || !data?.signed_url) {
-      throw new Error(String(data?.error || 'Export JSON non disponibile'));
+      throw new Error(String(data?.error || 'Export JSON non disponibile per questo snapshot'));
     }
 
     const response = await fetch(String(data.signed_url));
@@ -2287,11 +2308,11 @@ const DarkRisk360: React.FC = () => {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                disabled={!organizationId || generateReportMutation.isPending}
-                                onClick={() => generateReportMutation.mutate('extended')}
+                                disabled={!organizationId || regenerateDtiMutation.isPending}
+                                onClick={() => regenerateDtiMutation.mutate()}
                               >
                                 <FileText className="w-4 h-4 mr-2" />
-                                {generateReportMutation.isPending ? 'Generazione...' : reportRepository.extended ? 'Rigenera esteso' : 'Genera esteso'}
+                                {regenerateDtiMutation.isPending ? 'Generazione DTI...' : reportRepository.extended ? 'Rigenera esteso' : 'Genera esteso'}
                               </Button>
                             </div>
                             {reportRepository.extended ? (
