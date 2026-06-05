@@ -31,3 +31,4 @@ export { preferencesApi } from "./preferences";
 export { roleModulePermissionsApi } from "./role-module-permissions";
 export { hipatchApi } from "./hipatch";
 export { surfaceScanAlertsApi } from "./surface-scan-alerts";
+export { darkRiskApi } from "./darkrisk";
