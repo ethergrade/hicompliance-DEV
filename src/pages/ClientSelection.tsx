@@ -8,10 +8,15 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, Building2, Calendar, ArrowRight, Users, FileText, Server, Plug, Pencil, Trash2, ShieldCheck } from 'lucide-react';
+import { Search, Building2, Calendar, ArrowRight, Users, FileText, Server, Plug, Pencil, Trash2, ShieldCheck, Plus } from 'lucide-react';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
+import { groupsApi } from '@/lib/api';
+import { toast } from 'sonner';
 import ClientProfileSheet from '@/components/clients/ClientProfileSheet';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog';
 import ClientAssetSheet from '@/components/clients/ClientAssetSheet';
 import ClientServicesDialog from '@/components/clients/ClientServicesDialog';
 import ClientCrudDialog from '@/components/clients/ClientCrudDialog';
@@ -36,6 +41,12 @@ const ClientSelection: React.FC = () => {
   const [crudOrg, setCrudOrg] = useState<{ id: string; name: string; code: string } | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteOrg, setDeleteOrg] = useState<{ id: string; name: string } | null>(null);
+
+  // Create with group selection
+  const [createGroupId, setCreateGroupId] = useState<string | null>(null);
+  const [groupSelectOpen, setGroupSelectOpen] = useState(false);
+  const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
 
   const filteredOrganizations = organizations.filter(org => {
     if (!searchQuery.trim()) return true;
@@ -89,6 +100,38 @@ const ClientSelection: React.FC = () => {
     setDeleteOpen(true);
   };
 
+  const openCreate = async () => {
+    if (selectedOrganization?.group_id) {
+      setCreateGroupId(selectedOrganization.group_id);
+      setCrudOrg(null);
+      setCrudOpen(true);
+      return;
+    }
+    setGroupsLoading(true);
+    try {
+      const list = await groupsApi.list();
+      setGroups(list);
+      if (list.length === 1) {
+        setCreateGroupId(list[0].id);
+        setCrudOrg(null);
+        setCrudOpen(true);
+      } else {
+        setGroupSelectOpen(true);
+      }
+    } catch {
+      toast.error('Errore nel caricamento gruppi');
+    } finally {
+      setGroupsLoading(false);
+    }
+  };
+
+  const handleSelectGroupForCreate = (groupId: string) => {
+    setCreateGroupId(groupId);
+    setGroupSelectOpen(false);
+    setCrudOrg(null);
+    setCrudOpen(true);
+  };
+
   if (isLoadingClients) {
     return (
       <DashboardLayout>
@@ -121,6 +164,10 @@ const ClientSelection: React.FC = () => {
               Seleziona un cliente per visualizzare e gestire i suoi dati
             </p>
           </div>
+          <Button onClick={openCreate} className="gap-2" disabled={groupsLoading}>
+            <Plus className="w-4 h-4" />
+            {groupsLoading ? 'Caricamento...' : 'Nuovo Cliente'}
+          </Button>
         </div>
 
         {/* Search */}
@@ -261,8 +308,27 @@ const ClientSelection: React.FC = () => {
         <ClientContactsDialog organizationId={editingOrgId} organizationName={editingOrgName} open={contactsOpen} onOpenChange={setContactsOpen} />
       )}
 
+      {/* Group selector dialog for creation */}
+      <Dialog open={groupSelectOpen} onOpenChange={setGroupSelectOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Seleziona un gruppo</DialogTitle>
+            <DialogDescription>Scegli l'azienda (gruppo) per il nuovo cliente</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2 max-h-[300px] overflow-y-auto">
+            {groups.map(g => (
+              <Button key={g.id} variant="outline" className="w-full justify-start" onClick={() => handleSelectGroupForCreate(g.id)}>
+                <Building2 className="w-4 h-4 mr-2" />
+                {g.name}
+              </Button>
+            ))}
+            {groups.length === 0 && <p className="text-sm text-muted-foreground text-center">Nessun gruppo disponibile</p>}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* CRUD Dialogs */}
-      <ClientCrudDialog open={crudOpen} onOpenChange={setCrudOpen} organization={crudOrg} onSaved={fetchOrganizations} />
+      <ClientCrudDialog open={crudOpen} onOpenChange={setCrudOpen} organization={crudOrg} onSaved={fetchOrganizations} groupId={createGroupId} />
       <DeleteClientDialog open={deleteOpen} onOpenChange={setDeleteOpen} organization={deleteOrg} onDeleted={fetchOrganizations} />
     </DashboardLayout>
   );
