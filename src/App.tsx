@@ -22,8 +22,7 @@ import Documents from "./pages/Documents";
 import AssetInventory from "./pages/AssetInventory";
 import IncidentResponse from "./pages/IncidentResponse";
 import ThreatManagement from "./pages/ThreatManagement";
-// HIDDEN: supabase-only (PRODOTTO Integrations page), no backend API
-// import Integrations from "./pages/Integrations";
+import Integrations from "./pages/Integrations";
 import Users from "./pages/Users";
 import RoleSettings from "./pages/RoleSettings";
 import Settings from "./pages/Settings";
@@ -75,8 +74,7 @@ const App = () => (
             <Route path="/compliance-events" element={<ClientSelectionGuard><ComplianceEvents /></ClientSelectionGuard>} />
             <Route path="/threat-management" element={<ClientSelectionGuard><ThreatManagement /></ClientSelectionGuard>} />
             <Route path="/settings/users" element={<ClientSelectionGuard><Users /></ClientSelectionGuard>} />
-            {/* HIDDEN: supabase-only Integrations page */}
-            {/* <Route path="/settings/integrations" element={<ClientSelectionGuard><Integrations /></ClientSelectionGuard>} /> */}
+            <Route path="/settings/integrations" element={<ClientSelectionGuard><Integrations /></ClientSelectionGuard>} />
             <Route path="/settings/alerts" element={<ClientSelectionGuard><Settings /></ClientSelectionGuard>} />
             {/* HIDDEN: supabase-only SurfaceScan alerts */}
             {/* <Route path="/settings/surface-scan-alerts" element={<ClientSelectionGuard><SurfaceScanSettings /></ClientSelectionGuard>} /> */}

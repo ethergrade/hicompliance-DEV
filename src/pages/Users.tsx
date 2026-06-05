@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -11,11 +11,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { configApi, usersApi } from "@/lib/api";
+import { companiesApi, configApi, usersApi } from "@/lib/api";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
-import type { UserResource } from "@/types/api";
-import { User, Plus, Edit, Trash2, UserCheck, UserX } from "lucide-react";
+import type { TenantResource, UserResource } from "@/types/api";
+import { User, Plus, Edit, Trash2, UserCheck, UserX, Building2 } from "lucide-react";
 
 interface UserFormData {
   email: string;
@@ -25,6 +27,7 @@ interface UserFormData {
 }
 
 const fallbackRoles = ["admin", "viewer", "sales", "customer"];
+const tenantRestrictedRoles = new Set(["customer", "viewer", "editor"]);
 
 const getPrimaryRole = (user: UserResource) => user.roles?.[0] ?? "viewer";
 
@@ -62,6 +65,9 @@ const Users = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserResource | null>(null);
+  const [tenantDialogOpen, setTenantDialogOpen] = useState(false);
+  const [tenantUser, setTenantUser] = useState<UserResource | null>(null);
+  const [selectedTenantIds, setSelectedTenantIds] = useState<string[]>([]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { selectedOrganization } = useClientOrganization();
@@ -87,6 +93,24 @@ const Users = () => {
     queryFn: configApi.roles,
   });
 
+  const { data: companies = [] } = useQuery({
+    queryKey: ['companies-all', groupId],
+    queryFn: () => companiesApi.listAll(groupId!),
+    enabled: !!groupId,
+  });
+
+  const { data: tenantAssignments = [] } = useQuery({
+    queryKey: ['user-tenants', tenantUser?.id, groupId],
+    queryFn: () => usersApi.listTenants(tenantUser!.id, groupId),
+    enabled: tenantDialogOpen && !!tenantUser?.id && !!groupId,
+  });
+
+  useEffect(() => {
+    if (tenantDialogOpen) {
+      setSelectedTenantIds(tenantAssignments);
+    }
+  }, [tenantAssignments, tenantDialogOpen]);
+
   const roleOptions = roles.length > 0 ? roles : fallbackRoles;
 
   const getUserGroups = (user: UserResource) => {
@@ -106,24 +130,16 @@ const Users = () => {
       setIsDialogOpen(false);
       setSelectedUser(null);
       form.reset();
-      toast({
-        title: "Successo",
-        description: "Utente creato con successo",
-      });
+      toast({ title: "Successo", description: "Utente creato con successo" });
     },
     onError: (error) => {
-      toast({
-        title: "Errore",
-        description: getErrorMessage(error),
-        variant: "destructive",
-      });
+      toast({ title: "Errore", description: getErrorMessage(error), variant: "destructive" });
     },
   });
 
   const updateUserMutation = useMutation({
     mutationFn: (data: UserFormData) => {
       if (!selectedUser) throw new Error("Nessun utente selezionato");
-
       return usersApi.update(selectedUser.id, {
         name: data.name,
         email: data.email,
@@ -135,17 +151,10 @@ const Users = () => {
       setIsDialogOpen(false);
       setSelectedUser(null);
       form.reset();
-      toast({
-        title: "Successo",
-        description: "Utente aggiornato con successo",
-      });
+      toast({ title: "Successo", description: "Utente aggiornato con successo" });
     },
     onError: (error) => {
-      toast({
-        title: "Errore",
-        description: getErrorMessage(error),
-        variant: "destructive",
-      });
+      toast({ title: "Errore", description: getErrorMessage(error), variant: "destructive" });
     },
   });
 
@@ -155,37 +164,36 @@ const Users = () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       setIsDeleteDialogOpen(false);
       setUserToDelete(null);
-      toast({
-        title: "Successo",
-        description: "Utente eliminato con successo",
-      });
+      toast({ title: "Successo", description: "Utente eliminato con successo" });
     },
     onError: (error) => {
-      toast({
-        title: "Errore",
-        description: getErrorMessage(error),
-        variant: "destructive",
-      });
+      toast({ title: "Errore", description: getErrorMessage(error), variant: "destructive" });
+    },
+  });
+
+  const syncTenantsMutation = useMutation({
+    mutationFn: async () => {
+      if (!tenantUser) throw new Error('Nessun utente selezionato');
+      return usersApi.syncTenants(tenantUser.id, selectedTenantIds, groupId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['user-tenants', tenantUser?.id, groupId] });
+      setTenantDialogOpen(false);
+      setTenantUser(null);
+      toast({ title: 'Successo', description: 'Tenant assegnati aggiornati con successo' });
+    },
+    onError: (error) => {
+      toast({ title: 'Errore', description: getErrorMessage(error), variant: 'destructive' });
     },
   });
 
   const openDialog = (user?: UserResource) => {
     if (user) {
       setSelectedUser(user);
-      form.reset({
-        email: user.email,
-        name: user.name,
-        role: getPrimaryRole(user),
-        password: "",
-      });
+      form.reset({ email: user.email, name: user.name, role: getPrimaryRole(user), password: "" });
     } else {
       setSelectedUser(null);
-      form.reset({
-        email: "",
-        name: "",
-        role: roleOptions[0] ?? "viewer",
-        password: "",
-      });
+      form.reset({ email: "", name: "", role: roleOptions[0] ?? "viewer", password: "" });
     }
     setIsDialogOpen(true);
   };
@@ -195,12 +203,19 @@ const Users = () => {
     setIsDeleteDialogOpen(true);
   };
 
+  const openTenantDialog = (user: UserResource) => {
+    setTenantUser(user);
+    setSelectedTenantIds([]);
+    setTenantDialogOpen(true);
+  };
+
   const onSubmit = (data: UserFormData) => {
-    if (selectedUser) {
-      updateUserMutation.mutate(data);
-    } else {
-      createUserMutation.mutate(data);
-    }
+    if (selectedUser) updateUserMutation.mutate(data);
+    else createUserMutation.mutate(data);
+  };
+
+  const toggleTenant = (tenantId: string, checked: boolean) => {
+    setSelectedTenantIds(prev => checked ? [...prev, tenantId] : prev.filter(id => id !== tenantId));
   };
 
   return (
@@ -210,7 +225,7 @@ const Users = () => {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Gestione Utenti</h1>
             <p className="text-muted-foreground">
-              Gestisci accessi e controllo basato sui ruoli (RBAC)
+              Gestisci accessi, ruoli e tenant assegnati agli utenti limitati
             </p>
           </div>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -222,14 +237,9 @@ const Users = () => {
             </DialogTrigger>
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle>
-                  {selectedUser ? "Modifica Utente" : "Nuovo Utente"}
-                </DialogTitle>
+                <DialogTitle>{selectedUser ? "Modifica Utente" : "Nuovo Utente"}</DialogTitle>
                 <DialogDescription>
-                  {selectedUser
-                    ? "Modifica i dettagli dell'utente e i suoi privilegi"
-                    : "Crea un nuovo utente e assegna i suoi privilegi"
-                  }
+                  {selectedUser ? "Modifica i dettagli dell'utente e i suoi privilegi" : "Crea un nuovo utente e assegna i suoi privilegi"}
                 </DialogDescription>
               </DialogHeader>
               <Form {...form}>
@@ -253,10 +263,7 @@ const Users = () => {
                     name="email"
                     rules={{
                       required: "Email è richiesta",
-                      pattern: {
-                        value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                        message: "Email non valida"
-                      }
+                      pattern: { value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i, message: "Email non valida" }
                     }}
                     render={({ field }) => (
                       <FormItem>
@@ -272,13 +279,7 @@ const Users = () => {
                     <FormField
                       control={form.control}
                       name="password"
-                      rules={{
-                        required: "Password è richiesta",
-                        minLength: {
-                          value: 8,
-                          message: "Password deve essere di almeno 8 caratteri"
-                        }
-                      }}
+                      rules={{ required: "Password è richiesta", minLength: { value: 8, message: "Password deve essere di almeno 8 caratteri" } }}
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Password</FormLabel>
@@ -315,18 +316,11 @@ const Users = () => {
                     )}
                   />
                   <p className="text-xs text-muted-foreground">
-                    L'utente verrà creato nel gruppo corrente
-                    {selectedOrganization?.name ? ` (${selectedOrganization.name})` : ""}.
+                    L'utente verrà creato nel gruppo corrente{selectedOrganization?.name ? ` (${selectedOrganization.name})` : ''}.
                   </p>
                   <DialogFooter>
-                    <Button
-                      type="submit"
-                      disabled={createUserMutation.isPending || updateUserMutation.isPending}
-                    >
-                      {createUserMutation.isPending || updateUserMutation.isPending
-                        ? "Salvando..."
-                        : selectedUser ? "Aggiorna" : "Crea"
-                      }
+                    <Button type="submit" disabled={createUserMutation.isPending || updateUserMutation.isPending}>
+                      {createUserMutation.isPending || updateUserMutation.isPending ? 'Salvando...' : selectedUser ? 'Aggiorna' : 'Crea'}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -338,11 +332,10 @@ const Users = () => {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <User className="w-5 h-5" />
-              Utenti del Sistema
+              <User className="w-5 h-5" /> Utenti del Sistema
             </CardTitle>
             <CardDescription>
-              Lista completa degli utenti con i loro ruoli e gruppi
+              Lista completa degli utenti con ruoli, gruppi e tenant assegnati se il ruolo è limitato
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -354,9 +347,7 @@ const Users = () => {
               <div className="flex flex-col items-center justify-center py-8">
                 <User className="w-12 h-12 text-muted-foreground mb-4" />
                 <h3 className="text-lg font-semibold mb-2">Nessun utente trovato</h3>
-                <p className="text-muted-foreground text-center mb-4">
-                  Inizia creando il primo utente del sistema
-                </p>
+                <p className="text-muted-foreground text-center mb-4">Inizia creando il primo utente del sistema</p>
                 <Button onClick={() => openDialog()}>
                   <Plus className="w-4 h-4 mr-2" />
                   Crea primo utente
@@ -377,14 +368,14 @@ const Users = () => {
                 <TableBody>
                   {users.map((user) => {
                     const role = getPrimaryRole(user);
-
+                    const canAssignTenants = tenantRestrictedRoles.has(role);
                     return (
                       <TableRow key={user.id}>
                         <TableCell className="font-medium">{user.name}</TableCell>
                         <TableCell>{user.email}</TableCell>
                         <TableCell>
                           <Badge variant={getRoleVariant(role)}>
-                            {role === "super-admin" || role === "superadmin" || role === "super_admin" || role === "master" || role === "admin" ? (
+                            {role === 'super-admin' || role === 'superadmin' || role === 'super_admin' || role === 'master' || role === 'admin' ? (
                               <>
                                 <UserCheck className="w-3 h-3 mr-1" />
                                 {getRoleLabel(role)}
@@ -398,25 +389,20 @@ const Users = () => {
                           </Badge>
                         </TableCell>
                         <TableCell>{getUserGroups(user)}</TableCell>
-                        <TableCell>
-                          {new Date(user.created_at).toLocaleDateString("it-IT")}
-                        </TableCell>
+                        <TableCell>{new Date(user.created_at).toLocaleDateString('it-IT')}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openDialog(user)}
-                            >
+                            {canAssignTenants && (
+                              <Button variant="outline" size="sm" onClick={() => openTenantDialog(user)} title="Assegna tenant">
+                                <Building2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                            <Button variant="outline" size="sm" onClick={() => openDialog(user)}>
                               <Edit className="w-4 h-4" />
                             </Button>
                             <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
                               <AlertDialogTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => openDeleteDialog(user)}
-                                >
+                                <Button variant="outline" size="sm" onClick={() => openDeleteDialog(user)}>
                                   <Trash2 className="w-4 h-4" />
                                 </Button>
                               </AlertDialogTrigger>
@@ -424,16 +410,12 @@ const Users = () => {
                                 <AlertDialogHeader>
                                   <AlertDialogTitle>Elimina Utente</AlertDialogTitle>
                                   <AlertDialogDescription>
-                                    Sei sicuro di voler eliminare l'utente <strong>{userToDelete?.name}</strong>?
-                                    Questa azione non può essere annullata.
+                                    Sei sicuro di voler eliminare l'utente <strong>{userToDelete?.name}</strong>? Questa azione non può essere annullata.
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
                                   <AlertDialogCancel>Annulla</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => userToDelete && deleteUserMutation.mutate(userToDelete.id)}
-                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  >
+                                  <AlertDialogAction onClick={() => userToDelete && deleteUserMutation.mutate(userToDelete.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
                                     Elimina
                                   </AlertDialogAction>
                                 </AlertDialogFooter>
@@ -449,6 +431,42 @@ const Users = () => {
             )}
           </CardContent>
         </Card>
+
+        <Dialog open={tenantDialogOpen} onOpenChange={setTenantDialogOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Tenant assegnati</DialogTitle>
+              <DialogDescription>
+                Limita i tenant visibili per <strong>{tenantUser?.name}</strong>. Valido per ruoli customer / viewer / editor.
+              </DialogDescription>
+            </DialogHeader>
+            <ScrollArea className="max-h-[420px] pr-4">
+              <div className="space-y-3">
+                {companies.map((company: TenantResource) => {
+                  const checked = selectedTenantIds.includes(company.id);
+                  return (
+                    <label key={company.id} className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer">
+                      <Checkbox checked={checked} onCheckedChange={(value) => toggleTenant(company.id, value === true)} />
+                      <div>
+                        <div className="font-medium">{company.name}</div>
+                        <div className="text-xs text-muted-foreground">{company.id}</div>
+                      </div>
+                    </label>
+                  );
+                })}
+                {companies.length === 0 && (
+                  <div className="text-sm text-muted-foreground">Nessun tenant disponibile nel gruppo selezionato.</div>
+                )}
+              </div>
+            </ScrollArea>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setTenantDialogOpen(false)}>Annulla</Button>
+              <Button onClick={() => syncTenantsMutation.mutate()} disabled={syncTenantsMutation.isPending}>
+                {syncTenantsMutation.isPending ? 'Salvando...' : 'Salva Tenant'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );

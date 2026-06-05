@@ -4,7 +4,7 @@ export const moduleVisibility = {
   consistenze: false,
   incidentResponse: false,
   complianceEvents: false,
-  integrations: false,
+  integrations: true,
   darkRiskAlerts: false,
   threats: false,
   reports: false,

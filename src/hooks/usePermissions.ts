@@ -1,72 +1,85 @@
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { useUserRoles } from '@/hooks/useUserRoles';
 import { useCapabilities } from '@/hooks/useCapabilities';
-import { ROUTE_TO_MODULE, PermAction } from '@/lib/permissions/catalog';
+import { useUserRoles } from '@/hooks/useUserRoles';
+import type { PermAction } from '@/lib/permissions/catalog';
 
-type PermMap = Record<string, any>;
+type RouteCapabilities = {
+  view?: string[];
+  export?: string[];
+};
+
+const ROUTE_CAPABILITIES: Record<string, RouteCapabilities> = {
+  '/dashboard': { view: ['dashboard.view'] },
+  '/assessment': {
+    view: ['hicompliance.assessment.view'],
+    export: ['hicompliance.assessment.export'],
+  },
+  '/analytics': {
+    view: ['hicompliance.analysis.view'],
+    export: ['hicompliance.analysis.export'],
+  },
+  '/remediation': {
+    view: ['hicompliance.remediation.view'],
+    export: ['hicompliance.remediation.export'],
+  },
+  '/compliance-events': {
+    view: ['hicompliance.compliance_events.view'],
+    export: ['hicompliance.compliance_events.export'],
+  },
+  '/incident-response': { view: ['irp.view'] },
+  '/surface-scan': {
+    view: ['surfacescan.assets.view', 'surfacescan.cve.view'],
+    export: ['surfacescan.assets.export', 'surfacescan.cve.export'],
+  },
+  '/surface-scan/exposure': {
+    view: ['surfacescan.assets.view', 'surfacescan.cve.view'],
+    export: ['surfacescan.assets.export', 'surfacescan.cve.export'],
+  },
+  '/admin/clients': { view: ['companies.manage'] },
+  '/admin/companies': { view: ['companies.manage'] },
+  '/admin/role-settings': { view: ['users.manage'] },
+  '/settings/users': { view: ['users.manage'] },
+};
 
 /**
- * Loads the current user's module permissions map.
- * Returns helpers to check view/edit/export per module/subsection or per route.
- * SuperAdmin/Sales bypass all checks.
+ * Capability-driven route gating.
+ * Stefano's 2026-06-05 backend change moved fine-grained permissions from the
+ * old Supabase RPC map to dotted capability keys returned by /auth/me.
+ * Routes without an explicit capability mapping remain allowed by default.
  */
 export function usePermissions() {
-  const { user } = useAuth();
   const { isSuperAdmin, isSales } = useUserRoles();
   const bypass = isSuperAdmin || isSales;
+  const { capabilities, isLoading, hasCapability, hasAllCapabilities, hasAnyCapability } = useCapabilities();
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['my-module-permissions', user?.id],
-    enabled: !!user?.id && !bypass,
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc('get_my_module_permissions' as any);
-      if (error) throw error;
-      return (data ?? {}) as PermMap;
-    },
-    staleTime: 60_000,
-  });
+  const accountDisabled = false;
 
-  const perms: PermMap = data ?? {};
-  const accountDisabled = perms?.__disabled === true;
-  const { hasCapability, hasAllCapabilities, hasAnyCapability } = useCapabilities();
-
-  const check = (module: string, subsection: string | undefined, action: PermAction): boolean => {
+  const check = (_module: string, subsection: string | undefined, action: PermAction): boolean => {
     if (bypass) return true;
-    if (accountDisabled) return false;
-    // No contact-linked config -> default allow (legacy users)
-    if (!data || Object.keys(perms).length === 0) return true;
-    const mod = perms[module];
-    if (!mod) return true; // module not in map -> default allow
-    const subKey = subsection ?? '_root';
-    const sub = mod[subKey] ?? mod['_root'];
-    if (!sub) return true;
-    const v = sub[action];
-    return v === undefined ? true : !!v;
+    const routeCaps = ROUTE_CAPABILITIES[subsection || ''];
+    const names = routeCaps?.[action];
+    if (!names || names.length === 0) return true;
+    return hasAnyCapability(names);
   };
 
   const canViewRoute = (href: string): boolean => {
     if (bypass) return true;
-    if (accountDisabled) return false;
-    const m = ROUTE_TO_MODULE[href];
-    if (!m) return true;
-    return check(m.module, m.subsection, 'view');
+    const names = ROUTE_CAPABILITIES[href]?.view;
+    if (!names || names.length === 0) return true;
+    return hasAnyCapability(names);
   };
 
   const canExportRoute = (href: string): boolean => {
     if (bypass) return true;
-    if (accountDisabled) return false;
-    const m = ROUTE_TO_MODULE[href];
-    if (!m) return true;
-    return check(m.module, m.subsection, 'export');
+    const names = ROUTE_CAPABILITIES[href]?.export;
+    if (!names || names.length === 0) return true;
+    return hasAnyCapability(names);
   };
 
   return {
     isLoading,
     bypass,
     accountDisabled,
-    permissions: perms,
+    permissions: capabilities ?? {},
     can: check,
     canViewRoute,
     canExportRoute,

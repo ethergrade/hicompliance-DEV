@@ -58,6 +58,8 @@ export interface Group {
   slug?: string;
   description?: string;
   is_active: boolean;
+  /** Dotted capabilities for this group from GET /auth/groups */
+  capabilities?: Record<string, boolean>;
 }
 
 export interface LoginUser {
@@ -66,7 +68,7 @@ export interface LoginUser {
   email: string;
   is_super_admin: boolean;
   groups: Group[];
-  /** Capabilities map from /auth/me. Superadmins with empty groups get all true. */
+  /** Dotted capabilities map from /auth/me (e.g. `users.manage`, `hicompliance.assessment.view`). */
   capabilities?: Record<string, boolean>;
 }
 
@@ -505,6 +507,14 @@ export interface ServiceCatalogItem {
   description?: string;
   icon?: string;
   is_active?: boolean;
+}
+
+export interface RoleModulePermission {
+  id: string;
+  role: string;
+  module_path: string;
+  module_name: string;
+  is_enabled: boolean;
 }
 
 export interface StoreIntegrationRequest {

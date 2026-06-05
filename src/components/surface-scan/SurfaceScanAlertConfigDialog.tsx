@@ -30,6 +30,7 @@ import {
 import { SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
 import { useOrganizationUsers } from '@/hooks/useOrganizationUsers';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 const alertFormSchema = z.object({
   target_user_id: z.string().optional(),
@@ -75,7 +76,8 @@ export const SurfaceScanAlertConfigDialog: React.FC<SurfaceScanAlertConfigDialog
   defaultValues,
   mode = 'create',
 }) => {
-  const { users, loading: usersLoading } = useOrganizationUsers();
+  const { groupId } = useClientOrganization();
+  const { users, loading: usersLoading } = useOrganizationUsers(groupId);
   const { isSuperAdmin: isAdmin } = useUserRoles();
 
   const form = useForm<AlertFormValues>({

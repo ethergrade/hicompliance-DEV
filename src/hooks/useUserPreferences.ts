@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { preferencesApi } from '@/lib/api/preferences';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 export interface UserPreferences {
   // Audit log preferences
@@ -91,7 +92,7 @@ export const useUserPreferences = ({ preferenceKey, defaultPreferences = {}, gro
     if (!user?.id) return;
 
     try {
-      await preferencesApi.set(preferenceKey, defaultPreferences, groupId);
+      await preferencesApi.delete(preferenceKey, groupId);
       setLocalPreferences(defaultPreferences);
       queryClient.invalidateQueries({
         queryKey: ['user-preferences', user.id, preferenceKey],
@@ -120,20 +121,21 @@ export const useUserPreferences = ({ preferenceKey, defaultPreferences = {}, gro
  */
 export const useResetAllPreferences = () => {
   const { user } = useAuth();
+  const { groupId } = useClientOrganization();
   const queryClient = useQueryClient();
 
   const resetAllPreferences = useCallback(async (_currentOrgOnly: boolean = false) => {
-    if (!user?.id) return false;
+    if (!user?.id || !groupId) return false;
 
     try {
-      // Invalidate all preference queries so every consumer re-fetches defaults
+      await preferencesApi.deleteAll(groupId);
       queryClient.invalidateQueries({ queryKey: ['user-preferences'] });
       return true;
     } catch (error) {
       console.error('Error resetting preferences:', error);
       return false;
     }
-  }, [user?.id, queryClient]);
+  }, [user?.id, groupId, queryClient]);
 
   return { resetAllPreferences };
 };

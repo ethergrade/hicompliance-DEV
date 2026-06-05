@@ -21,6 +21,18 @@ export const usersApi = {
     return res.data;
   },
 
+  async listTenants(id: string | number, groupId?: string | null): Promise<string[]> {
+    const opts = groupId ? groupHeader(groupId) : undefined;
+    const res = await apiClient.get<ApiResponse<{ tenant_ids: string[] }>>(`/users/${id}/tenants`, undefined, opts);
+    return res.data.tenant_ids ?? [];
+  },
+
+  async syncTenants(id: string | number, tenantIds: string[], groupId?: string | null): Promise<string[]> {
+    const opts = groupId ? groupHeader(groupId) : undefined;
+    const res = await apiClient.put<ApiResponse<{ tenant_ids: string[] }>>(`/users/${id}/tenants`, { tenant_ids: tenantIds }, opts);
+    return res.data.tenant_ids ?? [];
+  },
+
   async get(id: string | number, groupId?: string | null): Promise<UserResource> {
     const opts = groupId ? groupHeader(groupId) : undefined;
     const res = await apiClient.get<ApiResponse<UserResource>>(`/users/${id}`, undefined, opts);

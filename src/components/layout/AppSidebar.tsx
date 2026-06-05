@@ -317,8 +317,20 @@ export const AppSidebar: React.FC = () => {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 )}
-                {/* /settings/integrations — HIDDEN: supabase-only Integrations page, no backend API */}
-                {/* /settings/surface-scan-alerts — HIDDEN: supabase-only SurfaceScan alerts, no backend API */}
+                {isModuleEnabled('/settings/integrations') && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton 
+                      asChild
+                      className="mx-2 rounded-lg transition-all duration-200 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    >
+                      <NavLink to="/settings/integrations">
+                        <Cloud className="w-4 h-4" />
+                        {!collapsed && <span>Integrazioni</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
+                {/* /settings/surface-scan-alerts — still hidden until full API migration of the page is complete */}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -332,10 +344,9 @@ export const AppSidebar: React.FC = () => {
             <SidebarGroupContent>
               <SidebarMenu>
               {adminNavigation.filter(item => {
-                  // Capability-based gating (takes priority when capabilities data exists)
-                  const hasCompanyMgmt = hasCapability('can_manage_companies');
-                  // Role management is gated by can_manage_users (Luca's backend doesn't expose can_manage_roles)
-                  const hasUserMgmt = hasCapability('can_manage_users');
+                  // Capability-based gating (Stefano dotted keys)
+                  const hasCompanyMgmt = hasCapability('companies.manage');
+                  const hasUserMgmt = hasCapability('users.manage');
 
                   // Show "Selezione Clienti" only for sales/admin who can manage multiple clients
                   if (item.href === '/admin/clients') return canManageMultipleClients && hasCompanyMgmt;

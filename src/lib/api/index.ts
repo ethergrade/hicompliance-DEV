@@ -1,7 +1,7 @@
 export { apiClient } from "@/lib/api-client";
 export { authApi } from "./auth";
 export { groupsApi } from "./groups";
-export { tenantsApi } from "./tenants";
+export { companiesApi, tenantsApi } from "./tenants";
 export { usersApi } from "./users";
 export { assessmentApi } from "./assessment";
 export { configApi } from "./config";
@@ -28,4 +28,6 @@ export { consistenzeApi } from "./consistenze";
 export { criticalInfrastructureApi } from "./critical-infrastructure";
 export { assetIrpApi } from "./asset-irp";
 export { preferencesApi } from "./preferences";
+export { roleModulePermissionsApi } from "./role-module-permissions";
 export { hipatchApi } from "./hipatch";
+export { surfaceScanAlertsApi } from "./surface-scan-alerts";
