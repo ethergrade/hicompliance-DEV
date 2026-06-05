@@ -7,13 +7,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useClientContext } from '@/contexts/ClientContext';
-import { SecurityFeedsSection } from '@/components/dashboard/SecurityFeedsSection';
-import { EPSSWidget } from '@/components/dashboard/EPSSWidget';
 import { ComplianceMetricCard } from '@/components/dashboard/ComplianceMetricCard';
 import { RiskScoreMetricCard } from '@/components/dashboard/RiskScoreMetricCard';
 import { useServiceIntegrations } from '@/hooks/useServiceIntegrations';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useDashboardMetrics } from '@/hooks/useDashboardMetrics';
+import { useAssessmentTrends } from '@/hooks/useAssessmentTrends';
+import { AssessmentRadarChart } from '@/components/assessment/AssessmentRadarChart';
 import ClientServicesDialog from '@/components/clients/ClientServicesDialog';
 import { 
   Shield, BarChart3, Link2, Unlink, Settings
@@ -39,8 +39,9 @@ const Dashboard: React.FC = () => {
   const canManageIntegrationSettings = isSuperAdmin || isSales;
   const [modulesDialogOpen, setModulesDialogOpen] = useState(false);
 
-  // Per-tenant assessment metrics for dashboard widgets
-  const { completionScore, riskScore } = useDashboardMetrics(activeOrgId, activeGroupId);
+  // Per-tenant assessment metrics + trends for dashboard widgets
+  const { completionScore, riskScore, assessmentId } = useDashboardMetrics(activeOrgId, activeGroupId);
+  const { radarCategories, vulnerabilities, deltaHosts, deltaCves } = useAssessmentTrends(assessmentId);
 
   // Catalogo servizi — chiavi normalizzate (lowercase, no underscore/punteggiatura)
   // per confronto case-insensitive con i service_type del backend.
@@ -281,10 +282,67 @@ const Dashboard: React.FC = () => {
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1"><EPSSWidget /></div>
-          <div className="lg:col-span-2"><SecurityFeedsSection compact /></div>
-        </div>
+        {/* Analisi e Trend — dati dal report mensile dell'assessment */}
+        <Card className="border-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Analisi e Trend</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Trend conformità e vulnerabilità dall'assessment mensile
+            </p>
+          </CardHeader>
+          <CardContent>
+            {radarCategories.length > 0 ? (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Radar chart */}
+                <div className="lg:col-span-2">
+                  <AssessmentRadarChart
+                    data={radarCategories.map(c => ({
+                      category: c.name.length > 18 ? c.name.slice(0, 16) + '…' : c.name,
+                      fullName: c.name,
+                      compliance: c.completion_percent,
+                      target: 90,
+                    }))}
+                  />
+                </div>
+                {/* Delta + vulnerabilità */}
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-4 rounded-lg border border-border bg-card/50 text-center">
+                      <div className="text-2xl font-bold text-primary">{deltaHosts ?? '—'}</div>
+                      <p className="text-xs text-muted-foreground mt-1">Delta Host</p>
+                    </div>
+                    <div className="p-4 rounded-lg border border-border bg-card/50 text-center">
+                      <div className="text-2xl font-bold text-destructive">{deltaCves ?? '—'}</div>
+                      <p className="text-xs text-muted-foreground mt-1">Delta CVE</p>
+                    </div>
+                  </div>
+                  <div className="p-4 rounded-lg border border-border bg-card/50">
+                    <p className="text-sm font-medium mb-2">Vulnerabilità recenti</p>
+                    {vulnerabilities.length > 0 ? (
+                      <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                        {vulnerabilities.slice(0, 6).map((v, i) => (
+                          <div key={i} className="flex items-center justify-between text-sm">
+                            <span className="font-mono text-xs truncate max-w-[140px]">{v.cve}</span>
+                            <Badge variant={v.severity === 'CRITICAL' || v.severity === 'HIGH' ? 'destructive' : 'secondary'} className="text-xs">
+                              {v.severity}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Nessuna vulnerabilità rilevata</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-12 text-muted-foreground">
+                <p className="text-sm">Nessun dato trend disponibile per questo cliente.</p>
+                <p className="text-xs mt-1">Compila l'assessment per generare i trend mensili.</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {isSuperAdmin && activeOrgId && (
