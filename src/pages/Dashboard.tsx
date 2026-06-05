@@ -194,7 +194,7 @@ const Dashboard: React.FC = () => {
             <span className="font-medium text-primary">HiCompliance</span>.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <ComplianceMetricCard completionScore={completionScore} />
+          <ComplianceMetricCard completionScore={completionScore} riskScore={riskScore} />
           <RiskScoreMetricCard score={riskScore} />
           {/* Merged card: Servizi Monitorati + Issues Totali */}
           <Card className="relative overflow-hidden border-border shadow-cyber hover:shadow-glow transition-cyber animate-fade-in">
