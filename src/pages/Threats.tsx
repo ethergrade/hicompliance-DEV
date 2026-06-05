@@ -36,7 +36,7 @@ interface Threat {
   title: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
   score: number;
-  source: 'HiFirewall' | 'HiEndpoint' | 'HiMail' | 'HiLog' | 'HiPatch' | 'HiMfa' | 'HiTrack' | 'SurfaceScan' | 'DarkRisk';
+  source: 'HiFirewall' | 'HiEndpoint' | 'HiMail' | 'HiLog' | 'HiPatch' | 'HiMfa' | 'SurfaceScan360' | 'SurfaceScan' | 'DarkRisk';
   asset: string;
   cve?: string;
   description: string;
@@ -119,7 +119,7 @@ const Threats: React.FC = () => {
       case 'HiLog': return 'text-cyan-600';
       case 'HiPatch': return 'text-violet-600';
       case 'HiMfa': return 'text-pink-600';
-      case 'HiTrack': return 'text-indigo-600';
+      case 'SurfaceScan360': return 'text-indigo-600';
       case 'SurfaceScan': return 'text-purple-500';
       case 'DarkRisk': return 'text-red-500';
       default: return 'text-gray-500';
@@ -287,7 +287,7 @@ const Threats: React.FC = () => {
                     <SelectItem value="HiLog">HiLog</SelectItem>
                     <SelectItem value="HiPatch">HiPatch</SelectItem>
                     <SelectItem value="HiMfa">HiMfa</SelectItem>
-                    <SelectItem value="HiTrack">HiTrack</SelectItem>
+                    <SelectItem value="SurfaceScan360">SurfaceScan360</SelectItem>
                     <SelectItem value="SurfaceScan">SurfaceScan</SelectItem>
                     <SelectItem value="DarkRisk">DarkRisk</SelectItem>
                   </SelectContent>

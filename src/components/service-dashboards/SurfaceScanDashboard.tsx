@@ -110,7 +110,7 @@ const RamTrendSparkline: React.FC<{ values: number[]; gradientId: string }> = ({
 
 const MONITORED_DEVICES_PER_PAGE = 15;
 
-export const HiTrackDashboard: React.FC = () => {
+export const SurfaceScanDashboard: React.FC = () => {
   const { data: trackData, isMock } = useTrackDashboard();
   const { overview: overviewStats, monitoredDevices: monitoredDevicesData, networkSites: networkTroubleshootingData, logicalDisks: logicalDisksData, diskSpace: diskSpaceData, ramMonitoring: ramMonitoringData } = trackData;
   const [monitoredSearchQuery, setMonitoredSearchQuery] = useState('');

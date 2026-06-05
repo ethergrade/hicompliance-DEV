@@ -198,7 +198,7 @@ const AdminReporting: React.FC = () => {
     { name: 'HiMail', value: 8, color: '#F59E0B' },
     { name: 'HiPatch', value: 7, color: '#EF4444' },
     { name: 'HiLog', value: 6, color: '#8B5CF6' },
-    { name: 'HiTrack', value: 5, color: '#EC4899' }
+    { name: 'SurfaceScan360', value: 5, color: '#EC4899' }
   ];
 
   const riskTrendData = [

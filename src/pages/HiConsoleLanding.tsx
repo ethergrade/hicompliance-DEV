@@ -52,7 +52,7 @@ const hiSolutionServices = [
   { icon: Shield, name: 'HiFirewall', desc: 'Gestione policy firewall' },
   { icon: Monitor, name: 'HiEndpoint', desc: 'EDR e protezione endpoint' },
   { icon: Mail, name: 'HiMail', desc: 'Email security e anti-phishing' },
-  { icon: Activity, name: 'HiTrack', desc: 'Monitoring proattivo asset' },
+  { icon: Activity, name: 'SurfaceScan360', desc: "Scansione superficie d'attacco esterna" },
   { icon: Server, name: 'HiLog', desc: 'Log management & SIEM correlato' },
   { icon: Search, name: 'HiDetect', desc: 'Detection & response 24/7' },
   { icon: Smartphone, name: 'HiMobile', desc: 'MDM e protezione dispositivi mobili' },
