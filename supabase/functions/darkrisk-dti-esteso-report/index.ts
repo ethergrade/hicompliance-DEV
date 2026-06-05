@@ -304,14 +304,18 @@ async function buildDtiEstesoReport(
     ...((otherRes.data || []) as any[]),
   ];
 
-  // Gather source_record_ids and fetch titles/dates
-  const srIds = [...new Set(sensitiveHits.map((h) => h.source_record_id).filter(Boolean))];
+  // Gather source_record_ids — limita a 150 per non appesantire la IN query
+  // Prioritizza le password (più critiche)
+  const pwHits = sensitiveHits.filter((h) => h.tag === 'passwords');
+  const otherHitsForSr = sensitiveHits.filter((h) => h.tag !== 'passwords').slice(0, 50);
+  const hitsForSr = [...pwHits, ...otherHitsForSr];
+  const srIds = [...new Set(hitsForSr.map((h) => h.source_record_id).filter(Boolean))].slice(0, 150);
   const sourceRecordMap = new Map<string, { title: string; source_date: string }>();
   if (srIds.length > 0) {
     const { data: srRows } = await adminClient
       .from('darkrisk_source_records' as any)
-      .select('id, title, source_date, source_added_at, extraction_source')
-      .in('id', srIds.slice(0, 1000));
+      .select('id, title, source_date, source_added_at')
+      .in('id', srIds);
     for (const r of (srRows || []) as any[]) {
       sourceRecordMap.set(String(r.id), {
         title: String(r.title || '—'),
@@ -634,26 +638,27 @@ async function buildDtiEstesoReport(
 <body>
 <div class="container">
 
-  <!-- COVER — Template HiSolution -->
-  <div class="cover">
-    <div class="cover-bg" style="background-image:url('data:image/jpeg;base64,${COVER_BG_B64}')">
-      <div class="cover-top">
-        <img class="cover-logo" src="data:image/png;base64,${COVER_LOGO_B64}" alt="HiSolution">
-        <span class="cover-brand">HiConsole · HiSolution Srl · support@hisolution.it</span>
+  <!-- COVER — CSS-only (no base64 images per performance edge function) -->
+  <div class="cover" style="background:linear-gradient(160deg,#0a1628 0%,#0f2544 45%,#0a1628 100%);min-height:480px;display:flex;flex-direction:column;justify-content:space-between;border-bottom:3px solid #3b82f6">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 32px;background:rgba(0,0,0,0.3)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:36px;height:36px;background:#3b82f6;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:14px;color:#fff">Hi</div>
+        <span style="color:#f8fafc;font-weight:700;font-size:14px;letter-spacing:.02em">HiSolution</span>
       </div>
-      <div class="cover-accent"></div>
-      <div class="cover-body">
-        <div class="cover-service">DarkRisk360</div>
-        <div class="cover-subtitle">Domain Threat Intelligence &nbsp;·&nbsp; Report DTI Esteso</div>
-        <div class="cover-sep"></div>
-        <div class="cover-client">${escHtml(orgName)}</div>
-        <div class="cover-date">Generato il: ${fmtDateTime(genAt)}</div>
-      </div>
-      <div class="cover-footer">
-        <span>Pubblico &nbsp;( )&nbsp;&nbsp; Privato &nbsp;( )&nbsp;&nbsp; <strong>Confidenziale &nbsp;( ✓ )</strong></span>
-        <span style="color:#dc2626;font-weight:700;letter-spacing:.04em">RISERVATO — Non distribuire</span>
-        <span>Via Della Canapiglia 5, Vecchiano (PI)</span>
-      </div>
+      <span style="color:#94a3b8;font-size:11px">HiConsole · support@hisolution.it</span>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;padding:32px 32px 28px">
+      <div style="font-size:11px;color:#3b82f6;text-transform:uppercase;letter-spacing:.12em;font-weight:700;margin-bottom:8px">DarkRisk360</div>
+      <div style="font-size:32px;font-weight:800;color:#fff;margin-bottom:6px;line-height:1.1">Domain Threat Intelligence</div>
+      <div style="font-size:14px;color:#93c5fd;margin-bottom:22px">Report DTI Esteso · Confidenziale</div>
+      <div style="width:48px;height:3px;background:#3b82f6;margin-bottom:20px;border-radius:2px"></div>
+      <div style="font-size:20px;font-weight:700;color:#f8fafc;margin-bottom:6px">${escHtml(orgName)}</div>
+      <div style="font-size:11px;color:#64748b">Generato il: ${fmtDateTime(genAt)}</div>
+    </div>
+    <div style="background:rgba(0,0,0,0.4);padding:10px 32px;display:flex;justify-content:space-between;font-size:10px;color:#475569">
+      <span>Pubblico &nbsp;( ) &nbsp; Privato &nbsp;( ) &nbsp; <strong style="color:#94a3b8">Confidenziale &nbsp;(✓)</strong></span>
+      <span style="color:#ef4444;font-weight:700">RISERVATO — Non distribuire</span>
+      <span>Via Della Canapiglia 5, Vecchiano (PI)</span>
     </div>
   </div>
 
@@ -914,7 +919,7 @@ serve(async (req: Request) => {
         organization_id: orgId,
         tenant_id: orgId,
         scan_run_id: scanRunId,
-        title: `HiConsole - DARKRISK360 - ${String((await adminClient.from('organizations' as any).select('name').eq('id', orgId).maybeSingle()).data?.name || orgId.slice(0, 8))} - ${now.toLocaleDateString('it-IT')}`,
+        title: `HiConsole - DARKRISK360 - ${String((json as any).organization_name || orgId.slice(0, 8))} - ${now.toLocaleDateString('it-IT')}`,
         tier: 'extended',
         classification: 'confidential',
         status: 'published',
