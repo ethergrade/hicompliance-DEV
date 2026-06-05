@@ -2164,6 +2164,148 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       });
     }
     const assetsForReport = Array.from(assetsForReportMap.values());
+
+    // ── ASSET MODULE DETAILS: dati ricchi per-asset (dominio/subdomain) ──────
+    // Raggruppa http/dns/ssl/whois/threats/tech per host, preservando i campi
+    // completi (score/grade/checks/findings) che la compaction altrimenti scarta.
+    const jobHostMap = new Map<string, string>();
+    for (const j of scopedJobs as any[]) {
+      const host = parseHostname(String(j?.normalized_target || j?.raw_target || '')) ||
+        String(j?.normalized_target || '').trim().toLowerCase();
+      if (j?.id && host) jobHostMap.set(String(j.id), host);
+    }
+    const scopeTargetHostSet = new Set(
+      (scopeTargets as any[]).map((t: any) => parseHostname(String(t || '')) || String(t || '').trim().toLowerCase()).filter(Boolean)
+    );
+    const obsHostOf = (ob: any): string | null => {
+      const v = ob?.value || {};
+      const fromVal = parseHostname(String(
+        v.hostname || v.domain_scanned || v.domain || v.host || v.url || v.target || v?.otx?.domain_target || ''
+      ));
+      if (fromVal) return fromVal;
+      return jobHostMap.get(String(ob?.scan_job_id || '')) || null;
+    };
+    const amdMap = new Map<string, any>();
+    const ensureAmd = (host: string) => {
+      if (!amdMap.has(host)) {
+        amdMap.set(host, {
+          asset: host,
+          asset_type: scopeTargetHostSet.has(host) ? 'domain' : 'subdomain',
+        });
+      }
+      return amdMap.get(host);
+    };
+    for (const ob of (rawObservationsAll || []) as any[]) {
+      const host = obsHostOf(ob);
+      if (!host) continue;
+      const v = ob?.value || {};
+      const ot = String(ob?.observation_type || '');
+      if (ot === 'http_headers_scanner_summary' || ot === 'http_security_summary') {
+        const a = ensureAmd(host);
+        if (!a.http || Number(v.score ?? -1) >= 0) {
+          a.http = {
+            score: Number(v.score ?? 0),
+            grade: v.grade || null,
+            statusCode: v.statusCode ?? null,
+            checks: (v.checks && typeof v.checks === 'object') ? v.checks : {},
+          };
+        }
+      } else if (ot === 'http_headers_scanner_findings') {
+        const a = ensureAmd(host);
+        const f = Array.isArray(v.findings) ? v.findings : [];
+        a.http_findings = f
+          .filter((x: any) => String(x?.status || '').toLowerCase() !== 'ok')
+          .slice(0, 8)
+          .map((x: any) => ({ header: String(x?.header || x?.rule_id || ''), status: String(x?.status || ''), note: String(x?.note || x?.recommendation || '') }));
+      } else if (ot === 'dns_lookup_summary') {
+        const a = ensureAmd(host);
+        a.dns = { score: Number(v.score ?? 0), grade: v.grade || null, ...(v.summary && typeof v.summary === 'object' ? v.summary : {}) };
+      } else if (ot === 'dns_lookup_findings') {
+        const a = ensureAmd(host);
+        const f = Array.isArray(v.findings) ? v.findings : [];
+        a.dns_findings = f
+          .filter((x: any) => !['pass', 'ok'].includes(String(x?.status || '').toLowerCase()))
+          .slice(0, 8)
+          .map((x: any) => ({ title: String(x?.title || x?.id || ''), severity: String(x?.severity || ''), status: String(x?.status || '') }));
+      } else if (ot === 'ssl_certificate_summary' || ot === 'tls_summary') {
+        const a = ensureAmd(host);
+        a.ssl = {
+          ...(a.ssl || {}),
+          trusted: v.trusted ?? a.ssl?.trusted,
+          statusCode: v.statusCode ?? a.ssl?.statusCode,
+          grade: v.grade ?? a.ssl?.grade,
+          tls12: v.tls12Supported ?? v.tls_1_2 ?? a.ssl?.tls12,
+          tls13: v.tls13Supported ?? v.tls_1_3 ?? a.ssl?.tls13,
+        };
+      } else if (ot === 'whois_rdap') {
+        const a = ensureAmd(host);
+        a.whois = {
+          registrar: v.registrar || null,
+          days_to_expiry: v.days_to_expiry ?? null,
+          expires: v.expires || null,
+          dnssec: v.dnssec || null,
+          source: v.source || null,
+        };
+      } else if (ot === 'threats_summary') {
+        const a = ensureAmd(host);
+        const ioc = (v.ioc_fresh_list || v.intelguard || {}) as any;
+        a.threats = {
+          safe_browsing_unsafe: Boolean(v?.safe_browsing?.unsafe),
+          urlhaus_listed: Boolean(v?.urlhaus?.listed),
+          phishtank_verified: Boolean(v?.phishtank?.verified),
+          ioc_matched: Boolean(ioc?.matched),
+          ioc_count: Number(ioc?.matched_count || 0),
+          ioc_lease: Number(ioc?.lease_minutes || 0),
+          ioc_refreshed: ioc?.last_refreshed_at || null,
+        };
+      } else if (ot === 'dnsbl_summary') {
+        const a = ensureAmd(host);
+        a.blocklist = { listed_count: Number(v.listed_count || 0) };
+      } else if (ob?.module === 'tech_stack' && ot === 'tech_stack') {
+        const a = ensureAmd(host);
+        const techs = Array.isArray(v.technologies) ? v.technologies : [];
+        if (techs.length > 0) {
+          a.technologies = techs.slice(0, 12).map((x: any) => ({
+            name: String(x?.name || ''),
+            version: x?.version || null,
+            category: Array.isArray(x?.categories) ? x.categories[0] : (x?.category || null),
+          })).filter((x: any) => x.name);
+        }
+      }
+    }
+    // Enrich SSL con dati certificato dalla tabella dedicata (grade, cert, cipher)
+    for (const row of (rawSslAll || []) as any[]) {
+      const host = parseHostname(String(row?.host || row?.url || '')) || jobHostMap.get(String(row?.scan_job_id || '')) || null;
+      if (!host) continue;
+      const a = ensureAmd(host);
+      a.ssl = {
+        ...(a.ssl || {}),
+        grade: row?.grade ?? a.ssl?.grade,
+        weak_protocols: Array.isArray(row?.weak_protocols) && row.weak_protocols.length ? row.weak_protocols : a.ssl?.weak_protocols,
+        weak_ciphers: Array.isArray(row?.weak_ciphers) && row.weak_ciphers.length ? row.weak_ciphers : a.ssl?.weak_ciphers,
+        subject: row?.certificate_subject || a.ssl?.subject,
+        issuer: row?.certificate_issuer || a.ssl?.issuer,
+      };
+    }
+    // Enrich technologies dalla tabella dedicata (ha versione + host)
+    for (const row of (rawWebTechAll || []) as any[]) {
+      const host = parseHostname(String(row?.host || row?.url || '')) || jobHostMap.get(String(row?.scan_job_id || '')) || null;
+      const name = String(row?.technology_name || '').trim();
+      if (!host || !name) continue;
+      const a = ensureAmd(host);
+      if (!Array.isArray(a.technologies)) a.technologies = [];
+      if (!a.technologies.some((t: any) => t.name === name)) {
+        a.technologies.push({ name, version: row?.technology_version || null, category: row?.category || null });
+      }
+    }
+    const asset_module_details = Array.from(amdMap.values())
+      // Tieni solo asset con almeno un modulo valorizzato
+      .filter((a: any) => a.http || a.dns || a.ssl || a.whois || a.threats || a.blocklist || (Array.isArray(a.technologies) && a.technologies.length > 0))
+      .sort((a: any, b: any) => {
+        if (a.asset_type !== b.asset_type) return a.asset_type === 'domain' ? -1 : 1;
+        return String(a.asset).localeCompare(String(b.asset));
+      });
+
     const observationsForReport = observations.map((observation: any) => {
       const rawValue = observation?.value && typeof observation.value === 'object' ? observation.value as Record<string, any> : {};
       const compactValue: Record<string, unknown> = {};
@@ -2258,6 +2400,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       cve_catalog,
       intel,
       observations: observationsForReport,
+      asset_module_details,
       monitored_scope,
       scope_guard_summary,
       subdomain_dumps,

@@ -240,6 +240,35 @@ Deno.serve(async (req) => {
       .single();
     if (insErr) throw insErr;
 
+    // 5) AUTO-ADD a scope: ogni subdomain scoperto entra in monitoraggio
+    //    (entry_type=domain) così il prossimo SurfaceScan lo scansiona con tutti i moduli.
+    let scope_added = 0;
+    if (enriched.length > 0) {
+      const scopeRows = enriched
+        .map((e) => String(e.subdomain || '').trim().toLowerCase())
+        .filter((sub) => sub && DOMAIN_RX.test(sub) && sub !== root_domain)
+        .map((sub) => ({
+          organization_id,
+          input_value: sub,
+          entry_type: 'domain',
+          ip_start: '',
+          ip_end: '',
+          created_by,
+          discovered_via: 'subdomain_dump',
+          discovered_from: root_domain,
+        }));
+      if (scopeRows.length > 0) {
+        const { error: scopeErr, count } = await supabase
+          .from('surface_scan_monitored_ips')
+          .upsert(scopeRows, { onConflict: 'organization_id,input_value', ignoreDuplicates: true, count: 'exact' });
+        if (scopeErr) {
+          console.warn('subdomain-dump scope auto-add failed:', scopeErr.message);
+        } else {
+          scope_added = Number(count || 0);
+        }
+      }
+    }
+
     return new Response(JSON.stringify({
       ok: true,
       id: row.id,
@@ -251,6 +280,7 @@ Deno.serve(async (req) => {
       truncated,
       sources,
       results: enriched,
+      scope_added,
     }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (err) {

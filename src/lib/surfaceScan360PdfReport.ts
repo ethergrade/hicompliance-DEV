@@ -46,6 +46,19 @@ export interface SurfaceScan360Report {
   }>;
   intel: any[];
   observations?: any[];
+  asset_module_details?: Array<{
+    asset: string;
+    asset_type: 'domain' | 'subdomain';
+    http?: { score: number; grade: string | null; statusCode: number | null; checks: Record<string, boolean> };
+    http_findings?: Array<{ header: string; status: string; note: string }>;
+    dns?: Record<string, any>;
+    dns_findings?: Array<{ title: string; severity: string; status: string }>;
+    ssl?: { trusted?: boolean; statusCode?: number; grade?: string | null; tls12?: boolean; tls13?: boolean; weak_protocols?: string[]; weak_ciphers?: string[]; subject?: string; issuer?: string };
+    whois?: { registrar?: string | null; days_to_expiry?: number | null; expires?: string | null; dnssec?: string | null; source?: string | null };
+    threats?: { safe_browsing_unsafe: boolean; urlhaus_listed: boolean; phishtank_verified: boolean; ioc_matched: boolean; ioc_count: number; ioc_lease: number; ioc_refreshed: string | null };
+    blocklist?: { listed_count: number };
+    technologies?: Array<{ name: string; version: string | null; category: string | null }>;
+  }>;
   monitored_scope?: any[];
   subdomain_dumps?: any[];
   remediation_tasks?: RemediationTask[];
@@ -725,7 +738,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(100, 140, 195);
-  doc.text('Pubblico ( )  ·  Privato ( )  ·  Confidenziale ( ✓ )', margin, h - 34);
+  doc.text('Pubblico ( )  ·  Privato ( )  ·  Confidenziale (X)', margin, h - 34);
   doc.text('Il seguente rapporto contiene informazioni riservate. Non distribuire senza autorizzazione.', margin, h - 22);
   doc.text('Via Della Canapiglia 5, Vecchiano (PI)', w - margin, h - 22, { align: 'right' });
 
@@ -1119,212 +1132,162 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     }
   }
 
-  // ===== 5 EVIDENZE ESTERNE =====
-  sectionTitle(5, 'Evidenze esterne');
-
-  // ── Helper: estrai la prima osservazione per modulo/tipo ─────────────────
+  // ===== 5 EVIDENZE ESTERNE — DETTAGLIO PER ASSET =====
+  sectionTitle(5, 'Evidenze esterne per asset');
   const observations = report.observations || [];
-  const findObs = (module: string, obsType?: string): any =>
-    observations.find((ob: any) =>
-      ob.module === module && (obsType ? ob.observation_type === obsType : true)
-    )?.value || {};
-  const findObsFindings = (module: string, obsType: string): any[] => {
-    const val = observations.find((ob: any) =>
-      ob.module === module && ob.observation_type === obsType
-    )?.value;
-    return Array.isArray(val?.findings) ? val.findings : [];
+
+  // Markers ASCII (jsPDF helvetica non supporta glifi Unicode)
+  const OK = '[OK]';
+  const NO = '[X]';
+  const WARN = '[!]';
+
+  // Mapping reali chiavi check HTTP header → label
+  const HTTP_HEADER_RULES: Array<{ key: string; label: string }> = [
+    { key: 'contentSecurityPolicy', label: 'Content-Security-Policy' },
+    { key: 'strictTransportSecurity', label: 'Strict-Transport-Security (HSTS)' },
+    { key: 'xContentTypeOptions', label: 'X-Content-Type-Options' },
+    { key: 'xFrameOptions', label: 'X-Frame-Options' },
+    { key: 'referrerPolicy', label: 'Referrer-Policy' },
+    { key: 'permissionsPolicy', label: 'Permissions-Policy' },
+    { key: 'crossOriginOpenerPolicy', label: 'Cross-Origin-Opener-Policy' },
+    { key: 'crossOriginResourcePolicy', label: 'Cross-Origin-Resource-Policy' },
+  ];
+
+  const amd = (report.asset_module_details || []).slice();
+  const domainsAmd = amd.filter((a) => a.asset_type === 'domain');
+  const subsAmd = amd.filter((a) => a.asset_type === 'subdomain');
+
+  const renderAssetBlock = (a: NonNullable<SurfaceScan360Report['asset_module_details']>[number]) => {
+    ensure(40);
+    // Header asset
+    y += 4;
+    doc.setFillColor(BRAND.r, BRAND.g, BRAND.b);
+    doc.rect(margin, y - 2, 3, 14, 'F');
+    text(`${a.asset}${a.asset_type === 'subdomain' ? '  (sottodominio)' : ''}`, { bold: true, size: 12, color: [DARK.r, DARK.g, DARK.b], indent: 8 });
+    y += 2;
+
+    // HTTP Security
+    if (a.http) {
+      const score = Number(a.http.score ?? 0);
+      const col: [number, number, number] = score >= 70 ? [16, 133, 89] : score >= 40 ? [180, 120, 10] : [200, 50, 50];
+      text(`HTTP Security — Score ${score}/100 · Grade ${a.http.grade || '-'} · HTTP ${a.http.statusCode ?? '-'}`, { size: 9, bold: true, color: col, indent: 8 });
+      const checks = a.http.checks || {};
+      const rows = HTTP_HEADER_RULES
+        .filter((r) => r.key in checks)
+        .map((r) => [r.label, checks[r.key] ? `${OK} Presente` : `${NO} Mancante`]);
+      if (rows.length > 0) drawTable(['Header di sicurezza', 'Stato'], rows, [320, 195]);
+      if (Array.isArray(a.http_findings) && a.http_findings.length > 0) {
+        drawTable(
+          ['Header', 'Stato', 'Nota'],
+          a.http_findings.slice(0, 6).map((f) => [f.header || '-', String(f.status || '-').toUpperCase(), String(f.note || '-').slice(0, 90)]),
+          [150, 60, 305]
+        );
+      }
+    }
+
+    // DNS Posture & Email Security
+    if (a.dns) {
+      const d = a.dns;
+      const score = Number(d.score ?? 0);
+      const col: [number, number, number] = score >= 70 ? [16, 133, 89] : score >= 40 ? [180, 120, 10] : [200, 50, 50];
+      text(`DNS & Email Security — Score ${score}/100 · Grade ${d.grade || '-'}`, { size: 9, bold: true, color: col, indent: 8 });
+      const protoRows = [
+        ['SPF', d.hasSpf ? `${OK} Presente` : `${NO} Assente`],
+        ['DMARC', d.hasDmarc ? `${OK} Presente` : `${NO} Assente`],
+        ['CAA', d.hasCaa ? `${OK} Presente` : `${NO} Assente`],
+        ['DNSSEC', d.hasDnssecDelegation ? `${OK} Attivo` : `${NO} Non configurato`],
+        ['Mail Exchange (MX)', d.hasMailExchange ? `${OK} Presente` : `${NO} Assente`],
+      ];
+      drawTable(['Protocollo', 'Stato'], protoRows, [200, 315]);
+      if (Array.isArray(a.dns_findings) && a.dns_findings.length > 0) {
+        drawTable(
+          ['Finding DNS', 'Severità', 'Stato'],
+          a.dns_findings.slice(0, 6).map((f) => [String(f.title || '-').slice(0, 130), String(f.severity || '-').toUpperCase(), String(f.status || '-').toUpperCase()]),
+          [290, 80, 145]
+        );
+      }
+    }
+
+    // SSL/TLS
+    if (a.ssl && (a.ssl.trusted !== undefined || a.ssl.grade || a.ssl.subject)) {
+      text('SSL/TLS', { size: 9, bold: true, color: [BRAND.r, BRAND.g, BRAND.b], indent: 8 });
+      const s = a.ssl;
+      const sslRows: string[][] = [];
+      if (s.trusted !== undefined) sslRows.push(['Certificato trusted', s.trusted ? `${OK} Si` : `${NO} No`]);
+      if (s.grade) sslRows.push(['Grado SSL Labs', String(s.grade)]);
+      if (s.tls12 !== undefined) sslRows.push(['TLS 1.2+', s.tls12 ? `${OK} Supportato` : `${NO} No`]);
+      if (s.tls13 !== undefined) sslRows.push(['TLS 1.3', s.tls13 ? `${OK} Supportato` : `${NO} No`]);
+      if (Array.isArray(s.weak_protocols) && s.weak_protocols.length) sslRows.push(['Protocolli deboli', `${WARN} ${s.weak_protocols.join(', ')}`]);
+      if (Array.isArray(s.weak_ciphers) && s.weak_ciphers.length) sslRows.push(['Cipher deboli', `${WARN} ${s.weak_ciphers.slice(0, 3).join(', ')}`]);
+      if (s.subject) sslRows.push(['Soggetto certificato', String(s.subject).slice(0, 80)]);
+      if (s.issuer) sslRows.push(['Emittente (CA)', String(s.issuer).slice(0, 80)]);
+      if (sslRows.length > 0) drawTable(['Campo', 'Valore'], sslRows, [200, 315]);
+    }
+
+    // WHOIS / RDAP
+    if (a.whois && (a.whois.registrar || a.whois.days_to_expiry != null)) {
+      text('Domain WHOIS / RDAP', { size: 9, bold: true, color: [BRAND.r, BRAND.g, BRAND.b], indent: 8 });
+      const w = a.whois;
+      const wRows: string[][] = [];
+      if (w.registrar) wRows.push(['Registrar', String(w.registrar)]);
+      if (w.days_to_expiry != null) {
+        const dl = Number(w.days_to_expiry);
+        const flag = dl < 30 ? `  ${WARN} URGENTE` : dl < 90 ? `  ${WARN} Attenzione` : '';
+        wRows.push(['Scadenza dominio', `${dl} giorni${flag}`]);
+      }
+      if (w.expires) wRows.push(['Data scadenza', String(w.expires).slice(0, 10)]);
+      if (w.dnssec) wRows.push(['DNSSEC (RDAP)', String(w.dnssec)]);
+      if (w.source) wRows.push(['Fonte dati', String(w.source)]);
+      if (wRows.length > 0) drawTable(['Campo', 'Valore'], wRows, [200, 315]);
+    }
+
+    // Tecnologie (solo se presenti — niente n/d)
+    if (Array.isArray(a.technologies) && a.technologies.length > 0) {
+      text('Tecnologie rilevate', { size: 9, bold: true, color: [BRAND.r, BRAND.g, BRAND.b], indent: 8 });
+      drawTable(
+        ['Tecnologia', 'Versione', 'Categoria'],
+        a.technologies.slice(0, 10).map((t) => [t.name, t.version || '-', t.category || '-']),
+        [220, 120, 175]
+      );
+    }
+
+    // Threat Intelligence
+    if (a.threats || a.blocklist) {
+      text('Threat Intelligence & Reputazione', { size: 9, bold: true, color: [BRAND.r, BRAND.g, BRAND.b], indent: 8 });
+      const t = a.threats;
+      const tRows: string[][] = [];
+      if (t) {
+        tRows.push(['Safe Browsing (Google)', t.safe_browsing_unsafe ? `${WARN} Unsafe` : `${OK} Safe`]);
+        tRows.push(['URLHaus (abuse.ch)', t.urlhaus_listed ? `${WARN} Listato` : `${OK} Non listato`]);
+        tRows.push(['PhishTank', t.phishtank_verified ? `${WARN} Phishing` : `${OK} Pulito`]);
+        tRows.push(['IOC Fresh List', t.ioc_matched ? `${WARN} Match (${t.ioc_count})` : `${OK} No match`]);
+      }
+      if (a.blocklist) {
+        tRows.push(['DNS Blocklist', Number(a.blocklist.listed_count) > 0 ? `${WARN} In ${a.blocklist.listed_count} blocklist` : `${OK} Clean`]);
+      }
+      if (tRows.length > 0) drawTable(['Controllo', 'Risultato'], tRows, [200, 315]);
+    }
+    y += 6;
   };
 
-  // ── 5a: HTTP Security Headers ───────────────────────────────────────────
-  const httpSec = (findObs('http_security', 'http_headers_scanner_summary') ||
-    findObs('http_security')) as Record<string, any>;
-  const httpFindings = (findObsFindings('headers', 'http_headers_scanner_findings').length
-    ? findObsFindings('headers', 'http_headers_scanner_findings')
-    : findObsFindings('http_security', 'http_headers_scanner_findings')) as any[];
-  if (Object.keys(httpSec).length > 0 || httpFindings.length > 0) {
-    const httpChecks = (httpSec.checks || {}) as Record<string, boolean>;
-    const httpSum = (httpSec.summary || {}) as Record<string, number>;
-    const grade = String(httpSec.grade || '—');
-    const score = Number(httpSec.score ?? 0);
-    const statusCode = httpSec.statusCode != null ? String(httpSec.statusCode) : '—';
-
-    text('HTTP Security Headers', { bold: true, size: 11, color: [BRAND.r, BRAND.g, BRAND.b] });
-    y += 2;
-
-    // Score row
-    const scoreColor: [number, number, number] = score >= 70 ? [16, 185, 129] : score >= 40 ? [245, 158, 11] : [239, 68, 68];
-    text(
-      `Score: ${score}/100  ·  Grade: ${grade}  ·  HTTP: ${statusCode}  ·  OK: ${Number(httpSum.ok || 0)}  ·  Missing: ${Number(httpSum.missing || 0)}  ·  Weak: ${Number(httpSum.weak || 0)}`,
-      { size: 9, color: scoreColor }
-    );
-    y += 4;
-
-    // Per-header status table
-    const HEADER_RULES: Array<{ key: string; label: string }> = [
-      { key: 'csp', label: 'Content-Security-Policy' },
-      { key: 'hsts', label: 'Strict-Transport-Security (HSTS)' },
-      { key: 'xcto', label: 'X-Content-Type-Options' },
-      { key: 'xfo', label: 'X-Frame-Options / frame-ancestors' },
-      { key: 'rp', label: 'Referrer-Policy' },
-      { key: 'pp', label: 'Permissions-Policy' },
-      { key: 'coop', label: 'COOP (Cross-Origin-Opener-Policy)' },
-      { key: 'corp', label: 'CORP (Cross-Origin-Resource-Policy)' },
-    ];
-    const headerRows = HEADER_RULES
-      .filter((r) => r.key in httpChecks)
-      .map((r) => [r.label, httpChecks[r.key] ? '✓  OK' : '✗  Mancante']);
-    if (headerRows.length > 0) {
-      drawTable(['Header di sicurezza', 'Stato'], headerRows, [350, 165]);
-    }
-
-    // Findings detail
-    const nonOkFindings = httpFindings.filter((f: any) =>
-      String(f?.status || '').toLowerCase() !== 'ok'
-    );
-    if (nonOkFindings.length > 0) {
+  if (amd.length === 0) {
+    text('Nessuna evidenza tecnica per-asset disponibile in questo snapshot.', { color: [MUTED.r, MUTED.g, MUTED.b], size: 9 });
+  } else {
+    if (domainsAmd.length > 0) {
+      text(`Domini in scope (${domainsAmd.length})`, { bold: true, size: 11, color: [BRAND.r, BRAND.g, BRAND.b] });
       y += 4;
-      text('Dettaglio anomalie header', { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] });
-      y += 2;
-      drawTable(
-        ['Header', 'Stato', 'Nota operativa'],
-        nonOkFindings.slice(0, 10).map((f: any) => [
-          String(f?.header || f?.rule_id || '—'),
-          String(f?.status || '—').toUpperCase(),
-          String(f?.note || f?.recommendation || '—').slice(0, 100),
-        ]),
-        [155, 60, 300]
-      );
+      domainsAmd.forEach(renderAssetBlock);
     }
-    y += 8;
-  }
-
-  // ── 5b: DNS Posture ──────────────────────────────────────────────────────
-  const dnsSummary = findObs('dns_lookup', 'dns_lookup_summary') as Record<string, any>;
-  const dnsFindings2 = findObsFindings('dns_lookup', 'dns_lookup_findings') as any[];
-  if (Object.keys(dnsSummary).length > 0 || dnsFindings2.length > 0) {
-    const dnsSum = (dnsSummary.summary || {}) as Record<string, any>;
-    const dnsScore = Number(dnsSummary.score ?? 0);
-    const dnsGrade = String(dnsSummary.grade || '—');
-    const dnsColor: [number, number, number] = dnsScore >= 70 ? [16, 185, 129] : dnsScore >= 40 ? [245, 158, 11] : [239, 68, 68];
-
-    text('DNS Posture & Email Security', { bold: true, size: 11, color: [BRAND.r, BRAND.g, BRAND.b] });
-    y += 2;
-    text(
-      `Score: ${dnsScore}/100  ·  Grade: ${dnsGrade}  ·  High/Critical: ${Number(dnsSum.high || 0) + Number(dnsSum.critical || 0)}  ·  Medium: ${Number(dnsSum.medium || 0)}  ·  Low: ${Number(dnsSum.low || 0)}  ·  Info: ${Number(dnsSum.info || 0)}`,
-      { size: 9, color: dnsColor }
-    );
-    y += 4;
-
-    // Status overview
-    const protocolRows = [
-      ['SPF', Boolean(dnsSum.hasSpf) ? '✓  Presente' : '✗  Assente'],
-      ['DMARC', Boolean(dnsSum.hasDmarc) ? '✓  Presente' : '✗  Assente'],
-      ['DKIM', Boolean(dnsSum.hasDkim) ? '✓  Presente' : '—'],
-      ['CAA', Boolean(dnsSum.hasCaa) ? '✓  Presente' : '✗  Assente'],
-      ['DNSSEC', Boolean(dnsSum.hasDnssecDelegation) ? '✓  Delegazione attiva' : '✗  Non configurato'],
-      ['MTA-STS', Boolean(dnsSum.hasMtaSts) ? '✓  Configurato' : '✗  Non rilevato'],
-    ].filter((r) => r[1] !== '—');
-    drawTable(['Protocollo', 'Stato'], protocolRows, [200, 315]);
-
-    // DNS Findings (warn/fail only)
-    const dnsFail = dnsFindings2.filter((f: any) => {
-      const st = String(f?.status || '').toLowerCase();
-      return st !== 'pass' && st !== 'ok';
-    });
-    if (dnsFail.length > 0) {
+    if (subsAmd.length > 0) {
+      ensure(40);
+      y += 6;
+      text(`Sottodomini rilevati (${subsAmd.length})`, { bold: true, size: 11, color: [BRAND.r, BRAND.g, BRAND.b] });
       y += 4;
-      text('Finding DNS e email security', { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] });
-      y += 2;
-      drawTable(
-        ['Finding', 'Severità', 'Stato'],
-        dnsFail.slice(0, 10).map((f: any) => [
-          String(f?.title || f?.id || '—').slice(0, 140),
-          String(f?.severity || '—').toUpperCase(),
-          String(f?.status || '—').toUpperCase(),
-        ]),
-        [285, 80, 150]
-      );
+      subsAmd.forEach(renderAssetBlock);
     }
-    y += 8;
   }
 
-  // ── 5c: SSL/TLS ──────────────────────────────────────────────────────────
-  const sslObs = (findObs('ssl_certificate') ||
-    findObs('tls_summary') ||
-    findObs('ssl_scan', 'tls_snapshot')) as Record<string, any>;
-  if (Object.keys(sslObs).length > 0) {
-    text('SSL/TLS', { bold: true, size: 11, color: [BRAND.r, BRAND.g, BRAND.b] });
-    y += 2;
-    const sslRows: string[][] = [];
-    if (sslObs.trusted !== undefined) sslRows.push(['Certificato trusted', sslObs.trusted ? '✓  Sì' : '✗  No']);
-    if (sslObs.expiresInDays != null) sslRows.push(['Scadenza certificato', `${sslObs.expiresInDays} giorni`]);
-    if (sslObs.grade) sslRows.push(['Grado SSL Labs', String(sslObs.grade)]);
-    const tls12 = sslObs.tls12Supported ?? sslObs.tls_1_2;
-    const tls13 = sslObs.tls13Supported ?? sslObs.tls_1_3;
-    if (tls12 !== undefined) sslRows.push(['TLS 1.2+', tls12 ? '✓  Supportato' : '✗  Non supportato']);
-    if (tls13 !== undefined) sslRows.push(['TLS 1.3', tls13 ? '✓  Supportato' : '✗  Non supportato']);
-    const weakProtos = Array.isArray(sslObs.weak_protocols) ? sslObs.weak_protocols : [];
-    const weakCiphers = Array.isArray(sslObs.weak_ciphers) ? sslObs.weak_ciphers : [];
-    if (weakProtos.length > 0) sslRows.push(['Protocolli deboli', weakProtos.join(', ')]);
-    if (weakCiphers.length > 0) sslRows.push(['Cipher deboli', weakCiphers.slice(0, 3).join(', ')]);
-    if (sslObs.certificate_subject) sslRows.push(['Soggetto certificato', String(sslObs.certificate_subject).slice(0, 80)]);
-    if (sslObs.certificate_issuer) sslRows.push(['Emittente (CA)', String(sslObs.certificate_issuer).slice(0, 80)]);
-    if (sslRows.length > 0) drawTable(['Campo', 'Valore'], sslRows, [200, 315]);
-    y += 8;
-  }
-
-  // ── 5d: Domain WHOIS ─────────────────────────────────────────────────────
-  const whoisObs = findObs('whois', 'whois_rdap') as Record<string, any>;
-  if (Object.keys(whoisObs).length > 0) {
-    text('Domain WHOIS / RDAP', { bold: true, size: 11, color: [BRAND.r, BRAND.g, BRAND.b] });
-    y += 2;
-    const whoisRows: string[][] = [];
-    if (whoisObs.registrar) whoisRows.push(['Registrar', String(whoisObs.registrar)]);
-    if (whoisObs.days_to_expiry != null) {
-      const daysLeft = Number(whoisObs.days_to_expiry);
-      const expiryFlag = daysLeft < 30 ? ' ⚠ URGENTE' : daysLeft < 90 ? ' ⚠ Attenzione' : '';
-      whoisRows.push(['Scadenza dominio', `${daysLeft} giorni${expiryFlag}`]);
-    }
-    if (whoisObs.expires) whoisRows.push(['Data scadenza', String(whoisObs.expires).slice(0, 10)]);
-    if (whoisObs.dnssec) whoisRows.push(['DNSSEC (RDAP)', String(whoisObs.dnssec)]);
-    if (whoisObs.source) whoisRows.push(['Fonte dati', String(whoisObs.source)]);
-    if (whoisObs.created) whoisRows.push(['Data registrazione', String(whoisObs.created).slice(0, 10)]);
-    if (whoisRows.length > 0) drawTable(['Campo', 'Valore'], whoisRows, [200, 315]);
-    y += 8;
-  }
-
-  // ── 5e: Threat Intelligence ──────────────────────────────────────────────
-  const threatsObs = findObs('threats') as Record<string, any>;
-  const blocklistsObs = findObs('dns_blocklists') as Record<string, any>;
-  const hasThreats = Object.keys(threatsObs).length > 0 || Object.keys(blocklistsObs).length > 0;
-  if (hasThreats) {
-    text('Threat Intelligence & Reputazione', { bold: true, size: 11, color: [BRAND.r, BRAND.g, BRAND.b] });
-    y += 2;
-    const iocObj = (threatsObs?.ioc_fresh_list || threatsObs?.intelguard || {}) as Record<string, any>;
-    const iocLeaseMin = Number(iocObj?.lease_minutes || 0);
-    const iocRefreshed = String(iocObj?.last_refreshed_at || '');
-    const iocFreshLabel = (() => {
-      if (!iocLeaseMin || !iocRefreshed) return 'N/D';
-      const refreshedTs = Date.parse(iocRefreshed);
-      if (!Number.isFinite(refreshedTs)) return 'N/D';
-      return Date.now() - refreshedTs > iocLeaseMin * 60_000 ? 'Stale' : 'Fresh';
-    })();
-
-    const threatRows: string[][] = [
-      ['Safe Browsing (Google)', threatsObs?.safe_browsing?.unsafe ? '⚠ Unsafe — URL malevoli rilevati' : '✓  Safe — Nessuna minaccia'],
-      ['URLHaus (abuse.ch)', threatsObs?.urlhaus?.listed ? '⚠ Presente in URLHaus' : '✓  Non listato'],
-      ['PhishTank', threatsObs?.phishtank?.verified ? '⚠ Phishing verificato' : '✓  Nessun phishing rilevato'],
-      ['IOC Fresh List', iocObj?.matched ? `⚠ Match (${Number(iocObj?.matched_count || 0)} occorrenze)` : '✓  No match'],
-      ['Stato feed IOC', `${iocFreshLabel}${iocLeaseMin ? `  (lease: ${iocLeaseMin} min)` : ''}`],
-      ['Ultimo aggiornamento feed', iocRefreshed ? new Date(iocRefreshed).toLocaleString('it-IT') : '—'],
-      ['DNS Blocklist', Number(blocklistsObs?.listed_count || 0) > 0 ? `⚠ In ${blocklistsObs?.listed_count} blocklist` : '✓  Clean — Nessuna blocklist'],
-    ].filter((r) => r[1] !== '—');
-    drawTable(['Controllo', 'Risultato'], threatRows, [200, 315]);
-    y += 8;
-  }
-
-  // ── Separatore ── poi intel generica ──────────────────────────────────────
-
+  // ── Intel generica residua (hosting/geo/altre evidenze) ────────────────────
   const intel = (report.intel || [])
     .map((i: any) => {
       const resolvedTarget = resolveReportTarget(
@@ -1351,13 +1314,13 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     })
     .filter((i: any) => i.summaryText && !isJunkSummary(i.summaryText));
 
-  // Aggiungi osservazioni chiave per arricchire il report
-  // Include anche website_recon (tecnologie), hosting_context (geo), port_scanner, ssl_scan
-  const OBS_MODULES_INCLUDED = ['dnssec','tech_stack','website_recon','mail_security','security_headers','ct_log','hosting_context','port_scanner','ssl_scan'];
+  // Osservazioni residue: SOLO geolocalizzazione/hosting (il resto è già per-asset).
+  // tech_stack/website_recon/ssl/dns/http esclusi qui (mostrati nel dettaglio per-asset sopra).
+  const OBS_MODULES_INCLUDED = ['hosting_context'];
+  const TECH_EMPTY_RX = /nessuna tecnologia|^n\/d$|tecnologie rilevate:\s*$/i;
   const obsAsIntel = observations
     .filter((ob: any) => OBS_MODULES_INCLUDED.includes(ob.module))
     .map((ob: any) => {
-      // Risolvi target con fallback: title dell'osservazione come dominio candidato
       const resolvedTarget = resolveReportTarget(
         ob.value?.domain,
         ob.value?.hostname,
@@ -1374,11 +1337,15 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     });
   const allIntel = [...intel, ...obsAsIntel]
     .filter((i: any) => !isJunkSummary(i?.summaryText))
-    .filter((i: any) => !isScopeAggregateTarget(i?.target));
+    .filter((i: any) => !isScopeAggregateTarget(i?.target))
+    .filter((i: any) => !TECH_EMPTY_RX.test(String(i?.summaryText || '')))
+    .filter((i: any) => String(i?.target || 'n/d') !== 'n/d');
 
   if (allIntel.length === 0) {
-    text('Nessun dato di enrichment disponibile.', { color: [MUTED.r, MUTED.g, MUTED.b], size: 9 });
+    // Nessuna evidenza extra: la sezione per-asset sopra è già esaustiva
   } else {
+    text('Geolocalizzazione e contesto hosting', { bold: true, size: 11, color: [BRAND.r, BRAND.g, BRAND.b] });
+    y += 2;
     const byProvider: Record<string, any[]> = {};
     allIntel.forEach((i: any) => { (byProvider[i.group || 'Evidenze esterne'] ||= []).push(i); });
     Object.entries(byProvider).forEach(([prov, list]) => {
