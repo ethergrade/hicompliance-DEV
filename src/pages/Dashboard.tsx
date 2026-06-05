@@ -61,18 +61,16 @@ const Dashboard: React.FC = () => {
     hi_mobile: 'HiMobile',
   };
 
-  // Mostra TUTTI i servizi HiSolution con dashboard mock funzionanti.
-  // Lo stato "connected" riflette le integration realmente configurate.
+  // Mostra SOLO i servizi HiSolution attivi per questo tenant.
   const hiSolutionServices = useMemo(() => {
-    return Object.entries(SERVICE_CATALOG).map(([code, name]) => {
-      const connected = isServiceConnected(code);
-      return {
-        id: code,
-        status: connected ? ('active' as const) : ('mock' as const),
+    return integrations
+      .filter(i => i.is_active && i.service_code && i.service_code in SERVICE_CATALOG)
+      .map(i => ({
+        id: i.service_code!,
+        status: 'active' as const,
         health_score: null as number | null,
-        services: { name, code, id: code },
-      };
-    });
+        services: { name: SERVICE_CATALOG[i.service_code!], code: i.service_code!, id: i.service_code! },
+      }));
   }, [integrations]);
 
 
