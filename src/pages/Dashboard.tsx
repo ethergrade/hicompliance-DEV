@@ -16,20 +16,16 @@ import { useUserRoles } from '@/hooks/useUserRoles';
 import { useDashboardMetrics } from '@/hooks/useDashboardMetrics';
 import ClientServicesDialog from '@/components/clients/ClientServicesDialog';
 import { 
-  Shield, Monitor, Mail, FileText, Download, 
-  BarChart3, Laptop, Link2, Unlink, Smartphone, Settings
+  Shield, Monitor, BarChart3, Link2, Unlink, Settings, Download
 } from 'lucide-react';
 
 const getServiceIcon = (code: string) => {
-  switch (code) {
-    case 'hi_firewall': return <Shield className="w-4 h-4" />;
-    case 'hi_endpoint': return <Laptop className="w-4 h-4" />;
-    case 'hi_mail': return <Mail className="w-4 h-4" />;
-    case 'hi_log': return <FileText className="w-4 h-4" />;
-    case 'hi_patch': return <Download className="w-4 h-4" />;
-    case 'hi_track': return <BarChart3 className="w-4 h-4" />;
-    case 'hi_detect': return <Monitor className="w-4 h-4" />;
-    case 'hi_mobile': return <Smartphone className="w-4 h-4" />;
+  const key = code.toLowerCase().replace(/[^a-z0-9]/g, '');
+  switch (key) {
+    case 'hicompliance': return <Shield className="w-4 h-4" />;
+    case 'hipatch': return <Download className="w-4 h-4" />;
+    case 'hitrack': return <BarChart3 className="w-4 h-4" />;
+    case 'darkrisk': return <Monitor className="w-4 h-4" />;
     default: return <Shield className="w-4 h-4" />;
   }
 };
@@ -49,28 +45,33 @@ const Dashboard: React.FC = () => {
   // Per-tenant assessment metrics for dashboard widgets
   const { completionScore, riskScore } = useDashboardMetrics(activeOrgId, activeGroupId);
 
-  // Catalogo statico nomi servizi HiSolution
-  const SERVICE_CATALOG: Record<string, string> = {
-    hi_firewall: 'HiFirewall',
-    hi_endpoint: 'HiEndpoint',
-    hi_mail: 'HiMail',
-    hi_log: 'HiLog',
-    hi_patch: 'HiPatch',
-    hi_track: 'HiTrack',
-    hi_detect: 'HiDetect',
-    hi_mobile: 'HiMobile',
+  // Catalogo servizi — chiavi normalizzate (lowercase, no underscore/punteggiatura)
+  // per confronto case-insensitive con i service_type del backend.
+  const SERVICE_CATALOG: Record<string, { name: string; icon: string }> = {
+    hicompliance:  { name: 'HiCompliance',  icon: 'shield' },
+    hipatch:       { name: 'HiPatch',       icon: 'download' },
+    hitrack:       { name: 'HiTrack',       icon: 'chart' },
+    darkrisk:      { name: 'DarkRisk360',   icon: 'monitor' },
   };
+
+  const normalizeCode = (code: string) => code.toLowerCase().replace(/[^a-z0-9]/g, '');
 
   // Mostra SOLO i servizi HiSolution attivi per questo tenant.
   const hiSolutionServices = useMemo(() => {
     return integrations
-      .filter(i => i.is_active && i.service_code && i.service_code in SERVICE_CATALOG)
-      .map(i => ({
-        id: i.service_code!,
-        status: 'active' as const,
-        health_score: null as number | null,
-        services: { name: SERVICE_CATALOG[i.service_code!], code: i.service_code!, id: i.service_code! },
-      }));
+      .filter(i => i.is_active && i.service_code)
+      .map(i => {
+        const key = normalizeCode(i.service_code!);
+        const meta = SERVICE_CATALOG[key];
+        if (!meta) return null;
+        return {
+          id: i.service_code!,
+          status: 'active' as const,
+          health_score: null as number | null,
+          services: { name: meta.name, code: i.service_code!, id: i.service_code! },
+        };
+      })
+      .filter(Boolean) as typeof hiSolutionServices;
   }, [integrations]);
 
 
