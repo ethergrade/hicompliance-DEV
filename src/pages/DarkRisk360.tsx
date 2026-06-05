@@ -1384,32 +1384,56 @@ const DarkRisk360: React.FC = () => {
         </p>
       </div>
       <Badge variant="outline">{String(report.status || 'completed')}</Badge>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={exportingReportId === String(report.id)}
-        onClick={() => void exportDarkRiskWithSurfaceTemplate(report, 'pdf')}
-      >
-        <Download className="w-4 h-4 mr-2" />
-        PDF
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={exportingReportId === String(report.id)}
-        onClick={() => void exportDarkRiskWithSurfaceTemplate(report, 'docx')}
-      >
-        <Download className="w-4 h-4 mr-2" />
-        DOCX
-      </Button>
-      <Button variant="outline" size="sm" onClick={() => void openReportAsset(report, 'json')}>
-        <Download className="w-4 h-4 mr-2" />
-        JSON
-      </Button>
-      <Button variant="outline" size="sm" onClick={() => void openReportAsset(report, 'html')}>
-        <ExternalLink className="w-4 h-4 mr-2" />
-        HTML
-      </Button>
+      {mode === 'extended' ? (
+        // Report DTI Esteso: è HTML-based. PDF = apri HTML (stampabile da browser).
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => { toast.info('Apri il report e usa Stampa → Salva come PDF'); void openReportAsset(report, 'html'); }}
+          >
+            <Download className="w-4 h-4 mr-2" />
+            PDF
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => void openReportAsset(report, 'json')}>
+            <Download className="w-4 h-4 mr-2" />
+            JSON
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => void openReportAsset(report, 'html')}>
+            <ExternalLink className="w-4 h-4 mr-2" />
+            HTML
+          </Button>
+        </>
+      ) : (
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={exportingReportId === String(report.id)}
+            onClick={() => void exportDarkRiskWithSurfaceTemplate(report, 'pdf')}
+          >
+            <Download className="w-4 h-4 mr-2" />
+            PDF
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={exportingReportId === String(report.id)}
+            onClick={() => void exportDarkRiskWithSurfaceTemplate(report, 'docx')}
+          >
+            <Download className="w-4 h-4 mr-2" />
+            DOCX
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => void openReportAsset(report, 'json')}>
+            <Download className="w-4 h-4 mr-2" />
+            JSON
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => void openReportAsset(report, 'html')}>
+            <ExternalLink className="w-4 h-4 mr-2" />
+            HTML
+          </Button>
+        </>
+      )}
     </div>
   );
 

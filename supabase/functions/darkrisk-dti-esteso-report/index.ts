@@ -2,7 +2,7 @@
 // Mirrors structure of the HiSolution DTI Esteso document.
 // Pulls: IntelX leaks/credentials, DNS analysis, port data, surface scan findings.
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.3';
 
 const SUPABASE_URL = String(Deno.env.get('SUPABASE_URL') || '').trim();
 const SERVICE_ROLE = String(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '').trim();
@@ -873,14 +873,29 @@ serve(async (req: Request) => {
     }
 
     if (!isTrustedService && !isTrustedDbNonce) {
-      // Check user JWT
-      const anonKey = String(Deno.env.get('SUPABASE_ANON_KEY') || '').trim();
+      // Check user JWT — passa il token esplicitamente (più affidabile del global header)
+      if (!bearerKey) {
+        return jsonResponse({ ok: false, error: 'Unauthorized: token mancante' }, 401);
+      }
+      const anonKey = String(Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('SUPABASE_PUBLISHABLE_KEY') || '').trim();
       const userClient = createClient(SUPABASE_URL, anonKey, {
-        global: { headers: { Authorization: authHeader } },
-        auth: { persistSession: false },
+        auth: { persistSession: false, autoRefreshToken: false },
       });
-      const { data: authData, error: authError } = await userClient.auth.getUser();
-      if (authError || !authData.user) return jsonResponse({ ok: false, error: 'Unauthorized' }, 401);
+      const { data: authData, error: authError } = await userClient.auth.getUser(bearerKey);
+      if (authError || !authData?.user) {
+        return jsonResponse({ ok: false, error: `Unauthorized: ${authError?.message || 'sessione non valida'}` }, 401);
+      }
+      // Verifica che sia super admin (la generazione DTI è admin-only)
+      const adminCheck = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+      const { data: roleRow } = await adminCheck
+        .from('user_roles' as any)
+        .select('role')
+        .eq('user_id', authData.user.id)
+        .in('role', ['super_admin', 'sales'])
+        .maybeSingle();
+      if (!roleRow) {
+        return jsonResponse({ ok: false, error: 'Forbidden: richiesto ruolo super_admin' }, 403);
+      }
     }
   }
 
