@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { toast } from 'sonner';
 import {
   AlertTriangle,
   CheckCircle,
@@ -336,52 +337,55 @@ const Assessment: React.FC = () => {
   const responsesRef = useRef(responses);
   responsesRef.current = responses;
 
+  const saveResponsesImmediate = useCallback(async () => {
+    if (!orgId || !user || Object.keys(indexToUuid).length === 0) return;
+    const currentResponses = responsesRef.current;
+    try {
+      if (isUsingFallbackData && v1AssessmentId) {
+        // Salva via API v1 legacy (formato q1, q2, ...)
+        const questionsPayload: Record<string, string> = {};
+        Object.entries(currentResponses).forEach(([idx, value]) => {
+          if (value) {
+            questionsPayload[`q${idx}`] = value === 'completato' ? '1' : 
+                                            value === 'pianificato_in_corso' ? '2' : 
+                                            value === 'non_iniziato' ? '3' :
+                                            value === 'non_applicabile' ? '0' : '3';
+          }
+        });
+        
+        if (Object.keys(questionsPayload).length > 0) {
+          await assessmentApi.update(v1AssessmentId, {
+            questions: questionsPayload,
+            status: 3 // in_progress with answers
+          });
+          console.log('Saved via v1 API:', questionsPayload);
+        }
+      } else {
+        // Salva via API v2 normale
+        const responses = Object.entries(currentResponses)
+          .filter(([, value]) => value)
+          .map(([idx, value]) => ({
+            question_id: indexToUuid[Number(idx)],
+            status: mapToV2Status(value) ?? 'planned_in_progress',
+            notes: null,
+          }));
+        if (responses.length > 0) {
+          await assessmentV2Api.updateResponses(orgId, { responses });
+        }
+      }
+      setSaveStatus('saved');
+      setLastSaved(new Date());
+    } catch (err) {
+      console.error('Auto-save error:', err);
+      setSaveStatus('error');
+    }
+  }, [orgId, user, indexToUuid, isUsingFallbackData, v1AssessmentId]);
+
   const triggerAutoSave = useCallback(() => {
     if (!orgId || !user || Object.keys(indexToUuid).length === 0) return;
     if (snapshotTimerRef.current) clearTimeout(snapshotTimerRef.current);
-    snapshotTimerRef.current = setTimeout(async () => {
-      const currentResponses = responsesRef.current;
-      try {
-        if (isUsingFallbackData && v1AssessmentId) {
-          // Salva via API v1 legacy (formato q1, q2, ...)
-          const questionsPayload: Record<string, string> = {};
-          Object.entries(currentResponses).forEach(([idx, value]) => {
-            if (value) {
-              questionsPayload[`q${idx}`] = value === 'completato' ? '1' : 
-                                              value === 'pianificato_in_corso' ? '2' : 
-                                              value === 'non_iniziato' ? '3' :
-                                              value === 'non_applicabile' ? '0' : '3';
-            }
-          });
-          
-          if (Object.keys(questionsPayload).length > 0) {
-            await assessmentApi.update(v1AssessmentId, {
-              questions: questionsPayload,
-              status: 3 // in_progress with answers
-            });
-            console.log('Saved via v1 API:', questionsPayload);
-          }
-        } else {
-          // Salva via API v2 normale
-          const responses = Object.entries(currentResponses)
-            .filter(([, value]) => value)
-            .map(([idx, value]) => ({
-              question_id: indexToUuid[Number(idx)],
-              status: mapToV2Status(value) ?? 'planned_in_progress',
-              notes: null,
-            }));
-          if (responses.length > 0) {
-            await assessmentV2Api.updateResponses(orgId, { responses });
-          }
-        }
-        setSaveStatus('saved');
-        setLastSaved(new Date());
-      } catch (err) {
-        console.error('Auto-save error:', err);
-        setSaveStatus('error');
-      }
-    }, 3000); // 3s debounce
-  }, [orgId, user, indexToUuid, isUsingFallbackData, v1AssessmentId]);
+    snapshotTimerRef.current = setTimeout(saveResponsesImmediate, 3000); // 3s debounce
+  }, [orgId, user, indexToUuid, saveResponsesImmediate]);
 
   const setResponse = useCallback((questionId: number, value: AssessmentResponse) => {
     if (isReadOnlyView) return;
@@ -676,6 +680,21 @@ const Assessment: React.FC = () => {
       selectGuidedCategory(nextCanonicalIndex);
     }
   }, [filteredAndSortedCategories, assessmentCategories, selectGuidedCategory]);
+
+  const handleContinueOrFinish = useCallback((categoryName: string, hasNext: boolean) => {
+    if (isReadOnlyView) return;
+
+    if (hasNext) {
+      continueToNextCategory(categoryName);
+      return;
+    }
+
+    // Ultima categoria: forza il salvataggio immediato e scrolla in cima
+    if (snapshotTimerRef.current) clearTimeout(snapshotTimerRef.current);
+    snapshotTimerRef.current = null;
+    saveResponsesImmediate();
+    toast.success('Assessment completato! Le risposte sono state salvate.');
+  }, [isReadOnlyView, continueToNextCategory, saveResponsesImmediate]);
 
   return (
     <DashboardLayout>
@@ -1256,11 +1275,14 @@ const Assessment: React.FC = () => {
                           <Button
                             variant="outline"
                             size="sm"
-                            disabled={!hasNextGuidedCategory}
-                            onClick={() => continueToNextCategory(category.name)}
+                            onClick={() => handleContinueOrFinish(category.name, hasNextGuidedCategory)}
                           >
-                            Continua
-                            <ChevronRight className="ml-1 h-4 w-4" />
+                            {hasNextGuidedCategory ? 'Continua' : 'Completato'}
+                            {hasNextGuidedCategory ? (
+                              <ChevronRight className="ml-1 h-4 w-4" />
+                            ) : (
+                              <CheckCircle className="ml-1 h-4 w-4 text-green-600" />
+                            )}
                           </Button>
                         </div>
                       </div>
