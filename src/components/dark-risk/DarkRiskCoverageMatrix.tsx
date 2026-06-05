@@ -34,7 +34,7 @@ export const DarkRiskCoverageMatrix: React.FC<{ controls: CoverageItem[] }> = ({
       <CardContent>
         {controls.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Nessun controllo disponibile per l’asset selezionato.
+            Nessun controllo disponibile per l'asset selezionato.
           </p>
         ) : (
           <div className="overflow-x-auto">

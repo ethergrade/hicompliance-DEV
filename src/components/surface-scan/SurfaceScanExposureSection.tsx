@@ -640,7 +640,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
                     </div>
                   ) : (
                     <p className="mt-3 text-xs text-muted-foreground">
-                      Nessuna porta aperta rilevata su questo asset nell’ultimo snapshot valido.
+                      Nessuna porta aperta rilevata su questo asset nell'ultimo snapshot valido.
                     </p>
                   )}
                 </div>
