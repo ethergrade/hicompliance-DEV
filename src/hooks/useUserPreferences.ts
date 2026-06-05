@@ -26,9 +26,10 @@ export interface UserPreferences {
 interface UseUserPreferencesOptions {
   preferenceKey: string;
   defaultPreferences?: UserPreferences;
+  groupId?: string | null;
 }
 
-export const useUserPreferences = ({ preferenceKey, defaultPreferences = {} }: UseUserPreferencesOptions) => {
+export const useUserPreferences = ({ preferenceKey, defaultPreferences = {}, groupId }: UseUserPreferencesOptions) => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [localPreferences, setLocalPreferences] = useState<UserPreferences>(defaultPreferences);
@@ -40,7 +41,7 @@ export const useUserPreferences = ({ preferenceKey, defaultPreferences = {} }: U
       if (!user?.id) return null;
 
       try {
-        const result = await preferencesApi.get(preferenceKey);
+        const result = await preferencesApi.get(preferenceKey, groupId);
         return (result?.value ?? null) as UserPreferences | null;
       } catch (_err) {
         // Preference key not found yet → return null
@@ -66,7 +67,7 @@ export const useUserPreferences = ({ preferenceKey, defaultPreferences = {} }: U
     mutationFn: async (preferences: UserPreferences) => {
       if (!user?.id) throw new Error('User not available');
 
-      await preferencesApi.set(preferenceKey, preferences);
+      await preferencesApi.set(preferenceKey, preferences, groupId);
       return preferences;
     },
     onSuccess: () => {
@@ -90,7 +91,7 @@ export const useUserPreferences = ({ preferenceKey, defaultPreferences = {} }: U
     if (!user?.id) return;
 
     try {
-      await preferencesApi.set(preferenceKey, defaultPreferences);
+      await preferencesApi.set(preferenceKey, defaultPreferences, groupId);
       setLocalPreferences(defaultPreferences);
       queryClient.invalidateQueries({
         queryKey: ['user-preferences', user.id, preferenceKey],

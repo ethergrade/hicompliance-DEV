@@ -85,6 +85,7 @@ const Remediation: React.FC = () => {
   const { preferences, updatePreferences } = useUserPreferences({
     preferenceKey: 'remediation_filters',
     defaultPreferences: defaultPrefs,
+    groupId,
   });
 
   const [selectedTimeframe, setSelectedTimeframeState] = useState('90days');

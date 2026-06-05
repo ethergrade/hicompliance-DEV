@@ -28,6 +28,7 @@ import {
   Filter,
 } from 'lucide-react';
 import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { NIS2_LABELS } from '@/types/organization';
 import { useUserPreferences } from '@/hooks/useUserPreferences';
@@ -427,6 +428,7 @@ const Assessment: React.FC = () => {
 
   // Organization profile for NIS2 classification
   const { formData: orgProfile, loading: profileLoading } = useOrganizationProfile();
+  const { groupId } = useClientOrganization();
 
   // Persistent preferences
   const { preferences, updatePreferences } = useUserPreferences({
@@ -436,6 +438,7 @@ const Assessment: React.FC = () => {
       sortBy: 'name',
       sortOrder: 'asc',
     },
+    groupId,
   });
 
   // Filter and sort states synced with preferences

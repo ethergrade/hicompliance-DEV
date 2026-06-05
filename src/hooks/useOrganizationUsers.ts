@@ -4,10 +4,11 @@ import type { UserResource } from '@/types/api';
 
 export type OrganizationUser = UserResource;
 
-export const useOrganizationUsers = () => {
+export const useOrganizationUsers = (groupId?: string | null) => {
   const { data: users = [], isLoading: loading, refetch } = useQuery({
-    queryKey: ['users'],
-    queryFn: () => usersApi.list(),
+    queryKey: ['users', groupId],
+    queryFn: () => usersApi.list(groupId),
+    enabled: !!groupId,
   });
   return { users, loading, refetch };
 };

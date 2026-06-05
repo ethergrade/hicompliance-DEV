@@ -32,6 +32,7 @@ interface AuditLog {
 
 interface IntegrationAuditLogProps {
   organizationId: string | null;
+  groupId?: string | null;
 }
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100];
@@ -113,7 +114,7 @@ const exportToCSV = (logs: AuditLog[], filename: string) => {
   URL.revokeObjectURL(link.href);
 };
 
-export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organizationId }) => {
+export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organizationId, groupId }) => {
   const { toast } = useToast();
   const { isAdmin, isSales, loading: rolesLoading } = useUserRoles();
   const canManage = isAdmin || isSales;
@@ -127,6 +128,7 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
       auditLogDateTo: undefined,
       itemsPerPage: DEFAULT_PAGE_SIZE,
     },
+    groupId,
   });
 
   // Local state synced with preferences

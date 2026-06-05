@@ -62,7 +62,7 @@ const Integrations = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { organizationId, needsClientSelection, canManageMultipleClients, selectedOrganization } = useClientOrganization();
+  const { organizationId, groupId, needsClientSelection, canManageMultipleClients, selectedOrganization } = useClientOrganization();
   const { isSuperAdmin, loading: rolesLoading } = useUserRoles();
 
   const form = useForm<IntegrationFormData>({
@@ -477,7 +477,7 @@ const Integrations = () => {
         )}
 
         {/* Audit Log */}
-        <IntegrationAuditLog organizationId={organizationId} />
+        <IntegrationAuditLog organizationId={organizationId} groupId={groupId} />
       </div>
     </DashboardLayout>
   );
