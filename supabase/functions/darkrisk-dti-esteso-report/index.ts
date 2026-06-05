@@ -362,25 +362,14 @@ async function buildDtiEstesoReport(
     .limit(20);
   const aiRecos = (recoRows || []) as any[];
 
-  // ── 12. Build JSON payload ─────────────────────────────────────────────────
-  const json = {
-    generated_at: genAt,
-    organization_id: orgId,
-    organization_name: orgName,
-    scan_run_id: scanRunId,
-    scope: { domains: scopeDomains, emails: scopeEmails, ips: scopeIps },
-    intelx_stats: intelxStats,
-    tag_counts: tagCounts,
-    source_kind_counts: Object.fromEntries(sourceKindCounts),
-    stealer_count: stealerHits.length,
-    total_creds: enrichedHits.filter((h) => h.tag === 'passwords').length,
-  };
-
-  // ── 12. Build HTML ─────────────────────────────────────────────────────────
+  // ── 12. Build HTML + structured data ────────────────────────────────────────
+  // Il payload JSON ricco (report_data) viene costruito DOPO le sezioni, così
+  // contiene tutto il dettaglio (per-dominio, password, findings, raccomandazioni)
+  // necessario al generatore PDF client-side.
   const domainsToAnalyze = scopeDomains.length > 0 ? scopeDomains : ['(nessun dominio in scope)'];
 
   // ── Section: per-domain DNS + findings ────────────────────────────────────
-  const perDomainSections = domainsToAnalyze.map((domain) => {
+  const perDomainEntries = domainsToAnalyze.map((domain) => {
     const dns = dnsPerDomain.get(domain.toLowerCase());
     const dnsRecs = (dns?.records as any) || {};
     const addRecs = (dns?.additional_records as any) || {};
@@ -436,7 +425,59 @@ async function buildDtiEstesoReport(
       credsByTag[h.tag] = (credsByTag[h.tag] || 0) + 1;
     }
 
-    return `
+    const domainPasswords = domainCreds.filter((h: any) => h.tag === 'passwords');
+    const domainStealer = stealerHits.filter((h: any) => String(h.asset_scope || h.query_term || '').toLowerCase().includes(domain.toLowerCase()));
+
+    // ── Dati strutturati per-dominio (per il PDF client-side) ──
+    const __data = {
+      domain,
+      dns: dns ? {
+        grade: dnsGrade,
+        score: Number(dns.score ?? 0),
+        scanned_at: dns.scanned_at || null,
+        records: dnsRows,
+      } : null,
+      email_security: {
+        protection_pct: emailProtectionPct,
+        spf_present: spfPresent,
+        dkim_status: dkimStatus,
+        dmarc_present: dmarcPresent,
+        dmarc_enforced: dmarcEnforced,
+        dmarc_value: dmarcValue.slice(0, 120),
+        findings: emailFindings.map((f: any) => ({
+          category: f.category || '', title: f.title || '', severity: f.severity || '', recommendation: f.recommendation || '',
+        })),
+      },
+      dns_health: dnsHealthFindings.map((f: any) => ({
+        category: f.category || '', title: f.title || '', severity: f.severity || '', recommendation: (f.recommendation || '').slice(0, 160),
+      })),
+      ports: domainPorts.map((p: any) => ({
+        port: p.port, protocol: p.protocol || 'tcp', service: p.service_name || p.service_product || '',
+        version: p.service_version || '', is_web: !!p.is_web, is_tls: !!p.is_tls, exposure: String(p.exposure_level || '').toUpperCase(),
+      })),
+      intelx_kpi: {
+        total_results: totalResults, search_results: searchResults, leaks_results: leaksResults,
+        phonebook_results: phonebookResults, passwords: credsByTag.passwords || 0, total_hits: domainCreds.length,
+      },
+      source_runs: domainSourceRuns.slice(0, 30).map((r: any) => ({
+        source: r.source_label || r.source || '', query_kind: r.query_kind || '',
+        query_term: String(r.query_term || '').slice(0, 60), result_count: Number(r.result_count || 0), status: r.status || '',
+      })),
+      passwords: domainPasswords.slice(0, 200).map((h: any) => ({
+        collection_title: (h.collection_title || '').slice(0, 90),
+        data_collection: h.data_collection || null,
+        value: h.clear_value || h.masked_value || '',
+        context: (h.context_excerpt || '').slice(0, 100),
+      })),
+      passwords_total: domainPasswords.length,
+      stealer: domainStealer.slice(0, 20).map((h: any) => ({
+        collection_title: (h.collection_title || '').slice(0, 70),
+        data_collection: h.data_collection || null,
+        tag: h.tag || '', context: (h.context_excerpt || '').slice(0, 100),
+      })),
+    };
+
+    const __html = `
     <div class="page-break">
       <h2 style="color:#60a5fa;border-bottom:2px solid #1e3a5f;padding-bottom:8px;margin-bottom:16px">${escHtml(domain)}</h2>
 
@@ -566,7 +607,10 @@ async function buildDtiEstesoReport(
         )}
       `) : ''}
     </div>`;
-  }).join('');
+    return { html: __html, data: __data };
+  });
+  const perDomainSections = perDomainEntries.map((e) => e.html).join('');
+  const perDomainData = perDomainEntries.map((e) => e.data);
 
   // ── Section: Surface findings ──────────────────────────────────────────────
   const surfaceSec = surfaceFindings.length > 0
@@ -625,6 +669,75 @@ async function buildDtiEstesoReport(
     'Policy aziendale di non memorizzare credenziali nei browser (autofill) — comunicare ai partner EDR/anti-malware aggiornati per ridurre infostealer.',
     'Revisione periodicaMX/SPF/DKIM/DMARC report su tutti i domini del gruppo per rilevare anomalie di deliverability o spoofing.',
   ];
+
+  // ── Build rich JSON payload (per PDF client-side + dashboard) ───────────────
+  const passwordsTotal = enrichedHits.filter((h) => h.tag === 'passwords').length;
+  const riskLevel = (n: number, hi: number, mid: number) => (n > hi ? 'ALTO' : n > mid ? 'MEDIO' : 'BASSO');
+  const json = {
+    schema_version: '2.0',
+    generated_at: genAt,
+    organization_id: orgId,
+    organization_name: orgName,
+    scan_run_id: scanRunId,
+    scan_run: scanRun ? {
+      started_at: scanRun.started_at || null,
+      completed_at: scanRun.completed_at || null,
+      status: scanRun.status || null,
+    } : null,
+    scope: { domains: scopeDomains, emails: scopeEmails, ips: scopeIps },
+    intelx_stats: intelxStats,
+    tag_counts: tagCounts,
+    source_kind_counts: Object.fromEntries(sourceKindCounts),
+    stealer_count: stealerHits.length,
+    total_creds: passwordsTotal,
+    counters: {
+      enriched_hits_total: enrichedHits.length,
+      surface_findings_count: surfaceFindings.length,
+      intelx_findings_count: intelxFindings.length,
+      domains: scopeDomains.length,
+      emails: scopeEmails.length,
+    },
+    per_domain: perDomainData,
+    surface_findings: surfaceFindings.slice(0, 100).map((f: any) => ({
+      severity: (f.severity || '').toUpperCase(),
+      finding_type: String(f.finding_type || f.module || '').slice(0, 40),
+      title: String(f.title || '').slice(0, 120),
+      affected_asset: String(f.affected_asset || '').slice(0, 60),
+      created_at: f.created_at || null,
+    })),
+    intelx_findings: intelxFindings.slice(0, 100).map((f: any) => ({
+      severity: (f.severity || '').toUpperCase(),
+      finding_type: String(f.finding_type || '').replace('intelx_', '').replace(/_/g, ' '),
+      title: String(f.title || '').slice(0, 120),
+      confidence: f.confidence || '',
+      risk_score: f.risk_score ?? null,
+      first_seen_at: f.first_seen_at || null,
+    })),
+    risk_assessment: {
+      threat_score: riskLevel(tagCounts.passwords || 0, 5, 0),
+      items: [
+        ['Leak di credenziali', riskLevel(tagCounts.passwords || 0, 5, 0)],
+        ['Stealer log implicazioni', stealerHits.length > 0 ? 'MEDIO' : 'BASSO'],
+        ['Credential reuse/weak patterns', (tagCounts.passwords || 0) > 0 ? 'ALTO' : 'BASSO'],
+        ['Esposizione infrastrutturale', ports.filter((p: any) => p.exposure_level === 'high' || p.exposure_level === 'critical').length > 0 ? 'ALTO' : 'MEDIO'],
+        ['Email security posture', hasDmarcIssue ? 'MEDIO' : 'BASSO'],
+        ['Cross-domain leakage', scopeDomains.length > 1 ? 'MEDIO' : 'BASSO'],
+      ],
+      has_high_creds: hasHighCreds,
+      has_dmarc_issue: hasDmarcIssue,
+      has_open_ports: hasOpenPorts,
+    },
+    recommendations: { immediate: recsImmediate, d30: recs30d, d90: recs90d },
+    ai_recommendations: aiRecos.map((r: any) => ({
+      title: r.title || '',
+      priority: r.priority || '',
+      why_it_matters: r.why_it_matters || '',
+      actions: Array.isArray(r.actions) ? r.actions : [],
+      expected_outcome: r.expected_outcome || '',
+      confidence: r.confidence || '',
+      model: r.model || '',
+    })),
+  };
 
   // ── Final HTML assembly ────────────────────────────────────────────────────
   const html = `<!DOCTYPE html>

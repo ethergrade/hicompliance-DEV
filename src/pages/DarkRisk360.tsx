@@ -61,6 +61,7 @@ import { presentDarkRiskFindingType, presentDarkRiskSource } from '@/lib/darkris
 import { detectSensitiveIndicators, type SensitiveIndicators } from '@/lib/darkrisk/sensitiveDetection';
 import { generateSurfaceScan360Pdf } from '@/lib/surfaceScan360PdfReport';
 import { generateSurfaceScan360Docx } from '@/lib/surfaceScan360DocxReport';
+import { generateDtiEstesoPdf } from '@/lib/dtiEstesoPdfReport';
 import { adaptDarkRiskReportToSurfaceScanTemplate } from '@/lib/darkrisk/darkriskReportExportAdapter';
 import { parseMonitoredScopeMixedEntries } from '@/lib/ipRange';
 
@@ -1257,10 +1258,15 @@ const DarkRisk360: React.FC = () => {
   const loadReportJsonSnapshot = async (report: Record<string, any>) => {
     if (!organizationId) throw new Error('Nessun cliente selezionato');
 
-    // Usa report_json inline solo se ha la struttura DarkRisk360 completa (findings o scope.authorized_assets)
+    // Usa report_json inline se ha struttura completa: DarkRisk standard (findings/authorized_assets)
+    // OPPURE DTI Esteso v2.0 (per_domain / schema_version)
     const inlineJson = report?.report_json;
-    const hasFullStructure = inlineJson && typeof inlineJson === 'object' &&
-      (Array.isArray(inlineJson.findings) || Array.isArray(inlineJson?.scope?.authorized_assets));
+    const hasFullStructure = inlineJson && typeof inlineJson === 'object' && (
+      Array.isArray(inlineJson.findings) ||
+      Array.isArray(inlineJson?.scope?.authorized_assets) ||
+      Array.isArray(inlineJson?.per_domain) ||
+      String(inlineJson?.schema_version || '') === '2.0'
+    );
     if (hasFullStructure) return inlineJson;
 
     // Altrimenti scarica il JSON dal percorso di storage tramite signed URL
@@ -1282,6 +1288,26 @@ const DarkRisk360: React.FC = () => {
       throw new Error(`Download JSON fallito (${response.status})`);
     }
     return await response.json();
+  };
+
+  // Export PDF dedicato per il report DTI Esteso (client-side, da report_json ricco v2.0)
+  const exportDtiEstesoPdf = async (report: Record<string, any>) => {
+    try {
+      setExportingReportId(String(report?.id || ''));
+      const reportJson = await loadReportJsonSnapshot(report);
+      if (!reportJson || (!Array.isArray((reportJson as any).per_domain) && String((reportJson as any).schema_version || '') !== '2.0')) {
+        toast.warning('Questo snapshot non ha il formato dettagliato. Clicca "Rigenera esteso" per produrre un report completo, poi riprova.');
+        // Fallback: apri HTML
+        await openReportAsset(report, 'html');
+        return;
+      }
+      generateDtiEstesoPdf(reportJson as any);
+      toast.success('PDF DTI Esteso generato');
+    } catch (exportError: any) {
+      toast.error(`Export PDF non riuscito: ${String(exportError?.message || 'errore sconosciuto')}`);
+    } finally {
+      setExportingReportId(null);
+    }
   };
 
   const exportDarkRiskWithSurfaceTemplate = async (report: Record<string, any>, format: 'pdf' | 'docx') => {
@@ -1385,12 +1411,13 @@ const DarkRisk360: React.FC = () => {
       </div>
       <Badge variant="outline">{String(report.status || 'completed')}</Badge>
       {mode === 'extended' ? (
-        // Report DTI Esteso: è HTML-based. PDF = apri HTML (stampabile da browser).
+        // Report DTI Esteso: PDF generato client-side dal report_json ricco (v2.0).
         <>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => { toast.info('Apri il report e usa Stampa → Salva come PDF'); void openReportAsset(report, 'html'); }}
+            disabled={exportingReportId === String(report.id)}
+            onClick={() => void exportDtiEstesoPdf(report)}
           >
             <Download className="w-4 h-4 mr-2" />
             PDF

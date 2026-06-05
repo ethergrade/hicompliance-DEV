@@ -71,11 +71,14 @@ serve(async (req: Request) => {
       return jsonResponse({ ok: false, error: 'report_id not in selected customer scope' }, 403);
     }
 
+    // NB: lo storage path è un valore di sistema (generato dalla edge function di build),
+    // NON input utente: NON va passato per sanitize()/maskPotentialSecrets — il timestamp
+    // a 13 cifre nel filename verrebbe scambiato per un segreto e alterato, rompendo createSignedUrl.
     let storagePath = '';
-    if (format === 'html') storagePath = sanitize(report.html_storage_path as string, 300);
-    if (format === 'pdf') storagePath = sanitize(report.pdf_storage_path as string, 300);
+    if (format === 'html') storagePath = String(report.html_storage_path || '').trim();
+    if (format === 'pdf') storagePath = String(report.pdf_storage_path || '').trim();
     if (format === 'json') {
-      storagePath = sanitize(report.json_storage_path as string, 300);
+      storagePath = String(report.json_storage_path || '').trim();
       if (!storagePath) storagePath = `${customerId}/${reportId}.json`;
     }
 
@@ -121,9 +124,13 @@ serve(async (req: Request) => {
       signed_url: signedData.signedUrl,
     });
   } catch (error: any) {
+    // Rispetta lo status di SurfaceScanHttpError (es. 403 autorizzazione) invece di
+    // degradare sempre a 500.
+    const status = (error && typeof error.status === 'number') ? error.status : 500;
     return jsonResponse({
       ok: false,
       error: sanitize(error?.message || 'Internal error', 500),
-    }, 500);
+      code: error?.code,
+    }, status);
   }
 });
