@@ -186,7 +186,7 @@ const AdminCompanies: React.FC = () => {
         </div>
 
         {/* ─── PANNELLO COMPANIES ─── */}
-        <div className="flex-1 space-y-6 min-w-0">
+        <div className="flex-1 min-w-0 flex flex-col">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-foreground">
@@ -206,20 +206,20 @@ const AdminCompanies: React.FC = () => {
           </div>
 
           {!selectedGroup ? (
-            <Card>
+            <Card className="flex-1 flex items-center justify-center">
               <CardContent className="py-16 text-center text-muted-foreground">
                 <Building2 className="w-12 h-12 mx-auto mb-4 opacity-30" />
                 <p>Seleziona un'azienda dalla sidebar per visualizzare i suoi clienti.</p>
               </CardContent>
             </Card>
           ) : (
-            <Card>
-              <CardHeader>
+            <Card className="flex-1 flex flex-col overflow-hidden">
+              <CardHeader className="shrink-0">
                 <CardTitle className="flex items-center gap-2">
                   <Building2 className="w-5 h-5" /> Clienti ({tenants.length})
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="flex-1 overflow-y-auto">
                 {loading ? (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
