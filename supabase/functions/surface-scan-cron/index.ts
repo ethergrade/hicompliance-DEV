@@ -13,6 +13,7 @@ interface MonitoredRule {
   input_value: string;
   ip_start: string;
   ip_end: string;
+  discovered_via?: string | null;
 }
 
 interface ShodanBanner {
@@ -655,6 +656,78 @@ async function triggerWeeklyDarkRiskStandardScan(
   }
 }
 
+// Subdomain discovery automatica: per ogni dominio ROOT in scope (non già
+// scoperto via subdomain_dump) lancia subdomain-dump che enumera i sottodomini
+// (crt.sh + hackertarget + passive DNS) e li AUTO-AGGIUNGE allo scope.
+// Al ciclo successivo (o nello stesso, dopo refresh rules) vengono scansionati.
+async function triggerSubdomainDiscovery(
+  supabase: any,
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  orgId: string,
+  rules: MonitoredRule[],
+): Promise<{ dumped: number; scope_added: number; skipped: number }> {
+  // Verifica che il modulo sia abilitato per l'org
+  const { data: org } = await supabase
+    .from('organizations')
+    .select('subdomain_dump_enabled')
+    .eq('id', orgId)
+    .maybeSingle();
+  if (org && org.subdomain_dump_enabled === false) {
+    return { dumped: 0, scope_added: 0, skipped: 0 };
+  }
+
+  // Solo domini root/manuali (evita di ri-dumpare i sottodomini già scoperti)
+  const rootDomains = Array.from(new Set(
+    rules
+      .filter((r) => r.entry_type === 'domain'
+        && String(r.discovered_via || 'manual') !== 'subdomain_dump'
+        && r.input_value)
+      .map((r) => String(r.input_value).trim().toLowerCase())
+      .filter(Boolean)
+  )).slice(0, 15);
+  if (rootDomains.length === 0) return { dumped: 0, scope_added: 0, skipped: 0 };
+
+  // Non ri-dumpare domini già processati negli ultimi 7 giorni
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: recentDumps } = await supabase
+    .from('subdomain_dumps')
+    .select('root_domain')
+    .eq('organization_id', orgId)
+    .gte('created_at', sevenDaysAgo);
+  const recentSet = new Set(((recentDumps || []) as any[]).map((d: any) => String(d.root_domain || '').toLowerCase()));
+
+  let dumped = 0, scope_added = 0, skipped = 0;
+  for (const domain of rootDomains) {
+    if (recentSet.has(domain)) { skipped++; continue; }
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 25_000);
+    try {
+      const res = await fetch(`${supabaseUrl}/functions/v1/subdomain-dump`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${serviceRoleKey}`,
+        },
+        body: JSON.stringify({ organization_id: orgId, root_domain: domain, triggered_by: 'cron_surface' }),
+        signal: ctrl.signal,
+      });
+      clearTimeout(t);
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && !body?.error) {
+        dumped++;
+        scope_added += Number(body?.scope_added || 0);
+      } else {
+        skipped++;
+      }
+    } catch {
+      clearTimeout(t);
+      skipped++;
+    }
+  }
+  return { dumped, scope_added, skipped };
+}
+
 // Ensures all scope domains have a recent classic surface scan job.
 // Creates new scan jobs for domains not scanned in the last 7 days, so the
 // full engine (DNS, RDAP, OTX, CVE-MITRE+CIRCL, BGP, Tor, crt.sh, etc.) runs weekly.
@@ -843,13 +916,40 @@ Deno.serve(async (req) => {
       }
 
       let queuedClassicStarted = 0;
+      let effectiveRules = orgRules;
       if (surfaceGate.allowed) {
+        // Step -1: Subdomain discovery — enumera sottodomini e li auto-aggiunge a scope.
+        // Eseguito PRIMA della scansione classica così i nuovi sub entrano subito in coda.
+        try {
+          const subResult = await triggerSubdomainDiscovery(
+            supabase, supabaseUrl, serviceRoleKey, orgId, orgRules,
+          );
+          if (subResult.dumped > 0 || subResult.scope_added > 0) {
+            await supabase.from('external_scan_audit_log').insert({
+              organization_id: orgId,
+              actor_email: 'system:cron',
+              action: 'auto_subdomain_discovery',
+              details: subResult,
+            });
+            // Re-fetch rules: includi i sottodomini appena aggiunti allo scope
+            const { data: refreshed } = await supabase
+              .from('surface_scan_monitored_ips')
+              .select('*')
+              .eq('organization_id', orgId);
+            if (Array.isArray(refreshed) && refreshed.length > 0) {
+              effectiveRules = refreshed as MonitoredRule[];
+            }
+          }
+        } catch (subErr) {
+          console.error(`Subdomain discovery failed for org ${orgId}:`, subErr);
+        }
+
         // Step 0: Create new scan jobs for scope domains not scanned in the last 7 days.
         // This ensures all engine modules run weekly (DNS, RDAP/WHOIS, OTX, CVE-MITRE+CIRCL,
         // BGP/ASN, Tor exit node, crt.sh, IP-geo, DNSDumpster, HTTP headers, etc.)
         try {
           const scanTriggerResult = await triggerWeeklyClassicScopeScans(
-            supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, orgRules,
+            supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, effectiveRules,
           );
           if (scanTriggerResult.queued > 0 || scanTriggerResult.failed > 0) {
             await supabase.from('external_scan_audit_log').insert({
@@ -897,7 +997,7 @@ Deno.serve(async (req) => {
       let truncated: string[] = [];
       let perRule: RuleScanResult[] = [];
       if (surfaceGate.allowed) {
-        const scanRes = await scanOrganization(orgId, orgRules, SHODAN_API_KEY);
+        const scanRes = await scanOrganization(orgId, effectiveRules, SHODAN_API_KEY);
         assets = scanRes.assets;
         truncated = scanRes.truncated;
         perRule = scanRes.perRule;
@@ -965,7 +1065,7 @@ Deno.serve(async (req) => {
         // PentestTools: solo se esplicitamente abilitato e token disponibili
         if (pentestToolsEnabled) {
           await maybeTriggerAutoValidation(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, perRule);
-          await triggerWeeklyScopeExposureScan(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, orgRules);
+          await triggerWeeklyScopeExposureScan(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, effectiveRules);
         } else {
           console.log(`[cron] pentest-tools disabled — using Shodan as exposure source for org=${orgId}`);
         }
