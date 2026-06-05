@@ -98,12 +98,15 @@ const sevColor = (s?: string): [number, number, number] => {
 const PROVIDER_LABELS: Record<string, string> = {
   shodan: 'Esposizione rete pubblica',
   urlscan: 'Comportamento applicativo esterno',
-  hosting_context: 'Classificazione contesto hosting',
+  hosting_context: 'Geolocalizzazione e Hosting',
   ct_log: 'Evidenze certificate pubbliche',
   dnssec: 'Stato DNSSEC',
-  tech_stack: 'Configurazione applicativa',
+  tech_stack: 'Tecnologie rilevate',
+  website_recon: 'Tecnologie rilevate',
   mail_security: 'Postura sicurezza email (SPF/DKIM/DMARC)',
   security_headers: 'Controlli HTTP di sicurezza',
+  port_scanner: 'Porte e servizi esposti',
+  ssl_scan: 'Analisi TLS/SSL',
 };
 const providerLabel = (p: string) => PROVIDER_LABELS[p] || 'Evidenze esterne';
 
@@ -264,12 +267,56 @@ const summarizeIntel = (provider: string, target: string, summary: any): string 
   }
   if (provider === 'hosting_context') {
     const out: string[] = [];
-    if (summary.resolved_ips?.length) out.push(`IP risolti: ${summary.resolved_ips.join(', ')}`);
+    if (summary.resolved_ips?.length) out.push(`IP: ${summary.resolved_ips.join(', ')}`);
+    if (summary.country) out.push(`Paese: ${summary.country}`);
+    if (summary.city) out.push(`Città: ${summary.city}`);
+    if (summary.asn) out.push(`ASN: ${summary.asn}`);
+    if (summary.org) out.push(`Provider: ${summary.org}`);
+    if (summary.isp) out.push(`ISP: ${summary.isp}`);
     if (summary.co_hosted_count != null) out.push(`co-hosted: ${summary.co_hosted_count}`);
-    if (summary.multi_tenant != null) out.push(`multi-tenant: ${summary.multi_tenant ? 'sì' : 'no'}`);
-    if (summary.cdn_score != null) out.push(`score CDN: ${summary.cdn_score}`);
-    if (summary.type) out.push(`tipo: ${summary.type}`);
+    if (summary.cdn_score != null) out.push(`CDN score: ${summary.cdn_score}`);
+    if (summary.type) out.push(`hosting type: ${summary.type}`);
     return out.join(' · ') || 'n/d';
+  }
+  if (provider === 'website_recon' || provider === 'tech_stack') {
+    // Osservazione tecnologie: ob.value.technologies array oppure summary con fields diretti
+    const techs: string[] = [];
+    const techArr = Array.isArray(summary.technologies) ? summary.technologies : [];
+    for (const t of techArr.slice(0, 8)) {
+      const name = String(t.technology_name || t.name || '').trim();
+      const version = String(t.technology_version || t.version || '').trim();
+      const cat = String(t.category || '').trim();
+      if (!name) continue;
+      techs.push(version ? `${name} ${version}` : name);
+    }
+    if (techs.length > 0) {
+      const cat = techArr[0]?.category ? ` [${String(techArr[0].category).trim()}]` : '';
+      return `Tecnologie rilevate${cat}: ${techs.join(', ')}`;
+    }
+    // Summary diretto (tech_stack module)
+    if (summary.technology_name) {
+      const v = summary.technology_version ? ` ${summary.technology_version}` : '';
+      return `${summary.technology_name}${v}${summary.category ? ` (${summary.category})` : ''}`;
+    }
+    return 'Nessuna tecnologia rilevata';
+  }
+  if (provider === 'port_scanner') {
+    const openPorts: number[] = Array.isArray(summary.open_ports) ? summary.open_ports : [];
+    const dataArr: any[] = Array.isArray(summary.data) ? summary.data : [];
+    const services = dataArr.map((d: any) => {
+      const svc = String(d.service_name || d.service_product || d.service || '').trim();
+      return svc ? `${d.port}/${d.protocol || 'tcp'} (${svc})` : `${d.port}/${d.protocol || 'tcp'}`;
+    }).filter(Boolean).slice(0, 6);
+    if (services.length) return `Porte esposte: ${services.join(', ')}`;
+    if (openPorts.length) return `Porte aperte: ${openPorts.join(', ')}`;
+    return 'Nessun servizio esposto rilevato';
+  }
+  if (provider === 'ssl_scan') {
+    const grade = summary.grade ? `Grado TLS: ${summary.grade}` : '';
+    const weakProtos = Array.isArray(summary.weak_protocols) && summary.weak_protocols.length
+      ? `Protocolli deboli: ${summary.weak_protocols.join(', ')}` : '';
+    const cert = summary.certificate_subject ? `Cert: ${String(summary.certificate_subject).slice(0, 60)}` : '';
+    return [grade, weakProtos, cert].filter(Boolean).join(' · ') || 'TLS rilevato';
   }
   if (provider === 'shodan') {
     if (summary.reason === 'not_found') return `Nessuna esposizione pubblica significativa rilevata per ${target}`;
@@ -278,6 +325,8 @@ const summarizeIntel = (provider: string, target: string, summary: any): string 
     const parts: string[] = [];
     if (ports?.length) parts.push(`porte aperte: ${ports.join(', ')}`);
     if (banners.length) parts.push(`banner tecnici: ${banners.length}`);
+    if (summary.country) parts.push(`Paese: ${summary.country}`);
+    if (summary.city) parts.push(`Città: ${summary.city}`);
     if (summary.org) parts.push(`operatore rete: ${summary.org}`);
     if (summary.asn) parts.push(`ASN: ${summary.asn}`);
     return redactReportWords(parts.join(' · ') || 'Nessuna esposizione pubblica confermata.');
@@ -474,7 +523,10 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   let pageNum = 1;
   const sectionIndex: Array<{ number: number; title: string; page: number }> = [];
 
+  // skipNextFooter: evita di stampare il footer sulla cover (pagina 1)
+  let skipNextFooter = false;
   const drawFooter = () => {
+    if (skipNextFooter) { skipNextFooter = false; return; }
     doc.setFontSize(8);
     doc.setTextColor(MUTED.r, MUTED.g, MUTED.b);
     doc.setFont('helvetica', 'normal');
@@ -678,6 +730,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   doc.text('Via Della Canapiglia 5, Vecchiano (PI)', w - margin, h - 22, { align: 'right' });
 
   y = h + 1;
+  skipNextFooter = true; // non stampare footer sulla cover page
   newPage();
   const tocPage = pageNum;
   newPage();
@@ -1096,31 +1149,26 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   const observations = report.observations || [];
 
   // Aggiungi osservazioni chiave per arricchire il report
+  // Include anche website_recon (tecnologie), hosting_context (geo), port_scanner, ssl_scan
+  const OBS_MODULES_INCLUDED = ['dnssec','tech_stack','website_recon','mail_security','security_headers','ct_log','hosting_context','port_scanner','ssl_scan'];
   const obsAsIntel = observations
-    .filter((ob: any) => ['dnssec','tech_stack','mail_security','security_headers','ct_log'].includes(ob.module))
-    .map((ob: any) => ({
-      group: providerLabel(ob.module),
-      target: resolveReportTarget(
+    .filter((ob: any) => OBS_MODULES_INCLUDED.includes(ob.module))
+    .map((ob: any) => {
+      // Risolvi target con fallback: title dell'osservazione come dominio candidato
+      const resolvedTarget = resolveReportTarget(
         ob.value?.domain,
         ob.value?.hostname,
         ob.value?.host,
         ob.value?.target,
         ob.value?.url,
         ob.title,
-      ),
-      summaryText: summarizeIntel(
-        ob.module,
-        resolveReportTarget(
-          ob.value?.domain,
-          ob.value?.hostname,
-          ob.value?.host,
-          ob.value?.target,
-          ob.value?.url,
-          ob.title,
-        ),
-        ob.value,
-      ),
-    }));
+      );
+      return {
+        group: providerLabel(ob.module),
+        target: resolvedTarget,
+        summaryText: summarizeIntel(ob.module, resolvedTarget, ob.value),
+      };
+    });
   const allIntel = [...intel, ...obsAsIntel]
     .filter((i: any) => !isJunkSummary(i?.summaryText))
     .filter((i: any) => !isScopeAggregateTarget(i?.target));
