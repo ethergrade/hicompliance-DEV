@@ -244,7 +244,8 @@ export const AppSidebar: React.FC = () => {
             <SidebarMenu>
               {filteredNavigation.map((item) => renderNavItem(item))}
               {servicesStandalone.map((item) => renderNavItem(item))}
-              {isModuleEnabled('/threat-management') && renderNavItem({ title: 'Threat Management', href: '/threat-management', icon: Shield })}
+              {/* HIDDEN: Threat Management page removed per client request (2026-06-05) */}
+              {/* {isModuleEnabled('/threat-management') && renderNavItem({ title: 'Threat Management', href: '/threat-management', icon: Shield })} */}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

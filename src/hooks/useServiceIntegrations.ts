@@ -30,15 +30,16 @@ function toServiceIntegration(s: TenantServiceResource): ServiceIntegration {
 }
 
 export const useServiceIntegrations = () => {
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
   const queryClient = useQueryClient();
 
   const { data: integrations = [], isLoading } = useQuery({
-    queryKey: ['service-integrations', organizationId],
+    queryKey: ['service-integrations', organizationId, groupId],
     queryFn: async () => {
       if (!organizationId) return [];
-      const list = await tenantServicesApi.list();
-      return list.map(toServiceIntegration);
+      const list = await tenantServicesApi.listByOrganization(organizationId, groupId);
+      // Client-side filter: compensate for backend bug where tenant_id param is ignored
+      return list.filter(s => s.tenant_id === organizationId).map(toServiceIntegration);
     },
     enabled: !!organizationId,
   });
@@ -48,7 +49,8 @@ export const useServiceIntegrations = () => {
     return integrations.some(i =>
       i.service_code &&
       normalizeServiceCode(i.service_code) === normalizedTargetCode &&
-      i.is_active
+      i.is_active &&
+      i.organization_id === organizationId
     );
   };
 
@@ -57,7 +59,8 @@ export const useServiceIntegrations = () => {
     return integrations.find(i =>
       i.service_code &&
       normalizeServiceCode(i.service_code) === normalizedTargetCode &&
-      i.is_active
+      i.is_active &&
+      i.organization_id === organizationId
     );
   };
 

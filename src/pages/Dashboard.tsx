@@ -13,6 +13,7 @@ import { ComplianceMetricCard } from '@/components/dashboard/ComplianceMetricCar
 import { RiskScoreMetricCard } from '@/components/dashboard/RiskScoreMetricCard';
 import { useServiceIntegrations } from '@/hooks/useServiceIntegrations';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { useDashboardMetrics } from '@/hooks/useDashboardMetrics';
 import ClientServicesDialog from '@/components/clients/ClientServicesDialog';
 import { 
   Shield, Monitor, Mail, FileText, Download, 
@@ -45,6 +46,9 @@ const Dashboard: React.FC = () => {
   const canManageIntegrationSettings = isSuperAdmin || isSales;
   const [modulesDialogOpen, setModulesDialogOpen] = useState(false);
 
+  // Per-tenant assessment metrics for dashboard widgets
+  const { completionScore, riskScore } = useDashboardMetrics(activeOrgId, activeGroupId);
+
   // Catalogo statico nomi servizi HiSolution
   const SERVICE_CATALOG: Record<string, string> = {
     hi_firewall: 'HiFirewall',
@@ -72,7 +76,7 @@ const Dashboard: React.FC = () => {
   }, [integrations]);
 
 
-  const totalIssues = 0;
+  const totalIssues = integrations.filter(i => !i.is_active).length;
 
   // Tutte le tile sono cliccabili: in assenza di integration mostriamo dashboard mock funzionante
   const isModuleEnabledForDashboard = (_serviceCode: string) => true;
@@ -190,8 +194,8 @@ const Dashboard: React.FC = () => {
             <span className="font-medium text-primary">HiCompliance</span>.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <ComplianceMetricCard />
-          <RiskScoreMetricCard />
+          <ComplianceMetricCard completionScore={completionScore} />
+          <RiskScoreMetricCard score={riskScore} />
           {/* Merged card: Servizi Monitorati + Issues Totali */}
           <Card className="relative overflow-hidden border-border shadow-cyber hover:shadow-glow transition-cyber animate-fade-in">
             <CardContent className="p-0 h-full">
@@ -200,7 +204,7 @@ const Dashboard: React.FC = () => {
                 <div className="flex flex-col items-center justify-center p-5 text-center space-y-3">
                   <p className="text-sm font-medium text-muted-foreground">Servizi Monitorati</p>
                   <Badge variant="secondary" className="bg-cyber-green/20 text-cyber-green w-full justify-center">Buono</Badge>
-                  <div className="text-4xl font-bold text-foreground">{hiSolutionServices.length}</div>
+                  <div className="text-4xl font-bold text-foreground">{integrations.filter(i => i.is_active).length}</div>
                   <p className="text-sm text-muted-foreground">Servizi attivi</p>
                 </div>
                 {/* Issues Totali */}
@@ -272,11 +276,11 @@ const Dashboard: React.FC = () => {
                   <div className="text-sm text-muted-foreground">Servizi Connessi</div>
                 </div>
                 <div className="text-center p-4">
-                  <div className="text-2xl font-bold text-red-500 mb-1">{alertServicesCount}</div>
-                  <div className="text-sm text-muted-foreground">Servizi in Allerta</div>
+                  <div className="text-2xl font-bold text-red-500 mb-1">{totalIssues}</div>
+                  <div className="text-sm text-muted-foreground">Servizi Inattivi</div>
                 </div>
                 <div className="text-center p-4">
-                  <div className="text-2xl font-bold text-green-500 mb-1">{operativeServicesCount}</div>
+                  <div className="text-2xl font-bold text-green-500 mb-1">{integrations.filter(i => i.is_active).length}</div>
                   <div className="text-sm text-muted-foreground">Servizi Operativi</div>
                 </div>
               </div>
