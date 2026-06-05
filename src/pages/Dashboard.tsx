@@ -16,16 +16,13 @@ import { useUserRoles } from '@/hooks/useUserRoles';
 import { useDashboardMetrics } from '@/hooks/useDashboardMetrics';
 import ClientServicesDialog from '@/components/clients/ClientServicesDialog';
 import { 
-  Shield, Monitor, BarChart3, Link2, Unlink, Settings, Download
+  Shield, BarChart3, Link2, Unlink, Settings
 } from 'lucide-react';
 
 const getServiceIcon = (code: string) => {
   const key = code.toLowerCase().replace(/[^a-z0-9]/g, '');
   switch (key) {
-    case 'hicompliance': return <Shield className="w-4 h-4" />;
-    case 'hipatch': return <Download className="w-4 h-4" />;
     case 'hitrack': return <BarChart3 className="w-4 h-4" />;
-    case 'darkrisk': return <Monitor className="w-4 h-4" />;
     default: return <Shield className="w-4 h-4" />;
   }
 };
@@ -48,10 +45,7 @@ const Dashboard: React.FC = () => {
   // Catalogo servizi — chiavi normalizzate (lowercase, no underscore/punteggiatura)
   // per confronto case-insensitive con i service_type del backend.
   const SERVICE_CATALOG: Record<string, { name: string; icon: string }> = {
-    hicompliance:  { name: 'HiCompliance',  icon: 'shield' },
-    hipatch:       { name: 'HiPatch',       icon: 'download' },
-    hitrack:       { name: 'HiTrack',       icon: 'chart' },
-    darkrisk:      { name: 'DarkRisk360',   icon: 'monitor' },
+    hitrack:       { name: 'SurfaceScan360', icon: 'chart' },
   };
 
   const normalizeCode = (code: string) => code.toLowerCase().replace(/[^a-z0-9]/g, '');
