@@ -1121,6 +1121,210 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
 
   // ===== 5 EVIDENZE ESTERNE =====
   sectionTitle(5, 'Evidenze esterne');
+
+  // ── Helper: estrai la prima osservazione per modulo/tipo ─────────────────
+  const observations = report.observations || [];
+  const findObs = (module: string, obsType?: string): any =>
+    observations.find((ob: any) =>
+      ob.module === module && (obsType ? ob.observation_type === obsType : true)
+    )?.value || {};
+  const findObsFindings = (module: string, obsType: string): any[] => {
+    const val = observations.find((ob: any) =>
+      ob.module === module && ob.observation_type === obsType
+    )?.value;
+    return Array.isArray(val?.findings) ? val.findings : [];
+  };
+
+  // ── 5a: HTTP Security Headers ───────────────────────────────────────────
+  const httpSec = (findObs('http_security', 'http_headers_scanner_summary') ||
+    findObs('http_security')) as Record<string, any>;
+  const httpFindings = (findObsFindings('headers', 'http_headers_scanner_findings').length
+    ? findObsFindings('headers', 'http_headers_scanner_findings')
+    : findObsFindings('http_security', 'http_headers_scanner_findings')) as any[];
+  if (Object.keys(httpSec).length > 0 || httpFindings.length > 0) {
+    const httpChecks = (httpSec.checks || {}) as Record<string, boolean>;
+    const httpSum = (httpSec.summary || {}) as Record<string, number>;
+    const grade = String(httpSec.grade || '—');
+    const score = Number(httpSec.score ?? 0);
+    const statusCode = httpSec.statusCode != null ? String(httpSec.statusCode) : '—';
+
+    text('HTTP Security Headers', { bold: true, size: 11, color: [BRAND.r, BRAND.g, BRAND.b] });
+    y += 2;
+
+    // Score row
+    const scoreColor: [number, number, number] = score >= 70 ? [16, 185, 129] : score >= 40 ? [245, 158, 11] : [239, 68, 68];
+    text(
+      `Score: ${score}/100  ·  Grade: ${grade}  ·  HTTP: ${statusCode}  ·  OK: ${Number(httpSum.ok || 0)}  ·  Missing: ${Number(httpSum.missing || 0)}  ·  Weak: ${Number(httpSum.weak || 0)}`,
+      { size: 9, color: scoreColor }
+    );
+    y += 4;
+
+    // Per-header status table
+    const HEADER_RULES: Array<{ key: string; label: string }> = [
+      { key: 'csp', label: 'Content-Security-Policy' },
+      { key: 'hsts', label: 'Strict-Transport-Security (HSTS)' },
+      { key: 'xcto', label: 'X-Content-Type-Options' },
+      { key: 'xfo', label: 'X-Frame-Options / frame-ancestors' },
+      { key: 'rp', label: 'Referrer-Policy' },
+      { key: 'pp', label: 'Permissions-Policy' },
+      { key: 'coop', label: 'COOP (Cross-Origin-Opener-Policy)' },
+      { key: 'corp', label: 'CORP (Cross-Origin-Resource-Policy)' },
+    ];
+    const headerRows = HEADER_RULES
+      .filter((r) => r.key in httpChecks)
+      .map((r) => [r.label, httpChecks[r.key] ? '✓  OK' : '✗  Mancante']);
+    if (headerRows.length > 0) {
+      drawTable(['Header di sicurezza', 'Stato'], headerRows, [350, 165]);
+    }
+
+    // Findings detail
+    const nonOkFindings = httpFindings.filter((f: any) =>
+      String(f?.status || '').toLowerCase() !== 'ok'
+    );
+    if (nonOkFindings.length > 0) {
+      y += 4;
+      text('Dettaglio anomalie header', { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] });
+      y += 2;
+      drawTable(
+        ['Header', 'Stato', 'Nota operativa'],
+        nonOkFindings.slice(0, 10).map((f: any) => [
+          String(f?.header || f?.rule_id || '—'),
+          String(f?.status || '—').toUpperCase(),
+          String(f?.note || f?.recommendation || '—').slice(0, 100),
+        ]),
+        [155, 60, 300]
+      );
+    }
+    y += 8;
+  }
+
+  // ── 5b: DNS Posture ──────────────────────────────────────────────────────
+  const dnsSummary = findObs('dns_lookup', 'dns_lookup_summary') as Record<string, any>;
+  const dnsFindings2 = findObsFindings('dns_lookup', 'dns_lookup_findings') as any[];
+  if (Object.keys(dnsSummary).length > 0 || dnsFindings2.length > 0) {
+    const dnsSum = (dnsSummary.summary || {}) as Record<string, any>;
+    const dnsScore = Number(dnsSummary.score ?? 0);
+    const dnsGrade = String(dnsSummary.grade || '—');
+    const dnsColor: [number, number, number] = dnsScore >= 70 ? [16, 185, 129] : dnsScore >= 40 ? [245, 158, 11] : [239, 68, 68];
+
+    text('DNS Posture & Email Security', { bold: true, size: 11, color: [BRAND.r, BRAND.g, BRAND.b] });
+    y += 2;
+    text(
+      `Score: ${dnsScore}/100  ·  Grade: ${dnsGrade}  ·  High/Critical: ${Number(dnsSum.high || 0) + Number(dnsSum.critical || 0)}  ·  Medium: ${Number(dnsSum.medium || 0)}  ·  Low: ${Number(dnsSum.low || 0)}  ·  Info: ${Number(dnsSum.info || 0)}`,
+      { size: 9, color: dnsColor }
+    );
+    y += 4;
+
+    // Status overview
+    const protocolRows = [
+      ['SPF', Boolean(dnsSum.hasSpf) ? '✓  Presente' : '✗  Assente'],
+      ['DMARC', Boolean(dnsSum.hasDmarc) ? '✓  Presente' : '✗  Assente'],
+      ['DKIM', Boolean(dnsSum.hasDkim) ? '✓  Presente' : '—'],
+      ['CAA', Boolean(dnsSum.hasCaa) ? '✓  Presente' : '✗  Assente'],
+      ['DNSSEC', Boolean(dnsSum.hasDnssecDelegation) ? '✓  Delegazione attiva' : '✗  Non configurato'],
+      ['MTA-STS', Boolean(dnsSum.hasMtaSts) ? '✓  Configurato' : '✗  Non rilevato'],
+    ].filter((r) => r[1] !== '—');
+    drawTable(['Protocollo', 'Stato'], protocolRows, [200, 315]);
+
+    // DNS Findings (warn/fail only)
+    const dnsFail = dnsFindings2.filter((f: any) => {
+      const st = String(f?.status || '').toLowerCase();
+      return st !== 'pass' && st !== 'ok';
+    });
+    if (dnsFail.length > 0) {
+      y += 4;
+      text('Finding DNS e email security', { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] });
+      y += 2;
+      drawTable(
+        ['Finding', 'Severità', 'Stato'],
+        dnsFail.slice(0, 10).map((f: any) => [
+          String(f?.title || f?.id || '—').slice(0, 140),
+          String(f?.severity || '—').toUpperCase(),
+          String(f?.status || '—').toUpperCase(),
+        ]),
+        [285, 80, 150]
+      );
+    }
+    y += 8;
+  }
+
+  // ── 5c: SSL/TLS ──────────────────────────────────────────────────────────
+  const sslObs = (findObs('ssl_certificate') ||
+    findObs('tls_summary') ||
+    findObs('ssl_scan', 'tls_snapshot')) as Record<string, any>;
+  if (Object.keys(sslObs).length > 0) {
+    text('SSL/TLS', { bold: true, size: 11, color: [BRAND.r, BRAND.g, BRAND.b] });
+    y += 2;
+    const sslRows: string[][] = [];
+    if (sslObs.trusted !== undefined) sslRows.push(['Certificato trusted', sslObs.trusted ? '✓  Sì' : '✗  No']);
+    if (sslObs.expiresInDays != null) sslRows.push(['Scadenza certificato', `${sslObs.expiresInDays} giorni`]);
+    if (sslObs.grade) sslRows.push(['Grado SSL Labs', String(sslObs.grade)]);
+    const tls12 = sslObs.tls12Supported ?? sslObs.tls_1_2;
+    const tls13 = sslObs.tls13Supported ?? sslObs.tls_1_3;
+    if (tls12 !== undefined) sslRows.push(['TLS 1.2+', tls12 ? '✓  Supportato' : '✗  Non supportato']);
+    if (tls13 !== undefined) sslRows.push(['TLS 1.3', tls13 ? '✓  Supportato' : '✗  Non supportato']);
+    const weakProtos = Array.isArray(sslObs.weak_protocols) ? sslObs.weak_protocols : [];
+    const weakCiphers = Array.isArray(sslObs.weak_ciphers) ? sslObs.weak_ciphers : [];
+    if (weakProtos.length > 0) sslRows.push(['Protocolli deboli', weakProtos.join(', ')]);
+    if (weakCiphers.length > 0) sslRows.push(['Cipher deboli', weakCiphers.slice(0, 3).join(', ')]);
+    if (sslObs.certificate_subject) sslRows.push(['Soggetto certificato', String(sslObs.certificate_subject).slice(0, 80)]);
+    if (sslObs.certificate_issuer) sslRows.push(['Emittente (CA)', String(sslObs.certificate_issuer).slice(0, 80)]);
+    if (sslRows.length > 0) drawTable(['Campo', 'Valore'], sslRows, [200, 315]);
+    y += 8;
+  }
+
+  // ── 5d: Domain WHOIS ─────────────────────────────────────────────────────
+  const whoisObs = findObs('whois', 'whois_rdap') as Record<string, any>;
+  if (Object.keys(whoisObs).length > 0) {
+    text('Domain WHOIS / RDAP', { bold: true, size: 11, color: [BRAND.r, BRAND.g, BRAND.b] });
+    y += 2;
+    const whoisRows: string[][] = [];
+    if (whoisObs.registrar) whoisRows.push(['Registrar', String(whoisObs.registrar)]);
+    if (whoisObs.days_to_expiry != null) {
+      const daysLeft = Number(whoisObs.days_to_expiry);
+      const expiryFlag = daysLeft < 30 ? ' ⚠ URGENTE' : daysLeft < 90 ? ' ⚠ Attenzione' : '';
+      whoisRows.push(['Scadenza dominio', `${daysLeft} giorni${expiryFlag}`]);
+    }
+    if (whoisObs.expires) whoisRows.push(['Data scadenza', String(whoisObs.expires).slice(0, 10)]);
+    if (whoisObs.dnssec) whoisRows.push(['DNSSEC (RDAP)', String(whoisObs.dnssec)]);
+    if (whoisObs.source) whoisRows.push(['Fonte dati', String(whoisObs.source)]);
+    if (whoisObs.created) whoisRows.push(['Data registrazione', String(whoisObs.created).slice(0, 10)]);
+    if (whoisRows.length > 0) drawTable(['Campo', 'Valore'], whoisRows, [200, 315]);
+    y += 8;
+  }
+
+  // ── 5e: Threat Intelligence ──────────────────────────────────────────────
+  const threatsObs = findObs('threats') as Record<string, any>;
+  const blocklistsObs = findObs('dns_blocklists') as Record<string, any>;
+  const hasThreats = Object.keys(threatsObs).length > 0 || Object.keys(blocklistsObs).length > 0;
+  if (hasThreats) {
+    text('Threat Intelligence & Reputazione', { bold: true, size: 11, color: [BRAND.r, BRAND.g, BRAND.b] });
+    y += 2;
+    const iocObj = (threatsObs?.ioc_fresh_list || threatsObs?.intelguard || {}) as Record<string, any>;
+    const iocLeaseMin = Number(iocObj?.lease_minutes || 0);
+    const iocRefreshed = String(iocObj?.last_refreshed_at || '');
+    const iocFreshLabel = (() => {
+      if (!iocLeaseMin || !iocRefreshed) return 'N/D';
+      const refreshedTs = Date.parse(iocRefreshed);
+      if (!Number.isFinite(refreshedTs)) return 'N/D';
+      return Date.now() - refreshedTs > iocLeaseMin * 60_000 ? 'Stale' : 'Fresh';
+    })();
+
+    const threatRows: string[][] = [
+      ['Safe Browsing (Google)', threatsObs?.safe_browsing?.unsafe ? '⚠ Unsafe — URL malevoli rilevati' : '✓  Safe — Nessuna minaccia'],
+      ['URLHaus (abuse.ch)', threatsObs?.urlhaus?.listed ? '⚠ Presente in URLHaus' : '✓  Non listato'],
+      ['PhishTank', threatsObs?.phishtank?.verified ? '⚠ Phishing verificato' : '✓  Nessun phishing rilevato'],
+      ['IOC Fresh List', iocObj?.matched ? `⚠ Match (${Number(iocObj?.matched_count || 0)} occorrenze)` : '✓  No match'],
+      ['Stato feed IOC', `${iocFreshLabel}${iocLeaseMin ? `  (lease: ${iocLeaseMin} min)` : ''}`],
+      ['Ultimo aggiornamento feed', iocRefreshed ? new Date(iocRefreshed).toLocaleString('it-IT') : '—'],
+      ['DNS Blocklist', Number(blocklistsObs?.listed_count || 0) > 0 ? `⚠ In ${blocklistsObs?.listed_count} blocklist` : '✓  Clean — Nessuna blocklist'],
+    ].filter((r) => r[1] !== '—');
+    drawTable(['Controllo', 'Risultato'], threatRows, [200, 315]);
+    y += 8;
+  }
+
+  // ── Separatore ── poi intel generica ──────────────────────────────────────
+
   const intel = (report.intel || [])
     .map((i: any) => {
       const resolvedTarget = resolveReportTarget(
@@ -1146,7 +1350,6 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
       };
     })
     .filter((i: any) => i.summaryText && !isJunkSummary(i.summaryText));
-  const observations = report.observations || [];
 
   // Aggiungi osservazioni chiave per arricchire il report
   // Include anche website_recon (tecnologie), hosting_context (geo), port_scanner, ssl_scan
