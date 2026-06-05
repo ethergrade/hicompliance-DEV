@@ -73,7 +73,7 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
   };
 
   const handleDelete = async (reportId: string) => {
-    const shouldDelete = window.confirm('Confermi l'eliminazione di questo report dal repository?');
+    const shouldDelete = window.confirm('Confermi l\'eliminazione di questo report dal repository?');
     if (!shouldDelete) return;
     await deleteReport(reportId);
   };

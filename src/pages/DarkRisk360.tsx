@@ -908,7 +908,7 @@ const DarkRisk360: React.FC = () => {
         delta: overview.kpis.last_scan.delta,
         tone: 'text-foreground',
         icon: Clock3,
-        description: 'Timestamp di completamento dell'ultimo ciclo disponibile per il cliente.',
+        description: 'Timestamp di completamento dell\'ultimo ciclo disponibile per il cliente.',
       },
       {
         key: 'coverage',

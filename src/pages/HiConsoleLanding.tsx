@@ -198,7 +198,7 @@ const HiConsoleLanding: React.FC = () => {
                 <p className="text-sm text-muted-foreground leading-relaxed max-w-3xl">
                   Trasforma findings e gap di compliance in un <strong>piano operativo con tempi, owner e costi</strong>.
                   Ogni intervento ha priorità, effort stimato, budget allocato e stato avanzamento.
-                  Vedi a colpo d'occhio quanto stai investendo, quanto rischio stai abbattendo e a che punto sei nel percorso verso l'obiettivo.
+                  Vedi a colpo d'occhio quanto stai investendo, quanto rischio stai abbattendo e a che punto sei nel percorso verso l\'obiettivo.
                 </p>
                 <ul className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm pt-1">
                   <li className="flex items-start gap-2"><CalendarClock className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" /><span>Roadmap con milestone trimestrali</span></li>
@@ -315,7 +315,7 @@ const HiConsoleLanding: React.FC = () => {
                 L'<strong>Incident Response Plan</strong> di HiSolution Console non è un documento PDF da aggiornare ogni due anni:
                 è un sistema vivo, integrato con la tua infrastruttura e il tuo team. Quando scatta un incidente,
                 il responsabile apre il playbook giusto, segue gli step, assegna i task ai responsabili nominati nella rubrica,
-                allega evidenze e screenshot, e a fine procedura ottiene automaticamente il documento archiviabile per l'ACN o l'autorità di controllo.
+                allega evidenze e screenshot, e a fine procedura ottiene automaticamente il documento archiviabile per l'ACN o l\'autorità di controllo.
               </p>
               <p className="text-muted-foreground leading-relaxed">
                 Tutto è già pre-popolato per <strong>NIS2</strong>: classificazione del soggetto, CISO sostituto, asset critici,
