@@ -20,10 +20,10 @@ export const LoginPage: React.FC = () => {
     setIsLoading(true);
     
     const formData = new FormData(e.currentTarget);
-    const email = formData.get('email') as string;
+    const login = formData.get('login') as string;
     const password = formData.get('password') as string;
     
-    await signIn(email, password);
+    await signIn(login, password);
     setIsLoading(false);
   };
 
@@ -49,12 +49,12 @@ export const LoginPage: React.FC = () => {
           <CardContent>
             <form onSubmit={handleSignIn} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="login">Email o Username</Label>
                 <Input 
-                  id="email" 
-                  name="email" 
-                  type="email" 
-                  placeholder="email di login"
+                  id="login" 
+                  name="login" 
+                  type="text" 
+                  placeholder="email o username"
                   required 
                 />
               </div>

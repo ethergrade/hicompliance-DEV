@@ -47,7 +47,8 @@ export interface PaginatedResponse<T> {
 // ─── Auth ───────────────────────────────────────────────────────────────────
 
 export interface LoginRequest {
-  email: string;
+  /** Username or email — backend accepts either */
+  login: string;
   password: string;
 }
 

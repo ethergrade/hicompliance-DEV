@@ -7,7 +7,7 @@ import type { LoginUser } from '@/types/api';
 interface AuthContextType {
   user: LoginUser | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: unknown }>;
+  signIn: (login: string, password: string) => Promise<{ error: unknown }>;
   signOut: () => Promise<void>;
 }
 
@@ -70,9 +70,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => window.removeEventListener('auth:unauthorized', handleAuthUnauthorized);
   }, [toast]);
 
-  const signIn = useCallback(async (email: string, password: string) => {
+  const signIn = useCallback(async (login: string, password: string) => {
     try {
-      const { user: loggedUser } = await authApi.login({ email, password });
+      const { user: loggedUser } = await authApi.login({ login, password });
       setUser(loggedUser);
 
       toast({
