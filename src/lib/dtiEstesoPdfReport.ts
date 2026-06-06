@@ -2,7 +2,7 @@ import jsPDF from 'jspdf';
 import { COVER_BG_JPEG_B64, HISOLUTION_LOGO_PNG_B64 } from './reportCoverAssets';
 
 // ─── Tipi (shape del report_json prodotto da darkrisk-dti-esteso-report v2.0) ───
-interface DtiPasswordHit { collection_title: string; data_collection: string | null; value: string; context: string }
+interface DtiPasswordHit { collection_title: string; data_collection: string | null; username?: string; value: string; context: string }
 interface DtiPerDomain {
   domain: string;
   dns: { grade: string; score: number; scanned_at: string | null; records: string[][] } | null;
@@ -13,7 +13,7 @@ interface DtiPerDomain {
   };
   dns_health: Array<{ category: string; title: string; severity: string; recommendation: string }>;
   ports: Array<{ port: number; protocol: string; service: string; version: string; is_web: boolean; is_tls: boolean; exposure: string }>;
-  intelx_kpi: { total_results: number; search_results: number; leaks_results: number; phonebook_results: number; passwords: number; total_hits: number };
+  dti_kpi: { total_results: number; search_results: number; leaks_results: number; phonebook_results: number; passwords: number; total_hits: number };
   source_runs: Array<{ source: string; query_kind: string; query_term: string; result_count: number; status: string }>;
   passwords: DtiPasswordHit[];
   passwords_total: number;
@@ -25,18 +25,16 @@ export interface DtiEstesoReportJson {
   organization_name: string;
   scan_run_id?: string | null;
   scan_run?: { started_at: string | null; completed_at: string | null; status: string | null } | null;
-  scope: { domains: string[]; emails: string[]; ips: string[] };
-  intelx_stats?: Record<string, any>;
-  tag_counts?: Record<string, number>;
+  scope: { domains: string[]; emails: string[]; ips: string[] };  tag_counts?: Record<string, number>;
   stealer_count?: number;
   total_creds?: number;
-  counters?: { enriched_hits_total: number; surface_findings_count: number; intelx_findings_count: number; domains: number; emails: number };
+  counters?: { enriched_hits_total: number; surface_findings_count: number; passwords_count: number; domains: number; emails: number };
   per_domain?: DtiPerDomain[];
+  all_passwords?: Array<{ asset: string; username: string; value: string; source: string; date: string | null }>;
+  findings_by_source?: Array<{ source: string; count: number }>;
   surface_findings?: Array<{ severity: string; finding_type: string; title: string; affected_asset: string; created_at: string | null }>;
-  intelx_findings?: Array<{ severity: string; finding_type: string; title: string; confidence: string; risk_score: number | null; first_seen_at: string | null }>;
   risk_assessment?: { threat_score: string; items: Array<[string, string]>; has_high_creds: boolean; has_dmarc_issue: boolean; has_open_ports: boolean };
   recommendations?: { immediate: string[]; d30: string[]; d90: string[] };
-  ai_recommendations?: Array<{ title: string; priority: string; why_it_matters: string; actions: string[]; expected_outcome: string; confidence: string; model: string }>;
 }
 
 const BRAND = { r: 59, g: 130, b: 246 };
@@ -249,7 +247,7 @@ export function generateDtiEstesoPdf(report: DtiEstesoReportJson): void {
   const c = report.counters;
   const tc = report.tag_counts || {};
   if (c) {
-    kv('Sintesi', `${c.domains} domini · ${c.emails} email · ${report.total_creds || 0} password · ${c.enriched_hits_total} evidenze · ${c.intelx_findings_count} findings IntelX`);
+    kv('Sintesi', `${c.domains} domini · ${c.emails} email · ${report.total_creds || 0} password in chiaro · ${c.enriched_hits_total} evidenze · ${c.surface_findings_count} findings SurfaceScan`);
   }
 
   // ===== PERIMETRO =====
@@ -260,7 +258,7 @@ export function generateDtiEstesoPdf(report: DtiEstesoReportJson): void {
   ];
   drawTable(['ID', 'URL / Indirizzo', 'Tipo'], scopeRows, [50, 350, 115]);
   if ((report.scope?.emails || []).length > 0) {
-    subTitle('Email identity in scope (IntelX Leaks)');
+    subTitle('Email identity in scope (DarkRisk360)');
     bullets(report.scope.emails.slice(0, 30), [BRAND.r, BRAND.g, BRAND.b]);
   }
 
@@ -319,28 +317,29 @@ export function generateDtiEstesoPdf(report: DtiEstesoReportJson): void {
           [50, 50, 130, 100, 50, 50, 85]);
       }
 
-      // IntelX KPI
-      const k = d.intelx_kpi;
+      // DTI KPI numerici (no nomi provider), source_runs senza FAILED
+      const k = d.dti_kpi;
       if (k) {
-        subTitle('DTI - Rilevazioni IntelX');
-        text(`Totale risultati: ${k.total_results}  ·  Search: ${k.search_results}  ·  Leaks: ${k.leaks_results}  ·  Phonebook: ${k.phonebook_results}  ·  Password: ${k.passwords}  ·  Hit sensibili: ${k.total_hits}`,
+        subTitle('DTI - Rilevazioni DarkRisk360');
+        text(`Totale risultati: ${k.total_results}  ·  Password in chiaro: ${k.passwords}  ·  Hit sensibili: ${k.total_hits}`,
           { size: 9, bold: true, color: k.passwords > 0 ? [200, 50, 50] : [16, 133, 89] });
-        if ((d.source_runs || []).length > 0) {
-          drawTable(['Sorgente', 'Query Kind', 'Query Term', 'Risultati', 'Status'],
-            d.source_runs.slice(0, 20).map((r) => [r.source, r.query_kind, r.query_term, String(r.result_count), r.status]),
-            [130, 110, 130, 70, 75]);
+        const runs = (d.source_runs || []).filter((r) => String(r.status || '').toLowerCase() !== 'failed');
+        if (runs.length > 0) {
+          drawTable(['Sorgente', 'Tipo query', 'Termine', 'Risultati'],
+            runs.slice(0, 20).map((r) => [r.source, r.query_kind, r.query_term, String(r.result_count)]),
+            [150, 120, 165, 80]);
         }
       }
 
-      // Passwords in chiaro
+      // Password in chiaro REALI (asset/username/password) — niente stringhe URL/segnali
       if ((d.passwords || []).length > 0) {
-        subTitle(`Password / credenziali in chiaro rilevate (${d.passwords_total})`, [200, 50, 50]);
+        subTitle(`Password in chiaro rilevate (${d.passwords_total})`, [200, 50, 50]);
         text('Dati sensibili - riservato. Mostrare solo a personale autorizzato.', { size: 8, color: [200, 50, 50] });
-        drawTable(['Collection', 'Data', 'Stringa trovata', 'Note'],
-          d.passwords.slice(0, 200).map((p) => [p.collection_title, fmtDate(p.data_collection), p.value, p.context]),
-          [150, 65, 170, 130]);
+        drawTable(['#', 'Account / Username', 'Password in chiaro', 'Fonte', 'Data'],
+          d.passwords.slice(0, 300).map((p, i) => [String(i + 1), String(p.username || '-'), p.value, p.collection_title, fmtDate(p.data_collection)]),
+          [30, 150, 150, 120, 65]);
         if (d.passwords_total > d.passwords.length) {
-          text(`Mostrate ${d.passwords.length} di ${d.passwords_total} credenziali.`, { size: 8, color: [MUTED.r, MUTED.g, MUTED.b] });
+          text(`Mostrate ${d.passwords.length} di ${d.passwords_total} password.`, { size: 8, color: [MUTED.r, MUTED.g, MUTED.b] });
         }
       }
 
@@ -356,27 +355,44 @@ export function generateDtiEstesoPdf(report: DtiEstesoReportJson): void {
     });
   }
 
-  // ===== SURFACE FINDINGS =====
-  const sf = report.surface_findings || [];
-  if (sf.length > 0) {
-    sectionTitle('SurfaceScan360 - Findings');
-    drawTable(['Severità', 'Tipo', 'Titolo', 'Asset', 'Data'],
-      sf.slice(0, 80).map((f) => [f.severity, f.finding_type, f.title, f.affected_asset, fmtDate(f.created_at)]),
-      [70, 90, 180, 110, 65]);
+  // ===== CREDENZIALI ESPOSTE — elenco globale password reali =====
+  const allPw = report.all_passwords || [];
+  if (allPw.length > 0) {
+    sectionTitle(`Credenziali esposte — Password in chiaro (${allPw.length})`);
+    text('Dati sensibili - riservato. Mostrare solo a personale autorizzato.', { size: 8, color: [200, 50, 50] });
+    drawTable(['#', 'Asset', 'Account / Username', 'Password in chiaro', 'Fonte', 'Data'],
+      allPw.slice(0, 500).map((p, i) => [String(i + 1), p.asset, String(p.username || '-'), p.value, p.source, fmtDate(p.date)]),
+      [28, 110, 120, 120, 72, 65]);
+    if (allPw.length > 500) text(`Mostrate 500 di ${allPw.length} password.`, { size: 8, color: [MUTED.r, MUTED.g, MUTED.b] });
   }
 
-  // ===== INTELX FINDINGS =====
-  const ifs = report.intelx_findings || [];
-  if (ifs.length > 0) {
-    sectionTitle('DarkRisk360 - Findings IntelX');
-    const tcEntries = Object.entries(tc);
-    if (tcEntries.length > 0) {
-      text(tcEntries.map(([k2, v]) => `${k2}: ${v}`).join('   ·   '), { size: 9, bold: true });
-      y += 2;
+  // ===== SINTESI NUMERICA PER FONTE/TIPO =====
+  const bySource = report.findings_by_source || [];
+  if (bySource.length > 0) {
+    sectionTitle('Sintesi numerica per fonte');
+    drawTable(['Fonte', 'Tipo', 'Risultati'], bySource.map((s) => [s.source, 'leak/exposure', String(s.count)]), [240, 170, 105]);
+  }
+
+  // ===== SURFACE FINDINGS — PER ASSET =====
+  const sf = (report.surface_findings || []).filter((f) => String(f.severity || '').toLowerCase() !== 'failed');
+  if (sf.length > 0) {
+    sectionTitle('SurfaceScan360 - Findings per asset');
+    const byAsset = new Map<string, typeof sf>();
+    for (const f of sf) {
+      const a = String(f.affected_asset || 'n/d');
+      if (!byAsset.has(a)) byAsset.set(a, [] as any);
+      byAsset.get(a)!.push(f);
     }
-    drawTable(['Severità', 'Tipo', 'Titolo', 'Confidenza', 'Score', 'Prima vista'],
-      ifs.slice(0, 80).map((f) => [f.severity, f.finding_type, f.title, f.confidence, String(f.risk_score ?? '-'), fmtDate(f.first_seen_at)]),
-      [65, 95, 160, 70, 50, 75]);
+    Array.from(byAsset.entries())
+      .sort((a, b) => b[1].length - a[1].length)
+      .forEach(([asset, list]) => {
+        const cnt = { critical: 0, high: 0, medium: 0, low: 0, info: 0 } as Record<string, number>;
+        list.forEach((f) => { cnt[String(f.severity || 'info').toLowerCase()] = (cnt[String(f.severity || 'info').toLowerCase()] || 0) + 1; });
+        subTitle(`${asset} - ${list.length} finding (Crit ${cnt.critical} · High ${cnt.high} · Med ${cnt.medium} · Low ${cnt.low})`);
+        drawTable(['Severità', 'Tipo', 'Titolo', 'Data'],
+          list.slice(0, 40).map((f) => [f.severity, f.finding_type, f.title, fmtDate(f.created_at)]),
+          [70, 100, 280, 65]);
+      });
   }
 
   // ===== RISK ASSESSMENT =====
@@ -387,36 +403,17 @@ export function generateDtiEstesoPdf(report: DtiEstesoReportJson): void {
     const tcol = sevColor(ra.threat_score);
     text(`Threat Score complessivo: ${ra.threat_score}`, { size: 11, bold: true, color: tcol });
     const cnt = report.counters;
-    if (cnt) text(`Basato su ${cnt.enriched_hits_total} evidenze sensibili, ${cnt.intelx_findings_count} findings IntelX, ${cnt.surface_findings_count} findings SurfaceScan.`,
+    if (cnt) text(`Basato su ${cnt.passwords_count} password in chiaro, ${cnt.surface_findings_count} findings SurfaceScan, ${cnt.enriched_hits_total} evidenze sensibili.`,
       { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] });
   }
 
-  // ===== RACCOMANDAZIONI =====
+  // ===== RACCOMANDAZIONI OPERATIVE (include raccomandazioni AI gia' merge-ate) =====
   const recs = report.recommendations;
   if (recs) {
     sectionTitle('Raccomandazioni Operative');
     if ((recs.immediate || []).length > 0) { subTitle('Priorità IMMEDIATA (0-7 giorni)', [200, 50, 50]); bullets(recs.immediate, [200, 50, 50]); }
     if ((recs.d30 || []).length > 0) { subTitle('Priorità 30 giorni', [180, 120, 10]); bullets(recs.d30, [180, 120, 10]); }
     if ((recs.d90 || []).length > 0) { subTitle('Priorità 90 giorni', [37, 99, 235]); bullets(recs.d90, [37, 99, 235]); }
-  }
-
-  // ===== AI RECOMMENDATIONS =====
-  const ai = report.ai_recommendations || [];
-  if (ai.length > 0) {
-    sectionTitle('Raccomandazioni AI (OpenAI)');
-    if (ai[0].model) text(`Generate da ${ai[0].model} · ${ai.length} raccomandazioni.`, { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] });
-    const prioLabel: Record<string, string> = { immediate: 'IMMEDIATA', short_term: 'BREVE TERMINE', mid_term: 'MEDIO TERMINE', long_term: 'LUNGO TERMINE' };
-    ai.forEach((r) => {
-      ensure(40);
-      y += 4;
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(DARK.r, DARK.g, DARK.b);
-      const pl = prioLabel[String(r.priority)] || String(r.priority || '').toUpperCase();
-      text(`${r.title}  [${pl}]`, { size: 10, bold: true });
-      if (r.why_it_matters) text(r.why_it_matters, { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] });
-      (r.actions || []).forEach((a) => text(`> ${a}`, { size: 9, indent: 10 }));
-      if (r.expected_outcome) text(`Outcome atteso: ${r.expected_outcome}`, { size: 8, color: [MUTED.r, MUTED.g, MUTED.b], indent: 10 });
-      y += 4;
-    });
   }
 
   drawFooter();

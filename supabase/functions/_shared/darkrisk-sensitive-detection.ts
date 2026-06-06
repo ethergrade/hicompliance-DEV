@@ -84,16 +84,20 @@ const invalidAdjacentPasswordTokens = new Set([
 function isLikelyPasswordCandidate(value: string): boolean {
   const clean = normalizeText(value);
   if (!clean) return false;
-  if (clean.length < 3 || clean.length > 120) return false;
+  if (clean.length < 4 || clean.length > 80) return false;
   const lower = clean.toLowerCase();
   if (invalidPasswordTokens.has(lower)) return false;
   if (/^&#\d{1,6};?$/i.test(clean)) return false;
   if (/^&[a-z]{2,8};$/i.test(clean)) return false;
   if (/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(clean)) return false;
-  if (/^https?:\/\//i.test(clean)) return false;
-  if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(clean)) return false;
+  // Scarta URL / path / dominio / JSON / segnali (rumore, NON sono password reali)
+  if (lower.includes('http') || clean.includes('//') || clean.includes('/') || clean.includes('\\')) return false;
+  if (clean.includes('{') || clean.includes('}') || clean.includes('[') || clean.includes(']') || clean.includes('"')) return false;
+  if (clean.includes('\t')) return false;
+  if (lower.includes('pastebin') || lower.includes('signal') || lower.includes('linea') || lower.includes('darkrisk')) return false;
+  if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(clean)) return false; // dominio puro
   if (/^[*xX•]+$/.test(clean)) return false;
-  if (/^\d{1,6}$/.test(clean)) return false;
+  if (/^\d{1,8}$/.test(clean)) return false; // solo cifre (id/timestamp)
   return true;
 }
 

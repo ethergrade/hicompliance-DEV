@@ -1,6 +1,6 @@
 // darkrisk-dti-esteso-report: Generates the full DTI Esteso content-rich report.
 // Mirrors structure of the HiSolution DTI Esteso document.
-// Pulls: IntelX leaks/credentials, DNS analysis, port data, surface scan findings.
+// Pulls: leaks/credentials DarkRisk360, DNS analysis, port data, surface scan findings.
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.3';
 
@@ -28,6 +28,37 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function escHtml(s: unknown): string {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Vera password in chiaro: scarta URL/path/dominio/JSON/segnali "leaks signal".
+// L'utente vuole SOLO credenziali reali, non link (pastebin, URL prodotto, ecc.).
+function isRealCleartextPassword(rawValue: unknown): boolean {
+  const v = String(rawValue ?? '').trim();
+  if (!v) return false;
+  if (v.length < 4 || v.length > 80) return false;
+  const lower = v.toLowerCase();
+  // Scarta URL / path / dominio / JSON / segnali
+  if (lower.includes('http') || v.includes('//') || v.includes('/') || v.includes('\\')) return false;
+  if (v.includes('{') || v.includes('}') || v.includes('[') || v.includes(']') || v.includes('"')) return false;
+  if (v.includes('\t') || /\s/.test(v)) return false;
+  if (lower.includes('pastebin') || lower.includes('leaks signal') || lower.includes('darkrisk')) return false;
+  if (lower.includes('linea') || lower.includes('signal') || lower.includes('exposure')) return false;
+  if (/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(v)) return false; // email pura
+  if (/^(?:[a-z0-9-]+\.)+[a-z]{2,}$/i.test(v)) return false; // dominio puro
+  if (/^\d{1,8}$/.test(v)) return false; // solo cifre (timestamp/id)
+  if (/^[a-f0-9]{32,}$/i.test(v)) return false; // hash
+  // Deve contenere almeno una lettera o un carattere tipico password
+  if (!/[a-zA-Z]/.test(v) && !/[!@#$%^&*_\-+=?.]/.test(v)) return false;
+  return true;
+}
+
+// Estrae la vera password in chiaro da un hit sensibile (clear_value preferito)
+function realPasswordValue(hit: any): string | null {
+  const candidates = [hit?.clear_value, hit?.masked_value, hit?.value].map((x) => String(x ?? '').trim());
+  for (const c of candidates) {
+    if (isRealCleartextPassword(c)) return c;
+  }
+  return null;
 }
 
 function fmtDate(v: unknown): string {
@@ -253,7 +284,7 @@ async function buildDtiEstesoReport(
     .limit(200);
   const surfaceFindings = (surfaceFindingsRaw || []) as any[];
 
-  // ── 8. IntelX findings ─────────────────────────────────────────────────────
+  // -- 8. DarkRisk360 findings ─────────────────────────────────────────────────────
   const { data: intelxFindingsRaw } = await adminClient
     .from('darkrisk_findings' as any)
     .select('id, finding_type, title, description, severity, confidence, risk_score, first_seen_at, last_seen_at, metadata')
@@ -425,7 +456,11 @@ async function buildDtiEstesoReport(
       credsByTag[h.tag] = (credsByTag[h.tag] || 0) + 1;
     }
 
-    const domainPasswords = domainCreds.filter((h: any) => h.tag === 'passwords');
+    // SOLO password reali in chiaro (scarta URL/path/segnali/pastebin).
+    const domainPasswords = domainCreds
+      .filter((h: any) => h.tag === 'passwords')
+      .map((h: any) => ({ ...h, __pw: realPasswordValue(h) }))
+      .filter((h: any) => h.__pw);
     const domainStealer = stealerHits.filter((h: any) => String(h.asset_scope || h.query_term || '').toLowerCase().includes(domain.toLowerCase()));
 
     // ── Dati strutturati per-dominio (per il PDF client-side) ──
@@ -455,18 +490,21 @@ async function buildDtiEstesoReport(
         port: p.port, protocol: p.protocol || 'tcp', service: p.service_name || p.service_product || '',
         version: p.service_version || '', is_web: !!p.is_web, is_tls: !!p.is_tls, exposure: String(p.exposure_level || '').toUpperCase(),
       })),
-      intelx_kpi: {
+      dti_kpi: {
         total_results: totalResults, search_results: searchResults, leaks_results: leaksResults,
-        phonebook_results: phonebookResults, passwords: credsByTag.passwords || 0, total_hits: domainCreds.length,
+        phonebook_results: phonebookResults, passwords: domainPasswords.length, total_hits: domainCreds.length,
       },
-      source_runs: domainSourceRuns.slice(0, 30).map((r: any) => ({
-        source: r.source_label || r.source || '', query_kind: r.query_kind || '',
-        query_term: String(r.query_term || '').slice(0, 60), result_count: Number(r.result_count || 0), status: r.status || '',
-      })),
-      passwords: domainPasswords.slice(0, 200).map((h: any) => ({
+      source_runs: domainSourceRuns
+        .filter((r: any) => String(r.status || '').toLowerCase() !== 'failed')
+        .slice(0, 30).map((r: any) => ({
+          source: r.source_label || r.source || '', query_kind: r.query_kind || '',
+          query_term: String(r.query_term || '').slice(0, 60), result_count: Number(r.result_count || 0), status: r.status || '',
+        })),
+      passwords: domainPasswords.slice(0, 300).map((h: any) => ({
         collection_title: (h.collection_title || '').slice(0, 90),
         data_collection: h.data_collection || null,
-        value: h.clear_value || h.masked_value || '',
+        username: String(h.user || h.username || '').slice(0, 80),
+        value: h.__pw,
         context: (h.context_excerpt || '').slice(0, 100),
       })),
       passwords_total: domainPasswords.length,
@@ -538,7 +576,7 @@ async function buildDtiEstesoReport(
         )}
       `) : ''}
 
-      ${subsection('DTI: Rilevazioni IntelX', `
+      ${subsection('DTI: Rilevazioni DarkRisk360', `
         <div class="kpi-grid">
           <div class="kpi-card"><div class="kpi-val">${totalResults}</div><div class="kpi-lbl">Totale risultati</div></div>
           <div class="kpi-card"><div class="kpi-val">${searchResults}</div><div class="kpi-lbl">Search API</div></div>
@@ -559,33 +597,33 @@ async function buildDtiEstesoReport(
         ) : '<p style="color:#6b7280">Nessuna query eseguita per questo dominio.</p>'}
       `)}
 
-      ${domainCreds.filter((h: any) => h.tag === 'passwords').length > 0 ? subsection('Password in chiaro rilevate', `
+      ${domainPasswords.length > 0 ? subsection(`Password in chiaro rilevate (${domainPasswords.length})`, `
         <div class="callout">
           <p class="callout-title">⚠ Dati sensibili — riservato. Mostrare solo a personale autorizzato.</p>
         </div>
         <table style="width:100%;border-collapse:collapse;font-size:12px;margin:8px 0">
           <thead>
             <tr>
-              <th style="padding:8px 10px;background:#1e3a5f;color:#93c5fd;border:1px solid #374151;text-align:left;font-size:11px">Collection Title</th>
-              <th style="padding:8px 10px;background:#1e3a5f;color:#93c5fd;border:1px solid #374151;text-align:left;font-size:11px">Data Collection</th>
-              <th style="padding:8px 10px;background:#1e3a5f;color:#93c5fd;border:1px solid #374151;text-align:left;font-size:11px">Stringa Trovata</th>
-              <th style="padding:8px 10px;background:#1e3a5f;color:#93c5fd;border:1px solid #374151;text-align:left;font-size:11px;width:40px">Ris.</th>
-              <th style="padding:8px 10px;background:#1e3a5f;color:#93c5fd;border:1px solid #374151;text-align:left;font-size:11px">Note</th>
+              <th style="padding:8px 10px;background:#1e3a5f;color:#93c5fd;border:1px solid #374151;text-align:left;font-size:11px">#</th>
+              <th style="padding:8px 10px;background:#1e3a5f;color:#93c5fd;border:1px solid #374151;text-align:left;font-size:11px">Account / Username</th>
+              <th style="padding:8px 10px;background:#1e3a5f;color:#93c5fd;border:1px solid #374151;text-align:left;font-size:11px">Password in chiaro</th>
+              <th style="padding:8px 10px;background:#1e3a5f;color:#93c5fd;border:1px solid #374151;text-align:left;font-size:11px">Fonte</th>
+              <th style="padding:8px 10px;background:#1e3a5f;color:#93c5fd;border:1px solid #374151;text-align:left;font-size:11px">Data</th>
             </tr>
           </thead>
           <tbody>
-            ${domainCreds.filter((h: any) => h.tag === 'passwords').slice(0, 200).map((h: any) => `
-              <tr class="${/saintsrow|password|123456|qwerty|admin|presezzi/i.test(h.masked_value || h.clear_value || '') ? 'cred-row-high' : 'cred-row-med'}">
-                <td style="padding:5px 10px;border:1px solid #374151;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(h.collection_title)}">${escHtml((h.collection_title || '—').slice(0, 70))}</td>
+            ${domainPasswords.slice(0, 300).map((h: any, i: number) => `
+              <tr class="cred-row-high">
+                <td style="padding:5px 10px;border:1px solid #374151;text-align:center;color:#6b7280">${i + 1}</td>
+                <td style="padding:5px 10px;border:1px solid #374151;font-size:11px">${escHtml(String(h.user || h.username || '—').slice(0, 70))}</td>
+                <td style="padding:5px 10px;border:1px solid #374151;font-family:monospace;font-size:12px;color:#fca5a5">${escHtml(h.__pw)}</td>
+                <td style="padding:5px 10px;border:1px solid #374151;font-size:10px;color:#94a3b8;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(h.collection_title)}">${escHtml((h.collection_title || '—').slice(0, 50))}</td>
                 <td style="padding:5px 10px;border:1px solid #374151;white-space:nowrap">${fmtDate(h.data_collection)}</td>
-                <td style="padding:5px 10px;border:1px solid #374151;font-family:monospace;font-size:11px">${escHtml(h.clear_value || h.masked_value || '—')}</td>
-                <td style="padding:5px 10px;border:1px solid #374151;text-align:center">1</td>
-                <td style="padding:5px 10px;border:1px solid #374151;font-size:11px;color:#94a3b8">${escHtml((h.context_excerpt || '').slice(0, 80))}</td>
               </tr>
             `).join('')}
           </tbody>
         </table>
-        ${domainCreds.filter((h: any) => h.tag === 'passwords').length > 200 ? `<p style="color:#6b7280;font-style:italic">Mostrate 200 di ${domainCreds.filter((h: any) => h.tag === 'passwords').length} credenziali.</p>` : ''}
+        ${domainPasswords.length > 300 ? `<p style="color:#6b7280;font-style:italic">Mostrate 300 di ${domainPasswords.length} password.</p>` : ''}
       `) : ''}
 
       ${stealerHits.filter((h: any) => String(h.asset_scope || h.query_term || '').toLowerCase().includes(domain.toLowerCase())).length > 0 ? subsection('DTI Finding — Stealer Log', `
@@ -612,34 +650,60 @@ async function buildDtiEstesoReport(
   const perDomainSections = perDomainEntries.map((e) => e.html).join('');
   const perDomainData = perDomainEntries.map((e) => e.data);
 
-  // ── Section: Surface findings ──────────────────────────────────────────────
-  const surfaceSec = surfaceFindings.length > 0
-    ? table(
-        ['Severità', 'Tipo', 'Titolo', 'Asset', 'Data'],
-        surfaceFindings.slice(0, 100).map((f: any) => [
-          (f.severity || '—').toUpperCase(),
-          String(f.finding_type || f.module || '—').slice(0, 30),
-          String(f.title || '—').slice(0, 80),
-          String(f.affected_asset || '—').slice(0, 40),
-          fmtDate(f.created_at),
-        ])
-      )
+  // Password REALI in chiaro aggregate (per la sezione credenziali HTML e il JSON)
+  const allPasswordsForHtml: Array<{ asset: string; username: string; value: string; source: string; date: string | null }> = [];
+  for (const d of perDomainData) {
+    for (const p of ((d as any).passwords || [])) {
+      allPasswordsForHtml.push({
+        asset: d.domain,
+        username: String(p.username || ''),
+        value: String(p.value || ''),
+        source: String(p.collection_title || ''),
+        date: p.data_collection || null,
+      });
+    }
+  }
+
+  // ── Section: Surface findings — ORGANIZZATO PER ASSET (#3), no FAILED (#5) ──
+  const surfaceClean = surfaceFindings.filter((f: any) => String(f.status || '').toLowerCase() !== 'failed');
+  const surfaceByAsset = new Map<string, any[]>();
+  for (const f of surfaceClean) {
+    const asset = String(f.affected_asset || 'n/d').slice(0, 60) || 'n/d';
+    if (!surfaceByAsset.has(asset)) surfaceByAsset.set(asset, []);
+    surfaceByAsset.get(asset)!.push(f);
+  }
+  const surfaceSec = surfaceClean.length > 0
+    ? Array.from(surfaceByAsset.entries())
+        .sort((a, b) => b[1].length - a[1].length)
+        .map(([asset, list]) => {
+          const cnt = { critical: 0, high: 0, medium: 0, low: 0, info: 0 } as Record<string, number>;
+          list.forEach((f) => { cnt[String(f.severity || 'info').toLowerCase()] = (cnt[String(f.severity || 'info').toLowerCase()] || 0) + 1; });
+          return subsection(`${escHtml(asset)} — ${list.length} finding (Crit ${cnt.critical} · High ${cnt.high} · Med ${cnt.medium} · Low ${cnt.low})`, table(
+            ['Severità', 'Tipo', 'Titolo', 'Data'],
+            list.slice(0, 40).map((f: any) => [
+              (f.severity || '—').toUpperCase(),
+              String(f.finding_type || f.module || '—').slice(0, 30),
+              String(f.title || '—').slice(0, 90),
+              fmtDate(f.created_at),
+            ]),
+          ));
+        }).join('')
     : '<p style="color:#6b7280">Nessun finding SurfaceScan attivo.</p>';
 
-  // ── Section: IntelX findings ───────────────────────────────────────────────
-  const intelxSec = intelxFindings.length > 0
+  // ── Section: Credenziali esposte — SOLO password reali in chiaro (#6) ──────
+  const credSec = allPasswordsForHtml.length > 0
     ? table(
-        ['Severità', 'Tipo', 'Titolo', 'Confidenza', 'Score', 'Prima vista'],
-        intelxFindings.slice(0, 100).map((f: any) => [
-          (f.severity || '—').toUpperCase(),
-          String(f.finding_type || '—').replace('intelx_', '').replace(/_/g, ' '),
-          String(f.title || '—').slice(0, 80),
-          String(f.confidence || '—'),
-          String(f.risk_score ?? '—'),
-          fmtDate(f.first_seen_at),
-        ])
+        ['#', 'Asset', 'Account / Username', 'Password in chiaro', 'Fonte', 'Data'],
+        allPasswordsForHtml.slice(0, 500).map((p: any, i: number) => [
+          String(i + 1),
+          p.asset || '—',
+          String(p.username || '—').slice(0, 60),
+          p.value,
+          String(p.source || '—').slice(0, 40),
+          fmtDate(p.date),
+        ]),
       )
-    : '<p style="color:#6b7280">Nessun finding IntelX disponibile.</p>';
+    : '<p style="color:#6b7280">Nessuna password in chiaro reale rilevata (segnali/URL esclusi).</p>';
 
   // ── Recommendations ────────────────────────────────────────────────────────
   const hasHighCreds = (tagCounts.passwords || 0) > 0;
@@ -671,7 +735,25 @@ async function buildDtiEstesoReport(
   ];
 
   // ── Build rich JSON payload (per PDF client-side + dashboard) ───────────────
-  const passwordsTotal = enrichedHits.filter((h) => h.tag === 'passwords').length;
+  const allPasswords = allPasswordsForHtml;
+  const passwordsTotal = allPasswords.length;
+
+  // Distribuzione numerica per fonte/tipo (per il report: source + type)
+  const findingsBySource = Object.entries(Object.fromEntries(sourceKindCounts))
+    .map(([source, count]) => ({ source, count: Number(count) }))
+    .sort((a, b) => b.count - a.count);
+
+  // MERGE raccomandazioni AI nel capitolo "Raccomandazioni Operative" (no menzione provider AI)
+  const aiPrio = (p: string) => String(p || '').toLowerCase();
+  for (const r of aiRecos) {
+    const line = `${String(r.title || '').trim()}${r.why_it_matters ? ' — ' + String(r.why_it_matters).trim() : ''}${Array.isArray(r.actions) && r.actions.length ? ' Azioni: ' + r.actions.join('; ') : ''}`.trim();
+    if (!line) continue;
+    const p = aiPrio(r.priority);
+    if (p === 'immediate' || p === 'short_term') recsImmediate.push(line);
+    else if (p === 'mid_term') recs30d.push(line);
+    else recs90d.push(line);
+  }
+
   const riskLevel = (n: number, hi: number, mid: number) => (n > hi ? 'ALTO' : n > mid ? 'MEDIO' : 'BASSO');
   const json = {
     schema_version: '2.0',
@@ -685,7 +767,7 @@ async function buildDtiEstesoReport(
       status: scanRun.status || null,
     } : null,
     scope: { domains: scopeDomains, emails: scopeEmails, ips: scopeIps },
-    intelx_stats: intelxStats,
+    dti_stats: intelxStats,
     tag_counts: tagCounts,
     source_kind_counts: Object.fromEntries(sourceKindCounts),
     stealer_count: stealerHits.length,
@@ -693,26 +775,25 @@ async function buildDtiEstesoReport(
     counters: {
       enriched_hits_total: enrichedHits.length,
       surface_findings_count: surfaceFindings.length,
-      intelx_findings_count: intelxFindings.length,
+      passwords_count: passwordsTotal,
       domains: scopeDomains.length,
       emails: scopeEmails.length,
     },
     per_domain: perDomainData,
-    surface_findings: surfaceFindings.slice(0, 100).map((f: any) => ({
-      severity: (f.severity || '').toUpperCase(),
-      finding_type: String(f.finding_type || f.module || '').slice(0, 40),
-      title: String(f.title || '').slice(0, 120),
-      affected_asset: String(f.affected_asset || '').slice(0, 60),
-      created_at: f.created_at || null,
-    })),
-    intelx_findings: intelxFindings.slice(0, 100).map((f: any) => ({
-      severity: (f.severity || '').toUpperCase(),
-      finding_type: String(f.finding_type || '').replace('intelx_', '').replace(/_/g, ' '),
-      title: String(f.title || '').slice(0, 120),
-      confidence: f.confidence || '',
-      risk_score: f.risk_score ?? null,
-      first_seen_at: f.first_seen_at || null,
-    })),
+    // Numerica per fonte (DarkRisk360 DTI / Leaks / Search), niente menzione provider
+    findings_by_source: findingsBySource,
+    // Lista globale password REALI in chiaro (no signal/URL/pastebin)
+    all_passwords: allPasswords.slice(0, 1000),
+    // Surface findings: esclude i failed (#5)
+    surface_findings: surfaceFindings
+      .filter((f: any) => String(f.status || '').toLowerCase() !== 'failed')
+      .slice(0, 200).map((f: any) => ({
+        severity: (f.severity || '').toUpperCase(),
+        finding_type: String(f.finding_type || f.module || '').slice(0, 40),
+        title: String(f.title || '').slice(0, 120),
+        affected_asset: String(f.affected_asset || 'n/d').slice(0, 60),
+        created_at: f.created_at || null,
+      })),
     risk_assessment: {
       threat_score: riskLevel(tagCounts.passwords || 0, 5, 0),
       items: [
@@ -727,16 +808,8 @@ async function buildDtiEstesoReport(
       has_dmarc_issue: hasDmarcIssue,
       has_open_ports: hasOpenPorts,
     },
+    // Raccomandazioni AI gia' merge-ate qui dentro (nessuna sezione separata, nessun nome provider)
     recommendations: { immediate: recsImmediate, d30: recs30d, d90: recs90d },
-    ai_recommendations: aiRecos.map((r: any) => ({
-      title: r.title || '',
-      priority: r.priority || '',
-      why_it_matters: r.why_it_matters || '',
-      actions: Array.isArray(r.actions) ? r.actions : [],
-      expected_outcome: r.expected_outcome || '',
-      confidence: r.confidence || '',
-      model: r.model || '',
-    })),
   };
 
   // ── Final HTML assembly ────────────────────────────────────────────────────
@@ -798,7 +871,7 @@ async function buildDtiEstesoReport(
       <li>DTI: Credenziali & Leak (${(tagCounts.passwords || 0)} password, ${enrichedHits.length} hit totali)</li>
       <li>Stealer Log Findings (${stealerHits.length} evidenze)</li>
       <li>Surface Scan Findings (${surfaceFindings.length} findings)</li>
-      <li>IntelX Findings (${intelxFindings.length} findings)</li>
+      <li>Credenziali esposte ( password)</li>
       <li>Raccomandazioni Operative</li>
     </ol>
   </div>
@@ -817,7 +890,7 @@ async function buildDtiEstesoReport(
   <!-- SECTION 2: SCOPE OF WORK -->
   ${section('2. Scope of Work — Obiettivo DTI', `
     <p style="color:#d1d5db;margin-bottom:12px"><strong>OSINT (Open Source Intelligence)</strong> — Raccolta strutturata di informazioni da fonti pubbliche: DNS, WHOIS, certificati TLS, subdomain enumeration, feed di threat intelligence.</p>
-    <p style="color:#d1d5db;margin-bottom:12px"><strong>CLOSINT (Close Source Intelligence)</strong> — Raccolta da fonti chiuse: database di credenziali compromesse (IntelX Search API, Leaks API), stealer log, dark web collections.</p>
+    <p style="color:#d1d5db;margin-bottom:12px"><strong>CLOSINT (Close Source Intelligence)</strong> — Raccolta da fonti chiuse: database di credenziali compromesse (motore DarkRisk360), stealer log, dark web collections.</p>
     ${ul([
       'Individuare sottodomini e asset digitali associati ai domini target',
       'Rilevare credenziali compromesse presenti nel surface web, dark web e deep web',
@@ -838,7 +911,7 @@ async function buildDtiEstesoReport(
     )}
     ${scopeEmails.length > 0 ? `
       <br>
-      <strong style="color:#93c5fd">Email identity in scope (IntelX Leaks):</strong>
+      <strong style="color:#93c5fd">Email identity in scope (DarkRisk360):</strong>
       ${ul(scopeEmails.slice(0, 20))}
     ` : ''}
   `)}
@@ -847,30 +920,25 @@ async function buildDtiEstesoReport(
   ${section('4. Analisi per Dominio', '')}
   ${perDomainSections}
 
-  <!-- SECTION 5: SURFACE SCAN FINDINGS -->
+  <!-- SECTION 5: CREDENZIALI ESPOSTE (solo password reali in chiaro) -->
   <div class="page-break">
-    ${section('5. SurfaceScan360 — Findings', surfaceSec)}
+    ${section(`5. Credenziali esposte — Password in chiaro (${allPasswordsForHtml.length})`, `
+      ${allPasswordsForHtml.length > 0 ? '<div class="callout"><p class="callout-title">⚠ Dati sensibili — riservato. Mostrare solo a personale autorizzato.</p></div>' : ''}
+      ${credSec}
+    `)}
   </div>
 
-  <!-- SECTION 6: INTELX FINDINGS -->
-  ${section('6. DarkRisk360 — Findings IntelX', `
+  <!-- SECTION 6: DISTRIBUZIONE NUMERICA PER FONTE/TIPO -->
+  ${section('6. DarkRisk360 — Sintesi numerica', `
     <div class="kpi-grid">
-      ${Object.entries(tagCounts).map(([tag, count]) => `
-        <div class="kpi-card">
-          <div class="kpi-val" style="color:${tag === 'passwords' ? '#ef4444' : '#60a5fa'}">${count}</div>
-          <div class="kpi-lbl">${tag}</div>
-        </div>
-      `).join('')}
-      <div class="kpi-card">
-        <div class="kpi-val">${intelxStats.searches_run ?? '—'}</div>
-        <div class="kpi-lbl">Search queries</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-val">${intelxStats.leaks_searches_run ?? '—'}</div>
-        <div class="kpi-lbl">Leaks queries</div>
-      </div>
+      <div class="kpi-card"><div class="kpi-val" style="color:#ef4444">${allPasswordsForHtml.length}</div><div class="kpi-lbl">Password in chiaro</div></div>
+      <div class="kpi-card"><div class="kpi-val">${Number(tagCounts.domains || 0)}</div><div class="kpi-lbl">Domini esposti</div></div>
+      <div class="kpi-card"><div class="kpi-val">${Number(tagCounts.credit_cards || 0)}</div><div class="kpi-lbl">Carte rilevate</div></div>
+      <div class="kpi-card"><div class="kpi-val">${Number(tagCounts.phone_numbers || 0)}</div><div class="kpi-lbl">Telefoni rilevati</div></div>
+      <div class="kpi-card"><div class="kpi-val">${stealerHits.length}</div><div class="kpi-lbl">Evidenze stealer</div></div>
     </div>
-    ${intelxSec}
+    <p style="color:#94a3b8;font-size:12px;margin:10px 0 4px">Risultati per fonte e tipo:</p>
+    ${table(['Fonte', 'Tipo', 'Risultati'], findingsBySource.map((s) => [s.source, 'leak/exposure', String(s.count)]))}
   `)}
 
   <!-- SECTION 7: DTI RISK ASSESSMENT -->
@@ -878,23 +946,28 @@ async function buildDtiEstesoReport(
     ${table(
       ['Elemento', 'Valutazione'],
       [
-        ['Leak di credenziali', (tagCounts.passwords || 0) > 5 ? 'ALTO' : (tagCounts.passwords || 0) > 0 ? 'MEDIO' : 'BASSO'],
+        ['Leak di credenziali', allPasswordsForHtml.length > 5 ? 'ALTO' : allPasswordsForHtml.length > 0 ? 'MEDIO' : 'BASSO'],
         ['Stealer log implicazioni', stealerHits.length > 0 ? 'MEDIO' : 'BASSO'],
-        ['Credential reuse/weak patterns', (tagCounts.passwords || 0) > 0 ? 'ALTO' : 'BASSO'],
+        ['Credential reuse/weak patterns', allPasswordsForHtml.length > 0 ? 'ALTO' : 'BASSO'],
         ['Esposizione infrastrutturale', ports.filter((p: any) => p.exposure_level === 'high' || p.exposure_level === 'critical').length > 0 ? 'ALTO' : 'MEDIO'],
         ['Email security posture', hasDmarcIssue ? 'MEDIO' : 'BASSO'],
         ['Cross-domain leakage', scopeDomains.length > 1 ? 'MEDIO' : 'BASSO'],
       ]
     )}
-    <div class="callout ${(tagCounts.passwords || 0) > 5 ? '' : 'warn'}">
-      <p class="callout-title">Threat Score complessivo: ${(tagCounts.passwords || 0) > 5 ? 'ALTO' : (tagCounts.passwords || 0) > 0 ? 'MEDIO' : 'BASSO'}</p>
-      <p>Basato su ${enrichedHits.length} evidenze sensibili, ${intelxFindings.length} findings IntelX, ${surfaceFindings.length} findings SurfaceScan.</p>
+    <div class="callout ${allPasswordsForHtml.length > 5 ? '' : 'warn'}">
+      <p class="callout-title">Threat Score complessivo: ${allPasswordsForHtml.length > 5 ? 'ALTO' : allPasswordsForHtml.length > 0 ? 'MEDIO' : 'BASSO'}</p>
+      <p>Basato su ${allPasswordsForHtml.length} password in chiaro, ${surfaceClean.length} findings SurfaceScan, ${enrichedHits.length} evidenze sensibili.</p>
     </div>
   `)}
 
-  <!-- SECTION 8: RECOMMENDATIONS -->
+  <!-- SECTION 8: SURFACE SCAN FINDINGS (per asset) -->
   <div class="page-break">
-    ${section('8. Raccomandazioni Operative DTI', `
+    ${section('8. SurfaceScan360 — Findings per asset', surfaceSec)}
+  </div>
+
+  <!-- SECTION 9: RECOMMENDATIONS (include raccomandazioni AI merge-ate) -->
+  <div class="page-break">
+    ${section('9. Raccomandazioni Operative DTI', `
       <h3 style="color:#ef4444;margin:16px 0 8px">Priorità IMMEDIATA (0–7 giorni)</h3>
       ${ul(recsImmediate.length > 0 ? recsImmediate : ['Nessuna azione critica immediata identificata.'])}
 
@@ -905,29 +978,6 @@ async function buildDtiEstesoReport(
       ${ul(recs90d)}
     `)}
   </div>
-
-  <!-- SECTION 9: AI RECOMMENDATIONS -->
-  ${aiRecos.length > 0 ? `
-  <div class="page-break">
-    ${section('9. Raccomandazioni AI (OpenAI)', `
-      <p style="color:#94a3b8;font-size:12px;margin-bottom:12px">Generate da GPT-4o-mini su finding e evidenze del ciclo corrente. Modello: ${escHtml(aiRecos[0]?.model || 'gpt-4o-mini')} &nbsp;·&nbsp; ${escHtml(aiRecos.length)} raccomandazioni totali.</p>
-      ${aiRecos.map((rec: any) => {
-        const priorityColor = { immediate: '#ef4444', short_term: '#f97316', mid_term: '#eab308', long_term: '#3b82f6' }[String(rec.priority)] || '#6b7280';
-        const priorityLabel = { immediate: 'IMMEDIATA', short_term: 'BREVE TERMINE', mid_term: 'MEDIO TERMINE', long_term: 'LUNGO TERMINE' }[String(rec.priority)] || String(rec.priority).toUpperCase();
-        const actions: string[] = Array.isArray(rec.actions) ? rec.actions : [];
-        return `<div style="border-left:4px solid ${priorityColor};background:rgba(255,255,255,0.03);padding:14px 18px;border-radius:0 8px 8px 0;margin:10px 0">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
-            <p style="color:#f8fafc;font-weight:700;margin:0 0 4px">${escHtml(rec.title || '')}</p>
-            <span style="background:${priorityColor};color:#fff;padding:2px 10px;border-radius:12px;font-size:10px;font-weight:700;white-space:nowrap">${escHtml(priorityLabel)}</span>
-          </div>
-          ${rec.why_it_matters ? `<p style="color:#94a3b8;font-size:12px;margin:6px 0 8px">${escHtml(rec.why_it_matters)}</p>` : ''}
-          ${actions.length > 0 ? `<ul style="color:#d1d5db;padding-left:18px;margin:6px 0;font-size:13px">${actions.map((a: string) => `<li style="margin:3px 0">${escHtml(a)}</li>`).join('')}</ul>` : ''}
-          ${rec.expected_outcome ? `<p style="color:#6b7280;font-size:11px;margin:8px 0 0;border-top:1px solid #374151;padding-top:6px"><strong>Outcome atteso:</strong> ${escHtml(rec.expected_outcome)}</p>` : ''}
-        </div>`;
-      }).join('')}
-    `)}
-  </div>
-  ` : ''}
 
   <!-- FOOTER -->
   <div style="margin-top:48px;padding-top:16px;border-top:1px solid #374151;text-align:center;color:#4b5563;font-size:12px">

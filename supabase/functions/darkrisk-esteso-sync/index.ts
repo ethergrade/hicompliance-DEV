@@ -639,6 +639,66 @@ async function runLeaksSearch(selector: string): Promise<Array<Record<string, un
   return out.slice(0, Math.min(INTELX_MAX_RESULTS_PER_QUERY, 120));
 }
 
+// ── Leaked ACCOUNTS API (3.intelx.io/accounts/1) ─────────────────────────────
+// Ritorna credenziali REALI (user + password in chiaro) per un selector, invece
+// dei generici "signal". Endpoint sincrono /accounts/1 (timeout fino a 10 min).
+// CSVRecord: { user, password, passwordtype, bucket, date, sourceshort, sourcelong, systemid }
+async function runAccountsLeakSearch(selector: string): Promise<Array<Record<string, unknown>>> {
+  const url = new URL(`${ESTESO_LEAKS_API_URL}/accounts/1`);
+  url.searchParams.set('selector', selector);
+  url.searchParams.set('limit', String(Math.min(INTELX_MAX_RESULTS_PER_QUERY * 5, 2000)));
+  url.searchParams.set('bucket', '');
+  url.searchParams.set('timeout', '20'); // secondi: bilancia copertura/latenza edge function
+
+  try {
+    const response = await withRateLimit(() =>
+      fetchWithTimeout(url.toString(), {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'HICONSOLE-DARKRISK-ESTESO/1.0',
+          'x-key': ESTESO_LEAKS_API_KEY,
+        },
+      }, 30_000),
+    );
+    if (!response.ok) {
+      // 404/204 = nessun account; altri errori non bloccano (additivo)
+      return [];
+    }
+    const data = await response.json().catch(() => null);
+    const rows = Array.isArray(data) ? data : (Array.isArray((data as any)?.records) ? (data as any).records : []);
+    const out: Array<Record<string, unknown>> = [];
+    const seen = new Set<string>();
+    for (const r of rows) {
+      const user = normalizeText(String((r as any)?.user || ''));
+      const password = normalizeText(String((r as any)?.password || ''));
+      if (!password) continue; // SOLO record con password reale
+      const key = `${user}|${password}`.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const acct = user || 'account';
+      out.push({
+        // testo pulito "user : password" così l'estrazione cattura la password reale
+        name: `Credenziale esposta: ${acct}`,
+        description: `${acct} : ${password}`,
+        user,
+        password,
+        passwordtype: (r as any)?.passwordtype ?? null,
+        bucket: (r as any)?.bucket || null,
+        date: (r as any)?.date || null,
+        systemid: (r as any)?.systemid || null,
+        sourceshort: (r as any)?.sourceshort || null,
+        sourcelong: (r as any)?.sourcelong || null,
+        media: 24, // marker "leaks accounts"
+        __accounts_credential: true,
+      });
+      if (out.length >= Math.min(INTELX_MAX_RESULTS_PER_QUERY * 5, 2000)) break;
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 async function upsertDarkRiskFinding(adminClient: any, payload: Record<string, unknown>): Promise<{ id: string }> {
   const organizationId = normalizeText(String(payload.organization_id || ''));
   const sourceRecordKey = normalizeText(String(payload.source_record_key || ''));
@@ -1999,7 +2059,10 @@ serve(async (req: Request) => {
       let recordsCount = 0;
       try {
         const selector = query.kind === 'at_domain_tld' ? query.term.replace(/^@/, '') : query.term;
-        const records = await runLeaksSearch(selector);
+        // 1) Credenziali REALI dall'Accounts API (user+password in chiaro) — prioritarie
+        const accountRecords = await runAccountsLeakSearch(selector);
+        // 2) Segnali leaks generici (file/URL) come prima
+        const records = [...accountRecords, ...await runLeaksSearch(selector)];
         leaksRun += 1;
 
         for (const record of records) {
