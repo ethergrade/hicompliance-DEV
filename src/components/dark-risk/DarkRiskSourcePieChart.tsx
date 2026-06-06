@@ -2,29 +2,7 @@ import React from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Database } from 'lucide-react';
-
-const BUCKET_LABELS: Record<string, string> = {
-  leaks_restricted:        'Leaks › Restricted',
-  leaks_logs:              'Leaks › Logs',
-  leaks_public:            'Leaks › Public',
-  'leaks.logs':            'Leaks › Logs',
-  'leaks.private.general': 'Leaks › Private',
-  'leaks.public.general':  'Leaks › Public',
-  'leaks.restricted':      'Leaks › Restricted',
-  'web.public.com':        'Web: .com',
-  'web.public.it':         'Web: .it',
-  'web.public.org':        'Web: .org',
-  'web.public.net':        'Web: .net',
-  whois:                   'WHOIS',
-  dns:                     'DNS',
-  DNS:                     'DNS',
-  paste:                   'Paste Sites',
-  social:                  'Social Media',
-  forum:                   'Forum',
-  darkweb:                 'Dark Web',
-  '.com':                  'Web: .com',
-  '.it':                   'Web: .it',
-};
+import { bucketLabel } from '@/lib/darkrisk/bucketLegend';
 
 const BUCKET_COLORS = [
   '#ef4444', '#f97316', '#eab308', '#22c55e',
@@ -41,7 +19,7 @@ export function DarkRiskSourcePieChart({ data, title = 'Results per Data Source'
   const chartData = Object.entries(data)
     .sort((a, b) => b[1] - a[1])
     .map(([key, value], idx) => ({
-      name: BUCKET_LABELS[key] ?? key,
+      name: bucketLabel(key),
       value,
       color: BUCKET_COLORS[idx % BUCKET_COLORS.length],
     }));

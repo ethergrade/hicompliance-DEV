@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AlertTriangle, Eye, EyeOff, Search, Copy, Check } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { bucketLabel } from '@/lib/darkrisk/bucketLegend';
 
 interface CredentialHit {
   id: string;
@@ -25,13 +26,6 @@ interface Props {
   organizationId: string;
   limit?: number;
 }
-
-const BUCKET_LABELS: Record<string, string> = {
-  'leaks.logs':            'Leaks Logs',
-  'leaks.private.general': 'Leaks Private',
-  'leaks.public.general':  'Leaks Public',
-  'leaks.restricted':      'Leaks Restricted',
-};
 
 export function DarkRiskCredentialLeaks({ organizationId, limit = 100 }: Props) {
   const [showPasswords, setShowPasswords] = useState(false);
@@ -156,7 +150,7 @@ export function DarkRiskCredentialLeaks({ organizationId, limit = 100 }: Props) 
                     <td className="px-3 py-2 hidden md:table-cell">
                       {hit.source_bucket && (
                         <Badge variant="outline" className="text-[10px] px-1.5">
-                          {BUCKET_LABELS[hit.source_bucket] ?? hit.source_bucket}
+                          {bucketLabel(hit.source_bucket)}
                         </Badge>
                       )}
                     </td>

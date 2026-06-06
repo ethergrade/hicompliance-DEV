@@ -35,6 +35,7 @@ export interface DtiEstesoReportJson {
   surface_findings?: Array<{ severity: string; finding_type: string; title: string; affected_asset: string; created_at: string | null }>;
   risk_assessment?: { threat_score: string; items: Array<[string, string]>; has_high_creds: boolean; has_dmarc_issue: boolean; has_open_ports: boolean };
   recommendations?: { immediate: string[]; d30: string[]; d90: string[] };
+  bucket_legend?: Array<{ category: string; description: string }>;
 }
 
 const BRAND = { r: 59, g: 130, b: 246 };
@@ -414,6 +415,14 @@ export function generateDtiEstesoPdf(report: DtiEstesoReportJson): void {
     if ((recs.immediate || []).length > 0) { subTitle('Priorità IMMEDIATA (0-7 giorni)', [200, 50, 50]); bullets(recs.immediate, [200, 50, 50]); }
     if ((recs.d30 || []).length > 0) { subTitle('Priorità 30 giorni', [180, 120, 10]); bullets(recs.d30, [180, 120, 10]); }
     if ((recs.d90 || []).length > 0) { subTitle('Priorità 90 giorni', [37, 99, 235]); bullets(recs.d90, [37, 99, 235]); }
+  }
+
+  // ===== LEGENDA — NOMENCLATURA FONTI =====
+  const legend = report.bucket_legend || [];
+  if (legend.length > 0) {
+    sectionTitle('Legenda - Nomenclatura fonti');
+    text('Categorie di fonte dei finding e relativo significato operativo.', { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] });
+    drawTable(['Categoria', 'Significato'], legend.map((l) => [l.category, l.description]), [160, 355]);
   }
 
   drawFooter();

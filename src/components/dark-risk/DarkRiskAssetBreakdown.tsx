@@ -3,17 +3,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ChevronDown, ChevronRight, Globe } from 'lucide-react';
-
-const BUCKET_LABELS: Record<string, string> = {
-  'leaks.logs':            'Leaks Logs',
-  'leaks.private.general': 'Leaks Private',
-  'leaks.public.general':  'Leaks Public',
-  'leaks.restricted':      'Leaks Restricted',
-  'web.public.com':        'Web .com',
-  'web.public.it':         'Web .it',
-  whois:                   'WHOIS',
-  dns: 'DNS', DNS: 'DNS',
-};
+import { bucketLabel } from '@/lib/darkrisk/bucketLegend';
 
 const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#8b5cf6','#ec4899','#14b8a6'];
 
@@ -31,7 +21,7 @@ function MiniPie({ data }: { data: Record<string, number> }) {
   const entries = Object.entries(data).sort((a, b) => b[1] - a[1]).slice(0, 6);
   const total = entries.reduce((s, [, v]) => s + v, 0);
   if (!total) return null;
-  const chartData = entries.map(([k, v]) => ({ name: BUCKET_LABELS[k] ?? k, value: v }));
+  const chartData = entries.map(([k, v]) => ({ name: bucketLabel(k), value: v }));
   return (
     <ResponsiveContainer width="100%" height={120}>
       <PieChart>
@@ -63,7 +53,7 @@ function AssetCard({ asset, data }: { asset: string; data: AssetData }) {
           <div className="flex gap-1.5 flex-wrap">
             {topSources.map(([k, v]) => (
               <Badge key={k} variant="secondary" className="text-[10px] px-1.5 py-0">
-                {BUCKET_LABELS[k] ?? k}: {v}
+                {bucketLabel(k)}: {v}
               </Badge>
             ))}
           </div>
@@ -85,7 +75,7 @@ function AssetCard({ asset, data }: { asset: string; data: AssetData }) {
                   <div key={k} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-1.5">
                       <div className="h-2 w-2 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
-                      <span className="text-muted-foreground truncate max-w-[130px]">{BUCKET_LABELS[k] ?? k}</span>
+                      <span className="text-muted-foreground truncate max-w-[130px]">{bucketLabel(k)}</span>
                     </div>
                     <span className="font-medium">{v}</span>
                   </div>

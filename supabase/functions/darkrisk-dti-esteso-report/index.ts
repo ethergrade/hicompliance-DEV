@@ -61,6 +61,42 @@ function realPasswordValue(hit: any): string | null {
   return null;
 }
 
+// Legenda nomenclatura fonti (bucket) — coerente con la dashboard
+const BUCKET_LEGEND: Array<{ category: string; description: string }> = [
+  { category: 'Data Leak', description: 'Credenziali e dati da database compromessi (pubblici e riservati).' },
+  { category: 'Bot Logs / Infostealer', description: 'Dati esfiltrati da malware infostealer (Redline, Vidar, Lumma): cookie e credenziali browser.' },
+  { category: 'Dark Web', description: 'Servizi nascosti Tor (.onion) e I2P (.i2p): esposizione su rete anonima.' },
+  { category: 'Paste', description: 'Documenti su siti di paste (es. Pastebin): possibili dump di credenziali.' },
+  { category: 'Web pubblico', description: 'Pagine web pubblicamente indicizzate che citano il dominio/asset.' },
+  { category: 'Web governativo', description: 'Siti governativi pubblici che citano l\'asset.' },
+  { category: 'WHOIS / Dominio', description: 'Dati di registrazione e configurazione del dominio.' },
+  { category: 'Dumpster / Misti', description: 'Dati eterogenei ad alto valore non classificati altrove.' },
+];
+
+// Etichetta leggibile per un bucket tecnico (coerente con src/lib/darkrisk/bucketLegend.ts)
+function bucketLabel(bucket: unknown): string {
+  const raw = String(bucket || '').trim();
+  if (!raw) return 'Fonte non classificata';
+  const k = raw.toLowerCase();
+  const exact: Record<string, string> = {
+    'leaks.private.general': 'Data Leak riservati', 'leaks.public.general': 'Data Leak pubblici',
+    'leaks.public.wikileaks': 'Leak WikiLeaks / Cryptome', 'leaks.restricted': 'Data Leak riservati',
+    'leaks.logs': 'Bot Logs / Infostealer', 'darknet.tor': 'Dark Web — Tor (.onion)',
+    'darknet.i2p': 'Dark Web — I2P (.i2p)', 'pastes': 'Paste pubblici', 'paste': 'Paste pubblici',
+    'whois': 'Registrazioni dominio (WHOIS)', 'dns': 'Record DNS', 'usenet': 'Usenet',
+    'documents.public.scihub': 'Documenti pubblici', 'dumpster': 'Dati misti (Dumpster)',
+    'web.public.gov': 'Web governativo — US', 'web.gov.ru': 'Web governativo — Russia',
+  };
+  if (exact[k]) return exact[k];
+  if (k.startsWith('web.public.')) { const tld = k.split('.').slice(2).join('.'); return tld ? `Web pubblico — ${tld}` : 'Web pubblico'; }
+  if (k.startsWith('web.gov.')) return 'Web governativo';
+  if (k.startsWith('leaks.')) return 'Data Leak';
+  if (k.startsWith('darknet.')) return 'Dark Web';
+  if (k.startsWith('dumpster')) return 'Dati misti (Dumpster)';
+  if (k.startsWith('documents.')) return 'Documenti pubblici';
+  return raw.replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function fmtDate(v: unknown): string {
   const s = String(v || '');
   if (!s) return '—';
@@ -810,6 +846,8 @@ async function buildDtiEstesoReport(
     },
     // Raccomandazioni AI gia' merge-ate qui dentro (nessuna sezione separata, nessun nome provider)
     recommendations: { immediate: recsImmediate, d30: recs30d, d90: recs90d },
+    // Legenda nomenclatura fonti (coerente con la dashboard)
+    bucket_legend: BUCKET_LEGEND,
   };
 
   // ── Final HTML assembly ────────────────────────────────────────────────────
@@ -978,6 +1016,12 @@ async function buildDtiEstesoReport(
       ${ul(recs90d)}
     `)}
   </div>
+
+  <!-- SECTION 10: LEGENDA FONTI -->
+  ${section('10. Legenda — Nomenclatura fonti', `
+    <p style="color:#94a3b8;font-size:12px;margin-bottom:8px">Categorie di fonte dei finding e relativo significato operativo.</p>
+    ${table(['Categoria', 'Significato'], BUCKET_LEGEND.map((l) => [l.category, l.description]))}
+  `)}
 
   <!-- FOOTER -->
   <div style="margin-top:48px;padding-top:16px;border-top:1px solid #374151;text-align:center;color:#4b5563;font-size:12px">
