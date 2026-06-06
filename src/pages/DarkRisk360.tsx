@@ -139,8 +139,15 @@ const normalizeThreatCategoryKey = (value: string | null | undefined): string =>
 
 const inactiveFindingStatuses = new Set(['resolved', 'suppressed', 'false_positive', 'accepted_risk']);
 
+const normalizeDarkRiskStatus = (status: unknown): string => {
+  const normalized = String(status || 'new').toLowerCase();
+  if (normalized === 'open') return 'new';
+  if (normalized === 'investigating') return 'triaged';
+  return normalized;
+};
+
 const isActiveDarkRiskStatus = (status: unknown): boolean => {
-  return !inactiveFindingStatuses.has(String(status || 'open').toLowerCase());
+  return !inactiveFindingStatuses.has(normalizeDarkRiskStatus(status));
 };
 
 const formatDateTime = (value: string | null | undefined): string => {
@@ -300,12 +307,22 @@ const DarkRisk360: React.FC = () => {
     data: findingRows = [],
     isLoading: findingsLoading,
   } = useQuery({
-    queryKey: ['darkrisk360-findings', organizationId, overview.latest_scan?.id || null],
+    queryKey: [
+      'darkrisk360-findings',
+      organizationId,
+      overview.latest_scan?.id || null,
+      overview.latest_scan?.data_scan_id || null,
+      overview.dti?.latest_scan_run_id || null,
+    ],
     enabled: Boolean(organizationId),
     queryFn: async (): Promise<DarkRiskFindingRowExtended[]> => {
       if (!organizationId) return [];
 
-      const latestOverviewScanId = overview.latest_scan?.id ? String(overview.latest_scan.id) : '';
+      const latestOverviewScanId = overview.latest_scan?.data_scan_id
+        ? String(overview.latest_scan.data_scan_id)
+        : overview.latest_scan?.id
+          ? String(overview.latest_scan.id)
+          : '';
 
       const [findingsQueryRes, latestSurfaceRes, latestExposureRes] = await Promise.all([
         supabase
@@ -469,7 +486,9 @@ const DarkRisk360: React.FC = () => {
         }
       }
 
-      const darkRiskRows = findings.map((finding) => {
+      const darkRiskRows = findings
+        .filter((finding) => isActiveDarkRiskStatus(finding.status))
+        .map((finding) => {
         const source = presentDarkRiskSource(String(
           finding?.metadata?.source_module ||
           finding?.metadata?.source_origin ||
@@ -570,7 +589,7 @@ const DarkRisk360: React.FC = () => {
           .limit(600),
         supabase
           .from('darkrisk_findings' as any)
-          .select('id, affected_asset_id')
+          .select('id, affected_asset_id, status')
           .eq('organization_id', organizationId)
           .limit(1200),
       ]);
@@ -580,6 +599,7 @@ const DarkRisk360: React.FC = () => {
 
       const findingCountByAsset = new Map<string, number>();
       for (const finding of ((findingsRes.data || []) as Array<Record<string, any>>)) {
+        if (!isActiveDarkRiskStatus(finding.status)) continue;
         const assetId = String(finding.affected_asset_id || '').trim();
         if (!assetId) continue;
         findingCountByAsset.set(assetId, (findingCountByAsset.get(assetId) || 0) + 1);
@@ -743,11 +763,25 @@ const DarkRisk360: React.FC = () => {
   );
 
   const filteredFindings = useMemo(() => {
+    const latestSurfaceScanId = String(overview.latest_scan?.data_scan_id || overview.latest_scan?.id || '').trim();
+    const latestDarkRiskRunId = String(overview.dti?.latest_scan_run_id || '').trim();
+
     return findingRows
       .filter((row) => {
         if (findingFilter.scope === 'latest_overview') {
-          const latestScanId = String(overview.latest_scan?.id || '');
-          if (!latestScanId || row.source_scan_job_id !== latestScanId) return false;
+          const hasLatestReference = Boolean(latestSurfaceScanId || latestDarkRiskRunId);
+          if (!hasLatestReference) return false;
+
+          const bySurfaceScan = Boolean(
+            latestSurfaceScanId &&
+              String(row.source_scan_job_id || '').trim() === latestSurfaceScanId,
+          );
+          const byDarkRiskRun = Boolean(
+            latestDarkRiskRunId &&
+              String(row.scan_run_id || '').trim() === latestDarkRiskRunId,
+          );
+
+          if (!bySurfaceScan && !byDarkRiskRun) return false;
         } else if (row.detail_only) {
           return false;
         }
@@ -772,7 +806,7 @@ const DarkRisk360: React.FC = () => {
         }
         return b.risk_score - a.risk_score;
       });
-  }, [findingRows, findingFilter, overview.latest_scan?.id]);
+  }, [findingRows, findingFilter, overview.latest_scan?.id, overview.latest_scan?.data_scan_id, overview.dti?.latest_scan_run_id]);
 
   const filteredAssets = useMemo(() => {
     return assetRows.filter((row) => {
@@ -1197,7 +1231,7 @@ const DarkRisk360: React.FC = () => {
           </Card>
         )}
 
-        {isError && !isLoading && overview.enabled && (
+        {isError && !isLoading && (
           <Card className="border-red-500/40">
             <CardContent className="py-6 text-sm text-red-300">
               Impossibile caricare i dati DarkRisk360: {String((error as any)?.message || 'errore sconosciuto')}.
