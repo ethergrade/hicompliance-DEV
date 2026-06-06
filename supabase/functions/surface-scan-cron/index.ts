@@ -751,7 +751,7 @@ async function triggerWeeklyClassicScopeScans(
   const targets = [
     ...domains.map((t) => ({ target: t, profile: 'domain_exposure' })),
     ...ips.map((t) => ({ target: t, profile: 'ip_exposure' })),
-  ].slice(0, 30);
+  ].slice(0, 80);
 
   if (targets.length === 0) return { queued: 0, skipped: 0, failed: 0 };
 
@@ -771,46 +771,42 @@ async function triggerWeeklyClassicScopeScans(
 
   let queued = 0, skipped = 0, failed = 0;
 
+  // Orchestratore interno fidato: inserisce i job 'queued' DIRETTAMENTE in
+  // surface_scan_jobs, bypassando il rate-limit/cooldown di surfacescan360-start-scan
+  // (pensati per l'uso manuale UI). Così TUTTI i subdomain in scope vengono accodati.
+  const rootOf = (host: string): string => {
+    const labels = host.split('.').filter(Boolean);
+    return labels.length <= 2 ? host : labels.slice(-2).join('.');
+  };
+  const jobRows: any[] = [];
   for (const item of targets) {
     const normalizedTarget = item.target.replace(/^https?:\/\//, '').replace(/\/.*$/, '').toLowerCase();
-    if (recentTargets.has(normalizedTarget)) {
-      skipped++;
-      continue;
-    }
+    if (recentTargets.has(normalizedTarget)) { skipped++; continue; }
+    recentTargets.add(normalizedTarget);
+    const isIpTarget = item.profile === 'ip_exposure';
+    jobRows.push({
+      organization_id: orgId,
+      tenant_id: orgId,
+      customer_id: orgId,
+      requested_by: null,
+      raw_target: item.target,
+      normalized_target: normalizedTarget,
+      target_type: isIpTarget ? 'ip' : 'domain',
+      hostname: isIpTarget ? null : normalizedTarget,
+      root_domain: isIpTarget ? null : rootOf(normalizedTarget),
+      scan_profile: item.profile,
+      status: 'queued',
+      authorization_confirmed: true,
+    });
+  }
 
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 20_000);
-    try {
-      const res = await fetch(`${supabaseUrl}/functions/v1/surfacescan360-start-scan`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${serviceRoleKey}`,
-          ...(internalSecret ? { 'x-surface-internal-secret': internalSecret } : {}),
-        },
-        body: JSON.stringify({
-          target: item.target,
-          customer_id: orgId,
-          scan_profile: item.profile,
-          authorization_confirmed: true,
-          ownership_proof: 'cron_weekly_surface_scan',
-          force_refresh: false,
-        }),
-        signal: ctrl.signal,
-      });
-      clearTimeout(t);
-      const body = await res.json().catch(() => ({}));
-      if (res.ok && !body?.error) {
-        queued++;
-        recentTargets.add(normalizedTarget); // prevent duplicates within same run
-      } else if (res.status === 429 || res.status === 200) {
-        skipped++; // cooldown active or already queued
-      } else {
-        failed++;
-      }
-    } catch {
-      clearTimeout(t);
-      failed++;
+  if (jobRows.length > 0) {
+    const { error: insErr } = await supabase.from('surface_scan_jobs').insert(jobRows);
+    if (insErr) {
+      console.error('[cron] bulk job insert failed:', insErr.message);
+      failed = jobRows.length;
+    } else {
+      queued = jobRows.length;
     }
   }
 
@@ -1047,10 +1043,9 @@ Deno.serve(async (req) => {
         });
       }
 
-      const pentestToolsEnabled = Deno.env.get('SURFACESCAN_ENABLE_PENTEST_TOOLS') === 'true';
-
       if (surfaceGate.allowed) {
-        // Sync exposure port/tech data from Shodan results (no PentestTools needed)
+        // Esposizione porte/servizi/tech: SOLO da Shodan + moduli interni.
+        // Pentest-Tools eliminato (provider 401 -> job exposure tutti falliti).
         if (assets.length > 0) {
           const syncResult = await syncExposureFromShodanAssets(supabase, orgId, assets);
           console.log(`[shodan-exposure-sync] org=${orgId} ports=${syncResult.ports} techs=${syncResult.techs}`);
@@ -1060,14 +1055,6 @@ Deno.serve(async (req) => {
             action: 'auto_shodan_exposure_synced',
             details: { ports_synced: syncResult.ports, techs_synced: syncResult.techs, assets_count: assets.length },
           });
-        }
-
-        // PentestTools: solo se esplicitamente abilitato e token disponibili
-        if (pentestToolsEnabled) {
-          await maybeTriggerAutoValidation(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, perRule);
-          await triggerWeeklyScopeExposureScan(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, effectiveRules);
-        } else {
-          console.log(`[cron] pentest-tools disabled — using Shodan as exposure source for org=${orgId}`);
         }
 
         // Report repository canonico SurfaceScan360: refresh automatico settimanale.

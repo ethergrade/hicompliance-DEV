@@ -138,10 +138,65 @@ async function upsertSurfaceAsset(adminClient: any, args: {
 }
 
 async function enqueueScanTask(adminClient: any, payload: Record<string, unknown>) {
-  const { error } = await adminClient.from('pentest_tools_scans' as any).insert(payload);
+  const scanJobId = String(payload.scan_job_id || '').trim();
+  const phase = String(payload.phase || '').trim();
+  const targetName = String(payload.target_name || '').trim().toLowerCase();
+  const toolId = Number(payload.tool_id || 0);
+
+  if (!scanJobId || !phase || !targetName || !Number.isFinite(toolId) || toolId <= 0) {
+    console.warn('[ptools-poll] enqueueScanTask skipped invalid payload');
+    return null;
+  }
+
+  const { data: existing } = await adminClient
+    .from('pentest_tools_scans' as any)
+    .select('id, status')
+    .eq('scan_job_id', scanJobId)
+    .eq('phase', phase)
+    .eq('target_name', targetName)
+    .eq('tool_id', toolId)
+    .limit(1)
+    .maybeSingle();
+
+  if (existing?.id) {
+    const status = String((existing as any).status || '').toLowerCase();
+    if (['queued', 'retry', 'running', 'waiting', 'finished'].includes(status)) {
+      return String((existing as any).id);
+    }
+    const { error: updateError } = await adminClient
+      .from('pentest_tools_scans' as any)
+      .update({
+        ...payload,
+        target_name: targetName,
+        status: 'queued',
+        remote_scan_id: null,
+        remote_target_id: null,
+        progress: null,
+        error_message: null,
+        retry_count: 0,
+        next_retry_at: null,
+        started_at: null,
+        finished_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', (existing as any).id);
+    if (updateError) {
+      console.warn('[ptools-poll] enqueueScanTask requeue failed:', updateError.message);
+      return null;
+    }
+    return String((existing as any).id);
+  }
+
+  const { data, error } = await adminClient
+    .from('pentest_tools_scans' as any)
+    .insert({ ...payload, target_name: targetName })
+    .select('id')
+    .single();
   if (error) {
     console.warn('[ptools-poll] enqueueScanTask failed:', error.message);
+    return null;
   }
+  return data?.id ? String(data.id) : null;
 }
 
 async function bootstrapExposureTasksForJob(
@@ -794,10 +849,16 @@ async function persistSubdomainsAndQueuePorts(adminClient: any, args: {
   output: unknown;
 }) {
   const remoteScanId = Number(args.scanTask.remote_scan_id || 0);
+  const rootDomain = String(
+    args.job.root_domain
+      || hostFromTargetValue(String(args.scanTask.target_name || ''))
+      || args.scanTask.target_name
+      || '',
+  ).trim().toLowerCase();
   const discovered = normalizeSubdomainFinderOutputForDomain(
     args.output,
     remoteScanId,
-    String(args.job.root_domain || "").trim().toLowerCase(),
+    rootDomain,
   );
   if (discovered.length === 0) return;
 
@@ -815,7 +876,7 @@ async function persistSubdomainsAndQueuePorts(adminClient: any, args: {
       assetType: 'subdomain',
       assetValue: normalizedHost,
       hostname: normalizedHost,
-      rootDomain: args.job.root_domain || null,
+      rootDomain: rootDomain || null,
       ip: (sub.ips || [])[0] || null,
       source: 'pentest_tools_subdomain_finder',
       confidence: 'medium',
@@ -834,7 +895,7 @@ async function persistSubdomainsAndQueuePorts(adminClient: any, args: {
       customer_id: args.scanTask.customer_id,
       target_value: normalizedHost,
       target_type: 'subdomain',
-      root_domain: args.job.root_domain || null,
+      root_domain: rootDomain || null,
       source: 'subdomain_finder',
       resolved_ips: sub.ips || [],
       is_authorized: true,
@@ -851,6 +912,7 @@ async function persistSubdomainsAndQueuePorts(adminClient: any, args: {
     insertedTargets = (data || []) as Array<{ id: string; target_value: string; target_type: string }>;
   }
 
+  let queuedPortScans = 0;
   if (args.inputConfig.include_port_scan) {
     const portParams = buildPortScannerParams(args.inputConfig);
     const targetIdByValue = new Map<string, string>();
@@ -861,7 +923,7 @@ async function persistSubdomainsAndQueuePorts(adminClient: any, args: {
     for (const sub of discovered) {
       const targetName = String(sub.hostname || '').trim().toLowerCase();
       if (!targetName) continue;
-      await enqueueScanTask(adminClient, {
+      const queuedId = await enqueueScanTask(adminClient, {
         scan_job_id: args.scanTask.scan_job_id,
         target_id: targetIdByValue.get(targetName) || null,
         organization_id: args.scanTask.organization_id,
@@ -874,8 +936,22 @@ async function persistSubdomainsAndQueuePorts(adminClient: any, args: {
         tool_params: portParams,
         status: 'queued',
       });
+      if (queuedId) queuedPortScans += 1;
     }
   }
+
+  await adminClient.from('surface_scan_audit_log' as any).insert({
+    scan_job_id: args.scanTask.scan_job_id,
+    organization_id: args.scanTask.organization_id,
+    action: 'ptools_subdomains_expanded_to_queue',
+    details: {
+      discovered_subdomains: discovered.length,
+      targets_upserted: subdomainTargetRows.length,
+      port_scans_queued_or_existing: queuedPortScans,
+      root_domain: rootDomain || null,
+      source_task_id: args.scanTask.id || null,
+    },
+  });
 }
 
 async function processFinishedTask(adminClient: any, pentestClient: PentestToolsClient, scanTask: any): Promise<void> {
@@ -1182,6 +1258,12 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   if (!['POST', 'GET'].includes(req.method)) return jsonResponse({ error: 'Method not allowed' }, 405);
 
+  // ── PENTEST-TOOLS DISABILITATO ───────────────────────────────────────────────
+  // Neutralizzato: non esistono più task exposure ptools da pollare. Evita di
+  // marcare i job "All exposure tasks failed". L'esposizione usa moduli interni.
+  return jsonResponse({ ok: true, skipped: true, reason: 'pentest_tools_disabled', polled: 0, updated: 0 }, 200);
+
+  // eslint-disable-next-line no-unreachable
   try {
     let requestPayload: Record<string, unknown> = {};
     if (req.method === 'POST') {
@@ -1261,7 +1343,10 @@ serve(async (req: Request) => {
       if (!jobId) continue;
       recoveryJobIds.add(jobId);
       const errorMessage = String((job as any).error_message || '').toLowerCase();
-      if (errorMessage.includes('all pentest-tools tasks failed')) {
+      if (
+        errorMessage.includes('all pentest-tools tasks failed')
+        || errorMessage.includes('all exposure tasks failed')
+      ) {
         forceRequeueFailedJobs.add(jobId);
       }
     }

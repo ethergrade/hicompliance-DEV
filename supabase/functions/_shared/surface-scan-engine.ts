@@ -44,6 +44,9 @@ interface SurfaceScanJob {
   started_at?: string | null;
   completed_at?: string | null;
   created_at?: string | null;
+  scan_type?: string | null;
+  config?: Record<string, unknown> | null;
+  summary?: Record<string, unknown> | null;
 }
 
 interface RunOptions {
@@ -197,6 +200,7 @@ interface ModuleExecutionConfig {
   label: string;
   timeoutMs: number;
   featureFlag?: string;
+  defaultEnabled?: boolean;
   retryOnError?: boolean;
   maxRetries?: number;
   retryBackoffMs?: number;
@@ -239,6 +243,12 @@ const asStringArray = (value: unknown): string[] => {
   }
   return [];
 };
+
+function toPositiveInt(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.round(parsed);
+}
 
 function severityRank(severity: string): number {
   switch (toSeverity(severity)) {
@@ -1018,6 +1028,138 @@ export async function runSurfaceScanEnrichment(
     });
   };
 
+  const enqueueDiscoveredSubdomainJobs = async (): Promise<{
+    discovered: number;
+    eligible: number;
+    inserted: number;
+    skippedExisting: number;
+    skippedCurrent: number;
+    skippedLimit: number;
+  }> => {
+    const jobConfig = (job.config && typeof job.config === "object") ? job.config : {};
+    if (jobConfig.auto_expand_subdomains === false) {
+      return { discovered: 0, eligible: 0, inserted: 0, skippedExisting: 0, skippedCurrent: 0, skippedLimit: 0 };
+    }
+    if (String(job.scan_type || "") === "subdomain_enrichment") {
+      return { discovered: 0, eligible: 0, inserted: 0, skippedExisting: 0, skippedCurrent: 0, skippedLimit: 0 };
+    }
+    if (parsedTarget.target_type !== "domain" || !rootDomain) {
+      return { discovered: 0, eligible: 0, inserted: 0, skippedExisting: 0, skippedCurrent: 0, skippedLimit: 0 };
+    }
+
+    const limit = toPositiveInt(Deno.env.get("SURFACESCAN_SUBDOMAIN_CHILD_JOB_LIMIT"), 75);
+    const cooldownHours = toPositiveInt(Deno.env.get("SURFACESCAN_SUBDOMAIN_CHILD_COOLDOWN_HOURS"), 24);
+    const cooldownIso = new Date(Date.now() - cooldownHours * 60 * 60 * 1000).toISOString();
+    const currentHost = String(hostname || "").trim().toLowerCase();
+    const candidates = [...new Set(
+      [...discoveredHostnames]
+        .map((entry) => String(entry || "").trim().toLowerCase().replace(/\.$/, ""))
+        .filter(Boolean)
+        .filter((entry) => entry !== rootDomain)
+        .filter((entry) => entry !== currentHost)
+        .filter((entry) => entry.endsWith(`.${rootDomain}`))
+        .filter((entry) => isValidHostnameCandidate(entry))
+        .filter((entry) => shouldAcceptScannableHost(entry)),
+    )].sort();
+
+    const selected = candidates.slice(0, limit);
+    let inserted = 0;
+    let skippedExisting = 0;
+    let skippedCurrent = candidates.length - selected.length;
+
+    for (const subdomain of selected) {
+      const normalizedChild = normalizeTargetInput(subdomain);
+      const { count: existingCount } = await adminClient
+        .from("surface_scan_jobs" as any)
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", organizationId)
+        .eq("normalized_target", normalizedChild.normalized_target)
+        .in("status", ["queued", "pending", "running", "completed"])
+        .gte("created_at", cooldownIso);
+
+      if ((existingCount || 0) > 0) {
+        skippedExisting += 1;
+        continue;
+      }
+
+      const [aRecords, aaaaRecords] = await Promise.all([
+        resolveWithDnsOverHttps(subdomain, "A").catch(() => [] as string[]),
+        resolveWithDnsOverHttps(subdomain, "AAAA").catch(() => [] as string[]),
+      ]);
+
+      const { error } = await adminClient
+        .from("surface_scan_jobs" as any)
+        .insert({
+          organization_id: organizationId,
+          tenant_id: tenantId,
+          customer_id: customerId,
+          requested_by: options.initiatedByUserId || job.requested_by || null,
+          raw_target: subdomain,
+          normalized_target: normalizedChild.normalized_target,
+          target_type: normalizedChild.target_type,
+          hostname: normalizedChild.hostname,
+          root_domain: normalizedChild.root_domain || rootDomain,
+          resolved_ips: [...new Set([...aRecords, ...aaaaRecords])],
+          scan_profile: job.scan_profile || "domain_exposure",
+          scan_type: "subdomain_enrichment",
+          scan_name: `Subdomain enrichment · ${subdomain}`,
+          status: "queued",
+          authorization_confirmed: true,
+          config: {
+            parent_scan_job_id: job.id,
+            parent_target: parsedTarget.normalized_target,
+            discovered_from: "surface_scan_engine",
+            auto_expand_subdomains: false,
+            no_pentest_tools: true,
+          },
+          summary: {
+            parent_scan_job_id: job.id,
+            root_domain: rootDomain,
+            discovered_from: "surface_scan_engine",
+          },
+        });
+
+      if (error) {
+        skippedCurrent += 1;
+        continue;
+      }
+      inserted += 1;
+    }
+
+    const stats = {
+      discovered: discoveredHostnames.size,
+      eligible: candidates.length,
+      inserted,
+      skippedExisting,
+      skippedCurrent: Math.max(0, skippedCurrent),
+      skippedLimit: Math.max(0, candidates.length - selected.length),
+    };
+
+    if (candidates.length > 0 || inserted > 0) {
+      await insertObservation({
+        module: "subdomain_queue",
+        observation_type: "subdomain_child_jobs",
+        title: "Discovered subdomains queued for SurfaceScan360 enrichment",
+        value: {
+          ...stats,
+          root_domain: rootDomain,
+          limit,
+          cooldown_hours: cooldownHours,
+          sample: selected.slice(0, 30),
+        },
+        severity: "info",
+      });
+      await logAudit("subdomain_child_jobs_queued", {
+        ...stats,
+        root_domain: rootDomain,
+        limit,
+        cooldown_hours: cooldownHours,
+      });
+    }
+
+    return stats;
+  };
+
   const emitEngineEnvelope = async (envelope: SurfaceEngineEnvelope) => {
     await insertObservation({
       module: "engine_orchestrator",
@@ -1459,7 +1601,7 @@ export async function runSurfaceScanEnrichment(
   };
 
   const safeRun = async (config: ModuleExecutionConfig, fn: () => Promise<void>) => {
-    if (!isFeatureEnabled(config.featureFlag, true)) {
+    if (!isFeatureEnabled(config.featureFlag, config.defaultEnabled ?? true)) {
       await upsertModuleResult(config, "skipped", {
         severity: "info",
         normalized: {
@@ -7507,6 +7649,7 @@ export async function runSurfaceScanEnrichment(
       label: "Pentest-Tools",
       timeoutMs: 240000,
       featureFlag: "SURFACESCAN_ENABLE_PENTEST_TOOLS",
+      defaultEnabled: false,
     },
     open_ports: {
       key: "open_ports",
@@ -7564,7 +7707,10 @@ export async function runSurfaceScanEnrichment(
         phase3.push(safeRun(modules.urlscan, runUrlscanModule));
       }
       await Promise.allSettled(phase3);
-      await safeRun(modules.pentest_tools, runPentestToolsModule);
+      // Pentest-Tools DISABILITATO: il provider rifiuta la chiave (401) e bloccava
+      // l'esposizione. L'enrichment usa solo i moduli interni (Shodan, urlscan,
+      // open_ports, CVE intel, SSL/TLS, tech_stack, DNS, HTTP headers, ecc.).
+      // void runPentestToolsModule; // legacy non operativo
     }
     await safeRun(modules.open_ports, runOpenPortsModule);
     await safeRun(modules.cve_intel, runCveIntelModule);
@@ -7838,6 +7984,7 @@ export async function runSurfaceScanEnrichment(
       } as Record<string, number>,
     );
     await triggerCveEnrichmentQueue();
+    const subdomainQueueStats = await enqueueDiscoveredSubdomainJobs();
 
     const scanSummary = {
       overall_score: overallScore,
@@ -7854,6 +8001,7 @@ export async function runSurfaceScanEnrichment(
       scope_guard: scopeCounters,
       hosting_context: hostingContext,
       shodan_status: shodanStatus,
+      subdomain_child_queue: subdomainQueueStats,
       warnings: scanWarnings.length > 0 ? scanWarnings : undefined,
     };
 

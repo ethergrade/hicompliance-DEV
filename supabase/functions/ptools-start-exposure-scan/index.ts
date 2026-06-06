@@ -51,6 +51,21 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   if (req.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
 
+  // ── PENTEST-TOOLS DISABILITATO ───────────────────────────────────────────────
+  // Il provider Pentest-Tools rifiuta la chiave (401) e generava job exposure
+  // tutti falliti ("All exposure tasks failed"). L'esposizione (porte/servizi/tech)
+  // è ora coperta dai moduli interni SurfaceScan360 + Shodan. Questa funzione è
+  // neutralizzata: NON crea job né task, ritorna skip a tutti i chiamanti.
+  return jsonResponse({
+    ok: true,
+    skipped: true,
+    reason: 'pentest_tools_disabled',
+    message: 'Exposure via Pentest-Tools disabilitato. Usa i moduli interni SurfaceScan360 (Shodan/SSL/tech/DNS).',
+    queue: { total: 0, started: 0 },
+    tasks: [],
+  }, 200);
+
+  // eslint-disable-next-line no-unreachable
   try {
     const { userClient, adminClient } = makeSupabaseClients(req);
     const bearerToken = extractBearerToken(req);
