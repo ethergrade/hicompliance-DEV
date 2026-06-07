@@ -12,7 +12,7 @@ type NucleiProfile =
   | "web_vuln_safe"
   | "web_vuln_authorized";
 
-type NucleiAction = "direct_scan" | "enqueue" | "list" | "get" | "retrieve_targets" | "process_queue";
+type NucleiAction = "direct_scan" | "enqueue" | "list" | "get" | "retrieve_targets" | "process_queue" | "smoke_test";
 
 type RequestBody = {
   action?: NucleiAction;
@@ -30,6 +30,7 @@ type RequestBody = {
   max_findings?: number;
   authorized_scan?: boolean;
   limit?: number;
+  request_id?: string;
 };
 
 type NucleiFinding = {
@@ -92,6 +93,24 @@ type ScannableTarget = {
   confidence: "high" | "medium" | "low";
 };
 
+type TraceContext = {
+  requestId: string;
+  action: NucleiAction;
+  organizationId: string;
+  startedAt: number;
+  profile?: NucleiProfile;
+  targetCount: number;
+};
+
+type SmokeCheck = {
+  name: string;
+  ok: boolean;
+  status?: number;
+  message?: string;
+  details?: Record<string, unknown>;
+  duration_ms?: number;
+};
+
 const ALLOWED_PROFILES = new Set<NucleiProfile>([
   "baseline_headers",
   "exposure_medium",
@@ -110,6 +129,10 @@ const PRIVATE_IPV4_RANGES = [
 
 const HTTP_ACTION_TIMEOUT_SECONDS = 165;
 const DOMAIN_REGEX = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
+const nucleiCorsHeaders = {
+  ...corsHeaders,
+  "Access-Control-Allow-Headers": `${corsHeaders["Access-Control-Allow-Headers"]}, x-nuclei-scan360-request-id`,
+};
 const SURFACE_TARGET_ASSET_TYPES = [
   "domain",
   "subdomain",
@@ -157,8 +180,34 @@ const MANUAL_TARGET_TYPES = [
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json", ...corsHeaders },
+    headers: { "Content-Type": "application/json", ...nucleiCorsHeaders },
   });
+
+const sanitizeRequestId = (value: unknown) => {
+  const raw = String(value || "").trim();
+  if (!raw) return crypto.randomUUID();
+  return raw.replace(/[^a-zA-Z0-9._:-]/g, "").slice(0, 96) || crypto.randomUUID();
+};
+
+const countRequestedTargets = (body: RequestBody) =>
+  Number(Boolean(body.target_url)) + (Array.isArray(body.targets) ? body.targets.filter(Boolean).length : 0);
+
+function traceLog(ctx: TraceContext, status: string, extra: Record<string, unknown> = {}) {
+  console.log(JSON.stringify({
+    event: "nuclei_scan360",
+    request_id: ctx.requestId,
+    action: ctx.action,
+    organization_id: ctx.organizationId || null,
+    profile: ctx.profile || null,
+    target_count: ctx.targetCount,
+    status,
+    duration_ms: Date.now() - ctx.startedAt,
+    ...extra,
+  }));
+}
+
+const tracedJsonResponse = (ctx: TraceContext, body: Record<string, unknown>, status = 200) =>
+  jsonResponse({ request_id: ctx.requestId, ...body }, status);
 
 function clampInt(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = Number(value);
@@ -404,6 +453,32 @@ async function callNucleiService(payload: ScanPayload): Promise<NucleiResult> {
   }
 }
 
+async function callNucleiHealth(): Promise<Record<string, unknown>> {
+  const { serviceUrl } = getServiceConfig();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(`${serviceUrl}/health`, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    let parsed: unknown = {};
+    try {
+      parsed = text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error(`Nuclei health returned malformed JSON: ${text.slice(0, 300)}`);
+    }
+    if (!response.ok) {
+      const errorPayload = parsed as Record<string, unknown>;
+      throw new Error(String(errorPayload.error || errorPayload.message || `Nuclei health HTTP ${response.status}`));
+    }
+    return parsed as Record<string, unknown>;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function loadOrganization(adminClient: SupabaseClient, organizationId: string) {
   const { data, error } = await adminClient
     .from("organizations")
@@ -605,9 +680,17 @@ async function enqueueJobs(
     body.target_url,
     ...(Array.isArray(body.targets) ? body.targets : []),
   ].filter(Boolean) as string[];
-  const surfaceTargets = body.include_surface_assets || body.include_discovered_targets
-    ? await collectSurfaceTargets(adminClient, organizationId, clampInt(body.surface_asset_limit || body.target_limit, 25, 1, 100))
-    : [];
+  const warnings: string[] = [];
+  let surfaceTargets: string[] = [];
+  const shouldLoadDiscoveredTargets = Boolean(body.include_discovered_targets) || (manualTargets.length === 0 && Boolean(body.include_surface_assets));
+  if (shouldLoadDiscoveredTargets) {
+    try {
+      surfaceTargets = await collectSurfaceTargets(adminClient, organizationId, clampInt(body.surface_asset_limit || body.target_limit, 25, 1, 100));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      warnings.push(`target_repository:${message || "query_failed"}`);
+    }
+  }
   const source = manualTargets.length > 0 && surfaceTargets.length > 0
     ? "mixed"
     : surfaceTargets.length > 0
@@ -629,7 +712,7 @@ async function enqueueJobs(
   const activeTargets = new Set((activeJobs || []).map((job: { normalized_target_url?: string }) => String(job.normalized_target_url || "")));
   const newTargets = normalizedTargets.filter((targetUrl) => !activeTargets.has(targetUrl));
   if (newTargets.length === 0) {
-    return { queued: [], queued_count: 0, skipped_duplicates: normalizedTargets.length };
+    return { queued: [], queued_count: 0, skipped_duplicates: normalizedTargets.length, warnings };
   }
 
   const rows = newTargets.map((targetUrl) => ({
@@ -655,7 +738,7 @@ async function enqueueJobs(
     .select("*");
   if (error) throw new Error(error.message || "Unable to enqueue NucleiScan360 jobs");
 
-  return { queued: data || [], queued_count: data?.length || 0, skipped_duplicates: normalizedTargets.length - (data?.length || 0) };
+  return { queued: data || [], queued_count: data?.length || 0, skipped_duplicates: normalizedTargets.length - (data?.length || 0), warnings };
 }
 
 async function listJobs(adminClient: SupabaseClient, body: RequestBody) {
@@ -820,22 +903,116 @@ async function directScan(body: RequestBody) {
   return { result };
 }
 
+async function smokeTest(adminClient: SupabaseClient, body: RequestBody) {
+  const startedAt = Date.now();
+  const organizationId = String(body.organization_id || "").trim();
+  const checks: SmokeCheck[] = [];
+  const warnings: string[] = [];
+
+  const runCheck = async (
+    name: string,
+    check: () => Promise<Record<string, unknown> | void>,
+  ) => {
+    const checkStartedAt = Date.now();
+    try {
+      const details = await check();
+      checks.push({
+        name,
+        ok: true,
+        details: details || undefined,
+        duration_ms: Date.now() - checkStartedAt,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      checks.push({
+        name,
+        ok: false,
+        message: message || "check_failed",
+        duration_ms: Date.now() - checkStartedAt,
+      });
+      warnings.push(`${name}:${message || "check_failed"}`);
+    }
+  };
+
+  await runCheck("service_config", async () => {
+    const { serviceUrl } = getServiceConfig();
+    return { configured: true, service_url_host: new URL(serviceUrl).host };
+  });
+
+  await runCheck("organization", async () => {
+    if (!organizationId) throw new Error("organization_id is required");
+    const organization = await loadOrganization(adminClient, organizationId);
+    return { id: organization.id, name: organization.name, code: organization.code };
+  });
+
+  await runCheck("target_repository", async () => {
+    if (!organizationId) throw new Error("organization_id is required");
+    const repository = await collectScannableTargets(adminClient, organizationId, clampInt(body.target_limit, 25, 1, 80));
+    return { target_count: repository.targets.length, counts: repository.counts, warnings: repository.warnings };
+  });
+
+  await runCheck("queue_table", async () => {
+    if (!organizationId) throw new Error("organization_id is required");
+    const { count, error } = await adminClient
+      .from("nuclei_scan360_jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organizationId);
+    if (error) throw new Error(error.message || "queue_table_failed");
+    return { dry_run_insert: false, existing_jobs: count || 0 };
+  });
+
+  await runCheck("container_health", async () => {
+    const health = await callNucleiHealth();
+    return health;
+  });
+
+  return {
+    checks,
+    warnings,
+    duration_ms: Date.now() - startedAt,
+    ok: checks.every((check) => check.ok),
+  };
+}
+
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-  if (req.method !== "POST") return jsonResponse({ ok: false, error: "Method not allowed" }, 405);
+  if (req.method === "OPTIONS") return new Response(null, { headers: nucleiCorsHeaders });
+  const startedAt = Date.now();
+  let body = {} as RequestBody;
+  try {
+    body = (await req.json()) as RequestBody;
+  } catch {
+    body = {} as RequestBody;
+  }
+  const action = (body.action || "direct_scan") as NucleiAction;
+  const organizationId = String(body.organization_id || "").trim();
+  const ctx: TraceContext = {
+    requestId: sanitizeRequestId(req.headers.get("x-nuclei-scan360-request-id") || body.request_id),
+    action,
+    organizationId,
+    startedAt,
+    profile: body.profile,
+    targetCount: countRequestedTargets(body),
+  };
+
+  if (req.method !== "POST") {
+    traceLog(ctx, "method_not_allowed", { phase: "method", http_status: 405 });
+    return tracedJsonResponse(ctx, { ok: false, error: "Method not allowed", phase: "method" }, 405);
+  }
 
   try {
     const { userClient, adminClient } = makeSupabaseClients(req);
     const { data: authData, error: authError } = await userClient.auth.getUser();
-    if (authError || !authData.user) return jsonResponse({ ok: false, error: "Unauthorized" }, 401);
+    if (authError || !authData.user) {
+      traceLog(ctx, "unauthorized", { phase: "auth", http_status: 401, message: authError?.message || "no_user" });
+      return tracedJsonResponse(ctx, { ok: false, error: "Unauthorized", phase: "auth" }, 401);
+    }
 
     const caller = await getCallerProfile(adminClient, authData.user.id);
     if (!caller.isSuperAdmin) {
-      return jsonResponse({ ok: false, error: "Only super admins can use NucleiScan360" }, 403);
+      traceLog(ctx, "forbidden", { phase: "auth", http_status: 403, email: caller.email });
+      return tracedJsonResponse(ctx, { ok: false, error: "Only super admins can use NucleiScan360", phase: "auth" }, 403);
     }
 
-    const body = (await req.json()) as RequestBody;
-    const action = (body.action || "direct_scan") as NucleiAction;
     let payload: Record<string, unknown>;
 
     if (action === "direct_scan") {
@@ -850,15 +1027,28 @@ serve(async (req: Request) => {
       payload = await retrieveTargets(adminClient, body);
     } else if (action === "process_queue") {
       payload = await processQueue(adminClient, body);
+    } else if (action === "smoke_test") {
+      payload = await smokeTest(adminClient, body);
     } else {
-      return jsonResponse({ ok: false, error: "Unsupported action" }, 400);
+      traceLog(ctx, "unsupported_action", { phase: "routing", http_status: 400 });
+      return tracedJsonResponse(ctx, { ok: false, error: "Unsupported action", phase: "routing" }, 400);
     }
 
-    return jsonResponse({ ok: true, action, ...payload });
+    const responseOk = payload.ok !== false;
+    traceLog(ctx, responseOk ? "ok" : "completed_with_warnings", {
+      phase: action,
+      http_status: 200,
+      queued_count: payload.queued_count,
+      processed_count: payload.processed_count,
+      warning_count: Array.isArray(payload.warnings) ? payload.warnings.length : 0,
+    });
+    return tracedJsonResponse(ctx, { ok: responseOk, action, ...payload });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const isAbort = error instanceof DOMException && error.name === "AbortError";
     const status = message.includes("not configured") ? 503 : isAbort ? 504 : 400;
-    return jsonResponse({ ok: false, error: isAbort ? "NucleiScan360 timeout" : message }, status);
+    const phase = isAbort ? "timeout" : action;
+    traceLog(ctx, "error", { phase, http_status: status, message });
+    return tracedJsonResponse(ctx, { ok: false, error: isAbort ? "NucleiScan360 timeout" : message, phase }, status);
   }
 });

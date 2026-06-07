@@ -213,6 +213,8 @@ const clampNumber = (value: unknown, fallback: number, min: number, max: number)
 };
 
 const extractInvokeErrorMessage = async (error: unknown, fallback = 'Errore funzione Supabase') => {
+  const diagnostic = (error as NucleiFunctionError)?.diagnostic;
+  if (diagnostic) return formatDiagnosticMessage(diagnostic);
   const maybeError = error as { message?: string; context?: Response };
   if (maybeError?.context instanceof Response) {
     try {
@@ -236,7 +238,8 @@ type NucleiAction =
   | 'list'
   | 'get'
   | 'retrieve_targets'
-  | 'process_queue';
+  | 'process_queue'
+  | 'smoke_test';
 
 type NucleiFunctionBody = {
   action: NucleiAction;
@@ -253,6 +256,22 @@ type NucleiFunctionBody = {
   max_findings?: number;
   authorized_scan?: boolean;
   limit?: number;
+  request_id?: string;
+};
+
+type NucleiInvokeDiagnostic = {
+  phase: string;
+  endpoint: string;
+  request_id: string;
+  action: NucleiAction;
+  status: number | null;
+  retry_count: number;
+  message: string;
+  payload?: unknown;
+};
+
+type NucleiFunctionError = Error & {
+  diagnostic?: NucleiInvokeDiagnostic;
 };
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -260,6 +279,24 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const getResponseStatus = (error: unknown) => {
   const context = (error as { context?: Response })?.context;
   return context instanceof Response ? context.status : 0;
+};
+
+const createNucleiRequestId = (action: NucleiAction) =>
+  `nuclei-${action}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+
+const formatDiagnosticMessage = (diagnostic: NucleiInvokeDiagnostic) =>
+  [
+    `fase=${diagnostic.phase}`,
+    `request_id=${diagnostic.request_id}`,
+    `status=${diagnostic.status ?? 'network'}`,
+    `retry=${diagnostic.retry_count}`,
+    diagnostic.message,
+  ].filter(Boolean).join(' · ');
+
+const createNucleiFunctionError = (diagnostic: NucleiInvokeDiagnostic): NucleiFunctionError => {
+  const error = new Error(formatDiagnosticMessage(diagnostic)) as NucleiFunctionError;
+  error.diagnostic = diagnostic;
+  return error;
 };
 
 const isTransientFunctionError = (error: unknown) => {
@@ -271,39 +308,91 @@ const isTransientFunctionError = (error: unknown) => {
 async function directFetchNucleiScan360<T>(body: NucleiFunctionBody): Promise<T> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token || SUPABASE_PUBLISHABLE_KEY;
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/nuclei-scan360`, {
-    method: 'POST',
-    headers: {
-      apikey: SUPABASE_PUBLISHABLE_KEY,
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  const requestId = body.request_id || createNucleiRequestId(body.action);
+  const tracedBody = { ...body, request_id: requestId };
+  const endpoint = `${SUPABASE_URL}/functions/v1/nuclei-scan360`;
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'x-nuclei-scan360-request-id': requestId,
+      },
+      body: JSON.stringify(tracedBody),
+    });
+  } catch (error) {
+    throw createNucleiFunctionError({
+      phase: 'network',
+      endpoint,
+      request_id: requestId,
+      action: body.action,
+      status: null,
+      retry_count: 0,
+      message: error instanceof Error ? error.message : String(error || 'fetch_failed'),
+    });
+  }
 
   const text = await response.text();
   let payload: unknown = {};
   try {
     payload = text ? JSON.parse(text) : {};
   } catch {
-    throw new Error(text.trim() || `NucleiScan360 HTTP ${response.status}`);
+    throw createNucleiFunctionError({
+      phase: 'malformed_json',
+      endpoint,
+      request_id: requestId,
+      action: body.action,
+      status: response.status,
+      retry_count: 0,
+      message: text.trim() || `NucleiScan360 HTTP ${response.status}`,
+      payload: text.slice(0, 500),
+    });
   }
   if (!response.ok) {
-    const errorPayload = payload as { error?: string; message?: string };
-    throw new Error(errorPayload.error || errorPayload.message || `NucleiScan360 HTTP ${response.status}`);
+    const errorPayload = payload as { error?: string; message?: string; phase?: string; request_id?: string };
+    throw createNucleiFunctionError({
+      phase: errorPayload.phase || body.action,
+      endpoint,
+      request_id: String(errorPayload.request_id || requestId),
+      action: body.action,
+      status: response.status,
+      retry_count: 0,
+      message: errorPayload.error || errorPayload.message || `NucleiScan360 HTTP ${response.status}`,
+      payload,
+    });
   }
   return payload as T;
 }
 
 async function invokeNucleiScan360<T>(body: NucleiFunctionBody, retries = 2): Promise<T> {
   let lastError: unknown;
+  const requestId = body.request_id || createNucleiRequestId(body.action);
+  const tracedBody = { ...body, request_id: requestId };
+  const endpoint = `${SUPABASE_URL}/functions/v1/nuclei-scan360`;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
-      const { data, error } = await supabase.functions.invoke('nuclei-scan360', { body });
+      const { data, error } = await supabase.functions.invoke('nuclei-scan360', {
+        body: tracedBody,
+        headers: {
+          'x-nuclei-scan360-request-id': requestId,
+        },
+      });
       if (!error) return data as T;
       lastError = error;
       if (!isTransientFunctionError(error)) {
-        throw new Error(await extractInvokeErrorMessage(error, 'NucleiScan360 errore'));
+        const status = getResponseStatus(error);
+        throw createNucleiFunctionError({
+          phase: body.action,
+          endpoint,
+          request_id: requestId,
+          action: body.action,
+          status: status || null,
+          retry_count: attempt,
+          message: await extractInvokeErrorMessage(error, 'NucleiScan360 errore'),
+        });
       }
     } catch (error) {
       lastError = error;
@@ -316,13 +405,23 @@ async function invokeNucleiScan360<T>(body: NucleiFunctionBody, retries = 2): Pr
   }
 
   try {
-    return await directFetchNucleiScan360<T>(body);
+    return await directFetchNucleiScan360<T>(tracedBody);
   } catch (error) {
     if (isTransientFunctionError(error)) {
       await wait(1200);
-      return await directFetchNucleiScan360<T>(body);
+      return await directFetchNucleiScan360<T>(tracedBody);
     }
-    throw lastError instanceof Error ? lastError : error;
+    if ((error as NucleiFunctionError).diagnostic) throw error;
+    const status = getResponseStatus(lastError);
+    throw createNucleiFunctionError({
+      phase: body.action,
+      endpoint,
+      request_id: requestId,
+      action: body.action,
+      status: status || null,
+      retry_count: retries,
+      message: lastError instanceof Error ? lastError.message : String(lastError || error || 'NucleiScan360 request failed'),
+    });
   }
 }
 
@@ -458,10 +557,12 @@ const NucleiScan360: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [queueLoading, setQueueLoading] = useState(false);
   const [processingQueue, setProcessingQueue] = useState(false);
+  const [smokeLoading, setSmokeLoading] = useState(false);
   const [jobs, setJobs] = useState<NucleiJob[]>([]);
   const [selectedJobId, setSelectedJobId] = useState('');
   const [result, setResult] = useState<NucleiResult | null>(null);
   const [rawResult, setRawResult] = useState('');
+  const [lastDiagnostic, setLastDiagnostic] = useState<NucleiInvokeDiagnostic | null>(null);
 
   const analysis = useMemo(() => parseNucleiResult(result), [result]);
   const findings = analysis.findings;
@@ -471,6 +572,21 @@ const NucleiScan360: React.FC = () => {
   );
 
   const selectedTargetSet = useMemo(() => new Set(selectedTargetUrls), [selectedTargetUrls]);
+
+  const recordDiagnostic = useCallback((error: unknown, fallback: string) => {
+    const diagnostic = (error as NucleiFunctionError)?.diagnostic || {
+      phase: 'unknown',
+      endpoint: `${SUPABASE_URL}/functions/v1/nuclei-scan360`,
+      request_id: 'not_available',
+      action: 'direct_scan' as NucleiAction,
+      status: getResponseStatus(error) || null,
+      retry_count: 0,
+      message: error instanceof Error ? error.message : String(error || fallback),
+    };
+    setLastDiagnostic(diagnostic);
+    setRawResult(JSON.stringify({ ok: false, diagnostic }, null, 2));
+    return diagnostic;
+  }, []);
 
   const fetchScannableTargets = useCallback(async (organizationId = selectedOrgId) => {
     if (!organizationId || !isSuperAdmin) return;
@@ -492,6 +608,7 @@ const NucleiScan360: React.FC = () => {
         setSelectedTargetUrls(nextTargets.slice(0, 25).map((target) => target.target_url));
       }
     } catch (error) {
+      recordDiagnostic(error, 'Target repository non disponibile');
       const message = await extractInvokeErrorMessage(error, 'Target repository non disponibile');
       setScannableTargets([]);
       toast({
@@ -502,7 +619,7 @@ const NucleiScan360: React.FC = () => {
     } finally {
       setTargetsLoading(false);
     }
-  }, [includeSurfaceAssets, isSuperAdmin, selectedOrgId, toast]);
+  }, [includeSurfaceAssets, isSuperAdmin, recordDiagnostic, selectedOrgId, toast]);
 
   useEffect(() => {
     if (!selectedOrgId && selectedOrganization?.id) {
@@ -528,6 +645,7 @@ const NucleiScan360: React.FC = () => {
       if (!data?.ok) throw new Error(data?.error || 'Impossibile leggere la coda NucleiScan360');
       setJobs((data.jobs || []) as NucleiJob[]);
     } catch (error) {
+      recordDiagnostic(error, 'Coda NucleiScan360 non disponibile');
       const message = await extractInvokeErrorMessage(error, 'Coda NucleiScan360 non disponibile');
       toast({
         title: 'Coda NucleiScan360 non disponibile',
@@ -537,7 +655,7 @@ const NucleiScan360: React.FC = () => {
     } finally {
       setQueueLoading(false);
     }
-  }, [isSuperAdmin, selectedOrgId, toast]);
+  }, [isSuperAdmin, recordDiagnostic, selectedOrgId, toast]);
 
   useEffect(() => {
     if (selectedOrgId && isSuperAdmin) {
@@ -610,6 +728,7 @@ const NucleiScan360: React.FC = () => {
       });
       await refreshJobs(selectedOrgId);
     } catch (error) {
+      recordDiagnostic(error, 'NucleiScan360 enqueue errore');
       const message = await extractInvokeErrorMessage(error, 'NucleiScan360 enqueue errore');
       toast({
         title: 'NucleiScan360 enqueue errore',
@@ -644,6 +763,7 @@ const NucleiScan360: React.FC = () => {
       setResult(nextResult);
       setRawResult(nextResult ? JSON.stringify(nextResult, null, 2) : JSON.stringify(data, null, 2));
     } catch (error) {
+      recordDiagnostic(error, 'Apertura job fallita');
       const message = await extractInvokeErrorMessage(error, 'Apertura job fallita');
       toast({
         title: 'Apertura job fallita',
@@ -688,6 +808,7 @@ const NucleiScan360: React.FC = () => {
       });
       await refreshJobs(selectedOrgId);
     } catch (error) {
+      recordDiagnostic(error, 'Processamento coda fallito');
       const message = await extractInvokeErrorMessage(error, 'Processamento coda fallito');
       toast({
         title: 'Processamento coda fallito',
@@ -696,6 +817,43 @@ const NucleiScan360: React.FC = () => {
       });
     } finally {
       setProcessingQueue(false);
+    }
+  };
+
+  const runSmokeTest = async () => {
+    if (!selectedOrgId) return;
+    setSmokeLoading(true);
+    try {
+      const data = await invokeNucleiScan360<{
+        ok?: boolean;
+        error?: string;
+        request_id?: string;
+        checks?: Array<{ name: string; ok: boolean; message?: string; duration_ms?: number; details?: Record<string, unknown> }>;
+        warnings?: string[];
+        duration_ms?: number;
+      }>({
+        action: 'smoke_test',
+        organization_id: selectedOrgId,
+        target_limit: 25,
+      }, 1);
+
+      setLastDiagnostic(null);
+      setRawResult(JSON.stringify(data, null, 2));
+      toast({
+        title: data.ok ? 'Smoke test OK' : 'Smoke test con warning',
+        description: `request_id=${data.request_id || '—'} · check=${data.checks?.filter((check) => check.ok).length || 0}/${data.checks?.length || 0}`,
+        variant: data.ok ? 'default' : 'destructive',
+      });
+    } catch (error) {
+      recordDiagnostic(error, 'Smoke test fallito');
+      const message = await extractInvokeErrorMessage(error, 'Smoke test fallito');
+      toast({
+        title: 'Smoke test fallito',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setSmokeLoading(false);
     }
   };
 
@@ -926,6 +1084,10 @@ const NucleiScan360: React.FC = () => {
               <Button className="w-full" variant="secondary" onClick={processNextJob} disabled={processingQueue || !selectedOrgId}>
                 {processingQueue ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlayCircle className="mr-2 h-4 w-4" />}
                 Processa prossimo job
+              </Button>
+              <Button className="w-full" variant="outline" onClick={runSmokeTest} disabled={smokeLoading || !selectedOrgId}>
+                {smokeLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TerminalSquare className="mr-2 h-4 w-4" />}
+                Smoke test Nuclei
               </Button>
             </CardContent>
           </Card>
@@ -1278,6 +1440,23 @@ const NucleiScan360: React.FC = () => {
                   )}
                 </CardContent>
               </Card>
+            )}
+
+            {lastDiagnostic && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Diagnostica ultima chiamata NucleiScan360</AlertTitle>
+                <AlertDescription>
+                  <div className="mt-2 grid gap-2 text-xs md:grid-cols-2">
+                    <span><strong>fase:</strong> {lastDiagnostic.phase}</span>
+                    <span><strong>request_id:</strong> {lastDiagnostic.request_id}</span>
+                    <span><strong>status:</strong> {lastDiagnostic.status ?? 'network'}</span>
+                    <span><strong>retry:</strong> {lastDiagnostic.retry_count}</span>
+                    <span className="md:col-span-2"><strong>endpoint:</strong> {lastDiagnostic.endpoint}</span>
+                    <span className="md:col-span-2"><strong>messaggio:</strong> {lastDiagnostic.message}</span>
+                  </div>
+                </AlertDescription>
+              </Alert>
             )}
 
             <Card>
