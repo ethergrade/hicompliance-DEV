@@ -1,0 +1,40 @@
+id: surfacescan360-public-debug-surfaces-medium
+
+info:
+  name: SurfaceScan360 Public Debug Surfaces Medium
+  author: surfacescan360
+  severity: medium
+  description: Checks for common public debug or diagnostic endpoints.
+  tags: exposure,debug,misconfig,surfacescan360
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/phpinfo.php"
+      - "{{BaseURL}}/info.php"
+      - "{{BaseURL}}/server-status"
+      - "{{BaseURL}}/actuator/env"
+      - "{{BaseURL}}/actuator/heapdump"
+    redirects: false
+    stop-at-first-match: true
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        condition: and
+        words:
+          - "PHP Version"
+          - "phpinfo()"
+      - type: word
+        part: body
+        condition: and
+        words:
+          - "Server Version"
+          - "Server MPM"
+      - type: word
+        part: body
+        condition: or
+        words:
+          - "\"activeProfiles\""
+          - "\"propertySources\""
+          - "JAVA PROFILE"

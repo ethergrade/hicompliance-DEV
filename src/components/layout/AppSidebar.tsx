@@ -26,6 +26,7 @@ import {
   PieChart,
   ChevronDown,
   Bot,
+  Radar,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -98,6 +99,12 @@ const adminNavigation = [
     title: 'DARKRISK_ESTESO Admin',
     href: '/admin/darkrisk-esteso',
     icon: Eye,
+  },
+  {
+    title: 'NUCLEI-SCAN360',
+    href: '/admin/nuclei-scan360',
+    icon: Radar,
+    superAdminOnly: true,
   },
   {
     title: 'Gestione Ruoli',
@@ -362,6 +369,7 @@ export const AppSidebar: React.FC = () => {
             <SidebarGroupContent>
               <SidebarMenu>
               {adminNavigation.filter(item => {
+                  if ((item as any).superAdminOnly && !isSuperAdmin) return false;
                   // Show "Selezione Clienti" only for sales/admin who can manage multiple clients
                   if (item.href === '/admin/clients') return canManageMultipleClients;
                   // Show "Reportistica Aggregata" for admin/sales who can manage multiple clients

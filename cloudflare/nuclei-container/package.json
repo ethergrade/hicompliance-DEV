@@ -1,0 +1,21 @@
+{
+  "name": "surfacescan360-nuclei-container",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "start": "node src/server.mjs"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "^0.3.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260606.1",
+    "typescript": "^5.5.3",
+    "wrangler": "^4.98.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

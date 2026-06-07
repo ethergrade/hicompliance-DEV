@@ -1,0 +1,29 @@
+id: surfacescan360-http-security-headers-light
+
+info:
+  name: SurfaceScan360 HTTP Security Headers Light
+  author: surfacescan360
+  severity: info
+  description: Checks for common HTTP security headers without exploit payloads.
+  tags: exposure,headers,surfacescan360
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    redirects: true
+    max-redirects: 2
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "Content-Security-Policy"
+          - "Strict-Transport-Security"
+          - "X-Frame-Options"
+          - "X-Content-Type-Options"
+    extractors:
+      - type: regex
+        part: header
+        regex:
+          - "(?i)^(content-security-policy|strict-transport-security|x-frame-options|x-content-type-options):\\s*.*$"

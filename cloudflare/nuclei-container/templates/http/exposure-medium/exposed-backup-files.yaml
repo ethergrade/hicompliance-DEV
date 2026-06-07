@@ -1,0 +1,32 @@
+id: surfacescan360-exposed-backup-files-medium
+
+info:
+  name: SurfaceScan360 Exposed Backup Files Medium
+  author: surfacescan360
+  severity: medium
+  description: Checks a short list of common web-root backup files.
+  tags: exposure,backup,files,surfacescan360
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/backup.zip"
+      - "{{BaseURL}}/backup.tar.gz"
+      - "{{BaseURL}}/site.zip"
+      - "{{BaseURL}}/www.zip"
+      - "{{BaseURL}}/dump.sql"
+    redirects: false
+    stop-at-first-match: true
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: header
+        condition: or
+        words:
+          - "application/zip"
+          - "application/x-gzip"
+          - "application/sql"
+          - "application/octet-stream"

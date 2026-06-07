@@ -37,6 +37,7 @@ import AdminSalesDashboard from "./pages/AdminSalesDashboard";
 import SurfaceGraph from "./pages/SurfaceGraph";
 import Consistenze from "./pages/Consistenze";
 import AICiso from "./pages/AICiso";
+import NucleiScan360 from "./pages/NucleiScan360";
 import HiConsoleLanding from "./pages/HiConsoleLanding";
 import NotFound from "./pages/NotFound";
 
@@ -82,6 +83,7 @@ const App = () => (
             <Route path="/admin/reporting" element={<AdminReporting />} />
             <Route path="/admin/darkrisk-esteso" element={<AdminDarkRiskEsteso />} />
             <Route path="/admin/sales" element={<AdminSalesDashboard />} />
+            <Route path="/admin/nuclei-scan360" element={<NucleiScan360 />} />
             <Route path="/consistenze" element={<ClientSelectionGuard><Consistenze /></ClientSelectionGuard>} />
             <Route path="/ai-ciso" element={<AICiso />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

@@ -1,0 +1,25 @@
+id: surfacescan360-exposed-git-config-medium
+
+info:
+  name: SurfaceScan360 Exposed Git Config Medium
+  author: surfacescan360
+  severity: medium
+  description: Checks whether the Git repository metadata is publicly readable.
+  tags: exposure,git,files,surfacescan360
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.git/config"
+    redirects: false
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        condition: and
+        words:
+          - "[core]"
+          - "repositoryformatversion"

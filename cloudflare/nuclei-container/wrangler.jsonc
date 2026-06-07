@@ -1,0 +1,39 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "surfacescan360-nuclei",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-04-21",
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "NUCLEI_CONTAINER_INSTANCE": "surfacescan360-nuclei-v4",
+    "NUCLEI_TIMEOUT_SECONDS": "45",
+    "NUCLEI_MAX_TIMEOUT_SECONDS": "120",
+    "NUCLEI_RATE_LIMIT": "5",
+    "NUCLEI_MAX_FINDINGS": "100"
+  },
+  "containers": [
+    {
+      "class_name": "NucleiContainer",
+      "image": "./Dockerfile",
+      "max_instances": 2
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "NUCLEI_CONTAINER",
+        "class_name": "NucleiContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "NucleiContainer"
+      ]
+    }
+  ]
+}
