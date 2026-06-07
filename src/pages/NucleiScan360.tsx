@@ -274,6 +274,9 @@ type NucleiFunctionError = Error & {
   diagnostic?: NucleiInvokeDiagnostic;
 };
 
+const NUCLEI_SCAN360_PRIMARY_ENDPOINT = `${SUPABASE_URL}/functions/v1/nuclei-scan360`;
+const NUCLEI_SCAN360_GATEWAY_ENDPOINT = `${SUPABASE_URL}/functions/v1/scan360-job-gateway`;
+
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const getResponseStatus = (error: unknown) => {
@@ -282,7 +285,7 @@ const getResponseStatus = (error: unknown) => {
 };
 
 const createNucleiRequestId = (action: NucleiAction) =>
-  `nuclei-${action}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  `scan360-${action}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 
 const formatDiagnosticMessage = (diagnostic: NucleiInvokeDiagnostic) =>
   [
@@ -305,12 +308,14 @@ const isTransientFunctionError = (error: unknown) => {
   return status >= 500 || /failed to send|fetch|network|non-2xx|timeout/i.test(message);
 };
 
-async function directFetchNucleiScan360<T>(body: NucleiFunctionBody): Promise<T> {
+async function directFetchNucleiScan360<T>(body: NucleiFunctionBody, endpoint = NUCLEI_SCAN360_PRIMARY_ENDPOINT): Promise<T> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token || SUPABASE_PUBLISHABLE_KEY;
   const requestId = body.request_id || createNucleiRequestId(body.action);
   const tracedBody = { ...body, request_id: requestId };
-  const endpoint = `${SUPABASE_URL}/functions/v1/nuclei-scan360`;
+  const requestIdHeader = endpoint === NUCLEI_SCAN360_GATEWAY_ENDPOINT
+    ? 'x-scan360-request-id'
+    : 'x-nuclei-scan360-request-id';
   let response: Response;
   try {
     response = await fetch(endpoint, {
@@ -319,7 +324,7 @@ async function directFetchNucleiScan360<T>(body: NucleiFunctionBody): Promise<T>
         apikey: SUPABASE_PUBLISHABLE_KEY,
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
-        'x-nuclei-scan360-request-id': requestId,
+        [requestIdHeader]: requestId,
       },
       body: JSON.stringify(tracedBody),
     });
@@ -371,7 +376,7 @@ async function invokeNucleiScan360<T>(body: NucleiFunctionBody, retries = 2): Pr
   let lastError: unknown;
   const requestId = body.request_id || createNucleiRequestId(body.action);
   const tracedBody = { ...body, request_id: requestId };
-  const endpoint = `${SUPABASE_URL}/functions/v1/nuclei-scan360`;
+  const endpoint = NUCLEI_SCAN360_PRIMARY_ENDPOINT;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
       const { data, error } = await supabase.functions.invoke('nuclei-scan360', {
@@ -407,6 +412,14 @@ async function invokeNucleiScan360<T>(body: NucleiFunctionBody, retries = 2): Pr
   try {
     return await directFetchNucleiScan360<T>(tracedBody);
   } catch (error) {
+    const diagnostic = (error as NucleiFunctionError).diagnostic;
+    if (diagnostic?.phase === 'network') {
+      try {
+        return await directFetchNucleiScan360<T>(tracedBody, NUCLEI_SCAN360_GATEWAY_ENDPOINT);
+      } catch (gatewayError) {
+        throw gatewayError;
+      }
+    }
     if (isTransientFunctionError(error)) {
       await wait(1200);
       return await directFetchNucleiScan360<T>(tracedBody);
@@ -576,7 +589,7 @@ const NucleiScan360: React.FC = () => {
   const recordDiagnostic = useCallback((error: unknown, fallback: string) => {
     const diagnostic = (error as NucleiFunctionError)?.diagnostic || {
       phase: 'unknown',
-      endpoint: `${SUPABASE_URL}/functions/v1/nuclei-scan360`,
+      endpoint: NUCLEI_SCAN360_PRIMARY_ENDPOINT,
       request_id: 'not_available',
       action: 'direct_scan' as NucleiAction,
       status: getResponseStatus(error) || null,
