@@ -55,6 +55,7 @@ import { useDarkRiskQaStatus } from '@/hooks/useDarkRiskQaStatus';
 import { useDarkRiskRoadmapStatus } from '@/hooks/useDarkRiskRoadmapStatus';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useSurfaceScanMonitoredIps } from '@/hooks/useSurfaceScanMonitoredIps';
+import { useUserRoles } from '@/hooks/useUserRoles';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { presentDarkRiskFindingType, presentDarkRiskSource } from '@/lib/darkrisk/presentation';
@@ -351,6 +352,7 @@ const DarkRisk360: React.FC = () => {
   const queryClient = useQueryClient();
   const { alerts, createAlert, loading: alertsLoading } = useDarkRiskAlerts();
   const { data: overview, isLoading, isError, error, refetch, isFetching } = useDarkRiskOverview();
+  const { isSuperAdmin } = useUserRoles();
   const { organizationId } = useClientOrganization();
   const { snapshot } = useDarkRiskSnapshot();
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
@@ -369,6 +371,7 @@ const DarkRisk360: React.FC = () => {
   const [exportingReportId, setExportingReportId] = useState<string | null>(null);
   const [scopeInput, setScopeInput] = useState('');
   const [addingScope, setAddingScope] = useState(false);
+  const failedSourceRunLogs = overview.dti?.failed_source_run_logs || [];
 
   const {
     rules: scopeRules,
@@ -1856,6 +1859,42 @@ const DarkRisk360: React.FC = () => {
                         dti={overview.dti}
                       />
                     </ResilientErrorBoundary>
+                    {isSuperAdmin && overview.dti?.source_runs?.failed > 0 ? (
+                      <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <h3 className="text-sm font-semibold text-red-100">Log failed source run</h3>
+                            <p className="text-xs text-muted-foreground">
+                              Dettaglio tecnico visibile solo ai superadmin. Mostra gli ultimi {failedSourceRunLogs.length} failed della run DTI.
+                            </p>
+                          </div>
+                          <Badge variant="destructive">failed {overview.dti.source_runs.failed}</Badge>
+                        </div>
+                        {failedSourceRunLogs.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">
+                            Nessun dettaglio errore disponibile nel payload overview. Rilancia la scan o verifica `darkrisk_dti_source_runs.error_message`.
+                          </p>
+                        ) : (
+                          <div className="space-y-2">
+                            {failedSourceRunLogs.map((run) => (
+                              <div key={run.id || `${run.source}-${run.query_kind}-${run.query_term}`} className="rounded-lg border border-border/60 bg-background/60 p-3">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge variant="outline">{run.source || 'DarkRisk360'}</Badge>
+                                  <Badge variant="secondary">{run.query_kind || 'query'}</Badge>
+                                  <span className="font-mono text-xs text-muted-foreground">
+                                    {run.query_term || run.selector_value || run.asset_scope || run.source_key || 'n/d'}
+                                  </span>
+                                  <span className="ml-auto text-xs text-muted-foreground">{formatDateTime(run.completed_at)}</span>
+                                </div>
+                                <p className="mt-2 whitespace-pre-wrap break-words font-mono text-xs text-red-100">
+                                  {run.error_message || run.warning || 'Errore non valorizzato dal provider.'}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
                   </CardContent>
                 </Card>
                 <ResilientErrorBoundary

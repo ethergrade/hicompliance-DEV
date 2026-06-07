@@ -12,7 +12,7 @@ type NucleiProfile =
   | "web_vuln_safe"
   | "web_vuln_authorized";
 
-type NucleiAction = "direct_scan" | "enqueue" | "list" | "get" | "process_queue";
+type NucleiAction = "direct_scan" | "enqueue" | "list" | "get" | "retrieve_targets" | "process_queue";
 
 type RequestBody = {
   action?: NucleiAction;
@@ -21,7 +21,9 @@ type RequestBody = {
   target_url?: string;
   targets?: string[];
   include_surface_assets?: boolean;
+  include_discovered_targets?: boolean;
   surface_asset_limit?: number;
+  target_limit?: number;
   profile?: NucleiProfile;
   timeout_seconds?: number;
   rate_limit?: number;
@@ -80,6 +82,16 @@ type NucleiJob = {
   attempt_count: number;
 };
 
+type ScannableTarget = {
+  target_url: string;
+  value: string;
+  host: string;
+  kind: "domain" | "subdomain" | "url";
+  source: string;
+  label: string;
+  confidence: "high" | "medium" | "low";
+};
+
 const ALLOWED_PROFILES = new Set<NucleiProfile>([
   "baseline_headers",
   "exposure_medium",
@@ -97,6 +109,7 @@ const PRIVATE_IPV4_RANGES = [
 ];
 
 const HTTP_ACTION_TIMEOUT_SECONDS = 165;
+const DOMAIN_REGEX = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
 
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -159,6 +172,76 @@ function getTargetHost(targetUrl: string): string {
     return new URL(targetUrl).hostname.toLowerCase();
   } catch {
     return "";
+  }
+}
+
+function normalizeDomainCandidate(value: unknown): string {
+  const raw = String(value || "").trim().toLowerCase()
+    .replace(/^\*\./, "")
+    .replace(/\.$/, "");
+  if (!raw || raw.length > 253) return "";
+  if (raw.includes("@")) return normalizeDomainCandidate(raw.split("@").pop());
+  try {
+    const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    return normalizeDomainCandidate(url.hostname);
+  } catch {
+    // continue with raw hostname validation
+  }
+  if (!DOMAIN_REGEX.test(raw)) return "";
+  if (raw === "localhost" || raw.endsWith(".localhost")) return "";
+  if (PRIVATE_IPV4_RANGES.some((range) => range.test(raw))) return "";
+  return raw;
+}
+
+function classifyTargetKind(value: string, explicitType?: unknown): "domain" | "subdomain" | "url" {
+  const type = String(explicitType || "").toLowerCase();
+  if (type === "url" || /^https?:\/\//i.test(value)) return "url";
+  if (type === "subdomain") return "subdomain";
+  const host = normalizeDomainCandidate(value);
+  return host.split(".").length > 2 ? "subdomain" : "domain";
+}
+
+function toScannableTarget(
+  value: unknown,
+  source: string,
+  label: string,
+  explicitType?: unknown,
+  confidence: ScannableTarget["confidence"] = "medium",
+): ScannableTarget | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const normalizedTargetUrl = normalizeTargetUrl(raw);
+  const host = getTargetHost(normalizedTargetUrl);
+  const domain = normalizeDomainCandidate(host);
+  if (!domain) return null;
+  return {
+    target_url: normalizedTargetUrl,
+    value: raw,
+    host,
+    kind: classifyTargetKind(raw, explicitType),
+    source,
+    label,
+    confidence,
+  };
+}
+
+function pushTarget(
+  targets: Map<string, ScannableTarget>,
+  value: unknown,
+  source: string,
+  label: string,
+  explicitType?: unknown,
+  confidence: ScannableTarget["confidence"] = "medium",
+) {
+  try {
+    const target = toScannableTarget(value, source, label, explicitType, confidence);
+    if (!target) return;
+    const existing = targets.get(target.target_url);
+    if (!existing || existing.confidence === "low") {
+      targets.set(target.target_url, target);
+    }
+  } catch {
+    // Ignore noisy inventory values that are not valid public HTTP targets.
   }
 }
 
@@ -260,23 +343,172 @@ async function loadOrganization(adminClient: SupabaseClient, organizationId: str
 }
 
 async function collectSurfaceTargets(adminClient: SupabaseClient, organizationId: string, limit: number): Promise<string[]> {
-  const { data, error } = await adminClient
-    .from("surface_assets")
-    .select("asset_type, asset_value")
-    .or(`organization_id.eq.${organizationId},customer_id.eq.${organizationId}`)
-    .in("asset_type", ["domain", "subdomain", "url"])
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error) throw new Error(error.message || "Unable to load SurfaceScan360 assets");
+  const { targets } = await collectScannableTargets(adminClient, organizationId, limit);
+  return targets.map((target) => target.target_url);
+}
 
-  return (data || [])
-    .map((asset: { asset_type?: string; asset_value?: string }) => {
-      const value = String(asset.asset_value || "").trim();
-      if (!value) return "";
-      if (asset.asset_type === "url" || /^https?:\/\//i.test(value)) return value;
-      return `https://${value}`;
+async function collectScannableTargets(adminClient: SupabaseClient, organizationId: string, limit: number) {
+  const organization = await loadOrganization(adminClient, organizationId);
+  const targets = new Map<string, ScannableTarget>();
+  const warnings: string[] = [];
+
+  const safeSelect = async <T>(
+    label: string,
+    queryBuilder: PromiseLike<{ data: T[] | null; error: { message?: string } | null }>,
+  ): Promise<T[]> => {
+    const { data, error } = await queryBuilder;
+    if (error) {
+      warnings.push(`${label}: ${error.message || "query_failed"}`);
+      return [];
+    }
+    return data || [];
+  };
+
+  pushTarget(targets, organization.code, "client_registry", "Anagrafica cliente", "domain", "low");
+
+  const users = await safeSelect<{ email?: string }>(
+    "users",
+    adminClient
+      .from("users")
+      .select("email")
+      .eq("organization_id", organizationId)
+      .limit(100),
+  );
+  for (const user of users) {
+    const domain = String(user.email || "").split("@").pop();
+    pushTarget(targets, domain, "client_registry", "Dominio email anagrafica", "domain", "low");
+  }
+
+  const surfaceAssets = await safeSelect<{ asset_type?: string; asset_value?: string; hostname?: string; root_domain?: string; source?: string }>(
+    "surface_assets",
+    adminClient
+      .from("surface_assets")
+      .select("asset_type, asset_value, hostname, root_domain, source")
+      .or(`organization_id.eq.${organizationId},customer_id.eq.${organizationId}`)
+      .in("asset_type", ["domain", "subdomain", "url", "hostname"])
+      .order("last_seen", { ascending: false, nullsFirst: false })
+      .limit(limit),
+  );
+  for (const asset of surfaceAssets) {
+    pushTarget(targets, asset.asset_value || asset.hostname || asset.root_domain, "surface_assets", asset.source || "SurfaceScan360 asset", asset.asset_type, "high");
+    pushTarget(targets, asset.hostname, "surface_assets", "SurfaceScan360 hostname", "subdomain", "high");
+    pushTarget(targets, asset.root_domain, "surface_assets", "SurfaceScan360 root domain", "domain", "medium");
+  }
+
+  const surfaceTargets = await safeSelect<{ target_type?: string; target_value?: string; root_domain?: string; source?: string }>(
+    "surface_scan_targets",
+    adminClient
+      .from("surface_scan_targets")
+      .select("target_type, target_value, root_domain, source")
+      .or(`organization_id.eq.${organizationId},customer_id.eq.${organizationId}`)
+      .in("target_type", ["domain", "subdomain", "url", "hostname"])
+      .order("created_at", { ascending: false })
+      .limit(limit),
+  );
+  for (const target of surfaceTargets) {
+    pushTarget(targets, target.target_value, "surface_scan_targets", target.source || "SurfaceScan360 target", target.target_type, "high");
+    pushTarget(targets, target.root_domain, "surface_scan_targets", "SurfaceScan360 root domain", "domain", "medium");
+  }
+
+  const manualDarkriskTargets = await safeSelect<{ target_type?: string; value?: string; normalized_value?: string; label?: string }>(
+    "darkrisk360_manual_targets",
+    adminClient
+      .from("darkrisk360_manual_targets")
+      .select("target_type, value, normalized_value, label")
+      .eq("organization_id", organizationId)
+      .eq("enabled", true)
+      .in("target_type", ["domain", "subdomain", "url", "hostname"])
+      .order("created_at", { ascending: false })
+      .limit(limit),
+  );
+  for (const target of manualDarkriskTargets) {
+    pushTarget(targets, target.normalized_value || target.value, "darkrisk_manual_targets", target.label || "DarkRisk manual target", target.target_type, "high");
+  }
+
+  const darkriskAssets = await safeSelect<{ asset_type?: string; value?: string; normalized_value?: string; scope_status?: string }>(
+    "darkrisk_assets",
+    adminClient
+      .from("darkrisk_assets")
+      .select("asset_type, value, normalized_value, scope_status")
+      .eq("organization_id", organizationId)
+      .in("asset_type", ["domain", "subdomain", "url", "hostname"])
+      .order("last_seen_at", { ascending: false, nullsFirst: false })
+      .limit(limit),
+  );
+  for (const asset of darkriskAssets) {
+    pushTarget(targets, asset.normalized_value || asset.value, "darkrisk_assets", asset.scope_status || "DarkRisk asset", asset.asset_type, "medium");
+  }
+
+  const darkriskSelectors = await safeSelect<{ selector_type?: string; value?: string; normalized_value?: string; status?: string }>(
+    "darkrisk_selectors",
+    adminClient
+      .from("darkrisk_selectors")
+      .select("selector_type, value, normalized_value, status")
+      .eq("organization_id", organizationId)
+      .in("selector_type", ["domain", "subdomain", "url", "hostname"])
+      .order("created_at", { ascending: false })
+      .limit(limit),
+  );
+  for (const selector of darkriskSelectors) {
+    pushTarget(targets, selector.normalized_value || selector.value, "darkrisk_selectors", selector.status || "DarkRisk selector", selector.selector_type, "medium");
+  }
+
+  const darkriskSourceRuns = await safeSelect<{ query_kind?: string; query_term?: string; selector_value?: string; target_url?: string }>(
+    "darkrisk_dti_source_runs",
+    adminClient
+      .from("darkrisk_dti_source_runs")
+      .select("query_kind, query_term, selector_value, target_url")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+      .limit(limit),
+  );
+  for (const run of darkriskSourceRuns) {
+    if (String(run.query_kind || "").includes("domain")) {
+      pushTarget(targets, run.query_term, "darkrisk_dti_runs", "DarkRisk query term", "domain", "medium");
+    }
+    pushTarget(targets, run.selector_value, "darkrisk_dti_runs", "DarkRisk selector", "domain", "low");
+    pushTarget(targets, run.target_url, "darkrisk_dti_runs", "DarkRisk source URL", "url", "low");
+  }
+
+  const darkriskRecords = await safeSelect<{ query_kind?: string; query_term?: string; source_url?: string }>(
+    "darkrisk_source_records",
+    adminClient
+      .from("darkrisk_source_records")
+      .select("query_kind, query_term, source_url")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+      .limit(limit),
+  );
+  for (const record of darkriskRecords) {
+    if (String(record.query_kind || "").includes("domain")) {
+      pushTarget(targets, record.query_term, "darkrisk_source_records", "DarkRisk record query", "domain", "low");
+    }
+    pushTarget(targets, record.source_url, "darkrisk_source_records", "DarkRisk source URL", "url", "low");
+  }
+
+  const sortedTargets = Array.from(targets.values())
+    .filter((target) => target.host !== "example.com" && !target.host.endsWith(".example.com"))
+    .sort((a, b) => {
+      const confidenceWeight = { high: 0, medium: 1, low: 2 };
+      return confidenceWeight[a.confidence] - confidenceWeight[b.confidence]
+        || a.source.localeCompare(b.source)
+        || a.host.localeCompare(b.host);
     })
-    .filter(Boolean);
+    .slice(0, limit);
+
+  const counts = sortedTargets.reduce<Record<string, number>>((acc, target) => {
+    acc[target.source] = (acc[target.source] || 0) + 1;
+    return acc;
+  }, {});
+
+  return { targets: sortedTargets, counts, warnings };
+}
+
+async function retrieveTargets(adminClient: SupabaseClient, body: RequestBody) {
+  const organizationId = String(body.organization_id || "").trim();
+  if (!organizationId) throw new Error("organization_id is required");
+  await loadOrganization(adminClient, organizationId);
+  return await collectScannableTargets(adminClient, organizationId, clampInt(body.target_limit, 80, 1, 150));
 }
 
 async function enqueueJobs(
@@ -294,8 +526,8 @@ async function enqueueJobs(
     body.target_url,
     ...(Array.isArray(body.targets) ? body.targets : []),
   ].filter(Boolean) as string[];
-  const surfaceTargets = body.include_surface_assets
-    ? await collectSurfaceTargets(adminClient, organizationId, clampInt(body.surface_asset_limit, 20, 1, 50))
+  const surfaceTargets = body.include_surface_assets || body.include_discovered_targets
+    ? await collectSurfaceTargets(adminClient, organizationId, clampInt(body.surface_asset_limit || body.target_limit, 25, 1, 100))
     : [];
   const source = manualTargets.length > 0 && surfaceTargets.length > 0
     ? "mixed"
@@ -535,6 +767,8 @@ serve(async (req: Request) => {
       payload = await listJobs(adminClient, body);
     } else if (action === "get") {
       payload = await getJob(adminClient, body);
+    } else if (action === "retrieve_targets") {
+      payload = await retrieveTargets(adminClient, body);
     } else if (action === "process_queue") {
       payload = await processQueue(adminClient, body);
     } else {

@@ -16,6 +16,7 @@ const MAX_TIMEOUT_SECONDS = clampInt(process.env.NUCLEI_MAX_TIMEOUT_SECONDS, 120
 const DEFAULT_TIMEOUT_SECONDS = clampInt(process.env.NUCLEI_TIMEOUT_SECONDS, 45, 10, MAX_TIMEOUT_SECONDS);
 const DEFAULT_RATE_LIMIT = clampInt(process.env.NUCLEI_RATE_LIMIT, 5, 1, 25);
 const DEFAULT_MAX_FINDINGS = clampInt(process.env.NUCLEI_MAX_FINDINGS, 100, 1, 500);
+const EGRESS_PROXY_MODE = String(process.env.SURFACESCAN_EGRESS_PROXY_MODE || 'direct').trim();
 const MAX_BODY_BYTES = 128 * 1024;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const EXCLUDED_PUBLIC_TAGS = ['dos', 'bruteforce', 'intrusive', 'destructive'];
@@ -434,6 +435,7 @@ async function runNuclei(body) {
         warnings: Array.from(new Set(warnings)).slice(0, 80),
         duration_ms: Date.now() - started,
         nuclei_version: await getNucleiVersion(),
+        egress_proxy: EGRESS_PROXY_MODE,
         templates_loaded_count: debugSummary.templates_loaded_log || templateCount.count,
         templates_executed_count: templatesExecuted || parsed.stats.at(-1)?.templates || 0,
         template_paths: templatePaths,
@@ -466,6 +468,7 @@ async function runNuclei(body) {
           warnings: Array.from(new Set(warnings)).slice(0, 80),
           duration_ms: Date.now() - started,
           nuclei_version: await getNucleiVersion(),
+          egress_proxy: EGRESS_PROXY_MODE,
           templates_loaded_count: debugSummary.templates_loaded_log || templateCount.count,
           templates_executed_count: templatesExecuted || parsed.stats.at(-1)?.templates || 0,
           template_paths: templatePaths,
@@ -484,6 +487,7 @@ async function runNuclei(body) {
         profile,
         warnings: Array.from(new Set(warnings)).slice(0, 80),
         duration_ms: Date.now() - started,
+        egress_proxy: EGRESS_PROXY_MODE,
         templates_loaded_count: debugSummary.templates_loaded_log || templateCount.count,
         templates_executed_count: templatesExecuted || parsed.stats.at(-1)?.templates || 0,
         template_paths: templatePaths,
@@ -503,6 +507,7 @@ const server = createServer(async (req, res) => {
       return json(res, 200, {
         ok: true,
         nuclei_version: await getNucleiVersion(),
+        egress_proxy: EGRESS_PROXY_MODE,
       });
     }
     if (req.method !== 'POST' || url.pathname !== '/nuclei/scan') {

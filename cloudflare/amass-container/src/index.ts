@@ -59,29 +59,29 @@ async function controlledEgress(
   const url = new URL(request.url);
   const hostname = url.hostname.toLowerCase();
   const params = ctx.params || {};
-  const service = params.service || "nuclei";
-  const deniedHosts = [...csv(env.NUCLEI_EGRESS_DENIED_HOSTS), ...csv(params.deniedHosts)];
-  const allowedHosts = [...csv(env.NUCLEI_EGRESS_ALLOWED_HOSTS || "*"), ...csv(params.allowedHosts)];
+  const service = params.service || "amass";
+  const deniedHosts = [...csv(env.AMASS_EGRESS_DENIED_HOSTS), ...csv(params.deniedHosts)];
+  const allowedHosts = [...csv(env.AMASS_EGRESS_ALLOWED_HOSTS || "*"), ...csv(params.allowedHosts)];
 
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     return json(403, { error: "egress_protocol_blocked", protocol: url.protocol });
   }
   if (isPrivateOrLocalHost(hostname) || deniedHosts.some((pattern) => wildcardMatch(pattern, hostname))) {
-    console.warn("nuclei-egress-blocked", JSON.stringify({ hostname, reason: "denied_or_private", containerId: ctx.containerId }));
+    console.warn("amass-egress-blocked", JSON.stringify({ hostname, reason: "denied_or_private", containerId: ctx.containerId }));
     return json(403, { error: "egress_host_blocked", hostname });
   }
   if (allowedHosts.length > 0 && !allowedHosts.some((pattern) => wildcardMatch(pattern, hostname))) {
-    console.warn("nuclei-egress-blocked", JSON.stringify({ hostname, reason: "not_allowed", containerId: ctx.containerId }));
+    console.warn("amass-egress-blocked", JSON.stringify({ hostname, reason: "not_allowed", containerId: ctx.containerId }));
     return json(403, { error: "egress_host_not_allowed", hostname });
   }
 
   const headers = new Headers(request.headers);
-  headers.set("User-Agent", enrichUserAgent(headers.get("User-Agent"), service, env.NUCLEI_EGRESS_USER_AGENT_SUFFIX));
+  headers.set("User-Agent", enrichUserAgent(headers.get("User-Agent"), service, env.AMASS_EGRESS_USER_AGENT_SUFFIX));
   headers.set("X-SurfaceScan360-Egress", "cloudflare-container-outbound");
   headers.set("X-SurfaceScan360-Egress-Service", service);
 
   const response = await fetch(new Request(request, { headers }));
-  console.log("nuclei-egress", JSON.stringify({
+  console.log("amass-egress", JSON.stringify({
     host: hostname,
     method: request.method,
     status: response.status,
@@ -91,7 +91,7 @@ async function controlledEgress(
   return response;
 }
 
-export class NucleiContainer extends Container {
+export class AmassContainer extends Container {
   defaultPort = 8080;
   requiredPorts = [8080];
   sleepAfter = "1m";
@@ -100,35 +100,34 @@ export class NucleiContainer extends Container {
   pingEndpoint = "localhost/health";
 
   override onStart() {
-    console.log("SurfaceScan360 Nuclei container started");
+    console.log("SurfaceScan360 Amass container started");
   }
 
   override onStop(params: { exitCode?: number; reason?: string }) {
-    console.log("SurfaceScan360 Nuclei container stopped", params);
+    console.log("SurfaceScan360 Amass container stopped", params);
   }
 
   override onError(error: unknown) {
-    console.error("SurfaceScan360 Nuclei container error", error);
+    console.error("SurfaceScan360 Amass container error", error);
   }
 }
 
-NucleiContainer.outboundHandlers = {
+AmassContainer.outboundHandlers = {
   controlledEgress,
 };
 
-NucleiContainer.outbound = controlledEgress;
+AmassContainer.outbound = controlledEgress;
 
 interface Env {
-  NUCLEI_CONTAINER: DurableObjectNamespace<NucleiContainer>;
-  NUCLEI_SHARED_SECRET: string;
-  NUCLEI_CONTAINER_INSTANCE?: string;
-  NUCLEI_TIMEOUT_SECONDS?: string;
-  NUCLEI_MAX_TIMEOUT_SECONDS?: string;
-  NUCLEI_RATE_LIMIT?: string;
-  NUCLEI_MAX_FINDINGS?: string;
-  NUCLEI_EGRESS_ALLOWED_HOSTS?: string;
-  NUCLEI_EGRESS_DENIED_HOSTS?: string;
-  NUCLEI_EGRESS_USER_AGENT_SUFFIX?: string;
+  AMASS_CONTAINER: DurableObjectNamespace<AmassContainer>;
+  AMASS_SHARED_SECRET: string;
+  AMASS_CONTAINER_INSTANCE?: string;
+  AMASS_TIMEOUT_SECONDS?: string;
+  AMASS_MAX_TIMEOUT_SECONDS?: string;
+  AMASS_MAX_NAMES?: string;
+  AMASS_EGRESS_ALLOWED_HOSTS?: string;
+  AMASS_EGRESS_DENIED_HOSTS?: string;
+  AMASS_EGRESS_USER_AGENT_SUFFIX?: string;
 }
 
 function json(status: number, payload: Record<string, unknown>): Response {
@@ -141,7 +140,7 @@ function json(status: number, payload: Record<string, unknown>): Response {
 }
 
 function isAuthorized(request: Request, env: Env): boolean {
-  const secret = String(env.NUCLEI_SHARED_SECRET || "").trim();
+  const secret = String(env.AMASS_SHARED_SECRET || "").trim();
   if (!secret) return false;
   return String(request.headers.get("authorization") || "").trim() === `Bearer ${secret}`;
 }
@@ -151,38 +150,37 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/health") {
-      return json(200, { ok: true, worker: "surfacescan360-nuclei" });
+      return json(200, { ok: true, worker: "surfacescan360-amass" });
     }
 
-    if (request.method !== "POST" || url.pathname !== "/nuclei/scan") {
+    if (request.method !== "POST" || url.pathname !== "/amass/enum") {
       return json(404, { error: "not_found" });
     }
 
-    if (!String(env.NUCLEI_SHARED_SECRET || "").trim()) {
-      return json(503, { error: "nuclei_shared_secret_not_configured" });
+    if (!String(env.AMASS_SHARED_SECRET || "").trim()) {
+      return json(503, { error: "amass_shared_secret_not_configured" });
     }
 
     if (!isAuthorized(request, env)) {
       return json(401, { error: "unauthorized" });
     }
 
-    const container = getContainer(env.NUCLEI_CONTAINER, env.NUCLEI_CONTAINER_INSTANCE || "surfacescan360-nuclei-v4");
+    const container = getContainer(env.AMASS_CONTAINER, env.AMASS_CONTAINER_INSTANCE || "surfacescan360-amass-v2");
     await container.setOutboundHandler("controlledEgress", {
-      service: "nuclei",
-      allowedHosts: env.NUCLEI_EGRESS_ALLOWED_HOSTS || "*",
-      deniedHosts: env.NUCLEI_EGRESS_DENIED_HOSTS || "",
-      userAgentSuffix: env.NUCLEI_EGRESS_USER_AGENT_SUFFIX || "",
+      service: "amass",
+      allowedHosts: env.AMASS_EGRESS_ALLOWED_HOSTS || "*",
+      deniedHosts: env.AMASS_EGRESS_DENIED_HOSTS || "",
+      userAgentSuffix: env.AMASS_EGRESS_USER_AGENT_SUFFIX || "",
     });
     await container.startAndWaitForPorts({
       ports: [8080],
       startOptions: {
         enableInternet: true,
         envVars: {
-          NUCLEI_SHARED_SECRET: env.NUCLEI_SHARED_SECRET,
-          NUCLEI_TIMEOUT_SECONDS: String(env.NUCLEI_TIMEOUT_SECONDS || "45"),
-          NUCLEI_MAX_TIMEOUT_SECONDS: String(env.NUCLEI_MAX_TIMEOUT_SECONDS || "120"),
-          NUCLEI_RATE_LIMIT: String(env.NUCLEI_RATE_LIMIT || "5"),
-          NUCLEI_MAX_FINDINGS: String(env.NUCLEI_MAX_FINDINGS || "100"),
+          AMASS_SHARED_SECRET: env.AMASS_SHARED_SECRET,
+          AMASS_TIMEOUT_SECONDS: String(env.AMASS_TIMEOUT_SECONDS || "45"),
+          AMASS_MAX_TIMEOUT_SECONDS: String(env.AMASS_MAX_TIMEOUT_SECONDS || "120"),
+          AMASS_MAX_NAMES: String(env.AMASS_MAX_NAMES || "250"),
           SURFACESCAN_EGRESS_PROXY_MODE: "cloudflare_container_outbound",
         },
       },

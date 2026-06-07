@@ -37,5 +37,7 @@ WORKDIR /app
 COPY package.json ./
 COPY src ./src
 COPY templates ${SURFACESCAN_NUCLEI_TEMPLATES_DIR}
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
 
-CMD ["node", "src/server.mjs"]
+CMD ["./docker-entrypoint.sh"]

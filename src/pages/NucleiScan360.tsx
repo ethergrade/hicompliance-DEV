@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Clock, Database, Loader2, PlayCircle, Radar, RefreshCcw, Route, ShieldAlert, Target, TerminalSquare } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, Database, Globe2, Loader2, PlayCircle, Radar, RefreshCcw, Route, ShieldAlert, Target, TerminalSquare } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from 'recharts';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -73,6 +73,16 @@ type NucleiJob = {
   created_at?: string | null;
   started_at?: string | null;
   completed_at?: string | null;
+};
+
+type ScannableTarget = {
+  target_url: string;
+  value: string;
+  host: string;
+  kind: 'domain' | 'subdomain' | 'url';
+  source: string;
+  label: string;
+  confidence: 'high' | 'medium' | 'low';
 };
 
 type ParsedFinding = NucleiFinding & {
@@ -196,6 +206,30 @@ const formatDateTime = (value?: string | null) => {
   }
 };
 
+const clampNumber = (value: unknown, fallback: number, min: number, max: number) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(parsed)));
+};
+
+const extractInvokeErrorMessage = async (error: unknown, fallback = 'Errore funzione Supabase') => {
+  const maybeError = error as { message?: string; context?: Response };
+  if (maybeError?.context instanceof Response) {
+    try {
+      const payload = await maybeError.context.clone().json();
+      return String(payload?.error || payload?.message || maybeError.message || fallback);
+    } catch {
+      try {
+        const text = await maybeError.context.clone().text();
+        if (text.trim()) return text.slice(0, 500);
+      } catch {
+        // ignore
+      }
+    }
+  }
+  return error instanceof Error ? error.message : String(error || fallback);
+};
+
 const safeLower = (value: unknown) => String(value || '').trim().toLowerCase();
 
 const extractAsset = (matchedAt?: string | null) => {
@@ -314,9 +348,12 @@ const NucleiScan360: React.FC = () => {
   const { isSuperAdmin, loading: rolesLoading } = useUserRoles();
   const { selectedOrganization, organizations, isLoadingClients } = useClientContext();
   const { toast } = useToast();
-  const [targetUrl, setTargetUrl] = useState('https://example.com');
+  const [targetUrl, setTargetUrl] = useState('');
   const [selectedOrgId, setSelectedOrgId] = useState('');
   const [includeSurfaceAssets, setIncludeSurfaceAssets] = useState(true);
+  const [scannableTargets, setScannableTargets] = useState<ScannableTarget[]>([]);
+  const [selectedTargetUrls, setSelectedTargetUrls] = useState<string[]>([]);
+  const [targetsLoading, setTargetsLoading] = useState(false);
   const [profile, setProfile] = useState<NucleiProfile>('baseline_headers');
   const [authorizedScan, setAuthorizedScan] = useState(false);
   const [timeoutSeconds, setTimeoutSeconds] = useState(45);
@@ -337,6 +374,39 @@ const NucleiScan360: React.FC = () => {
     [organizations, selectedOrgId, selectedOrganization?.name],
   );
 
+  const selectedTargetSet = useMemo(() => new Set(selectedTargetUrls), [selectedTargetUrls]);
+
+  const fetchScannableTargets = useCallback(async (organizationId = selectedOrgId) => {
+    if (!organizationId || !isSuperAdmin) return;
+    setTargetsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('nuclei-scan360', {
+        body: {
+          action: 'retrieve_targets',
+          organization_id: organizationId,
+          target_limit: 80,
+        },
+      });
+      if (error) throw new Error(await extractInvokeErrorMessage(error, 'Impossibile recuperare i target'));
+      if (!data?.ok) throw new Error(data?.error || 'Impossibile recuperare i target');
+      const nextTargets = (data.targets || []) as ScannableTarget[];
+      setScannableTargets(nextTargets);
+      if (includeSurfaceAssets) {
+        setSelectedTargetUrls(nextTargets.slice(0, 25).map((target) => target.target_url));
+      }
+    } catch (error) {
+      const message = await extractInvokeErrorMessage(error, 'Target repository non disponibile');
+      setScannableTargets([]);
+      toast({
+        title: 'Target repository non disponibile',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setTargetsLoading(false);
+    }
+  }, [includeSurfaceAssets, isSuperAdmin, selectedOrgId, toast]);
+
   useEffect(() => {
     if (!selectedOrgId && selectedOrganization?.id) {
       setSelectedOrgId(selectedOrganization.id);
@@ -356,11 +426,11 @@ const NucleiScan360: React.FC = () => {
           limit: 30,
         },
       });
-      if (error) throw error;
+      if (error) throw new Error(await extractInvokeErrorMessage(error, 'Impossibile leggere la coda NucleiScan360'));
       if (!data?.ok) throw new Error(data?.error || 'Impossibile leggere la coda NucleiScan360');
       setJobs((data.jobs || []) as NucleiJob[]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = await extractInvokeErrorMessage(error, 'Coda NucleiScan360 non disponibile');
       toast({
         title: 'Coda NucleiScan360 non disponibile',
         description: message,
@@ -374,16 +444,29 @@ const NucleiScan360: React.FC = () => {
   useEffect(() => {
     if (selectedOrgId && isSuperAdmin) {
       refreshJobs(selectedOrgId);
+      fetchScannableTargets(selectedOrgId);
     }
-  }, [isSuperAdmin, refreshJobs, selectedOrgId]);
+  }, [fetchScannableTargets, isSuperAdmin, refreshJobs, selectedOrgId]);
 
   const targetList = useMemo(
-    () => targetUrl
+    () => Array.from(new Set([
+      ...targetUrl
       .split(/[\n,]+/)
       .map((target) => target.trim())
       .filter(Boolean),
-    [targetUrl],
+      ...selectedTargetUrls,
+    ])),
+    [selectedTargetUrls, targetUrl],
   );
+
+  const toggleTargetSelection = (targetUrlValue: string, checked: boolean) => {
+    setSelectedTargetUrls((current) => {
+      const next = new Set(current);
+      if (checked) next.add(targetUrlValue);
+      else next.delete(targetUrlValue);
+      return Array.from(next);
+    });
+  };
 
   const enqueueScan = async () => {
     if (!selectedOrgId) {
@@ -394,6 +477,13 @@ const NucleiScan360: React.FC = () => {
       });
       return;
     }
+    const safeTimeoutSeconds = clampNumber(timeoutSeconds, profile === 'baseline_headers' ? 45 : 120, 15, 180);
+    const safeRateLimit = clampNumber(rateLimit, profile === 'web_vuln_authorized' ? 2 : 5, 1, profile === 'web_vuln_authorized' ? 2 : 10);
+    const safeMaxFindings = clampNumber(maxFindings, 25, 1, 200);
+    if (safeTimeoutSeconds !== timeoutSeconds) setTimeoutSeconds(safeTimeoutSeconds);
+    if (safeRateLimit !== rateLimit) setRateLimit(safeRateLimit);
+    if (safeMaxFindings !== maxFindings) setMaxFindings(safeMaxFindings);
+
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('nuclei-scan360', {
@@ -401,17 +491,17 @@ const NucleiScan360: React.FC = () => {
           action: 'enqueue',
           organization_id: selectedOrgId,
           targets: targetList,
-          include_surface_assets: includeSurfaceAssets,
+          include_discovered_targets: includeSurfaceAssets && selectedTargetUrls.length === 0,
           surface_asset_limit: 25,
           profile,
-          timeout_seconds: timeoutSeconds,
-          rate_limit: rateLimit,
-          max_findings: maxFindings,
+          timeout_seconds: safeTimeoutSeconds,
+          rate_limit: safeRateLimit,
+          max_findings: safeMaxFindings,
           authorized_scan: authorizedScan,
         },
       });
 
-      if (error) throw error;
+      if (error) throw new Error(await extractInvokeErrorMessage(error, 'NucleiScan360 enqueue failed'));
       if (!data?.ok) throw new Error(data?.error || 'NucleiScan360 enqueue failed');
 
       toast({
@@ -420,7 +510,7 @@ const NucleiScan360: React.FC = () => {
       });
       await refreshJobs(selectedOrgId);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = await extractInvokeErrorMessage(error, 'NucleiScan360 enqueue errore');
       toast({
         title: 'NucleiScan360 enqueue errore',
         description: message,
@@ -447,13 +537,13 @@ const NucleiScan360: React.FC = () => {
           job_id: job.id,
         },
       });
-      if (error) throw error;
+      if (error) throw new Error(await extractInvokeErrorMessage(error, 'Impossibile aprire job NucleiScan360'));
       if (!data?.ok) throw new Error(data?.error || 'Impossibile aprire job NucleiScan360');
       const nextResult = (data.job?.raw_result || null) as NucleiResult | null;
       setResult(nextResult);
       setRawResult(nextResult ? JSON.stringify(nextResult, null, 2) : JSON.stringify(data, null, 2));
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = await extractInvokeErrorMessage(error, 'Apertura job fallita');
       toast({
         title: 'Apertura job fallita',
         description: message,
@@ -475,7 +565,7 @@ const NucleiScan360: React.FC = () => {
           limit: 1,
         },
       });
-      if (error) throw error;
+      if (error) throw new Error(await extractInvokeErrorMessage(error, 'NucleiScan360 queue failed'));
       if (!data?.ok) throw new Error(data?.error || 'NucleiScan360 queue failed');
 
       const processed = data.processed?.[0];
@@ -491,7 +581,7 @@ const NucleiScan360: React.FC = () => {
       });
       await refreshJobs(selectedOrgId);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = await extractInvokeErrorMessage(error, 'Processamento coda fallito');
       toast({
         title: 'Processamento coda fallito',
         description: message,
@@ -583,10 +673,11 @@ const NucleiScan360: React.FC = () => {
 
               <div className="flex flex-col gap-2">
                 <Label htmlFor="target_url">Target manuali</Label>
-                <Input
+                <Textarea
                   id="target_url"
                   value={targetUrl}
                   onChange={(event) => setTargetUrl(event.target.value)}
+                  className="min-h-20"
                   placeholder="https://example.com oppure dominio.it"
                 />
                 <p className="text-xs text-muted-foreground">Puoi separare più target con virgole o nuove righe.</p>
@@ -596,13 +687,64 @@ const NucleiScan360: React.FC = () => {
                 <Checkbox
                   id="include_surface_assets"
                   checked={includeSurfaceAssets}
-                  onCheckedChange={(checked) => setIncludeSurfaceAssets(checked === true)}
+                  onCheckedChange={(checked) => {
+                    const enabled = checked === true;
+                    setIncludeSurfaceAssets(enabled);
+                    setSelectedTargetUrls(enabled ? scannableTargets.slice(0, 25).map((target) => target.target_url) : []);
+                  }}
                 />
                 <div className="flex flex-col gap-1">
-                  <Label htmlFor="include_surface_assets">Includi asset SurfaceScan360</Label>
-                  <p className="text-xs text-muted-foreground">Accoda fino a 25 domain/subdomain/url già presenti per il cliente.</p>
+                  <Label htmlFor="include_surface_assets">Includi target già noti</Label>
+                  <p className="text-xs text-muted-foreground">Da anagrafica, SurfaceScan360 e DarkRisk quando presenti.</p>
                 </div>
               </div>
+
+              <Card className="bg-muted/20">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <CardTitle className="text-sm">Target recuperati</CardTitle>
+                      <CardDescription className="text-xs">
+                        {selectedTargetUrls.length} selezionati su {scannableTargets.length} disponibili.
+                      </CardDescription>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => fetchScannableTargets()} disabled={targetsLoading || !selectedOrgId}>
+                      {targetsLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />}
+                      Get
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="flex max-h-72 flex-col gap-2 overflow-auto">
+                  {targetsLoading ? (
+                    <div className="flex items-center gap-2 rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Recupero domini e sottodomini cliente…
+                    </div>
+                  ) : scannableTargets.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                      Nessun dominio scansionabile trovato. Inserisci un target manuale o verifica SurfaceScan360/DarkRisk.
+                    </div>
+                  ) : scannableTargets.map((target) => (
+                    <label key={target.target_url} className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:bg-muted/40">
+                      <Checkbox
+                        checked={selectedTargetSet.has(target.target_url)}
+                        onCheckedChange={(checked) => toggleTargetSelection(target.target_url, checked === true)}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <Globe2 className="h-4 w-4 text-primary" />
+                          <span className="truncate font-mono text-xs">{target.host}</span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          <Badge variant="outline">{target.kind}</Badge>
+                          <Badge variant="secondary">{target.source}</Badge>
+                          <Badge variant={target.confidence === 'high' ? 'default' : 'outline'}>{target.confidence}</Badge>
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </CardContent>
+              </Card>
 
               <div className="flex flex-col gap-2">
                 <Label>Profilo</Label>

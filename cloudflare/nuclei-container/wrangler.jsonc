@@ -7,17 +7,20 @@
     "enabled": true
   },
   "vars": {
-    "NUCLEI_CONTAINER_INSTANCE": "surfacescan360-nuclei-v4",
+    "NUCLEI_CONTAINER_INSTANCE": "surfacescan360-nuclei-v5-egress",
     "NUCLEI_TIMEOUT_SECONDS": "45",
     "NUCLEI_MAX_TIMEOUT_SECONDS": "120",
     "NUCLEI_RATE_LIMIT": "5",
-    "NUCLEI_MAX_FINDINGS": "100"
+    "NUCLEI_MAX_FINDINGS": "100",
+    "NUCLEI_EGRESS_ALLOWED_HOSTS": "*",
+    "NUCLEI_EGRESS_DENIED_HOSTS": "localhost,*.localhost,127.*,10.*,172.16.*,172.17.*,172.18.*,172.19.*,172.20.*,172.21.*,172.22.*,172.23.*,172.24.*,172.25.*,172.26.*,172.27.*,172.28.*,172.29.*,172.30.*,172.31.*,192.168.*,169.254.*",
+    "NUCLEI_EGRESS_USER_AGENT_SUFFIX": "authorized-security-scan"
   },
   "containers": [
     {
       "class_name": "NucleiContainer",
       "image": "./Dockerfile",
-      "max_instances": 2
+      "max_instances": 5
     }
   ],
   "durable_objects": {

@@ -717,6 +717,26 @@ serve(async (req: Request) => {
       else dtiRunCounters.skipped += 1;
     }
 
+    const failedSourceRunLogs = caller.isSuperAdmin
+      ? dtiSourceRuns
+          .filter((row) => normalizeCoverageStatus(String(row.status || '')) === 'error')
+          .map((row) => ({
+            id: String(row.id || ''),
+            source: presentDarkRiskLabel(String(row.source_label || row.source || 'DarkRisk360')),
+            source_key: String(row.source_key || ''),
+            query_kind: String(row.query_kind || ''),
+            query_term: String(row.query_term || ''),
+            selector_value: String(row.selector_value || ''),
+            asset_scope: String(row.asset_scope || ''),
+            status: String(row.status || ''),
+            result_count: Number(row.result_count || 0),
+            warning: String(row.warning || '').slice(0, 400),
+            error_message: String(row.error_message || '').slice(0, 700),
+            completed_at: row.completed_at || null,
+          }))
+          .slice(0, 30)
+      : [];
+
     const coveredAtDomain = new Set<string>();
     const coveredSelector = new Set<string>();
     const coveredEmail = new Set<string>();
@@ -960,6 +980,7 @@ serve(async (req: Request) => {
       dti: {
         privileged_sensitive_view: privilegedSensitiveView,
         source_runs: dtiRunCounters,
+        failed_source_run_logs: failedSourceRunLogs,
         query_coverage: dtiQueryCoverage,
         sensitive_totals: {
           ...sensitiveTotals,

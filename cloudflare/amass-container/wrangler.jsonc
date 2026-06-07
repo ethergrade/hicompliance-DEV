@@ -1,0 +1,41 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "surfacescan360-amass",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-04-21",
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "AMASS_CONTAINER_INSTANCE": "surfacescan360-amass-v3-egress",
+    "AMASS_TIMEOUT_SECONDS": "45",
+    "AMASS_MAX_TIMEOUT_SECONDS": "120",
+    "AMASS_MAX_NAMES": "250",
+    "AMASS_EGRESS_ALLOWED_HOSTS": "*",
+    "AMASS_EGRESS_DENIED_HOSTS": "localhost,*.localhost,127.*,10.*,172.16.*,172.17.*,172.18.*,172.19.*,172.20.*,172.21.*,172.22.*,172.23.*,172.24.*,172.25.*,172.26.*,172.27.*,172.28.*,172.29.*,172.30.*,172.31.*,192.168.*,169.254.*",
+    "AMASS_EGRESS_USER_AGENT_SUFFIX": "authorized-security-scan"
+  },
+  "containers": [
+    {
+      "class_name": "AmassContainer",
+      "image": "./Dockerfile",
+      "max_instances": 5
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "AMASS_CONTAINER",
+        "class_name": "AmassContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "AmassContainer"
+      ]
+    }
+  ]
+}

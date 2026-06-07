@@ -78,6 +78,20 @@ export type DarkRiskOverviewResponse = {
       skipped: number;
       total: number;
     };
+    failed_source_run_logs: Array<{
+      id: string;
+      source: string;
+      source_key: string;
+      query_kind: string;
+      query_term: string;
+      selector_value: string;
+      asset_scope: string;
+      status: string;
+      result_count: number;
+      warning: string;
+      error_message: string;
+      completed_at: string | null;
+    }>;
     query_coverage: {
       at_domain_tld: number;
       selector: number;
@@ -161,6 +175,7 @@ const emptyData: DarkRiskOverviewResponse = {
       skipped: 0,
       total: 0,
     },
+    failed_source_run_logs: [],
     query_coverage: {
       at_domain_tld: 0,
       selector: 0,
@@ -237,6 +252,9 @@ const normalizeOverviewPayload = (data: any): DarkRiskOverviewResponse => {
         : [],
       sensitive_samples: Array.isArray(payloadDti.sensitive_samples)
         ? payloadDti.sensitive_samples
+        : [],
+      failed_source_run_logs: Array.isArray(payloadDti.failed_source_run_logs)
+        ? payloadDti.failed_source_run_logs
         : [],
       latest_scan_run_id: payloadDti.latest_scan_run_id || null,
     },
