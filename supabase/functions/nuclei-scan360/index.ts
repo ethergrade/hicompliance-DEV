@@ -110,6 +110,49 @@ const PRIVATE_IPV4_RANGES = [
 
 const HTTP_ACTION_TIMEOUT_SECONDS = 165;
 const DOMAIN_REGEX = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
+const SURFACE_TARGET_ASSET_TYPES = [
+  "domain",
+  "subdomain",
+  "url",
+  "hostname",
+  "host",
+  "fqdn",
+  "ip",
+  "ipv4",
+  "ipv6",
+  "mx",
+  "mx_host",
+  "ns",
+  "ns_host",
+  "cname",
+  "cname_host",
+  "a",
+  "aaaa",
+];
+const DARKRISK_TARGET_ASSET_TYPES = [
+  "domain",
+  "subdomain",
+  "url",
+  "host",
+  "ip",
+  "mx",
+  "ns",
+];
+const DARKRISK_SELECTOR_TARGET_TYPES = [
+  "domain",
+  "wildcard_domain",
+  "url",
+  "ipv4",
+  "ipv6",
+];
+const MANUAL_TARGET_TYPES = [
+  "domain",
+  "subdomain",
+  "url",
+  "hostname",
+  "ip",
+  "ipv4",
+];
 
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -124,8 +167,11 @@ function clampInt(value: unknown, fallback: number, min: number, max: number): n
 }
 
 function normalizeTargetUrl(value: unknown): string {
-  const raw = String(value || "").trim();
+  const raw = String(value || "").trim().replace(/^\*\./, "");
   if (!raw) throw new Error("target_url is required");
+  if (!/^https?:\/\//i.test(raw) && raw.includes("@")) {
+    return normalizeTargetUrl(raw.split("@").pop());
+  }
   const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
   const url = new URL(withScheme);
   url.hash = "";
@@ -236,6 +282,33 @@ function pushTarget(
   try {
     const target = toScannableTarget(value, source, label, explicitType, confidence);
     if (!target) return;
+    const existing = targets.get(target.target_url);
+    if (!existing || existing.confidence === "low") {
+      targets.set(target.target_url, target);
+    }
+  } catch {
+    // Ignore noisy inventory values that are not valid public HTTP targets.
+  }
+}
+
+function isHostInRootScope(host: string, rootDomain?: unknown): boolean {
+  const root = normalizeDomainCandidate(rootDomain);
+  if (!root) return true;
+  return host === root || host.endsWith(`.${root}`);
+}
+
+function pushScopedTarget(
+  targets: Map<string, ScannableTarget>,
+  value: unknown,
+  source: string,
+  label: string,
+  explicitType?: unknown,
+  confidence: ScannableTarget["confidence"] = "medium",
+  rootDomain?: unknown,
+) {
+  try {
+    const target = toScannableTarget(value, source, label, explicitType, confidence);
+    if (!target || !isHostInRootScope(target.host, rootDomain)) return;
     const existing = targets.get(target.target_url);
     if (!existing || existing.confidence === "low") {
       targets.set(target.target_url, target);
@@ -356,12 +429,18 @@ async function collectScannableTargets(adminClient: SupabaseClient, organization
     label: string,
     queryBuilder: PromiseLike<{ data: T[] | null; error: { message?: string } | null }>,
   ): Promise<T[]> => {
-    const { data, error } = await queryBuilder;
-    if (error) {
-      warnings.push(`${label}: ${error.message || "query_failed"}`);
+    try {
+      const { data, error } = await queryBuilder;
+      if (error) {
+        warnings.push(`${label}: ${error.message || "query_failed"}`);
+        return [];
+      }
+      return data || [];
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      warnings.push(`${label}: ${message || "query_failed"}`);
       return [];
     }
-    return data || [];
   };
 
   pushTarget(targets, organization.code, "client_registry", "Anagrafica cliente", "domain", "low");
@@ -385,14 +464,14 @@ async function collectScannableTargets(adminClient: SupabaseClient, organization
       .from("surface_assets")
       .select("asset_type, asset_value, hostname, root_domain, source")
       .or(`organization_id.eq.${organizationId},customer_id.eq.${organizationId}`)
-      .in("asset_type", ["domain", "subdomain", "url", "hostname"])
+      .in("asset_type", SURFACE_TARGET_ASSET_TYPES)
       .order("last_seen", { ascending: false, nullsFirst: false })
       .limit(limit),
   );
   for (const asset of surfaceAssets) {
-    pushTarget(targets, asset.asset_value || asset.hostname || asset.root_domain, "surface_assets", asset.source || "SurfaceScan360 asset", asset.asset_type, "high");
-    pushTarget(targets, asset.hostname, "surface_assets", "SurfaceScan360 hostname", "subdomain", "high");
     pushTarget(targets, asset.root_domain, "surface_assets", "SurfaceScan360 root domain", "domain", "medium");
+    pushScopedTarget(targets, asset.hostname, "surface_assets", "SurfaceScan360 hostname", "subdomain", "high", asset.root_domain);
+    pushScopedTarget(targets, asset.asset_value, "surface_assets", asset.source || "SurfaceScan360 asset", asset.asset_type, "high", asset.root_domain);
   }
 
   const surfaceTargets = await safeSelect<{ target_type?: string; target_value?: string; root_domain?: string; source?: string }>(
@@ -401,7 +480,7 @@ async function collectScannableTargets(adminClient: SupabaseClient, organization
       .from("surface_scan_targets")
       .select("target_type, target_value, root_domain, source")
       .or(`organization_id.eq.${organizationId},customer_id.eq.${organizationId}`)
-      .in("target_type", ["domain", "subdomain", "url", "hostname"])
+      .in("target_type", SURFACE_TARGET_ASSET_TYPES)
       .order("created_at", { ascending: false })
       .limit(limit),
   );
@@ -417,7 +496,7 @@ async function collectScannableTargets(adminClient: SupabaseClient, organization
       .select("target_type, value, normalized_value, label")
       .eq("organization_id", organizationId)
       .eq("enabled", true)
-      .in("target_type", ["domain", "subdomain", "url", "hostname"])
+      .in("target_type", MANUAL_TARGET_TYPES)
       .order("created_at", { ascending: false })
       .limit(limit),
   );
@@ -431,7 +510,7 @@ async function collectScannableTargets(adminClient: SupabaseClient, organization
       .from("darkrisk_assets")
       .select("asset_type, value, normalized_value, scope_status")
       .eq("organization_id", organizationId)
-      .in("asset_type", ["domain", "subdomain", "url", "hostname"])
+      .in("asset_type", DARKRISK_TARGET_ASSET_TYPES)
       .order("last_seen_at", { ascending: false, nullsFirst: false })
       .limit(limit),
   );
@@ -445,7 +524,7 @@ async function collectScannableTargets(adminClient: SupabaseClient, organization
       .from("darkrisk_selectors")
       .select("selector_type, value, normalized_value, status")
       .eq("organization_id", organizationId)
-      .in("selector_type", ["domain", "subdomain", "url", "hostname"])
+      .in("selector_type", DARKRISK_SELECTOR_TARGET_TYPES)
       .order("created_at", { ascending: false })
       .limit(limit),
   );
