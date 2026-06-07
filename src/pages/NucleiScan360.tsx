@@ -16,7 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useClientContext } from '@/contexts/ClientContext';
 import { useToast } from '@/hooks/use-toast';
 import { useUserRoles } from '@/hooks/useUserRoles';
-import { supabase } from '@/integrations/supabase/client';
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL, supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 
 type NucleiProfile = 'baseline_headers' | 'exposure_medium' | 'web_vuln_safe' | 'web_vuln_authorized';
@@ -230,6 +230,102 @@ const extractInvokeErrorMessage = async (error: unknown, fallback = 'Errore funz
   return error instanceof Error ? error.message : String(error || fallback);
 };
 
+type NucleiAction =
+  | 'direct_scan'
+  | 'enqueue'
+  | 'list'
+  | 'get'
+  | 'retrieve_targets'
+  | 'process_queue';
+
+type NucleiFunctionBody = {
+  action: NucleiAction;
+  organization_id?: string;
+  job_id?: string;
+  target_url?: string;
+  targets?: string[];
+  include_discovered_targets?: boolean;
+  surface_asset_limit?: number;
+  target_limit?: number;
+  profile?: NucleiProfile;
+  timeout_seconds?: number;
+  rate_limit?: number;
+  max_findings?: number;
+  authorized_scan?: boolean;
+  limit?: number;
+};
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const getResponseStatus = (error: unknown) => {
+  const context = (error as { context?: Response })?.context;
+  return context instanceof Response ? context.status : 0;
+};
+
+const isTransientFunctionError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error || '');
+  const status = getResponseStatus(error);
+  return status >= 500 || /failed to send|fetch|network|non-2xx|timeout/i.test(message);
+};
+
+async function directFetchNucleiScan360<T>(body: NucleiFunctionBody): Promise<T> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token || SUPABASE_PUBLISHABLE_KEY;
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/nuclei-scan360`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  const text = await response.text();
+  let payload: unknown = {};
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(text.trim() || `NucleiScan360 HTTP ${response.status}`);
+  }
+  if (!response.ok) {
+    const errorPayload = payload as { error?: string; message?: string };
+    throw new Error(errorPayload.error || errorPayload.message || `NucleiScan360 HTTP ${response.status}`);
+  }
+  return payload as T;
+}
+
+async function invokeNucleiScan360<T>(body: NucleiFunctionBody, retries = 2): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const { data, error } = await supabase.functions.invoke('nuclei-scan360', { body });
+      if (!error) return data as T;
+      lastError = error;
+      if (!isTransientFunctionError(error)) {
+        throw new Error(await extractInvokeErrorMessage(error, 'NucleiScan360 errore'));
+      }
+    } catch (error) {
+      lastError = error;
+      if (!isTransientFunctionError(error)) throw error;
+    }
+
+    if (attempt < retries) {
+      await wait(650 * (attempt + 1));
+    }
+  }
+
+  try {
+    return await directFetchNucleiScan360<T>(body);
+  } catch (error) {
+    if (isTransientFunctionError(error)) {
+      await wait(1200);
+      return await directFetchNucleiScan360<T>(body);
+    }
+    throw lastError instanceof Error ? lastError : error;
+  }
+}
+
 const safeLower = (value: unknown) => String(value || '').trim().toLowerCase();
 
 const extractAsset = (matchedAt?: string | null) => {
@@ -380,14 +476,15 @@ const NucleiScan360: React.FC = () => {
     if (!organizationId || !isSuperAdmin) return;
     setTargetsLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('nuclei-scan360', {
-        body: {
-          action: 'retrieve_targets',
-          organization_id: organizationId,
-          target_limit: 80,
-        },
+      const data = await invokeNucleiScan360<{
+        ok?: boolean;
+        error?: string;
+        targets?: ScannableTarget[];
+      }>({
+        action: 'retrieve_targets',
+        organization_id: organizationId,
+        target_limit: 80,
       });
-      if (error) throw new Error(await extractInvokeErrorMessage(error, 'Impossibile recuperare i target'));
       if (!data?.ok) throw new Error(data?.error || 'Impossibile recuperare i target');
       const nextTargets = (data.targets || []) as ScannableTarget[];
       setScannableTargets(nextTargets);
@@ -419,14 +516,15 @@ const NucleiScan360: React.FC = () => {
     if (!organizationId || !isSuperAdmin) return;
     setQueueLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('nuclei-scan360', {
-        body: {
-          action: 'list',
-          organization_id: organizationId,
-          limit: 30,
-        },
+      const data = await invokeNucleiScan360<{
+        ok?: boolean;
+        error?: string;
+        jobs?: NucleiJob[];
+      }>({
+        action: 'list',
+        organization_id: organizationId,
+        limit: 30,
       });
-      if (error) throw new Error(await extractInvokeErrorMessage(error, 'Impossibile leggere la coda NucleiScan360'));
       if (!data?.ok) throw new Error(data?.error || 'Impossibile leggere la coda NucleiScan360');
       setJobs((data.jobs || []) as NucleiJob[]);
     } catch (error) {
@@ -486,22 +584,24 @@ const NucleiScan360: React.FC = () => {
 
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('nuclei-scan360', {
-        body: {
-          action: 'enqueue',
-          organization_id: selectedOrgId,
-          targets: targetList,
-          include_discovered_targets: includeSurfaceAssets && selectedTargetUrls.length === 0,
-          surface_asset_limit: 25,
-          profile,
-          timeout_seconds: safeTimeoutSeconds,
-          rate_limit: safeRateLimit,
-          max_findings: safeMaxFindings,
-          authorized_scan: authorizedScan,
-        },
+      const data = await invokeNucleiScan360<{
+        ok?: boolean;
+        error?: string;
+        queued_count?: number;
+        skipped_duplicates?: number;
+      }>({
+        action: 'enqueue',
+        organization_id: selectedOrgId,
+        targets: targetList,
+        include_discovered_targets: includeSurfaceAssets && selectedTargetUrls.length === 0,
+        surface_asset_limit: 25,
+        profile,
+        timeout_seconds: safeTimeoutSeconds,
+        rate_limit: safeRateLimit,
+        max_findings: safeMaxFindings,
+        authorized_scan: authorizedScan,
       });
 
-      if (error) throw new Error(await extractInvokeErrorMessage(error, 'NucleiScan360 enqueue failed'));
       if (!data?.ok) throw new Error(data?.error || 'NucleiScan360 enqueue failed');
 
       toast({
@@ -531,13 +631,14 @@ const NucleiScan360: React.FC = () => {
 
     setQueueLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('nuclei-scan360', {
-        body: {
-          action: 'get',
-          job_id: job.id,
-        },
+      const data = await invokeNucleiScan360<{
+        ok?: boolean;
+        error?: string;
+        job?: { raw_result?: NucleiResult | null };
+      }>({
+        action: 'get',
+        job_id: job.id,
       });
-      if (error) throw new Error(await extractInvokeErrorMessage(error, 'Impossibile aprire job NucleiScan360'));
       if (!data?.ok) throw new Error(data?.error || 'Impossibile aprire job NucleiScan360');
       const nextResult = (data.job?.raw_result || null) as NucleiResult | null;
       setResult(nextResult);
@@ -558,14 +659,20 @@ const NucleiScan360: React.FC = () => {
     if (!selectedOrgId) return;
     setProcessingQueue(true);
     try {
-      const { data, error } = await supabase.functions.invoke('nuclei-scan360', {
-        body: {
-          action: 'process_queue',
-          organization_id: selectedOrgId,
-          limit: 1,
-        },
+      const data = await invokeNucleiScan360<{
+        ok?: boolean;
+        error?: string;
+        processed?: Array<{
+          status?: string;
+          error?: string;
+          job_id?: string;
+          result?: NucleiResult;
+        }>;
+      }>({
+        action: 'process_queue',
+        organization_id: selectedOrgId,
+        limit: 1,
       });
-      if (error) throw new Error(await extractInvokeErrorMessage(error, 'NucleiScan360 queue failed'));
       if (!data?.ok) throw new Error(data?.error || 'NucleiScan360 queue failed');
 
       const processed = data.processed?.[0];
