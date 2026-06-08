@@ -203,6 +203,7 @@ const SurfaceScan360: React.FC = () => {
   const [isDiscoveryCollapsed, setIsDiscoveryCollapsed] = useState(true);
   const [isLiveResultsCollapsed, setIsLiveResultsCollapsed] = useState(true);
   const [showScopeDiagnostics, setShowScopeDiagnostics] = useState(false);
+  const [enableAmassDiscovery, setEnableAmassDiscovery] = useState(false);
   const [reverseDnsMap, setReverseDnsMap] = useState<Record<string, string[]>>({});
 
   const assetsPerPage = 15;
@@ -644,6 +645,7 @@ const SurfaceScan360: React.FC = () => {
       scan_profiles: scanProfiles,
       authorization_confirmed: true,
       ownership_proof: ownershipProof || 'subdomain_module_card',
+      enable_amass: enableAmassDiscovery,
     });
   };
 
@@ -735,6 +737,32 @@ const SurfaceScan360: React.FC = () => {
         )}
 
         <SubdomainDumpPanel isAdmin={isAdminUser} />
+
+        {isAdminUser && (
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle>Moduli opzionali</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Questi moduli partono solo se abilitati anche lato backend tramite variabili ambiente.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+                <div>
+                  <p className="text-sm font-medium">Amass active-light</p>
+                  <p className="text-xs text-muted-foreground">
+                    Usa il container Cloudflare Amass per arricchire discovery subdomain/IP in modo opzionale.
+                  </p>
+                </div>
+                <Switch
+                  checked={enableAmassDiscovery}
+                  onCheckedChange={setEnableAmassDiscovery}
+                  aria-label="Abilita Amass active-light per le prossime scansioni"
+                />
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
           <Card className="border-border">

@@ -31,6 +31,7 @@ export interface SurfaceScanJob {
   started_at: string | null;
   completed_at: string | null;
   error_message: string | null;
+  config?: Record<string, any> | null;
   summary?: Record<string, any> | null;
 }
 
@@ -39,6 +40,7 @@ interface StartScanInput {
   scan_profile?: SurfaceScanProfile;
   authorization_confirmed: boolean;
   ownership_proof?: string;
+  enable_amass?: boolean;
 }
 
 interface StartScanQueueInput {
@@ -46,6 +48,7 @@ interface StartScanQueueInput {
   scan_profiles: SurfaceScanProfile[];
   authorization_confirmed: boolean;
   ownership_proof?: string;
+  enable_amass?: boolean;
 }
 
 export const useSurfaceScanEngine = () => {
@@ -72,7 +75,7 @@ export const useSurfaceScanEngine = () => {
       const { data, error } = await supabase
         .from('surface_scan_jobs' as any)
         .select(
-          'id, raw_target, normalized_target, target_type, hostname, root_domain, resolved_ips, scan_profile, status, hosting_context, shodan_status, created_at, started_at, completed_at, error_message, summary',
+          'id, raw_target, normalized_target, target_type, hostname, root_domain, resolved_ips, scan_profile, status, hosting_context, shodan_status, created_at, started_at, completed_at, error_message, config, summary',
         )
         .or(scopeFilter)
         .order('created_at', { ascending: false })
@@ -180,6 +183,7 @@ export const useSurfaceScanEngine = () => {
             scan_profile: input.scan_profile,
             authorization_confirmed: input.authorization_confirmed,
             ownership_proof: input.ownership_proof || null,
+            enable_amass: Boolean(input.enable_amass),
           },
         });
 
@@ -269,6 +273,7 @@ export const useSurfaceScanEngine = () => {
               scan_profile: pair.profile,
               authorization_confirmed: input.authorization_confirmed,
               ownership_proof: input.ownership_proof || null,
+              enable_amass: Boolean(input.enable_amass),
             },
           });
 

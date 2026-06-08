@@ -25,6 +25,10 @@ import {
   scanDnsLookup,
   type DnsLookupResult,
 } from "./dnsLookupScanner.ts";
+import {
+  resolveAmassDiscoveryGate,
+  runAmassDiscovery,
+} from "./amassDiscovery.ts";
 import { firecrawlScrape } from "./darkrisk-dti-enrichment.ts";
 
 interface SurfaceScanJob {
@@ -275,6 +279,190 @@ const COMMON_PORTS = [
   5060, 5900, 8000, 8080, 8888, 8443, 9443, 9200, 9300, 5432, 6379,
   27017, 11211, 1521, 8081, 9000, 9090,
 ];
+
+// ─── TCP Port Scanner — lista porte, mappa servizi, CVE hints ────────────────
+
+const TCP_PROBE_PORTS = [
+  // Accesso remoto
+  21, 22, 23, 3389, 5900, 5901, 990, 20,
+  // Mail
+  25, 110, 143, 465, 587, 993, 995,
+  // Web
+  80, 443, 8080, 8443, 8888, 9000, 9090, 9443, 7080, 7443, 3000, 4000, 5000, 10000,
+  // Database
+  1433, 1521, 3306, 5432, 5984, 6379, 9200, 9300, 11211, 27017, 27018, 28017,
+  // Rete/Infrastruttura
+  53, 161, 389, 636, 2049, 111, 135, 139, 445,
+  // Container/Cloud native
+  2375, 2376, 2379, 2380, 6443, 10250, 10255, 8500, 4646,
+  // Message Queue
+  5672, 15672, 9092, 2181,
+  // VPN/Tunneling
+  1194, 1723, 500,
+  // Stampa/IoT
+  515, 631, 9100,
+  // Altro
+  69, 79, 88, 9418,
+];
+
+const PORT_SERVICE: Record<number, { name: string; description: string; risk: string }> = {
+  20:    { name: "ftp-data",     description: "FTP Data Transfer",                         risk: "Trasferimento file non cifrato" },
+  21:    { name: "ftp",          description: "FTP - File Transfer Protocol",               risk: "Credenziali in chiaro, directory traversal" },
+  22:    { name: "ssh",          description: "SSH - Secure Shell",                         risk: "Brute force, versioni vulnerabili" },
+  23:    { name: "telnet",       description: "Telnet - terminale non cifrato",             risk: "Credenziali e dati in chiaro" },
+  25:    { name: "smtp",         description: "SMTP Mail Relay",                            risk: "Open relay, spam, enumerazione utenti" },
+  53:    { name: "dns",          description: "DNS - Domain Name System",                  risk: "Zone transfer, amplification DDoS" },
+  69:    { name: "tftp",         description: "TFTP - Trivial FTP",                        risk: "Nessuna autenticazione, accesso file" },
+  79:    { name: "finger",       description: "Finger - user info",                        risk: "Enumerazione utenti sistema" },
+  80:    { name: "http",         description: "HTTP Web Server",                            risk: "Applicazioni web non cifrate" },
+  88:    { name: "kerberos",     description: "Kerberos Authentication",                   risk: "Kerberoasting, AS-REP roasting" },
+  110:   { name: "pop3",         description: "POP3 Mail",                                 risk: "Credenziali in chiaro" },
+  111:   { name: "rpcbind",      description: "RPC Portmapper",                            risk: "Enumerazione servizi RPC/NFS" },
+  135:   { name: "msrpc",        description: "Microsoft RPC Endpoint Mapper",             risk: "Enumerazione servizi Windows, lateral movement" },
+  139:   { name: "netbios-ssn",  description: "NetBIOS Session Service",                   risk: "Enumerazione SMB, pass-the-hash" },
+  143:   { name: "imap",         description: "IMAP Mail",                                 risk: "Credenziali in chiaro" },
+  161:   { name: "snmp",         description: "SNMP Network Management",                   risk: "Community string default, info disclosure" },
+  389:   { name: "ldap",         description: "LDAP Directory Service",                   risk: "Enumerazione utenti AD, credenziali in chiaro" },
+  443:   { name: "https",        description: "HTTPS Web Server",                          risk: "Versioni TLS/cipher deboli" },
+  445:   { name: "smb",          description: "SMB - Server Message Block",               risk: "EternalBlue CVE-2017-0144, ransomware" },
+  465:   { name: "smtps",        description: "SMTP over TLS",                             risk: "Configurazione TLS debole" },
+  500:   { name: "isakmp",       description: "IKE/IPSec VPN",                             risk: "Vulnerabilità IKEv1" },
+  515:   { name: "lpd",          description: "Line Printer Daemon",                       risk: "Stampa non autenticata, path traversal" },
+  587:   { name: "submission",   description: "SMTP Mail Submission",                      risk: "Open relay se mal configurato" },
+  631:   { name: "ipp",          description: "Internet Printing Protocol",                risk: "CUPS vulnerabilità, info disclosure" },
+  636:   { name: "ldaps",        description: "LDAP over TLS",                             risk: "Configurazione TLS, certificate validation" },
+  990:   { name: "ftps",         description: "FTP over TLS",                              risk: "Configurazione TLS debole" },
+  993:   { name: "imaps",        description: "IMAP over TLS",                             risk: "Configurazione TLS debole" },
+  995:   { name: "pop3s",        description: "POP3 over TLS",                             risk: "Configurazione TLS debole" },
+  1194:  { name: "openvpn",      description: "OpenVPN",                                   risk: "CVE-2017-7479, configurazioni deboli" },
+  1433:  { name: "mssql",        description: "Microsoft SQL Server",                      risk: "SA blank password, xp_cmdshell, injection" },
+  1521:  { name: "oracle",       description: "Oracle Database",                           risk: "Default credentials, TNS Poison" },
+  1723:  { name: "pptp",         description: "PPTP VPN",                                  risk: "MS-CHAPv2 vulnerabile" },
+  2049:  { name: "nfs",          description: "NFS - Network File System",                risk: "Mount senza autenticazione, root squash" },
+  2181:  { name: "zookeeper",    description: "Apache ZooKeeper",                         risk: "Nessuna autenticazione default, info disclosure" },
+  2375:  { name: "docker",       description: "Docker API (non TLS!)",                    risk: "RCE completo, escape container CRITICO" },
+  2376:  { name: "docker-tls",   description: "Docker API over TLS",                      risk: "Configurazione TLS, client auth" },
+  2379:  { name: "etcd",         description: "etcd - Kubernetes key-value",              risk: "Secrets Kubernetes in chiaro, no auth default" },
+  2380:  { name: "etcd-peer",    description: "etcd peer communication",                  risk: "Cluster takeover" },
+  3000:  { name: "grafana",      description: "Grafana Dashboard",                        risk: "Default admin:admin, CVE-2021-43798" },
+  3306:  { name: "mysql",        description: "MySQL / MariaDB",                          risk: "Default root senza password, SQL injection" },
+  3389:  { name: "rdp",          description: "RDP - Remote Desktop Protocol",            risk: "BlueKeep CVE-2019-0708, brute force" },
+  4000:  { name: "http-dev",     description: "HTTP Dev Server",                          risk: "Applicazioni in ambiente development" },
+  4646:  { name: "nomad",        description: "HashiCorp Nomad",                          risk: "Nessun ACL default, exec arbitrario" },
+  5000:  { name: "http-alt",     description: "HTTP alternativo / Docker Registry",       risk: "Registry non autenticato" },
+  5432:  { name: "postgresql",   description: "PostgreSQL Database",                      risk: "Default postgres senza password, COPY TO/FROM" },
+  5672:  { name: "amqp",         description: "RabbitMQ AMQP",                            risk: "Default guest:guest, message injection" },
+  5900:  { name: "vnc",          description: "VNC Remote Desktop",                       risk: "Nessuna password, CVE-2019-15681" },
+  5901:  { name: "vnc-1",        description: "VNC display :1",                           risk: "Nessuna password, accesso desktop remoto" },
+  5984:  { name: "couchdb",      description: "CouchDB HTTP API",                         risk: "Admin party (no auth), CVE-2017-12635" },
+  6379:  { name: "redis",        description: "Redis in-memory DB",                      risk: "No auth default, RCE via config write, CVE-2023-28425" },
+  6443:  { name: "k8s-api",      description: "Kubernetes API Server",                   risk: "Cluster takeover, CVE-2018-1002105" },
+  7080:  { name: "http-alt",     description: "HTTP alternativo",                        risk: "Pannelli admin non cifrati" },
+  7443:  { name: "https-alt",    description: "HTTPS alternativo",                       risk: "TLS configuration" },
+  8080:  { name: "http-proxy",   description: "HTTP alternativo / proxy",                risk: "Pannelli admin, Tomcat, Jenkins esposti" },
+  8443:  { name: "https-alt",    description: "HTTPS alternativo (Tomcat/JBoss/WebLogic)", risk: "Admin panel esposto" },
+  8500:  { name: "consul",       description: "HashiCorp Consul HTTP",                   risk: "Nessun ACL default, service mesh takeover" },
+  8888:  { name: "jupyter",      description: "Jupyter Notebook / HTTP alt",             risk: "Nessun token, RCE arbitrario" },
+  9000:  { name: "sonarqube",    description: "SonarQube / Portainer",                   risk: "Default admin, code disclosure" },
+  9090:  { name: "prometheus",   description: "Prometheus Metrics",                      risk: "Info disclosure, CVE-2019-3826" },
+  9092:  { name: "kafka",        description: "Apache Kafka",                            risk: "No auth default, message interception" },
+  9100:  { name: "jetdirect",    description: "HP JetDirect / RAW print",               risk: "Info disclosure, phishing via printer" },
+  9200:  { name: "elasticsearch",description: "Elasticsearch HTTP API",                 risk: "No auth default, dati esposti, CVE-2021-22145" },
+  9300:  { name: "es-transport", description: "Elasticsearch transport",                risk: "Cluster join non autenticato" },
+  9418:  { name: "git",          description: "Git daemon",                              risk: "Repository esposti in lettura" },
+  9443:  { name: "https-alt",    description: "HTTPS alternativo",                      risk: "TLS configuration" },
+  10000: { name: "webmin",       description: "Webmin Admin Panel",                     risk: "CVE-2019-15107 RCE, brute force" },
+  10250: { name: "kubelet",      description: "Kubernetes Kubelet API",                 risk: "RCE, pod/secret access CRITICO" },
+  10255: { name: "kubelet-ro",   description: "Kubernetes Kubelet read-only",           risk: "Info disclosure pods/secrets" },
+  11211: { name: "memcached",    description: "Memcached",                              risk: "No auth, data dump, DDoS amplification" },
+  15672: { name: "rabbitmq-ui",  description: "RabbitMQ Management UI",                 risk: "Default guest:guest, message injection" },
+  27017: { name: "mongodb",      description: "MongoDB",                                risk: "No auth default, data dump CRITICO" },
+  27018: { name: "mongodb-shard",description: "MongoDB Shard",                         risk: "No auth default" },
+  28017: { name: "mongodb-web",  description: "MongoDB Web Interface",                  risk: "Info disclosure, admin panel" },
+};
+
+const SERVICE_CVE_MAP: Record<string, string[]> = {
+  openssh:       ["CVE-2024-6387","CVE-2023-38408","CVE-2021-41617","CVE-2018-15473"],
+  rdp:           ["CVE-2019-0708","CVE-2020-0609","CVE-2020-0610","CVE-2021-34527"],
+  vnc:           ["CVE-2019-15681","CVE-2006-2369","CVE-2023-29445"],
+  telnet:        ["CVE-1999-0619","CVE-2011-4862"],
+  ftp:           ["CVE-1999-0497","CVE-2010-4221","CVE-2015-3306"],
+  apache:        ["CVE-2021-41773","CVE-2021-42013","CVE-2023-25690","CVE-2022-22721"],
+  nginx:         ["CVE-2021-23017","CVE-2022-41741","CVE-2022-41742"],
+  iis:           ["CVE-2022-21907","CVE-2021-31166","CVE-2017-7269"],
+  tomcat:        ["CVE-2020-1938","CVE-2019-0232","CVE-2017-12617"],
+  weblogic:      ["CVE-2023-21839","CVE-2021-2109","CVE-2020-14882"],
+  jboss:         ["CVE-2017-12149","CVE-2015-7501"],
+  jenkins:       ["CVE-2024-23897","CVE-2023-43494","CVE-2019-1003000"],
+  php:           ["CVE-2024-4577","CVE-2022-31625","CVE-2021-21703"],
+  openssl:       ["CVE-2022-0778","CVE-2021-3449","CVE-2021-3450","CVE-2014-0160"],
+  mysql:         ["CVE-2023-21980","CVE-2022-21427","CVE-2020-2574"],
+  postgresql:    ["CVE-2023-2454","CVE-2023-2455","CVE-2019-9193"],
+  mssql:         ["CVE-2020-0618","CVE-2019-1068","CVE-2018-8273"],
+  oracle:        ["CVE-2022-21410","CVE-2021-2121","CVE-2020-14871"],
+  redis:         ["CVE-2023-28425","CVE-2022-0543","CVE-2015-8080"],
+  elasticsearch: ["CVE-2021-22145","CVE-2021-22144","CVE-2015-1427"],
+  mongodb:       ["CVE-2021-20328","CVE-2021-32035"],
+  memcached:     ["CVE-2018-1000115","CVE-2011-4971"],
+  couchdb:       ["CVE-2022-24706","CVE-2017-12635","CVE-2017-12636"],
+  smb:           ["CVE-2017-0144","CVE-2020-0796","CVE-2021-34527"],
+  msrpc:         ["CVE-2003-0352","CVE-2008-4250"],
+  ldap:          ["CVE-2021-44228","CVE-2017-8563"],
+  kerberos:      ["CVE-2020-17049","CVE-2014-6324"],
+  docker:        ["CVE-2019-5736","CVE-2020-15257","CVE-2021-41091"],
+  kubernetes:    ["CVE-2018-1002105","CVE-2019-9946","CVE-2019-11253"],
+  etcd:          ["CVE-2020-15106","CVE-2018-16873"],
+  consul:        ["CVE-2020-28053","CVE-2021-37219"],
+  grafana:       ["CVE-2021-43798","CVE-2022-26148","CVE-2023-22462"],
+  prometheus:    ["CVE-2019-3826","CVE-2022-46146"],
+  webmin:        ["CVE-2019-15107","CVE-2022-0824"],
+  rabbitmq:      ["CVE-2023-46118","CVE-2021-32718","CVE-2022-25717"],
+  kafka:         ["CVE-2023-25194","CVE-2018-17196"],
+  zookeeper:     ["CVE-2023-44981","CVE-2019-0201"],
+  smtp:          ["CVE-2020-7247","CVE-2019-15605"],
+  postfix:       ["CVE-2023-51764","CVE-2011-1720"],
+  exim:          ["CVE-2019-10149","CVE-2021-38371"],
+  snmp:          ["CVE-2002-0013","CVE-2017-6742","CVE-2023-20198"],
+  nfs:           ["CVE-2019-3010","CVE-2021-3197"],
+  openvpn:       ["CVE-2017-7479","CVE-2020-15078"],
+};
+
+function cveHintsForService(serviceName: string): string[] {
+  const norm = (serviceName || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  for (const [svc, cves] of Object.entries(SERVICE_CVE_MAP)) {
+    if (norm.includes(svc)) return cves;
+  }
+  return [];
+}
+
+async function tcpProbe(
+  host: string, port: number, timeoutMs = 2500,
+): Promise<{ open: boolean; banner: string }> {
+  let conn: Deno.TcpConn | null = null;
+  try {
+    conn = await Promise.race([
+      Deno.connect({ hostname: host, port, transport: "tcp" }),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), timeoutMs)),
+    ]);
+    let banner = "";
+    try {
+      const buf = new Uint8Array(512);
+      const n = await Promise.race([
+        conn.read(buf),
+        new Promise<number>(res => setTimeout(() => res(0), 500)),
+      ]);
+      if (n) {
+        banner = new TextDecoder("utf-8", { fatal: false })
+          .decode(buf.subarray(0, Number(n))).trim().slice(0, 300);
+      }
+    } catch { /* banner opzionale */ }
+    return { open: true, banner };
+  } catch {
+    return { open: false, banner: "" };
+  } finally {
+    try { conn?.close(); } catch {}
+  }
+}
 
 function severityForExposedPort(
   port: number,
@@ -776,7 +964,9 @@ export async function runSurfaceScanEnrichment(
   const targetUrl = parsedTarget.normalized_target;
   const seenAssetKeys = new Set<string>();
   const seenFindingKeys = new Set<string>();
+  const seenPortKeys = new Set<string>();
   const scanWarnings: string[] = [];
+  const jobConfig = (job.config && typeof job.config === "object") ? job.config : {};
   const { data: monitoredScopeRows } = await adminClient
     .from("surface_scan_monitored_ips" as any)
     .select("entry_type, input_value, ip_start, ip_end")
@@ -915,7 +1105,7 @@ export async function runSurfaceScanEnrichment(
 
     const evidenceWithScope = addScopeRaw(input.evidence || {}, findingScopeReason);
 
-    await adminClient.from("surface_findings" as any).insert({
+    await adminClient.from("surface_findings" as any).upsert({
       organization_id: organizationId,
       tenant_id: tenantId,
       customer_id: customerId,
@@ -940,7 +1130,47 @@ export async function runSurfaceScanEnrichment(
       evidence: evidenceWithScope,
       attribution_confidence: input.attribution_confidence || "medium",
       status: input.status || "open",
-    });
+      first_seen_at: new Date().toISOString(),
+      last_seen_at:  new Date().toISOString(),
+      occurrence_count: 1,
+    }, { onConflict: "dedup_fingerprint" });
+  };
+
+  const insertOpenPort = async (
+    portNum: number,
+    host: string,
+    ip: string,
+    protocol = "tcp",
+    source = "shodan",
+    serviceName?: string,
+    serviceVersion?: string,
+    banner?: string,
+  ) => {
+    const key = [(host || ip).toLowerCase(), (ip || "").toLowerCase(), portNum, protocol].join("|");
+    if (seenPortKeys.has(key)) return;
+    seenPortKeys.add(key);
+    const isWeb = [80,443,8080,8443,8888,9000,3000,4000,5000,7080,7443,9090,10000].includes(portNum);
+    const isTls = [443,8443,993,995,465,636,2376,5986].includes(portNum);
+    await adminClient.from("surface_open_ports" as any).upsert({
+      scan_job_id: job.id,
+      organization_id: organizationId,
+      tenant_id: tenantId,
+      customer_id: customerId,
+      host: host || ip,
+      ip: ip || null,
+      port: portNum,
+      protocol,
+      state: "open",
+      service_name: serviceName || null,
+      service_version: serviceVersion || null,
+      banner: banner?.slice(0, 500) || null,
+      is_web: isWeb,
+      is_tls: isTls,
+      exposure_level: severityForExposedPort(portNum),
+      first_seen_at: new Date().toISOString(),
+      last_seen_at:  new Date().toISOString(),
+      raw: { source, service: serviceName, version: serviceVersion },
+    }, { onConflict: "scan_job_id,host,port,protocol" });
   };
 
   const insertAsset = async (input: AssetInput): Promise<string | null> => {
@@ -1036,7 +1266,6 @@ export async function runSurfaceScanEnrichment(
     skippedCurrent: number;
     skippedLimit: number;
   }> => {
-    const jobConfig = (job.config && typeof job.config === "object") ? job.config : {};
     if (jobConfig.auto_expand_subdomains === false) {
       return { discovered: 0, eligible: 0, inserted: 0, skippedExisting: 0, skippedCurrent: 0, skippedLimit: 0 };
     }
@@ -1786,6 +2015,41 @@ export async function runSurfaceScanEnrichment(
       errorMessage,
       attempts: attempt,
       maxAttempts: totalAttempts,
+    });
+  };
+
+  const recordModuleSkipped = async (
+    config: ModuleExecutionConfig,
+    reason: string,
+    extra: Record<string, unknown> = {},
+  ) => {
+    const nowIso = new Date().toISOString();
+    await upsertModuleResult(config, "skipped", {
+      severity: "info",
+      startedAt: nowIso,
+      completedAt: nowIso,
+      durationMs: 0,
+      normalized: {
+        module: config.key,
+        status: "skipped",
+        reason,
+        ...extra,
+      },
+    });
+    await insertObservation({
+      module: config.key,
+      observation_type: "module_skipped",
+      title: `Modulo ${config.label} saltato`,
+      value: {
+        reason,
+        ...extra,
+      },
+      severity: "info",
+    });
+    await logAudit("module_skipped", {
+      module: config.key,
+      reason,
+      ...extra,
     });
   };
 
@@ -3536,6 +3800,26 @@ export async function runSurfaceScanEnrichment(
       result.isExpired = isExpired;
       result.isSelfSigned = isSelfSigned;
       result.raw = certPayload;
+
+      // Wildcard certificate detection
+      const wildcardSans = san
+        .map(e => e.replace(/^DNS:/i, "").trim())
+        .filter(e => e.startsWith("*."));
+      const isWildcard = wildcardSans.length > 0 || Boolean(subject?.startsWith("*."));
+      result.isWildcard = isWildcard;
+      if (isWildcard) {
+        await insertFinding({
+          module: "ssl_certificate",
+          finding_type: "ssl_wildcard_certificate",
+          severity: "info",
+          title: "Certificato wildcard rilevato",
+          description: `Certificato con copertura wildcard: ${wildcardSans.join(", ") || subject}. Verificare che emissione e gestione chiavi siano controllate.`,
+          affected_asset: hostForCert,
+          cwe: ["CWE-295"],
+          evidence: { is_wildcard: true, wildcard_domains: wildcardSans, subject, issuer },
+          remediation: "Usare wildcard solo se necessario. Proteggere la chiave privata con HSM. Monitorare via Certificate Transparency.",
+        });
+      }
 
       const hasHostnameMatch = san.length > 0
         ? san.some((entry) => {
@@ -5674,6 +5958,7 @@ export async function runSurfaceScanEnrichment(
           const payload = await crtRes.json();
           const rows = Array.isArray(payload) ? payload : [];
           const names = new Set<string>();
+          const wildcardCertNames = new Set<string>();
           let resolvedSubdomains = 0;
           let unresolvedSubdomains = 0;
 
@@ -5682,11 +5967,10 @@ export async function runSurfaceScanEnrichment(
             if (!nameValue) continue;
             for (const candidate of nameValue.split("\n")) {
               const normalized = candidate.trim().toLowerCase().replace(/\.$/, "");
-              if (
-                normalized.endsWith(rootDomain) &&
-                !normalized.startsWith("*.") &&
-                isValidHostnameCandidate(normalized)
-              ) {
+              if (!normalized.endsWith(rootDomain)) continue;
+              if (normalized.startsWith("*.")) {
+                wildcardCertNames.add(normalized);
+              } else if (isValidHostnameCandidate(normalized)) {
                 names.add(normalized);
               }
             }
@@ -5746,6 +6030,20 @@ export async function runSurfaceScanEnrichment(
             }
           }
 
+          for (const wildcard of wildcardCertNames) {
+            await insertFinding({
+              module: "dns_certificate_transparency",
+              finding_type: "ssl_wildcard_certificate",
+              severity: "info",
+              title: `Wildcard rilevato in Certificate Transparency: ${wildcard}`,
+              description: `Il dominio wildcard ${wildcard} appare nei log pubblici di Certificate Transparency (crt.sh). Verificare che l'emissione sia autorizzata.`,
+              affected_asset: wildcard,
+              cwe: ["CWE-295"],
+              evidence: { source: "crt.sh", wildcard_domain: wildcard },
+              remediation: "Usare wildcard solo se necessario. Monitorare emissioni non autorizzate via CT alert.",
+            });
+          }
+
           await insertObservation({
             module: "dns_dumpster_like",
             observation_type: "subdomain_discovery",
@@ -5753,6 +6051,7 @@ export async function runSurfaceScanEnrichment(
             value: {
               root_domain: rootDomain,
               subdomains_found: names.size,
+              wildcard_certs_found: wildcardCertNames.size,
               resolved_subdomains: resolvedSubdomains,
               unresolved_subdomains: unresolvedSubdomains,
               sample: [...names].slice(0, 50),
@@ -6043,6 +6342,137 @@ export async function runSurfaceScanEnrichment(
     }
   };
 
+  const runAmassModule = async () => {
+    const serviceUrl = String(Deno.env.get("SURFACESCAN_AMASS_SERVICE_URL") || "").trim();
+    const sharedSecret = String(Deno.env.get("SURFACESCAN_AMASS_SHARED_SECRET") || "").trim();
+    const timeoutSeconds = Math.max(
+      10,
+      Math.min(120, Number(Deno.env.get("SURFACESCAN_AMASS_TIMEOUT_SECONDS") || "45")),
+    );
+    const maxNames = Math.max(
+      1,
+      Math.min(500, Number(Deno.env.get("SURFACESCAN_AMASS_MAX_NAMES") || "250")),
+    );
+
+    const amassResult = await runAmassDiscovery({
+      serviceUrl,
+      sharedSecret,
+      target: hostname || rootDomain || targetUrl,
+      rootDomain,
+      scanJobId: job.id,
+      timeoutSeconds,
+      maxNames,
+    });
+
+    let acceptedSubdomains = 0;
+    let excludedSubdomains = 0;
+    let acceptedIps = 0;
+    let excludedIps = 0;
+
+    for (const subdomain of amassResult.subdomains) {
+      if (!shouldAcceptScannableHost(subdomain)) {
+        excludedSubdomains += 1;
+        await insertAsset({
+          asset_type: "subdomain",
+          asset_value: subdomain,
+          hostname: subdomain,
+          root_domain: rootDomain,
+          source: "amass",
+          confidence: "low",
+          raw: {
+            mode: "active_light",
+            amass_version: amassResult.amass_version,
+            _scope_excluded: true,
+            _scope_exclusion_reason: scopeReasonFromHost(subdomain) || "scope_excluded_domain",
+            _scope_excluded_at: new Date().toISOString(),
+          },
+        });
+        continue;
+      }
+      acceptedSubdomains += 1;
+      discoveredHostnames.add(subdomain);
+      await insertAsset({
+        asset_type: "subdomain",
+        asset_value: subdomain,
+        hostname: subdomain,
+        root_domain: rootDomain,
+        source: "amass",
+        confidence: "medium",
+        raw: {
+          mode: "active_light",
+          amass_version: amassResult.amass_version,
+        },
+      });
+    }
+
+    for (const ip of amassResult.ips) {
+      const inScope = isIpAllowedInScope(ip);
+      if (!inScope) {
+        excludedIps += 1;
+      } else {
+        acceptedIps += 1;
+        discoveredIps.add(ip);
+      }
+      await insertAsset({
+        asset_type: "ip",
+        asset_value: ip,
+        hostname: hostname || rootDomain,
+        root_domain: rootDomain,
+        ip,
+        source: "amass",
+        confidence: inScope ? "medium" : "low",
+        raw: {
+          mode: "active_light",
+          amass_version: amassResult.amass_version,
+          in_scope: inScope,
+        },
+      });
+    }
+
+    const summary = {
+      root_domain: rootDomain,
+      target: hostname || rootDomain || targetUrl,
+      mode: "active_light",
+      subdomains_found: amassResult.subdomains.length,
+      subdomains_accepted: acceptedSubdomains,
+      subdomains_excluded: excludedSubdomains,
+      ips_found: amassResult.ips.length,
+      ips_accepted: acceptedIps,
+      ips_excluded: excludedIps,
+      warnings: amassResult.warnings,
+      duration_ms: amassResult.duration_ms,
+      amass_version: amassResult.amass_version,
+      sample_subdomains: amassResult.subdomains.slice(0, 80),
+      sample_ips: amassResult.ips.slice(0, 80),
+    };
+
+    await insertObservation({
+      module: "amass_discovery",
+      observation_type: "amass_summary",
+      title: "Amass active-light discovery summary",
+      value: summary,
+      severity: "info",
+      confidence: acceptedSubdomains > 0 || acceptedIps > 0 ? "high" : "medium",
+    });
+
+    await insertExternalIntel(
+      "amass",
+      rootDomain || hostname || targetUrl,
+      amassResult.subdomains.length > 0 || amassResult.ips.length > 0,
+      summary,
+      amassResult.raw,
+      acceptedSubdomains > 0 || acceptedIps > 0 ? "high" : "medium",
+    );
+
+    await emitEngineEnvelope({
+      engine: "amass",
+      target: rootDomain || hostname || targetUrl,
+      status: "success",
+      durationMs: amassResult.duration_ms || 0,
+      summary,
+    });
+  };
+
   const runShodanModule = async () => {
     const key = Deno.env.get("SHODAN_API_KEY");
     if (!key || discoveredIps.size === 0) {
@@ -6299,14 +6729,17 @@ export async function runSurfaceScanEnrichment(
             port: portNumber,
             protocol: "tcp",
             cwe: ["CWE-284"],
+            cve: cveHintsForService(PORT_SERVICE[portNumber]?.name ?? ""),
             evidence: {
               ip,
               port: portNumber,
               source: "shodan",
               hostnames: hostnames.slice(0, 10),
+              service_description: PORT_SERVICE[portNumber]?.description,
             },
             remediation: remediationForExposedPort(portNumber),
           });
+          await insertOpenPort(portNumber, hostname || ip, ip, "tcp", "shodan", PORT_SERVICE[portNumber]?.name);
         }
 
         for (const cpe of cpes.slice(0, 20)) {
@@ -6936,14 +7369,17 @@ export async function runSurfaceScanEnrichment(
             port,
             protocol,
             cwe: ["CWE-284"],
+            cve: cveHintsForService(serviceName ?? PORT_SERVICE[port]?.name ?? ""),
             evidence: {
               source: "pentest_tools_port_scanner",
               service: serviceName || null,
               version: serviceVersion || null,
               raw: portData,
+              service_description: PORT_SERVICE[port]?.description,
             },
             remediation: remediationForExposedPort(port),
           });
+          await insertOpenPort(port, associatedHost || hostname || ipAddress || "", ipAddress || "", protocol, "pentest_tools", serviceName, serviceVersion);
 
           if (serviceName || serviceVersion) {
             await insertFinding({
@@ -7526,6 +7962,92 @@ export async function runSurfaceScanEnrichment(
     }
   };
 
+  const runDenoTcpProbeModule = async () => {
+    const targetIps = new Set<string>([
+      ...(job.resolved_ips ?? []),
+      ...Array.from(discoveredIps).filter(v => /^\d{1,3}(\.\d{1,3}){3}$/.test(v)),
+    ].filter(Boolean));
+
+    const portListEnv = Deno.env.get("SURFACESCAN_TCP_PROBE_PORTS");
+    const portsToScan = portListEnv
+      ? portListEnv.split(",").map(Number).filter(n => n > 0 && n < 65536)
+      : TCP_PROBE_PORTS;
+
+    if (targetIps.size === 0) {
+      await insertObservation({
+        module: "deno_tcp_probe",
+        observation_type: "tcp_probe_skipped",
+        title: "TCP probe saltato: nessun IP risolto",
+        value: { reason: "no_ips" },
+        severity: "info",
+      });
+      return;
+    }
+
+    const CONCURRENCY = Number(Deno.env.get("SURFACESCAN_TCP_CONCURRENCY") ?? "10");
+    const TIMEOUT_MS  = Number(Deno.env.get("SURFACESCAN_TCP_TIMEOUT_MS")  ?? "2500");
+    const openResults: Array<{ ip: string; port: number; banner: string }> = [];
+
+    for (const ip of targetIps) {
+      for (let i = 0; i < portsToScan.length; i += CONCURRENCY) {
+        const chunk = portsToScan.slice(i, i + CONCURRENCY);
+        const results = await Promise.allSettled(
+          chunk.map(port => tcpProbe(ip, port, TIMEOUT_MS)),
+        );
+        for (let j = 0; j < chunk.length; j++) {
+          const r = results[j];
+          if (r.status === "fulfilled" && r.value.open) {
+            openResults.push({ ip, port: chunk[j], banner: r.value.banner });
+          }
+        }
+        if (i + CONCURRENCY < portsToScan.length) {
+          await new Promise(res => setTimeout(res, 100));
+        }
+      }
+    }
+
+    for (const { ip, port, banner } of openResults) {
+      const svcInfo = PORT_SERVICE[port];
+      await insertOpenPort(port, ip, ip, "tcp", "deno_tcp_probe", svcInfo?.name, undefined, banner);
+      await insertFinding({
+        provider: "deno_tcp_probe",
+        module: "deno_tcp_probe",
+        finding_type: "open_port_exposed",
+        severity: severityForExposedPort(port),
+        title: `Porta ${port}${svcInfo ? ` (${svcInfo.name})` : ""} esposta`,
+        description: svcInfo
+          ? `${svcInfo.description}. ${svcInfo.risk}.${banner ? ` Banner: ${banner.slice(0, 80)}` : ""}`
+          : `Porta aperta ${port}/tcp.${banner ? ` Banner: ${banner.slice(0, 80)}` : ""}`,
+        affected_asset: job.hostname || ip,
+        ip,
+        port,
+        protocol: "tcp",
+        cwe: ["CWE-284"],
+        cve: cveHintsForService(svcInfo?.name ?? ""),
+        evidence: {
+          source: "deno_tcp_probe",
+          banner: banner || null,
+          service_description: svcInfo?.description,
+          risk_summary: svcInfo?.risk,
+        },
+        remediation: remediationForExposedPort(port),
+      });
+    }
+
+    await insertObservation({
+      module: "deno_tcp_probe",
+      observation_type: "tcp_probe_summary",
+      title: "TCP Port Probe completato",
+      value: {
+        ips_scanned: targetIps.size,
+        ports_checked: portsToScan.length,
+        open_count: openResults.length,
+        open_ports: openResults.map(p => `${p.ip}:${p.port}`),
+      },
+      severity: openResults.length > 0 ? "medium" : "info",
+    });
+  };
+
   const modules: Record<string, ModuleExecutionConfig> = {
     dns: {
       key: "dns",
@@ -7642,6 +8164,19 @@ export async function runSurfaceScanEnrichment(
       timeoutMs: 30000,
       featureFlag: "SURFACESCAN_ENABLE_SUBDOMAINS",
     },
+    amass_discovery: {
+      key: "amass_discovery",
+      label: "Amass Discovery",
+      timeoutMs: Math.max(
+        20000,
+        Math.min(150000, Number(Deno.env.get("SURFACESCAN_AMASS_MODULE_TIMEOUT_MS") || "90000")),
+      ),
+      featureFlag: "SURFACESCAN_ENABLE_AMASS",
+      defaultEnabled: false,
+      retryOnError: true,
+      maxRetries: 1,
+      retryBackoffMs: 1500,
+    },
     shodan: { key: "shodan", label: "Shodan Intel", timeoutMs: 30000 },
     urlscan: { key: "urlscan", label: "URLScan Intel", timeoutMs: 20000 },
     pentest_tools: {
@@ -7650,6 +8185,14 @@ export async function runSurfaceScanEnrichment(
       timeoutMs: 240000,
       featureFlag: "SURFACESCAN_ENABLE_PENTEST_TOOLS",
       defaultEnabled: false,
+    },
+    deno_tcp_probe: {
+      key: "deno_tcp_probe",
+      label: "TCP Port Probe",
+      timeoutMs: 120_000,
+      featureFlag: "SURFACESCAN_ENABLE_TCP_PROBE",
+      defaultEnabled: true,
+      retryOnError: false,
     },
     open_ports: {
       key: "open_ports",
@@ -7671,6 +8214,31 @@ export async function runSurfaceScanEnrichment(
       timeoutMs: 15000,
       featureFlag: "SURFACESCAN_ENABLE_WEBCHECK_MODULES",
     },
+  };
+
+  const runAmassDiscoveryIfEnabled = async () => {
+    const serviceUrl = String(Deno.env.get("SURFACESCAN_AMASS_SERVICE_URL") || "").trim();
+    const sharedSecret = String(Deno.env.get("SURFACESCAN_AMASS_SHARED_SECRET") || "").trim();
+    const gate = resolveAmassDiscoveryGate({
+      featureEnabled: isFeatureEnabled("SURFACESCAN_ENABLE_AMASS", false),
+      serviceUrl,
+      sharedSecret,
+      jobConfig,
+      targetType: parsedTarget.target_type,
+      rootDomain,
+    });
+
+    if (!gate.enabled) {
+      await recordModuleSkipped(modules.amass_discovery, gate.reason || "amass_disabled", {
+        feature_flag: "SURFACESCAN_ENABLE_AMASS",
+        target_type: parsedTarget.target_type,
+        has_service_url: Boolean(serviceUrl),
+        has_shared_secret: Boolean(sharedSecret),
+      });
+      return;
+    }
+
+    await safeRun(modules.amass_discovery, runAmassModule);
   };
 
   const runSafeRecon = async () => {
@@ -7700,6 +8268,7 @@ export async function runSurfaceScanEnrichment(
     if (["domain_exposure", "ip_exposure", "cve_api_validation"].includes(job.scan_profile)) {
       const phase3: Promise<void>[] = [
         safeRun(modules.reverse_dns_and_dumpster, runReverseAndDumpsterModule),
+        runAmassDiscoveryIfEnabled(),
         safeRun(modules.shodan, runShodanModule),
         safeRun(modules.ip_geo_asn, runIpGeoAndAsnModule),
       ];
@@ -7712,6 +8281,7 @@ export async function runSurfaceScanEnrichment(
       // open_ports, CVE intel, SSL/TLS, tech_stack, DNS, HTTP headers, ecc.).
       // void runPentestToolsModule; // legacy non operativo
     }
+    await safeRun(modules.deno_tcp_probe, runDenoTcpProbeModule);
     await safeRun(modules.open_ports, runOpenPortsModule);
     await safeRun(modules.cve_intel, runCveIntelModule);
 

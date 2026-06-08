@@ -110,15 +110,11 @@ const DEFAULT_RECORD_TYPES: DnsRecordType[] = [
 ];
 
 const DEFAULT_DKIM_SELECTORS = [
-  "default",
-  "selector1",
-  "selector2",
-  "google",
-  "k1",
-  "s1",
-  "s2",
-  "mail",
-  "smtp",
+  "default", "selector1", "selector2",
+  "google", "k1", "k2", "s1", "s2",
+  "mail", "dkim", "smtp", "email",
+  "mimecast", "pm", "mailjet",
+  "sendgrid", "amazonses", "mandrill",
 ];
 
 const DNS_TYPE_BY_CODE: Record<number, string> = {

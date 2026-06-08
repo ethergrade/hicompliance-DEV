@@ -22,6 +22,7 @@ interface StartScanRequest {
   ownership_proof?: string;
   force_refresh?: boolean;
   requested_by?: string | null;
+  enable_amass?: boolean;
 }
 
 const MAX_SCANS_PER_USER_PER_HOUR = 200;
@@ -103,6 +104,7 @@ serve(async (req: Request) => {
     const scanProfile = String(body?.scan_profile || DEFAULT_SCAN_PROFILE).trim();
     const authorizationConfirmed = Boolean(body?.authorization_confirmed);
     const forceRefresh = Boolean(body?.force_refresh);
+    const enableAmass = Boolean(body?.enable_amass);
 
     if (!target || !customerId) {
       return new Response(
@@ -377,6 +379,14 @@ serve(async (req: Request) => {
         scan_profile: scanProfile,
         status: "queued",
         authorization_confirmed: true,
+        config: enableAmass
+          ? {
+            amass: {
+              enabled: true,
+              mode: "active_light",
+            },
+          }
+          : null,
       })
       .select("*")
       .single();
@@ -393,6 +403,7 @@ serve(async (req: Request) => {
         target: normalized.normalized_target,
         scan_profile: scanProfile,
         ownership_proof: body.ownership_proof || null,
+        amass_enabled: enableAmass,
       },
     });
 

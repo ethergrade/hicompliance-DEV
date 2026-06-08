@@ -66,6 +66,10 @@ function toTs(value: unknown): number {
   return Number.isFinite(ts) ? ts : 0;
 }
 
+function isProviderAuthError(error: unknown): boolean {
+  return error instanceof PentestToolsApiError && (error.status === 401 || error.status === 403);
+}
+
 function staleRecoveryRawPayload(row: any, reason: string) {
   const currentRaw = row?.raw_output && typeof row.raw_output === 'object' ? row.raw_output : {};
   return {
@@ -257,6 +261,28 @@ export async function startQueuedScansForJob(adminClient: any, scanJobId: string
 
       started += 1;
     } catch (error: any) {
+      if (isProviderAuthError(error)) {
+        const authRetryAt = nextRetryIsoFromMinutes(30);
+        const selectedIds = rows
+          .slice(rows.indexOf(row))
+          .map((selectedRow: any) => String(selectedRow?.id || '').trim())
+          .filter(Boolean);
+
+        if (selectedIds.length > 0) {
+          await adminClient
+            .from('pentest_tools_scans' as any)
+            .update({
+              status: 'retry',
+              next_retry_at: authRetryAt,
+              error_message: `provider_auth_failed:${error.status}`,
+              updated_at: new Date().toISOString(),
+            })
+            .in('id', selectedIds);
+          deferred += selectedIds.length;
+        }
+        break;
+      }
+
       const retryCount = Number(row.retry_count || 0);
       const isApiError = error instanceof PentestToolsApiError;
       const retryAfterSeconds = isApiError ? error.retryAfterSeconds : null;

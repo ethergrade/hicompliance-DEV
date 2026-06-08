@@ -636,6 +636,16 @@ const SecurityFindings: React.FC = () => {
                                                       <Badge variant="outline" className="text-[10px]">
                                                         {sourceFamily(row)}
                                                       </Badge>
+                                                      {(row.finding_type === 'ssl_wildcard_certificate' || row.evidence?.is_wildcard === true) && (
+                                                        <Badge className="text-[10px] bg-amber-500/20 text-amber-400 border-amber-500/30">
+                                                          Wildcard
+                                                        </Badge>
+                                                      )}
+                                                      {(row.occurrence_count ?? 0) > 1 && (
+                                                        <Badge className="text-[10px] bg-orange-500/20 text-orange-400 border-orange-500/30">
+                                                          ×{row.occurrence_count} ricorrente
+                                                        </Badge>
+                                                      )}
                                                     </div>
                                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 mt-2">
                                                       <div className="rounded-md border border-border/60 bg-muted/20 p-2">
@@ -655,6 +665,19 @@ const SecurityFindings: React.FC = () => {
                                                         </div>
                                                       </div>
                                                     </div>
+                                                    {((row.occurrence_count ?? 0) > 1 || row.first_seen_at) && (
+                                                      <div className="text-[10px] text-muted-foreground mt-1.5 flex gap-3 flex-wrap">
+                                                        {row.first_seen_at && (
+                                                          <span>Prima rilevazione: {new Date(row.first_seen_at).toLocaleDateString('it-IT')}</span>
+                                                        )}
+                                                        {row.last_seen_at && row.last_seen_at !== row.first_seen_at && (
+                                                          <span>Ultima: {new Date(row.last_seen_at).toLocaleDateString('it-IT')}</span>
+                                                        )}
+                                                        {(row.occurrence_count ?? 0) > 1 && (
+                                                          <span className="text-orange-400 font-medium">Ricorrente ×{row.occurrence_count}</span>
+                                                        )}
+                                                      </div>
+                                                    )}
                                                   </TableCell>
                                                   <TableCell className="min-w-44">
                                                     {normalizeSubAsset(row, assetGroup.assetLabel)}

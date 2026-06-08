@@ -35,6 +35,9 @@ export interface SurfaceFindingRow {
   attribution_confidence: string | null;
   status: string | null;
   created_at: string;
+  first_seen_at?: string | null;
+  last_seen_at?: string | null;
+  occurrence_count?: number | null;
 }
 
 const ORGANIZATION_SCOPE_REPORT_TITLE = 'SurfaceScan360 Report - Organization Scope';
@@ -228,6 +231,9 @@ export const useSurfaceScanFindings = () => {
       attribution_confidence: record.attribution_confidence ?? null,
       status: record.status ?? null,
       created_at: String(record.created_at || new Date().toISOString()),
+      first_seen_at: record.first_seen_at ?? null,
+      last_seen_at: record.last_seen_at ?? null,
+      occurrence_count: record.occurrence_count ?? null,
     };
   }, []);
 
@@ -279,7 +285,7 @@ export const useSurfaceScanFindings = () => {
         supabase
           .from('surface_findings' as any)
           .select(
-            'id, provider, module, finding_type, title, description, severity, affected_asset, affected_url, ip, port, protocol, cve, cwe, cvss, epss, cisa_kev, remediation, evidence, attribution_confidence, status, created_at',
+            'id, provider, module, finding_type, title, description, severity, affected_asset, affected_url, ip, port, protocol, cve, cwe, cvss, epss, cisa_kev, remediation, evidence, attribution_confidence, status, created_at, first_seen_at, last_seen_at, occurrence_count',
           )
           .or(scopeFilter)
           .order('created_at', { ascending: false })

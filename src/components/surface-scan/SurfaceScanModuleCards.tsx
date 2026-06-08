@@ -173,6 +173,7 @@ const moduleOrder = [
   'quality',
   'threats',
   'dns_blocklists',
+  'amass_discovery',
 ];
 
 const headerRules: Array<{ key: string; label: string; remediation: string }> = [
@@ -412,6 +413,10 @@ const moduleReasonLabel = (reason: string): string => {
   const key = String(reason || '').toLowerCase();
   if (key.includes('missing_google_cloud_api_key')) return 'Prerequisito mancante: GOOGLE_API_KEY per Quality.';
   if (key.includes('feature_flag_disabled')) return 'Modulo disabilitato da feature flag.';
+  if (key.includes('job_toggle_disabled')) return 'Modulo opzionale non selezionato per questa scansione.';
+  if (key.includes('missing_service_url')) return 'Prerequisito mancante: endpoint container Amass non configurato.';
+  if (key.includes('missing_shared_secret')) return 'Prerequisito mancante: secret condiviso Amass non configurato.';
+  if (key.includes('target_not_domain')) return 'Amass applicabile solo a domini, subdomain o URL.';
   if (key.includes('missing_root_domain')) return 'Target senza dominio registrabile: WHOIS applicabile solo a domini.';
   if (key.includes('rdap')) return 'RDAP temporaneamente non disponibile per WHOIS.';
   if (key.includes('server_location_no_ip')) return 'Nessun IP in-scope geolocalizzabile disponibile.';
@@ -1468,6 +1473,9 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                     <div key={`${finding.finding_type}-${index}`} className="rounded-md border border-border/70 p-2 text-sm">
                       <div className="flex items-center gap-2 flex-wrap">
                         <Badge className={severityBadgeClass[finding.severity]}>{finding.severity}</Badge>
+                        {(finding.finding_type === 'ssl_wildcard_certificate' || (finding.evidence as any)?.is_wildcard === true) && (
+                          <Badge className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30">Wildcard</Badge>
+                        )}
                         <span className="font-medium">{finding.title || finding.finding_type || 'Finding'}</span>
                       </div>
                       {targets.length > 0 && (
