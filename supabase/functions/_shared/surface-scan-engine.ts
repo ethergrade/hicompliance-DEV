@@ -988,6 +988,9 @@ export async function runSurfaceScanEnrichment(
 
   const scopeReasonFromIp = (candidateIp: string): "scope_excluded_ip" | null => {
     if (!candidateIp) return null;
+    // If no IP scope rules are configured, IP-based restriction is not active:
+    // IPs resolved from in-scope domains are implicitly allowed.
+    if (ipScopeRules.length === 0) return null;
     return isIpWithinMonitoredScope(candidateIp, ipScopeRules) ? null : "scope_excluded_ip";
   };
 
