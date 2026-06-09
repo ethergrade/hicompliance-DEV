@@ -25,7 +25,7 @@ interface HiLogPdfExportProps {
   dataSets: DataSets;
 }
 
-const LOGO_PATH = '/lovable-uploads/ebc3b9f3-fce3-4df9-a7f9-b0b576887830.png';
+const LOGO_PATH = '/assets/ebc3b9f3-fce3-4df9-a7f9-b0b576887830.png';
 
 const SECTIONS = [
   { key: 'windowsLogs', label: 'Windows Logs' },

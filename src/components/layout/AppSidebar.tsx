@@ -223,7 +223,7 @@ export const AppSidebar: React.FC = () => {
       <SidebarHeader className="p-4 border-b border-sidebar-border">
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 rounded-lg overflow-hidden">
-            <img src="/lovable-uploads/ebc3b9f3-fce3-4df9-a7f9-b0b576887830.png" alt={`${platformName} Logo`} className="w-full h-full object-cover" />
+            <img src="/assets/ebc3b9f3-fce3-4df9-a7f9-b0b576887830.png" alt={`${platformName} Logo`} className="w-full h-full object-cover" />
           </div>
           {!collapsed && (
             <div>

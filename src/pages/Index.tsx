@@ -90,7 +90,7 @@ const Index = () => {
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-lg overflow-hidden">
-              <img src="/lovable-uploads/ebc3b9f3-fce3-4df9-a7f9-b0b576887830.png" alt="HiConsole Logo" className="w-full h-full object-cover" />
+              <img src="/assets/ebc3b9f3-fce3-4df9-a7f9-b0b576887830.png" alt="HiConsole Logo" className="w-full h-full object-cover" />
             </div>
             <div>
               <h1 className="text-2xl font-bold bg-gradient-cyber bg-clip-text text-transparent">
@@ -252,7 +252,7 @@ const Index = () => {
           <div className="flex flex-col md:flex-row items-center justify-between">
             <div className="flex items-center space-x-3 mb-4 md:mb-0">
               <div className="w-8 h-8 rounded-lg overflow-hidden">
-                <img src="/lovable-uploads/ebc3b9f3-fce3-4df9-a7f9-b0b576887830.png" alt="HiConsole Logo" className="w-full h-full object-cover" />
+                <img src="/assets/ebc3b9f3-fce3-4df9-a7f9-b0b576887830.png" alt="HiConsole Logo" className="w-full h-full object-cover" />
               </div>
               <span className="text-lg font-semibold">HiConsole</span>
             </div>

@@ -34,7 +34,7 @@ import { CorrelationSection } from './hilog/CorrelationSection';
 import { AdvancedFilter, createEmptyFilter, evalAdvancedFilter } from './hilog/filterEngine';
 
 const STORAGE_KEY = 'hilog_query_builder_state';
-const HISO_LOGO_PATH = '/lovable-uploads/ebc3b9f3-fce3-4df9-a7f9-b0b576887830.png';
+const HISO_LOGO_PATH = '/assets/ebc3b9f3-fce3-4df9-a7f9-b0b576887830.png';
 
 interface AdvisoryRunbook {
   id: string;
