@@ -39,7 +39,7 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const { toast } = useToast();
-  const { organizationId: clientOrgId, isLoading: clientLoading } = useClientOrganization();
+  const { organizationId: clientOrgId, groupId, isLoading: clientLoading } = useClientOrganization();
 
   const fetchSuppliers = useCallback(async () => {
     if (clientLoading || !clientOrgId) return;
@@ -47,7 +47,7 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
     setLoading(true);
     try {
       // Fetch critical infrastructure assets via API for linked-asset labels
-      const assets = await criticalInfrastructureApi.list(clientOrgId);
+      const assets = await criticalInfrastructureApi.list(clientOrgId, groupId);
 
       const options: SupplierAssetOption[] = assets.map((asset) => ({
         id: asset.id,

@@ -148,7 +148,7 @@ const Documents: React.FC = () => {
         confidentiality: uploadForm.confidentiality,
         description: uploadForm.description,
         tags: uploadForm.tags,
-      }, groupId, groupId);
+      }, groupId);
 
       toast({ title: "Successo", description: "Documento caricato con successo" });
       setSelectedFile(null);
@@ -214,7 +214,7 @@ const Documents: React.FC = () => {
         category: metadata.category,
         description: metadata.description,
         tags: metadata.tags,
-      }, groupId, groupId);
+      }, groupId);
 
       toast({ title: "Successo", description: "Metadata aggiornati" });
       fetchDocuments();

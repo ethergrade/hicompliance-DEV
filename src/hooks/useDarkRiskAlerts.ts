@@ -100,7 +100,7 @@ export function useDarkRiskAlerts() {
       await darkRiskAlertsApi.create(organizationId, {
         alert_email: data.alert_email,
         alert_types: alertTypesToStrings(data.alert_types),
-      }, groupId, groupId);
+      }, groupId);
       toast({
         title: 'Alert creato',
         description: "L'alert è stato configurato con successo",
@@ -127,7 +127,7 @@ export function useDarkRiskAlerts() {
       await darkRiskAlertsApi.update(organizationId, id, {
         alert_email: data.alert_email,
         alert_types: alertTypesToStrings(data.alert_types),
-      }, groupId, groupId);
+      }, groupId);
       toast({
         title: 'Alert aggiornato',
         description: 'Le modifiche sono state salvate',

@@ -138,7 +138,7 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
         email: exampleContact.email,
         responsibilities: exampleContact.responsibilities,
         category: 'governance',
-      }, groupId, groupId);
+      }, groupId);
 
       toast({
         title: "Successo",
@@ -173,7 +173,7 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
           email: contact.email,
           responsibilities: contact.responsibilities,
           category: 'governance',
-        }, groupId, groupId);
+        }, groupId);
       }
 
       toast({

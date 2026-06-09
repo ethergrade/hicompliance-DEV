@@ -23,7 +23,7 @@ export const useDocumentSave = () => {
       await documentsApi.createWithFile(organizationId, blob, fileName, {
         name: fileName,
         category,
-      }, groupId, groupId);
+      }, groupId);
 
       return true;
     } catch (error) {

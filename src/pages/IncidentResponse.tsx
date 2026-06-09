@@ -264,7 +264,7 @@ const IncidentResponse: React.FC = () => {
   const fetchEmergencyContacts = async () => {
     if (!organizationId) { setLoading(false); return; }
     try {
-      const data = await irpApi.emergencyContacts(organizationId);
+      const data = await irpApi.emergencyContacts(organizationId, groupId);
       setEmergencyContacts((data || []).map(c => ({
         id: c.id,
         name: c.name,
@@ -296,7 +296,7 @@ const IncidentResponse: React.FC = () => {
   const handleDeleteContact = async (contactId: string) => {
     if (!organizationId) return;
     try {
-      await irpApi.deleteEmergencyContact(organizationId, contactId);
+      await irpApi.deleteEmergencyContact(organizationId, contactId, groupId);
 
       toast({
         title: "Successo",

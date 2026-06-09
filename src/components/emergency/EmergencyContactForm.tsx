@@ -48,7 +48,7 @@ export const EmergencyContactForm: React.FC<EmergencyContactFormProps> = ({ onCo
         phone: formData.phone,
         email: formData.email,
         category: finalCategory || undefined,
-      }, groupId, groupId);
+      }, groupId);
 
       toast.success('Contatto di emergenza aggiunto con successo');
 

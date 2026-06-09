@@ -56,7 +56,7 @@ const statusProgress = (status: string): number => {
 };
 
 const ExposurePortsPage: React.FC = () => {
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
 
   const [loading, setLoading] = useState(false);
   const [startingScan, setStartingScan] = useState(false);
