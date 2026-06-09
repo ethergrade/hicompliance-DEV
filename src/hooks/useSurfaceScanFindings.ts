@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { useCallback, useEffect, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { surfaceScan360Api, type SurfaceScanJob } from '@/lib/api/surface-scan360';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -10,7 +11,9 @@ import {
   splitMonitoredScopeRules,
   type SurfaceMonitoredScopeRule,
 } from '@/lib/surfaceScopeGuard';
-import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+
+// TODO: migrate scope rules to backend API when surface_scan_monitored_ips endpoint is available
+import { supabase } from '@/integrations/supabase/client';
 
 export interface SurfaceFindingRow {
   id: string;
@@ -37,19 +40,6 @@ export interface SurfaceFindingRow {
   created_at: string;
 }
 
-const ORGANIZATION_SCOPE_REPORT_TITLE = 'SurfaceScan360 Report - Organization Scope';
-
-const isOrganizationScopeReport = (row: Record<string, any> | null): boolean => {
-  const title = String(row?.title || '').trim();
-  const payloadScope = String(row?.payload?.scan?.scope_mode || '').trim().toLowerCase();
-  const repositoryMode = String(row?.payload?.report_repository?.mode || '').trim().toLowerCase();
-  return (
-    title === ORGANIZATION_SCOPE_REPORT_TITLE
-    || payloadScope === 'organization_scope'
-    || repositoryMode === 'organization_scope_canonical'
-  );
-};
-
 const normalizeAssetKey = (value: unknown): string => {
   const raw = String(value || '').trim().toLowerCase();
   if (!raw) return '';
@@ -58,7 +48,7 @@ const normalizeAssetKey = (value: unknown): string => {
     try {
       return new URL(raw).hostname.toLowerCase();
     } catch {
-      // fallback sotto
+      // fallback
     }
   }
   return raw
@@ -196,188 +186,223 @@ const buildSyntheticCveRowsFromReport = (
   return out;
 };
 
+/**
+ * Map a raw finding object from the backend API into our SurfaceFindingRow interface.
+ */
+const mapApiFinding = (record: Record<string, any> | null): SurfaceFindingRow | null => {
+  if (!record || !record.id) return null;
+  return {
+    id: String(record.id),
+    provider: record.provider ?? null,
+    module: record.module ?? null,
+    finding_type: String(record.finding_type || ''),
+    title: String(record.title || ''),
+    description: record.description ?? null,
+    severity: (record.severity || 'info') as SurfaceFindingRow['severity'],
+    affected_asset: record.affected_asset ?? null,
+    affected_url: record.affected_url ?? null,
+    ip: record.ip ? String(record.ip) : null,
+    port: record.port ?? null,
+    protocol: record.protocol ?? null,
+    cve: Array.isArray(record.cve) ? record.cve : null,
+    cwe: Array.isArray(record.cwe) ? record.cwe : null,
+    cvss: record.cvss ?? null,
+    epss: record.epss ?? null,
+    cisa_kev: record.cisa_kev ?? null,
+    remediation: record.remediation ?? null,
+    evidence: record.evidence && typeof record.evidence === 'object' ? (record.evidence as Record<string, any>) : null,
+    attribution_confidence: record.attribution_confidence ?? null,
+    status: record.status ?? null,
+    created_at: String(record.created_at || new Date().toISOString()),
+  };
+};
+
+const extractHostFromRow = (row: SurfaceFindingRow): string => {
+  const urlCandidate = String(row.affected_url || '').trim();
+  if (urlCandidate) {
+    try {
+      return new URL(urlCandidate).hostname.toLowerCase();
+    } catch {
+      return '';
+    }
+  }
+  const asset = String(row.affected_asset || '').trim().toLowerCase();
+  if (!asset || isIpv4(asset) || isIpv6(asset)) return '';
+  return asset
+    .replace(/^https?:\/\//, '')
+    .replace(/\/.*$/, '')
+    .replace(/\.$/, '');
+};
+
+const shouldHideFindingByScope = (
+  row: SurfaceFindingRow,
+  monitoredRules: SurfaceMonitoredScopeRule[],
+): boolean => {
+  const backendExcluded = Boolean(row?.evidence?._scope_excluded);
+  if (backendExcluded) return true;
+
+  const { scopeDomains, ipScopeRules } = splitMonitoredScopeRules(monitoredRules);
+  const ipCandidate = String(row.ip || row.evidence?.ip || '').trim().toLowerCase();
+  if (ipCandidate && (isIpv4(ipCandidate) || isIpv6(ipCandidate))) {
+    if (!isIpWithinScopeRules(ipCandidate, ipScopeRules)) return true;
+  }
+
+  const hostCandidate = extractHostFromRow(row);
+  if (hostCandidate) {
+    const classification = classifySurfaceHostForScope(hostCandidate, scopeDomains);
+    if (classification.blocked) return true;
+  }
+  return false;
+};
+
 export const useSurfaceScanFindings = () => {
-  const [findings, setFindings] = useState<SurfaceFindingRow[]>([]);
-  const [scopeRules, setScopeRules] = useState<SurfaceMonitoredScopeRule[]>([]);
-  const [loading, setLoading] = useState(false);
-  const { organizationId, isLoading: clientLoading } = useClientOrganization();
+  const { organizationId, isLoading: clientLoading, groupId } = useClientOrganization();
   const { toast } = useToast();
 
-  const mapRecord = useCallback((record: Record<string, any> | null): SurfaceFindingRow | null => {
-    if (!record || !record.id) return null;
-    return {
-      id: String(record.id),
-      provider: record.provider ?? null,
-      module: record.module ?? null,
-      finding_type: String(record.finding_type || ''),
-      title: String(record.title || ''),
-      description: record.description ?? null,
-      severity: (record.severity || 'info') as SurfaceFindingRow['severity'],
-      affected_asset: record.affected_asset ?? null,
-      affected_url: record.affected_url ?? null,
-      ip: record.ip ? String(record.ip) : null,
-      port: record.port ?? null,
-      protocol: record.protocol ?? null,
-      cve: Array.isArray(record.cve) ? record.cve : null,
-      cwe: Array.isArray(record.cwe) ? record.cwe : null,
-      cvss: record.cvss ?? null,
-      epss: record.epss ?? null,
-      cisa_kev: record.cisa_kev ?? null,
-      remediation: record.remediation ?? null,
-      evidence: record.evidence && typeof record.evidence === 'object' ? (record.evidence as Record<string, any>) : null,
-      attribution_confidence: record.attribution_confidence ?? null,
-      status: record.status ?? null,
-      created_at: String(record.created_at || new Date().toISOString()),
-    };
-  }, []);
+  // Step 1: Fetch jobs to identify completed ones
+  const jobsQuery = useQuery({
+    queryKey: ['surface-scan-findings-jobs', organizationId, groupId],
+    queryFn: async () => {
+      if (!organizationId) return [] as SurfaceScanJob[];
+      const result = await surfaceScan360Api.listJobs(organizationId, { page: 1 }, groupId);
+      return (result || []);
+    },
+    enabled: !!organizationId && !clientLoading,
+    refetchInterval: 30_000, // polling replaces Realtime
+    staleTime: 15_000,
+  });
 
-  const extractHostFromRow = (row: SurfaceFindingRow): string => {
-    const urlCandidate = String(row.affected_url || '').trim();
-    if (urlCandidate) {
-      try {
-        return new URL(urlCandidate).hostname.toLowerCase();
-      } catch {
-        return '';
-      }
+  const completedJobs = useMemo(() => {
+    return (jobsQuery.data || [])
+      .filter((j) => j.status === 'completed')
+      .slice(0, 10); // Limit to 10 most recent completed jobs
+  }, [jobsQuery.data]);
+
+  // Step 2: Fetch findings for each completed job
+  const findingsQueries = useMemo(() => {
+    return completedJobs.map((job) => ({
+      queryKey: ['surface-scan-job-findings', organizationId, job.id, groupId],
+      queryFn: async () => {
+        if (!organizationId || !job.id) return [] as any[];
+        return surfaceScan360Api.getJobFindings(
+          organizationId,
+          job.id,
+          { page: 1 },
+          groupId,
+        );
+      },
+    }));
+  }, [completedJobs, organizationId, groupId]);
+
+  // Execute all findings queries (we use a combined effect rather than individual useQuery per job)
+  const [allApiFindings, setAllApiFindings] = useState<SurfaceFindingRow[]>([]);
+  const [findingsLoading, setFindingsLoading] = useState(false);
+
+  const fetchAllFindings = useCallback(async () => {
+    if (!organizationId || completedJobs.length === 0) {
+      setAllApiFindings([]);
+      return;
     }
-    const asset = String(row.affected_asset || '').trim().toLowerCase();
-    if (!asset || isIpv4(asset) || isIpv6(asset)) return '';
-    return asset
-      .replace(/^https?:\/\//, '')
-      .replace(/\/.*$/, '')
-      .replace(/\.$/, '');
-  };
-
-  const shouldHideFindingByScope = (
-    row: SurfaceFindingRow,
-    monitoredRules: SurfaceMonitoredScopeRule[],
-  ): boolean => {
-    const backendExcluded = Boolean(row?.evidence?._scope_excluded);
-    if (backendExcluded) return true;
-
-    const { scopeDomains, ipScopeRules } = splitMonitoredScopeRules(monitoredRules);
-    const ipCandidate = String(row.ip || row.evidence?.ip || '').trim().toLowerCase();
-    if (ipCandidate && (isIpv4(ipCandidate) || isIpv6(ipCandidate))) {
-      if (!isIpWithinScopeRules(ipCandidate, ipScopeRules)) return true;
-    }
-
-    const hostCandidate = extractHostFromRow(row);
-    if (hostCandidate) {
-      const classification = classifySurfaceHostForScope(hostCandidate, scopeDomains);
-      if (classification.blocked) return true;
-    }
-    return false;
-  };
-
-  const fetchFindings = useCallback(async (options?: { background?: boolean }) => {
-    if (clientLoading || !organizationId) return;
-    const background = Boolean(options?.background);
-    if (!background) setLoading(true);
+    setFindingsLoading(true);
     try {
-      const scopeFilter = `customer_id.eq.${organizationId},organization_id.eq.${organizationId}`;
-      const [findingsRes, scopeRulesRes, reportRes] = await Promise.all([
-        supabase
-          .from('surface_findings' as any)
-          .select(
-            'id, provider, module, finding_type, title, description, severity, affected_asset, affected_url, ip, port, protocol, cve, cwe, cvss, epss, cisa_kev, remediation, evidence, attribution_confidence, status, created_at',
-          )
-          .or(scopeFilter)
-          .order('created_at', { ascending: false })
-          .limit(1000),
-        supabase
-          .from('surface_scan_monitored_ips' as any)
-          .select('entry_type, input_value, ip_start, ip_end')
-          .eq('organization_id', organizationId),
-        supabase
-          .from('surface_scan_ai_reports' as any)
-          .select('id, title, payload, created_at')
-          .eq('organization_id', organizationId)
-          .order('created_at', { ascending: false })
-          .limit(20),
-      ]);
-
-      if (findingsRes.error) throw findingsRes.error;
-      if (scopeRulesRes.error) throw scopeRulesRes.error;
-      if (reportRes.error) throw reportRes.error;
-
-      const rules = (scopeRulesRes.data || []) as SurfaceMonitoredScopeRule[];
-      setScopeRules(rules);
-
-      const normalizedRows = ((findingsRes.data || []) as Record<string, any>[])
-        .map((record) => mapRecord(record))
-        .filter((record): record is SurfaceFindingRow => Boolean(record));
-
-      const reportRows = (reportRes.data || []) as Record<string, any>[];
-      const canonicalRows = reportRows.filter((row) => isOrganizationScopeReport(row));
-      const selectedReport = canonicalRows[0] || reportRows[0] || null;
-      const syntheticCveRows = buildSyntheticCveRowsFromReport(selectedReport, normalizedRows);
-      const mergedRows = [...normalizedRows, ...syntheticCveRows];
-
-      setFindings(
-        mergedRows
-          .filter((row) => !['resolved', 'suppressed', 'false_positive', 'accepted_risk'].includes(String(row.status || '').toLowerCase()))
-          .filter((row) => !shouldHideFindingByScope(row, rules)),
+      const results = await Promise.allSettled(
+        completedJobs.map((job) =>
+          surfaceScan360Api.getJobFindings(organizationId, job.id, { page: 1 }, groupId),
+        ),
       );
+      const allRows: SurfaceFindingRow[] = [];
+      for (const result of results) {
+        if (result.status === 'fulfilled' && Array.isArray(result.value)) {
+          for (const raw of result.value) {
+            const mapped = mapApiFinding(raw);
+            if (mapped) allRows.push(mapped);
+          }
+        }
+      }
+      // Deduplicate by id
+      const seen = new Set<string>();
+      const unique = allRows.filter((row) => {
+        if (seen.has(row.id)) return false;
+        seen.add(row.id);
+        return true;
+      });
+      setAllApiFindings(unique);
     } catch (error) {
       console.error('Error fetching surface findings:', error);
-      if (!background) {
-        toast({
-          title: 'Errore',
-          description: 'Impossibile caricare i security findings',
-          variant: 'destructive',
-        });
-      }
     } finally {
-      if (!background) setLoading(false);
+      setFindingsLoading(false);
     }
-  }, [clientLoading, organizationId, mapRecord, toast]);
+  }, [organizationId, completedJobs, groupId]);
 
   useEffect(() => {
-    if (!clientLoading && organizationId) {
-      fetchFindings();
-    }
-  }, [clientLoading, organizationId, fetchFindings]);
+    fetchAllFindings();
+    // Set up polling for findings
+    const interval = setInterval(() => { fetchAllFindings(); }, 30_000);
+    return () => clearInterval(interval);
+  }, [fetchAllFindings]);
 
-  useEffect(() => {
+  // Step 3: Fetch AI reports for synthetic CVE rows
+  const aiReportsQuery = useQuery({
+    queryKey: ['surface-scan-findings-ai-reports', organizationId, groupId],
+    queryFn: async () => {
+      if (!organizationId) return [] as any[];
+      return surfaceScan360Api.listAiReports(organizationId, { page: 1 }, groupId);
+    },
+    enabled: !!organizationId && !clientLoading,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+
+  // TODO: migrate scope rules to backend API when surface_scan_monitored_ips endpoint is available
+  const [scopeRules, setScopeRules] = useState<SurfaceMonitoredScopeRule[]>([]);
+  const fetchScopeRules = async () => {
     if (!organizationId) return;
+    try {
+      const { data: scopeRows, error: scopeErr } = await supabase
+        .from('surface_scan_monitored_ips' as any)
+        .select('entry_type, input_value, ip_start, ip_end')
+        .eq('organization_id', organizationId);
+      if (!scopeErr) {
+        setScopeRules((scopeRows || []) as SurfaceMonitoredScopeRule[]);
+      }
+    } catch {
+      // silent
+    }
+  };
 
-    const channelByCustomer = supabase
-      .channel(`surface-findings-${organizationId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'surface_findings',
-          filter: `customer_id=eq.${organizationId}`,
-        },
-        (_payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
-          void fetchFindings({ background: true });
-        },
-      )
-      .subscribe();
+  useEffect(() => {
+    if (organizationId) fetchScopeRules();
+  }, [organizationId]);
 
-    const channelByOrganization = supabase
-      .channel(`surface-findings-org-${organizationId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'surface_findings',
-          filter: `organization_id=eq.${organizationId}`,
-        },
-        (_payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
-          void fetchFindings({ background: true });
-        },
-      )
-      .subscribe();
+  // Step 4: Merge API findings with synthetic CVE rows from AI reports
+  const findings = useMemo(() => {
+    const apiFindings = [...allApiFindings];
 
-    return () => {
-      supabase.removeChannel(channelByCustomer);
-      supabase.removeChannel(channelByOrganization);
+    // Build synthetic CVE rows from AI reports
+    const reportRows = (aiReportsQuery.data || []) as Record<string, any>[];
+    const ORGANIZATION_SCOPE_REPORT_TITLE = 'SurfaceScan360 Report - Organization Scope';
+    const isOrganizationScopeReport = (row: Record<string, any> | null): boolean => {
+      const title = String(row?.title || '').trim();
+      const payloadScope = String(row?.payload?.scan?.scope_mode || '').trim().toLowerCase();
+      const repositoryMode = String(row?.payload?.report_repository?.mode || '').trim().toLowerCase();
+      return (
+        title === ORGANIZATION_SCOPE_REPORT_TITLE
+        || payloadScope === 'organization_scope'
+        || repositoryMode === 'organization_scope_canonical'
+      );
     };
-  }, [organizationId, fetchFindings]);
+
+    const canonicalRows = reportRows.filter((row) => isOrganizationScopeReport(row));
+    const selectedReport = canonicalRows[0] || reportRows[0] || null;
+    const syntheticCveRows = buildSyntheticCveRowsFromReport(selectedReport, apiFindings);
+    const mergedRows = [...apiFindings, ...syntheticCveRows];
+
+    return mergedRows
+      .filter((row) => !['resolved', 'suppressed', 'false_positive', 'accepted_risk'].includes(String(row.status || '').toLowerCase()))
+      .filter((row) => !shouldHideFindingByScope(row, scopeRules));
+  }, [allApiFindings, aiReportsQuery.data, scopeRules]);
+
+  const loading = jobsQuery.isLoading || findingsLoading || aiReportsQuery.isLoading;
 
   const counts = useMemo(() => {
     const bySeverity = findings.reduce(
@@ -398,11 +423,18 @@ export const useSurfaceScanFindings = () => {
     };
   }, [findings]);
 
+  const refetch = useCallback(async () => {
+    await jobsQuery.refetch();
+    await fetchAllFindings();
+    await aiReportsQuery.refetch();
+    await fetchScopeRules();
+  }, [jobsQuery, aiReportsQuery]);
+
   return {
     findings,
     loading,
     counts,
     scopeRules,
-    refetch: fetchFindings,
+    refetch,
   };
 };

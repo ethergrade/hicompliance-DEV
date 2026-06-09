@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { useCallback, useEffect, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { surfaceScan360Api, type SurfaceScanJob } from '@/lib/api/surface-scan360';
 import { useToast } from '@/hooks/use-toast';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useUserRoles } from '@/hooks/useUserRoles';
-import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 export type SurfaceScanJobStatus = 'pending' | 'queued' | 'running' | 'completed' | 'failed';
 export type SurfaceScanProfile =
@@ -15,24 +15,8 @@ export type SurfaceScanProfile =
 
 const DEFAULT_SCAN_PROFILE: SurfaceScanProfile = 'domain_exposure';
 
-export interface SurfaceScanJob {
-  id: string;
-  raw_target: string;
-  normalized_target: string;
-  target_type: string;
-  hostname: string | null;
-  root_domain: string | null;
-  resolved_ips: string[] | null;
-  scan_profile: SurfaceScanProfile;
-  status: SurfaceScanJobStatus;
-  hosting_context: string | null;
-  shodan_status: string | null;
-  created_at: string;
-  started_at: string | null;
-  completed_at: string | null;
-  error_message: string | null;
-  summary?: Record<string, any> | null;
-}
+// Re-export for backward compatibility
+export type { SurfaceScanJob };
 
 interface StartScanInput {
   target: string;
@@ -48,99 +32,80 @@ interface StartScanQueueInput {
   ownership_proof?: string;
 }
 
-export const useSurfaceScanEngine = () => {
-  const [jobs, setJobs] = useState<SurfaceScanJob[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [startingScan, setStartingScan] = useState(false);
+const mapApiJobToLocal = (job: any): SurfaceScanJob => ({
+  id: job.id,
+  raw_target: job.raw_target || job.normalized_target || '',
+  normalized_target: job.normalized_target || '',
+  target_type: job.target_type || 'domain',
+  hostname: job.hostname ?? null,
+  root_domain: job.root_domain ?? null,
+  resolved_ips: job.resolved_ips ?? null,
+  scan_profile: job.scan_profile || DEFAULT_SCAN_PROFILE,
+  status: (job.status || 'pending') as SurfaceScanJobStatus,
+  hosting_context: job.hosting_context ?? null,
+  shodan_status: job.shodan_status ?? null,
+  created_at: job.created_at || new Date().toISOString(),
+  started_at: job.started_at ?? null,
+  completed_at: job.completed_at ?? null,
+  error_message: job.error_message ?? null,
+  summary: job.summary ?? null,
+});
 
+const mapScanProfile = (profile?: SurfaceScanProfile): 'standard' | 'full' => {
+  if (!profile) return 'standard';
+  if (profile === 'cve_api_validation' || profile === 'safe_recon') return 'full';
+  return profile === 'domain_exposure' ? 'standard' : 'full';
+};
+
+export const useSurfaceScanEngine = () => {
   const { toast } = useToast();
-  const { organizationId, isLoading: clientLoading } = useClientOrganization();
+  const { organizationId, isLoading: clientLoading, groupId } = useClientOrganization();
   const { userProfile } = useAuth();
   const { isSuperAdmin } = useUserRoles();
+  const qc = useQueryClient();
 
   const isAdmin = userProfile?.user_type === 'admin' || isSuperAdmin;
 
-  const fetchJobs = useCallback(async (options?: { background?: boolean }) => {
-    if (clientLoading || !organizationId) return;
+  const listQuery = useQuery({
+    queryKey: ['surface-scan-engine-jobs', organizationId, groupId],
+    queryFn: async () => {
+      if (!organizationId) return [] as SurfaceScanJob[];
+      const result = await surfaceScan360Api.listJobs(
+        organizationId,
+        { page: 1 },
+        groupId,
+      );
+      return (result || []).map(mapApiJobToLocal).slice(0, 25);
+    },
+    enabled: !!organizationId && !clientLoading,
+    refetchInterval: 15_000, // polling replaces Realtime — scan engine status tracker
+    staleTime: 10_000,
+  });
 
-    const background = Boolean(options?.background);
-    if (!background) {
-      setLoading(true);
-    }
-    try {
-      const scopeFilter = `customer_id.eq.${organizationId},organization_id.eq.${organizationId}`;
-      const { data, error } = await supabase
-        .from('surface_scan_jobs' as any)
-        .select(
-          'id, raw_target, normalized_target, target_type, hostname, root_domain, resolved_ips, scan_profile, status, hosting_context, shodan_status, created_at, started_at, completed_at, error_message, summary',
-        )
-        .or(scopeFilter)
-        .order('created_at', { ascending: false })
-        .limit(25);
+  const jobs = listQuery.data ?? [];
+  const loading = listQuery.isLoading;
+  const fetchJobs = useCallback(
+    async (_options?: { background?: boolean }) => {
+      await listQuery.refetch();
+    },
+    [listQuery],
+  );
 
-      if (error) throw error;
-      setJobs((data || []) as SurfaceScanJob[]);
-    } catch (error) {
-      console.error('Error fetching surface scan jobs:', error);
-      if (!background) {
-        toast({
-          title: 'Errore',
-          description: 'Impossibile caricare lo stato delle scansioni',
-          variant: 'destructive',
-        });
-      }
-    } finally {
-      if (!background) {
-        setLoading(false);
-      }
-    }
-  }, [clientLoading, organizationId, toast]);
-
-  useEffect(() => {
-    if (!clientLoading && organizationId) {
-      fetchJobs();
-    }
-  }, [clientLoading, organizationId, fetchJobs]);
-
-  useEffect(() => {
-    if (!organizationId) return;
-    const customerChannel = supabase
-      .channel(`surface-scan-jobs-${organizationId}`)
-      .on(
-        'postgres_changes',
+  const startScanMut = useMutation({
+    mutationFn: async (input: StartScanInput) => {
+      if (!organizationId) throw new Error('Nessun cliente selezionato');
+      if (!isAdmin) throw new Error('Solo gli admin possono avviare scansioni');
+      const result = await surfaceScan360Api.createJob(
+        organizationId,
         {
-          event: '*',
-          schema: 'public',
-          table: 'surface_scan_jobs',
-          filter: `customer_id=eq.${organizationId}`,
+          target: input.target,
+          scan_profile: mapScanProfile(input.scan_profile),
         },
-        (_payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
-          void fetchJobs({ background: true });
-        },
-      )
-      .subscribe();
-
-    const orgChannel = supabase
-      .channel(`surface-scan-jobs-org-${organizationId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'surface_scan_jobs',
-          filter: `organization_id=eq.${organizationId}`,
-        },
-        (_payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
-          void fetchJobs({ background: true });
-        },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(customerChannel);
-      supabase.removeChannel(orgChannel);
-    };
-  }, [organizationId, fetchJobs]);
+        groupId,
+      );
+      return result;
+    },
+  });
 
   const startScan = useCallback(
     async (input: StartScanInput): Promise<{ job_id?: string; status?: string }> => {
@@ -156,33 +121,20 @@ export const useSurfaceScanEngine = () => {
       if (!isAdmin) {
         toast({
           title: 'Operazione non consentita',
-          description: 'Solo gli admin possono avviare scansioni in v1',
+          description: 'Solo gli admin possono avviare scansioni',
           variant: 'destructive',
         });
         return {};
       }
 
-      setStartingScan(true);
       try {
-        const { data, error } = await supabase.functions.invoke('surfacescan360-start-scan', {
-          body: {
-            target: input.target,
-            customer_id: organizationId,
-            scan_profile: input.scan_profile,
-            authorization_confirmed: input.authorization_confirmed,
-            ownership_proof: input.ownership_proof || null,
-          },
-        });
-
-        if (error) throw error;
-        if (data?.error) throw new Error(data.error);
-
+        const result = await startScanMut.mutateAsync(input);
         toast({
           title: 'Scansione avviata',
-          description: `Job ${data?.job_id || ''} - stato: ${data?.status || 'queued'}`,
+          description: `Job ${result?.id || ''} - stato: ${result?.status || 'queued'}`,
         });
-        await fetchJobs();
-        return data || {};
+        qc.invalidateQueries({ queryKey: ['surface-scan-engine-jobs', organizationId, groupId] });
+        return { job_id: result?.id, status: result?.status };
       } catch (error: any) {
         console.error('Error starting surface scan:', error);
         toast({
@@ -191,11 +143,9 @@ export const useSurfaceScanEngine = () => {
           variant: 'destructive',
         });
         return {};
-      } finally {
-        setStartingScan(false);
       }
     },
-    [organizationId, isAdmin, fetchJobs, toast],
+    [organizationId, isAdmin, startScanMut, toast, qc, groupId],
   );
 
   const startScanQueue = useCallback(
@@ -212,7 +162,7 @@ export const useSurfaceScanEngine = () => {
       if (!isAdmin) {
         toast({
           title: 'Operazione non consentita',
-          description: 'Solo gli admin possono avviare scansioni in v1',
+          description: 'Solo gli admin possono avviare scansioni',
           variant: 'destructive',
         });
         return { queued: 0, failed: 0 };
@@ -247,57 +197,42 @@ export const useSurfaceScanEngine = () => {
         });
       }
 
-      setStartingScan(true);
       let queued = 0;
       let failed = 0;
 
-      try {
-        for (const pair of pairsToQueue) {
-          const { data, error } = await supabase.functions.invoke('surfacescan360-start-scan', {
-            body: {
+      for (const pair of pairsToQueue) {
+        try {
+          await surfaceScan360Api.createJob(
+            organizationId,
+            {
               target: pair.target,
-              customer_id: organizationId,
-              scan_profile: pair.profile,
-              authorization_confirmed: input.authorization_confirmed,
-              ownership_proof: input.ownership_proof || null,
+              scan_profile: mapScanProfile(pair.profile),
             },
-          });
-
-          if (error || data?.error) {
-            failed += 1;
-            continue;
-          }
-
+            groupId,
+          );
           queued += 1;
+        } catch {
+          failed += 1;
         }
-
-        if (queued > 0) {
-          toast({
-            title: 'Coda scansioni creata',
-            description: `${queued} job in coda${failed > 0 ? `, ${failed} non avviati` : ''}`,
-          });
-        } else {
-          toast({
-            title: 'Nessun job accodato',
-            description: 'Controlla autorizzazione, limiti o input target',
-            variant: 'destructive',
-          });
-        }
-      } catch (error: any) {
-        console.error('Error queueing surface scans:', error);
-        toast({
-          title: 'Errore coda scansioni',
-          description: error?.message || 'Impossibile creare la coda',
-          variant: 'destructive',
-        });
-      } finally {
-        setStartingScan(false);
-        await fetchJobs();
       }
 
+      if (queued > 0) {
+        toast({
+          title: 'Coda scansioni creata',
+          description: `${queued} job in coda${failed > 0 ? `, ${failed} non avviati` : ''}`,
+        });
+      } else {
+        toast({
+          title: 'Nessun job accodato',
+          description: 'Controlla autorizzazione, limiti o input target',
+          variant: 'destructive',
+        });
+      }
+
+      qc.invalidateQueries({ queryKey: ['surface-scan-engine-jobs', organizationId, groupId] });
       return { queued, failed };
     },
-    [organizationId, isAdmin, fetchJobs, toast],
+    [organizationId, isAdmin, toast, qc, groupId],
   );
 
   const activeJobsCount = useMemo(
@@ -308,7 +243,7 @@ export const useSurfaceScanEngine = () => {
   return {
     jobs,
     loading,
-    startingScan,
+    startingScan: startScanMut.isPending,
     isAdmin,
     activeJobsCount,
     startScan,

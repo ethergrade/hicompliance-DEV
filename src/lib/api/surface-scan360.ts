@@ -12,9 +12,28 @@ export interface SurfaceScanJob {
   target_type: "domain" | "ip" | "url";
   scan_profile: "standard" | "full";
   status: "queued" | "running" | "completed" | "partial" | "failed";
+  hostname?: string | null;
+  root_domain?: string | null;
+  resolved_ips?: string[] | null;
+  hosting_context?: string | null;
+  shodan_status?: string | null;
+  created_at?: string;
   started_at: string | null;
   completed_at: string | null;
-  summary: { overall_score: number; risk_level: string } | null;
+  error_message?: string | null;
+  summary: {
+    overall_score: number;
+    risk_level: string;
+    total_assets?: number;
+    critical_count?: number;
+    warning_count?: number;
+    safe_count?: number;
+    high_cves?: number;
+    medium_cves?: number;
+    low_cves?: number;
+    discovered_hosts?: string[];
+    discovered_subdomains?: string[];
+  } | null;
 }
 
 export interface SurfaceScanAiReport {

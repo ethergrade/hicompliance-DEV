@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
+import { surfaceScan360Api, type SurfaceScanJob } from '@/lib/api/surface-scan360';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -11,7 +12,9 @@ import {
   splitMonitoredScopeRules,
   type SurfaceMonitoredScopeRule,
 } from '@/lib/surfaceScopeGuard';
-import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+
+// TODO: migrate scope rules to backend API when surface_scan_monitored_ips endpoint is available
+import { supabase } from '@/integrations/supabase/client';
 
 interface AssetRow {
   asset_type: string;
@@ -47,119 +50,119 @@ interface UseSurfaceScanDiscoveredAssetsResult {
   loading: boolean;
   refetch: () => Promise<void>;
 }
+
 const isDomainLike = (value: string): boolean => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(value);
 
+/**
+ * Extract asset rows from completed SurfaceScan jobs (normalized_targets and summary data).
+ * Backend API returns aggregated job data; we derive discovered assets from it.
+ */
+const deriveAssetsFromJobs = (jobs: SurfaceScanJob[]): AssetRow[] => {
+  const rows: AssetRow[] = [];
+  for (const job of jobs) {
+    if (job.status !== 'completed') continue;
+    const target = job.normalized_target || job.raw_target || '';
+    if (!target) continue;
+
+    const targetType = job.target_type || 'domain';
+
+    if (targetType === 'domain' || targetType === 'url') {
+      let hostname = target.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+      rows.push({
+        asset_type: 'domain',
+        asset_value: hostname.toLowerCase(),
+        source: 'surface_scan360_job',
+        ip: null,
+        raw: null,
+      });
+    } else if (targetType === 'ip') {
+      rows.push({
+        asset_type: 'ip',
+        asset_value: target.trim().toLowerCase(),
+        source: 'surface_scan360_job',
+        ip: target.trim().toLowerCase(),
+        raw: null,
+      });
+    }
+
+    // Extract discovered subdomains from summary
+    const discovered = job.summary?.discovered_hosts || job.summary?.discovered_subdomains || [];
+    if (Array.isArray(discovered)) {
+      for (const host of discovered) {
+        const value = String(host).trim().toLowerCase();
+        if (value && isDomainLike(value)) {
+          rows.push({
+            asset_type: 'subdomain',
+            asset_value: value,
+            source: 'surface_scan360_discovery',
+            ip: null,
+            raw: null,
+          });
+        }
+      }
+    }
+
+    // Extract IPs from resolved_ips
+    if (Array.isArray(job.resolved_ips)) {
+      for (const ip of job.resolved_ips) {
+        const ipStr = String(ip).trim().toLowerCase();
+        if (ipStr && (isIpv4(ipStr) || isIpv6(ipStr))) {
+          rows.push({
+            asset_type: 'ip',
+            asset_value: ipStr,
+            source: 'surface_scan360_resolved',
+            ip: ipStr,
+            raw: null,
+          });
+        }
+      }
+    }
+  }
+  return rows;
+};
+
 export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssetsResult => {
-  const [rows, setRows] = useState<AssetRow[]>([]);
-  const [scopeRules, setScopeRules] = useState<SurfaceMonitoredScopeRule[]>([]);
-  const [loading, setLoading] = useState(false);
-  const { organizationId, isLoading: clientLoading } = useClientOrganization();
+  const { organizationId, isLoading: clientLoading, groupId } = useClientOrganization();
   const { toast } = useToast();
 
-  const fetchAssets = useCallback(async (options?: { background?: boolean }) => {
-    if (clientLoading || !organizationId) return;
+  // Fetch completed SurfaceScan jobs (the source of discovered assets)
+  const jobsQuery = useQuery({
+    queryKey: ['surface-scan-discovered-assets-jobs', organizationId, groupId],
+    queryFn: async () => {
+      if (!organizationId) return [] as SurfaceScanJob[];
+      const allJobs = await surfaceScan360Api.listJobs(organizationId, { page: 1 }, groupId);
+      return (allJobs || []);
+    },
+    enabled: !!organizationId && !clientLoading,
+    refetchInterval: 30_000, // polling replaces Realtime
+    staleTime: 15_000,
+  });
 
-    const background = Boolean(options?.background);
-    if (!background) {
-      setLoading(true);
-    }
+  // TODO: migrate to backend API when surface_scan_monitored_ips endpoint is available
+  const [scopeRules, setScopeRules] = useState<SurfaceMonitoredScopeRule[]>([]);
+  const fetchScopeRules = async () => {
+    if (!organizationId) return;
     try {
-      const scopeFilter = `customer_id.eq.${organizationId},organization_id.eq.${organizationId}`;
-      const { data, error } = await supabase
-        .from('surface_assets' as any)
-        .select('asset_type, asset_value, source, ip, raw')
-        .or(scopeFilter)
-        .in('asset_type', ['subdomain', 'reverse_dns_hostname', 'domain', 'ip'])
-        .order('last_seen', { ascending: false })
-        .limit(1500);
-
-      if (error) throw error;
-      setRows((data || []) as AssetRow[]);
-
       const { data: scopeRows, error: scopeErr } = await supabase
         .from('surface_scan_monitored_ips' as any)
         .select('entry_type, input_value, ip_start, ip_end')
         .eq('organization_id', organizationId);
-      if (scopeErr) throw scopeErr;
-      setScopeRules((scopeRows || []) as SurfaceMonitoredScopeRule[]);
-    } catch (error) {
-      console.error('Error fetching discovered surface assets:', error);
-      if (!background) {
-        toast({
-          title: 'Errore',
-          description: 'Impossibile caricare subdomain/IP scoperti',
-          variant: 'destructive',
-        });
+      if (!scopeErr) {
+        setScopeRules((scopeRows || []) as SurfaceMonitoredScopeRule[]);
       }
-    } finally {
-      if (!background) {
-        setLoading(false);
-      }
+    } catch {
+      // silent — scope rules are optional
     }
-  }, [clientLoading, organizationId, toast]);
+  };
 
   useEffect(() => {
-    if (!clientLoading && organizationId) {
-      fetchAssets();
-    }
-  }, [clientLoading, organizationId, fetchAssets]);
+    if (organizationId) fetchScopeRules();
+  }, [organizationId]);
 
-  useEffect(() => {
-    if (!organizationId) return;
-    const assetsChannelByCustomer = supabase
-      .channel(`surface-assets-${organizationId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'surface_assets',
-          filter: `customer_id=eq.${organizationId}`,
-        },
-        (_payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
-          void fetchAssets({ background: true });
-        },
-      )
-      .subscribe();
+  const jobs = jobsQuery.data ?? [];
+  const loading = jobsQuery.isLoading;
 
-    const assetsChannelByOrganization = supabase
-      .channel(`surface-assets-org-${organizationId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'surface_assets',
-          filter: `organization_id=eq.${organizationId}`,
-        },
-        (_payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
-          void fetchAssets({ background: true });
-        },
-      )
-      .subscribe();
-
-    const scopeChannel = supabase
-      .channel(`surface-scope-domains-${organizationId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'surface_scan_monitored_ips',
-          filter: `organization_id=eq.${organizationId}`,
-        },
-        (_payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
-          void fetchAssets({ background: true });
-        },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(assetsChannelByCustomer);
-      supabase.removeChannel(assetsChannelByOrganization);
-      supabase.removeChannel(scopeChannel);
-    };
-  }, [organizationId, fetchAssets]);
+  const rows: AssetRow[] = useMemo(() => deriveAssetsFromJobs(jobs), [jobs]);
 
   const { subdomains, ips, hostMeta, scopeCounters, scopeDomains } = useMemo(() => {
     const { scopeDomains, ipScopeRules } = splitMonitoredScopeRules(scopeRules);
@@ -247,6 +250,14 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
       scopeDomains,
     };
   }, [rows, scopeRules]);
+
+  const fetchAssets = useCallback(
+    async (_options?: { background?: boolean }) => {
+      await jobsQuery.refetch();
+      await fetchScopeRules();
+    },
+    [jobsQuery],
+  );
 
   return {
     subdomains,

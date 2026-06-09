@@ -1,6 +1,8 @@
-import { useEffect, useState, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { surfaceScan360Api, type SurfaceScanJob } from '@/lib/api/surface-scan360';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { toast } from 'sonner';
 
 export interface SurfaceScanHistoryRow {
   id: string;
@@ -36,53 +38,67 @@ const toEpss = (avgScore: number) => {
   return Math.round(((100 - s) / 10) * 10) / 10;
 };
 
+const mapJobToHistoryRow = (job: SurfaceScanJob): SurfaceScanHistoryRow => ({
+  id: job.id,
+  scanned_at: job.completed_at || job.started_at || job.id, // fallback to ID if no date
+  total_assets: job.summary?.total_assets ?? 0,
+  critical_count: job.summary?.critical_count ?? 0,
+  warning_count: job.summary?.warning_count ?? 0,
+  safe_count: job.summary?.safe_count ?? 0,
+  avg_score: job.summary?.overall_score ?? 0,
+  high_cves: job.summary?.high_cves ?? 0,
+  medium_cves: job.summary?.medium_cves ?? 0,
+  low_cves: job.summary?.low_cves ?? 0,
+  triggered_by: null,
+});
+
+/**
+ * Trigger a manual SurfaceScan (creates a new job via the backend API).
+ * Creates a domain_exposure scan for the organization's monitored scope.
+ */
 export async function triggerManualSurfaceScan(organizationId: string) {
-  const { data, error } = await supabase.functions.invoke('surface-scan-cron', {
-    body: { organization_id: organizationId, triggered_by: 'manual' },
-  });
-  if (error) throw error;
-  return data as any;
+  try {
+    const result = await surfaceScan360Api.createJob(
+      organizationId,
+      { target: '__scope__', scan_profile: 'standard' },
+    );
+    return result as any;
+  } catch (error: any) {
+    console.error('triggerManualSurfaceScan failed:', error);
+    throw error;
+  }
 }
 
 export const useSurfaceScanHistory = (limit: number = 12) => {
-  const { organizationId, isLoading: orgLoading } = useClientOrganization();
-  const [rows, setRows] = useState<SurfaceScanHistoryRow[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { organizationId, isLoading: orgLoading, groupId } = useClientOrganization();
+  const [isExporting, setIsExporting] = useState(false);
 
-  const fetchHistory = useCallback(async () => {
-    if (orgLoading || !organizationId) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const { data, error: qErr } = await supabase
-        .from('surface_scan_history')
-        .select('id, scanned_at, total_assets, critical_count, warning_count, safe_count, avg_score, high_cves, medium_cves, low_cves, triggered_by')
-        .eq('organization_id', organizationId)
-        .order('scanned_at', { ascending: false })
-        .limit(limit);
-      if (qErr) throw qErr;
-      setRows((data ?? []) as SurfaceScanHistoryRow[]);
-    } catch (e: any) {
-      setError(e?.message ?? 'Errore caricamento storico');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [orgLoading, organizationId, limit]);
+  const {
+    data: jobs = [],
+    isLoading,
+    error: queryError,
+    refetch,
+  } = useQuery({
+    queryKey: ['surface-scan-history', organizationId, limit, groupId],
+    queryFn: async () => {
+      if (!organizationId) return [] as SurfaceScanJob[];
+      const result = await surfaceScan360Api.listJobs(
+        organizationId,
+        { page: 1 },
+        groupId,
+      );
+      return (result || []).slice(0, limit);
+    },
+    enabled: !!organizationId,
+    refetchInterval: 30_000, // polling replaces Realtime subscription
+    staleTime: 15_000,
+  });
 
-  useEffect(() => { fetchHistory(); }, [fetchHistory]);
+  const rows: SurfaceScanHistoryRow[] = useMemo(() => {
+    return jobs.map(mapJobToHistoryRow);
+  }, [jobs]);
 
-  useEffect(() => {
-    if (!organizationId) return;
-    const ch = supabase
-      .channel(`surface-scan-history-${organizationId}`)
-      .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'surface_scan_history',
-        filter: `organization_id=eq.${organizationId}`,
-      }, () => fetchHistory())
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [organizationId, fetchHistory]);
+  const error = queryError ? String((queryError as any)?.message || 'Errore caricamento storico') : null;
 
   // ASC ordering for charts/trendlines (oldest → newest)
   const data = [...rows].reverse();
@@ -131,6 +147,6 @@ export const useSurfaceScanHistory = (limit: number = 12) => {
     isLoading,
     loading: isLoading,
     error,
-    refetch: fetchHistory,
-  };
+    refetch,
+  } as const;
 };

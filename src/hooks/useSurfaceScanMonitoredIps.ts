@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+// TODO: migrate to backend API when endpoints for monitored_ips and exposure_scope tables are available
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { surfaceScan360Api } from '@/lib/api/surface-scan360';
+import { darkRiskApi } from '@/lib/api/darkrisk';
 import {
   MonitoredIpEntryType,
   parseMonitoredIpInput,
@@ -48,7 +51,7 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
   const [saving, setSaving] = useState(false);
 
   const { toast } = useToast();
-  const { organizationId, isLoading: isClientLoading } = useClientOrganization();
+  const { organizationId, isLoading: isClientLoading, groupId } = useClientOrganization();
   const { user, userProfile } = useAuth();
   const { isSuperAdmin } = useUserRoles();
 
@@ -57,64 +60,47 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
   const queueScopeRuleScan = useCallback(async (args: {
     organizationId: string;
     target: string;
-    scanProfile: 'domain_exposure' | 'ip_exposure';
     silent?: boolean;
     discoveredVia?: string;
   }) => {
     try {
-      const { data, error } = await supabase.functions.invoke('surfacescan360-start-scan', {
-        body: {
+      await surfaceScan360Api.createJob(
+        args.organizationId,
+        {
           target: args.target,
-          customer_id: args.organizationId,
-          scan_profile: args.scanProfile,
-          authorization_confirmed: true,
-          ownership_proof: `auto_scope_rule:${args.discoveredVia || 'manual'}`,
+          scan_profile: 'standard',
         },
-      });
-
-      if (error || data?.error) {
-        const message = String(error?.message || data?.error || '').toLowerCase();
-        const expectedFailure =
-          message.includes('cooldown')
-          || message.includes('rate limit')
-          || message.includes('queue is full')
-          || message.includes('target_module_cooldown_active');
-        if (!expectedFailure) {
-          console.warn('Auto scope scan enqueue failed:', error || data);
-        }
-        return;
-      }
+        groupId,
+      );
 
       if (!args.silent) {
         toast({
           title: 'Scansione automatica accodata',
-          description: `${args.target} (${args.scanProfile})`,
+          description: `${args.target}`,
         });
       }
-    } catch (scanError) {
-      console.warn('Auto scope scan enqueue error:', scanError);
+    } catch (error: any) {
+      const message = String(error?.message || '').toLowerCase();
+      const expectedFailure =
+        message.includes('cooldown')
+        || message.includes('rate limit')
+        || message.includes('queue is full');
+      if (!expectedFailure) {
+        console.warn('Auto scope scan enqueue failed:', error);
+      }
     }
-  }, [toast]);
+  }, [toast, groupId]);
 
   const triggerDarkRiskScopeSync = useCallback(async (args: {
     organizationId: string;
-    triggerType: string;
     silent?: boolean;
   }) => {
     try {
-      const { data, error } = await supabase.functions.invoke('darkrisk360-sync-surfacescan', {
-        body: {
-          customer_id: args.organizationId,
-          trigger_type: args.triggerType,
-          auto_scope_scan: true,
-          force_scope_refresh: false,
-        },
-      });
-
-      if (error || data?.error) {
-        console.warn('DarkRisk auto scope sync failed:', error || data);
-        return;
-      }
+      await darkRiskApi.createScanRun(
+        args.organizationId,
+        { notes: 'auto_scope_sync' },
+        groupId,
+      );
 
       if (!args.silent) {
         toast({
@@ -125,8 +111,9 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
     } catch (syncError) {
       console.warn('DarkRisk auto scope sync error:', syncError);
     }
-  }, [toast]);
+  }, [toast, groupId]);
 
+  // TODO: migrate to backend API when monitored_ips endpoint is available
   const fetchRules = useCallback(async () => {
     if (isClientLoading || !organizationId) return;
 
@@ -209,6 +196,7 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
         discovered_from: opts.discovered_from ?? null,
       };
 
+      // TODO: migrate to backend API when monitored_ips endpoint is available
       const { error } = await supabase
         .from('surface_scan_monitored_ips' as any)
         .insert(payload);
@@ -234,6 +222,7 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
         });
       }
 
+      // TODO: migrate to backend API when organizations table is available
       const { data: orgFlagsData, error: orgFlagsError } = await supabase
         .from('organizations' as any)
         .select('surface_scan360_enabled, dark_risk360_enabled')
@@ -247,23 +236,12 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
 
       const shouldAutoQueue = opts.auto_queue_scan !== false && surfaceEnabled;
       if (shouldAutoQueue) {
-        if (parsed.entryType === 'domain') {
-          void queueScopeRuleScan({
-            organizationId,
-            target: parsed.inputValue,
-            scanProfile: 'domain_exposure',
-            silent: opts.silent,
-            discoveredVia: opts.discovered_via || 'manual',
-          });
-        } else if (parsed.entryType === 'single') {
-          void queueScopeRuleScan({
-            organizationId,
-            target: parsed.inputValue,
-            scanProfile: 'ip_exposure',
-            silent: opts.silent,
-            discoveredVia: opts.discovered_via || 'manual',
-          });
-        }
+        void queueScopeRuleScan({
+          organizationId,
+          target: parsed.inputValue,
+          silent: opts.silent,
+          discoveredVia: opts.discovered_via || 'manual',
+        });
       }
 
       const shouldSyncDarkRisk =
@@ -274,7 +252,6 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
       if (shouldSyncDarkRisk) {
         void triggerDarkRiskScopeSync({
           organizationId,
-          triggerType: 'scope_rule_added_auto',
           silent: opts.silent,
         });
       }
@@ -296,6 +273,7 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
     }
   };
 
+  // TODO: migrate to backend API when monitored_ips endpoint is available
   const removeRule = async (id: string): Promise<boolean> => {
     if (!isAdmin) {
       toast({
