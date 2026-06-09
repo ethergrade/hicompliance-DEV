@@ -4,6 +4,7 @@ export interface AssessmentQuestion {
   id: number;
   question: string;
   priority: "ALTA" | "MEDIA" | "BASSA";
+  dependency?: string; // order_index (1-based) of parent question this depends on
 }
 
 export interface AssessmentCategory {

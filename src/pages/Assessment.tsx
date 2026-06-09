@@ -1228,7 +1228,16 @@ const Assessment: React.FC = () => {
                           </div>
                         </div>
                         <div className="divide-y divide-border">
-                          {catData.questions.map((q, qi) => {
+                          {(catData.questions.filter(q => {
+                            const dep = q.dependency;
+                            if (!dep) return true;
+                            const depIdx = parseInt(dep, 10);
+                            if (isNaN(depIdx) || depIdx < 1 || depIdx > catData.questions.length) return true;
+                            const parentQ = catData.questions[depIdx - 1];
+                            if (!parentQ) return true;
+                            const parentStatus = responses[parentQ.id] || null;
+                            return parentStatus === 'pianificato_in_corso' || parentStatus === 'completato';
+                          })).map((q, qi) => {
                             const currentResponse = responses[q.id] || null;
                             return (
                               <div key={q.id} className="grid grid-cols-[2rem_1fr_420px] gap-3 items-center px-5 py-3 hover:bg-muted/30 transition-colors">
