@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api-client';
+import { FALLBACK_SERVICE_CATALOG } from '@/data/serviceCatalog';
 import type {
   ApiResponse,
   IntegrationResource,
@@ -59,8 +60,15 @@ export const integrationsApi = {
   },
 
   async catalog(): Promise<ServiceCatalogItem[]> {
-    const res = await apiClient.get<ApiResponse<ServiceCatalogItem[]>>('/hisolution-services');
-    return res.data;
+    try {
+      const res = await apiClient.get<ApiResponse<ServiceCatalogItem[]>>('/hisolution-services');
+      if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+        return res.data;
+      }
+      return FALLBACK_SERVICE_CATALOG;
+    } catch {
+      return FALLBACK_SERVICE_CATALOG;
+    }
   },
 
   async create(

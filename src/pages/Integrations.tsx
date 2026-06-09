@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -47,6 +47,14 @@ const Integrations = () => {
   const { organizationId, groupId, needsClientSelection } = useClientOrganization();
   const { isSuperAdmin, loading: rolesLoading } = useUserRoles();
 
+  // HiPatch-specific form state (stored in api_methods JSON)
+  const [hipatchFields, setHipatchFields] = useState({
+    connectsecure_company_id: '',
+    ninjaone_organization_id: '',
+    ninjaone_organization_id_client: '',
+    ninjaone_organization_secret: '',
+  });
+
   const form = useForm<IntegrationFormData>({
     defaultValues: {
       service_id: '',
@@ -57,10 +65,27 @@ const Integrations = () => {
     },
   });
 
+  const watchedServiceId = form.watch('service_id');
+
   const { data: services = [] } = useQuery({
     queryKey: ['hisolution-services'],
     queryFn: integrationsApi.catalog,
   });
+
+  // Derive service code from selected service_id for conditional rendering
+  const selectedServiceCode = useMemo(() => {
+    if (!watchedServiceId) return null;
+    const fromCatalog = services.find(s => s.id === watchedServiceId)?.code;
+    if (fromCatalog) return fromCatalog;
+    // When editing, the service_id is a UUID that may not be in the fallback catalog.
+    // Fall back to the selected integration's own service_code.
+    if (selectedIntegration && selectedIntegration.service_id === watchedServiceId) {
+      return selectedIntegration.service_code;
+    }
+    return null;
+  }, [watchedServiceId, services, selectedIntegration]);
+
+  const isHipatch = selectedServiceCode === 'hipatch';
 
   const { data: integrations = [] } = useQuery({
     queryKey: ['organization-integrations', organizationId, groupId],
@@ -74,11 +99,29 @@ const Integrations = () => {
   const createOrUpdateMutation = useMutation({
     mutationFn: async (data: IntegrationFormData) => {
       if (!organizationId) throw new Error('Nessuna organizzazione selezionata');
+
+      let api_methods: Record<string, unknown>;
+      let api_url: string;
+
+      if (isHipatch) {
+        // Store HiPatch-specific fields in api_methods
+        api_methods = {
+          connectsecure_company_id: hipatchFields.connectsecure_company_id,
+          ninjaone_organization_id: hipatchFields.ninjaone_organization_id,
+          ninjaone_organization_id_client: hipatchFields.ninjaone_organization_id_client,
+          ninjaone_organization_secret: hipatchFields.ninjaone_organization_secret,
+        };
+        api_url = '';
+      } else {
+        api_methods = JSON.parse(data.api_methods || '[]');
+        api_url = data.api_url;
+      }
+
       const payload = {
         service_id: data.service_id,
-        api_url: data.api_url,
+        api_url,
         api_key: data.api_key,
-        api_methods: JSON.parse(data.api_methods || '[]'),
+        api_methods,
         is_active: data.is_active,
       };
       if (selectedIntegration) {
@@ -133,6 +176,23 @@ const Integrations = () => {
         api_methods: JSON.stringify(integration.api_methods ?? [], null, 2),
         is_active: integration.is_active,
       });
+      // Populate HiPatch fields from api_methods if this is a HiPatch integration
+      const methods = integration.api_methods ?? {};
+      if (integration.service_code === 'hipatch' || (methods as Record<string, unknown>).connectsecure_company_id !== undefined) {
+        setHipatchFields({
+          connectsecure_company_id: String((methods as Record<string, unknown>).connectsecure_company_id ?? ''),
+          ninjaone_organization_id: String((methods as Record<string, unknown>).ninjaone_organization_id ?? ''),
+          ninjaone_organization_id_client: String((methods as Record<string, unknown>).ninjaone_organization_id_client ?? ''),
+          ninjaone_organization_secret: String((methods as Record<string, unknown>).ninjaone_organization_secret ?? ''),
+        });
+      } else {
+        setHipatchFields({
+          connectsecure_company_id: '',
+          ninjaone_organization_id: '',
+          ninjaone_organization_id_client: '',
+          ninjaone_organization_secret: '',
+        });
+      }
     } else {
       setSelectedIntegration(null);
       form.reset({
@@ -141,6 +201,12 @@ const Integrations = () => {
         api_key: '',
         api_methods: '[]',
         is_active: true,
+      });
+      setHipatchFields({
+        connectsecure_company_id: '',
+        ninjaone_organization_id: '',
+        ninjaone_organization_id_client: '',
+        ninjaone_organization_secret: '',
       });
     }
     setIsDialogOpen(true);
@@ -151,11 +217,14 @@ const Integrations = () => {
   };
 
   const availableServices = services.filter(
-    service => !integrations.some(integration => integration.service_id === service.id)
+    service => !integrations.some(integration =>
+      integration.service_id === service.id || integration.service_code === service.code
+    )
   );
 
   const getServiceMeta = (integration: IntegrationResource): ServiceCatalogItem | undefined =>
     services.find(service => service.id === integration.service_id) ||
+    services.find(service => service.code === integration.service_code) ||
     (integration.service_name
       ? {
           id: integration.service_id,
@@ -248,41 +317,95 @@ const Integrations = () => {
                     control={form.control}
                     name="api_url"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>URL API</FormLabel>
-                        <FormControl>
-                          <Input {...field} placeholder="https://api.hisolution.com/v1" type="url" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
+                      isHipatch ? null : (
+                        <FormItem>
+                          <FormLabel>URL API</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="https://api.hisolution.com/v1" type="url" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )
                     )}
                   />
                   <FormField
                     control={form.control}
                     name="api_key"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Chiave API</FormLabel>
-                        <FormControl>
-                          <Input {...field} placeholder="Inserisci la chiave API" type="password" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
+                      isHipatch ? null : (
+                        <FormItem>
+                          <FormLabel>Chiave API</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="Inserisci la chiave API" type="password" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )
                     )}
                   />
                   <FormField
                     control={form.control}
                     name="api_methods"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Metodi API (JSON array/object)</FormLabel>
-                        <FormControl>
-                          <Textarea {...field} placeholder='["GET /status", "POST /alerts"]' rows={4} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
+                      isHipatch ? null : (
+                        <FormItem>
+                          <FormLabel>Metodi API (JSON array/object)</FormLabel>
+                          <FormControl>
+                            <Textarea {...field} placeholder='["GET /status", "POST /alerts"]' rows={4} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )
                     )}
                   />
+
+                  {/* HiPatch-specific fields */}
+                  {isHipatch && (
+                    <>
+                      <FormItem>
+                        <FormLabel>ConnectSecure Company ID</FormLabel>
+                        <FormControl>
+                          <Input
+                            value={hipatchFields.connectsecure_company_id}
+                            onChange={(e) => setHipatchFields(prev => ({ ...prev, connectsecure_company_id: e.target.value }))}
+                            placeholder="ID cliente su ConnectSecure"
+                          />
+                        </FormControl>
+                      </FormItem>
+                      <FormItem>
+                        <FormLabel>NinjaOne Organization ID</FormLabel>
+                        <FormControl>
+                          <Input
+                            value={hipatchFields.ninjaone_organization_id}
+                            onChange={(e) => setHipatchFields(prev => ({ ...prev, ninjaone_organization_id: e.target.value }))}
+                            placeholder="ID cliente su NinjaOne"
+                          />
+                        </FormControl>
+                      </FormItem>
+                      <FormItem>
+                        <FormLabel>NinjaOne Client ID (API)</FormLabel>
+                        <FormControl>
+                          <Input
+                            value={hipatchFields.ninjaone_organization_id_client}
+                            onChange={(e) => setHipatchFields(prev => ({ ...prev, ninjaone_organization_id_client: e.target.value }))}
+                            placeholder="ID client API NinjaOne"
+                            type="password"
+                          />
+                        </FormControl>
+                      </FormItem>
+                      <FormItem>
+                        <FormLabel>NinjaOne Secret (API)</FormLabel>
+                        <FormControl>
+                          <Input
+                            value={hipatchFields.ninjaone_organization_secret}
+                            onChange={(e) => setHipatchFields(prev => ({ ...prev, ninjaone_organization_secret: e.target.value }))}
+                            placeholder="Secret API NinjaOne"
+                            type="password"
+                          />
+                        </FormControl>
+                      </FormItem>
+                    </>
+                  )}
                   <FormField
                     control={form.control}
                     name="is_active"
