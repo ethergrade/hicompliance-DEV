@@ -53,7 +53,7 @@ export const usePlaybookCompletions = (): UsePlaybookCompletionsReturn => {
   const [completions, setCompletions] = useState<PlaybookCompletion[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { organizationId: clientOrgId, isLoading: clientLoading } = useClientOrganization();
+  const { organizationId: clientOrgId, groupId, isLoading: clientLoading } = useClientOrganization();
 
   const fetchCompletions = useCallback(async () => {
     if (clientLoading || !clientOrgId) return;
@@ -62,7 +62,7 @@ export const usePlaybookCompletions = (): UsePlaybookCompletionsReturn => {
     setError(null);
 
     try {
-      const items = await playbookCompletionsApi.list(clientOrgId);
+      const items = await playbookCompletionsApi.list(clientOrgId, groupId);
       const parsed = (items || []).map(item => toLocalCompletion(item, clientOrgId));
       setCompletions(parsed);
     } catch (err) {
@@ -100,9 +100,9 @@ export const usePlaybookCompletions = (): UsePlaybookCompletionsReturn => {
 
       let result: ApiPlaybookCompletion;
       if (existing) {
-        result = await playbookCompletionsApi.update(clientOrgId, existing.id, payload);
+        result = await playbookCompletionsApi.update(clientOrgId, existing.id, payload, groupId);
       } else {
-        result = await playbookCompletionsApi.create(clientOrgId, payload);
+        result = await playbookCompletionsApi.create(clientOrgId, payload, groupId);
       }
 
       const localResult = toLocalCompletion(result, clientOrgId);
@@ -135,7 +135,7 @@ export const usePlaybookCompletions = (): UsePlaybookCompletionsReturn => {
         return true;
       }
 
-      await playbookCompletionsApi.delete(clientOrgId, existing.id);
+      await playbookCompletionsApi.delete(clientOrgId, existing.id, groupId);
       setCompletions(prev => prev.filter(c => c.playbook_id !== playbookId));
       return true;
     } catch (err) {

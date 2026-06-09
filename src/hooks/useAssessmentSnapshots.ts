@@ -39,7 +39,7 @@ function toSnapshot(item: ApiAssessmentSnapshot, orgId: string): AssessmentSnaps
 }
 
 export const useAssessmentSnapshots = () => {
-  const { organizationId: orgId } = useClientOrganization();
+  const { organizationId: orgId, groupId } = useClientOrganization();
 
   const [snapshots, setSnapshots] = useState<AssessmentSnapshot[]>([]);
   const [loading, setLoading] = useState(false);
@@ -49,7 +49,7 @@ export const useAssessmentSnapshots = () => {
     if (!orgId) return;
     setLoading(true);
     try {
-      const items = await assessmentV2Api.snapshots(orgId);
+      const items = await assessmentV2Api.snapshots(orgId, groupId);
       setSnapshots((items || []).map(item => toSnapshot(item, orgId)));
     } catch (err) {
       console.error('Error loading snapshots:', err);
@@ -67,7 +67,7 @@ export const useAssessmentSnapshots = () => {
     if (!orgId) return;
     setSaving(true);
     try {
-      await assessmentV2Api.createSnapshot(orgId);
+      await assessmentV2Api.createSnapshot(orgId, groupId);
       toast.success('Snapshot ricalcolato e salvato con successo');
       await loadSnapshots();
     } catch (err: any) {

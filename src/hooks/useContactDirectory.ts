@@ -37,14 +37,14 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const { toast } = useToast();
-  const { organizationId: clientOrgId, isLoading: clientLoading } = useClientOrganization();
+  const { organizationId: clientOrgId, groupId, isLoading: clientLoading } = useClientOrganization();
 
   const fetchContacts = useCallback(async () => {
     if (clientLoading || !clientOrgId) return;
 
     setLoading(true);
     try {
-      const apiContacts = await irpApi.contacts(clientOrgId);
+      const apiContacts = await irpApi.contacts(clientOrgId, groupId);
       setContacts((apiContacts || []).map(toDirectoryContact));
     } catch (error) {
       console.error('Error fetching directory contacts:', error);
@@ -86,7 +86,7 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
         email: contactData.email ?? '',
         phone: contactData.phone ?? '',
         notes: contactData.notes ?? null,
-      });
+      }, groupId);
 
       toast({
         title: "Successo",
@@ -118,7 +118,7 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
       if (contactData.phone !== undefined) payload.phone = contactData.phone;
       if (contactData.notes !== undefined) payload.notes = contactData.notes;
 
-      await irpApi.updateContact(clientOrgId, id, payload);
+      await irpApi.updateContact(clientOrgId, id, payload, groupId);
 
       toast({
         title: "Successo",
@@ -142,7 +142,7 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
     try {
       if (!clientOrgId) throw new Error('Organizzazione non trovata');
 
-      await irpApi.deleteContact(clientOrgId, id);
+      await irpApi.deleteContact(clientOrgId, id, groupId);
 
       toast({
         title: "Successo",
@@ -167,7 +167,7 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
       if (!clientOrgId) throw new Error('Organizzazione non trovata');
 
       // Fetch emergency contacts from API
-      const emergencyContacts = await irpApi.emergencyContacts(clientOrgId);
+      const emergencyContacts = await irpApi.emergencyContacts(clientOrgId, groupId);
 
       if (!emergencyContacts || emergencyContacts.length === 0) {
         toast({
@@ -178,7 +178,7 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
       }
 
       // Fetch existing directory contacts to avoid duplicates
-      const existingContacts = await irpApi.contacts(clientOrgId);
+      const existingContacts = await irpApi.contacts(clientOrgId, groupId);
       const existingSet = new Set(
         (existingContacts || []).map(c =>
           `${c.first_name?.toLowerCase()}_${c.last_name?.toLowerCase()}_${c.email?.toLowerCase()}`
@@ -209,7 +209,7 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
             job_title: contact.job_title || contact.role || null,
             phone: contact.phone || '',
             email: contact.email || '',
-          });
+          }, groupId);
           imported++;
         } catch {
           skipped++;

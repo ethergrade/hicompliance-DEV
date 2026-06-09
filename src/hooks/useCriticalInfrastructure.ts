@@ -8,7 +8,7 @@ export const useCriticalInfrastructure = () => {
   const [assets, setAssets] = useState<CriticalInfrastructureAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const { organizationId: clientOrgId, isLoading: clientLoading } = useClientOrganization();
+  const { organizationId: clientOrgId, groupId, isLoading: clientLoading } = useClientOrganization();
 
   const loadAssets = useCallback(async () => {
     if (clientLoading || !clientOrgId) {
@@ -18,7 +18,7 @@ export const useCriticalInfrastructure = () => {
     
     try {
       setLoading(true);
-      const items = await criticalInfrastructureApi.list(clientOrgId);
+      const items = await criticalInfrastructureApi.list(clientOrgId, groupId);
       setAssets(items || []);
     } catch (error) {
       console.error('Error loading critical infrastructure:', error);
@@ -77,7 +77,7 @@ export const useCriticalInfrastructure = () => {
         // tenant_id and group_id are auto-assigned by the backend
       };
 
-      const insertedAsset = await criticalInfrastructureApi.create(clientOrgId, newAsset);
+      const insertedAsset = await criticalInfrastructureApi.create(clientOrgId, newAsset, groupId);
       setAssets(prev => [...prev, insertedAsset]);
       toast.success(`Asset ${newAssetId} creato`);
       return insertedAsset;
@@ -98,7 +98,7 @@ export const useCriticalInfrastructure = () => {
 
     try {
       setSaving(true);
-      await criticalInfrastructureApi.update(clientOrgId, id, updates);
+      await criticalInfrastructureApi.update(clientOrgId, id, updates, groupId);
       setAssets(prev => prev.map(asset => 
         asset.id === id ? { ...asset, ...updates } : asset
       ));
@@ -120,7 +120,7 @@ export const useCriticalInfrastructure = () => {
     try {
       setSaving(true);
       const asset = assets.find(a => a.id === id);
-      await criticalInfrastructureApi.delete(clientOrgId, id);
+      await criticalInfrastructureApi.delete(clientOrgId, id, groupId);
       setAssets(prev => prev.filter(a => a.id !== id));
       toast.success(`Asset ${asset?.asset_id} eliminato`);
     } catch (error) {
