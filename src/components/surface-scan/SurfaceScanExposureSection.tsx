@@ -9,12 +9,11 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronRight, Loader2, Play, RefreshCw, RotateCw, ShieldAlert } from 'lucide-react';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
-import { supabase } from '@/integrations/supabase/client';
-// TODO: migrate surface_scan_monitored_ips scope query to backend API when endpoint available
+// TODO: migrate remaining Supabase calls to backend API when endpoints available
+import { surfaceScan360Api } from '@/lib/api/surface-scan360';
 import {
   fetchExposureFindingsByJobIds,
   fetchExposureJobs,
-  fetchExposureSummary,
   fetchOpenPortsByJobIds,
   fetchTechnologiesByJobIds,
   resyncExposureJob,
@@ -157,7 +156,7 @@ const dedupeFindingsRows = (rows: ExposureFindingRow[]): ExposureFindingRow[] =>
 };
 
 export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProps> = ({ isAdmin }) => {
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
   const [loading, setLoading] = useState(false);
   const [startingScan, setStartingScan] = useState(false);
   const [polling, setPolling] = useState(false);
@@ -254,23 +253,14 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
     try {
       const [jobsResult, summaryResult, scopeDomainsResult] = await Promise.allSettled([
         fetchExposureJobs(organizationId, 50),
-        fetchExposureSummary({
-          customerId: organizationId,
-          scopeMode: 'scope_latest_per_target',
-        }),
-        supabase
-          .from('surface_scan_monitored_ips' as any)
-          .select('entry_type, input_value')
-          .eq('organization_id', organizationId)
-          .order('input_value', { ascending: true }),
+        surfaceScan360Api.getExposureSummary(organizationId, { scope_mode: 'scope_latest_per_target' }, groupId),
+        surfaceScan360Api.listMonitoredIps(organizationId, groupId),
       ]);
 
       const jobsData = jobsResult.status === 'fulfilled' ? jobsResult.value : [];
       const summaryData = summaryResult.status === 'fulfilled' ? summaryResult.value : null;
-      const scopeDomainsRes = scopeDomainsResult.status === 'fulfilled' ? scopeDomainsResult.value : null;
-      if (scopeDomainsRes && (scopeDomainsRes as any).error) throw (scopeDomainsRes as any).error;
-
-      const monitoredRules = ((scopeDomainsRes as any)?.data || []) as Array<{ entry_type: string; input_value: string }>;
+      const scopeDomainsData = scopeDomainsResult.status === 'fulfilled' ? scopeDomainsResult.value : null;
+      const monitoredRules: Array<{ entry_type: string; input_value: string }> = Array.isArray(scopeDomainsData) ? scopeDomainsData : [];
       const normalizedScopeDomains = Array.from(
         new Set(
           monitoredRules

@@ -127,6 +127,43 @@ export const surfaceScan360Api = {
     return res.data;
   },
 
+  // Monitored IPs (replaces Supabase surface_scan_monitored_ips query)
+  async listMonitoredIps(
+    companyId: string,
+    groupId?: string | null,
+  ): Promise<any[]> {
+    const res = await complianceApiClient.get<ApiResponse<any[]>>(
+      `/companies/${companyId}/surface-scan360/monitored-ips`,
+      undefined,
+      groupId ? groupHeader(groupId) : undefined,
+    );
+    return res.data || [];
+  },
+
+  async deleteMonitoredIp(
+    companyId: string,
+    monitoredIpId: string,
+    groupId?: string | null,
+  ): Promise<void> {
+    await complianceApiClient.delete(
+      `/companies/${companyId}/surface-scan360/monitored-ips/${monitoredIpId}`,
+      groupId ? groupHeader(groupId) : undefined,
+    );
+  },
+
+  async getExposureSummary(
+    companyId: string,
+    params?: { job_id?: string; scope_mode?: string },
+    groupId?: string | null,
+  ): Promise<any> {
+    const res = await complianceApiClient.get<ApiResponse<any>>(
+      `/companies/${companyId}/surface-scan360/exposure-summary`,
+      params as Record<string, string>,
+      groupId ? groupHeader(groupId) : undefined,
+    );
+    return res.data;
+  },
+
   async getAiReport(companyId: string, reportId: string, groupId?: string | null): Promise<any> {
     const res = await complianceApiClient.get<ApiResponse<any>>(
       `/companies/${companyId}/surface-scan360/ai-report/${reportId}`,
