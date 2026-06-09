@@ -107,7 +107,7 @@ const AdminCompanies: React.FC = () => {
       }
       toast.success(`Gruppo "${group.name}" eliminato`);
     } catch (err: any) {
-      toast.error(getErrorDetail(err)eliminazione del gruppo");
+      toast.error(getErrorDetail(err) || 'Errore nell’eliminazione del gruppo');
     }
   };
 

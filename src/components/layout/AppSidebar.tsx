@@ -272,10 +272,9 @@ export const AppSidebar: React.FC = () => {
                     {visibleHiCompliance.map(item => renderNavItem(item))}
                     {servicesInHiCompliance.map(item => renderNavItem(item))}
 
-                    {/* INCIDENT sub-collapsible */}
+                    {/* Incident Response & Compliance Events */}
                     {incidentMainItems.map(item => isModuleEnabled(item.href) && isFeatureAllowed(item.href) && isUserAllowed(item.href) && renderNavItem(item))}
-                    {visibleComplianceEvents.length > 0 && visibleComplianceEvents.map(item => renderNavItem(item))
-                    )}
+                    {visibleComplianceEvents.length > 0 && visibleComplianceEvents.map(item => renderNavItem(item))}
                   </SidebarMenu>
                 </SidebarGroupContent>
               </CollapsibleContent>
