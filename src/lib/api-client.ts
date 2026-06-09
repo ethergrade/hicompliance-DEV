@@ -1,7 +1,13 @@
 import type { ApiErrorResponse } from "@/types/api";
 
 const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+const configuredComplianceBaseUrl = (import.meta.env.VITE_COMPLIANCE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+
 const API_BASE_URL = import.meta.env.DEV ? "/api" : configuredBaseUrl || "https://hiapi.websoupcloud.it";
+const COMPLIANCE_API_BASE_URL = import.meta.env.DEV
+  ? "/api"
+  : configuredComplianceBaseUrl || "https://svilhicompliance.hisolution.it/api";
+
 const CSRF_URL = import.meta.env.DEV
   ? "/sanctum/csrf-cookie"
   : `${API_BASE_URL}/sanctum/csrf-cookie`;
@@ -125,11 +131,12 @@ type RequestOptions = {
 
 async function request<T>(
   path: string,
-  options: RequestOptions = {}
+  options: RequestOptions = {},
+  baseUrl: string = API_BASE_URL,
 ): Promise<T> {
   const { method = "GET", body, headers = {}, params } = options;
 
-  let url = `${API_BASE_URL}${path}`;
+  let url = `${baseUrl}${path}`;
 
   if (params) {
     const searchParams = new URLSearchParams();
@@ -194,24 +201,29 @@ type ApiClientOptions = {
   params?: RequestOptions["params"];
 };
 
-export const apiClient = {
-  get<T>(path: string, params?: RequestOptions["params"], opts?: ApiClientOptions): Promise<T> {
-    return request<T>(path, { method: "GET", params, headers: opts?.headers });
-  },
+function createApiClient(baseUrl: string) {
+  return {
+    get<T>(path: string, params?: RequestOptions["params"], opts?: ApiClientOptions): Promise<T> {
+      return request<T>(path, { method: "GET", params, headers: opts?.headers }, baseUrl);
+    },
 
-  post<T>(path: string, body?: unknown, opts?: ApiClientOptions): Promise<T> {
-    return request<T>(path, { method: "POST", body, headers: opts?.headers });
-  },
+    post<T>(path: string, body?: unknown, opts?: ApiClientOptions): Promise<T> {
+      return request<T>(path, { method: "POST", body, headers: opts?.headers }, baseUrl);
+    },
 
-  put<T>(path: string, body?: unknown, opts?: ApiClientOptions): Promise<T> {
-    return request<T>(path, { method: "PUT", body, headers: opts?.headers });
-  },
+    put<T>(path: string, body?: unknown, opts?: ApiClientOptions): Promise<T> {
+      return request<T>(path, { method: "PUT", body, headers: opts?.headers }, baseUrl);
+    },
 
-  patch<T>(path: string, body?: unknown, opts?: ApiClientOptions): Promise<T> {
-    return request<T>(path, { method: "PATCH", body, headers: opts?.headers });
-  },
+    patch<T>(path: string, body?: unknown, opts?: ApiClientOptions): Promise<T> {
+      return request<T>(path, { method: "PATCH", body, headers: opts?.headers }, baseUrl);
+    },
 
-  delete<T>(path: string, opts?: ApiClientOptions): Promise<T> {
-    return request<T>(path, { method: "DELETE", headers: opts?.headers });
-  },
-};
+    delete<T>(path: string, opts?: ApiClientOptions): Promise<T> {
+      return request<T>(path, { method: "DELETE", headers: opts?.headers }, baseUrl);
+    },
+  };
+}
+
+export const apiClient = createApiClient(API_BASE_URL);
+export const complianceApiClient = createApiClient(COMPLIANCE_API_BASE_URL);

@@ -1,4 +1,4 @@
-import { apiClient } from "@/lib/api-client";
+import { complianceApiClient } from "@/lib/api-client";
 import type {
   ApiResponse,
   Group,
@@ -17,7 +17,7 @@ export const irpApi = {
 
   /** List all IRP contacts for a company */
   async contacts(companyId: string, _g?: string | null): Promise<IrpContactResource[]> {
-    const res = await apiClient.get<ApiResponse<IrpContactResource[]>>(
+    const res = await complianceApiClient.get<ApiResponse<IrpContactResource[]>>(
       `/companies/${companyId}/irp/contacts`,
       undefined,
       _h(companyId, _g)
@@ -27,7 +27,7 @@ export const irpApi = {
 
   /** Create an IRP contact */
   async createContact(companyId: string, payload: StoreIrpContactRequest, _g?: string | null): Promise<IrpContactResource> {
-    const res = await apiClient.post<ApiResponse<IrpContactResource>>(
+    const res = await complianceApiClient.post<ApiResponse<IrpContactResource>>(
       `/companies/${companyId}/irp/contacts`,
       payload,
       _h(companyId, _g)
@@ -37,7 +37,7 @@ export const irpApi = {
 
   /** Update an IRP contact */
   async updateContact(companyId: string, contactId: string, payload: Partial<StoreIrpContactRequest>, _g?: string | null): Promise<IrpContactResource> {
-    const res = await apiClient.put<ApiResponse<IrpContactResource>>(
+    const res = await complianceApiClient.put<ApiResponse<IrpContactResource>>(
       `/companies/${companyId}/irp/contacts/${contactId}`,
       payload,
       _h(companyId, _g)
@@ -47,7 +47,7 @@ export const irpApi = {
 
   /** Delete an IRP contact */
   async deleteContact(companyId: string, contactId: string, _g?: string | null): Promise<void> {
-    await apiClient.delete(
+    await complianceApiClient.delete(
       `/companies/${companyId}/irp/contacts/${contactId}`,
       _h(companyId, _g)
     );
@@ -57,7 +57,7 @@ export const irpApi = {
 
   /** List all emergency contacts for a company */
   async emergencyContacts(companyId: string, _g?: string | null): Promise<IrpEmergencyContactResource[]> {
-    const res = await apiClient.get<ApiResponse<IrpEmergencyContactResource[]>>(
+    const res = await complianceApiClient.get<ApiResponse<IrpEmergencyContactResource[]>>(
       `/companies/${companyId}/irp/emergency-contacts`,
       undefined,
       _h(companyId, _g)
@@ -67,7 +67,7 @@ export const irpApi = {
 
   /** Create an emergency contact */
   async createEmergencyContact(companyId: string, payload: StoreIrpEmergencyContactRequest, _g?: string | null): Promise<IrpEmergencyContactResource> {
-    const res = await apiClient.post<ApiResponse<IrpEmergencyContactResource>>(
+    const res = await complianceApiClient.post<ApiResponse<IrpEmergencyContactResource>>(
       `/companies/${companyId}/irp/emergency-contacts`,
       payload,
       _h(companyId, _g)
@@ -77,7 +77,7 @@ export const irpApi = {
 
   /** Update an emergency contact */
   async updateEmergencyContact(companyId: string, contactId: string, payload: Partial<StoreIrpEmergencyContactRequest>, _g?: string | null): Promise<IrpEmergencyContactResource> {
-    const res = await apiClient.put<ApiResponse<IrpEmergencyContactResource>>(
+    const res = await complianceApiClient.put<ApiResponse<IrpEmergencyContactResource>>(
       `/companies/${companyId}/irp/emergency-contacts/${contactId}`,
       payload,
       _h(companyId, _g)
@@ -87,7 +87,7 @@ export const irpApi = {
 
   /** Delete an emergency contact */
   async deleteEmergencyContact(companyId: string, contactId: string, _g?: string | null): Promise<void> {
-    await apiClient.delete(
+    await complianceApiClient.delete(
       `/companies/${companyId}/irp/emergency-contacts/${contactId}`,
       _h(companyId, _g)
     );
@@ -97,7 +97,7 @@ export const irpApi = {
 
   /** Get the IRP document for a company */
   async document(companyId: string, _g?: string | null): Promise<Record<string, unknown> | null> {
-    const res = await apiClient.get<ApiResponse<Record<string, unknown> | null>>(
+    const res = await complianceApiClient.get<ApiResponse<Record<string, unknown> | null>>(
       `/companies/${companyId}/irp/document`,
       undefined,
       _h(companyId, _g)
@@ -107,7 +107,7 @@ export const irpApi = {
 
   /** Save/update the IRP document for a company */
   async saveDocument(companyId: string, payload: Record<string, unknown>, _g?: string | null): Promise<Record<string, unknown>> {
-    const res = await apiClient.post<ApiResponse<Record<string, unknown>>>(
+    const res = await complianceApiClient.post<ApiResponse<Record<string, unknown>>>(
       `/companies/${companyId}/irp/document`,
       payload,
       _h(companyId, _g)
@@ -119,7 +119,7 @@ export const irpApi = {
 
   /** Get IRP document history for a company */
   async history(companyId: string, _g?: string | null): Promise<Record<string, unknown>[]> {
-    const res = await apiClient.get<ApiResponse<Record<string, unknown>[]>>(
+    const res = await complianceApiClient.get<ApiResponse<Record<string, unknown>[]>>(
       `/companies/${companyId}/irp/history`,
       undefined,
       _h(companyId, _g)
@@ -131,7 +131,7 @@ export const irpApi = {
 
   /** Publish the IRP document for a company */
   async publishDocument(companyId: string, _g?: string | null): Promise<Record<string, unknown>> {
-    const res = await apiClient.post<ApiResponse<Record<string, unknown>>>(
+    const res = await complianceApiClient.post<ApiResponse<Record<string, unknown>>>(
       `/companies/${companyId}/irp/document/publish`,
       undefined,
       _h(companyId, _g)
@@ -143,7 +143,7 @@ export const irpApi = {
 
   /** Request a signed download URL for the IRP DOCX, then trigger download */
   async exportDocument(companyId: string, companyName: string, _g?: string | null): Promise<void> {
-    const res = await apiClient.get<ApiResponse<{ download_url: string; expires_in: number }>>(
+    const res = await complianceApiClient.get<ApiResponse<{ download_url: string; expires_in: number }>>(
       `/companies/${companyId}/irp/export`,
       undefined,
       _h(companyId, _g)
@@ -161,7 +161,7 @@ export const irpApi = {
 
   /** Import emergency contacts from the directory */
   async importEmergencyContactsFromDirectory(companyId: string, _g?: string | null): Promise<IrpEmergencyContactResource[]> {
-    const res = await apiClient.post<ApiResponse<IrpEmergencyContactResource[]>>(
+    const res = await complianceApiClient.post<ApiResponse<IrpEmergencyContactResource[]>>(
       `/companies/${companyId}/irp/emergency-contacts/import-from-directory`,
       undefined,
       _h(companyId, _g)
@@ -171,13 +171,13 @@ export const irpApi = {
 
   /** List all groups */
   async groups(_companyId?: string): Promise<Group[]> {
-    const res = await apiClient.get<ApiResponse<Group[]>>("/groups");
+    const res = await complianceApiClient.get<ApiResponse<Group[]>>("/groups");
     return res.data;
   },
 
   /** Get a single group by ID */
   async group(groupId: string, _g?: string | null): Promise<Group> {
-    const res = await apiClient.get<ApiResponse<Group>>(`/groups/${groupId}`);
+    const res = await complianceApiClient.get<ApiResponse<Group>>(`/groups/${groupId}`);
     return res.data;
   },
 };

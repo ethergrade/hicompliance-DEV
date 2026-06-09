@@ -1,4 +1,4 @@
-import { apiClient } from "@/lib/api-client";
+import { complianceApiClient } from "@/lib/api-client";
 import type { ApiResponse } from "@/types/api";
 
 const groupHeader = (groupId: string) => ({
@@ -22,7 +22,7 @@ export const nucleiScan360Api = {
     params?: { page?: number },
     groupId?: string | null,
   ): Promise<NucleiScanJob[]> {
-    const res = await apiClient.get<ApiResponse<NucleiScanJob[]>>(
+    const res = await complianceApiClient.get<ApiResponse<NucleiScanJob[]>>(
       `/companies/${companyId}/nuclei-scan360/jobs`,
       params,
       groupId ? groupHeader(groupId) : undefined,
@@ -39,7 +39,7 @@ export const nucleiScan360Api = {
     },
     groupId?: string | null,
   ): Promise<NucleiScanJob> {
-    const res = await apiClient.post<ApiResponse<NucleiScanJob>>(
+    const res = await complianceApiClient.post<ApiResponse<NucleiScanJob>>(
       `/companies/${companyId}/nuclei-scan360/jobs`,
       payload,
       groupId ? groupHeader(groupId) : undefined,
@@ -48,7 +48,7 @@ export const nucleiScan360Api = {
   },
 
   async getJob(companyId: string, jobId: string, groupId?: string | null): Promise<NucleiScanJob> {
-    const res = await apiClient.get<ApiResponse<NucleiScanJob>>(
+    const res = await complianceApiClient.get<ApiResponse<NucleiScanJob>>(
       `/companies/${companyId}/nuclei-scan360/jobs/${jobId}`,
       undefined,
       groupId ? groupHeader(groupId) : undefined,
@@ -62,7 +62,7 @@ export const nucleiScan360Api = {
     params?: { severity?: string; page?: number },
     groupId?: string | null,
   ): Promise<any[]> {
-    const res = await apiClient.get<ApiResponse<any[]>>(
+    const res = await complianceApiClient.get<ApiResponse<any[]>>(
       `/companies/${companyId}/nuclei-scan360/jobs/${jobId}/findings`,
       params,
       groupId ? groupHeader(groupId) : undefined,
