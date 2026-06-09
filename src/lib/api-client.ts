@@ -6,7 +6,7 @@ const configuredComplianceBaseUrl = (import.meta.env.VITE_COMPLIANCE_API_BASE_UR
 const API_BASE_URL = import.meta.env.DEV ? "/api" : configuredBaseUrl || "https://hiapi.websoupcloud.it";
 const COMPLIANCE_API_BASE_URL = import.meta.env.DEV
   ? "/api"
-  : configuredComplianceBaseUrl || "https://svilhicompliance.hisolution.it/api";
+  : configuredComplianceBaseUrl || "https://hiapi.websoupcloud.it";
 
 const CSRF_URL = import.meta.env.DEV
   ? "/sanctum/csrf-cookie"
