@@ -288,7 +288,7 @@ const HiConsoleLanding: React.FC = () => {
                   <div className="absolute inset-3 rounded-full bg-background/60 backdrop-blur flex flex-col items-center justify-center">
                     <div className="text-5xl font-bold bg-gradient-to-br from-primary to-primary/60 bg-clip-text text-transparent">72</div>
                     <div className="text-xs text-muted-foreground mt-1 uppercase tracking-wider">True Risk Score</div>
-                    <div className="text-[10px] text-emerald-500 mt-1 flex items-center gap-1">
+                    <div className="text-[10px] text-red-500 mt-1 flex items-center gap-1">
                       <TrendingUp className="w-3 h-3" /> +8 negli ultimi 90gg
                     </div>
                   </div>
