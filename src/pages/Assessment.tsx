@@ -643,10 +643,16 @@ const Assessment: React.FC = () => {
   }, [orgId, assessmentCategories, firstIncompleteCategoryIndex]);
 
   const toggleCategory = useCallback((name: string) => {
-    const index = assessmentCategories.findIndex(category => category.name === name);
-    if (index === -1) return;
-    selectGuidedCategory(index);
-  }, [assessmentCategories, selectGuidedCategory]);
+    setExpandedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) {
+        next.delete(name);
+      } else {
+        next.add(name);
+      }
+      return next;
+    });
+  }, []);
 
   const answeredQuestions = useMemo(
     () => assessmentCategories.reduce((acc, cat) => acc + cat.completed, 0),
