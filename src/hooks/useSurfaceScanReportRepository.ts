@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { surfaceScan360Api } from '@/lib/api/surface-scan360';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import type { SurfaceScanJob } from '@/hooks/useSurfaceScanEngine';
+import type { SurfaceScanAiReport } from '@/lib/api/surface-scan360';
 
 export interface SurfaceScanAiReportRow {
   id: string;
@@ -16,16 +18,27 @@ export interface SurfaceScanAiReportRow {
 
 const ORGANIZATION_SCOPE_REPORT_TITLE = 'SurfaceScan360 Report - Organization Scope';
 
-const isOrganizationScopeReport = (row: SurfaceScanAiReportRow): boolean => {
-  const title = String(row?.title || '').trim();
-  const payloadScope = String(row?.payload?.scan?.scope_mode || '').trim().toLowerCase();
-  const repositoryMode = String(row?.payload?.report_repository?.mode || '').trim().toLowerCase();
+const isOrganizationScopeReport = (row: SurfaceScanAiReportRow | SurfaceScanAiReport): boolean => {
+  const title = String((row as any)?.title || '').trim();
+  const payloadScope = String((row as any)?.payload?.scan?.scope_mode || '').trim().toLowerCase();
+  const repositoryMode = String((row as any)?.payload?.report_repository?.mode || '').trim().toLowerCase();
   return (
     title === ORGANIZATION_SCOPE_REPORT_TITLE
     || payloadScope === 'organization_scope'
     || repositoryMode === 'organization_scope_canonical'
   );
 };
+
+/** Map backend SurfaceScanAiReport to the local row type expected by consumers. */
+const mapApiReportToRow = (report: SurfaceScanAiReport, organizationId: string): SurfaceScanAiReportRow => ({
+  id: report.id,
+  organization_id: organizationId,
+  scan_job_id: report.scan_job_id || null,
+  title: report.title || null,
+  payload: report.ai_summary ? { ai_summary: report.ai_summary } : {},
+  created_by: null,
+  created_at: report.created_at,
+});
 
 interface UseSurfaceScanReportRepositoryResult {
   reports: SurfaceScanAiReportRow[];
@@ -42,7 +55,7 @@ interface UseSurfaceScanReportRepositoryResult {
 export const useSurfaceScanReportRepository = (
   scanJobs: SurfaceScanJob[],
 ): UseSurfaceScanReportRepositoryResult => {
-  const { organizationId, isLoading: organizationLoading } = useClientOrganization();
+  const { organizationId, groupId, isLoading: organizationLoading } = useClientOrganization();
   const [reports, setReports] = useState<SurfaceScanAiReportRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -52,14 +65,12 @@ export const useSurfaceScanReportRepository = (
     if (organizationLoading || !organizationId) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('surface_scan_ai_reports')
-        .select('id, organization_id, scan_job_id, title, payload, created_by, created_at')
-        .eq('organization_id', organizationId)
-        .order('created_at', { ascending: false })
-        .limit(100);
-      if (error) throw error;
-      const allRows = ((data || []) as SurfaceScanAiReportRow[]).filter((row) => row?.payload);
+      const apiReports = await surfaceScan360Api.listAiReports(organizationId, undefined, groupId);
+
+      const allRows: SurfaceScanAiReportRow[] = (apiReports || [])
+        .filter((r) => r?.id)
+        .map((r) => mapApiReportToRow(r, organizationId));
+
       const canonicalRows = allRows.filter((row) => isOrganizationScopeReport(row));
       canonicalRows.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
 
@@ -74,7 +85,7 @@ export const useSurfaceScanReportRepository = (
     } finally {
       setLoading(false);
     }
-  }, [organizationId, organizationLoading]);
+  }, [organizationId, groupId, organizationLoading]);
 
   useEffect(() => {
     if (!organizationLoading && organizationId) {
@@ -91,28 +102,34 @@ export const useSurfaceScanReportRepository = (
 
       setGenerating(true);
       try {
-        const { data, error } = await supabase.functions.invoke('surfacescan360-ai-report', {
-          body: {
-            organization_id: organizationId,
+        await surfaceScan360Api.createAiReport(
+          organizationId,
+          {
             job_id: options?.jobId,
             scope_mode: 'organization_scope',
             trigger_source: 'manual',
             force_regenerate: Boolean(options?.forceRegenerate),
           },
-        });
-        if (error) throw error;
-        if ((data as any)?.error) throw new Error((data as any).error);
+          groupId,
+        );
+
         await fetchReports();
         if (!options?.silent) {
-          if ((data as any)?.existing) {
-            toast.success('Report già presente in repository');
-          } else {
-            toast.success('Report generato e salvato in repository');
-          }
+          toast.success('Report generato e salvato in repository');
         }
         return true;
       } catch (error: any) {
         console.error('Error generating SurfaceScan report:', error);
+        // Check if the backend indicated the report already exists (409 or specific message)
+        const msg = String(error?.message || '').toLowerCase();
+        const status = Number(error?.status || 0);
+        if (status === 409 || msg.includes('already exists') || msg.includes('esiste già') || msg.includes('existing')) {
+          await fetchReports();
+          if (!options?.silent) {
+            toast.success('Report già presente in repository');
+          }
+          return true;
+        }
         if (!options?.silent) {
           toast.error(`Errore generazione report: ${error?.message || 'unknown'}`);
         }
@@ -121,7 +138,7 @@ export const useSurfaceScanReportRepository = (
         setGenerating(false);
       }
     },
-    [organizationId, fetchReports],
+    [organizationId, groupId, fetchReports],
   );
 
   const missingCompletedJobs = useMemo(() => {
@@ -152,6 +169,7 @@ export const useSurfaceScanReportRepository = (
 
       setDeletingReportId(id);
       try {
+        // No backend delete endpoint yet — fall back to supabase
         const { error } = await supabase
           .from('surface_scan_ai_reports')
           .delete()

@@ -1,22 +1,7 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { darkRiskApi } from '@/lib/api/darkrisk';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
-
-type ScanRunRow = {
-  id: string;
-  status: string;
-  trigger_type: string | null;
-  created_at: string;
-  completed_at: string | null;
-};
-
-type FindingRow = {
-  scan_run_id: string | null;
-  severity: string | null;
-  risk_score: number | null;
-  finding_type: string | null;
-};
 
 export type DarkRiskWeeklyTrendPoint = {
   week_key: string;
@@ -48,7 +33,7 @@ const weekLabelFromKey = (key: string): string => {
 };
 
 export const useDarkRiskWeeklyTrend = (weeks: number = 12) => {
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
 
   const query = useQuery({
     queryKey: ['darkrisk360-weekly-trend', organizationId, weeks],
@@ -56,55 +41,65 @@ export const useDarkRiskWeeklyTrend = (weeks: number = 12) => {
     queryFn: async (): Promise<DarkRiskWeeklyTrendPoint[]> => {
       if (!organizationId) return emptyData;
 
-      const { data: runsData, error: runsError } = await supabase
-        .from('darkrisk_scan_runs' as any)
-        .select('id, status, trigger_type, created_at, completed_at')
-        .eq('organization_id', organizationId)
-        .in('status', ['completed', 'completed_with_warnings', 'failed'])
-        .order('created_at', { ascending: false })
-        .limit(Math.max(weeks * 8, 40));
+      // Fetch scan runs from the backend API
+      const scanRuns = await darkRiskApi.listScanRuns(
+        organizationId,
+        { per_page: Math.max(weeks * 8, 40) },
+        groupId,
+      );
 
-      if (runsError) throw runsError;
-      const runs = (runsData || []) as ScanRunRow[];
-      if (runs.length === 0) return emptyData;
+      if (!scanRuns || scanRuns.length === 0) return emptyData;
 
-      const runIds = runs.map((run) => String(run.id)).filter(Boolean);
-      const { data: findingsData, error: findingsError } = await supabase
-        .from('darkrisk_findings' as any)
-        .select('scan_run_id, severity, risk_score, finding_type')
-        .in('scan_run_id', runIds)
-        .limit(6000);
-
-      if (findingsError) throw findingsError;
-      const findings = (findingsData || []) as FindingRow[];
-
-      const findingsByRun = new Map<string, FindingRow[]>();
-      for (const finding of findings) {
-        const runId = String(finding.scan_run_id || '').trim();
-        if (!runId) continue;
-        const bucket = findingsByRun.get(runId) || [];
-        bucket.push(finding);
-        findingsByRun.set(runId, bucket);
-      }
-
+      // Gather findings for each scan run (up to all runs, but only completed/failed ones)
       const byWeek = new Map<string, DarkRiskWeeklyTrendPoint & { __risk_sum: number; __risk_count: number }>();
 
-      for (const run of runs) {
+      // Process scan runs (backend returns them newest-first by default — we process all, not just the tail)
+      for (const run of scanRuns) {
+        const runStatus = String(run.status || '').toLowerCase();
+        if (!runStatus || !['completed', 'completed_with_warnings', 'failed'].includes(runStatus)) continue;
+
         const runDate = String(run.completed_at || run.created_at || '').trim();
         if (!runDate) continue;
-        const weekKey = weekStartUtcKey(runDate);
-        const rowFindings = findingsByRun.get(String(run.id)) || [];
 
-        const highCritical = rowFindings.filter((f) => ['high', 'critical'].includes(String(f.severity || '').toLowerCase())).length;
-        const medium = rowFindings.filter((f) => String(f.severity || '').toLowerCase() === 'medium').length;
-        const lowInfo = rowFindings.filter((f) => ['low', 'info'].includes(String(f.severity || '').toLowerCase())).length;
-        const riskScores = rowFindings
-          .map((f) => Number(f.risk_score))
-          .filter((score) => Number.isFinite(score));
+        const weekKey = weekStartUtcKey(runDate);
+
+        if (!weekKey || weekKey === 'n/a') continue;
+
+        // Fetch findings for this run
+        let findings: any[] = [];
+        try {
+          findings = await darkRiskApi.getScanRunFindings(
+            organizationId,
+            String(run.id),
+            undefined,
+            groupId,
+          );
+        } catch {
+          // If findings fetch fails for a single run, skip its finding stats but count the scan
+        }
+
+        findings = Array.isArray(findings) ? findings : [];
+
+        const highCritical = findings.filter(
+          (f: any) => ['high', 'critical'].includes(String(f.severity || '').toLowerCase()),
+        ).length;
+        const medium = findings.filter(
+          (f: any) => String(f.severity || '').toLowerCase() === 'medium',
+        ).length;
+        const lowInfo = findings.filter(
+          (f: any) => ['low', 'info'].includes(String(f.severity || '').toLowerCase()),
+        ).length;
+
+        const riskScores = findings
+          .map((f: any) => Number(f.risk_score))
+          .filter((score: number) => Number.isFinite(score));
         const runRiskAvg = riskScores.length > 0
-          ? riskScores.reduce((sum, score) => sum + score, 0) / riskScores.length
+          ? riskScores.reduce((sum: number, score: number) => sum + score, 0) / riskScores.length
           : 0;
-        const dtiSignals = rowFindings.filter((f) => String(f.finding_type || '').toLowerCase().includes('dti')).length;
+
+        const dtiSignals = findings.filter(
+          (f: any) => String(f.finding_type || '').toLowerCase().includes('dti'),
+        ).length;
 
         const current = byWeek.get(weekKey) || {
           week_key: weekKey,
@@ -121,7 +116,7 @@ export const useDarkRiskWeeklyTrend = (weeks: number = 12) => {
         };
 
         current.scans += 1;
-        current.findings_total += rowFindings.length;
+        current.findings_total += findings.length;
         current.high_critical += highCritical;
         current.medium += medium;
         current.low_info += lowInfo;

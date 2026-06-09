@@ -34,3 +34,4 @@ export { surfaceScanAlertsApi } from "./surface-scan-alerts";
 export { darkRiskApi } from "./darkrisk";
 export { surfaceScan360Api } from "./surface-scan360";
 export { nucleiScan360Api } from "./nuclei-scan360";
+export { lifecycleApi } from "./lifecycle";
