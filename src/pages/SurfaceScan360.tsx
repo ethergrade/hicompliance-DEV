@@ -57,6 +57,7 @@ import {
   splitMonitoredScopeRules,
 } from '@/lib/surfaceScopeGuard';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import { SurfaceScanErrorBoundary } from '@/components/shared/ErrorFallback';
 
 const IPV4_REGEX =
   /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
@@ -209,7 +210,7 @@ const SurfaceScan360: React.FC = () => {
   const { organizationId } = useClientOrganization();
 
   const { alerts, createAlert } = useSurfaceScanAlerts();
-  const activeAlertsCount = alerts.filter((a) => a.is_active).length;
+  const activeAlertsCount = (alerts || []).filter((a) => a.is_active).length;
 
   const { jobs: scanJobs, startScanQueue, isAdmin } = useSurfaceScanEngine();
   const {
@@ -279,8 +280,8 @@ const SurfaceScan360: React.FC = () => {
 
     const lastScanAt = scanJobs.length > 0 ? scanJobs[0].created_at : null;
 
-    const dumpedSubdomains = subdomainDump.history
-      .flatMap((dump) =>
+    const dumpedSubdomains = (subdomainDump.history || [])
+      .flatMap((dump: any) =>
         dump.results
           .map((entry) => String(entry.subdomain || '').trim().toLowerCase())
           .filter(Boolean)
@@ -294,14 +295,14 @@ const SurfaceScan360: React.FC = () => {
       scannedDomains: [...scannedDomains],
       scannedIps: [...scannedIps],
       discoveredSubdomains: mergedSubdomains,
-      discoveredIps,
+      discoveredIps: Array.isArray(discoveredIps) ? discoveredIps : [],
       lastScanAt,
       lastScanLabel: formatLastScanLabel(lastScanAt),
     };
   }, [scanJobs, discoveredSubdomains, discoveredIps, subdomainDump.history, scopeDomains]);
 
   const visibleScannedTargets = useMemo(() => {
-    return scanDiscovery.scannedTargets.filter((target) => {
+    return [...scanDiscovery.scannedTargets].filter((target) => {
       const host = extractHostFromTarget(target);
       if (!host) return false;
       if (IPV4_REGEX.test(host) || isIpv6(host)) {
@@ -312,7 +313,7 @@ const SurfaceScan360: React.FC = () => {
   }, [scanDiscovery.scannedTargets, scopeDomains, ipScopeRules]);
 
   const excludedScannedTargets = useMemo(() => {
-    return scanDiscovery.scannedTargets.filter((target) => !visibleScannedTargets.includes(target));
+    return [...scanDiscovery.scannedTargets].filter((target) => !visibleScannedTargets.includes(target));
   }, [scanDiscovery.scannedTargets, visibleScannedTargets]);
 
   const excludedHostDiagnostics = useMemo(() => {
@@ -635,6 +636,7 @@ const SurfaceScan360: React.FC = () => {
 
   return (
     <DashboardLayout>
+      <SurfaceScanErrorBoundary title="SurfaceScan360 non disponibile" message="I dati di scansione non sono al momento accessibili. Riprova più tardi.">
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -1372,6 +1374,7 @@ const SurfaceScan360: React.FC = () => {
         onSubmit={handleCreateAlert}
         mode="create"
       />
+      </SurfaceScanErrorBoundary>
     </DashboardLayout>
   );
 };

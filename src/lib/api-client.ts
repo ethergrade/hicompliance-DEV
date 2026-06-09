@@ -177,16 +177,25 @@ async function request<T>(
   }
 
   const contentType = response.headers.get("content-type") ?? "";
-  const json = contentType.includes("application/json")
-    ? await response.json()
-    : { success: false, message: await response.text() };
+  const isJson = contentType.includes("application/json");
 
   if (!response.ok) {
+    const body = isJson ? await response.json() : { success: false, message: await response.text() };
     // Note: 401 on API data endpoints does NOT auto-logout.
     // Only authApi.me() and authApi.login() call handleUnauthorized() explicitly.
     // This prevents a single expired API call from destroying the entire session.
-    throw new ApiError(response.status, json as ApiErrorResponse);
+    throw new ApiError(response.status, body as ApiErrorResponse);
   }
+
+  // Guard: if response is 200 but not JSON, the backend returned HTML (likely a 500 disguised as 200)
+  // Treat as an API error so hooks get safe empty fallbacks instead of crashing on unexpected data
+  if (!isJson) {
+    const text = await response.text();
+    console.warn(`[api-client] Non-JSON 200 response from ${path}: ${text.substring(0, 200)}`);
+    throw new ApiError(response.status, { success: false, message: `Invalid response format (${contentType || "unknown"})` });
+  }
+
+  const json = await response.json();
 
   // Extend session on successful API calls (active user keeps token alive)
   refreshTokenExpiry();
