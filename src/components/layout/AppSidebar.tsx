@@ -78,8 +78,11 @@ const hiComplianceServices = [
   { title: 'DarkRisk360', href: '/dark-risk', icon: Eye },
 ];
 
-const incidentSubItems = [
+const incidentMainItems = [
   { title: 'Incident Response', href: '/incident-response', icon: AlertTriangle },
+];
+
+const complianceEventItems = [
   { title: 'Eventi Compliance', href: '/compliance-events', icon: FileCheck },
 ];
 
@@ -172,7 +175,7 @@ export const AppSidebar: React.FC = () => {
   const visibleHiCompliance = hiComplianceModules.filter(
     item => isModuleEnabled(item.href) && isFeatureAllowed(item.href) && isUserAllowed(item.href)
   );
-  const visibleIncident = incidentSubItems.filter(
+  const visibleComplianceEvents = complianceEventItems.filter(
     item => isModuleEnabled(item.href) && isFeatureAllowed(item.href) && isUserAllowed(item.href)
   );
 
@@ -184,15 +187,15 @@ export const AppSidebar: React.FC = () => {
   const servicesInHiCompliance = visibleServices.length >= 2 ? visibleServices : [];
 
   // HiCompliance mostra moduli base + servizi (se entrambi attivi)
-  const hiComplianceGroupVisible = visibleHiCompliance.length > 0 || visibleIncident.length > 0 || servicesInHiCompliance.length > 0;
+  const hiComplianceGroupVisible = visibleHiCompliance.length > 0 || visibleComplianceEvents.length > 0 || servicesInHiCompliance.length > 0;
 
-  const hiComplianceActive = [...hiComplianceModules, ...incidentSubItems].some(
+  const hiComplianceActive = [...hiComplianceModules, ...complianceEventItems].some(
     item => location.pathname === item.href
   );
-  const incidentActive = incidentSubItems.some(item => location.pathname === item.href);
+  const complianceEventsActive = complianceEventItems.some(item => location.pathname === item.href);
 
   const [hiComplianceOpen, setHiComplianceOpen] = React.useState<boolean>(true);
-  const [incidentOpen, setIncidentOpen] = React.useState(incidentActive);
+  const [complianceEventsOpen, setComplianceEventsOpen] = React.useState(complianceEventsActive);
   const [servicesOpen, setServicesOpen] = React.useState(false);
 
   const renderNavItem = (item: { title: string; href: string; icon: React.ElementType }, indent = false) => {
@@ -270,25 +273,8 @@ export const AppSidebar: React.FC = () => {
                     {servicesInHiCompliance.map(item => renderNavItem(item))}
 
                     {/* INCIDENT sub-collapsible */}
-                    {visibleIncident.length > 0 && (
-                      <li>
-                        <Collapsible open={incidentOpen} onOpenChange={setIncidentOpen}>
-                          <CollapsibleTrigger className="flex w-full items-center justify-between mx-2 px-3 py-2 text-sm rounded-lg text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors">
-                            <div className="flex items-center gap-2">
-                              <Shield className="w-4 h-4" />
-                              {!collapsed && <span>Incident</span>}
-                            </div>
-                            {!collapsed && (
-                              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${incidentOpen ? 'rotate-180' : ''}`} />
-                            )}
-                          </CollapsibleTrigger>
-                          <CollapsibleContent>
-                            <SidebarMenu>
-                              {visibleIncident.map(item => renderNavItem(item, true))}
-                            </SidebarMenu>
-                          </CollapsibleContent>
-                        </Collapsible>
-                      </li>
+                    {incidentMainItems.map(item => isModuleEnabled(item.href) && isFeatureAllowed(item.href) && isUserAllowed(item.href) && renderNavItem(item))}
+                    {visibleComplianceEvents.length > 0 && visibleComplianceEvents.map(item => renderNavItem(item))
                     )}
                   </SidebarMenu>
                 </SidebarGroupContent>

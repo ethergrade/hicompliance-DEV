@@ -418,15 +418,15 @@ const IncidentResponse: React.FC = () => {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center gap-3">
-          <div>
+      <div className="space-y-6 max-w-7xl mx-auto">
+        <div className="flex items-center justify-between">
+          <div className="">
             <h1 className="text-3xl font-bold text-white">Incident Response Plan</h1>
-            <p className="text-gray-400">
+            <p className="text-gray-400 text-sm mt-1">
               Procedure operative e documentazione per la gestione degli incidenti di sicurezza
             </p>
           </div>
-          <Badge variant={isIrpExtended ? 'default' : 'secondary'} className="h-6 mt-1">
+          <Badge variant={isIrpExtended ? 'default' : 'secondary'} className="h-6">
             {isIrpExtended ? 'IRP Esteso' : 'IRP Normale'}
           </Badge>
         </div>
@@ -483,9 +483,9 @@ const IncidentResponse: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {procedures.map((procedure) => (
                 <Card key={procedure.id} className="border-border bg-card hover:bg-card/80 transition-colors">
-                  <CardHeader className="pb-3">
+                  <CardHeader className="pb-2 px-5 pt-5">
                     <div className="flex items-center justify-between">
-                      <procedure.icon className="w-8 h-8 text-primary" />
+                      <procedure.icon className="w-7 h-7 text-primary" />
                       <div className="flex items-center gap-2">
                         {hasPlaybookProgress(procedure.id) && (
                           <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/20">
@@ -499,11 +499,11 @@ const IncidentResponse: React.FC = () => {
                         </Badge>
                       </div>
                     </div>
-                    <CardTitle className="text-foreground text-lg">{procedure.title}</CardTitle>
-                    <p className="text-sm text-muted-foreground">{procedure.description}</p>
+                    <CardTitle className="text-foreground text-base leading-snug mt-2">{procedure.title}</CardTitle>
+                    <p className="text-xs text-muted-foreground leading-relaxed">{procedure.description}</p>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between text-sm">
+                  <CardContent className="space-y-3 px-5 pb-5">
+                    <div className="flex items-center justify-between text-xs">
                       <div className="flex items-center text-muted-foreground">
                         <Clock className="w-4 h-4 mr-1" />
                         {procedure.duration}
@@ -512,8 +512,8 @@ const IncidentResponse: React.FC = () => {
                     </div>
                     
                     <div className="space-y-2">
-                      <p className="text-sm font-medium text-foreground">Passaggi principali:</p>
-                      <ul className="text-sm text-muted-foreground space-y-1">
+                      <p className="text-xs font-medium text-foreground">Passaggi principali</p>
+                      <ul className="text-xs text-muted-foreground space-y-1.5">
                         {procedure.steps.slice(0, 3).map((step, index) => (
                           <li key={index} className="flex items-start">
                             <span className="text-primary mr-2">•</span>
