@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,8 +13,10 @@ import { OrganizationProfileForm } from '@/components/irp/OrganizationProfileFor
 import { PlaybookViewer } from '@/components/irp/PlaybookViewer';
 import { CriticalInfrastructureManager } from '@/components/irp/CriticalInfrastructureManager';
 import { RiskAnalysisManager } from '@/components/irp/RiskAnalysisManager';
+import SupplierDirectoryTab from '@/components/irp/SupplierDirectoryTab';
+import DocumentsTab from '@/components/irp/DocumentsTab';
 import { useToast } from '@/hooks/use-toast';
-import { irpApi } from '@/lib/api';
+import { irpApi, tenantServicesApi } from '@/lib/api';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { Playbook } from '@/types/playbook';
 import { playbooksMap } from '@/data/playbooks/phishing';
@@ -33,7 +36,10 @@ import {
   Package,
   Trash2,
   Server,
-  ShieldCheck
+  ShieldCheck,
+  Truck,
+  FileText,
+  Scale
 } from 'lucide-react';
 
 interface EmergencyContact {
@@ -55,6 +61,18 @@ const IncidentResponse: React.FC = () => {
   const [selectedPlaybook, setSelectedPlaybook] = useState<Playbook | null>(null);
   const { toast } = useToast();
   const { organizationId, groupId, selectedOrganization } = useClientOrganization();
+
+  // Detect IRP tier from tenant-services
+  const { data: isIrpExtended = false } = useQuery({
+    queryKey: ['irp-tier', organizationId],
+    queryFn: async () => {
+      if (!organizationId || !groupId) return false;
+      const services = await tenantServicesApi.listByOrganization(organizationId, groupId);
+      const hc = services.find(s => s.service_type === 'hicompliance' && s.status === 'active');
+      return !!(hc?.settings as any)?.extended_range;
+    },
+    enabled: !!organizationId && !!groupId,
+  });
 
   // Handle navigation state to open a specific playbook
   useEffect(() => {
@@ -401,26 +419,47 @@ const IncidentResponse: React.FC = () => {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-white">Incident Response Plan</h1>
-          <p className="text-gray-400">
-            Procedure operative e documentazione per la gestione degli incidenti di sicurezza
-          </p>
+        <div className="flex items-center gap-3">
+          <div>
+            <h1 className="text-3xl font-bold text-white">Incident Response Plan</h1>
+            <p className="text-gray-400">
+              Procedure operative e documentazione per la gestione degli incidenti di sicurezza
+            </p>
+          </div>
+          <Badge variant={isIrpExtended ? 'default' : 'secondary'} className="h-6 mt-1">
+            {isIrpExtended ? 'IRP Esteso' : 'IRP Normale'}
+          </Badge>
         </div>
 
         <Tabs defaultValue="procedures" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className={`grid w-full ${isIrpExtended ? 'grid-cols-8' : 'grid-cols-5'}`}>
             <TabsTrigger value="procedures">Procedure Operative</TabsTrigger>
             <TabsTrigger value="contacts">Contatti e Informazioni</TabsTrigger>
             <TabsTrigger value="directory">Rubrica Contatti</TabsTrigger>
-            <TabsTrigger value="infrastructure" className="flex items-center gap-1">
-              <Server className="h-4 w-4" />
-              Infrastruttura Critica
+            <TabsTrigger value="suppliers" className="flex items-center gap-1">
+              <Truck className="h-3.5 w-3.5" />
+              Fornitori
             </TabsTrigger>
-            <TabsTrigger value="risk-analysis" className="flex items-center gap-1">
-              <ShieldCheck className="h-4 w-4" />
-              Analisi Rischi
+            <TabsTrigger value="documents" className="flex items-center gap-1">
+              <FileText className="h-3.5 w-3.5" />
+              Documenti
             </TabsTrigger>
+            {isIrpExtended && (
+              <>
+                <TabsTrigger value="infrastructure" className="flex items-center gap-1">
+                  <Server className="h-3.5 w-3.5" />
+                  Infrastruttura
+                </TabsTrigger>
+                <TabsTrigger value="risk-analysis" className="flex items-center gap-1">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  Analisi Rischi
+                </TabsTrigger>
+                <TabsTrigger value="compliance" className="flex items-center gap-1">
+                  <Scale className="h-3.5 w-3.5" />
+                  Conformità
+                </TabsTrigger>
+              </>
+            )}
           </TabsList>
 
           <TabsContent value="procedures" className="space-y-6">
@@ -520,16 +559,56 @@ const IncidentResponse: React.FC = () => {
 
           <TabsContent value="directory" className="space-y-6">
             <ContactDirectoryManager />
-            {/* SupplierDirectoryManager nascosto — nessun endpoint API backend */}
           </TabsContent>
 
-          <TabsContent value="infrastructure" className="space-y-6">
-            <CriticalInfrastructureManager />
+          <TabsContent value="suppliers" className="space-y-6">
+            {organizationId ? (
+              <SupplierDirectoryTab organizationId={organizationId} groupId={groupId ?? null} />
+            ) : (
+              <div className="text-center py-12 text-muted-foreground">Seleziona un'azienda per gestire i fornitori.</div>
+            )}
           </TabsContent>
 
-          <TabsContent value="risk-analysis" className="space-y-6">
-            <RiskAnalysisManager />
+          <TabsContent value="documents" className="space-y-6">
+            {organizationId ? (
+              <DocumentsTab organizationId={organizationId} groupId={groupId ?? null} />
+            ) : (
+              <div className="text-center py-12 text-muted-foreground">Seleziona un'azienda per visualizzare i documenti.</div>
+            )}
           </TabsContent>
+
+          {isIrpExtended && (
+            <>
+              <TabsContent value="infrastructure" className="space-y-6">
+                <CriticalInfrastructureManager />
+              </TabsContent>
+
+              <TabsContent value="risk-analysis" className="space-y-6">
+                <RiskAnalysisManager />
+              </TabsContent>
+
+              <TabsContent value="compliance" className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Scale className="w-5 h-5 text-primary" />
+                      Conformità Normativa
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                      <Scale className="w-12 h-12 text-muted-foreground mb-4" />
+                      <h3 className="text-lg font-semibold mb-2">Modulo Conformità</h3>
+                      <p className="text-muted-foreground max-w-md">
+                        Questa sezione è in fase di sviluppo. Includerà il monitoraggio della conformità normativa
+                        (GDPR, NIS2, ISO 27001) e la verifica dei requisiti legali applicabili.
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </>
+          )}
         </Tabs>
       </div>
 
