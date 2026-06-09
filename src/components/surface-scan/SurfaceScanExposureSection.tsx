@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { ChevronDown, ChevronRight, Loader2, Play, RefreshCw, RotateCw, ShieldAlert } from 'lucide-react';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { supabase } from '@/integrations/supabase/client';
+// TODO: migrate surface_scan_monitored_ips scope query to backend API when endpoint available
 import {
   fetchExposureFindingsByJobIds,
   fetchExposureJobs,

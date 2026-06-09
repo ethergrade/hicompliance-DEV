@@ -26,6 +26,8 @@ import {
   XCircle,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+// TODO: migrate surface_scan_jobs, surface_scan_monitored_ips, surface_scan_module_results, surface_observations, surface_open_ports to backend API when endpoints available
+import { surfaceScan360Api, type SurfaceScanJob } from '@/lib/api/surface-scan360';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useSurfaceScanDiscoveredAssets } from '@/hooks/useSurfaceScanDiscoveredAssets';
 import {
@@ -451,7 +453,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
   onAddSubdomainToScope,
   onScanSubdomain,
 }) => {
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
   const { subdomains: discoveredSubdomains } = useSurfaceScanDiscoveredAssets();
   const [loading, setLoading] = useState(false);
   const [latestScan, setLatestScan] = useState<LatestScanRow | null>(null);
@@ -496,27 +498,32 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
     const fetchData = async () => {
       setLoading(true);
       try {
-        const scopeFilter = `customer_id.eq.${organizationId},organization_id.eq.${organizationId}`;
-        const [scopeRes, jobsRes] = await Promise.all([
-          supabase
-            .from('surface_scan_monitored_ips' as any)
-            .select('entry_type, input_value, ip_start, ip_end')
-            .eq('organization_id', organizationId),
-          supabase
-            .from('surface_scan_jobs' as any)
-            .select('id, raw_target, normalized_target, scan_profile, status, created_at, completed_at, summary')
-            .or(scopeFilter)
-            .in('status', ['completed', 'partial', 'queued', 'pending', 'running', 'failed'])
-            .order('created_at', { ascending: false })
-            .limit(500),
-        ]);
+        // Fetch monitored IPs (scope rules) from supabase — no backend API endpoint yet
+        // TODO: migrate surface_scan_monitored_ips to backend API when endpoint available
+        const scopeRes = await supabase
+          .from('surface_scan_monitored_ips' as any)
+          .select('entry_type, input_value, ip_start, ip_end')
+          .eq('organization_id', organizationId);
+
+        // Fetch jobs from backend API
+        const apiJobs = await surfaceScan360Api.listJobs(organizationId, { status: 'all' }, groupId);
 
         if (scopeRes.error) throw scopeRes.error;
-        if (jobsRes.error) throw jobsRes.error;
 
         const scopeRules = (scopeRes.data || []) as SurfaceMonitoredScopeRule[];
         const { scopeDomains, ipScopeRules } = splitMonitoredScopeRules(scopeRules);
-        const jobs = (jobsRes.data || []) as LatestScanRow[];
+
+        // Convert API jobs to LatestScanRow format
+        const jobs: LatestScanRow[] = apiJobs.map((job: any) => ({
+          id: job.id,
+          raw_target: job.raw_target || job.normalized_target || '',
+          normalized_target: job.normalized_target || job.raw_target || '',
+          scan_profile: job.scan_profile || 'standard',
+          status: job.status || 'queued',
+          created_at: job.created_at || '',
+          completed_at: job.completed_at || null,
+          summary: job.summary || null,
+        }));
 
         const configuredTargetsMap = new Map<string, ConfiguredScopeTarget>();
         for (const rule of scopeRules) {
@@ -616,7 +623,38 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
 
         const jobIds = scopeJobs.map((job) => String(job.id));
 
-        const [moduleRows, observationRows, findingRows, exposureRows] = await Promise.all([
+        // Fetch findings from backend API (per completed job)
+        const completedJobIds = scopeJobs
+          .filter((job) => ['completed', 'partial', 'success'].includes(String(job.status || '').toLowerCase()))
+          .map((job) => String(job.id));
+        let apiFindingRows: FindingRow[] = [];
+        if (completedJobIds.length > 0) {
+          const findingsResults = await Promise.allSettled(
+            completedJobIds.map((jobId) =>
+              surfaceScan360Api.getJobFindings(organizationId, jobId, {}, groupId),
+            ),
+          );
+          apiFindingRows = findingsResults
+            .filter((r): r is PromiseFulfilledResult<any[]> => r.status === 'fulfilled')
+            .flatMap((r) => (r.value || []).map((f: any) => ({
+              scan_job_id: f.scan_job_id || '',
+              module: f.module || null,
+              finding_type: f.finding_type || null,
+              title: f.title || null,
+              remediation: f.remediation || null,
+              severity: (f.severity || 'info') as FindingRow['severity'],
+              affected_asset: f.affected_asset || null,
+              affected_url: f.affected_url || null,
+              ip: f.ip || null,
+              evidence: f.evidence || null,
+              status: f.status || null,
+              created_at: f.created_at || '',
+            })));
+        }
+
+        // Module results, observations, open ports — still supabase (no backend API endpoints)
+        // TODO: migrate to backend API when endpoints available
+        const [moduleRows, observationRows, exposureRows] = await Promise.all([
           fetchRowsByJobIds<ModuleResultRow>(
             'surface_scan_module_results',
             'scan_job_id, module_key, module_label, status, severity, duration_ms, completed_at, error_message, normalized, raw, source',
@@ -629,12 +667,6 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
             jobIds,
             { orderBy: 'created_at', ascending: false },
           ),
-          fetchRowsByJobIds<FindingRow>(
-            'surface_findings',
-            'scan_job_id, module, finding_type, title, remediation, severity, affected_asset, affected_url, ip, evidence, status, created_at',
-            jobIds,
-            { orderBy: 'created_at', ascending: false },
-          ),
           fetchRowsByJobIds<ExposureOpenPortRow>(
             'surface_open_ports',
             'scan_job_id, host, ip, port, protocol, service_name, service_product, service_version, exposure_level, is_web, is_tls',
@@ -642,6 +674,8 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
             { orderBy: 'last_seen_at', ascending: false },
           ),
         ]);
+
+        const findingRows = apiFindingRows;
 
         const prioritizedFindings = findingRows
           .filter((entry) => !['resolved', 'suppressed', 'false_positive', 'accepted_risk'].includes(String(entry.status || '').toLowerCase()))
