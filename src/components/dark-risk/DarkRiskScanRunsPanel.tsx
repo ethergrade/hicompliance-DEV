@@ -6,6 +6,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useDarkRiskScanRuns } from '@/hooks/useDarkRiskScanRuns';
 import { RefreshCw, Play, AlertTriangle, CheckCircle, Clock, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import EnricherBadges from '@/components/shared/EnricherBadges';
+import { parseEnricherData } from '@/types/enrichers';
 
 const statusIcon: Record<string, React.ReactNode> = {
   queued: <Clock className="h-4 w-4 text-muted-foreground" />,
@@ -63,25 +65,35 @@ export function DarkRiskScanRunsPanel() {
         {(list.data || []).length === 0 && !list.isLoading && (
           <p className="text-sm text-muted-foreground">Nessuna scansione registrata.</p>
         )}
-        {(list.data || []).map((run: any) => (
+        {(list.data || []).map((run: any) => {
+          const enrichers = parseEnricherData(run.summary || run);
+          return (
           <div
             key={run.id}
-            className="flex items-center justify-between rounded-md border p-2 text-sm"
+            className="rounded-md border p-2 text-sm space-y-2"
           >
-            <div className="flex items-center gap-2">
-              {statusIcon[run.status] || statusIcon.queued}
-              <div>
-                <p className="font-medium">{run.trigger_type || 'manuale'}</p>
-                <p className="text-xs text-muted-foreground">
-                  {run.started_at ? new Date(run.started_at).toLocaleString('it-IT') : 'In attesa'}
-                </p>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {statusIcon[run.status] || statusIcon.queued}
+                <div>
+                  <p className="font-medium">{run.trigger_type || 'manuale'}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {run.started_at ? new Date(run.started_at).toLocaleString('it-IT') : 'In attesa'}
+                  </p>
+                </div>
               </div>
+              <Badge className={statusTone[run.status] || statusTone.queued}>
+                {run.status}
+              </Badge>
             </div>
-            <Badge className={statusTone[run.status] || statusTone.queued}>
-              {run.status}
-            </Badge>
+            {(run.status === 'completed' || run.status === 'completed_with_warnings') && enrichers && (
+              <div className="border-t pt-2">
+                <EnricherBadges data={enrichers} />
+              </div>
+            )}
           </div>
-        ))}
+          );
+        })}
       </CardContent>
     </Card>
   );

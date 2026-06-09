@@ -6,6 +6,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useSurfaceScan360Jobs } from '@/hooks/useSurfaceScan360';
 import { Play, AlertTriangle, CheckCircle, Clock, XCircle, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
+import EnricherBadges from '@/components/shared/EnricherBadges';
+import { parseJobEnrichers } from '@/types/enrichers';
 
 const statusIcon: Record<string, React.ReactNode> = {
   queued: <Clock className="h-4 w-4 text-muted-foreground" />,
@@ -63,34 +65,44 @@ export function SurfaceScanJobsPanel() {
         {(list.data || []).length === 0 && !list.isLoading && (
           <p className="text-sm text-muted-foreground">Nessuna scansione registrata.</p>
         )}
-        {(list.data || []).map((job: any) => (
+        {(list.data || []).map((job: any) => {
+          const enrichers = parseJobEnrichers(job);
+          return (
           <div
             key={job.id}
-            className="flex items-center justify-between rounded-md border p-2 text-sm"
+            className="rounded-md border p-2 text-sm space-y-2"
           >
-            <div className="flex items-center gap-2">
-              {statusIcon[job.status] || statusIcon.queued}
-              <div>
-                <p className="font-medium">{job.normalized_target || job.raw_target}</p>
-                <p className="text-xs text-muted-foreground">
-                  {job.started_at ? new Date(job.started_at).toLocaleString('it-IT') : 'In attesa'}
-                  {' · '}
-                  {job.scan_profile}
-                </p>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {statusIcon[job.status] || statusIcon.queued}
+                <div>
+                  <p className="font-medium">{job.normalized_target || job.raw_target}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {job.started_at ? new Date(job.started_at).toLocaleString('it-IT') : 'In attesa'}
+                    {' · '}
+                    {job.scan_profile}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {job.summary && (
+                  <span className="text-xs text-muted-foreground">
+                    Score {job.summary.overall_score} ({job.summary.risk_level})
+                  </span>
+                )}
+                <Badge className={statusTone[job.status] || statusTone.queued}>
+                  {job.status}
+                </Badge>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              {job.summary && (
-                <span className="text-xs text-muted-foreground">
-                  Score {job.summary.overall_score} ({job.summary.risk_level})
-                </span>
-              )}
-              <Badge className={statusTone[job.status] || statusTone.queued}>
-                {job.status}
-              </Badge>
-            </div>
+            {job.status === 'completed' && enrichers && (
+              <div className="border-t pt-2">
+                <EnricherBadges data={enrichers} />
+              </div>
+            )}
           </div>
-        ))}
+          );
+        })}
       </CardContent>
     </Card>
   );
