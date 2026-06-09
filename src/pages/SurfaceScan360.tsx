@@ -50,6 +50,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useSubdomainDump } from '@/hooks/useSubdomainDump';
 import { SubdomainDumpPanel } from '@/components/surface-scan/SubdomainDumpPanel';
+import { SurfaceScanJobsPanel } from '@/components/surface-scan/SurfaceScanJobsPanel';
 import {
   classifySurfaceHostForScope,
   isIpWithinScopeRules,
@@ -648,6 +649,8 @@ const SurfaceScan360: React.FC = () => {
             </Button>
           </div>
         </div>
+
+        <SurfaceScanJobsPanel />
 
         {isAdminUser && (
           <Card className="border-primary/30 bg-primary/5">
