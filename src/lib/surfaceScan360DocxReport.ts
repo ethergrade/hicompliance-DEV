@@ -14,6 +14,7 @@ import {
 } from 'docx';
 import { saveAs } from 'file-saver';
 import type { SurfaceScan360Report } from './surfaceScan360PdfReport';
+import { REPORT_GLOSSARY } from './reportGlossary';
 
 const SURFACESCAN_BRAND_TITLE_HICOMPLIANCE = 'HICOMPLIANCE · SURFACESCAN360';
 const SURFACESCAN_BRAND_TITLE_HICONSOLE = 'HiConsole - SURFACESCAN360';
@@ -247,6 +248,30 @@ export async function generateSurfaceScan360Docx(report: SurfaceScan360Report): 
     asText((entry.affected_assets || []).join(', '), '-'),
   ]);
 
+  // Glossario: paragrafi da iniettare nell'unica section del documento
+  const glossaryNodes = [
+    new Paragraph({
+      text: '7. Glossario tecnico',
+      heading: HeadingLevel.HEADING_1,
+      pageBreakBefore: true,
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: 'Definizioni semplificate dei termini tecnici usati in questo report.', italics: true, color: '6B7280' })],
+      spacing: { after: 200 },
+    }),
+    ...REPORT_GLOSSARY.flatMap((entry) => [
+      new Paragraph({
+        children: [new TextRun({ text: entry.term, bold: true, color: '111827' })],
+        spacing: { before: 120, after: 40 },
+      }),
+      new Paragraph({
+        children: [new TextRun({ text: entry.definition, color: '374151' })],
+        indent: { left: 360 },
+        spacing: { after: 80 },
+      }),
+    ]),
+  ];
+
   const doc = new Document({
     sections: [
       {
@@ -291,6 +316,9 @@ export async function generateSurfaceScan360Docx(report: SurfaceScan360Report): 
             ['Priorità', 'Titolo', 'Severità', 'Azione', 'Asset'],
             recommendationRows.length > 0 ? recommendationRows : [['#1', 'Nessuna priorità disponibile', 'low', '-', '-']],
           ),
+
+          // ── Sezione 7: Glossario tecnico ─────────────────────────────────
+          ...glossaryNodes,
         ],
       },
     ],

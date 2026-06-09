@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import { COVER_BG_JPEG_B64, HISOLUTION_LOGO_PNG_B64 } from './reportCoverAssets';
+import { REPORT_GLOSSARY } from './reportGlossary';
 
 interface RemediationTask {
   id: string;
@@ -1517,6 +1518,25 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
       sectionTitle(10, 'Note di compliance');
       text(redactReportWords(aiData.compliance_notes));
     }
+  }
+
+  // ===== 11 GLOSSARIO TECNICO =====
+  sectionTitle(11, 'Glossario tecnico');
+  text('Definizioni semplificate dei termini tecnici usati in questo report.', { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] });
+  y += 4;
+  for (const entry of REPORT_GLOSSARY) {
+    ensure(28);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(DARK.r, DARK.g, DARK.b);
+    doc.text(entry.term, margin, y);
+    y += 12;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(MUTED.r, MUTED.g, MUTED.b);
+    const defLines = doc.splitTextToSize(entry.definition, w - margin * 2 - 10);
+    defLines.forEach((line: string) => { ensure(10); doc.text(line, margin + 8, y); y += 10; });
+    y += 4;
   }
 
   drawFooter();

@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import { COVER_BG_JPEG_B64, HISOLUTION_LOGO_PNG_B64 } from './reportCoverAssets';
+import { REPORT_GLOSSARY } from './reportGlossary';
 
 // ─── Tipi (shape del report_json prodotto da darkrisk-dti-esteso-report v2.0) ───
 interface DtiPasswordHit { collection_title: string; data_collection: string | null; username?: string; value: string; context: string }
@@ -423,6 +424,92 @@ export function generateDtiEstesoPdf(report: DtiEstesoReportJson): void {
     sectionTitle('Legenda - Nomenclatura fonti');
     text('Categorie di fonte dei finding e relativo significato operativo.', { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] });
     drawTable(['Categoria', 'Significato'], legend.map((l) => [l.category, l.description]), [160, 355]);
+  }
+
+  // ===== EMAIL IDENTITY LEAK — riepilogo trasversale per dominio =====
+  sectionTitle('Email Identity Leak — Riepilogo per dominio');
+  text(
+    'Questa sezione riassume i risultati delle query di tipo email/identity condotte su fonti di threat intelligence ' +
+    '(IntelX/DarkRisk360) per tutti i domini in perimetro. Un risultato indica che indirizzi email ' +
+    'associati al dominio sono stati trovati in archivi di databreach o leak.',
+    { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] },
+  );
+  y += 4;
+  const perDomainForEmail = report.per_domain || [];
+  let emailLeakRowsTotal = 0;
+  for (const d of perDomainForEmail) {
+    const emailRuns = (d.source_runs || []).filter(
+      (r) =>
+        r.query_kind === 'at_domain_tld' ||
+        r.query_kind === 'email_selector' ||
+        String(r.query_term || '').startsWith('@'),
+    );
+    if (emailRuns.length === 0) continue;
+    ensure(20);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(BRAND.r, BRAND.g, BRAND.b);
+    doc.text(ascii(d.domain), margin, y);
+    y += 12;
+    const totalResults = emailRuns.reduce((s, r) => s + Number(r.result_count || 0), 0);
+    emailLeakRowsTotal += totalResults;
+    if (totalResults === 0) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.setTextColor(16, 133, 89);
+      doc.text('  Nessun finding email/identity rilevato in questa scansione.', margin, y);
+      y += 12;
+    } else {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(200, 50, 50);
+      doc.text(
+        `  ${totalResults} segnali rilevati per indirizzi email associati a questo dominio.`,
+        margin, y,
+      );
+      y += 10;
+      drawTable(
+        ['Query email', 'Tipo query', 'Risultati', 'Fonte'],
+        emailRuns.slice(0, 20).map((r) => [
+          r.query_term,
+          r.query_kind,
+          String(r.result_count),
+          r.source,
+        ]),
+        [180, 120, 80, 135],
+      );
+    }
+    y += 4;
+  }
+  if (perDomainForEmail.length === 0 || emailLeakRowsTotal === 0) {
+    ensure(20);
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(9);
+    doc.setTextColor(16, 133, 89);
+    doc.text(
+      'Nessun finding email/identity rilevato in questa scansione per nessun dominio in perimetro.',
+      margin, y,
+    );
+    y += 16;
+  }
+
+  // ===== GLOSSARIO TECNICO =====
+  sectionTitle('Glossario tecnico');
+  text('Definizioni semplificate dei termini tecnici usati in questo report.', { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] });
+  y += 4;
+  for (const entry of REPORT_GLOSSARY) {
+    ensure(28);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(DARK.r, DARK.g, DARK.b);
+    doc.text(ascii(entry.term), margin, y);
+    y += 12;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(MUTED.r, MUTED.g, MUTED.b);
+    const defLines = doc.splitTextToSize(ascii(entry.definition), w - margin * 2 - 10);
+    defLines.forEach((line: string) => { ensure(10); doc.text(line, margin + 8, y); y += 10; });
+    y += 4;
   }
 
   drawFooter();
