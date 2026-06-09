@@ -95,6 +95,7 @@ type DnsBlocklistCheck = {
   status: "listed" | "not_listed" | "lookup_blocked" | "lookup_error";
   records: string[];
   reason?: string;
+  secondary_records?: string[];
 };
 
 function classifyDnsBlocklistResponse(provider: string, answers: string[]): {
@@ -141,6 +142,40 @@ function classifyDnsBlocklistResponse(provider: string, answers: string[]): {
     status: listed ? "listed" : "lookup_error",
     reason: listed ? undefined : "unrecognized_dnsbl_response",
   };
+}
+
+function mergeDnsblClassifications(
+  provider: string,
+  primary: { listed: boolean; status: DnsBlocklistCheck["status"]; reason?: string },
+  secondary: { listed: boolean; status: DnsBlocklistCheck["status"]; reason?: string },
+): { listed: boolean; status: DnsBlocklistCheck["status"]; reason?: string } {
+  const normalizedProvider = String(provider || "").toLowerCase();
+  if (!normalizedProvider.includes("spamhaus")) return primary;
+
+  if (primary.listed && secondary.listed) {
+    return { listed: true, status: "listed" };
+  }
+  if (
+    (primary.listed && secondary.status === "lookup_blocked") ||
+    (secondary.listed && primary.status === "lookup_blocked")
+  ) {
+    return { listed: true, status: "listed", reason: "listed_with_partial_quorum_lookup_blocked" };
+  }
+  if (primary.listed !== secondary.listed) {
+    return {
+      listed: false,
+      status: "lookup_error",
+      reason: "ambiguous_spamhaus_dnsbl_quorum_mismatch",
+    };
+  }
+  if (primary.status === "lookup_blocked" || secondary.status === "lookup_blocked") {
+    return {
+      listed: false,
+      status: "lookup_blocked",
+      reason: "dnsbl_lookup_blocked_or_rate_limited",
+    };
+  }
+  return { listed: false, status: "not_listed" };
 }
 
 type ModuleStatus = "queued" | "running" | "success" | "skipped" | "error" | "timeout";
@@ -3680,18 +3715,39 @@ export async function runSurfaceScanEnrichment(
     }
 
     const checked: DnsBlocklistCheck[] = [];
+    const resolveDnsWithEndpoint = async (queryName: string, endpoint: string): Promise<string[]> => {
+      try {
+        const separator = endpoint.includes("?") ? "&" : "?";
+        const url = `${endpoint}${separator}name=${encodeURIComponent(queryName)}&type=A`;
+        const response = await fetch(url, {
+          headers: { accept: "application/dns-json" },
+        });
+        if (!response.ok) return [];
+        const payload = await response.json();
+        const answers = Array.isArray(payload?.Answer) ? payload.Answer : [];
+        return answers
+          .map((entry: any) => String(entry?.data || "").trim().replace(/\.$/, ""))
+          .filter(Boolean);
+      } catch {
+        return [];
+      }
+    };
     const lookupTasks = ipv4Targets.flatMap((ip) =>
       providers.map((provider) => async () => {
         const reversed = ip.split(".").reverse().join(".");
         const queryName = `${reversed}.${provider}`;
         const answers = await resolveWithDnsOverHttps(queryName, "A");
-        const classified = classifyDnsBlocklistResponse(provider, answers);
+        const secondaryAnswers = await resolveDnsWithEndpoint(queryName, "https://dns.google/resolve");
+        const classifiedPrimary = classifyDnsBlocklistResponse(provider, answers);
+        const classifiedSecondary = classifyDnsBlocklistResponse(provider, secondaryAnswers);
+        const classified = mergeDnsblClassifications(provider, classifiedPrimary, classifiedSecondary);
         checked.push({
           provider,
           ip,
           listed: classified.listed,
           status: classified.status,
           records: answers.slice(0, 10),
+          secondary_records: secondaryAnswers.slice(0, 10),
           reason: classified.reason,
         });
         if (classified.listed) {
@@ -3705,6 +3761,7 @@ export async function runSurfaceScanEnrichment(
             evidence: {
               provider,
               records: answers.slice(0, 10),
+              secondary_records: secondaryAnswers.slice(0, 10),
               status: classified.status,
               reason: classified.reason || null,
             },
@@ -3716,6 +3773,23 @@ export async function runSurfaceScanEnrichment(
     const DNSBL_CHUNK = 6;
     for (let i = 0; i < lookupTasks.length; i += DNSBL_CHUNK) {
       await Promise.allSettled(lookupTasks.slice(i, i + DNSBL_CHUNK).map((fn) => fn()));
+    }
+
+    for (const row of checked) {
+      if (row.listed) continue;
+      const listedTitle = `IP listed in DNS blocklist (${row.provider})`;
+      await adminClient
+        .from("surface_findings" as any)
+        .update({
+          status: "resolved",
+          remediation: "Rilevazione aggiornata: IP non più listato nel controllo corrente.",
+        })
+        .eq("customer_id", job.customer_id)
+        .eq("module", "dns_blocklists")
+        .eq("finding_type", "dnsbl_listed")
+        .eq("ip", row.ip)
+        .eq("title", listedTitle)
+        .in("status", ["new", "open", "validated", "investigating", "in_progress"]);
     }
 
     await insertObservation({
