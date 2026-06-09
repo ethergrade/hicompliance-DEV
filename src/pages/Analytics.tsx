@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { useDashboardMetrics } from '@/hooks/useDashboardMetrics';
+import { useAssessmentTrends } from '@/hooks/useAssessmentTrends';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -226,9 +229,24 @@ const Analytics: React.FC = () => {
   const [timeRange, setTimeRange] = useState<TimeRange>('6m');
   const [chartsTimeRange, setChartsTimeRange] = useState<TimeRange>('6m');
 
+  // React to organization switches — scopes all data to selected client
+  const { organizationId, groupId, isLoading: clientLoading } = useClientOrganization();
+  const { completionScore, riskScore, assessmentId } = useDashboardMetrics(organizationId, groupId);
+  const { radarCategories, isLoading: trendsLoading } = useAssessmentTrends(assessmentId);
+
   const currentData = KPI_DATA[timeRange];
   const riskTrendData = RISK_TREND_DATA[timeRange];
-  const assessmentComplianceData = getAssessmentData(chartsTimeRange);
+  // Use real assessment radar data when available, fall back to static
+  const assessmentComplianceData = useMemo(() => {
+    if (radarCategories && radarCategories.length > 0) {
+      return radarCategories.map(cat => ({
+        category: cat.category ?? 'N/D',
+        compliance: cat.compliance ?? 0,
+        target: Math.min((cat.compliance ?? 0) + 15, 100),
+      }));
+    }
+    return getAssessmentData(chartsTimeRange);
+  }, [radarCategories, chartsTimeRange]);
   const threatsTimeData = THREATS_DATA[timeRange];
   const severityDistribution = SEVERITY_DATA[chartsTimeRange];
 
@@ -245,7 +263,7 @@ const Analytics: React.FC = () => {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <div className="space-y-6" key={organizationId || 'loading'}>
 
         {/* ── Header ── */}
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -286,7 +304,7 @@ const Analytics: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Score Rischio</p>
-                  <p className="text-2xl font-bold text-foreground">{currentData.riskScore}</p>
+                  <p className="text-2xl font-bold text-foreground">{riskScore > 0 ? riskScore : currentData.riskScore}</p>
                   <div className="flex items-center mt-1">
                     {currentData.riskTrend === 'up'
                       ? <TrendingUp className="w-4 h-4 text-red-500 mr-1" />
