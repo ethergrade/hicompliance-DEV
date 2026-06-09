@@ -150,6 +150,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "assessment_responses_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
             foreignKeyName: "assessment_responses_question_id_fkey"
             columns: ["question_id"]
             isOneToOne: false
@@ -202,6 +209,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessment_snapshots_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
         ]
       }
@@ -328,6 +342,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "asset_inventory_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
         ]
       }
       asset_irp: {
@@ -399,6 +420,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_irp_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
         ]
       }
@@ -495,6 +523,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "consistenze_clienti_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
         ]
       }
       consistenze_items: {
@@ -550,6 +585,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consistenze_items_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
         ]
       }
@@ -609,6 +651,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_directory_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
         ]
       }
@@ -689,6 +738,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "critical_infrastructure_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
         ]
       }
@@ -848,6 +904,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "dark_risk_alerts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
         ]
       }
       darkrisk_alerts: {
@@ -914,6 +977,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "darkrisk_alerts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
         ]
       }
       darkrisk_assets: {
@@ -970,6 +1040,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "darkrisk_assets_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
         ]
       }
       darkrisk_audit_log: {
@@ -1022,6 +1099,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_audit_log_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
         ]
       }
@@ -1133,6 +1217,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "darkrisk_dti_sensitive_hits_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
             foreignKeyName: "darkrisk_dti_sensitive_hits_scan_run_id_fkey"
             columns: ["scan_run_id"]
             isOneToOne: false
@@ -1240,6 +1331,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "darkrisk_dti_source_runs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
             foreignKeyName: "darkrisk_dti_source_runs_scan_run_id_fkey"
             columns: ["scan_run_id"]
             isOneToOne: false
@@ -1302,6 +1400,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "darkrisk_entitlements_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
         ]
       }
       darkrisk_esteso_profiles: {
@@ -1354,6 +1459,13 @@ export type Database = {
             isOneToOne: true
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_esteso_profiles_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
         ]
       }
@@ -1444,6 +1556,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_evidence_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
           {
             foreignKeyName: "darkrisk_evidence_scan_run_id_fkey"
@@ -1564,6 +1683,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "darkrisk_findings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
             foreignKeyName: "darkrisk_findings_scan_run_id_fkey"
             columns: ["scan_run_id"]
             isOneToOne: false
@@ -1642,6 +1768,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "darkrisk_raw_evidence_refs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
         ]
       }
       darkrisk_recommendations: {
@@ -1717,6 +1850,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "darkrisk_recommendations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
         ]
       }
       darkrisk_report_snapshots: {
@@ -1781,6 +1921,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_report_snapshots_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
           {
             foreignKeyName: "darkrisk_report_snapshots_scan_run_id_fkey"
@@ -1869,6 +2016,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "darkrisk_scan_runs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
         ]
       }
       darkrisk_selectors: {
@@ -1941,6 +2095,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk_selectors_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
         ]
       }
@@ -2090,6 +2251,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "darkrisk_source_records_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
             foreignKeyName: "darkrisk_source_records_scan_run_id_fkey"
             columns: ["scan_run_id"]
             isOneToOne: false
@@ -2101,6 +2269,250 @@ export type Database = {
             columns: ["selector_id"]
             isOneToOne: false
             referencedRelation: "darkrisk_selectors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      darkrisk360_manual_targets: {
+        Row: {
+          added_by: string | null
+          created_at: string
+          enabled: boolean
+          id: string
+          label: string | null
+          normalized_value: string
+          organization_id: string
+          target_type: string
+          value: string
+        }
+        Insert: {
+          added_by?: string | null
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          label?: string | null
+          normalized_value: string
+          organization_id: string
+          target_type: string
+          value: string
+        }
+        Update: {
+          added_by?: string | null
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          label?: string | null
+          normalized_value?: string
+          organization_id?: string
+          target_type?: string
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "darkrisk360_manual_targets_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk360_manual_targets_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+        ]
+      }
+      darkrisk360_notification_configs: {
+        Row: {
+          alert_on_new_findings: boolean
+          alert_severity_threshold: string
+          created_at: string
+          created_by: string | null
+          id: string
+          last_alert_sent_at: string | null
+          last_summary_sent_at: string | null
+          min_new_findings_to_alert: number
+          organization_id: string
+          recipient_emails: string[]
+          updated_at: string
+          updated_by: string | null
+          weekly_summary_enabled: boolean
+        }
+        Insert: {
+          alert_on_new_findings?: boolean
+          alert_severity_threshold?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          last_alert_sent_at?: string | null
+          last_summary_sent_at?: string | null
+          min_new_findings_to_alert?: number
+          organization_id: string
+          recipient_emails?: string[]
+          updated_at?: string
+          updated_by?: string | null
+          weekly_summary_enabled?: boolean
+        }
+        Update: {
+          alert_on_new_findings?: boolean
+          alert_severity_threshold?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          last_alert_sent_at?: string | null
+          last_summary_sent_at?: string | null
+          min_new_findings_to_alert?: number
+          organization_id?: string
+          recipient_emails?: string[]
+          updated_at?: string
+          updated_by?: string | null
+          weekly_summary_enabled?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "darkrisk360_notification_configs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk360_notification_configs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+        ]
+      }
+      darkrisk360_scan_triggers: {
+        Row: {
+          id: string
+          include_surface_sync: boolean
+          organization_id: string
+          picked_up_at: string | null
+          requested_at: string
+          scan_run_id: string | null
+          status: string
+          trigger_type: string
+        }
+        Insert: {
+          id?: string
+          include_surface_sync?: boolean
+          organization_id: string
+          picked_up_at?: string | null
+          requested_at?: string
+          scan_run_id?: string | null
+          status?: string
+          trigger_type?: string
+        }
+        Update: {
+          id?: string
+          include_surface_sync?: boolean
+          organization_id?: string
+          picked_up_at?: string | null
+          requested_at?: string
+          scan_run_id?: string | null
+          status?: string
+          trigger_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "darkrisk360_scan_triggers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk360_scan_triggers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+        ]
+      }
+      darkrisk360_weekly_snapshots: {
+        Row: {
+          computed_at: string
+          created_at: string
+          delta_vs_prev: Json
+          id: string
+          new_records_this_week: number
+          organization_id: string
+          results_by_asset: Json
+          results_by_day: Json
+          results_by_filetype: Json
+          results_by_source: Json
+          risk_index: number
+          scan_run_id: string | null
+          severity_distribution: Json
+          tier: string
+          total_records: number
+          week_key: string
+          week_start_date: string
+        }
+        Insert: {
+          computed_at?: string
+          created_at?: string
+          delta_vs_prev?: Json
+          id?: string
+          new_records_this_week?: number
+          organization_id: string
+          results_by_asset?: Json
+          results_by_day?: Json
+          results_by_filetype?: Json
+          results_by_source?: Json
+          risk_index?: number
+          scan_run_id?: string | null
+          severity_distribution?: Json
+          tier?: string
+          total_records?: number
+          week_key: string
+          week_start_date: string
+        }
+        Update: {
+          computed_at?: string
+          created_at?: string
+          delta_vs_prev?: Json
+          id?: string
+          new_records_this_week?: number
+          organization_id?: string
+          results_by_asset?: Json
+          results_by_day?: Json
+          results_by_filetype?: Json
+          results_by_source?: Json
+          risk_index?: number
+          scan_run_id?: string | null
+          severity_distribution?: Json
+          tier?: string
+          total_records?: number
+          week_key?: string
+          week_start_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "darkrisk360_weekly_snapshots_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "darkrisk360_weekly_snapshots_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "darkrisk360_weekly_snapshots_scan_run_id_fkey"
+            columns: ["scan_run_id"]
+            isOneToOne: false
+            referencedRelation: "darkrisk_scan_runs"
             referencedColumns: ["id"]
           },
         ]
@@ -2165,6 +2577,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "emergency_contacts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
         ]
       }
@@ -2547,6 +2966,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "hilog_correlation_reports_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
         ]
       }
       hisolution_services: {
@@ -2655,6 +3081,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "incident_documents_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
             foreignKeyName: "incident_documents_uploaded_by_fkey"
             columns: ["uploaded_by"]
             isOneToOne: false
@@ -2708,6 +3141,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "integration_audit_logs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
         ]
       }
       irp_documents: {
@@ -2749,6 +3189,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "irp_documents_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
         ]
       }
       irp_history: {
@@ -2780,6 +3227,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "irp_history_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
         ]
       }
@@ -2818,6 +3272,227 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      nuclei_scan360_findings: {
+        Row: {
+          asset_host: string | null
+          category: string | null
+          created_at: string
+          customer_id: string
+          extracted_results: Json
+          id: string
+          job_id: string
+          matched_at: string | null
+          matcher_name: string | null
+          name: string | null
+          organization_id: string
+          raw_finding: Json
+          severity: string | null
+          tags: Json
+          template_id: string | null
+          type: string | null
+        }
+        Insert: {
+          asset_host?: string | null
+          category?: string | null
+          created_at?: string
+          customer_id: string
+          extracted_results?: Json
+          id?: string
+          job_id: string
+          matched_at?: string | null
+          matcher_name?: string | null
+          name?: string | null
+          organization_id: string
+          raw_finding?: Json
+          severity?: string | null
+          tags?: Json
+          template_id?: string | null
+          type?: string | null
+        }
+        Update: {
+          asset_host?: string | null
+          category?: string | null
+          created_at?: string
+          customer_id?: string
+          extracted_results?: Json
+          id?: string
+          job_id?: string
+          matched_at?: string | null
+          matcher_name?: string | null
+          name?: string | null
+          organization_id?: string
+          raw_finding?: Json
+          severity?: string | null
+          tags?: Json
+          template_id?: string | null
+          type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nuclei_scan360_findings_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_findings_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_findings_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "nuclei_scan360_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_findings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_findings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+        ]
+      }
+      nuclei_scan360_jobs: {
+        Row: {
+          attempt_count: number
+          authorized_scan: boolean
+          completed_at: string | null
+          created_at: string
+          created_by: string | null
+          created_by_email: string | null
+          customer_id: string
+          duration_ms: number | null
+          findings_count: number
+          id: string
+          last_error: string | null
+          max_findings: number
+          normalized_target_url: string
+          nuclei_version: string | null
+          organization_id: string
+          profile: string
+          rate_limit: number
+          raw_result: Json
+          resolved_target_url: string | null
+          source: string
+          started_at: string | null
+          status: string
+          summary: Json
+          target_host: string | null
+          target_url: string
+          templates_executed_count: number | null
+          templates_loaded_count: number | null
+          timeout_seconds: number
+          updated_at: string
+          warnings: Json
+        }
+        Insert: {
+          attempt_count?: number
+          authorized_scan?: boolean
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          created_by_email?: string | null
+          customer_id: string
+          duration_ms?: number | null
+          findings_count?: number
+          id?: string
+          last_error?: string | null
+          max_findings?: number
+          normalized_target_url: string
+          nuclei_version?: string | null
+          organization_id: string
+          profile: string
+          rate_limit?: number
+          raw_result?: Json
+          resolved_target_url?: string | null
+          source?: string
+          started_at?: string | null
+          status?: string
+          summary?: Json
+          target_host?: string | null
+          target_url: string
+          templates_executed_count?: number | null
+          templates_loaded_count?: number | null
+          timeout_seconds?: number
+          updated_at?: string
+          warnings?: Json
+        }
+        Update: {
+          attempt_count?: number
+          authorized_scan?: boolean
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          created_by_email?: string | null
+          customer_id?: string
+          duration_ms?: number | null
+          findings_count?: number
+          id?: string
+          last_error?: string | null
+          max_findings?: number
+          normalized_target_url?: string
+          nuclei_version?: string | null
+          organization_id?: string
+          profile?: string
+          rate_limit?: number
+          raw_result?: Json
+          resolved_target_url?: string | null
+          source?: string
+          started_at?: string | null
+          status?: string
+          summary?: Json
+          target_host?: string | null
+          target_url?: string
+          templates_executed_count?: number | null
+          templates_loaded_count?: number | null
+          timeout_seconds?: number
+          updated_at?: string
+          warnings?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nuclei_scan360_jobs_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_jobs_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_jobs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_jobs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+        ]
       }
       organization_integrations: {
         Row: {
@@ -2860,6 +3535,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_integrations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
           {
             foreignKeyName: "organization_integrations_service_id_fkey"
@@ -2926,6 +3608,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_locations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
         ]
       }
@@ -2995,6 +3684,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "organization_profiles_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
         ]
       }
       organization_services: {
@@ -3034,6 +3730,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "organization_services_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
             foreignKeyName: "organization_services_service_id_fkey"
             columns: ["service_id"]
             isOneToOne: false
@@ -3057,6 +3760,7 @@ export type Database = {
           irp_extended: boolean
           name: string
           pentest_tools_auto_validation: boolean
+          sales_owner_user_id: string | null
           services_pause_reason: string | null
           services_paused: boolean
           services_paused_at: string | null
@@ -3082,6 +3786,7 @@ export type Database = {
           irp_extended?: boolean
           name: string
           pentest_tools_auto_validation?: boolean
+          sales_owner_user_id?: string | null
           services_pause_reason?: string | null
           services_paused?: boolean
           services_paused_at?: string | null
@@ -3107,6 +3812,7 @@ export type Database = {
           irp_extended?: boolean
           name?: string
           pentest_tools_auto_validation?: boolean
+          sales_owner_user_id?: string | null
           services_pause_reason?: string | null
           services_paused?: boolean
           services_paused_at?: string | null
@@ -3267,6 +3973,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "playbook_completions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
         ]
       }
       remediation_tasks: {
@@ -3418,6 +4131,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "risk_analysis_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
         ]
       }
@@ -3636,6 +4356,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_directory_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
         ]
       }
@@ -3996,13 +4723,17 @@ export type Database = {
           cve: string[]
           cvss: number | null
           cwe: string[]
+          dedup_fingerprint: string | null
           description: string | null
           epss: number | null
           evidence: Json | null
           finding_type: string
+          first_seen_at: string | null
           id: string
           ip: unknown
+          last_seen_at: string | null
           module: string | null
+          occurrence_count: number
           organization_id: string
           port: number | null
           protocol: string | null
@@ -4024,13 +4755,17 @@ export type Database = {
           cve?: string[]
           cvss?: number | null
           cwe?: string[]
+          dedup_fingerprint?: string | null
           description?: string | null
           epss?: number | null
           evidence?: Json | null
           finding_type: string
+          first_seen_at?: string | null
           id?: string
           ip?: unknown
+          last_seen_at?: string | null
           module?: string | null
+          occurrence_count?: number
           organization_id: string
           port?: number | null
           protocol?: string | null
@@ -4052,13 +4787,17 @@ export type Database = {
           cve?: string[]
           cvss?: number | null
           cwe?: string[]
+          dedup_fingerprint?: string | null
           description?: string | null
           epss?: number | null
           evidence?: Json | null
           finding_type?: string
+          first_seen_at?: string | null
           id?: string
           ip?: unknown
+          last_seen_at?: string | null
           module?: string | null
+          occurrence_count?: number
           organization_id?: string
           port?: number | null
           protocol?: string | null
@@ -4212,6 +4951,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_graph_investigations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
         ]
       }
@@ -4648,6 +5394,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "surface_scan_alerts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
         ]
       }
       surface_scan_audit_log: {
@@ -4782,6 +5535,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "surface_scan_ioc_fresh_config_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
         ]
       }
       surface_scan_ioc_fresh_items: {
@@ -4840,6 +5600,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_scan_ioc_fresh_items_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
         ]
       }
@@ -5317,6 +6084,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "user_preferences_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
         ]
       }
       user_roles: {
@@ -5378,6 +6152,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "users_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
         ]
       }
@@ -5461,6 +6242,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      v_sales_remediation_dashboard: {
+        Row: {
+          avg_progress: number | null
+          completed_tasks: number | null
+          critical_tasks: number | null
+          high_tasks: number | null
+          low_tasks: number | null
+          medium_tasks: number | null
+          organization_code: string | null
+          organization_id: string | null
+          organization_name: string | null
+          overdue_tasks: number | null
+          sales_owner_email: string | null
+          sales_owner_user_id: string | null
+          total_tasks: number | null
+        }
+        Relationships: []
       }
     }
     Functions: {
