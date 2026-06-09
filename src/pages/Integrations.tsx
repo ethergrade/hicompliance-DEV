@@ -18,7 +18,7 @@ import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { ClientSelectionGuard } from '@/components/guards/ClientSelectionGuard';
 import { IntegrationAuditLog } from '@/components/integrations/IntegrationAuditLog';
 import { useUserRoles } from '@/hooks/useUserRoles';
-import { integrationsApi } from '@/lib/api';
+import { integrationsApi, tenantServicesApi } from '@/lib/api';
 import type { IntegrationResource, ServiceCatalogItem } from '@/types/api';
 
 interface IntegrationFormData {
@@ -47,7 +47,7 @@ const Integrations = () => {
   const { organizationId, groupId, needsClientSelection } = useClientOrganization();
   const { isSuperAdmin, loading: rolesLoading } = useUserRoles();
 
-  // HiPatch-specific form state (stored in api_methods JSON)
+  // HiPatch-specific form state
   const [hipatchFields, setHipatchFields] = useState({
     connectsecure_company_id: '',
     ninjaone_organization_id: '',
@@ -96,26 +96,53 @@ const Integrations = () => {
     enabled: !!organizationId,
   });
 
+  // Fetch HiPatch tenant-service for scenario detection (exists vs not)
+  const { data: hipatchServices = [] } = useQuery({
+    queryKey: ['tenant-services-hipatch', organizationId, groupId],
+    enabled: !!organizationId,
+    queryFn: async () => {
+      if (!organizationId) return [];
+      const all = await tenantServicesApi.listByOrganization(organizationId, groupId);
+      return all.filter((s: any) => s.service_type === 'HiPatch');
+    },
+  });
+
+  const existingHipatch = hipatchServices.length > 0 ? hipatchServices[0] : null;
+
   const createOrUpdateMutation = useMutation({
     mutationFn: async (data: IntegrationFormData) => {
       if (!organizationId) throw new Error('Nessuna organizzazione selezionata');
 
-      let api_methods: Record<string, unknown>;
-      let api_url: string;
-
       if (isHipatch) {
-        // Store HiPatch-specific fields in api_methods
-        api_methods = {
+        // HiPatch → usa tenant-services API con settings
+        const settings = {
           connectsecure_company_id: hipatchFields.connectsecure_company_id,
           ninjaone_organization_id: hipatchFields.ninjaone_organization_id,
           ninjaone_organization_id_client: hipatchFields.ninjaone_organization_id_client,
           ninjaone_organization_secret: hipatchFields.ninjaone_organization_secret,
         };
-        api_url = '';
-      } else {
-        api_methods = JSON.parse(data.api_methods || '[]');
-        api_url = data.api_url;
+
+        if (existingHipatch) {
+          // Scenario 2: record esiste → PATCH
+          return tenantServicesApi.patch(existingHipatch.id, { settings }, groupId);
+        } else {
+          // Scenario 1: record non esiste → POST
+          return tenantServicesApi.create(
+            {
+              tenant_id: organizationId,
+              service_type: 'HiPatch',
+              status: 'active',
+              settings,
+            },
+            groupId
+          );
+        }
       }
+
+      let api_methods: Record<string, unknown>;
+      let api_url: string;
+      api_methods = JSON.parse(data.api_methods || '[]');
+      api_url = data.api_url;
 
       const payload = {
         service_id: data.service_id,
@@ -131,6 +158,7 @@ const Integrations = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organization-integrations', organizationId] });
+      queryClient.invalidateQueries({ queryKey: ['tenant-services-hipatch', organizationId, groupId] });
       setIsDialogOpen(false);
       setSelectedIntegration(null);
       form.reset();
@@ -151,10 +179,15 @@ const Integrations = () => {
   const deleteIntegrationMutation = useMutation({
     mutationFn: async (integrationId: string) => {
       if (!organizationId) throw new Error('Nessuna organizzazione selezionata');
-      await integrationsApi.delete(organizationId, integrationId, groupId);
+      if (isHipatch && existingHipatch) {
+        await tenantServicesApi.delete(existingHipatch.id, groupId);
+      } else {
+        await integrationsApi.delete(organizationId, integrationId, groupId);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organization-integrations', organizationId] });
+      queryClient.invalidateQueries({ queryKey: ['tenant-services-hipatch', organizationId, groupId] });
       toast({ title: 'Successo', description: 'Integrazione eliminata con successo' });
     },
     onError: (error) => {
@@ -176,14 +209,14 @@ const Integrations = () => {
         api_methods: JSON.stringify(integration.api_methods ?? [], null, 2),
         is_active: integration.is_active,
       });
-      // Populate HiPatch fields from api_methods if this is a HiPatch integration
-      const methods = integration.api_methods ?? {};
-      if (integration.service_code === 'hipatch' || (methods as Record<string, unknown>).connectsecure_company_id !== undefined) {
+      // Populate HiPatch fields from tenant-service settings (not integrations api_methods)
+      if (integration.service_code === 'hipatch' || existingHipatch) {
+        const settings = existingHipatch?.settings ?? {};
         setHipatchFields({
-          connectsecure_company_id: String((methods as Record<string, unknown>).connectsecure_company_id ?? ''),
-          ninjaone_organization_id: String((methods as Record<string, unknown>).ninjaone_organization_id ?? ''),
-          ninjaone_organization_id_client: String((methods as Record<string, unknown>).ninjaone_organization_id_client ?? ''),
-          ninjaone_organization_secret: String((methods as Record<string, unknown>).ninjaone_organization_secret ?? ''),
+          connectsecure_company_id: String((settings as any).connectsecure_company_id ?? ''),
+          ninjaone_organization_id: String((settings as any).ninjaone_organization_id ?? ''),
+          ninjaone_organization_id_client: String((settings as any).ninjaone_organization_id_client ?? ''),
+          ninjaone_organization_secret: String((settings as any).ninjaone_organization_secret ?? ''),
         });
       } else {
         setHipatchFields({
@@ -219,7 +252,7 @@ const Integrations = () => {
   const availableServices = services.filter(
     service => !integrations.some(integration =>
       integration.service_id === service.id || integration.service_code === service.code
-    )
+    ) && !(service.code === 'hipatch' && existingHipatch)
   );
 
   const getServiceMeta = (integration: IntegrationResource): ServiceCatalogItem | undefined =>

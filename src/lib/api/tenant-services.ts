@@ -56,6 +56,16 @@ export const tenantServicesApi = {
     return res.data;
   },
 
+  /** PATCH — partial update (used for HiPatch settings, etc.) */
+  async patch(id: string, payload: Partial<UpdateTenantServiceRequest>, groupId?: string | null): Promise<TenantServiceResource> {
+    const res = await apiClient.patch<ApiResponse<TenantServiceResource>>(
+      `/tenant-services/${id}`,
+      payload,
+      groupId ? { headers: groupHeader(groupId) } : undefined
+    );
+    return res.data;
+  },
+
   async delete(id: string, groupId?: string | null): Promise<void> {
     await apiClient.delete(
       `/tenant-services/${id}`,
