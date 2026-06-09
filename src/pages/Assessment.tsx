@@ -307,6 +307,26 @@ const Assessment: React.FC = () => {
 
     const loadResponses = async () => {
       try {
+        // If using v1 fallback data, load responses from v1 API
+        if (isUsingFallbackData && v1AssessmentId) {
+          const assessment = await assessmentApi.get(v1AssessmentId);
+          if (assessment?.questions && typeof assessment.questions === 'object') {
+            const mapped: Record<number, string | null> = {};
+            Object.entries(assessment.questions as Record<string, string>).forEach(([key, val]) => {
+              const qNum = key.replace('q', '');
+              const idx = Number(qNum);
+              if (idx) {
+                mapped[idx] = val === '1' ? 'completato' : val === '2' ? 'pianificato_in_corso' : val === '3' ? 'non_iniziato' : val === '0' ? 'non_applicabile' : null;
+              }
+            });
+            setResponses(mapped);
+          } else {
+            setResponses({});
+          }
+          return;
+        }
+
+        // Otherwise load from v2 API
         const items = await assessmentV2Api.responses(orgId, groupId);
         if (!items || items.length === 0) {
           setResponses({});
@@ -326,13 +346,13 @@ const Assessment: React.FC = () => {
         });
         setResponses(mapped);
       } catch (error) {
-        console.error('Assessment v2 load error:', error);
+        console.error('Assessment load error:', error);
         setResponses({});
       }
     };
 
     loadResponses();
-  }, [orgId, user, v2Categories.length, indexToUuid]);
+  }, [orgId, user, v2Categories.length, indexToUuid, isUsingFallbackData, v1AssessmentId]);
 
   // Auto-save: debounced save after each response change
   const snapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
