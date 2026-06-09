@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { darkRiskApi } from '@/lib/api/darkrisk';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 export type DarkRiskSeverity = 'info' | 'low' | 'medium' | 'high' | 'critical';
@@ -58,12 +58,39 @@ export type DarkRiskOverviewResponse = {
     severity: DarkRiskSeverity;
     title: string;
     asset: string | null;
+    finding_type: string;
+    created_at: string | null;
     type: string;
-    time: string | null;
+  }>;
+  weekly_snapshot: {
+    week_key: string;
+    total_records: number;
+    new_this_week: number;
+    risk_index: number;
+    delta_vs_prev: {
+      total_records: number;
+      new_this_week: number;
+      risk_index: number;
+    };
+    severity_distribution: {
+      critical: number;
+      high: number;
+      medium: number;
+      low: number;
+      info: number;
+    };
+    computed_at: string | null;
+  } | null;
+  historical_weeks: Array<{
+    week_key: string;
+    total_records: number;
+    new_this_week: number;
+    risk_index: number;
+  }>;
+  remediation_status: Array<{
     status: string;
-    confidence: string;
-    source: string;
-    finding_id?: string | null;
+    count: number;
+    percentage: number;
   }>;
   alert_config: {
     total: number;
@@ -186,28 +213,16 @@ const emptyData: DarkRiskOverviewResponse = {
 };
 
 export const useDarkRiskOverview = () => {
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
 
   const query = useQuery({
-    queryKey: ['darkrisk360-overview', organizationId],
+    queryKey: ['darkrisk360-overview', organizationId, groupId],
     enabled: Boolean(organizationId),
     queryFn: async (): Promise<DarkRiskOverviewResponse> => {
       if (!organizationId) {
         return emptyData;
       }
-
-      const { data, error } = await supabase.functions.invoke('darkrisk360-overview', {
-        body: { customer_id: organizationId },
-      });
-
-      if (error) {
-        throw error;
-      }
-
-      if (data?.error) {
-        throw new Error(String(data.error));
-      }
-
+      const data = await darkRiskApi.getOverview(organizationId, groupId);
       return {
         ...emptyData,
         ...(data || {}),

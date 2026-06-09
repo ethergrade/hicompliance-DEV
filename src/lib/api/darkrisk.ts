@@ -113,4 +113,115 @@ export const darkRiskApi = {
     );
     return res.data;
   },
+
+  // Overview
+  async getOverview(companyId: string, groupId?: string | null): Promise<any> {
+    const res = await apiClient.get<ApiResponse<any>>(
+      `/companies/${companyId}/darkrisk/overview`,
+      undefined,
+      groupId ? groupHeader(groupId) : undefined,
+    );
+    return res.data;
+  },
+
+  // Scan runs
+  async listScanRuns(
+    companyId: string,
+    params?: { page?: number; per_page?: number },
+    groupId?: string | null,
+  ): Promise<any[]> {
+    const res = await apiClient.get<ApiResponse<any[]>>(
+      `/companies/${companyId}/darkrisk/scan-runs`,
+      params,
+      groupId ? groupHeader(groupId) : undefined,
+    );
+    return res.data;
+  },
+
+  async createScanRun(
+    companyId: string,
+    payload?: { notes?: string },
+    groupId?: string | null,
+  ): Promise<any> {
+    const res = await apiClient.post<ApiResponse<any>>(
+      `/companies/${companyId}/darkrisk/scan-runs`,
+      payload || {},
+      groupId ? groupHeader(groupId) : undefined,
+    );
+    return res.data;
+  },
+
+  async getScanRun(companyId: string, scanRunId: string, groupId?: string | null): Promise<any> {
+    const res = await apiClient.get<ApiResponse<any>>(
+      `/companies/${companyId}/darkrisk/scan-runs/${scanRunId}`,
+      undefined,
+      groupId ? groupHeader(groupId) : undefined,
+    );
+    return res.data;
+  },
+
+  async getScanRunFindings(
+    companyId: string,
+    scanRunId: string,
+    params?: { severity?: string; page?: number },
+    groupId?: string | null,
+  ): Promise<any[]> {
+    const res = await apiClient.get<ApiResponse<any[]>>(
+      `/companies/${companyId}/darkrisk/scan-runs/${scanRunId}/findings`,
+      params,
+      groupId ? groupHeader(groupId) : undefined,
+    );
+    return res.data;
+  },
+
+  // Report snapshots
+  async listReportSnapshots(
+    companyId: string,
+    params?: { page?: number; per_page?: number },
+    groupId?: string | null,
+  ): Promise<any[]> {
+    const res = await apiClient.get<ApiResponse<any[]>>(
+      `/companies/${companyId}/darkrisk/report-snapshots`,
+      params,
+      groupId ? groupHeader(groupId) : undefined,
+    );
+    return res.data;
+  },
+
+  async createReportSnapshot(
+    companyId: string,
+    payload: { scan_run_id: string },
+    groupId?: string | null,
+  ): Promise<any> {
+    const res = await apiClient.post<ApiResponse<any>>(
+      `/companies/${companyId}/darkrisk/report-snapshots`,
+      payload,
+      groupId ? groupHeader(groupId) : undefined,
+    );
+    return res.data;
+  },
+
+  async getReportSnapshot(companyId: string, snapshotId: string, groupId?: string | null): Promise<any> {
+    const res = await apiClient.get<ApiResponse<any>>(
+      `/companies/${companyId}/darkrisk/report-snapshots/${snapshotId}`,
+      undefined,
+      groupId ? groupHeader(groupId) : undefined,
+    );
+    return res.data;
+  },
+
+  // Evidence reveal
+  async revealEvidence(
+    companyId: string,
+    evidenceId: string,
+    payload: { reason: string; expires_in?: number },
+    groupId?: string | null,
+  ): Promise<any> {
+    const res = await apiClient.post<ApiResponse<any>>(
+      `/companies/${companyId}/darkrisk/evidence/${evidenceId}/reveal`,
+      payload,
+      groupId ? groupHeader(groupId) : undefined,
+    );
+    return res.data;
+  },
 };

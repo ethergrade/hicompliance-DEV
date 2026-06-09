@@ -141,22 +141,20 @@ export const irpApi = {
 
   // ─── IRP Document Export ─────────────────────────────────────────────────
 
-  /** Export the IRP document as DOCX blob (uses cookie-based auth) */
+  /** Request a signed download URL for the IRP DOCX, then trigger download */
   async exportDocument(companyId: string, companyName: string, _g?: string | null): Promise<void> {
-    const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/companies/${companyId}/irp/export`, {
-      credentials: 'include', // Cookie-based auth - no manual Authorization header
-      headers: {
-        'X-Group-Id': _g || companyId,
-      },
-    });
-    if (!res.ok) throw new Error('Errore durante il download del documento IRP');
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
+    const res = await apiClient.get<ApiResponse<{ download_url: string; expires_in: number }>>(
+      `/companies/${companyId}/irp/export`,
+      undefined,
+      _h(companyId, _g)
+    );
+    const url = res.data.download_url;
+    if (!url) throw new Error('Nessun link di download ricevuto dal server');
     const a = document.createElement('a');
     a.href = url;
     a.download = `IRP_${companyName.replace(/\s+/g, '_')}.docx`;
+    a.target = '_blank';
     a.click();
-    URL.revokeObjectURL(url);
   },
 
   // ─── Import Emergency Contacts from Directory ─────────────────────────────
