@@ -39,6 +39,7 @@ import { DarkRiskFindingsTable, type DarkRiskFindingRow } from '@/components/dar
 import { DarkRiskFindingsAnalytics } from '@/components/dark-risk/DarkRiskFindingsAnalytics';
 import { DarkRiskWeeklyTrend } from '@/components/dark-risk/DarkRiskWeeklyTrend';
 import { DarkRiskAssetsTable, type DarkRiskAssetRow } from '@/components/dark-risk/DarkRiskAssetsTable';
+import { DarkRiskScanRunsPanel } from '@/components/dark-risk/DarkRiskScanRunsPanel';
 import { useDarkRiskAlerts } from '@/hooks/useDarkRiskAlerts';
 import { useDarkRiskOverview } from '@/hooks/useDarkRiskOverview';
 import { useDarkRiskQaStatus } from '@/hooks/useDarkRiskQaStatus';
@@ -54,7 +55,7 @@ import { generateSurfaceScan360Docx } from '@/lib/surfaceScan360DocxReport';
 import { adaptDarkRiskReportToSurfaceScanTemplate } from '@/lib/darkrisk/darkriskReportExportAdapter';
 import { parseMonitoredScopeMixedEntries } from '@/lib/ipRange';
 
-type DashboardTab = 'overview' | 'roadmap' | 'findings' | 'assets' | 'surface' | 'identity' | 'reports';
+type DashboardTab = 'overview' | 'roadmap' | 'findings' | 'assets' | 'surface' | 'identity' | 'reports' | 'scan-runs';
 type DarkRiskReportMode = 'weekly' | 'extended';
 
 type FindingFilterState = {
@@ -1266,6 +1267,7 @@ const DarkRisk360: React.FC = () => {
                 <TabsTrigger value="surface">Surface</TabsTrigger>
                 <TabsTrigger value="identity">Identity</TabsTrigger>
                 <TabsTrigger value="reports">Reports</TabsTrigger>
+                <TabsTrigger value="scan-runs">Scan Runs</TabsTrigger>
               </TabsList>
 
               <TabsContent value="overview" className="space-y-4">
@@ -1815,6 +1817,10 @@ const DarkRisk360: React.FC = () => {
                     )}
                   </CardContent>
                 </Card>
+              </TabsContent>
+
+              <TabsContent value="scan-runs" className="space-y-4">
+                <DarkRiskScanRunsPanel />
               </TabsContent>
             </Tabs>
           </>
