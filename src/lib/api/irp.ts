@@ -127,6 +127,16 @@ export const irpApi = {
     return res.data;
   },
 
+  /** Save a new IRP history entry (snapshot) */
+  async saveHistory(companyId: string, payload: Record<string, unknown>, _g?: string | null): Promise<Record<string, unknown>> {
+    const res = await complianceApiClient.post<ApiResponse<Record<string, unknown>>>(
+      `/companies/${companyId}/irp/history`,
+      payload,
+      _h(companyId, _g)
+    );
+    return res.data;
+  },
+
   // ─── IRP Document Publish ────────────────────────────────────────────────
 
   /** Publish the IRP document for a company */

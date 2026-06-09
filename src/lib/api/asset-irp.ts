@@ -29,6 +29,16 @@ export const assetIrpApi = {
     return res.data;
   },
 
+  /** Create a new asset IRP entry */
+  async create(companyId: string, payload: Partial<AssetIrpItem>, _g?: string | null): Promise<AssetIrpItem> {
+    const res = await apiClient.post<ApiResponse<AssetIrpItem>>(
+      `/companies/${companyId}/asset-irp`,
+      payload,
+      _h(companyId, _g)
+    );
+    return res.data;
+  },
+
   /** Update an asset IRP entry */
   async update(companyId: string, assetIrpId: string, payload: Partial<AssetIrpItem>, _g?: string | null): Promise<AssetIrpItem> {
     const res = await apiClient.put<ApiResponse<AssetIrpItem>>(

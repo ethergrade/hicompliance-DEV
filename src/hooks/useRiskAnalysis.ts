@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { riskAnalysisApi } from '@/lib/api';
-import { supabase } from '@/integrations/supabase/client';
+import { criticalInfrastructureApi } from '@/lib/api/critical-infrastructure';
 import type {
   RiskAnalysisItem,
   StoreRiskAnalysisRequest,
@@ -36,7 +36,7 @@ export const useRiskAnalysis = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
-  const { organizationId: clientOrgId, isLoading: clientLoading } = useClientOrganization();
+  const { organizationId: clientOrgId, groupId, isLoading: clientLoading } = useClientOrganization();
 
   const loadAssets = useCallback(async () => {
     if (clientLoading || !clientOrgId) {
@@ -48,7 +48,7 @@ export const useRiskAnalysis = () => {
       setLoading(true);
       setOrganizationId(clientOrgId);
 
-      const items = await riskAnalysisApi.list(clientOrgId, groupId);
+      const items = await riskAnalysisApi.list(clientOrgId, groupId ?? undefined);
       const parsedAssets = (items || []).map(item => toAsset(item, clientOrgId));
       setAssets(parsedAssets);
     } catch (error) {
@@ -97,25 +97,20 @@ export const useRiskAnalysis = () => {
         risk_score: 0,
       };
 
-      const created = await riskAnalysisApi.create(organizationId, payload, groupId);
+      const created = await riskAnalysisApi.create(organizationId, payload, groupId ?? undefined);
       const insertedAsset = toAsset(created, organizationId);
       
       setAssets(prev => [...prev, insertedAsset]);
 
       // If syncToInfrastructure is enabled, also create in critical_infrastructure
-      // (no API endpoint for critical infrastructure — use supabase, warn on failure)
       if (syncToInfrastructure) {
         try {
-          const { data: infraAssets } = await supabase
-            .from('critical_infrastructure')
-            .select('asset_id')
-            .eq('organization_id', organizationId)
-            .order('asset_id');
+          const infraAssets = await criticalInfrastructureApi.list(organizationId, groupId ?? undefined);
 
           let nextNumber = 1;
           if (infraAssets && infraAssets.length > 0) {
             const numbers = infraAssets
-              .map((a: any) => {
+              .map((a) => {
                 const match = a.asset_id.match(/C-(\d+)/);
                 return match ? parseInt(match[1], 10) : 0;
               })
@@ -124,15 +119,11 @@ export const useRiskAnalysis = () => {
           }
           const newAssetId = `C-${String(nextNumber).padStart(2, '0')}`;
 
-          const { error: infraError } = await supabase
-            .from('critical_infrastructure')
-            .insert({
-              organization_id: organizationId,
-              asset_id: newAssetId,
-              component_name: assetName,
-            });
+          await criticalInfrastructureApi.create(organizationId, {
+            asset_id: newAssetId,
+            component_name: assetName,
+          }, groupId ?? undefined);
 
-          if (infraError) throw infraError;
           toast.success(`Asset "${assetName}" creato e sincronizzato (${newAssetId})`);
         } catch (infraErr) {
           console.error('Error syncing to infrastructure:', infraErr);
@@ -163,7 +154,7 @@ export const useRiskAnalysis = () => {
         finalUpdates.risk_score = calculateRiskScore(updates.control_scores);
       }
 
-      await riskAnalysisApi.update(organizationId, id, finalUpdates as any, groupId);
+      await riskAnalysisApi.update(organizationId, id, finalUpdates as any, groupId ?? undefined);
 
       setAssets(prev => prev.map(asset => 
         asset.id === id ? { ...asset, ...updates, risk_score: finalUpdates.risk_score ?? updates.risk_score ?? asset.risk_score } : asset
@@ -198,7 +189,7 @@ export const useRiskAnalysis = () => {
     try {
       setSaving(true);
 
-      await riskAnalysisApi.delete(organizationId, id, groupId);
+      await riskAnalysisApi.delete(organizationId, id, groupId ?? undefined);
 
       setAssets(prev => prev.filter(a => a.id !== id));
       toast.success('Asset eliminato');
@@ -217,7 +208,7 @@ export const useRiskAnalysis = () => {
 
       const matching = assets.filter(a => a.asset_name === assetName);
       for (const a of matching) {
-        await riskAnalysisApi.delete(organizationId, a.id, groupId);
+        await riskAnalysisApi.delete(organizationId, a.id, groupId ?? undefined);
       }
 
       setAssets(prev => prev.filter(a => a.asset_name !== assetName));

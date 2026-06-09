@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { assetIrpApi } from '@/lib/api/asset-irp';
+import { irpApi } from '@/lib/api/irp';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import type { ConsistenzeItem, ConsistenzeArea, AssetIRP } from '@/types/consistenze';
 import { AREA_WEIGHTS } from '@/types/consistenze';
@@ -29,8 +30,26 @@ function calcRiskIntrinseco(esp: number, crit: number, sup: number): number {
   return Math.min((esp * crit * sup) * 4, 100);
 }
 
+function toAssetIRP(api: { id: string; consistenza_item_id: string | null; area: string | null; categoria: string | null; tecnologia: string | null; fornitore: string | null; quantita: number | null; esposizione_score: number | null; criticita_score: number | null; superficie_score: number | null; rischio_intrinseco: string | null; rischio_residuo: string | null }): AssetIRP {
+  return {
+    id: api.id,
+    organization_id: '', // filled by caller context
+    consistenza_item_id: api.consistenza_item_id,
+    area: api.area ?? '',
+    categoria: api.categoria ?? '',
+    tecnologia: api.tecnologia ?? '',
+    fornitore: api.fornitore ?? '',
+    quantita: api.quantita ?? 0,
+    esposizione_score: api.esposizione_score ?? 0,
+    criticita_score: api.criticita_score ?? 0,
+    superficie_score: api.superficie_score ?? 0,
+    rischio_intrinseco: Number(api.rischio_intrinseco) || 0,
+    rischio_residuo: Number(api.rischio_residuo) || 0,
+  };
+}
+
 export function useConsistenzeRisk() {
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
   const [irpAssets, setIrpAssets] = useState<AssetIRP[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -38,18 +57,15 @@ export function useConsistenzeRisk() {
     if (!organizationId) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('asset_irp' as any)
-        .select('*')
-        .eq('organization_id', organizationId);
-      if (error) throw error;
-      setIrpAssets((data as any[]) || []);
+      const items = await assetIrpApi.list(organizationId, groupId);
+      const mapped = items.map(toAssetIRP);
+      setIrpAssets(mapped);
     } catch (err) {
       console.error('Error loading IRP assets:', err);
     } finally {
       setLoading(false);
     }
-  }, [organizationId]);
+  }, [organizationId, groupId]);
 
   const syncItemToIRP = useCallback(async (item: ConsistenzeItem) => {
     if (!organizationId || !item.id) return;
@@ -58,7 +74,6 @@ export function useConsistenzeRisk() {
     const rischio_intrinseco = calcRiskIntrinseco(defaults.esposizione, defaults.criticita, defaults.superficie);
 
     const payload = {
-      organization_id: organizationId,
       consistenza_item_id: item.id,
       area: item.area,
       categoria: item.categoria,
@@ -68,8 +83,8 @@ export function useConsistenzeRisk() {
       esposizione_score: defaults.esposizione,
       criticita_score: defaults.criticita,
       superficie_score: defaults.superficie,
-      rischio_intrinseco,
-      rischio_residuo: rischio_intrinseco, // will be adjusted when maturity is available
+      rischio_intrinseco: String(rischio_intrinseco),
+      rischio_residuo: String(rischio_intrinseco), // will be adjusted when maturity is available
       last_sync_from_consistenze: new Date().toISOString(),
     };
 
@@ -77,20 +92,15 @@ export function useConsistenzeRisk() {
       // Upsert by consistenza_item_id
       const existing = irpAssets.find(a => a.consistenza_item_id === item.id);
       if (existing?.id) {
-        await supabase
-          .from('asset_irp' as any)
-          .update(payload as any)
-          .eq('id', existing.id);
+        await assetIrpApi.update(organizationId, existing.id, payload as any, groupId);
       } else {
-        await supabase
-          .from('asset_irp' as any)
-          .insert(payload as any);
+        await assetIrpApi.create(organizationId, payload as any, groupId);
       }
       await loadIRPAssets();
     } catch (err) {
       console.error('Error syncing to IRP:', err);
     }
-  }, [organizationId, irpAssets, loadIRPAssets]);
+  }, [organizationId, irpAssets, loadIRPAssets, groupId]);
 
   const calcAreaScore = useCallback((area: ConsistenzeArea): number => {
     const areaAssets = irpAssets.filter(a => a.area === area);
@@ -124,15 +134,14 @@ export function useConsistenzeRisk() {
     }
 
     try {
-      await supabase.from('irp_history' as any).insert({
-        organization_id: organizationId,
+      await irpApi.saveHistory(organizationId, {
         irp_score: calcTotalIRP(),
         area_scores_json: areaScores,
-      } as any);
+      }, groupId);
     } catch (err) {
       console.error('Error saving IRP snapshot:', err);
     }
-  }, [organizationId, calcAreaScore, calcTotalIRP]);
+  }, [organizationId, calcAreaScore, calcTotalIRP, groupId]);
 
   return {
     irpAssets,
