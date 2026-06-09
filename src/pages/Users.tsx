@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -68,6 +68,7 @@ const Users = () => {
   const [tenantDialogOpen, setTenantDialogOpen] = useState(false);
   const [tenantUser, setTenantUser] = useState<UserResource | null>(null);
   const [selectedTenantIds, setSelectedTenantIds] = useState<string[]>([]);
+  const tenantInitialLoadDone = useRef(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { selectedOrganization } = useClientOrganization();
@@ -99,17 +100,18 @@ const Users = () => {
     enabled: !!groupId,
   });
 
-  const { data: tenantAssignments = [] } = useQuery({
+  const { data: tenantAssignments = [], isLoading: tenantAssignmentsLoading } = useQuery({
     queryKey: ['user-tenants', tenantUser?.id, groupId],
     queryFn: () => usersApi.listTenants(tenantUser!.id, groupId),
     enabled: tenantDialogOpen && !!tenantUser?.id && !!groupId,
   });
 
   useEffect(() => {
-    if (tenantDialogOpen) {
+    if (tenantDialogOpen && !tenantAssignmentsLoading && !tenantInitialLoadDone.current) {
       setSelectedTenantIds(tenantAssignments);
+      tenantInitialLoadDone.current = true;
     }
-  }, [tenantAssignments, tenantDialogOpen]);
+  }, [tenantAssignments, tenantDialogOpen, tenantAssignmentsLoading]);
 
   const roleOptions = roles.length > 0 ? roles : fallbackRoles;
 
@@ -206,6 +208,7 @@ const Users = () => {
   const openTenantDialog = (user: UserResource) => {
     setTenantUser(user);
     setSelectedTenantIds([]);
+    tenantInitialLoadDone.current = false;
     setTenantDialogOpen(true);
   };
 
