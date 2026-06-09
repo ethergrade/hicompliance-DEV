@@ -33,8 +33,9 @@ export const assessmentApi = {
     return res.data;
   },
 
-  async update(id: AssessmentId, payload: UpdateAssessmentRequest): Promise<AssessmentData> {
-    const res = await apiClient.patch<ApiResponse<AssessmentData>>(`/assessments/${id}`, payload);
+  async update(id: AssessmentId, payload: UpdateAssessmentRequest, groupId?: string | null): Promise<AssessmentData> {
+    const opts = groupId ? { headers: { "X-Group-Id": groupId } } : undefined;
+    const res = await apiClient.patch<ApiResponse<AssessmentData>>(`/assessments/${id}`, payload, opts);
     return res.data;
   },
 

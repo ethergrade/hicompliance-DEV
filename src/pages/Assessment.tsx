@@ -359,7 +359,7 @@ const Assessment: React.FC = () => {
           await assessmentApi.update(v1AssessmentId, {
             questions: questionsPayload,
             status: 3 // in_progress with answers
-          });
+          }, groupId);
           console.log('Saved via v1 API:', questionsPayload);
         }
       } else {
@@ -372,7 +372,7 @@ const Assessment: React.FC = () => {
             notes: null,
           }));
         if (responses.length > 0) {
-          await assessmentV2Api.updateResponses(orgId, { responses });
+          await assessmentV2Api.updateResponses(orgId, { responses }, groupId);
         }
       }
       setSaveStatus('saved');
