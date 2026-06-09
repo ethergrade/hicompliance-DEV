@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { authApi } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api-client';
 import { toast } from '@/hooks/use-toast';
+import { getErrorDetail } from "@/lib/api-client";
 
 interface ChangePasswordDialogProps {
   open: boolean;
@@ -78,7 +79,7 @@ export const ChangePasswordDialog: React.FC<ChangePasswordDialogProps> = ({ open
           setErrors(mapped);
           return;
         }
-        toast({ title: 'Errore', description: err.message, variant: 'destructive' });
+        toast({ title: 'Errore', description: getErrorDetail(err), variant: 'destructive' });
       } else {
         toast({ title: 'Errore', description: 'Impossibile cambiare la password. Riprova più tardi.', variant: 'destructive' });
       }

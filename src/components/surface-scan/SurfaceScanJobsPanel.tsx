@@ -8,6 +8,7 @@ import { Play, AlertTriangle, CheckCircle, Clock, XCircle, RefreshCw } from 'luc
 import { toast } from 'sonner';
 import EnricherBadges from '@/components/shared/EnricherBadges';
 import { parseJobEnrichers } from '@/types/enrichers';
+import { getErrorDetail } from "@/lib/api-client";
 
 const statusIcon: Record<string, React.ReactNode> = {
   queued: <Clock className="h-4 w-4 text-muted-foreground" />,
@@ -35,7 +36,7 @@ export function SurfaceScanJobsPanel() {
       await create.mutateAsync({ target, scan_profile: 'standard' });
       toast.success('Scansione SurfaceScan360 accodata');
     } catch (e: any) {
-      toast.error('Errore avvio scansione: ' + (e.message || 'unknown'));
+      toast.error('Errore avvio scansione: ' + (getErrorDetail(e)));
     }
   };
 

@@ -6,6 +6,7 @@ import type {
   UpdateTenantServiceRequest,
 } from "@/types/api";
 import { toast } from "sonner";
+import { getErrorDetail } from "@/lib/api-client";
 
 export function useTenantServices(status?: "active" | "inactive") {
   const queryClient = useQueryClient();
@@ -29,7 +30,7 @@ export function useTenantServices(status?: "active" | "inactive") {
       queryClient.invalidateQueries({ queryKey: ["tenant-services"] });
       toast.success("Servizio creato");
     },
-    onError: (e: Error) => toast.error(`Errore: ${e.message}`),
+    onError: (e: Error) => toast.error(`Errore: ${getErrorDetail(e)}`),
   });
 
   const updateMutation = useMutation({
@@ -39,7 +40,7 @@ export function useTenantServices(status?: "active" | "inactive") {
       queryClient.invalidateQueries({ queryKey: ["tenant-services"] });
       toast.success("Servizio aggiornato");
     },
-    onError: (e: Error) => toast.error(`Errore: ${e.message}`),
+    onError: (e: Error) => toast.error(`Errore: ${getErrorDetail(e)}`),
   });
 
   const deleteMutation = useMutation({
@@ -48,7 +49,7 @@ export function useTenantServices(status?: "active" | "inactive") {
       queryClient.invalidateQueries({ queryKey: ["tenant-services"] });
       toast.success("Servizio eliminato");
     },
-    onError: (e: Error) => toast.error(`Errore: ${e.message}`),
+    onError: (e: Error) => toast.error(`Errore: ${getErrorDetail(e)}`),
   });
 
   const catalogQuery = useQuery({

@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { tenantServicesApi } from '@/lib/api';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import type { TenantServiceResource } from '@/types/api';
+import { getErrorDetail } from "@/lib/api-client";
 
 interface ClientServicesDialogProps {
   open: boolean;
@@ -169,7 +170,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
       queryClient.invalidateQueries({ queryKey: ['sidebar-org-flags'] });
       toast.success('Configurazione aggiornata');
     },
-    onError: (err: Error) => toast.error(`Errore: ${err.message}`),
+    onError: (err: Error) => toast.error(`Errore: ${getErrorDetail(err)}`),
   });
 
   const updateDarkRiskTierMutation = useMutation({
@@ -190,7 +191,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
       refetchServices();
       toast.success('Tier DarkRisk360 aggiornato');
     },
-    onError: (err: Error) => toast.error(`Errore tier DarkRisk360: ${err.message}`),
+    onError: (err: Error) => toast.error(`Errore tier DarkRisk360: ${getErrorDetail(err)}`),
   });
 
   const contractUpdateMutation = useMutation({
@@ -210,7 +211,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
       refetchServices();
       toast.success('Dettagli contratto aggiornati');
     },
-    onError: (err: Error) => toast.error(`Errore contratto: ${err.message}`),
+    onError: (err: Error) => toast.error(`Errore contratto: ${getErrorDetail(err)}`),
   });
 
   // Service catalog (hisolution_services equivalent)
@@ -257,7 +258,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
       setApiUrl('');
       setApiKey('');
     },
-    onError: (err: Error) => toast.error(`Errore: ${err.message}`),
+    onError: (err: Error) => toast.error(`Errore: ${getErrorDetail(err)}`),
   });
 
   const disconnectMutation = useMutation({
@@ -268,7 +269,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
       refetchServices();
       toast.success('Servizio scollegato');
     },
-    onError: (err: Error) => toast.error(`Errore: ${err.message}`),
+    onError: (err: Error) => toast.error(`Errore: ${getErrorDetail(err)}`),
   });
 
   const getIntegration = (serviceId: string) => integrations.find(i => i.service_id === serviceId);

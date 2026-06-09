@@ -14,6 +14,7 @@ import { irpApi } from '@/lib/api';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { toast } from 'sonner';
 import { PERMISSION_CATALOG, buildDefaultPermissions, ALL_ACTIONS, PermissionMap, PermAction } from '@/lib/permissions/catalog';
+import { getErrorDetail } from "@/lib/api-client";
 
 interface Props {
   open: boolean;
@@ -95,7 +96,7 @@ const ClientContactsDialog: React.FC<Props> = ({ open, onOpenChange, organizatio
       setNewContact({ first_name: '', last_name: '', email: '', phone: '', job_title: '' });
       qc.invalidateQueries({ queryKey: ['org-contacts', organizationId] });
     },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e: any) => toast.error(getErrorDetail(e)),
   });
 
   const deleteMut = useMutation({
@@ -107,7 +108,7 @@ const ClientContactsDialog: React.FC<Props> = ({ open, onOpenChange, organizatio
       if (selectedId) setSelectedId(null);
       qc.invalidateQueries({ queryKey: ['org-contacts', organizationId] });
     },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e: any) => toast.error(getErrorDetail(e)),
   });
 
   const updateMut = useMutation({
@@ -122,7 +123,7 @@ const ClientContactsDialog: React.FC<Props> = ({ open, onOpenChange, organizatio
       }, groupId);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['org-contacts', organizationId] }),
-    onError: (e: any) => toast.error(`Aggiornamento fallito: ${e.message}`),
+    onError: (e: any) => toast.error(`Aggiornamento fallito: ${getErrorDetail(e)}`),
   });
 
   // local permissions buffer

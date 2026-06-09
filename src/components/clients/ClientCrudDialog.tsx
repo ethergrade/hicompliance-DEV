@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { companiesApi } from '@/lib/api/tenants';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { getErrorDetail } from "@/lib/api-client";
 
 interface Props {
   open: boolean;
@@ -55,7 +56,7 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
       onSaved();
       onOpenChange(false);
     } catch (err: any) {
-      toast.error(err.message || 'Errore nel salvataggio');
+      toast.error(getErrorDetail(err));
     } finally {
       setSaving(false);
     }

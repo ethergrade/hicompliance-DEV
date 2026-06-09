@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { criticalInfrastructureApi } from '@/lib/api';
 import type { CriticalInfrastructureAsset } from '@/types/api';
 import { Plus, Trash2, Edit, Truck, Loader2 } from 'lucide-react';
+import { getErrorDetail } from "@/lib/api-client";
 
 interface SupplierDirectoryTabProps {
   organizationId: string;
@@ -52,7 +53,7 @@ const SupplierDirectoryTab: React.FC<SupplierDirectoryTabProps> = ({ organizatio
       toast({ title: 'Fornitore aggiunto', description: 'Il fornitore è stato registrato con successo.' });
       closeDialog();
     },
-    onError: (err: Error) => toast({ title: 'Errore', description: err.message, variant: 'destructive' }),
+    onError: (err: Error) => toast({ title: 'Errore', description: getErrorDetail(err), variant: 'destructive' }),
   });
 
   const updateMutation = useMutation({
@@ -65,7 +66,7 @@ const SupplierDirectoryTab: React.FC<SupplierDirectoryTabProps> = ({ organizatio
       toast({ title: 'Fornitore aggiornato', description: 'Il fornitore è stato aggiornato con successo.' });
       closeDialog();
     },
-    onError: (err: Error) => toast({ title: 'Errore', description: err.message, variant: 'destructive' }),
+    onError: (err: Error) => toast({ title: 'Errore', description: getErrorDetail(err), variant: 'destructive' }),
   });
 
   const deleteMutation = useMutation({
@@ -74,7 +75,7 @@ const SupplierDirectoryTab: React.FC<SupplierDirectoryTabProps> = ({ organizatio
       queryClient.invalidateQueries({ queryKey: ['suppliers', organizationId, groupId] });
       toast({ title: 'Fornitore rimosso', description: 'Il fornitore è stato rimosso con successo.' });
     },
-    onError: (err: Error) => toast({ title: 'Errore', description: err.message, variant: 'destructive' }),
+    onError: (err: Error) => toast({ title: 'Errore', description: getErrorDetail(err), variant: 'destructive' }),
   });
 
   const openCreateDialog = () => {

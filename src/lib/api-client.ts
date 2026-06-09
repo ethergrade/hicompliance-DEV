@@ -118,6 +118,23 @@ export class ApiError extends Error {
     this.status = status;
     this.errors = body.errors ?? null;
   }
+
+  /** Human-readable detail: field-specific messages if available, else generic message */
+  get detail(): string {
+    if (this.errors && Object.keys(this.errors).length > 0) {
+      return Object.entries(this.errors)
+        .map(([field, msgs]) => `${field}: ${msgs.join(', ')}`)
+        .join(' | ');
+    }
+    return this.message;
+  }
+}
+
+/** Extract human-readable error from any thrown value — field-specific for ApiError 422s */
+export function getErrorDetail(err: unknown): string {
+  if (err instanceof ApiError) return err.detail;
+  if (err instanceof Error) return err.message;
+  return String(err);
 }
 
 // ─── Core fetch wrapper ─────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { tenantServicesApi } from '@/lib/api';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { toast } from 'sonner';
 import type { TenantServiceResource } from '@/types/api';
+import { getErrorDetail } from "@/lib/api-client";
 
 interface ServiceIntegration {
   id: string;
@@ -85,7 +86,7 @@ export const useServiceIntegrations = () => {
       toast.success('Servizio collegato con successo');
     },
     onError: (error: Error) => {
-      toast.error(`Errore: ${error.message}`);
+      toast.error(`Errore: ${getErrorDetail(error)}`);
     },
   });
 
@@ -98,7 +99,7 @@ export const useServiceIntegrations = () => {
       toast.success('Servizio scollegato');
     },
     onError: (error: Error) => {
-      toast.error(`Errore: ${error.message}`);
+      toast.error(`Errore: ${getErrorDetail(error)}`);
     },
   });
 

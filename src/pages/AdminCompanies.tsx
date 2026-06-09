@@ -19,6 +19,7 @@ import { toast } from 'sonner';
 import ClientCrudDialog from '@/components/clients/ClientCrudDialog';
 import DeleteClientDialog from '@/components/clients/DeleteClientDialog';
 import type { TenantResource, Group } from '@/types/api';
+import { getErrorDetail } from "@/lib/api-client";
 
 const STATUS_LABELS: Record<number, string> = { 0: 'Inattivo', 1: 'Attivo', 2: 'Sospeso' };
 const STATUS_COLORS: Record<number, string> = { 0: 'secondary', 1: 'default', 2: 'outline' } as const;
@@ -50,7 +51,7 @@ const AdminCompanies: React.FC = () => {
       const list = await groupsApi.list();
       setGroups(list);
     } catch (err: any) {
-      toast.error(err.message || 'Errore nel caricamento gruppi');
+      toast.error(getErrorDetail(err));
     } finally {
       setGroupsLoading(false);
     }
@@ -65,7 +66,7 @@ const AdminCompanies: React.FC = () => {
       const all = await tenantsApi.listAll(groupId);
       setTenants(all);
     } catch (err: any) {
-      toast.error(err.message || 'Errore nel caricamento aziende');
+      toast.error(getErrorDetail(err));
     } finally {
       setLoading(false);
     }
@@ -89,7 +90,7 @@ const AdminCompanies: React.FC = () => {
       setNewGroupDesc('');
       setNewGroupOpen(false);
     } catch (err: any) {
-      toast.error(err.message || 'Errore nella creazione del gruppo');
+      toast.error(getErrorDetail(err));
     } finally {
       setCreatingGroup(false);
     }
@@ -106,7 +107,7 @@ const AdminCompanies: React.FC = () => {
       }
       toast.success(`Gruppo "${group.name}" eliminato`);
     } catch (err: any) {
-      toast.error(err.message || "Errore nell'eliminazione del gruppo");
+      toast.error(getErrorDetail(err)eliminazione del gruppo");
     }
   };
 
