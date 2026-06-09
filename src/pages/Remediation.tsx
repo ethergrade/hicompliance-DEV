@@ -405,13 +405,27 @@ const Remediation: React.FC = () => {
     switch (priority) { case 'Critica': return 'destructive'; case 'Alta': return 'default'; case 'Media': return 'secondary'; default: return 'outline'; }
   };
 
+  const criticalTasks = activeTasks.filter(t => t.priority === 'Critica');
+  const highPriorityTasks = activeTasks.filter(t => t.priority === 'Alta');
+  const completedTasks = activeTasks.filter(t => t.status === 'completed' || t.progress >= 100);
+  const totalProgress = activeTasks.length > 0
+    ? Math.round(activeTasks.reduce((sum, t) => sum + (t.progress || 0), 0) / activeTasks.length)
+    : 0;
+  const avgDaysRemaining = activeTasks.length > 0
+    ? Math.round(activeTasks.reduce((sum, t) => {
+        const end = new Date(t.end_date);
+        const diff = Math.max(0, Math.ceil((end.getTime() - Date.now()) / 86400000));
+        return sum + diff;
+      }, 0) / activeTasks.length)
+    : 0;
+
   const actionableMetrics = {
     totalBudget: `€${totalBudget.toLocaleString('it-IT')}`,
-    estimatedCompletion: '120 giorni',
-    riskReduction: '65%',
-    complianceImprovement: '60%',
-    criticalIssues: 4,
-    highPriorityActions: 7,
+    estimatedCompletion: activeTasks.length > 0 ? `${avgDaysRemaining} giorni` : '—',
+    riskReduction: `${totalProgress}%`,
+    complianceImprovement: `${Math.min(100, Math.round(totalProgress * 1.2))}%`,
+    criticalIssues: criticalTasks.length,
+    highPriorityActions: highPriorityTasks.length,
   };
 
   return (
