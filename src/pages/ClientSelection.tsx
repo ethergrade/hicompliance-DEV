@@ -304,9 +304,19 @@ const ClientSelection: React.FC = () => {
           />
         );
       })()}
-      {editingOrgId && (
-        <ClientContactsDialog organizationId={editingOrgId} organizationName={editingOrgName} open={contactsOpen} onOpenChange={setContactsOpen} />
-      )}
+      {editingOrgId && (() => {
+        const editingOrg = organizations.find(o => o.id === editingOrgId);
+        const editingGroupId = editingOrg?.group_id ?? null;
+        return (
+          <ClientContactsDialog
+            organizationId={editingOrgId}
+            organizationName={editingOrgName}
+            groupId={editingGroupId}
+            open={contactsOpen}
+            onOpenChange={setContactsOpen}
+          />
+        );
+      })()}
 
       {/* Group selector dialog for creation */}
       <Dialog open={groupSelectOpen} onOpenChange={setGroupSelectOpen}>

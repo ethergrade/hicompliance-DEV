@@ -10,7 +10,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, UserPlus, Trash2, Shield, Search, Users as UsersIcon } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { irpApi } from '@/lib/api';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { toast } from 'sonner';
 import { PERMISSION_CATALOG, buildDefaultPermissions, ALL_ACTIONS, PermissionMap, PermAction } from '@/lib/permissions/catalog';
 
@@ -19,6 +20,7 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   organizationId: string;
   organizationName: string;
+  groupId?: string | null;
 }
 
 interface ContactRow {
@@ -34,7 +36,9 @@ interface ContactRow {
   module_permissions: any;
 }
 
-const ClientContactsDialog: React.FC<Props> = ({ open, onOpenChange, organizationId, organizationName }) => {
+const ClientContactsDialog: React.FC<Props> = ({ open, onOpenChange, organizationId, organizationName, groupId: propGroupId }) => {
+  const { groupId: hookGroupId } = useClientOrganization();
+  const groupId = propGroupId ?? hookGroupId;
   const qc = useQueryClient();
   const [tab, setTab] = useState<'list' | 'permissions'>('list');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -44,16 +48,22 @@ const ClientContactsDialog: React.FC<Props> = ({ open, onOpenChange, organizatio
   const [newContact, setNewContact] = useState({ first_name: '', last_name: '', email: '', phone: '', job_title: '' });
 
   const { data: contacts = [], isLoading } = useQuery({
-    queryKey: ['org-contacts', organizationId],
+    queryKey: ['org-contacts', organizationId, groupId],
     enabled: open && !!organizationId,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('contact_directory')
-        .select('*')
-        .eq('organization_id', organizationId)
-        .order('last_name', { ascending: true });
-      if (error) throw error;
-      return (data ?? []) as ContactRow[];
+      const apiContacts = await irpApi.contacts(organizationId, groupId);
+      return (apiContacts ?? []).map(c => ({
+        id: c.id,
+        first_name: c.first_name,
+        last_name: c.last_name,
+        email: c.email ?? null,
+        phone: c.phone ?? null,
+        job_title: c.job_title ?? null,
+        auth_user_id: c.id,
+        is_platform_user: false,
+        account_disabled: false,
+        module_permissions: null,
+      } as ContactRow));
     },
   });
 
@@ -69,15 +79,16 @@ const ClientContactsDialog: React.FC<Props> = ({ open, onOpenChange, organizatio
 
   const createMut = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from('contact_directory').insert({
-        organization_id: organizationId,
+      const created = await irpApi.createContact(organizationId, {
         first_name: newContact.first_name,
         last_name: newContact.last_name,
-        email: newContact.email || null,
-        phone: newContact.phone || null,
-        job_title: newContact.job_title || null,
-      });
-      if (error) throw error;
+        email: newContact.email || '',
+        phone: newContact.phone || '',
+        job_title: newContact.job_title || undefined,
+        role: newContact.job_title || '',
+        category: 'general',
+      }, groupId);
+      return created;
     },
     onSuccess: () => {
       toast.success('Contatto aggiunto');
@@ -89,8 +100,7 @@ const ClientContactsDialog: React.FC<Props> = ({ open, onOpenChange, organizatio
 
   const deleteMut = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('contact_directory').delete().eq('id', id);
-      if (error) throw error;
+      await irpApi.deleteContact(organizationId, id, groupId);
     },
     onSuccess: () => {
       toast.success('Contatto rimosso');
@@ -103,8 +113,13 @@ const ClientContactsDialog: React.FC<Props> = ({ open, onOpenChange, organizatio
   const updateMut = useMutation({
     mutationFn: async (patch: Partial<ContactRow> & { id: string }) => {
       const { id, ...rest } = patch;
-      const { error } = await supabase.from('contact_directory').update(rest as any).eq('id', id);
-      if (error) throw error;
+      await irpApi.updateContact(organizationId, id, {
+        first_name: rest.first_name,
+        last_name: rest.last_name,
+        email: rest.email || undefined,
+        phone: rest.phone || undefined,
+        job_title: rest.job_title || undefined,
+      }, groupId);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['org-contacts', organizationId] }),
     onError: (e: any) => toast.error(`Aggiornamento fallito: ${e.message}`),
