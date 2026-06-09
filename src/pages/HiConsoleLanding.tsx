@@ -44,7 +44,7 @@ const irpFeatures = [
   { icon: LineChart, title: 'Analisi rischi & heatmap', desc: '33 controlli con matrice impatto/probabilità, mitigazioni colorate (grigio → verde) ed export PDF della heatmap pronta per il board.' },
   { icon: Network, title: 'Infrastruttura critica', desc: 'Wizard per censire asset critici (C-01, C-02...) con dipendenze, RTO/RPO, backup, runbook e dati sensibili trattati. Sincronizzato con le Consistenze.' },
   { icon: Users, title: 'Governance & Rubrica', desc: 'CISO sostituto, ruoli IRP, contatti emergenza e fornitori esterni. Rubrica centralizzata riutilizzata nei playbook.' },
-  { icon: FileCheck, title: 'Documento IRP esteso', desc: 'Generazione DOCX dinamica con docxtemplater: copertina, governance, classificazione NIS2, asset critici, playbook, allegati. Pronto per il deposito ACN.' },
+  { icon: FileCheck, title: 'Documento IRP esteso', desc: 'Generazione DOCX dinamica, rubrica azienda e rubrica fornitori, classificazione NIS2, asset critici, playbook, allegati.' },
   { icon: Siren, title: 'Eventi compliance', desc: 'Log temporale degli eventi (incident, esercitazioni, audit) con archiviazione automatica dei playbook eseguiti e tracciabilità completa.' },
 ];
 
@@ -280,7 +280,7 @@ const HiConsoleLanding: React.FC = () => {
                   <li className="flex items-start gap-2"><CheckCircle2 className="w-4 h-4 text-primary mt-0.5 shrink-0" /><span>Simulazione "what-if" sugli interventi in roadmap</span></li>
                 </ul>
                 <p className="text-xs text-muted-foreground italic pt-1">
-                  Disponibile esclusivamente con il modulo <strong>HiCompliance</strong> attivo — è l'assessment a fornire la baseline di calcolo.
+                  Attiva il modulo <strong>HiCompliance</strong> per sbloccare il True Risk Score: l'assessment iniziale crea la base, mentre gli altri moduli lo mantengono aggiornato in tempo reale.
                 </p>
               </div>
               <div className="flex justify-center md:justify-end">
