@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { darkRiskApi } from '@/lib/api/darkrisk';
+import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 export type DarkRiskSeverity = 'info' | 'low' | 'medium' | 'high' | 'critical';
@@ -222,11 +223,27 @@ export const useDarkRiskOverview = () => {
       if (!organizationId) {
         return emptyData;
       }
-      const data = await darkRiskApi.getOverview(organizationId, groupId);
-      return {
-        ...emptyData,
-        ...(data || {}),
-      } as DarkRiskOverviewResponse;
+      try {
+        const data = await darkRiskApi.getOverview(organizationId, groupId);
+        return {
+          ...emptyData,
+          ...(data || {}),
+        } as DarkRiskOverviewResponse;
+      } catch (apiError: any) {
+        // Fallback to Supabase Edge Function if backend endpoint not deployed yet
+        if (apiError?.status === 404 || apiError?.message?.includes('not found')) {
+          const { data, error } = await supabase.functions.invoke('darkrisk360-overview', {
+            body: { customer_id: organizationId },
+          });
+          if (error) throw error;
+          if (data?.error) throw new Error(String(data.error));
+          return {
+            ...emptyData,
+            ...(data || {}),
+          } as DarkRiskOverviewResponse;
+        }
+        throw apiError;
+      }
     },
     staleTime: 60_000,
     refetchInterval: 90_000,
