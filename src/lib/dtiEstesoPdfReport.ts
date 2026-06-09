@@ -37,7 +37,39 @@ export interface DtiEstesoReportJson {
   risk_assessment?: { threat_score: string; items: Array<[string, string]>; has_high_creds: boolean; has_dmarc_issue: boolean; has_open_ports: boolean };
   recommendations?: { immediate: string[]; d30: string[]; d90: string[] };
   bucket_legend?: Array<{ category: string; description: string }>;
+  identity_findings?: Array<{
+    email: string;
+    status: string;
+    total: number;
+    high: number;
+    medium: number;
+    low: number;
+    findings: Array<{
+      title: string;
+      finding_type: string;
+      severity: string;
+      risk_score: number;
+      first_seen_at: string;
+    }>;
+  }>;
 }
+
+// ── Mappa nomenclature sorgenti: nomi interni → etichette dashboard ────────
+const SOURCE_LABEL_DISPLAY: Record<string, string> = {
+  'DARKRISK_ESTESO Leaks':     'Ricerca leak & databreach',
+  'DARKRISK_ESTESO Search':    'Ricerca threat intelligence',
+  'DARKRISK_ESTESO Phonebook': 'Directory contatti esposti',
+  'DarkRisk360 DTI':           'Analisi dominio',
+  'DarkRisk360 Phonebook':     'Directory pubblica',
+  'DarkRisk360 Search':        'Ricerca intelligence',
+  'DarkRisk360 Leaks':         'Ricerca leak & databreach',
+};
+const displaySource = (raw: unknown): string => {
+  const s = String(raw || '').trim();
+  if (SOURCE_LABEL_DISPLAY[s]) return SOURCE_LABEL_DISPLAY[s];
+  // Rimuovi prefissi tecnici interni come fallback
+  return s.replace(/DARKRISK_ESTESO\s*/gi, '').replace(/DarkRisk360\s*/gi, 'DarkRisk360 ').trim() || s;
+};
 
 const BRAND = { r: 59, g: 130, b: 246 };
 const DARK = { r: 17, g: 24, b: 39 };
@@ -328,7 +360,7 @@ export function generateDtiEstesoPdf(report: DtiEstesoReportJson): void {
         const runs = (d.source_runs || []).filter((r) => String(r.status || '').toLowerCase() !== 'failed');
         if (runs.length > 0) {
           drawTable(['Sorgente', 'Tipo query', 'Termine', 'Risultati'],
-            runs.slice(0, 20).map((r) => [r.source, r.query_kind, r.query_term, String(r.result_count)]),
+            runs.slice(0, 20).map((r) => [displaySource(r.source), r.query_kind, r.query_term, String(r.result_count)]),
             [150, 120, 165, 80]);
         }
       }
@@ -372,7 +404,7 @@ export function generateDtiEstesoPdf(report: DtiEstesoReportJson): void {
   const bySource = report.findings_by_source || [];
   if (bySource.length > 0) {
     sectionTitle('Sintesi numerica per fonte');
-    drawTable(['Fonte', 'Tipo', 'Risultati'], bySource.map((s) => [s.source, 'leak/exposure', String(s.count)]), [240, 170, 105]);
+    drawTable(['Fonte', 'Tipo', 'Risultati'], bySource.map((s) => [displaySource(s.source), 'leak/exposure', String(s.count)]), [240, 170, 105]);
   }
 
   // ===== SURFACE FINDINGS — PER ASSET =====
@@ -426,71 +458,80 @@ export function generateDtiEstesoPdf(report: DtiEstesoReportJson): void {
     drawTable(['Categoria', 'Significato'], legend.map((l) => [l.category, l.description]), [160, 355]);
   }
 
-  // ===== EMAIL IDENTITY LEAK — riepilogo trasversale per dominio =====
-  sectionTitle('Email Identity Leak — Riepilogo per dominio');
+  // ===== EMAIL MONITORATE — FINDING IDENTITY (per selector individuale) =====
+  sectionTitle('Email monitorate — Finding Identity');
   text(
-    'Questa sezione riassume i risultati delle query di tipo email/identity condotte su fonti di threat intelligence ' +
-    '(IntelX/DarkRisk360) per tutti i domini in perimetro. Un risultato indica che indirizzi email ' +
-    'associati al dominio sono stati trovati in archivi di databreach o leak.',
+    'Analisi per ogni indirizzo email monitorato nel perimetro DarkRisk360. ' +
+    'I finding identity indicano esposizioni di credenziali o dati personali ' +
+    'rilevate nei database di databreach e threat intelligence.',
     { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] },
   );
   y += 4;
-  const perDomainForEmail = report.per_domain || [];
-  let emailLeakRowsTotal = 0;
-  for (const d of perDomainForEmail) {
-    const emailRuns = (d.source_runs || []).filter(
-      (r) =>
-        r.query_kind === 'at_domain_tld' ||
-        r.query_kind === 'email_selector' ||
-        String(r.query_term || '').startsWith('@'),
-    );
-    if (emailRuns.length === 0) continue;
-    ensure(20);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(BRAND.r, BRAND.g, BRAND.b);
-    doc.text(ascii(d.domain), margin, y);
-    y += 12;
-    const totalResults = emailRuns.reduce((s, r) => s + Number(r.result_count || 0), 0);
-    emailLeakRowsTotal += totalResults;
-    if (totalResults === 0) {
-      doc.setFont('helvetica', 'italic');
-      doc.setFontSize(8);
-      doc.setTextColor(16, 133, 89);
-      doc.text('  Nessun finding email/identity rilevato in questa scansione.', margin, y);
-      y += 12;
-    } else {
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(200, 50, 50);
-      doc.text(
-        `  ${totalResults} segnali rilevati per indirizzi email associati a questo dominio.`,
-        margin, y,
-      );
-      y += 10;
-      drawTable(
-        ['Query email', 'Tipo query', 'Risultati', 'Fonte'],
-        emailRuns.slice(0, 20).map((r) => [
-          r.query_term,
-          r.query_kind,
-          String(r.result_count),
-          r.source,
-        ]),
-        [180, 120, 80, 135],
-      );
-    }
-    y += 4;
-  }
-  if (perDomainForEmail.length === 0 || emailLeakRowsTotal === 0) {
+
+  const identityRows = report.identity_findings || [];
+
+  if (identityRows.length === 0) {
+    // Nessun selector email monitorato o nessun dato disponibile
     ensure(20);
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(9);
     doc.setTextColor(16, 133, 89);
-    doc.text(
-      'Nessun finding email/identity rilevato in questa scansione per nessun dominio in perimetro.',
-      margin, y,
-    );
+    doc.text('Nessuna email individuale monitorata in perimetro oppure dati non ancora disponibili.', margin, y);
     y += 16;
+  } else {
+    // Tabella riepilogativa [Email | Stato | HIGH | MED | LOW | Totale]
+    ensure(16);
+    drawTable(
+      ['Email monitorata', 'Stato', 'HIGH', 'MED', 'LOW', 'Totale finding'],
+      identityRows.map((e) => [
+        e.email,
+        e.status === 'approved' ? 'Approvato' : e.status,
+        e.high > 0 ? String(e.high) : '-',
+        e.medium > 0 ? String(e.medium) : '-',
+        e.low > 0 ? String(e.low) : '-',
+        e.total > 0 ? String(e.total) : '0',
+      ]),
+      [185, 70, 45, 45, 45, 85],
+    );
+    y += 6;
+
+    // Dettaglio per ogni email con finding
+    for (const emailEntry of identityRows) {
+      if (emailEntry.total === 0) {
+        // Email senza finding — messaggio verde rassicurante
+        ensure(14);
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(8);
+        doc.setTextColor(16, 133, 89);
+        doc.text(ascii(`${emailEntry.email}  —  Nessun finding identity rilevato.`), margin + 4, y);
+        y += 12;
+        continue;
+      }
+
+      // Email con finding — header + dettaglio
+      ensure(20);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(200, 50, 50);
+      doc.text(ascii(`${emailEntry.email}  (${emailEntry.total} finding)`), margin, y);
+      y += 12;
+
+      drawTable(
+        ['Sev.', 'Tipo', 'Titolo finding', 'Score', 'Prima vista'],
+        emailEntry.findings.slice(0, 20).map((f) => [
+          String(f.severity || 'info').toUpperCase().slice(0, 4),
+          String(f.finding_type || '-').replace(/_/g, ' '),
+          String(f.title || '-'),
+          f.risk_score > 0 ? String(f.risk_score) : '-',
+          fmtDate(f.first_seen_at),
+        ]),
+        [45, 100, 240, 50, 80],
+      );
+      if (emailEntry.total > 20) {
+        text(`Mostrati 20 di ${emailEntry.total} finding per questa email.`, { size: 8, color: [MUTED.r, MUTED.g, MUTED.b] });
+      }
+      y += 4;
+    }
   }
 
   // ===== GLOSSARIO TECNICO =====

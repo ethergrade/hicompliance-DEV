@@ -140,7 +140,33 @@ export const REPORT_GLOSSARY: GlossaryTerm[] = [
     definition:
       'Interfaccia web al registro Certificate Transparency. Permette di scoprire tutti i sottodomini registrati con certificati SSL per un dominio.',
   },
+  // ── Sorgenti DarkRisk360 ──────────────────────────────────────────────────
+  {
+    term: 'Data Leak riservati',
+    definition:
+      'Archivi di credenziali e dati rubati non ancora pubblicati o venduti nel web pubblico. Indicano una compromissione più recente e meno nota, spesso rilevata solo da servizi di threat intelligence avanzati.',
+  },
+  {
+    term: 'Bot Log / Infostealer (log)',
+    definition:
+      'Archivio dati esfiltrati da computer infetti da malware infostealer. A differenza dei databreach classici, i bot log contengono sessioni browser attive e credenziali prelevate in tempo reale dal dispositivo compromesso.',
+  },
+  {
+    term: 'Directory pubblica (Phonebook)',
+    definition:
+      "Indice pubblico di indirizzi email, sottodomini e contatti associati a un dominio. Usata per mappare la superficie di esposizione digitale dell'organizzazione e identificare asset non censiti.",
+  },
+  {
+    term: 'Identity selector',
+    definition:
+      'Indirizzo email individuale inserito nel perimetro di monitoraggio DarkRisk360. Per ogni selector, il sistema monitora continuamente i databreach e segnala nuove esposizioni di credenziali o dati personali.',
+  },
   // ── Dark web & Breach intelligence ───────────────────────────────────────
+  {
+    term: 'Threat intelligence',
+    definition:
+      'Raccolta e analisi di dati su minacce informatiche attuali o potenziali. Include informazioni su attaccanti, tattiche, credenziali rubate e vulnerabilità sfruttate, provenienti da fonti OSINT, dark web e feed specializzati.',
+  },
   {
     term: 'IntelX (Intelligence eXtended)',
     definition:

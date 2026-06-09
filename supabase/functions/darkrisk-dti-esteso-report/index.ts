@@ -226,7 +226,7 @@ async function buildDtiEstesoReport(
   // ── 2. Scope: selectors + monitored IPs ───────────────────────────────────
   const [selectorsRes, monitoredRes] = await Promise.all([
     adminClient.from('darkrisk_selectors' as any)
-      .select('selector_type, normalized_value, status')
+      .select('id, selector_type, normalized_value, status')
       .eq('organization_id', orgId)
       .in('status', ['approved', 'candidate'])
       .order('selector_type'),
@@ -242,6 +242,42 @@ async function buildDtiEstesoReport(
   ].filter(Boolean)));
   const scopeEmails = selectors.filter((s) => s.selector_type === 'email').map((s) => String(s.normalized_value || '')).filter(Boolean);
   const scopeIps = monitored.filter((m) => m.entry_type === 'single' && /^(\d{1,3}\.){3}\d{1,3}$/.test(m.input_value)).map((m) => m.input_value);
+
+  // ── 2b. Identity findings per email selector ───────────────────────────────
+  // Recupera i finding individualmente collegati a selectors email (affectedSelectorId)
+  const emailSelectorObjs = selectors.filter((s: any) => s.selector_type === 'email');
+  const emailSelectorIds = emailSelectorObjs.map((s: any) => s.id).filter(Boolean);
+  let identityFindingsRaw: any[] = [];
+  if (emailSelectorIds.length > 0) {
+    const { data: ifData } = await adminClient
+      .from('darkrisk_findings' as any)
+      .select('id, title, finding_type, severity, risk_score, first_seen_at, affected_selector_id')
+      .eq('organization_id', orgId)
+      .in('affected_selector_id', emailSelectorIds)
+      .order('risk_score', { ascending: false })
+      .limit(500);
+    identityFindingsRaw = (ifData as any[]) || [];
+  }
+  const identityFindings = emailSelectorObjs.map((sel: any) => {
+    const selFindings = identityFindingsRaw.filter(
+      (f: any) => String(f.affected_selector_id) === String(sel.id),
+    );
+    return {
+      email: String(sel.normalized_value || ''),
+      status: String(sel.status || 'approved'),
+      total: selFindings.length,
+      high: selFindings.filter((f: any) => f.severity === 'high' || f.severity === 'critical').length,
+      medium: selFindings.filter((f: any) => f.severity === 'medium').length,
+      low: selFindings.filter((f: any) => f.severity === 'low' || f.severity === 'info').length,
+      findings: selFindings.slice(0, 20).map((f: any) => ({
+        title: String(f.title || ''),
+        finding_type: String(f.finding_type || ''),
+        severity: String(f.severity || 'info'),
+        risk_score: Number(f.risk_score || 0),
+        first_seen_at: String(f.first_seen_at || ''),
+      })),
+    };
+  });
 
   // ── 3. Latest scan run ─────────────────────────────────────────────────────
   const { data: scanRunRow } = await adminClient
@@ -780,14 +816,22 @@ async function buildDtiEstesoReport(
     .sort((a, b) => b.count - a.count);
 
   // MERGE raccomandazioni AI nel capitolo "Raccomandazioni Operative" (no menzione provider AI)
+  // Dedup: normalizza testo (lowercase, no punteggiatura, slice 80 chars) prima del confronto
+  const _normalizeRec = (s: string) =>
+    String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  const _dedupPush = (arr: string[], item: string) => {
+    const norm = _normalizeRec(item);
+    if (norm && !arr.some((existing) => _normalizeRec(existing) === norm)) arr.push(item);
+  };
+
   const aiPrio = (p: string) => String(p || '').toLowerCase();
   for (const r of aiRecos) {
     const line = `${String(r.title || '').trim()}${r.why_it_matters ? ' — ' + String(r.why_it_matters).trim() : ''}${Array.isArray(r.actions) && r.actions.length ? ' Azioni: ' + r.actions.join('; ') : ''}`.trim();
     if (!line) continue;
     const p = aiPrio(r.priority);
-    if (p === 'immediate' || p === 'short_term') recsImmediate.push(line);
-    else if (p === 'mid_term') recs30d.push(line);
-    else recs90d.push(line);
+    if (p === 'immediate' || p === 'short_term') _dedupPush(recsImmediate, line);
+    else if (p === 'mid_term') _dedupPush(recs30d, line);
+    else _dedupPush(recs90d, line);
   }
 
   const riskLevel = (n: number, hi: number, mid: number) => (n > hi ? 'ALTO' : n > mid ? 'MEDIO' : 'BASSO');
@@ -848,6 +892,8 @@ async function buildDtiEstesoReport(
     recommendations: { immediate: recsImmediate, d30: recs30d, d90: recs90d },
     // Legenda nomenclatura fonti (coerente con la dashboard)
     bucket_legend: BUCKET_LEGEND,
+    // Finding identity per email selector monitorato (per PDF client-side)
+    identity_findings: identityFindings,
   };
 
   // ── Final HTML assembly ────────────────────────────────────────────────────
