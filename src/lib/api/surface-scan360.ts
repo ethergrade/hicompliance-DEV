@@ -5,6 +5,13 @@ const groupHeader = (groupId: string) => ({
   headers: { "X-Group-Id": groupId },
 });
 
+/** Extract array from API response — handles both plain arrays and Laravel paginated {data:[], ...} */
+const extractArray = <T>(data: unknown): T[] => {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === 'object' && 'data' in data && Array.isArray((data as any).data)) return (data as any).data;
+  return [];
+};
+
 export interface SurfaceScanJob {
   id: string;
   raw_target: string;
@@ -56,7 +63,7 @@ export const surfaceScan360Api = {
       params,
       groupId ? groupHeader(groupId) : undefined,
     );
-    return res.data;
+    return extractArray<SurfaceScanJob>(res.data);
   },
 
   async createJob(
@@ -92,7 +99,7 @@ export const surfaceScan360Api = {
       params,
       groupId ? groupHeader(groupId) : undefined,
     );
-    return res.data;
+    return extractArray<any>(res.data);
   },
 
   // AI Report
@@ -101,12 +108,13 @@ export const surfaceScan360Api = {
     params?: { page?: number },
     groupId?: string | null,
   ): Promise<SurfaceScanAiReport[]> {
-    const res = await complianceApiClient.get<ApiResponse<SurfaceScanAiReport[]>>(
+    const res = await complianceApiClient.get<ApiResponse<any>>(
       `/companies/${companyId}/surface-scan360/ai-report`,
       params,
       groupId ? groupHeader(groupId) : undefined,
     );
-    return res.data;
+    // Backend returns Laravel paginated response: {data: [...], current_page, ...}
+    return extractArray<SurfaceScanAiReport>(res.data);
   },
 
   async createAiReport(
@@ -137,7 +145,7 @@ export const surfaceScan360Api = {
       undefined,
       groupId ? groupHeader(groupId) : undefined,
     );
-    return res.data || [];
+    return extractArray<any>(res.data || []);
   },
 
   async deleteMonitoredIp(

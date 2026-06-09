@@ -198,8 +198,10 @@ const Assessment: React.FC = () => {
 
   // Load v2 categories + questions from API
   useEffect(() => {
-    if (categoriesLoaded.current) return;
+    if (!orgId) return; // Wait for org context
+    if (categoriesLoaded.current && guidedOrgRef.current === orgId) return;
     categoriesLoaded.current = true;
+    guidedOrgRef.current = orgId;
     loadV2AssessmentData().then((data) => {
       // Fallback ai dati statici se API v2 torna vuoto
       if (!data.categories || data.categories.length === 0) {

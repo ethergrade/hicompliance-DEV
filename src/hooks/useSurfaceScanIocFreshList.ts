@@ -149,7 +149,7 @@ export const useSurfaceScanIocFreshList = (): UseSurfaceScanIocFreshListReturn =
         });
       }
 
-      setItems((Array.isArray(itemsRes.data) ? itemsRes.data : []) as SurfaceScanIocFreshItem[]);
+      setItems((itemsRes.data || []) as SurfaceScanIocFreshItem[]);
     } catch (error) {
       console.error('Error fetching IOC fresh list data:', error);
       toast({

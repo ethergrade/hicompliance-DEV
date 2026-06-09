@@ -273,7 +273,7 @@ export const useSurfaceScanFindings = () => {
   });
 
   const completedJobs = useMemo(() => {
-    return (Array.isArray(jobsQuery.data) ? jobsQuery.data : [])
+    return (jobsQuery.data || [])
       .filter((j) => j.status === 'completed')
       .slice(0, 10); // Limit to 10 most recent completed jobs
   }, [jobsQuery.data]);
@@ -379,7 +379,7 @@ export const useSurfaceScanFindings = () => {
     const apiFindings = [...allApiFindings];
 
     // Build synthetic CVE rows from AI reports
-    const reportRows = (Array.isArray(aiReportsQuery.data) ? aiReportsQuery.data : []) as Record<string, any>[];
+    const reportRows = (aiReportsQuery.data || []) as Record<string, any>[];
     const ORGANIZATION_SCOPE_REPORT_TITLE = 'SurfaceScan360 Report - Organization Scope';
     const isOrganizationScopeReport = (row: Record<string, any> | null): boolean => {
       const title = String(row?.title || '').trim();

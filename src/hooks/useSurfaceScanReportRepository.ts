@@ -67,7 +67,7 @@ export const useSurfaceScanReportRepository = (
     try {
       const apiReports = await surfaceScan360Api.listAiReports(organizationId, undefined, groupId);
 
-      const allRows: SurfaceScanAiReportRow[] = (Array.isArray(apiReports) ? apiReports : [])
+      const allRows: SurfaceScanAiReportRow[] = (apiReports || [])
         .filter((r) => r?.id)
         .map((r) => mapApiReportToRow(r, organizationId));
 
