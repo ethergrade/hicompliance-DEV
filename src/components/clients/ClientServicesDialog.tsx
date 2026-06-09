@@ -8,7 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Link2, Unlink, Plug, Shield, Mail, Monitor, Smartphone, Activity, Search as SearchIcon, Server, ShieldCheck, FileCheck, Eye, Radar } from 'lucide-react';
+import { Loader2, Link2, Unlink, Plug, Shield, Mail, Monitor, Smartphone, Activity, Search as SearchIcon, Server, ShieldCheck, FileCheck, Eye, Radar, Calendar } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { tenantServicesApi } from '@/lib/api';
@@ -67,6 +67,13 @@ function deriveDarkRiskTier(services: TenantServiceResource[]) {
     enabled: !!dr,
   };
 }
+
+const calcEndDate = (startDate: string | null, durationYears: string | null): string => {
+  if (!startDate || !durationYears) return '';
+  const d = new Date(startDate + 'T00:00:00');
+  d.setFullYear(d.getFullYear() + parseInt(durationYears, 10));
+  return d.toLocaleDateString('it-IT');
+};
 
 const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   open, onOpenChange, organizationId: propOrgId, organizationName, groupId: propGroupId,
@@ -186,6 +193,26 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     onError: (err: Error) => toast.error(`Errore tier DarkRisk360: ${err.message}`),
   });
 
+  const contractUpdateMutation = useMutation({
+    mutationFn: async ({ serviceId, serviceType, contractStart, duration }: { serviceId: string; serviceType: string; contractStart: string; duration: string }) => {
+      if (!organizationId) throw new Error('Nessuna azienda selezionata');
+      const ts = await queryClient.fetchQuery({
+        queryKey: ['tenant-services-client', organizationId],
+        queryFn: () => tenantServicesApi.listByOrganization(organizationId!, groupId),
+      });
+      const svc = ts.find(s => s.id === serviceId);
+      if (!svc) throw new Error('Servizio non trovato');
+      await tenantServicesApi.update(serviceId, {
+        settings: { ...(svc.settings as any || {}), contract_start: contractStart, duration },
+      }, groupId);
+    },
+    onSuccess: () => {
+      refetchServices();
+      toast.success('Dettagli contratto aggiornati');
+    },
+    onError: (err: Error) => toast.error(`Errore contratto: ${err.message}`),
+  });
+
   // Service catalog (hisolution_services equivalent)
   const { data: services = [] } = useQuery({
     queryKey: ['tenant-services-catalog'],
@@ -245,6 +272,70 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   });
 
   const getIntegration = (serviceId: string) => integrations.find(i => i.service_id === serviceId);
+
+  // Helper: extract contract settings for a service type from tenantServices
+  const getContractSettings = (serviceType: string) => {
+    const svc = tenantServices.find(s => s.service_type === serviceType && s.status === 'active');
+    if (!svc) return { id: '', contract_start: '', duration: '', endDate: '' };
+    const settings = (svc.settings as any) || {};
+    const start = settings.contract_start || '';
+    const dur = settings.duration || '';
+    return { id: svc.id, contract_start: start, duration: dur, endDate: calcEndDate(start, dur) };
+  };
+
+  // Renders the contract detail row for an enabled service
+  const renderContractRow = (serviceType: string) => {
+    const cs = getContractSettings(serviceType);
+    const handleSave = (field: 'contract_start' | 'duration', value: string) => {
+      if (!cs.id) return;
+      const payload = field === 'contract_start'
+        ? { contractStart: value, duration: cs.duration }
+        : { contractStart: cs.contract_start, duration: value };
+      contractUpdateMutation.mutate({ serviceId: cs.id, serviceType, ...payload });
+    };
+    return (
+      <div className="rounded-md border p-2.5">
+        <div className="flex items-center gap-2 mb-2">
+          <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+          <p className="text-xs font-medium text-muted-foreground">Dettagli contratto</p>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <div>
+            <Label className="text-[10px] text-muted-foreground">Inizio contratto</Label>
+            <Input
+              type="date"
+              className="h-7 text-xs"
+              value={cs.contract_start}
+              onChange={(e) => handleSave('contract_start', e.target.value)}
+              disabled={contractUpdateMutation.isPending}
+            />
+          </div>
+          <div>
+            <Label className="text-[10px] text-muted-foreground">Durata</Label>
+            <Select
+              value={cs.duration || undefined}
+              onValueChange={(v) => handleSave('duration', v)}
+              disabled={contractUpdateMutation.isPending}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue placeholder="—" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="2">2 anni</SelectItem>
+                <SelectItem value="3">3 anni</SelectItem>
+                <SelectItem value="4">4 anni</SelectItem>
+                <SelectItem value="5">5 anni</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-[10px] text-muted-foreground">Fine contratto</Label>
+            <Input className="h-7 text-xs" value={cs.endDate} disabled />
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const handleConnect = () => {
     if (!connectingService || !apiUrl.trim() || !apiKey.trim()) return;
@@ -309,6 +400,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 
               {orgFlags?.hicompliance_enabled && (
                 <div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
+                  {renderContractRow('hicompliance')}
                   <div className="flex items-center justify-between rounded-md border p-2.5">
                     <div className="flex items-center gap-3">
                       <FileCheck className="w-4 h-4 text-muted-foreground" />
@@ -370,6 +462,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 
               {orgFlags?.surface_scan360_enabled && (
                 <div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
+                  {renderContractRow('hitrack')}
                   <div className="flex items-center justify-between rounded-md border p-2.5">
                     <div className="flex items-center gap-3">
                       <Radar className="w-4 h-4 text-muted-foreground" />
@@ -438,6 +531,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 
               {orgFlags?.dark_risk360_enabled && (
                 <div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
+                  {renderContractRow('darkrisk')}
                   <div className="flex items-center justify-between rounded-md border p-2.5">
                     <div className="flex items-center gap-3">
                       <Eye className="w-4 h-4 text-muted-foreground" />
