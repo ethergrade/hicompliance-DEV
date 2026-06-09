@@ -315,7 +315,7 @@ const HiConsoleLanding: React.FC = () => {
                 L'<strong>Incident Response Plan</strong> di HiSolution Console non è un documento PDF da aggiornare ogni due anni:
                 è un sistema vivo, integrato con la tua infrastruttura e il tuo team. Quando scatta un incidente,
                 il responsabile apre il playbook giusto, segue gli step, assegna i task ai responsabili nominati nella rubrica,
-                allega evidenze e screenshot, e a fine procedura ottiene automaticamente il documento archiviabile per l'ACN o l\'autorità di controllo.
+                allega evidenze e screenshot, e a fine procedura ottiene automaticamente il documento archiviabile per l'ACN o l'autorità di controllo.
               </p>
               <p className="text-muted-foreground leading-relaxed">
                 Tutto è già pre-popolato per <strong>NIS2</strong>: classificazione del soggetto, CISO sostituto, asset critici,
