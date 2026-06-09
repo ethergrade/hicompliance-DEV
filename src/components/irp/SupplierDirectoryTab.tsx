@@ -106,6 +106,7 @@ const SupplierDirectoryTab: React.FC<SupplierDirectoryTabProps> = ({ organizatio
       return;
     }
     const payload: Partial<CriticalInfrastructureAsset> = {
+      asset_id: `SUP-${Date.now()}`,
       component_name: formData.component_name.trim(),
       owner_team: formData.owner_team.trim(),
       management_type: formData.management_type,

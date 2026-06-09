@@ -307,7 +307,7 @@ const Assessment: React.FC = () => {
 
     const loadResponses = async () => {
       try {
-        const items = await assessmentV2Api.responses(orgId);
+        const items = await assessmentV2Api.responses(orgId, groupId);
         if (!items || items.length === 0) {
           setResponses({});
           return;

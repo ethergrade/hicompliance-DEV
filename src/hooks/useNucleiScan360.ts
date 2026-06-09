@@ -19,11 +19,17 @@ export function useNucleiScan360Jobs() {
   const create = useMutation({
     mutationFn: (payload: {
       target: string;
+      profile?: 'baseline_headers' | 'exposure_medium' | 'web_vuln_safe' | 'web_vuln_authorized';
       template_tags?: string[];
       severity_filter?: string[];
     }) => {
       if (!organizationId) throw new Error('Nessun cliente selezionato');
-      return nucleiScan360Api.createJob(organizationId, payload, groupId);
+      return nucleiScan360Api.createJob(organizationId, {
+        target_url: payload.target,
+        profile: payload.profile ?? 'web_vuln_safe',
+        template_tags: payload.template_tags,
+        severity_filter: payload.severity_filter,
+      }, groupId);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['nuclei-scan360-jobs', organizationId, groupId] });

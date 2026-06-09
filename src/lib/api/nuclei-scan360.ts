@@ -33,7 +33,8 @@ export const nucleiScan360Api = {
   async createJob(
     companyId: string,
     payload: {
-      target: string;
+      target_url: string;
+      profile: 'baseline_headers' | 'exposure_medium' | 'web_vuln_safe' | 'web_vuln_authorized';
       template_tags?: string[];
       severity_filter?: string[];
     },
