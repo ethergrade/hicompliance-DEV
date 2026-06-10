@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, Check, CloudOff, Building2 } from 'lucide-react';
+import { Loader2, Check, CloudOff, Building2, AlertCircle } from 'lucide-react';
 import { tenantsApi } from '@/lib/api';
 import type { TenantResource, UpdateTenantRequest } from '@/types/api';
 
@@ -47,7 +47,7 @@ const INITIAL: ProfileFormData = {
   phone: '',
   email: '',
   business_sector: '',
-  nis2_classification: 'nessuna',
+  nis2_classification: '',
   ciso_substitute: '',
 };
 
@@ -97,7 +97,15 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
   const [form, setForm] = useState<ProfileFormData>(INITIAL);
   const [loading, setLoading] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const validate = (data: ProfileFormData): Record<string, string> => {
+    const errs: Record<string, string> = {};
+    if (!data.vat_number.trim()) errs.vat_number = 'P.IVA obbligatoria';
+    if (!data.nis2_classification) errs.nis2_classification = 'Classificazione NIS2 obbligatoria';
+    return errs;
+  };
 
   // Fetch data when sheet opens
   useEffect(() => {
@@ -138,9 +146,16 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
       }
 
       saveTimerRef.current = setTimeout(async () => {
+        const errs = validate(data);
+        setFieldErrors(errs);
+        if (Object.keys(errs).length > 0) {
+          setSaveStatus('error');
+          return;
+        }
         setSaveStatus('saving');
         try {
           await tenantsApi.update(organizationId, formToPayload(data));
+          setFieldErrors({});
           setSaveStatus('saved');
           setTimeout(() => setSaveStatus('idle'), 2000);
         } catch {
@@ -170,9 +185,17 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
     if (!organizationId) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 
+    const errs = validate(form);
+    setFieldErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      setSaveStatus('error');
+      return;
+    }
+
     setSaveStatus('saving');
     try {
       await tenantsApi.update(organizationId, formToPayload(form));
+      setFieldErrors({});
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch {
@@ -180,20 +203,33 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
     }
   };
 
-  const renderField = (field: keyof ProfileFormData, label: string, placeholder?: string) => (
-    <div className="space-y-1.5">
-      <Label htmlFor={`profile-${field}`} className="text-xs text-muted-foreground">
-        {label}
-      </Label>
-      <Input
-        id={`profile-${field}`}
-        value={form[field] ?? ''}
-        onChange={(e) => updateField(field, e.target.value)}
-        placeholder={placeholder}
-        className="h-9"
-      />
-    </div>
-  );
+  const renderField = (
+    field: keyof ProfileFormData,
+    label: string,
+    placeholder?: string,
+    required?: boolean,
+  ) => {
+    const error = fieldErrors[field];
+    return (
+      <div className="space-y-1.5">
+        <Label htmlFor={`profile-${field}`} className="text-xs text-muted-foreground">
+          {label}{required && <span className="text-destructive ml-0.5">*</span>}
+        </Label>
+        <Input
+          id={`profile-${field}`}
+          value={form[field] ?? ''}
+          onChange={(e) => updateField(field, e.target.value)}
+          placeholder={placeholder}
+          className={`h-9 ${error ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+        />
+        {error && (
+          <p className="text-xs text-destructive flex items-center gap-1">
+            <AlertCircle className="w-3 h-3" />{error}
+          </p>
+        )}
+      </div>
+    );
+  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -225,7 +261,11 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
           {saveStatus === 'error' && (
             <>
               <CloudOff className="w-3 h-3 text-destructive" />
-              <span className="text-destructive">Errore salvataggio</span>
+              <span className="text-destructive">
+                {Object.keys(fieldErrors).length > 0
+                  ? 'Compila i campi obbligatori'
+                  : 'Errore salvataggio'}
+              </span>
             </>
           )}
           {saveStatus === 'idle' && (
@@ -246,7 +286,7 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
                 <div className="grid grid-cols-1 gap-3">
                   {renderField('legal_name', 'Ragione Sociale *')}
                   <div className="grid grid-cols-2 gap-3">
-                    {renderField('vat_number', 'Partita IVA')}
+                    {renderField('vat_number', 'Partita IVA', 'IT12345678901', true)}
                     {renderField('fiscal_code', 'Codice Fiscale')}
                   </div>
                   {renderField('legal_address', 'Sede Legale')}
@@ -276,14 +316,17 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
 
                   <div className="space-y-1.5">
                     <Label htmlFor="profile-nis2" className="text-xs text-muted-foreground">
-                      Classificazione NIS2
+                      Classificazione NIS2<span className="text-destructive ml-0.5">*</span>
                     </Label>
                     <Select
-                      value={form.nis2_classification || 'nessuna'}
+                      value={form.nis2_classification || ''}
                       onValueChange={(v) => updateField('nis2_classification', v)}
                     >
-                      <SelectTrigger id="profile-nis2" className="h-9">
-                        <SelectValue />
+                      <SelectTrigger
+                        id="profile-nis2"
+                        className={`h-9 ${fieldErrors.nis2_classification ? 'border-destructive' : ''}`}
+                      >
+                        <SelectValue placeholder="Seleziona classificazione…" />
                       </SelectTrigger>
                       <SelectContent>
                         {NIS2_OPTIONS.map((opt) => (
@@ -293,6 +336,11 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
                         ))}
                       </SelectContent>
                     </Select>
+                    {fieldErrors.nis2_classification && (
+                      <p className="text-xs text-destructive flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />{fieldErrors.nis2_classification}
+                      </p>
+                    )}
                   </div>
 
                   {renderField('ciso_substitute', 'CISO Sostituto')}
