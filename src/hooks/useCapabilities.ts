@@ -2,18 +2,22 @@ import { useMemo } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 
 /**
- * Hook that reads capabilities from the /auth/me LoginUser response.
+ * Hook that reads capabilities from the AuthContext.
+ *
+ * `refreshCapabilities()` in AuthProvider updates an independent
+ * `capabilities` state (not via `setUser`), so calling it does NOT
+ * trigger the `fetchOrganizations` cascade in ClientContext.
  *
  * Superadmins with is_super_admin === true automatically have ALL capabilities
  * regardless of what the capabilities map contains.
  *
- * If the backend hasn't been updated yet (capabilities field missing), all checks
- * return true for backward compatibility.
+ * If capabilities are undefined (backward compat — backend hasn't been updated),
+ * all checks return true.
  */
 export function useCapabilities() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, capabilities: ctxCapabilities, loading: authLoading } = useAuth();
 
-  const capabilities = user?.capabilities ?? null;
+  const capabilities = ctxCapabilities ?? user?.capabilities ?? null;
   const isSuperAdmin = user?.is_super_admin === true;
 
   const hasCapability = useMemo(() => {

@@ -37,7 +37,7 @@
    const [groups, setGroups] = useState<Group[]>([]);
    const [selectedGroup, setSelectedGroupState] = useState<Group | null>(null);
    const [isLoadingClients, setIsLoadingClients] = useState(true);
-   const [userOrganizationId, setUserOrganizationId] = useState<string | null>(null);
+  const [userOrganizationId, setUserOrganizationId] = useState<string | null>(null);
    const { user, loading: authLoading, refreshCapabilities } = useAuth();
  const { isSuperAdmin, isSales, loading: rolesLoading } = useUserRoles();
   

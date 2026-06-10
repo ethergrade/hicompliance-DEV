@@ -6,6 +6,7 @@ import type { LoginUser } from '@/types/api';
 
 interface AuthContextType {
   user: LoginUser | null;
+  capabilities: Record<string, boolean> | undefined;
   loading: boolean;
   signIn: (login: string, password: string) => Promise<{ error: unknown }>;
   signOut: () => Promise<void>;
@@ -15,6 +16,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
+  capabilities: undefined,
   loading: true,
   signIn: async () => ({ error: null }),
   signOut: async () => {},
@@ -31,6 +33,7 @@ export const useAuth = () => {
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<LoginUser | null>(null);
+  const [capabilities, setCapabilities] = useState<Record<string, boolean> | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
@@ -46,8 +49,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshCapabilities = useCallback(async (groupId: string) => {
     try {
       const me = await authApi.me(groupId);
-      setUser(me);
-    } catch { /* ignora — user rimane invariato */ }
+      setCapabilities(me.capabilities);
+    } catch { /* ignora — capabilities rimangono invariate */ }
   }, []);
 
   // Restore session from stored token on mount
@@ -67,6 +70,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     authApi.me(storedGroupId ?? undefined)
       .then(async (me) => {
         setUser(me);
+        setCapabilities(me.capabilities);
         // Se non avevamo un groupId stored, proviamo comunque il primo gruppo disponibile
         // per assicurarci di avere capabilities non vuote
         if (!storedGroupId && !me.is_super_admin) {
@@ -74,7 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (firstGroupId) {
             try {
               const meWithCaps = await authApi.me(firstGroupId);
-              setUser(meWithCaps);
+              setCapabilities(meWithCaps.capabilities);
             } catch { /* ignora */ }
           }
         }
@@ -114,8 +118,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (firstGroupId && !loggedUser.is_super_admin) {
         try {
           const meWithCaps = await authApi.me(firstGroupId);
-          setUser(meWithCaps);
-        } catch {
+          setCapabilities(meWithCaps.capabilities);
+        } finally {
           setUser(loggedUser);
         }
       } else {
@@ -159,6 +163,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const value: AuthContextType = {
     user,
+    capabilities,
     loading,
     signIn,
     signOut,
