@@ -188,6 +188,9 @@ export interface TenantDashboardExtra {
   virtual_machine?: number;
   dispositivi_rete_varie?: number;
   dispositivi_rete_totali?: number;
+  // HiCompliance extended scope
+  hicompliance_scope_domains?: string[];
+  hicompliance_scope_ips?: { start_ip: string; end_ip: string }[];
 }
 
 export interface StoreTenantRequest {

@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/select';
 import { Loader2, Check, CloudOff, Building2, AlertCircle, Plus, Trash2 } from 'lucide-react';
 import { tenantsApi, tenantServicesApi } from '@/lib/api';
-import type { TenantResource, UpdateTenantRequest, TenantServiceResource, IpRange } from '@/types/api';
+import type { TenantResource, UpdateTenantRequest, TenantServiceResource, IpRange, TenantDashboardExtra } from '@/types/api';
 
 interface ClientProfileSheetProps {
   organizationId: string | null;
@@ -41,6 +41,8 @@ interface ProfileFormData {
   secondary_domain: string;
   secondary_subnet: string;
   ips_list: IpRange[];
+  scopeEntries: { domain: string; start_ip: string; end_ip: string }[];
+  extra?: TenantDashboardExtra | null;
 }
 
 const INITIAL: ProfileFormData = {
@@ -60,6 +62,8 @@ const INITIAL: ProfileFormData = {
   secondary_domain: '',
   secondary_subnet: '',
   ips_list: [],
+  scopeEntries: [],
+  extra: null,
 };
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -81,6 +85,17 @@ const resourceToForm = (data: TenantResource): ProfileFormData => ({
   secondary_domain: data.secondary_domain || '',
   secondary_subnet: data.secondary_subnet || '',
   ips_list: data.ips_list || [],
+  extra: data.extra || null,
+  scopeEntries: (() => {
+    const domains = data.extra?.hicompliance_scope_domains || [];
+    const ips = data.extra?.hicompliance_scope_ips || [];
+    const max = Math.max(domains.length, ips.length);
+    return Array.from({ length: max }, (_, i) => ({
+      domain: domains[i] || '',
+      start_ip: ips[i]?.start_ip || '',
+      end_ip: ips[i]?.end_ip || '',
+    }));
+  })(),
 });
 
 const formToPayload = (data: ProfileFormData): UpdateTenantRequest => ({
@@ -101,6 +116,13 @@ const formToPayload = (data: ProfileFormData): UpdateTenantRequest => ({
   secondary_domain: data.secondary_domain || null,
   secondary_subnet: data.secondary_subnet || null,
   ips_list: data.ips_list.length > 0 ? data.ips_list : null,
+  extra: {
+    ...(data.extra || {}),
+    hicompliance_scope_domains: data.scopeEntries.map(e => e.domain).filter(Boolean),
+    hicompliance_scope_ips: data.scopeEntries
+      .filter(e => e.start_ip.trim())
+      .map(e => ({ start_ip: e.start_ip.trim(), end_ip: e.end_ip.trim() || e.start_ip.trim() })),
+  } as TenantDashboardExtra,
 });
 
 const NIS2_OPTIONS = [
@@ -221,6 +243,31 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
       const updated = { ...prev, ips_list: prev.ips_list.filter((_, i) => i !== index) };
       scheduleSave(updated);
       return updated;
+    });
+  };
+
+  const updateScopeEntry = (index: number, field: 'domain' | 'start_ip' | 'end_ip', value: string) => {
+    setForm((prev) => {
+      const updated = prev.scopeEntries.map((e, i) => (i === index ? { ...e, [field]: value } : e));
+      const next = { ...prev, scopeEntries: updated };
+      scheduleSave(next);
+      return next;
+    });
+  };
+
+  const addScopeEntry = () => {
+    setForm((prev) => {
+      const next = { ...prev, scopeEntries: [...prev.scopeEntries, { domain: '', start_ip: '', end_ip: '' }] };
+      scheduleSave(next);
+      return next;
+    });
+  };
+
+  const removeScopeEntry = (index: number) => {
+    setForm((prev) => {
+      const next = { ...prev, scopeEntries: prev.scopeEntries.filter((_, i) => i !== index) };
+      scheduleSave(next);
+      return next;
     });
   };
 
@@ -409,7 +456,8 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
                     </div>
 
                     {isExtendedLicense && (
-                      <div className="mt-4 space-y-3">
+                      <>
+                        <div className="mt-4 space-y-3">
                         <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                           IP Monitorati
                         </h5>
@@ -463,6 +511,57 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
                           </Button>
                         </div>
                       </div>
+
+                      {/* Scope di monitoraggio */}
+                      <div className="mt-4 space-y-3">
+                        <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          Scope di Monitoraggio
+                        </h5>
+                        {form.scopeEntries.length === 0 && (
+                          <p className="text-xs text-muted-foreground">Nessun dominio monitorato</p>
+                        )}
+                        {form.scopeEntries.map((entry, idx) => (
+                          <div key={idx} className="flex items-center gap-2">
+                            <Input
+                              placeholder="Dominio"
+                              value={entry.domain}
+                              onChange={(e) => updateScopeEntry(idx, 'domain', e.target.value)}
+                              className="h-8 text-xs flex-1"
+                            />
+                            <Input
+                              placeholder="IP iniziale"
+                              value={entry.start_ip}
+                              onChange={(e) => updateScopeEntry(idx, 'start_ip', e.target.value)}
+                              className="h-8 text-xs w-28"
+                            />
+                            <span className="text-xs text-muted-foreground">-</span>
+                            <Input
+                              placeholder="IP finale"
+                              value={entry.end_ip}
+                              onChange={(e) => updateScopeEntry(idx, 'end_ip', e.target.value)}
+                              className="h-8 text-xs w-28"
+                            />
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive"
+                              onClick={() => removeScopeEntry(idx)}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        ))}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full h-8 text-xs"
+                          onClick={addScopeEntry}
+                        >
+                          <Plus className="w-3.5 h-3.5 mr-1" />
+                          Aggiungi dominio
+                        </Button>
+                      </div>
+                      </>
                     )}
                   </div>
                 </>
