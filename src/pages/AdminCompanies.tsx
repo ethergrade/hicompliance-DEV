@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import {
   Plus, Pencil, Trash2, Building2, Loader2,
-  ChevronRight, FolderKanban, X,
+  ChevronRight, FolderKanban, X, Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import ClientCrudDialog from '@/components/clients/ClientCrudDialog';
@@ -45,6 +45,10 @@ const AdminCompanies: React.FC = () => {
   const [editingOrg, setEditingOrg] = useState<{ id: string; name: string; code: string } | null>(null);
   const [deletingOrg, setDeletingOrg] = useState<{ id: string; name: string } | null>(null);
 
+  /* ─── Search & Filter ─── */
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<number | null>(null);
+
   /* ─── Load groups ─── */
   const loadGroups = useCallback(async () => {
     try {
@@ -75,8 +79,22 @@ const AdminCompanies: React.FC = () => {
   useEffect(() => {
     if (selectedGroup) {
       loadTenants(selectedGroup.id);
+      setSearchQuery('');
+      setStatusFilter(null);
     }
   }, [selectedGroup, loadTenants]);
+
+  const filteredTenants = tenants.filter((t) => {
+    const q = searchQuery.toLowerCase();
+    const matchesSearch =
+      !q ||
+      t.name.toLowerCase().includes(q) ||
+      (t.customer_code ?? '').toLowerCase().includes(q) ||
+      (t.vat_number ?? '').toLowerCase().includes(q) ||
+      (t.primary_domain ?? '').toLowerCase().includes(q);
+    const matchesStatus = statusFilter === null || t.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
 
   /* ─── Group CRUD ─── */
   const handleCreateGroup = async () => {
@@ -215,10 +233,48 @@ const AdminCompanies: React.FC = () => {
             </Card>
           ) : (
             <Card className="flex-1 flex flex-col overflow-hidden">
-              <CardHeader className="shrink-0">
-                <CardTitle className="flex items-center gap-2">
-                  <Building2 className="w-5 h-5" /> Clienti ({tenants.length})
-                </CardTitle>
+              <CardHeader className="shrink-0 space-y-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <Building2 className="w-5 h-5" />
+                    Clienti ({filteredTenants.length}{filteredTenants.length !== tenants.length ? ` di ${tenants.length}` : ''})
+                  </CardTitle>
+                </div>
+                {/* Search + Status filter */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="relative flex-1 min-w-[200px]">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Cerca per nome, codice, P.IVA, dominio…"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-9 h-9"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {([null, 1, 0, 2] as (number | null)[]).map((s) => (
+                      <button
+                        key={String(s)}
+                        onClick={() => setStatusFilter(s === statusFilter ? null : s)}
+                        className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                          statusFilter === s
+                            ? 'bg-primary text-primary-foreground border-primary'
+                            : 'bg-background text-muted-foreground border-border hover:bg-muted'
+                        }`}
+                      >
+                        {s === null ? 'Tutti' : STATUS_LABELS[s]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="flex-1 overflow-y-auto">
                 {loading ? (
@@ -228,6 +284,10 @@ const AdminCompanies: React.FC = () => {
                 ) : tenants.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
                     Nessun cliente in questa azienda. Crea il primo!
+                  </div>
+                ) : filteredTenants.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    Nessun cliente corrisponde ai criteri di ricerca.
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
@@ -244,7 +304,7 @@ const AdminCompanies: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {tenants.map((t) => (
+                        {filteredTenants.map((t) => (
                           <tr key={t.id} className="border-b border-border hover:bg-muted/50 transition-colors">
                             <td className="py-3 px-3 font-medium">{t.name}</td>
                             <td className="py-3 px-3 text-muted-foreground">{t.customer_code || '—'}</td>
