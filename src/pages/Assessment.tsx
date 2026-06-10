@@ -31,6 +31,7 @@ import {
 import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { useServiceIntegrations } from '@/hooks/useServiceIntegrations';
 import { NIS2_LABELS } from '@/types/organization';
 import { useUserPreferences } from '@/hooks/useUserPreferences';
 import { assessmentV2Api, assessmentApi } from '@/lib/api';
@@ -45,6 +46,13 @@ import { moduleVisibility } from '@/config/moduleVisibility';
 
 // Local type for UI assessment response values
 type AssessmentResponse = 'completato' | 'pianificato_in_corso' | 'non_iniziato' | 'non_applicabile' | null;
+
+const NETWORK_FIELD_LABELS: Record<string, string> = {
+  primary_domain: 'Dominio primario',
+  primary_subnet: 'Subnet primaria',
+  secondary_domain: 'Dominio secondario',
+  secondary_subnet: 'Subnet secondaria',
+};
 
 // Map UI response values to API values and vice versa
 const UI_TO_API_QUESTION_STATUS: Record<string, number> = {
@@ -456,6 +464,28 @@ const Assessment: React.FC = () => {
   const { formData: orgProfile, loading: profileLoading } = useOrganizationProfile();
   const { groupId } = useClientOrganization();
 
+  // Tenant services: rileva se HiCompliance è attivo per il cliente selezionato
+  const { isServiceConnected } = useServiceIntegrations();
+  const hicomplianceActive = isServiceConnected('hicompliance');
+
+  // Campi di rete primari del cliente (da TenantResource) — popolati in ClientProfileSheet
+  const networkFields = useMemo(() => {
+    if (!selectedOrganization) return null;
+    return {
+      primary_domain: selectedOrganization.primary_domain?.trim() || '',
+      primary_subnet: selectedOrganization.primary_subnet?.trim() || '',
+      secondary_domain: selectedOrganization.secondary_domain?.trim() || '',
+      secondary_subnet: selectedOrganization.secondary_subnet?.trim() || '',
+    };
+  }, [selectedOrganization]);
+
+  const missingNetworkFields = useMemo(() => {
+    if (!networkFields || !hicomplianceActive) return [];
+    return (Object.entries(networkFields) as [keyof typeof networkFields, string][])
+      .filter(([, v]) => !v)
+      .map(([k]) => k);
+  }, [networkFields, hicomplianceActive]);
+
   // Persistent preferences
   const { preferences, updatePreferences } = useUserPreferences({
     preferenceKey: 'assessment_filters',
@@ -818,6 +848,37 @@ const Assessment: React.FC = () => {
                       </div>
                     </SheetContent>
                   </Sheet>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* HiCompliance: warning se servizio attivo ma campi rete primari vuoti */}
+        {missingNetworkFields.length > 0 && (
+          <Card className="border-amber-500/40 bg-amber-500/5">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-4">
+                <div className="p-2 rounded-lg bg-amber-500/10 shrink-0">
+                  <AlertTriangle className="h-6 w-6 text-amber-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-foreground">
+                    Configura i campi di rete del cliente prima di continuare
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    La licenza HiCompliance è attiva per <strong>{selectedOrganization?.name}</strong>, ma i seguenti campi di rete primari non sono ancora compilati:
+                  </p>
+                  <ul className="mt-2 text-sm text-amber-700 dark:text-amber-400 list-disc list-inside space-y-0.5">
+                    {missingNetworkFields.map((field) => (
+                      <li key={field} className="font-mono">
+                        {NETWORK_FIELD_LABELS[field]}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-xs text-muted-foreground mt-3">
+                    Vai su <strong>Clienti → Apri scheda</strong> e compila i campi nella sezione “Rete” (dominio primario, subnet primaria, dominio secondario, subnet secondaria). I domini aggiuntivi (licenza estesa) sono opzionali.
+                  </p>
                 </div>
               </div>
             </CardContent>
