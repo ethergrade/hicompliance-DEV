@@ -471,6 +471,9 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
 
                     {isExtendedLicense && (
                       <div className="mt-4 space-y-3">
+                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          Domini aggiuntivi
+                        </Label>
                         <div className="flex flex-col md:flex-row gap-2">
                           <Input
                             placeholder="Es. panapesca.it, 203.0.113.10, 203.0.113.10-203.0.113.20, 203.0.113.0/24"
