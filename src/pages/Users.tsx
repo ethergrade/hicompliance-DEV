@@ -340,21 +340,46 @@ const Users = () => {
             <CardDescription>
               Lista completa degli utenti con ruoli, gruppi e tenant assegnati se il ruolo è limitato
             </CardDescription>
+            <div className="relative mt-2">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Cerca per nome o email..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-8 pr-8"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {isLoading ? (
               <div className="flex items-center justify-center py-8">
                 <div className="text-muted-foreground">Caricamento utenti...</div>
               </div>
-            ) : users.length === 0 ? (
+            ) : searchedUsers.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8">
                 <User className="w-12 h-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">Nessun utente trovato</h3>
-                <p className="text-muted-foreground text-center mb-4">Inizia creando il primo utente del sistema</p>
-                <Button onClick={() => openDialog()}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Crea primo utente
-                </Button>
+                <h3 className="text-lg font-semibold mb-2">
+                  {searchQuery ? 'Nessun risultato' : 'Nessun utente trovato'}
+                </h3>
+                <p className="text-muted-foreground text-center mb-4">
+                  {searchQuery
+                    ? 'Nessun utente corrisponde ai criteri di ricerca'
+                    : 'Inizia creando il primo utente del sistema'}
+                </p>
+                {!searchQuery && (
+                  <Button onClick={() => openDialog()}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Crea primo utente
+                  </Button>
+                )}
               </div>
             ) : (
               <Table>
@@ -369,7 +394,7 @@ const Users = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users.map((user) => {
+                  {searchedUsers.map((user) => {
                     const role = getPrimaryRole(user);
                     const canAssignTenants = tenantRestrictedRoles.has(role);
                     return (
