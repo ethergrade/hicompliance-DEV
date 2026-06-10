@@ -9,6 +9,8 @@ interface AuthContextType {
   loading: boolean;
   signIn: (login: string, password: string) => Promise<{ error: unknown }>;
   signOut: () => Promise<void>;
+  /** Ricarica /auth/me con X-Group-Id per ottenere le capabilities corrette del gruppo */
+  refreshCapabilities: (groupId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -16,6 +18,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   signIn: async () => ({ error: null }),
   signOut: async () => {},
+  refreshCapabilities: async () => {},
 });
 
 export const useAuth = () => {
@@ -31,6 +34,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
+  // Legge il group_id dell'organizzazione selezionata da localStorage
+  const getStoredGroupId = (): string | null => {
+    try {
+      const raw = localStorage.getItem('hicompliance_selected_org');
+      return raw ? (JSON.parse(raw)?.group_id ?? null) : null;
+    } catch { return null; }
+  };
+
+  // Ricarica /auth/me con X-Group-Id per ottenere capabilities complete
+  const refreshCapabilities = useCallback(async (groupId: string) => {
+    try {
+      const me = await authApi.me(groupId);
+      setUser(me);
+    } catch { /* ignora — user rimane invariato */ }
+  }, []);
+
   // Restore session from stored token on mount
   useEffect(() => {
     const token = getToken();
@@ -43,8 +62,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    authApi.me()
-      .then((me) => setUser(me))
+    const storedGroupId = getStoredGroupId();
+
+    authApi.me(storedGroupId ?? undefined)
+      .then(async (me) => {
+        setUser(me);
+        // Se non avevamo un groupId stored, proviamo comunque il primo gruppo disponibile
+        // per assicurarci di avere capabilities non vuote
+        if (!storedGroupId && !me.is_super_admin) {
+          const firstGroupId = me.groups?.[0]?.id;
+          if (firstGroupId) {
+            try {
+              const meWithCaps = await authApi.me(firstGroupId);
+              setUser(meWithCaps);
+            } catch { /* ignora */ }
+          }
+        }
+      })
       .catch(() => {
         // Token expired or invalid — force logout via handleUnauthorized
         // This dispatches 'auth:unauthorized' event for graceful redirect
@@ -73,7 +107,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signIn = useCallback(async (login: string, password: string) => {
     try {
       const { user: loggedUser } = await authApi.login({ login, password });
-      setUser(loggedUser);
+
+      // Subito dopo il login, tentiamo di caricare capabilities del primo gruppo
+      // in modo che il sidebar sia già corretto al primo render
+      const firstGroupId = loggedUser.groups?.[0]?.id;
+      if (firstGroupId && !loggedUser.is_super_admin) {
+        try {
+          const meWithCaps = await authApi.me(firstGroupId);
+          setUser(meWithCaps);
+        } catch {
+          setUser(loggedUser);
+        }
+      } else {
+        setUser(loggedUser);
+      }
 
       toast({
         title: "Accesso effettuato",
@@ -115,6 +162,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loading,
     signIn,
     signOut,
+    refreshCapabilities,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

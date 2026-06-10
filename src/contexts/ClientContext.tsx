@@ -38,7 +38,7 @@
    const [selectedGroup, setSelectedGroupState] = useState<Group | null>(null);
    const [isLoadingClients, setIsLoadingClients] = useState(true);
    const [userOrganizationId, setUserOrganizationId] = useState<string | null>(null);
-   const { user, loading: authLoading } = useAuth();
+   const { user, loading: authLoading, refreshCapabilities } = useAuth();
  const { isSuperAdmin, isSales, loading: rolesLoading } = useUserRoles();
   
    const canManageMultipleClients = isSuperAdmin || isSales;
@@ -129,7 +129,10 @@
    const setSelectedGroup = useCallback(async (group: Group) => {
      setSelectedGroupState(group);
      setSelectedOrganizationState(null); // Clear org when group changes
-     
+
+     // Ricarica capabilities per il nuovo gruppo prima di caricare le organizzazioni
+     await refreshCapabilities(group.id);
+
      // Load organizations for the selected group
      setIsLoadingClients(true);
      try {
@@ -146,7 +149,7 @@
      } finally {
        setIsLoadingClients(false);
      }
-   }, [setSelectedOrganizationState]);
+   }, [setSelectedOrganizationState, refreshCapabilities]);
  
    return (
      <ClientContext.Provider

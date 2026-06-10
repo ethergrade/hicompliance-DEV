@@ -21,8 +21,12 @@ export const authApi = {
     clearToken();
   },
 
-  async me(): Promise<LoginUser> {
-    const res = await apiClient.get<ApiResponse<LoginUser>>("/auth/me");
+  async me(groupId?: string): Promise<LoginUser> {
+    const res = await apiClient.get<ApiResponse<LoginUser>>(
+      "/auth/me",
+      undefined,
+      groupId ? { headers: { 'X-Group-Id': groupId } } : undefined,
+    );
     return res.data;
   },
 
