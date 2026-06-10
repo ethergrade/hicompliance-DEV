@@ -49,6 +49,7 @@ function deriveFlags(services: TenantServiceResource[]) {
   const hc = services.find(s => s.service_type === 'hicompliance' && s.status === 'active');
   const ht = services.find(s => s.service_type === 'hitrack' && s.status === 'active');
   const dr = services.find(s => s.service_type === 'darkrisk' && s.status === 'active');
+  const hp = services.find(s => s.service_type === 'hipatch' && s.status === 'active');
   return {
     hicompliance_enabled: !!hc,
     irp_extended: !!(hc?.settings as any)?.extended_range,
@@ -56,6 +57,7 @@ function deriveFlags(services: TenantServiceResource[]) {
     pentest_tools_auto_validation: true,
     surface_scan360_enabled: !!ht,
     dark_risk360_enabled: !!dr,
+    hipatch_enabled: !!hp,
   };
 }
 
@@ -150,6 +152,11 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
         const dr = ts.find(s => s.service_type === 'darkrisk');
         if (dr) await tenantServicesApi.delete(dr.id, groupId);
       }
+      // Hipatch toggle OFF
+      if (patch.hipatch_enabled === false) {
+        const hp = ts.find(s => s.service_type === 'hipatch');
+        if (hp) await tenantServicesApi.delete(hp.id, groupId);
+      }
 
       // Create new services
       // HiCompliance toggle ON
@@ -184,6 +191,20 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
             service_type: 'darkrisk',
             status: 'active',
             settings: { tier: darkRiskTier, ...(defaultStart ? { contract_start: defaultStart } : {}) },
+          }, groupId);
+        }
+      }
+      // Hipatch toggle ON — eredita contract_start da HiCompliance se presente
+      if (patch.hipatch_enabled === true) {
+        const hp = ts.find(s => s.service_type === 'hipatch');
+        if (!hp) {
+          const hcSettings = (ts.find(s => s.service_type === 'hicompliance')?.settings as any) || {};
+          const defaultStart = hcSettings.contract_start || '';
+          await tenantServicesApi.create({
+            tenant_id: organizationId,
+            service_type: 'hipatch',
+            status: 'active',
+            settings: { ...(defaultStart ? { contract_start: defaultStart } : {}) },
           }, groupId);
         }
       }
@@ -582,6 +603,32 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                       {String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'Estesa' : 'Standard'}
                     </Badge>
                   </div>
+                </div>
+              )}
+
+              {/* Hipatch — independent */}
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <div className="flex items-center gap-3">
+                  <div className={`p-1.5 rounded-md ${orgFlags?.hipatch_enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                    <Shield className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">HiPatch</p>
+                    <p className="text-xs text-muted-foreground">Patch management e vulnerability remediation</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={!!orgFlags?.hipatch_enabled}
+                  disabled={updateFlagsMutation.isPending}
+                  onCheckedChange={(v) => {
+                    updateFlagsMutation.mutate({ hipatch_enabled: v });
+                  }}
+                />
+              </div>
+
+              {orgFlags?.hipatch_enabled && (
+                <div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
+                  {renderContractRow('hipatch')}
                 </div>
               )}
             </div>
