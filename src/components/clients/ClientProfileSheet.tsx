@@ -143,6 +143,8 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [tenantServices, setTenantServices] = useState<TenantServiceResource[]>([]);
+  const [newIpStart, setNewIpStart] = useState('');
+  const [newIpEnd, setNewIpEnd] = useState('');
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const validate = (data: ProfileFormData): Record<string, string> => {
