@@ -39,7 +39,7 @@ function MiniPie({ data }: { data: Record<string, number> }) {
 
 function AssetCard({ asset, data }: { asset: string; data: AssetData }) {
   const [open, setOpen] = useState(false);
-  const topSources = Object.entries(data.by_source).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const topSources = Object.entries(data?.by_source ?? {}).sort((a, b) => b[1] - a[1]).slice(0, 3);
 
   return (
     <div className="border border-border rounded-lg overflow-hidden">
@@ -69,9 +69,9 @@ function AssetCard({ asset, data }: { asset: string; data: AssetData }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-2">Sorgenti</p>
-              <MiniPie data={data.by_source} />
+              <MiniPie data={data?.by_source ?? {}} />
               <div className="mt-1 space-y-0.5">
-                {Object.entries(data.by_source).sort((a, b) => b[1] - a[1]).map(([k, v], i) => (
+                {Object.entries(data?.by_source ?? {}).sort((a, b) => b[1] - a[1]).map(([k, v], i) => (
                   <div key={k} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-1.5">
                       <div className="h-2 w-2 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
@@ -84,9 +84,9 @@ function AssetCard({ asset, data }: { asset: string; data: AssetData }) {
             </div>
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-2">Tipo file</p>
-              <MiniPie data={data.by_filetype} />
+              <MiniPie data={data?.by_filetype ?? {}} />
               <div className="mt-1 space-y-0.5">
-                {Object.entries(data.by_filetype).sort((a, b) => b[1] - a[1]).map(([k, v], i) => (
+                {Object.entries(data?.by_filetype ?? {}).sort((a, b) => b[1] - a[1]).map(([k, v], i) => (
                   <div key={k} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-1.5">
                       <div className="h-2 w-2 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
@@ -105,7 +105,9 @@ function AssetCard({ asset, data }: { asset: string; data: AssetData }) {
 }
 
 export function DarkRiskAssetBreakdown({ data }: Props) {
-  const sorted = Object.entries(data).sort((a, b) => b[1].total - a[1].total);
+  const sorted = Object.entries(data ?? {})
+    .filter(([, v]) => v && typeof v === 'object')
+    .sort((a, b) => (b[1].total ?? 0) - (a[1].total ?? 0));
   if (!sorted.length) return null;
 
   return (
