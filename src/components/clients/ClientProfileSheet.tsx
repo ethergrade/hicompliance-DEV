@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -14,7 +15,10 @@ import {
 } from '@/components/ui/select';
 import { Loader2, Check, CloudOff, Building2, AlertCircle, Plus, Trash2 } from 'lucide-react';
 import { tenantsApi, tenantServicesApi } from '@/lib/api';
-import type { TenantResource, UpdateTenantRequest, TenantServiceResource, IpRange, TenantDashboardExtra } from '@/types/api';
+import { parseMonitoredIpInput, parseMonitoredScopeMixedEntries } from '@/lib/ipRange';
+import type { ParsedMonitoredIpInput, MonitoredIpEntryType } from '@/lib/ipRange';
+import type { TenantResource, UpdateTenantRequest, TenantServiceResource, TenantDashboardExtra } from '@/types/api';
+import { toast } from 'sonner';
 
 interface ClientProfileSheetProps {
   organizationId: string | null;
@@ -40,8 +44,7 @@ interface ProfileFormData {
   primary_subnet: string;
   secondary_domain: string;
   secondary_subnet: string;
-  ips_list: IpRange[];
-  scopeEntries: { domain: string; start_ip: string; end_ip: string }[];
+  scopeEntries: ParsedMonitoredIpInput[];
   extra?: TenantDashboardExtra | null;
 }
 
@@ -61,7 +64,6 @@ const INITIAL: ProfileFormData = {
   primary_subnet: '',
   secondary_domain: '',
   secondary_subnet: '',
-  ips_list: [],
   scopeEntries: [],
   extra: null,
 };
@@ -84,17 +86,28 @@ const resourceToForm = (data: TenantResource): ProfileFormData => ({
   primary_subnet: data.primary_subnet || '',
   secondary_domain: data.secondary_domain || '',
   secondary_subnet: data.secondary_subnet || '',
-  ips_list: data.ips_list || [],
   extra: data.extra || null,
   scopeEntries: (() => {
     const domains = data.extra?.hicompliance_scope_domains || [];
     const ips = data.extra?.hicompliance_scope_ips || [];
-    const max = Math.max(domains.length, ips.length);
-    return Array.from({ length: max }, (_, i) => ({
-      domain: domains[i] || '',
-      start_ip: ips[i]?.start_ip || '',
-      end_ip: ips[i]?.end_ip || '',
+    const domainEntries: ParsedMonitoredIpInput[] = domains.map((d) => ({
+      entryType: 'domain' as MonitoredIpEntryType,
+      inputValue: d,
+      ipStart: '',
+      ipEnd: '',
     }));
+    const ipEntries: ParsedMonitoredIpInput[] = ips.map((r) => {
+      const start = r.start_ip || '';
+      const end = r.end_ip || start;
+      const sameIp = start === end;
+      return {
+        entryType: (sameIp ? 'single' : 'range') as MonitoredIpEntryType,
+        inputValue: sameIp ? start : `${start}-${end}`,
+        ipStart: start,
+        ipEnd: end,
+      };
+    });
+    return [...domainEntries, ...ipEntries];
   })(),
 });
 
@@ -115,13 +128,18 @@ const formToPayload = (data: ProfileFormData): UpdateTenantRequest => ({
   primary_subnet: data.primary_subnet || null,
   secondary_domain: data.secondary_domain || null,
   secondary_subnet: data.secondary_subnet || null,
-  ips_list: data.ips_list.length > 0 ? data.ips_list : null,
   extra: {
     ...(data.extra || {}),
-    hicompliance_scope_domains: data.scopeEntries.map(e => e.domain).filter(Boolean),
+    hicompliance_scope_domains: data.scopeEntries
+      .filter((e) => e.entryType === 'domain' && e.inputValue.trim())
+      .map((e) => e.inputValue.trim()),
     hicompliance_scope_ips: data.scopeEntries
-      .filter(e => e.start_ip.trim())
-      .map(e => ({ start_ip: e.start_ip.trim(), end_ip: e.end_ip.trim() || e.start_ip.trim() })),
+      .filter((e) => e.entryType !== 'domain' && (e.ipStart || e.inputValue).trim())
+      .map((e) => {
+        const start = e.ipStart || e.inputValue.split('-')[0].trim();
+        const end = e.ipEnd || start;
+        return { start_ip: start, end_ip: end };
+      }),
   } as TenantDashboardExtra,
 });
 
@@ -143,8 +161,8 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [tenantServices, setTenantServices] = useState<TenantServiceResource[]>([]);
-  const [newIpStart, setNewIpStart] = useState('');
-  const [newIpEnd, setNewIpEnd] = useState('');
+  const [newScopeInput, setNewScopeInput] = useState('');
+  const [scopeSaving, setScopeSaving] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const validate = (data: ProfileFormData): Record<string, string> => {
@@ -225,47 +243,41 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
     });
   };
 
-  const addIpRange = () => {
-    if (!newIpStart.trim()) return;
-    const next: IpRange = {
-      start_ip: newIpStart.trim(),
-      end_ip: newIpEnd.trim() || newIpStart.trim(),
-    };
+  const handleAddScopeEntries = () => {
+    const raw = newScopeInput.trim();
+    if (!raw) {
+      toast.error('Inserisci almeno un dominio/IP/range/CIDR');
+      return;
+    }
+    const tokens = parseMonitoredScopeMixedEntries(raw);
+    if (tokens.length === 0) return;
+    const parsed: ParsedMonitoredIpInput[] = [];
+    const failed: string[] = [];
+    for (const t of tokens) {
+      try {
+        parsed.push(parseMonitoredIpInput(t));
+      } catch (err) {
+        failed.push(t);
+      }
+    }
+    if (parsed.length === 0) {
+      toast.error('Nessuna entry valida');
+      return;
+    }
     setForm((prev) => {
-      const updated = { ...prev, ips_list: [...prev.ips_list, next] };
-      scheduleSave(updated);
-      return updated;
-    });
-    setNewIpStart('');
-    setNewIpEnd('');
-  };
-
-  const removeIpRange = (index: number) => {
-    setForm((prev) => {
-      const updated = { ...prev, ips_list: prev.ips_list.filter((_, i) => i !== index) };
-      scheduleSave(updated);
-      return updated;
-    });
-  };
-
-  const updateScopeEntry = (index: number, field: 'domain' | 'start_ip' | 'end_ip', value: string) => {
-    setForm((prev) => {
-      const updated = prev.scopeEntries.map((e, i) => (i === index ? { ...e, [field]: value } : e));
-      const next = { ...prev, scopeEntries: updated };
+      const next = { ...prev, scopeEntries: [...prev.scopeEntries, ...parsed] };
       scheduleSave(next);
       return next;
     });
+    setNewScopeInput('');
+    if (failed.length > 0) {
+      toast.warning(`Aggiunti ${parsed.length}, ignorati ${failed.length} non validi`);
+    } else {
+      toast.success(`${parsed.length} ${parsed.length === 1 ? 'regola aggiunta' : 'regole aggiunte'}`);
+    }
   };
 
-  const addScopeEntry = () => {
-    setForm((prev) => {
-      const next = { ...prev, scopeEntries: [...prev.scopeEntries, { domain: '', start_ip: '', end_ip: '' }] };
-      scheduleSave(next);
-      return next;
-    });
-  };
-
-  const removeScopeEntry = (index: number) => {
+  const handleRemoveScopeEntry = (index: number) => {
     setForm((prev) => {
       const next = { ...prev, scopeEntries: prev.scopeEntries.filter((_, i) => i !== index) };
       scheduleSave(next);
@@ -458,112 +470,66 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
                     </div>
 
                     {isExtendedLicense && (
-                      <>
-                        <div className="mt-4 space-y-3">
-                        <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                          IP Monitorati
-                        </h5>
-                        {form.ips_list.length === 0 && (
-                          <p className="text-xs text-muted-foreground">Nessun IP monitorato</p>
-                        )}
-                        {form.ips_list.map((range, idx) => (
-                          <div key={idx} className="flex items-center gap-2">
-                            <Input
-                              value={range.start_ip}
-                              readOnly
-                              className="h-8 text-xs bg-muted"
-                            />
-                            <span className="text-xs text-muted-foreground">-</span>
-                            <Input
-                              value={range.end_ip}
-                              readOnly
-                              className="h-8 text-xs bg-muted"
-                            />
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive"
-                              onClick={() => removeIpRange(idx)}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
-                        ))}
-                        <div className="flex items-center gap-2">
+                      <div className="mt-4 space-y-3">
+                        <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground space-y-1">
+                          <div className="font-medium text-foreground">Legenda input scope (misto supportato)</div>
+                          <div>Separatore lista: `,` `;` `|` oppure a capo.</div>
+                          <div>Esempio: `panapesca.it, 203.0.113.10, 203.0.113.10-203.0.113.20, 203.0.113.0/24`</div>
+                          <div>Tipi supportati: dominio, IP singolo, range IP, CIDR.</div>
+                        </div>
+                        <div className="flex flex-col md:flex-row gap-2">
                           <Input
-                            placeholder="IP iniziale"
-                            value={newIpStart}
-                            onChange={(e) => setNewIpStart(e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                          <span className="text-xs text-muted-foreground">-</span>
-                          <Input
-                            placeholder="IP finale (opzionale)"
-                            value={newIpEnd}
-                            onChange={(e) => setNewIpEnd(e.target.value)}
-                            className="h-8 text-xs"
+                            placeholder="Es. panapesca.it, 203.0.113.10, 203.0.113.10-203.0.113.20, 203.0.113.0/24"
+                            value={newScopeInput}
+                            onChange={(e) => setNewScopeInput(e.target.value)}
+                            disabled={scopeSaving}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddScopeEntries();
+                              }
+                            }}
                           />
                           <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={addIpRange}
+                            onClick={handleAddScopeEntries}
+                            disabled={scopeSaving || !newScopeInput.trim()}
                           >
-                            <Plus className="w-3.5 h-3.5" />
+                            <Plus className="w-4 h-4 mr-2" />
+                            Aggiungi
                           </Button>
                         </div>
-                      </div>
-
-                      {/* Scope di monitoraggio */}
-                      <div className="mt-4 space-y-3">
-                        <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                          Scope di Monitoraggio
-                        </h5>
-                        {form.scopeEntries.length === 0 && (
-                          <p className="text-xs text-muted-foreground">Nessun dominio monitorato</p>
-                        )}
-                        {form.scopeEntries.map((entry, idx) => (
-                          <div key={idx} className="flex items-center gap-2">
-                            <Input
-                              placeholder="Dominio"
-                              value={entry.domain}
-                              onChange={(e) => updateScopeEntry(idx, 'domain', e.target.value)}
-                              className="h-8 text-xs flex-1"
-                            />
-                            <Input
-                              placeholder="IP iniziale"
-                              value={entry.start_ip}
-                              onChange={(e) => updateScopeEntry(idx, 'start_ip', e.target.value)}
-                              className="h-8 text-xs w-28"
-                            />
-                            <span className="text-xs text-muted-foreground">-</span>
-                            <Input
-                              placeholder="IP finale"
-                              value={entry.end_ip}
-                              onChange={(e) => updateScopeEntry(idx, 'end_ip', e.target.value)}
-                              className="h-8 text-xs w-28"
-                            />
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive"
-                              onClick={() => removeScopeEntry(idx)}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
+                        <div className="rounded-lg border border-border">
+                          <div className="px-3 py-2 border-b border-border bg-muted/30 text-xs text-muted-foreground">
+                            Regole attive: {form.scopeEntries.length}
                           </div>
-                        ))}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full h-8 text-xs"
-                          onClick={addScopeEntry}
-                        >
-                          <Plus className="w-3.5 h-3.5 mr-1" />
-                          Aggiungi dominio
-                        </Button>
+                          {form.scopeEntries.length === 0 ? (
+                            <div className="p-4 text-sm text-muted-foreground">
+                              Nessuna regola configurata.
+                            </div>
+                          ) : (
+                            <div className="divide-y divide-border">
+                              {form.scopeEntries.map((entry, idx) => (
+                                <div key={`${entry.entryType}-${entry.inputValue}-${idx}`} className="flex items-center justify-between px-3 py-2">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <Badge variant="outline" className="uppercase shrink-0">
+                                      {entry.entryType}
+                                    </Badge>
+                                    <span className="text-sm font-medium truncate">{entry.inputValue}</span>
+                                  </div>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-destructive shrink-0"
+                                    onClick={() => handleRemoveScopeEntry(idx)}
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      </>
                     )}
                   </div>
                 </>
