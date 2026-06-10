@@ -75,15 +75,6 @@ const Users = () => {
   const { selectedOrganization } = useClientOrganization();
   const groupId = selectedOrganization?.group_id ?? null;
 
-  const searchedUsers = useMemo(() => {
-    if (!searchQuery.trim()) return users;
-    const q = searchQuery.toLowerCase();
-    return users.filter(u =>
-      u.name.toLowerCase().includes(q) ||
-      u.email.toLowerCase().includes(q)
-    );
-  }, [users, searchQuery]);
-
   const form = useForm<UserFormData>({
     defaultValues: {
       email: "",
@@ -98,6 +89,15 @@ const Users = () => {
     queryFn: () => usersApi.list(groupId),
     enabled: !!groupId,
   });
+
+  const searchedUsers = useMemo(() => {
+    if (!searchQuery.trim()) return users;
+    const q = searchQuery.toLowerCase();
+    return users.filter(u =>
+      u.name.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q)
+    );
+  }, [users, searchQuery]);
 
   const { data: roles = [] } = useQuery({
     queryKey: ["config", "roles"],
