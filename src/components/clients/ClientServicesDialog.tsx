@@ -69,6 +69,31 @@ function deriveDarkRiskTier(services: TenantServiceResource[]) {
   };
 }
 
+/** Input data contratto: stato locale, salva solo on-blur (evita salvataggio su ogni keystroke) */
+const ContractDateInput: React.FC<{
+  value: string;
+  onSave: (date: string) => void;
+  disabled?: boolean;
+}> = ({ value, onSave, disabled }) => {
+  const [local, setLocal] = React.useState(value);
+
+  // Sincronizza quando il parent fa refetch
+  React.useEffect(() => { setLocal(value); }, [value]);
+
+  return (
+    <Input
+      type="date"
+      className="h-7 text-xs"
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => {
+        if (local !== value) onSave(local);
+      }}
+      disabled={disabled}
+    />
+  );
+};
+
 const calcEndDate = (startDate: string | null, durationYears: string | null): string => {
   if (!startDate || !durationYears) return '';
   const d = new Date(startDate + 'T00:00:00');
@@ -134,18 +159,32 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
           await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'hicompliance', status: 'active', settings: { duration: '3', extended_range: false } }, groupId);
         }
       }
-      // SurfaceScan360 toggle ON
+      // SurfaceScan360 toggle ON — eredita contract_start da HiCompliance se presente
       if (patch.surface_scan360_enabled === true) {
         const ht = ts.find(s => s.service_type === 'hitrack');
         if (!ht) {
-          await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'hitrack', status: 'active', settings: { duration: '3', extended_range: false } }, groupId);
+          const hcSettings = (ts.find(s => s.service_type === 'hicompliance')?.settings as any) || {};
+          const defaultStart = hcSettings.contract_start || '';
+          await tenantServicesApi.create({
+            tenant_id: organizationId,
+            service_type: 'hitrack',
+            status: 'active',
+            settings: { duration: '3', extended_range: false, ...(defaultStart ? { contract_start: defaultStart } : {}) },
+          }, groupId);
         }
       }
-      // DarkRisk360 toggle ON
+      // DarkRisk360 toggle ON — eredita contract_start da HiCompliance se presente
       if (patch.dark_risk360_enabled === true) {
         const dr = ts.find(s => s.service_type === 'darkrisk');
         if (!dr) {
-          await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'darkrisk', status: 'active', settings: { tier: darkRiskTier } }, groupId);
+          const hcSettings = (ts.find(s => s.service_type === 'hicompliance')?.settings as any) || {};
+          const defaultStart = hcSettings.contract_start || '';
+          await tenantServicesApi.create({
+            tenant_id: organizationId,
+            service_type: 'darkrisk',
+            status: 'active',
+            settings: { tier: darkRiskTier, ...(defaultStart ? { contract_start: defaultStart } : {}) },
+          }, groupId);
         }
       }
 
@@ -303,11 +342,9 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
         <div className="grid grid-cols-3 gap-2">
           <div>
             <Label className="text-[10px] text-muted-foreground">Inizio contratto</Label>
-            <Input
-              type="date"
-              className="h-7 text-xs"
+            <ContractDateInput
               value={cs.contract_start}
-              onChange={(e) => handleSave('contract_start', e.target.value)}
+              onSave={(v) => handleSave('contract_start', v)}
               disabled={contractUpdateMutation.isPending}
             />
           </div>
