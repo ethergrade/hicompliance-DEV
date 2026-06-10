@@ -26,6 +26,12 @@ export const ConsistenzeAreaTable: React.FC<Props> = ({ area, items, onAdd, onUp
     onUpdate(item.id!, { metriche_json: metriche });
   };
 
+  /** Blocca digitazione su input numerici — solo frecce su/giù + tab */
+  const onNumberKeyDown = (e: React.KeyboardEvent) => {
+    const allowed = ['ArrowUp', 'ArrowDown', 'Tab', 'Home', 'End', 'Escape'];
+    if (!allowed.includes(e.key)) e.preventDefault();
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex justify-between items-center">
@@ -109,6 +115,7 @@ export const ConsistenzeAreaTable: React.FC<Props> = ({ area, items, onAdd, onUp
                     type="number"
                     min={0}
                     value={item.quantita}
+                    onKeyDown={onNumberKeyDown}
                     onChange={(e) => onUpdate(item.id!, { quantita: parseInt(e.target.value) || 0 })}
                   />
                 </TableCell>
@@ -126,6 +133,7 @@ export const ConsistenzeAreaTable: React.FC<Props> = ({ area, items, onAdd, onUp
                       className="h-8 text-xs"
                       type={col.type}
                       value={(item.metriche_json as any)?.[col.key] ?? ''}
+                      onKeyDown={col.type === 'number' ? onNumberKeyDown : undefined}
                       onChange={(e) => handleMetricChange(
                         item,
                         col.key,

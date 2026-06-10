@@ -126,17 +126,20 @@ const AssetInventory: React.FC = () => {
     }
     setSaving(true);
     try {
-      if (data.id) {
-        await assetInventoryApi.update(data.id, data, groupId);
-      } else {
-        const newData = await assetInventoryApi.create({ ...data, organization_id: organizationId }, groupId);
-        if (newData) setData({ ...INITIAL_DATA, ...newData, notes: newData.notes ?? '', hilog_sharepoint_dlp_enabled: newData.hilog_sharepoint_dlp_enabled ?? false, hilog_entra_id_enabled: newData.hilog_entra_id_enabled ?? false });
-      }
+      // PUT upsert — backend usa updateOrCreate, funziona sia per create che update
+      const saved = await assetInventoryApi.update(organizationId, { ...data, organization_id: organizationId }, groupId);
+      if (saved) setData({ ...INITIAL_DATA, ...saved, notes: saved.notes ?? '', hilog_sharepoint_dlp_enabled: saved.hilog_sharepoint_dlp_enabled ?? false, hilog_entra_id_enabled: saved.hilog_entra_id_enabled ?? false });
       toast({ title: "Successo", description: "Inventario salvato con successo" });
     } catch (error) {
       console.error('Error saving asset inventory:', error);
       toast({ title: "Errore", description: "Errore durante il salvataggio", variant: "destructive" });
     } finally { setSaving(false); }
+  };
+
+  /** Blocca digitazione su input numerici — solo frecce su/giù + tab */
+  const onNumberKeyDown = (e: React.KeyboardEvent) => {
+    const allowed = ['ArrowUp', 'ArrowDown', 'Tab', 'Home', 'End', 'Escape'];
+    if (!allowed.includes(e.key)) e.preventDefault();
   };
 
   const handleNumberChange = (field: keyof AssetInventoryData, value: string) => {
@@ -222,11 +225,11 @@ const AssetInventory: React.FC = () => {
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="users_count">Utenti</Label>
-                      <Input id="users_count" type="number" min="0" value={data.users_count} onChange={(e) => handleNumberChange('users_count', e.target.value)} />
+                      <Input id="users_count" type="number" min="0" value={data.users_count} onChange={(e) => handleNumberChange('users_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="locations_count">Sedi Cliente</Label>
-                      <Input id="locations_count" type="number" min="0" value={data.locations_count} onChange={(e) => handleNumberChange('locations_count', e.target.value)} />
+                      <Input id="locations_count" type="number" min="0" value={data.locations_count} onChange={(e) => handleNumberChange('locations_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                     </div>
                   </CardContent>
                 </Card>
@@ -242,11 +245,11 @@ const AssetInventory: React.FC = () => {
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="endpoints_count">Endpoint</Label>
-                      <Input id="endpoints_count" type="number" min="0" value={data.endpoints_count} onChange={(e) => handleNumberChange('endpoints_count', e.target.value)} />
+                      <Input id="endpoints_count" type="number" min="0" value={data.endpoints_count} onChange={(e) => handleNumberChange('endpoints_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="servers_count">Server</Label>
-                      <Input id="servers_count" type="number" min="0" value={data.servers_count} onChange={(e) => handleNumberChange('servers_count', e.target.value)} />
+                      <Input id="servers_count" type="number" min="0" value={data.servers_count} onChange={(e) => handleNumberChange('servers_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                     </div>
                   </CardContent>
                 </Card>
@@ -262,11 +265,11 @@ const AssetInventory: React.FC = () => {
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="hypervisors_count">HyperVisor</Label>
-                      <Input id="hypervisors_count" type="number" min="0" value={data.hypervisors_count} onChange={(e) => handleNumberChange('hypervisors_count', e.target.value)} />
+                      <Input id="hypervisors_count" type="number" min="0" value={data.hypervisors_count} onChange={(e) => handleNumberChange('hypervisors_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="virtual_machines_count">Virtual Machine</Label>
-                      <Input id="virtual_machines_count" type="number" min="0" value={data.virtual_machines_count} onChange={(e) => handleNumberChange('virtual_machines_count', e.target.value)} />
+                      <Input id="virtual_machines_count" type="number" min="0" value={data.virtual_machines_count} onChange={(e) => handleNumberChange('virtual_machines_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                     </div>
                   </CardContent>
                 </Card>
@@ -282,23 +285,23 @@ const AssetInventory: React.FC = () => {
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="firewalls_count">Firewall</Label>
-                      <Input id="firewalls_count" type="number" min="0" value={data.firewalls_count} onChange={(e) => handleNumberChange('firewalls_count', e.target.value)} />
+                      <Input id="firewalls_count" type="number" min="0" value={data.firewalls_count} onChange={(e) => handleNumberChange('firewalls_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="core_switches_count">Switch Core</Label>
-                      <Input id="core_switches_count" type="number" min="0" value={data.core_switches_count} onChange={(e) => handleNumberChange('core_switches_count', e.target.value)} />
+                      <Input id="core_switches_count" type="number" min="0" value={data.core_switches_count} onChange={(e) => handleNumberChange('core_switches_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="access_switches_count">Switch Access</Label>
-                      <Input id="access_switches_count" type="number" min="0" value={data.access_switches_count} onChange={(e) => handleNumberChange('access_switches_count', e.target.value)} />
+                      <Input id="access_switches_count" type="number" min="0" value={data.access_switches_count} onChange={(e) => handleNumberChange('access_switches_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="access_points_count">Access Point (Compresi Collector)</Label>
-                      <Input id="access_points_count" type="number" min="0" value={data.access_points_count} onChange={(e) => handleNumberChange('access_points_count', e.target.value)} />
+                      <Input id="access_points_count" type="number" min="0" value={data.access_points_count} onChange={(e) => handleNumberChange('access_points_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="miscellaneous_network_devices_count">Dispositivi di rete varie</Label>
-                      <Input id="miscellaneous_network_devices_count" type="number" min="0" value={data.miscellaneous_network_devices_count} onChange={(e) => handleNumberChange('miscellaneous_network_devices_count', e.target.value)} />
+                      <Input id="miscellaneous_network_devices_count" type="number" min="0" value={data.miscellaneous_network_devices_count} onChange={(e) => handleNumberChange('miscellaneous_network_devices_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="total_network_devices_count">Dispositivi di rete totali</Label>
@@ -318,27 +321,27 @@ const AssetInventory: React.FC = () => {
                   <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="va_ip_punctual_count">IP Puntuali</Label>
-                      <Input id="va_ip_punctual_count" type="number" min="0" value={data.va_ip_punctual_count} onChange={(e) => handleNumberChange('va_ip_punctual_count', e.target.value)} />
+                      <Input id="va_ip_punctual_count" type="number" min="0" value={data.va_ip_punctual_count} onChange={(e) => handleNumberChange('va_ip_punctual_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="va_subnet_25_count">Quantità di subnet /25 (126 IP) da scansionare</Label>
-                      <Input id="va_subnet_25_count" type="number" min="0" value={data.va_subnet_25_count} onChange={(e) => handleNumberChange('va_subnet_25_count', e.target.value)} />
+                      <Input id="va_subnet_25_count" type="number" min="0" value={data.va_subnet_25_count} onChange={(e) => handleNumberChange('va_subnet_25_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="va_subnet_24_count">Quantità di subnet /24 (254 IP) da scansionare</Label>
-                      <Input id="va_subnet_24_count" type="number" min="0" value={data.va_subnet_24_count} onChange={(e) => handleNumberChange('va_subnet_24_count', e.target.value)} />
+                      <Input id="va_subnet_24_count" type="number" min="0" value={data.va_subnet_24_count} onChange={(e) => handleNumberChange('va_subnet_24_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="va_subnet_23_count">Quantità di subnet /23 (510 IP) da scansionare</Label>
-                      <Input id="va_subnet_23_count" type="number" min="0" value={data.va_subnet_23_count} onChange={(e) => handleNumberChange('va_subnet_23_count', e.target.value)} />
+                      <Input id="va_subnet_23_count" type="number" min="0" value={data.va_subnet_23_count} onChange={(e) => handleNumberChange('va_subnet_23_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="va_subnet_22_count">Quantità di subnet /22 (1022 IP) da scansionare</Label>
-                      <Input id="va_subnet_22_count" type="number" min="0" value={data.va_subnet_22_count} onChange={(e) => handleNumberChange('va_subnet_22_count', e.target.value)} />
+                      <Input id="va_subnet_22_count" type="number" min="0" value={data.va_subnet_22_count} onChange={(e) => handleNumberChange('va_subnet_22_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="va_subnet_21_count">Quantità di subnet /21 (2046 IP) da scansionare</Label>
-                      <Input id="va_subnet_21_count" type="number" min="0" value={data.va_subnet_21_count} onChange={(e) => handleNumberChange('va_subnet_21_count', e.target.value)} />
+                      <Input id="va_subnet_21_count" type="number" min="0" value={data.va_subnet_21_count} onChange={(e) => handleNumberChange('va_subnet_21_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                     </div>
                     <div className="space-y-2 md:col-span-2">
                       <Label htmlFor="va_total_ips_count">IP Totali (1000IP = 1 Collector VA)</Label>
@@ -359,39 +362,39 @@ const AssetInventory: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="hilog_syslog_count">Syslog</Label>
-                        <Input id="hilog_syslog_count" type="number" min="0" value={data.hilog_syslog_count} onChange={(e) => handleNumberChange('hilog_syslog_count', e.target.value)} />
+                        <Input id="hilog_syslog_count" type="number" min="0" value={data.hilog_syslog_count} onChange={(e) => handleNumberChange('hilog_syslog_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="hilog_iis_count">IIS</Label>
-                        <Input id="hilog_iis_count" type="number" min="0" value={data.hilog_iis_count} onChange={(e) => handleNumberChange('hilog_iis_count', e.target.value)} />
+                        <Input id="hilog_iis_count" type="number" min="0" value={data.hilog_iis_count} onChange={(e) => handleNumberChange('hilog_iis_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="hilog_apache_count">Apache</Label>
-                        <Input id="hilog_apache_count" type="number" min="0" value={data.hilog_apache_count} onChange={(e) => handleNumberChange('hilog_apache_count', e.target.value)} />
+                        <Input id="hilog_apache_count" type="number" min="0" value={data.hilog_apache_count} onChange={(e) => handleNumberChange('hilog_apache_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="hilog_sql_count">SQL</Label>
-                        <Input id="hilog_sql_count" type="number" min="0" value={data.hilog_sql_count} onChange={(e) => handleNumberChange('hilog_sql_count', e.target.value)} />
+                        <Input id="hilog_sql_count" type="number" min="0" value={data.hilog_sql_count} onChange={(e) => handleNumberChange('hilog_sql_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="hilog_custom_path_count">Custom PATH</Label>
-                        <Input id="hilog_custom_path_count" type="number" min="0" value={data.hilog_custom_path_count} onChange={(e) => handleNumberChange('hilog_custom_path_count', e.target.value)} />
+                        <Input id="hilog_custom_path_count" type="number" min="0" value={data.hilog_custom_path_count} onChange={(e) => handleNumberChange('hilog_custom_path_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="hilog_endpoint_count">Endpoint sotto Log</Label>
-                        <Input id="hilog_endpoint_count" type="number" min="0" value={data.hilog_endpoint_count} onChange={(e) => handleNumberChange('hilog_endpoint_count', e.target.value)} />
+                        <Input id="hilog_endpoint_count" type="number" min="0" value={data.hilog_endpoint_count} onChange={(e) => handleNumberChange('hilog_endpoint_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="hilog_server_count">Server sotto Log</Label>
-                        <Input id="hilog_server_count" type="number" min="0" value={data.hilog_server_count} onChange={(e) => handleNumberChange('hilog_server_count', e.target.value)} />
+                        <Input id="hilog_server_count" type="number" min="0" value={data.hilog_server_count} onChange={(e) => handleNumberChange('hilog_server_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="hilog_dlp_linux_count">DLP File Server Linux</Label>
-                        <Input id="hilog_dlp_linux_count" type="number" min="0" value={data.hilog_dlp_linux_count} onChange={(e) => handleNumberChange('hilog_dlp_linux_count', e.target.value)} />
+                        <Input id="hilog_dlp_linux_count" type="number" min="0" value={data.hilog_dlp_linux_count} onChange={(e) => handleNumberChange('hilog_dlp_linux_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="hilog_dlp_windows_count">DLP File Server Windows</Label>
-                        <Input id="hilog_dlp_windows_count" type="number" min="0" value={data.hilog_dlp_windows_count} onChange={(e) => handleNumberChange('hilog_dlp_windows_count', e.target.value)} />
+                        <Input id="hilog_dlp_windows_count" type="number" min="0" value={data.hilog_dlp_windows_count} onChange={(e) => handleNumberChange('hilog_dlp_windows_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                       </div>
                     </div>
 
@@ -407,7 +410,7 @@ const AssetInventory: React.FC = () => {
                       {data.hilog_sharepoint_dlp_enabled && (
                         <div className="space-y-2 pl-4 border-l-2 border-primary/20">
                           <Label htmlFor="hilog_sharepoint_dlp_count">Quantità SharePoint DLP</Label>
-                          <Input id="hilog_sharepoint_dlp_count" type="number" min="0" value={data.hilog_sharepoint_dlp_count} onChange={(e) => handleNumberChange('hilog_sharepoint_dlp_count', e.target.value)} />
+                          <Input id="hilog_sharepoint_dlp_count" type="number" min="0" value={data.hilog_sharepoint_dlp_count} onChange={(e) => handleNumberChange('hilog_sharepoint_dlp_count', e.target.value)}  onKeyDown={onNumberKeyDown} />
                         </div>
                       )}
 

@@ -155,12 +155,9 @@ const ClientAssetSheet: React.FC<ClientAssetSheetProps> = ({
       const ti = f.va_ip_punctual_count + f.va_subnet_25_count * 128 + f.va_subnet_24_count * 256 + f.va_subnet_23_count * 512 + f.va_subnet_22_count * 1024 + f.va_subnet_21_count * 2048;
       const payload = { organization_id: organizationId, ...f, total_network_devices_count: tn, va_total_ips_count: ti };
 
-      if (recordIdRef.current) {
-        await assetInventoryApi.update(recordIdRef.current, payload);
-      } else {
-        const created = await assetInventoryApi.create(payload);
-        if (created.id) setRecordId(created.id);
-      }
+      // PUT upsert — backend usa updateOrCreate, funziona sia per create che update
+      const result = await assetInventoryApi.update(organizationId, payload);
+      if (result.id) setRecordId(result.id);
       setSaveStatus('saved');
     } catch {
       setSaveStatus('error');
