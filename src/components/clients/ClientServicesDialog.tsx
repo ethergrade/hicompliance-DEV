@@ -52,6 +52,7 @@ function deriveFlags(services: TenantServiceResource[]) {
   const hp = services.find(s => s.service_type === 'hipatch' && s.status === 'active');
   return {
     hicompliance_enabled: !!hc,
+    hicompliance_license: ((hc?.settings as any)?.license as string) || 'standard',
     irp_extended: !!(hc?.settings as any)?.extended_range,
     surface_scan_extended: !!(ht?.settings as any)?.extended_range,
     pentest_tools_auto_validation: true,
@@ -210,6 +211,13 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
       }
 
       // Settings updates (only reachable if services still exist after creates)
+      // HiCompliance license toggle
+      if ('hicompliance_license' in patch) {
+        const hc = ts.find(s => s.service_type === 'hicompliance');
+        if (hc) {
+          await tenantServicesApi.update(hc.id, { settings: { ...(hc.settings as any || {}), license: patch.hicompliance_license } }, groupId);
+        }
+      }
       // IRP extended toggle
       if ('irp_extended' in patch) {
         const hc = ts.find(s => s.service_type === 'hicompliance');
@@ -446,15 +454,32 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                     <p className="text-xs text-muted-foreground">Assessment, Analisi, Remediation, Incident</p>
                   </div>
                 </div>
-                <Switch
-                  checked={!!orgFlags?.hicompliance_enabled}
-                  disabled={updateFlagsMutation.isPending}
-                  onCheckedChange={(v) => {
-                    const patch: any = { hicompliance_enabled: v };
-                    if (!v) { patch.irp_extended = false; }
-                    updateFlagsMutation.mutate(patch);
-                  }}
-                />
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={orgFlags?.hicompliance_license || 'standard'}
+                    onValueChange={(value) => {
+                      updateFlagsMutation.mutate({ hicompliance_license: value });
+                    }}
+                    disabled={updateFlagsMutation.isPending || !orgFlags?.hicompliance_enabled}
+                  >
+                    <SelectTrigger className="h-8 w-[140px]">
+                      <SelectValue placeholder="Licenza" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="standard">Standard</SelectItem>
+                      <SelectItem value="extended">Estesa</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Switch
+                    checked={!!orgFlags?.hicompliance_enabled}
+                    disabled={updateFlagsMutation.isPending}
+                    onCheckedChange={(v) => {
+                      const patch: any = { hicompliance_enabled: v };
+                      if (!v) { patch.irp_extended = false; }
+                      updateFlagsMutation.mutate(patch);
+                    }}
+                  />
+                </div>
               </div>
 
               {orgFlags?.hicompliance_enabled && (
