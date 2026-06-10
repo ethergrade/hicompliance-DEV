@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -68,6 +68,7 @@ const Users = () => {
   const [tenantDialogOpen, setTenantDialogOpen] = useState(false);
   const [tenantUser, setTenantUser] = useState<UserResource | null>(null);
   const [selectedTenantIds, setSelectedTenantIds] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
   const tenantInitialLoadDone = useRef(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
