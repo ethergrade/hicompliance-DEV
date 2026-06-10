@@ -12,13 +12,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, Check, CloudOff, Building2, AlertCircle } from 'lucide-react';
-import { tenantsApi } from '@/lib/api';
-import type { TenantResource, UpdateTenantRequest } from '@/types/api';
+import { Loader2, Check, CloudOff, Building2, AlertCircle, Plus, Trash2 } from 'lucide-react';
+import { tenantsApi, tenantServicesApi } from '@/lib/api';
+import type { TenantResource, UpdateTenantRequest, TenantServiceResource, IpRange } from '@/types/api';
 
 interface ClientProfileSheetProps {
   organizationId: string | null;
   organizationName?: string;
+  groupId?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -35,6 +36,11 @@ interface ProfileFormData {
   business_sector: string;
   nis2_classification: string;
   ciso_substitute: string;
+  primary_domain: string;
+  primary_subnet: string;
+  secondary_domain: string;
+  secondary_subnet: string;
+  ips_list: IpRange[];
 }
 
 const INITIAL: ProfileFormData = {
@@ -49,6 +55,11 @@ const INITIAL: ProfileFormData = {
   business_sector: '',
   nis2_classification: '',
   ciso_substitute: '',
+  primary_domain: '',
+  primary_subnet: '',
+  secondary_domain: '',
+  secondary_subnet: '',
+  ips_list: [],
 };
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -65,6 +76,11 @@ const resourceToForm = (data: TenantResource): ProfileFormData => ({
   business_sector: data.business_sector || data.industry || '',
   nis2_classification: (data.nis2_classification as string) || 'nessuna',
   ciso_substitute: data.ciso_substitute || '',
+  primary_domain: data.primary_domain || '',
+  primary_subnet: data.primary_subnet || '',
+  secondary_domain: data.secondary_domain || '',
+  secondary_subnet: data.secondary_subnet || '',
+  ips_list: data.ips_list || [],
 });
 
 const formToPayload = (data: ProfileFormData): UpdateTenantRequest => ({
@@ -80,6 +96,11 @@ const formToPayload = (data: ProfileFormData): UpdateTenantRequest => ({
   industry: data.business_sector || null,
   nis2_classification: data.nis2_classification as any || null,
   ciso_substitute: data.ciso_substitute || null,
+  primary_domain: data.primary_domain || null,
+  primary_subnet: data.primary_subnet || null,
+  secondary_domain: data.secondary_domain || null,
+  secondary_subnet: data.secondary_subnet || null,
+  ips_list: data.ips_list.length > 0 ? data.ips_list : null,
 });
 
 const NIS2_OPTIONS = [
@@ -91,6 +112,7 @@ const NIS2_OPTIONS = [
 const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
   organizationId,
   organizationName,
+  groupId,
   open,
   onOpenChange,
 }) => {
@@ -98,6 +120,7 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
   const [loading, setLoading] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [tenantServices, setTenantServices] = useState<TenantServiceResource[]>([]);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const validate = (data: ProfileFormData): Record<string, string> => {
@@ -116,25 +139,22 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
     setSaveStatus('idle');
     setForm(INITIAL);
 
-    tenantsApi
-      .get(organizationId)
-      .then((tenant) => {
-        if (!cancelled) {
-          setForm(resourceToForm(tenant));
-          setLoading(false);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setLoading(false);
-          setSaveStatus('error');
-        }
-      });
+    Promise.all([
+      tenantsApi.get(organizationId).catch(() => null),
+      groupId ? tenantServicesApi.listByOrganization(organizationId, groupId).catch(() => [] as TenantServiceResource[]) : Promise.resolve([] as TenantServiceResource[]),
+    ]).then(([tenant, services]) => {
+      if (!cancelled) {
+        if (tenant) setForm(resourceToForm(tenant));
+        else setSaveStatus('error');
+        setTenantServices(services);
+        setLoading(false);
+      }
+    });
 
     return () => {
       cancelled = true;
     };
-  }, [open, organizationId]);
+  }, [open, organizationId, groupId]);
 
   // Auto-save with debounce
   const scheduleSave = useCallback(
@@ -178,6 +198,29 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
       const next = { ...prev, [field]: value };
       scheduleSave(next);
       return next;
+    });
+  };
+
+  const addIpRange = () => {
+    if (!newIpStart.trim()) return;
+    const next: IpRange = {
+      start_ip: newIpStart.trim(),
+      end_ip: newIpEnd.trim() || newIpStart.trim(),
+    };
+    setForm((prev) => {
+      const updated = { ...prev, ips_list: [...prev.ips_list, next] };
+      scheduleSave(updated);
+      return updated;
+    });
+    setNewIpStart('');
+    setNewIpEnd('');
+  };
+
+  const removeIpRange = (index: number) => {
+    setForm((prev) => {
+      const updated = { ...prev, ips_list: prev.ips_list.filter((_, i) => i !== index) };
+      scheduleSave(updated);
+      return updated;
     });
   };
 
@@ -230,6 +273,12 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
       </div>
     );
   };
+
+  const hicomplianceService = tenantServices.find(
+    (s) => s.service_type === 'hicompliance' && s.status === 'active'
+  );
+  const showNetworkFields = !!hicomplianceService;
+  const isExtendedLicense = hicomplianceService?.settings?.license === 'extended';
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -346,6 +395,78 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
                   {renderField('ciso_substitute', 'CISO Sostituto')}
                 </div>
               </div>
+
+              {showNetworkFields && (
+                <>
+                  <Separator />
+                  <div>
+                    <h4 className="text-sm font-semibold mb-3">Rete</h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      {renderField('primary_domain', 'Dominio Primario')}
+                      {renderField('primary_subnet', 'Subnet Primaria')}
+                      {renderField('secondary_domain', 'Dominio Secondario')}
+                      {renderField('secondary_subnet', 'Subnet Secondaria')}
+                    </div>
+
+                    {isExtendedLicense && (
+                      <div className="mt-4 space-y-3">
+                        <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          IP Monitorati
+                        </h5>
+                        {form.ips_list.length === 0 && (
+                          <p className="text-xs text-muted-foreground">Nessun IP monitorato</p>
+                        )}
+                        {form.ips_list.map((range, idx) => (
+                          <div key={idx} className="flex items-center gap-2">
+                            <Input
+                              value={range.start_ip}
+                              readOnly
+                              className="h-8 text-xs bg-muted"
+                            />
+                            <span className="text-xs text-muted-foreground">-</span>
+                            <Input
+                              value={range.end_ip}
+                              readOnly
+                              className="h-8 text-xs bg-muted"
+                            />
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive"
+                              onClick={() => removeIpRange(idx)}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        ))}
+                        <div className="flex items-center gap-2">
+                          <Input
+                            placeholder="IP iniziale"
+                            value={newIpStart}
+                            onChange={(e) => setNewIpStart(e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                          <span className="text-xs text-muted-foreground">-</span>
+                          <Input
+                            placeholder="IP finale (opzionale)"
+                            value={newIpEnd}
+                            onChange={(e) => setNewIpEnd(e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={addIpRange}
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
 
               {/* Manual save button */}
               <div className="pt-2 pb-4">

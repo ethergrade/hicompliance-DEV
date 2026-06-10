@@ -289,7 +289,7 @@ const ClientSelection: React.FC = () => {
       </div>
 
       {/* Sheets */}
-      <ClientProfileSheet organizationId={editingOrgId} organizationName={editingOrgName} open={profileOpen} onOpenChange={setProfileOpen} />
+      <ClientProfileSheet organizationId={editingOrgId} organizationName={editingOrgName} groupId={organizations.find(o => o.id === editingOrgId)?.group_id} open={profileOpen} onOpenChange={setProfileOpen} />
       <ClientAssetSheet organizationId={editingOrgId} organizationName={editingOrgName} open={assetOpen} onOpenChange={setAssetOpen} />
       {isSuperAdmin && editingOrgId && (() => {
         const editingOrg = organizations.find(o => o.id === editingOrgId);
