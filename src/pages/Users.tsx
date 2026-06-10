@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { companiesApi, configApi, usersApi } from "@/lib/api";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import type { TenantResource, UserResource } from "@/types/api";
-import { User, Plus, Edit, Trash2, UserCheck, UserX, Building2 } from "lucide-react";
+import { User, Plus, Edit, Trash2, UserCheck, UserX, Building2, Search, X } from "lucide-react";
 
 interface UserFormData {
   email: string;
