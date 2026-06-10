@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -72,8 +72,9 @@ const Users = () => {
   const tenantInitialLoadDone = useRef(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { selectedOrganization } = useClientOrganization();
+  const { selectedOrganization, organizationId: clientOrgId } = useClientOrganization();
   const groupId = selectedOrganization?.group_id ?? null;
+  const organizationId = clientOrgId;
 
   const form = useForm<UserFormData>({
     defaultValues: {
@@ -90,14 +91,48 @@ const Users = () => {
     enabled: !!groupId,
   });
 
+  // Per ogni utente, recupera i tenant assegnati (in parallelo, dedupe via queryKey)
+  const tenantAssignmentsQueries = useQueries({
+    queries: users.map((u) => ({
+      queryKey: ['user-tenants', u.id, groupId],
+      queryFn: () => usersApi.listTenants(u.id, groupId),
+      enabled: !!groupId && !!organizationId,
+      staleTime: 60_000,
+    })),
+  });
+
+  // Mappa userId -> tenantIds (solo per utenti con fetch completato)
+  const userTenantsMap = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    users.forEach((u, idx) => {
+      const q = tenantAssignmentsQueries[idx];
+      if (q?.data) map[String(u.id)] = q.data;
+    });
+    return map;
+  }, [users, tenantAssignmentsQueries]);
+
+  // Filtra per cliente (tenant) selezionato
+  const tenantFilteredUsers = useMemo(() => {
+    if (!organizationId) return users;
+    return users.filter((u) => {
+      const tenantIds = userTenantsMap[String(u.id)];
+      // Se non ha ancora completato il fetch, non escluderlo (evita flicker)
+      if (!tenantIds) return true;
+      return tenantIds.includes(organizationId);
+    });
+  }, [users, organizationId, userTenantsMap]);
+
+  const tenantFilterLoading = tenantAssignmentsQueries.some((q) => q.isLoading);
+
   const searchedUsers = useMemo(() => {
-    if (!searchQuery.trim()) return users;
+    const base = tenantFilteredUsers;
+    if (!searchQuery.trim()) return base;
     const q = searchQuery.toLowerCase();
-    return users.filter(u =>
+    return base.filter(u =>
       u.name.toLowerCase().includes(q) ||
       u.email.toLowerCase().includes(q)
     );
-  }, [users, searchQuery]);
+  }, [tenantFilteredUsers, searchQuery]);
 
   const { data: roles = [] } = useQuery({
     queryKey: ["config", "roles"],
@@ -240,6 +275,11 @@ const Users = () => {
             <p className="text-muted-foreground">
               Gestisci accessi, ruoli e tenant assegnati agli utenti limitati
             </p>
+            {organizationId && selectedOrganization && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Filtro attivo: utenti assegnati al cliente <strong>{selectedOrganization.name}</strong>
+              </p>
+            )}
           </div>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
@@ -369,7 +409,7 @@ const Users = () => {
             </div>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
+            {isLoading || tenantFilterLoading ? (
               <div className="flex items-center justify-center py-8">
                 <div className="text-muted-foreground">Caricamento utenti...</div>
               </div>
@@ -382,7 +422,9 @@ const Users = () => {
                 <p className="text-muted-foreground text-center mb-4">
                   {searchQuery
                     ? 'Nessun utente corrisponde ai criteri di ricerca'
-                    : 'Inizia creando il primo utente del sistema'}
+                    : organizationId
+                      ? 'Nessun utente è ancora assegnato a questo cliente. Aggiungilo dal dialog "Tenant assegnati" di un utente.'
+                      : 'Inizia creando il primo utente del sistema'}
                 </p>
                 {!searchQuery && (
                   <Button onClick={() => openDialog()}>
