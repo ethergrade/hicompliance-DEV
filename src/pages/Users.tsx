@@ -483,11 +483,25 @@ const Users = () => {
                 {companies.map((company: TenantResource) => {
                   const checked = selectedTenantIds.includes(company.id);
                   return (
-                    <label key={company.id} className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer">
+                    <label
+                      key={company.id}
+                      className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
+                        checked
+                          ? 'border-primary/40 bg-primary/10'
+                          : 'hover:bg-muted/40'
+                      }`}
+                    >
                       <Checkbox checked={checked} onCheckedChange={(value) => toggleTenant(company.id, value === true)} />
-                      <div>
-                        <div className="font-medium">{company.name}</div>
-                        <div className="text-xs text-muted-foreground">{company.id}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium truncate">{company.name}</span>
+                          {checked && (
+                            <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">
+                              Assegnato
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">{company.id}</div>
                       </div>
                     </label>
                   );
