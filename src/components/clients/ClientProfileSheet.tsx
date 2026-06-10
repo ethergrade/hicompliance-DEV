@@ -471,12 +471,6 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
 
                     {isExtendedLicense && (
                       <div className="mt-4 space-y-3">
-                        <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground space-y-1">
-                          <div className="font-medium text-foreground">Legenda input scope (misto supportato)</div>
-                          <div>Separatore lista: `,` `;` `|` oppure a capo.</div>
-                          <div>Esempio: `panapesca.it, 203.0.113.10, 203.0.113.10-203.0.113.20, 203.0.113.0/24`</div>
-                          <div>Tipi supportati: dominio, IP singolo, range IP, CIDR.</div>
-                        </div>
                         <div className="flex flex-col md:flex-row gap-2">
                           <Input
                             placeholder="Es. panapesca.it, 203.0.113.10, 203.0.113.10-203.0.113.20, 203.0.113.0/24"
