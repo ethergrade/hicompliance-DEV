@@ -91,17 +91,20 @@ const Users = () => {
     enabled: !!groupId,
   });
 
-  // Per ogni utente, recupera i tenant assegnati (in parallelo, dedupe via queryKey)
+  // Per ogni utente, recupera i tenant assegnati (in parallelo, dedupe via queryKey).
+  // Se l'API ritorna 403 per l'utente loggato (policy mancante lato backend),
+  // consideriamo l'utente "non filtrabile" e NON lo escludiamo.
   const tenantAssignmentsQueries = useQueries({
     queries: users.map((u) => ({
       queryKey: ['user-tenants', u.id, groupId],
       queryFn: () => usersApi.listTenants(u.id, groupId),
       enabled: !!groupId && !!organizationId,
       staleTime: 60_000,
+      retry: false,
     })),
   });
 
-  // Mappa userId -> tenantIds (solo per utenti con fetch completato)
+  // Mappa userId -> tenantIds (solo per utenti con fetch completato e andato a buon fine)
   const userTenantsMap = useMemo(() => {
     const map: Record<string, string[]> = {};
     users.forEach((u, idx) => {
@@ -111,16 +114,21 @@ const Users = () => {
     return map;
   }, [users, tenantAssignmentsQueries]);
 
+  // Se almeno una query è in errore, l'API non è accessibile per l'utente loggato
+  // → disabilitiamo il filtro per evitare di nascondere utenti legittimi
+  const tenantFilterUnavailable = tenantAssignmentsQueries.some((q) => q.isError);
+
   // Filtra per cliente (tenant) selezionato
   const tenantFilteredUsers = useMemo(() => {
     if (!organizationId) return users;
+    if (tenantFilterUnavailable) return users;
     return users.filter((u) => {
       const tenantIds = userTenantsMap[String(u.id)];
       // Se non ha ancora completato il fetch, non escluderlo (evita flicker)
       if (!tenantIds) return true;
       return tenantIds.includes(organizationId);
     });
-  }, [users, organizationId, userTenantsMap]);
+  }, [users, organizationId, userTenantsMap, tenantFilterUnavailable]);
 
   const tenantFilterLoading = tenantAssignmentsQueries.some((q) => q.isLoading);
 
@@ -278,6 +286,11 @@ const Users = () => {
             {organizationId && selectedOrganization && (
               <p className="text-xs text-muted-foreground mt-1">
                 Filtro attivo: utenti assegnati al cliente <strong>{selectedOrganization.name}</strong>
+                {tenantFilterUnavailable && (
+                  <span className="ml-2 text-amber-600 dark:text-amber-500">
+                    (non applicabile: l'API tenants non è accessibile per il tuo ruolo)
+                  </span>
+                )}
               </p>
             )}
           </div>
