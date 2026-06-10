@@ -322,7 +322,7 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
   };
 
   const hicomplianceService = tenantServices.find(
-    (s) => s.service_type === 'hicompliance' && s.status === 'active'
+    (s) => s.service_type === 'hicompliance' && (s.status === 'active' || !s.status)
   );
   const showNetworkFields = !!hicomplianceService;
   const isExtendedLicense = hicomplianceService?.settings?.license === 'extended';

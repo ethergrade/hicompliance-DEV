@@ -46,10 +46,10 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
 
 /** Derive feature flags from tenant-services list */
 function deriveFlags(services: TenantServiceResource[]) {
-  const hc = services.find(s => s.service_type === 'hicompliance' && s.status === 'active');
-  const ht = services.find(s => s.service_type === 'hitrack' && s.status === 'active');
-  const dr = services.find(s => s.service_type === 'darkrisk' && s.status === 'active');
-  const hp = services.find(s => s.service_type === 'hipatch' && s.status === 'active');
+  const hc = services.find(s => s.service_type === 'hicompliance' && (s.status === 'active' || !s.status));
+  const ht = services.find(s => s.service_type === 'hitrack' && (s.status === 'active' || !s.status));
+  const dr = services.find(s => s.service_type === 'darkrisk' && (s.status === 'active' || !s.status));
+  const hp = services.find(s => s.service_type === 'hipatch' && (s.status === 'active' || !s.status));
   return {
     hicompliance_enabled: !!hc,
     hicompliance_license: ((hc?.settings as any)?.license as string) || 'standard',
@@ -64,7 +64,7 @@ function deriveFlags(services: TenantServiceResource[]) {
 
 /** Derive DarkRisk tier from tenant-services list */
 function deriveDarkRiskTier(services: TenantServiceResource[]) {
-  const dr = services.find(s => s.service_type === 'darkrisk' && s.status === 'active');
+  const dr = services.find(s => s.service_type === 'darkrisk' && (s.status === 'active' || !s.status));
   const tier = (dr?.settings as any)?.tier;
   return {
     tier: (tier === 'extended' ? 'extended' : 'standard') as 'standard' | 'extended',
@@ -298,12 +298,12 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 
   // Integrations = tenant-services list
   const integrations: Integration[] = tenantServices
-    .filter(s => s.status === 'active')
+    .filter(s => (s.status === 'active' || !s.status))
     .map(s => ({
       id: s.id,
       service_id: s.service_type,
       api_url: (s.settings as any)?.api_url || '',
-      is_active: s.status === 'active',
+      is_active: (s.status === 'active' || !s.status),
       service_code: s.service_type,
       service_name: s.service_type,
     }));
@@ -344,7 +344,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 
   // Helper: extract contract settings for a service type from tenantServices
   const getContractSettings = (serviceType: string) => {
-    const svc = tenantServices.find(s => s.service_type === serviceType && s.status === 'active');
+    const svc = tenantServices.find(s => s.service_type === serviceType && (s.status === 'active' || !s.status));
     if (!svc) return { id: '', contract_start: '', duration: '', endDate: '' };
     const settings = (svc.settings as any) || {};
     const start = settings.contract_start || '';
