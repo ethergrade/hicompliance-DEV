@@ -81,6 +81,7 @@ const Users = () => {
   const [tenantDialogOpen, setTenantDialogOpen] = useState(false);
   const [tenantUser, setTenantUser] = useState<UserResource | null>(null);
   const [selectedTenantIds, setSelectedTenantIds] = useState<string[]>([]);
+  const [createTenantIds, setCreateTenantIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const tenantInitialLoadDone = useRef(false);
   const { toast } = useToast();
@@ -206,16 +207,25 @@ const Users = () => {
   };
 
   const createUserMutation = useMutation({
-    mutationFn: (data: UserFormData) => usersApi.create({
-      name: data.name,
-      email: data.email,
-      password: data.password,
-      role: data.role,
-    }, groupId),
+    mutationFn: async (data: UserFormData) => {
+      const user = await usersApi.create({
+        name: data.name,
+        email: data.email,
+        password: data.password,
+        role: data.role,
+      }, groupId);
+      // Assign tenants immediately for restricted roles
+      if (tenantRestrictedRoles.has(data.role) && createTenantIds.length > 0 && groupId) {
+        await usersApi.syncTenants(user.id, createTenantIds, groupId);
+      }
+      return user;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["user-tenants"] });
       setIsDialogOpen(false);
       setSelectedUser(null);
+      setCreateTenantIds([]);
       form.reset();
       toast({ title: "Successo", description: "Utente creato con successo" });
     },
@@ -281,6 +291,7 @@ const Users = () => {
     } else {
       setSelectedUser(null);
       form.reset({ email: "", name: "", role: roleOptions[0] ?? "viewer", password: "" });
+      setCreateTenantIds([]);
     }
     setIsDialogOpen(true);
   };
@@ -408,6 +419,35 @@ const Users = () => {
                       </FormItem>
                     )}
                   />
+                  {!selectedUser && tenantRestrictedRoles.has(form.watch('role')) && companies.length > 0 && (
+                    <div className="space-y-2 pt-2">
+                      <FormLabel className="text-sm font-medium">Tenant assegnati</FormLabel>
+                      <p className="text-xs text-muted-foreground">
+                        Seleziona i tenant a cui questo utente può accedere. Lascia vuoto per configurare in seguito.
+                      </p>
+                      <ScrollArea className="h-[180px] rounded-md border">
+                        <div className="p-3 space-y-2">
+                          {companies.map((company: TenantResource) => {
+                            const checked = createTenantIds.includes(company.id);
+                            return (
+                              <label
+                                key={company.id}
+                                className={`flex items-center gap-2 rounded px-2 py-1.5 cursor-pointer text-sm transition-colors ${
+                                  checked ? 'bg-primary/10 text-primary' : 'hover:bg-muted/40'
+                                }`}
+                              >
+                                <Checkbox
+                                  checked={checked}
+                                  onCheckedChange={(value) => setCreateTenantIds(prev => value === true ? [...prev, company.id] : prev.filter(id => id !== company.id))}
+                                />
+                                <span>{company.name}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     L'utente verrà creato nel gruppo corrente{selectedOrganization?.name ? ` (${selectedOrganization.name})` : ''}.
                   </p>
