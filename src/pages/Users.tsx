@@ -139,6 +139,8 @@ const Users = () => {
         filtered: filtered.length,
         restricted: users.filter(u => tenantRestrictedRoles.has(getPrimaryRole(u) ?? '')).length,
         mapKeys: Object.keys(userTenantsMap).length,
+        sampleUsers: users.slice(0, 3).map(u => ({ id: u.id, name: u.name, roles: u.roles, groups: u.groups })),
+        sampleTenants: Object.fromEntries(Object.entries(userTenantsMap).slice(0, 3)),
       });
     }
     return filtered;
