@@ -111,7 +111,7 @@ const Users = () => {
     queries: users.map((u) => ({
       queryKey: ['user-tenants', u.id, groupId],
       queryFn: () => usersApi.listTenants(u.id, groupId),
-      enabled: !!groupId && !!organizationId,
+      enabled: !!groupId,
       staleTime: 60_000,
       retry: false,
     })),
