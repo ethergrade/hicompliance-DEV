@@ -28,7 +28,7 @@ const ROLE_ALIASES: Record<string, AppRole> = {
 export const useUserRoles = () => {
   const { user, loading } = useAuth();
 
-  // Derive roles from group names + is_super_admin field
+  // Derive roles from group names + group pivot role + is_super_admin field
   const roles = useMemo<AppRole[]>(() => {
     const inferred: AppRole[] = [];
 
@@ -38,9 +38,21 @@ export const useUserRoles = () => {
     }
 
     // Check group names for role patterns
-    const groupNames = (user?.groups ?? []).map(g => g.name?.toLowerCase() || '');
-    for (const name of groupNames) {
+    const groups = user?.groups ?? [];
+    for (const g of groups) {
+      const name = g.name?.toLowerCase() || '';
       const mapped = ROLE_ALIASES[name];
+      if (mapped && !inferred.includes(mapped)) {
+        inferred.push(mapped as AppRole);
+      }
+    }
+
+    // Also check pivot role (group_user.role) — required when group names are neutral
+    // (e.g. group name = "Hisolution", pivot role = "admin" or "customer")
+    for (const g of groups) {
+      const pivotRole = (g as { role?: string | null }).role?.toLowerCase().trim();
+      if (!pivotRole) continue;
+      const mapped = ROLE_ALIASES[pivotRole];
       if (mapped && !inferred.includes(mapped)) {
         inferred.push(mapped as AppRole);
       }
