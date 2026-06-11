@@ -173,7 +173,7 @@ const ClientContactsDialog: React.FC<Props> = ({ open, onOpenChange, organizatio
       <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <UsersIcon className="w-5 h-5" /> Rubrica & Permessi — {organizationName}
+            <UsersIcon className="w-5 h-5" /> Rubrica — {organizationName}
           </DialogTitle>
           <DialogDescription>
             Gestisci la rubrica centralizzata. Per i contatti collegati a un account, abilita/disabilita visualizzazione,

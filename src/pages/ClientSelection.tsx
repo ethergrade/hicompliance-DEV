@@ -267,7 +267,7 @@ const ClientSelection: React.FC = () => {
                     </Button>
                     <Button variant="outline" size="sm" className="flex-1 text-xs min-w-[110px]" onClick={(e) => openContacts(e, org)}>
                       <ShieldCheck className="w-3.5 h-3.5 mr-1" />
-                      Rubrica & Permessi
+                      Rubrica
                     </Button>
                     {isSuperAdmin && (
                       <Button variant="outline" size="sm" className="flex-1 text-xs min-w-[110px]" onClick={(e) => openServices(e, org)}>
