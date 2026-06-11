@@ -419,11 +419,19 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
         }
         setSaveStatus('saving');
         try {
-          await tenantsApi.update(organizationId, formToPayload(data));
+          await tenantsApi.update(organizationId, formToPayload(data), groupId || '');
           setFieldErrors({});
           setSaveStatus('saved');
           setTimeout(() => setSaveStatus('idle'), 2000);
-        } catch {
+        } catch (err: any) {
+          // Log dettagliato per diagnostica (vedi errore salvataggio anagrafica)
+          // eslint-disable-next-line no-console
+          console.error('[ClientProfileSheet] save failed', {
+            status: err?.response?.status,
+            data: err?.response?.data,
+            message: err?.message,
+            payload: formToPayload(data),
+          });
           setSaveStatus('error');
         }
       }, 800);
@@ -518,11 +526,18 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
 
     setSaveStatus('saving');
     try {
-      await tenantsApi.update(organizationId, formToPayload(form));
+      await tenantsApi.update(organizationId, formToPayload(form), groupId || '');
       setFieldErrors({});
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
-    } catch {
+    } catch (err: any) {
+      // eslint-disable-next-line no-console
+      console.error('[ClientProfileSheet] manual save failed', {
+        status: err?.response?.status,
+        data: err?.response?.data,
+        message: err?.message,
+        payload: formToPayload(form),
+      });
       setSaveStatus('error');
     }
   };
