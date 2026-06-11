@@ -877,8 +877,26 @@ const Assessment: React.FC = () => {
                     ))}
                   </ul>
                   <p className="text-xs text-muted-foreground mt-3">
-                    Vai su <strong>Clienti → Apri scheda</strong> e compila i campi nella sezione “Rete” (dominio primario, subnet primaria, dominio secondario, subnet secondaria). I domini aggiuntivi (licenza estesa) sono opzionali.
+                    I domini aggiuntivi (licenza estesa) sono opzionali.
                   </p>
+                  <div className="mt-3">
+                    <Sheet>
+                      <SheetTrigger asChild>
+                        <Button variant="outline" size="sm" className="gap-1.5">
+                          <Pencil className="h-3.5 w-3.5" />
+                          Apri anagrafica
+                        </Button>
+                      </SheetTrigger>
+                      <SheetContent className="w-[500px] sm:max-w-[500px] overflow-y-auto">
+                        <SheetHeader>
+                          <SheetTitle>Anagrafica Azienda</SheetTitle>
+                        </SheetHeader>
+                        <div className="mt-4">
+                          <OrganizationProfileForm />
+                        </div>
+                      </SheetContent>
+                    </Sheet>
+                  </div>
                 </div>
               </div>
             </CardContent>
