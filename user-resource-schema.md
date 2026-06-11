@@ -1,0 +1,504 @@
+- generic [ref=e7]:
+  - generic [ref=e9]:
+    - heading "HiConsole" [level=4] [ref=e11]
+    - generic [ref=e14]:
+      - link "Overview" [ref=e15] [cursor=pointer]:
+        - /url: "#/"
+        - generic "Overview" [ref=e16]
+      - generic [ref=e18]: Endpoints
+      - generic "AcnFeeds" [ref=e19] [cursor=pointer]:
+        - generic [ref=e20]: AcnFeeds
+        - img [ref=e23]
+      - generic "AiCisoConversation" [ref=e25] [cursor=pointer]:
+        - generic [ref=e26]: AiCisoConversation
+        - img [ref=e29]
+      - generic "Assessment" [ref=e31] [cursor=pointer]:
+        - generic [ref=e32]: Assessment
+        - img [ref=e35]
+      - generic "AssessmentCatalog" [ref=e37] [cursor=pointer]:
+        - generic [ref=e38]: AssessmentCatalog
+        - img [ref=e41]
+      - generic "AssessmentResponse" [ref=e43] [cursor=pointer]:
+        - generic [ref=e44]: AssessmentResponse
+        - img [ref=e47]
+      - generic "AssessmentSnapshot" [ref=e49] [cursor=pointer]:
+        - generic [ref=e50]: AssessmentSnapshot
+        - img [ref=e53]
+      - generic "AssetInventory" [ref=e55] [cursor=pointer]:
+        - generic [ref=e56]: AssetInventory
+        - img [ref=e59]
+      - generic "AssetIrp" [ref=e61] [cursor=pointer]:
+        - generic [ref=e62]: AssetIrp
+        - img [ref=e65]
+      - generic "Auth" [ref=e67] [cursor=pointer]:
+        - generic [ref=e68]: Auth
+        - img [ref=e71]
+      - generic "ClientLifecycle" [ref=e73] [cursor=pointer]:
+        - generic [ref=e74]: ClientLifecycle
+        - img [ref=e77]
+      - generic "Company" [ref=e79] [cursor=pointer]:
+        - generic [ref=e80]: Company
+        - img [ref=e83]
+      - generic "CompanyProfile" [ref=e85] [cursor=pointer]:
+        - generic [ref=e86]: CompanyProfile
+        - img [ref=e89]
+      - generic "Config" [ref=e91] [cursor=pointer]:
+        - generic [ref=e92]: Config
+        - img [ref=e95]
+      - generic "Consistenze" [ref=e97] [cursor=pointer]:
+        - generic [ref=e98]: Consistenze
+        - img [ref=e101]
+      - generic "ContactDirectory" [ref=e103] [cursor=pointer]:
+        - generic [ref=e104]: ContactDirectory
+        - img [ref=e107]
+      - generic "CriticalInfrastructure" [ref=e109] [cursor=pointer]:
+        - generic [ref=e110]: CriticalInfrastructure
+        - img [ref=e113]
+      - generic "CsrfCookie" [ref=e115] [cursor=pointer]:
+        - generic [ref=e116]: CsrfCookie
+        - img [ref=e119]
+      - generic "DarkRiskAlert" [ref=e121] [cursor=pointer]:
+        - generic [ref=e122]: DarkRiskAlert
+        - img [ref=e125]
+      - generic "Darkrisk360ManualTarget" [ref=e127] [cursor=pointer]:
+        - generic [ref=e128]: Darkrisk360ManualTarget
+        - img [ref=e131]
+      - generic "Darkrisk360NotificationConfig" [ref=e133] [cursor=pointer]:
+        - generic [ref=e134]: Darkrisk360NotificationConfig
+        - img [ref=e137]
+      - generic "DarkriskAsset" [ref=e139] [cursor=pointer]:
+        - generic [ref=e140]: DarkriskAsset
+        - img [ref=e143]
+      - generic "DarkriskEvidenceReveal" [ref=e145] [cursor=pointer]:
+        - generic [ref=e146]: DarkriskEvidenceReveal
+        - img [ref=e149]
+      - generic "DarkriskFinding" [ref=e151] [cursor=pointer]:
+        - generic [ref=e152]: DarkriskFinding
+        - img [ref=e155]
+      - generic "DarkriskOverview" [ref=e157] [cursor=pointer]:
+        - generic [ref=e158]: DarkriskOverview
+        - img [ref=e161]
+      - generic "DarkriskReportSnapshot" [ref=e163] [cursor=pointer]:
+        - generic [ref=e164]: DarkriskReportSnapshot
+        - img [ref=e167]
+      - generic "DarkriskScanRun" [ref=e169] [cursor=pointer]:
+        - generic [ref=e170]: DarkriskScanRun
+        - img [ref=e173]
+      - generic "DarkriskSelector" [ref=e175] [cursor=pointer]:
+        - generic [ref=e176]: DarkriskSelector
+        - img [ref=e179]
+      - generic "EmergencyContact" [ref=e181] [cursor=pointer]:
+        - generic [ref=e182]: EmergencyContact
+        - img [ref=e185]
+      - generic "Group" [ref=e187] [cursor=pointer]:
+        - generic [ref=e188]: Group
+        - img [ref=e191]
+      - generic "HilogCorrelationReport" [ref=e193] [cursor=pointer]:
+        - generic [ref=e194]: HilogCorrelationReport
+        - img [ref=e197]
+      - generic "HipatchReport" [ref=e199] [cursor=pointer]:
+        - generic [ref=e200]: HipatchReport
+        - img [ref=e203]
+      - generic "HisolutionService" [ref=e205] [cursor=pointer]:
+        - generic [ref=e206]: HisolutionService
+        - img [ref=e209]
+      - generic "IncidentDocument" [ref=e211] [cursor=pointer]:
+        - generic [ref=e212]: IncidentDocument
+        - img [ref=e215]
+      - generic "IntegrationAuditLog" [ref=e217] [cursor=pointer]:
+        - generic [ref=e218]: IntegrationAuditLog
+        - img [ref=e221]
+      - generic "IrpDocument" [ref=e223] [cursor=pointer]:
+        - generic [ref=e224]: IrpDocument
+        - img [ref=e227]
+      - generic "IrpExport" [ref=e229] [cursor=pointer]:
+        - generic [ref=e230]: IrpExport
+        - img [ref=e233]
+      - generic "Mfa" [ref=e235] [cursor=pointer]:
+        - generic [ref=e236]: Mfa
+        - img [ref=e239]
+      - generic "NucleiScan360Job" [ref=e241] [cursor=pointer]:
+        - generic [ref=e242]: NucleiScan360Job
+        - img [ref=e245]
+      - generic "OrganizationIntegration" [ref=e247] [cursor=pointer]:
+        - generic [ref=e248]: OrganizationIntegration
+        - img [ref=e251]
+      - generic "PlaybookCompletion" [ref=e253] [cursor=pointer]:
+        - generic [ref=e254]: PlaybookCompletion
+        - img [ref=e257]
+      - generic "RemediationTask" [ref=e259] [cursor=pointer]:
+        - generic [ref=e260]: RemediationTask
+        - img [ref=e263]
+      - generic "RemediationTemplate" [ref=e265] [cursor=pointer]:
+        - generic [ref=e266]: RemediationTemplate
+        - img [ref=e269]
+      - generic "RiskAnalysis" [ref=e271] [cursor=pointer]:
+        - generic [ref=e272]: RiskAnalysis
+        - img [ref=e275]
+      - generic "RoleModulePermission" [ref=e277] [cursor=pointer]:
+        - generic [ref=e278]: RoleModulePermission
+        - img [ref=e281]
+      - generic "Site" [ref=e283] [cursor=pointer]:
+        - generic [ref=e284]: Site
+        - img [ref=e287]
+      - generic "SupplierDirectory" [ref=e289] [cursor=pointer]:
+        - generic [ref=e290]: SupplierDirectory
+        - img [ref=e293]
+      - generic "SurfaceAsset" [ref=e295] [cursor=pointer]:
+        - generic [ref=e296]: SurfaceAsset
+        - img [ref=e299]
+      - generic "SurfaceExposureFinding" [ref=e301] [cursor=pointer]:
+        - generic [ref=e302]: SurfaceExposureFinding
+        - img [ref=e305]
+      - generic "SurfaceExposureSummary" [ref=e307] [cursor=pointer]:
+        - generic [ref=e308]: SurfaceExposureSummary
+        - img [ref=e311]
+      - generic "SurfaceScanAiReport" [ref=e313] [cursor=pointer]:
+        - generic [ref=e314]: SurfaceScanAiReport
+        - img [ref=e317]
+      - generic "SurfaceScanAlert" [ref=e319] [cursor=pointer]:
+        - generic [ref=e320]: SurfaceScanAlert
+        - img [ref=e323]
+      - generic "SurfaceScanJob" [ref=e325] [cursor=pointer]:
+        - generic [ref=e326]: SurfaceScanJob
+        - img [ref=e329]
+      - generic "SurfaceScanMonitoredIp" [ref=e331] [cursor=pointer]:
+        - generic [ref=e332]: SurfaceScanMonitoredIp
+        - img [ref=e335]
+      - generic "TenantAssets" [ref=e337] [cursor=pointer]:
+        - generic [ref=e338]: TenantAssets
+        - img [ref=e341]
+      - generic "TenantService" [ref=e343] [cursor=pointer]:
+        - generic [ref=e344]: TenantService
+        - img [ref=e347]
+      - generic "User" [ref=e349] [cursor=pointer]:
+        - generic [ref=e350]: User
+        - img [ref=e353]
+      - generic "UserPreference" [ref=e355] [cursor=pointer]:
+        - generic [ref=e356]: UserPreference
+        - img [ref=e359]
+      - generic [ref=e361]: Schemas
+      - link "AiCisoConversationResource" [ref=e362] [cursor=pointer]:
+        - /url: "#/schemas/AiCisoConversationResource"
+        - generic "AiCisoConversationResource" [ref=e363]
+      - link "AssessmentCategoryResource" [ref=e367] [cursor=pointer]:
+        - /url: "#/schemas/AssessmentCategoryResource"
+        - generic "AssessmentCategoryResource" [ref=e368]
+      - link "AssessmentQuestionResource" [ref=e372] [cursor=pointer]:
+        - /url: "#/schemas/AssessmentQuestionResource"
+        - generic "AssessmentQuestionResource" [ref=e373]
+      - link "AssessmentResource" [ref=e377] [cursor=pointer]:
+        - /url: "#/schemas/AssessmentResource"
+        - generic "AssessmentResource" [ref=e378]
+      - link "AssessmentResponseResource" [ref=e382] [cursor=pointer]:
+        - /url: "#/schemas/AssessmentResponseResource"
+        - generic "AssessmentResponseResource" [ref=e383]
+      - link "AssessmentSnapshotResource" [ref=e387] [cursor=pointer]:
+        - /url: "#/schemas/AssessmentSnapshotResource"
+        - generic "AssessmentSnapshotResource" [ref=e388]
+      - link "AssetInventoryResource" [ref=e392] [cursor=pointer]:
+        - /url: "#/schemas/AssetInventoryResource"
+        - generic "AssetInventoryResource" [ref=e393]
+      - link "AssetIrpResource" [ref=e397] [cursor=pointer]:
+        - /url: "#/schemas/AssetIrpResource"
+        - generic "AssetIrpResource" [ref=e398]
+      - link "BatchUpdateAssessmentResponseRequest" [ref=e402] [cursor=pointer]:
+        - /url: "#/schemas/BatchUpdateAssessmentResponseRequest"
+        - generic "BatchUpdateAssessmentResponseRequest" [ref=e403]
+      - link "ChangePasswordRequest" [ref=e407] [cursor=pointer]:
+        - /url: "#/schemas/ChangePasswordRequest"
+        - generic "ChangePasswordRequest" [ref=e408]
+      - link "CompanyProfileResource" [ref=e412] [cursor=pointer]:
+        - /url: "#/schemas/CompanyProfileResource"
+        - generic "CompanyProfileResource" [ref=e413]
+      - link "CompanyResource" [ref=e417] [cursor=pointer]:
+        - /url: "#/schemas/CompanyResource"
+        - generic "CompanyResource" [ref=e418]
+      - link "ConsistenzaClienteResource" [ref=e422] [cursor=pointer]:
+        - /url: "#/schemas/ConsistenzaClienteResource"
+        - generic "ConsistenzaClienteResource" [ref=e423]
+      - link "ConsistenzaItemResource" [ref=e427] [cursor=pointer]:
+        - /url: "#/schemas/ConsistenzaItemResource"
+        - generic "ConsistenzaItemResource" [ref=e428]
+      - link "ContactDirectoryResource" [ref=e432] [cursor=pointer]:
+        - /url: "#/schemas/ContactDirectoryResource"
+        - generic "ContactDirectoryResource" [ref=e433]
+      - link "CriticalInfrastructureResource" [ref=e437] [cursor=pointer]:
+        - /url: "#/schemas/CriticalInfrastructureResource"
+        - generic "CriticalInfrastructureResource" [ref=e438]
+      - link "DarkRiskAlertResource" [ref=e442] [cursor=pointer]:
+        - /url: "#/schemas/DarkRiskAlertResource"
+        - generic "DarkRiskAlertResource" [ref=e443]
+      - link "Darkrisk360ManualTargetResource" [ref=e447] [cursor=pointer]:
+        - /url: "#/schemas/Darkrisk360ManualTargetResource"
+        - generic "Darkrisk360ManualTargetResource" [ref=e448]
+      - link "Darkrisk360WeeklySnapshot" [ref=e452] [cursor=pointer]:
+        - /url: "#/schemas/Darkrisk360WeeklySnapshot"
+        - generic "Darkrisk360WeeklySnapshot" [ref=e453]
+      - link "DarkriskAsset" [ref=e457] [cursor=pointer]:
+        - /url: "#/schemas/DarkriskAsset"
+        - generic "DarkriskAsset" [ref=e458]
+      - link "DarkriskFinding" [ref=e462] [cursor=pointer]:
+        - /url: "#/schemas/DarkriskFinding"
+        - generic "DarkriskFinding" [ref=e463]
+      - link "DarkriskFindingResource" [ref=e467] [cursor=pointer]:
+        - /url: "#/schemas/DarkriskFindingResource"
+        - generic "DarkriskFindingResource" [ref=e468]
+      - link "DarkriskReportSnapshotResource" [ref=e472] [cursor=pointer]:
+        - /url: "#/schemas/DarkriskReportSnapshotResource"
+        - generic "DarkriskReportSnapshotResource" [ref=e473]
+      - link "DarkriskScanRunResource" [ref=e477] [cursor=pointer]:
+        - /url: "#/schemas/DarkriskScanRunResource"
+        - generic "DarkriskScanRunResource" [ref=e478]
+      - link "DarkriskSelector" [ref=e482] [cursor=pointer]:
+        - /url: "#/schemas/DarkriskSelector"
+        - generic "DarkriskSelector" [ref=e483]
+      - link "EmergencyContactResource" [ref=e487] [cursor=pointer]:
+        - /url: "#/schemas/EmergencyContactResource"
+        - generic "EmergencyContactResource" [ref=e488]
+      - link "GroupResource" [ref=e492] [cursor=pointer]:
+        - /url: "#/schemas/GroupResource"
+        - generic "GroupResource" [ref=e493]
+      - link "HilogCorrelationReportResource" [ref=e497] [cursor=pointer]:
+        - /url: "#/schemas/HilogCorrelationReportResource"
+        - generic "HilogCorrelationReportResource" [ref=e498]
+      - link "HisolutionServiceResource" [ref=e502] [cursor=pointer]:
+        - /url: "#/schemas/HisolutionServiceResource"
+        - generic "HisolutionServiceResource" [ref=e503]
+      - link "IncidentDocumentResource" [ref=e507] [cursor=pointer]:
+        - /url: "#/schemas/IncidentDocumentResource"
+        - generic "IncidentDocumentResource" [ref=e508]
+      - link "IntegrationAuditLogResource" [ref=e512] [cursor=pointer]:
+        - /url: "#/schemas/IntegrationAuditLogResource"
+        - generic "IntegrationAuditLogResource" [ref=e513]
+      - link "IrpDocumentResource" [ref=e517] [cursor=pointer]:
+        - /url: "#/schemas/IrpDocumentResource"
+        - generic "IrpDocumentResource" [ref=e518]
+      - link "IrpHistoryResource" [ref=e522] [cursor=pointer]:
+        - /url: "#/schemas/IrpHistoryResource"
+        - generic "IrpHistoryResource" [ref=e523]
+      - link "LengthAwarePaginator" [ref=e527] [cursor=pointer]:
+        - /url: "#/schemas/LengthAwarePaginator"
+        - generic "LengthAwarePaginator" [ref=e528]
+      - link "LoginRequest" [ref=e532] [cursor=pointer]:
+        - /url: "#/schemas/LoginRequest"
+        - generic "LoginRequest" [ref=e533]
+      - link "NucleiScan360FindingResource" [ref=e537] [cursor=pointer]:
+        - /url: "#/schemas/NucleiScan360FindingResource"
+        - generic "NucleiScan360FindingResource" [ref=e538]
+      - link "NucleiScan360JobResource" [ref=e542] [cursor=pointer]:
+        - /url: "#/schemas/NucleiScan360JobResource"
+        - generic "NucleiScan360JobResource" [ref=e543]
+      - link "OrganizationIntegrationResource" [ref=e547] [cursor=pointer]:
+        - /url: "#/schemas/OrganizationIntegrationResource"
+        - generic "OrganizationIntegrationResource" [ref=e548]
+      - link "PlaybookCompletionResource" [ref=e552] [cursor=pointer]:
+        - /url: "#/schemas/PlaybookCompletionResource"
+        - generic "PlaybookCompletionResource" [ref=e553]
+      - link "RemediationTaskResource" [ref=e557] [cursor=pointer]:
+        - /url: "#/schemas/RemediationTaskResource"
+        - generic "RemediationTaskResource" [ref=e558]
+      - link "RemediationTemplateResource" [ref=e562] [cursor=pointer]:
+        - /url: "#/schemas/RemediationTemplateResource"
+        - generic "RemediationTemplateResource" [ref=e563]
+      - link "RiskAnalysisResource" [ref=e567] [cursor=pointer]:
+        - /url: "#/schemas/RiskAnalysisResource"
+        - generic "RiskAnalysisResource" [ref=e568]
+      - link "RoleModulePermissionResource" [ref=e572] [cursor=pointer]:
+        - /url: "#/schemas/RoleModulePermissionResource"
+        - generic "RoleModulePermissionResource" [ref=e573]
+      - link "SaveIrpDocumentRequest" [ref=e577] [cursor=pointer]:
+        - /url: "#/schemas/SaveIrpDocumentRequest"
+        - generic "SaveIrpDocumentRequest" [ref=e578]
+      - link "SiteResource" [ref=e582] [cursor=pointer]:
+        - /url: "#/schemas/SiteResource"
+        - generic "SiteResource" [ref=e583]
+      - link "StoreAiCisoConversationRequest" [ref=e587] [cursor=pointer]:
+        - /url: "#/schemas/StoreAiCisoConversationRequest"
+        - generic "StoreAiCisoConversationRequest" [ref=e588]
+      - link "StoreAssessmentRequest" [ref=e592] [cursor=pointer]:
+        - /url: "#/schemas/StoreAssessmentRequest"
+        - generic "StoreAssessmentRequest" [ref=e593]
+      - link "StoreCompanyRequest" [ref=e597] [cursor=pointer]:
+        - /url: "#/schemas/StoreCompanyRequest"
+        - generic "StoreCompanyRequest" [ref=e598]
+      - link "StoreConsistenzaItemRequest" [ref=e602] [cursor=pointer]:
+        - /url: "#/schemas/StoreConsistenzaItemRequest"
+        - generic "StoreConsistenzaItemRequest" [ref=e603]
+      - link "StoreContactDirectoryRequest" [ref=e607] [cursor=pointer]:
+        - /url: "#/schemas/StoreContactDirectoryRequest"
+        - generic "StoreContactDirectoryRequest" [ref=e608]
+      - link "StoreCriticalInfrastructureRequest" [ref=e612] [cursor=pointer]:
+        - /url: "#/schemas/StoreCriticalInfrastructureRequest"
+        - generic "StoreCriticalInfrastructureRequest" [ref=e613]
+      - link "StoreDarkRiskAlertRequest" [ref=e617] [cursor=pointer]:
+        - /url: "#/schemas/StoreDarkRiskAlertRequest"
+        - generic "StoreDarkRiskAlertRequest" [ref=e618]
+      - link "StoreDarkriskScanRunRequest" [ref=e622] [cursor=pointer]:
+        - /url: "#/schemas/StoreDarkriskScanRunRequest"
+        - generic "StoreDarkriskScanRunRequest" [ref=e623]
+      - link "StoreEmergencyContactRequest" [ref=e627] [cursor=pointer]:
+        - /url: "#/schemas/StoreEmergencyContactRequest"
+        - generic "StoreEmergencyContactRequest" [ref=e628]
+      - link "StoreGroupRequest" [ref=e632] [cursor=pointer]:
+        - /url: "#/schemas/StoreGroupRequest"
+        - generic "StoreGroupRequest" [ref=e633]
+      - link "StoreHilogCorrelationReportRequest" [ref=e637] [cursor=pointer]:
+        - /url: "#/schemas/StoreHilogCorrelationReportRequest"
+        - generic "StoreHilogCorrelationReportRequest" [ref=e638]
+      - link "StoreIncidentDocumentRequest" [ref=e642] [cursor=pointer]:
+        - /url: "#/schemas/StoreIncidentDocumentRequest"
+        - generic "StoreIncidentDocumentRequest" [ref=e643]
+      - link "StoreNucleiScan360JobRequest" [ref=e647] [cursor=pointer]:
+        - /url: "#/schemas/StoreNucleiScan360JobRequest"
+        - generic "StoreNucleiScan360JobRequest" [ref=e648]
+      - link "StoreOrganizationIntegrationRequest" [ref=e652] [cursor=pointer]:
+        - /url: "#/schemas/StoreOrganizationIntegrationRequest"
+        - generic "StoreOrganizationIntegrationRequest" [ref=e653]
+      - link "StorePlaybookCompletionRequest" [ref=e657] [cursor=pointer]:
+        - /url: "#/schemas/StorePlaybookCompletionRequest"
+        - generic "StorePlaybookCompletionRequest" [ref=e658]
+      - link "StoreRemediationTaskRequest" [ref=e662] [cursor=pointer]:
+        - /url: "#/schemas/StoreRemediationTaskRequest"
+        - generic "StoreRemediationTaskRequest" [ref=e663]
+      - link "StoreRiskAnalysisRequest" [ref=e667] [cursor=pointer]:
+        - /url: "#/schemas/StoreRiskAnalysisRequest"
+        - generic "StoreRiskAnalysisRequest" [ref=e668]
+      - link "StoreSiteRequest" [ref=e672] [cursor=pointer]:
+        - /url: "#/schemas/StoreSiteRequest"
+        - generic "StoreSiteRequest" [ref=e673]
+      - link "StoreSupplierDirectoryRequest" [ref=e677] [cursor=pointer]:
+        - /url: "#/schemas/StoreSupplierDirectoryRequest"
+        - generic "StoreSupplierDirectoryRequest" [ref=e678]
+      - link "StoreSurfaceScanAlertRequest" [ref=e682] [cursor=pointer]:
+        - /url: "#/schemas/StoreSurfaceScanAlertRequest"
+        - generic "StoreSurfaceScanAlertRequest" [ref=e683]
+      - link "StoreSurfaceScanJobRequest" [ref=e687] [cursor=pointer]:
+        - /url: "#/schemas/StoreSurfaceScanJobRequest"
+        - generic "StoreSurfaceScanJobRequest" [ref=e688]
+      - link "StoreTenantServiceRequest" [ref=e692] [cursor=pointer]:
+        - /url: "#/schemas/StoreTenantServiceRequest"
+        - generic "StoreTenantServiceRequest" [ref=e693]
+      - link "StoreUserRequest" [ref=e697] [cursor=pointer]:
+        - /url: "#/schemas/StoreUserRequest"
+        - generic "StoreUserRequest" [ref=e698]
+      - link "SupplierDirectoryResource" [ref=e702] [cursor=pointer]:
+        - /url: "#/schemas/SupplierDirectoryResource"
+        - generic "SupplierDirectoryResource" [ref=e703]
+      - link "SurfaceAsset" [ref=e707] [cursor=pointer]:
+        - /url: "#/schemas/SurfaceAsset"
+        - generic "SurfaceAsset" [ref=e708]
+      - link "SurfaceExposureFinding" [ref=e712] [cursor=pointer]:
+        - /url: "#/schemas/SurfaceExposureFinding"
+        - generic "SurfaceExposureFinding" [ref=e713]
+      - link "SurfaceFindingResource" [ref=e717] [cursor=pointer]:
+        - /url: "#/schemas/SurfaceFindingResource"
+        - generic "SurfaceFindingResource" [ref=e718]
+      - link "SurfaceScanAiReportResource" [ref=e722] [cursor=pointer]:
+        - /url: "#/schemas/SurfaceScanAiReportResource"
+        - generic "SurfaceScanAiReportResource" [ref=e723]
+      - link "SurfaceScanAlertResource" [ref=e727] [cursor=pointer]:
+        - /url: "#/schemas/SurfaceScanAlertResource"
+        - generic "SurfaceScanAlertResource" [ref=e728]
+      - link "SurfaceScanJobResource" [ref=e732] [cursor=pointer]:
+        - /url: "#/schemas/SurfaceScanJobResource"
+        - generic "SurfaceScanJobResource" [ref=e733]
+      - link "SurfaceScanMonitoredIp" [ref=e737] [cursor=pointer]:
+        - /url: "#/schemas/SurfaceScanMonitoredIp"
+        - generic "SurfaceScanMonitoredIp" [ref=e738]
+      - link "TenantServiceResource" [ref=e742] [cursor=pointer]:
+        - /url: "#/schemas/TenantServiceResource"
+        - generic "TenantServiceResource" [ref=e743]
+      - link "UpdateAiCisoConversationRequest" [ref=e747] [cursor=pointer]:
+        - /url: "#/schemas/UpdateAiCisoConversationRequest"
+        - generic "UpdateAiCisoConversationRequest" [ref=e748]
+      - link "UpdateAssessmentGanttRequest" [ref=e752] [cursor=pointer]:
+        - /url: "#/schemas/UpdateAssessmentGanttRequest"
+        - generic "UpdateAssessmentGanttRequest" [ref=e753]
+      - link "UpdateAssessmentRequest" [ref=e757] [cursor=pointer]:
+        - /url: "#/schemas/UpdateAssessmentRequest"
+        - generic "UpdateAssessmentRequest" [ref=e758]
+      - link "UpdateAssessmentResponseRequest" [ref=e762] [cursor=pointer]:
+        - /url: "#/schemas/UpdateAssessmentResponseRequest"
+        - generic "UpdateAssessmentResponseRequest" [ref=e763]
+      - link "UpdateAssetIrpRequest" [ref=e767] [cursor=pointer]:
+        - /url: "#/schemas/UpdateAssetIrpRequest"
+        - generic "UpdateAssetIrpRequest" [ref=e768]
+      - link "UpdateCompanyProfileRequest" [ref=e772] [cursor=pointer]:
+        - /url: "#/schemas/UpdateCompanyProfileRequest"
+        - generic "UpdateCompanyProfileRequest" [ref=e773]
+      - link "UpdateCompanyRequest" [ref=e777] [cursor=pointer]:
+        - /url: "#/schemas/UpdateCompanyRequest"
+        - generic "UpdateCompanyRequest" [ref=e778]
+      - link "UpdateConsistenzaItemRequest" [ref=e782] [cursor=pointer]:
+        - /url: "#/schemas/UpdateConsistenzaItemRequest"
+        - generic "UpdateConsistenzaItemRequest" [ref=e783]
+      - link "UpdateConsistenzaSummaryRequest" [ref=e787] [cursor=pointer]:
+        - /url: "#/schemas/UpdateConsistenzaSummaryRequest"
+        - generic "UpdateConsistenzaSummaryRequest" [ref=e788]
+      - link "UpdateContactDirectoryRequest" [ref=e792] [cursor=pointer]:
+        - /url: "#/schemas/UpdateContactDirectoryRequest"
+        - generic "UpdateContactDirectoryRequest" [ref=e793]
+      - link "UpdateCriticalInfrastructureRequest" [ref=e797] [cursor=pointer]:
+        - /url: "#/schemas/UpdateCriticalInfrastructureRequest"
+        - generic "UpdateCriticalInfrastructureRequest" [ref=e798]
+      - link "UpdateEmergencyContactRequest" [ref=e802] [cursor=pointer]:
+        - /url: "#/schemas/UpdateEmergencyContactRequest"
+        - generic "UpdateEmergencyContactRequest" [ref=e803]
+      - link "UpdateGroupRequest" [ref=e807] [cursor=pointer]:
+        - /url: "#/schemas/UpdateGroupRequest"
+        - generic "UpdateGroupRequest" [ref=e808]
+      - link "UpdateOrganizationIntegrationRequest" [ref=e812] [cursor=pointer]:
+        - /url: "#/schemas/UpdateOrganizationIntegrationRequest"
+        - generic "UpdateOrganizationIntegrationRequest" [ref=e813]
+      - link "UpdatePlaybookCompletionRequest" [ref=e817] [cursor=pointer]:
+        - /url: "#/schemas/UpdatePlaybookCompletionRequest"
+        - generic "UpdatePlaybookCompletionRequest" [ref=e818]
+      - link "UpdateRemediationTaskRequest" [ref=e822] [cursor=pointer]:
+        - /url: "#/schemas/UpdateRemediationTaskRequest"
+        - generic "UpdateRemediationTaskRequest" [ref=e823]
+      - link "UpdateRiskAnalysisRequest" [ref=e827] [cursor=pointer]:
+        - /url: "#/schemas/UpdateRiskAnalysisRequest"
+        - generic "UpdateRiskAnalysisRequest" [ref=e828]
+      - link "UpdateSiteRequest" [ref=e832] [cursor=pointer]:
+        - /url: "#/schemas/UpdateSiteRequest"
+        - generic "UpdateSiteRequest" [ref=e833]
+      - link "UpdateSupplierDirectoryRequest" [ref=e837] [cursor=pointer]:
+        - /url: "#/schemas/UpdateSupplierDirectoryRequest"
+        - generic "UpdateSupplierDirectoryRequest" [ref=e838]
+      - link "UpdateTenantServiceRequest" [ref=e842] [cursor=pointer]:
+        - /url: "#/schemas/UpdateTenantServiceRequest"
+        - generic "UpdateTenantServiceRequest" [ref=e843]
+      - link "UpdateUserRequest" [ref=e847] [cursor=pointer]:
+        - /url: "#/schemas/UpdateUserRequest"
+        - generic "UpdateUserRequest" [ref=e848]
+      - link "UpsertAssetInventoryRequest" [ref=e852] [cursor=pointer]:
+        - /url: "#/schemas/UpsertAssetInventoryRequest"
+        - generic "UpsertAssetInventoryRequest" [ref=e853]
+      - link "UserPreferenceResource" [ref=e857] [cursor=pointer]:
+        - /url: "#/schemas/UserPreferenceResource"
+        - generic "UserPreferenceResource" [ref=e858]
+      - link "UserResource" [ref=e862] [cursor=pointer]:
+        - /url: "#/schemas/UserResource"
+        - generic "UserResource" [ref=e863]
+    - link "powered by Stoplight" [ref=e867] [cursor=pointer]:
+      - /url: https://stoplight.io/?utm_source=elements&utm_medium=HiConsole&utm_campaign=powered_by&utm_content=/schemas/UserResource
+      - img [ref=e868]
+      - generic [ref=e870]:
+        - text: powered by
+        - strong [ref=e871]: Stoplight
+  - generic [ref=e901]:
+    - heading "UserResource" [level=1] [ref=e905]
+    - generic [ref=e906]:
+      - generic [ref=e912]:
+        - generic [ref=e915]
+        - generic [ref=e923]
+        - generic [ref=e931]
+        - generic [ref=e939]
+        - generic [ref=e947]
+        - generic [ref=e956]
+        - generic [ref=e961]
+        - generic [ref=e969]
+      - generic [ref=e976]:
+        - generic [ref=e977]
+        - 'group "{ \"id\": \"string\", \"name\": \"string\", \"email\": \"string\", \"is_active\": true, \"is_super_admin\": true, \"groups\": \"string\", \"mfa_configured\": true, \"created_at\": \"string\" }" [ref=e986]'

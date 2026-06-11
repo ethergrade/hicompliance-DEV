@@ -104,7 +104,7 @@ const Users = () => {
     })),
   });
 
-  // Mappa userId -> tenantIds (solo per utenti con fetch completato e andato a buon fine)
+  // Mappa userId -> tenantIds (solo per utenti con fetch completato)
   const userTenantsMap = useMemo(() => {
     const map: Record<string, string[]> = {};
     users.forEach((u, idx) => {
@@ -114,28 +114,16 @@ const Users = () => {
     return map;
   }, [users, tenantAssignmentsQueries]);
 
-  // Se almeno una query è in errore, l'API non è accessibile per l'utente loggato
-  // → disabilitiamo il filtro per evitare di nascondere utenti legittimi
-  const tenantFilterUnavailable = tenantAssignmentsQueries.some((q) => q.isError);
-
-  // Filtra per cliente (tenant) selezionato.
-  // Il concetto di "tenant assegnato" si applica SOLO ai ruoli restricted
-  // (customer/viewer/editor). Per gli altri ruoli (admin/manager/sales/
-  // super-admin/master) il filtro non ha senso: vanno sempre mostrati,
-  // anche se /users/{id}/tenants ritorna array vuoto.
   const tenantFilteredUsers = useMemo(() => {
     if (!organizationId) return users;
-    if (tenantFilterUnavailable) return users;
     return users.filter((u) => {
       const role = getPrimaryRole(u);
-      // Ruoli non limitati: mostra sempre, indipendentemente dai tenant assegnati
       if (!tenantRestrictedRoles.has(role)) return true;
       const tenantIds = userTenantsMap[String(u.id)];
-      // Se non ha ancora completato il fetch, non escluderlo (evita flicker)
       if (!tenantIds) return true;
       return tenantIds.includes(organizationId);
     });
-  }, [users, organizationId, userTenantsMap, tenantFilterUnavailable]);
+  }, [users, organizationId, userTenantsMap]);
 
   const tenantFilterLoading = tenantAssignmentsQueries.some((q) => q.isLoading);
 
@@ -293,11 +281,6 @@ const Users = () => {
             {organizationId && selectedOrganization && (
               <p className="text-xs text-muted-foreground mt-1">
                 Filtro attivo: utenti assegnati al cliente <strong>{selectedOrganization.name}</strong>
-                {tenantFilterUnavailable && (
-                  <span className="ml-2 text-amber-600 dark:text-amber-500">
-                    (non applicabile: l'API tenants non è accessibile per il tuo ruolo)
-                  </span>
-                )}
               </p>
             )}
           </div>
