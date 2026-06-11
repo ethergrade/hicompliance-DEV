@@ -91,7 +91,7 @@ const AdminCompanies: React.FC = () => {
       const q = searchQuery.toLowerCase();
       const matchesSearch =
         !q ||
-        t.name.toLowerCase().includes(q) ||
+        (t.name ?? '').toLowerCase().includes(q) ||
         (t.customer_code ?? '').toLowerCase().includes(q) ||
         (t.vat_number ?? '').toLowerCase().includes(q) ||
         (t.primary_domain ?? '').toLowerCase().includes(q);
