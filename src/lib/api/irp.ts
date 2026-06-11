@@ -153,12 +153,12 @@ export const irpApi = {
 
   /** Request a signed download URL for the IRP DOCX, then trigger download */
   async exportDocument(companyId: string, companyName: string, _g?: string | null): Promise<void> {
-    const res = await complianceApiClient.get<ApiResponse<{ download_url: string; expires_in: number }>>(
+    const res = await complianceApiClient.get<{ success: boolean; download_url: string; expires_in: number }>(
       `/companies/${companyId}/irp/export`,
       undefined,
       _h(companyId, _g)
     );
-    const url = res.data.download_url;
+    const url = res.download_url;
     if (!url) throw new Error('Nessun link di download ricevuto dal server');
     // Open the signed URL directly in a new tab — the URL is pre-signed
     // and valid for 2 minutes, so the browser can fetch it without a Bearer token.
