@@ -259,8 +259,12 @@ const Integrations = () => {
     createOrUpdateMutation.mutate(data);
   };
 
+  // Trello #41.4.8: only hipatch is currently offered to clients.
+  // Other services remain visible/editable in the integrations list below
+  // (so existing records can be deleted) but are excluded from the "add new"
+  // dropdown until they are officially supported.
   const availableServices = services.filter(
-    service => !integrations.some(integration =>
+    service => service.code === 'hipatch' && !integrations.some(integration =>
       integration.service_id === service.id || integration.service_code === service.code
     ) && !(service.code === 'hipatch' && existingHipatch)
   );
