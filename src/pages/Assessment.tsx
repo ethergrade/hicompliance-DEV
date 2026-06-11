@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import { OrganizationProfileForm } from '@/components/irp/OrganizationProfileForm';
+import { ClientProfileSheet } from '@/components/clients/ClientProfileSheet';
 import { Pencil } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -200,6 +199,8 @@ const Assessment: React.FC = () => {
   const [v2Categories, setV2Categories] = useState<UICategory[]>([]);
   const [indexToUuid, setIndexToUuid] = useState<Record<number, string>>({});
   const [isUsingFallbackData, setIsUsingFallbackData] = useState(false);
+  const [configSheetOpen, setConfigSheetOpen] = useState(false);
+  const [anagraficaOpen, setAnagraficaOpen] = useState(false);
   const [v1AssessmentId, setV1AssessmentId] = useState<string | null>(null);
   const categoriesLoaded = useRef(false);
   const guidedOrgRef = useRef<string | null>(null);
@@ -832,22 +833,17 @@ const Assessment: React.FC = () => {
                       <span className="text-sm">NIS2 non impostata</span>
                     </div>
                   )}
-                  <Sheet>
-                    <SheetTrigger asChild>
-                      <Button variant="outline" size="sm" className="gap-1.5">
-                        <Pencil className="h-3.5 w-3.5" />
-                        Configura
-                      </Button>
-                    </SheetTrigger>
-                    <SheetContent className="w-[500px] sm:max-w-[500px] overflow-y-auto">
-                      <SheetHeader>
-                        <SheetTitle>Anagrafica Azienda</SheetTitle>
-                      </SheetHeader>
-                      <div className="mt-4">
-                        <OrganizationProfileForm />
-                      </div>
-                    </SheetContent>
-                  </Sheet>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setConfigSheetOpen(true)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                    Configura
+                  </Button>
+                  <ClientProfileSheet
+                    organizationId={organizationId ?? null}
+                    organizationName={selectedOrganization?.name}
+                    groupId={groupId}
+                    open={configSheetOpen}
+                    onOpenChange={setConfigSheetOpen}
+                  />
                 </div>
               </div>
             </CardContent>
@@ -880,22 +876,17 @@ const Assessment: React.FC = () => {
                     I domini aggiuntivi (licenza estesa) sono opzionali.
                   </p>
                   <div className="mt-3">
-                    <Sheet>
-                      <SheetTrigger asChild>
-                        <Button variant="outline" size="sm" className="gap-1.5">
-                          <Pencil className="h-3.5 w-3.5" />
-                          Apri anagrafica
-                        </Button>
-                      </SheetTrigger>
-                      <SheetContent className="w-[500px] sm:max-w-[500px] overflow-y-auto">
-                        <SheetHeader>
-                          <SheetTitle>Anagrafica Azienda</SheetTitle>
-                        </SheetHeader>
-                        <div className="mt-4">
-                          <OrganizationProfileForm />
-                        </div>
-                      </SheetContent>
-                    </Sheet>
+                    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setAnagraficaOpen(true)}>
+                      <Pencil className="h-3.5 w-3.5" />
+                      Apri anagrafica
+                    </Button>
+                    <ClientProfileSheet
+                      organizationId={organizationId ?? null}
+                      organizationName={selectedOrganization?.name}
+                      groupId={groupId}
+                      open={anagraficaOpen}
+                      onOpenChange={setAnagraficaOpen}
+                    />
                   </div>
                 </div>
               </div>
