@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { ClientProfileSheet } from '@/components/clients/ClientProfileSheet';
+import ClientProfileSheet from '@/components/clients/ClientProfileSheet';
 import { Pencil } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/components/auth/AuthProvider';
