@@ -143,7 +143,9 @@ const Users = () => {
       const tenantIds = userTenantsMap[String(u.id)];
       // Tenant data not yet loaded — don't filter out
       if (!tenantIds) return true;
-      // Restricted users must be assigned to the current tenant
+      // No tenants assigned yet — still visible (need to be configured)
+      if (tenantIds.length === 0) return true;
+      // Has tenants — show only if current org is in the list
       return tenantIds.includes(organizationId);
     });
     if (import.meta.env.DEV) {
