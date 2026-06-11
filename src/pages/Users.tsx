@@ -118,11 +118,18 @@ const Users = () => {
   // → disabilitiamo il filtro per evitare di nascondere utenti legittimi
   const tenantFilterUnavailable = tenantAssignmentsQueries.some((q) => q.isError);
 
-  // Filtra per cliente (tenant) selezionato
+  // Filtra per cliente (tenant) selezionato.
+  // Il concetto di "tenant assegnato" si applica SOLO ai ruoli restricted
+  // (customer/viewer/editor). Per gli altri ruoli (admin/manager/sales/
+  // super-admin/master) il filtro non ha senso: vanno sempre mostrati,
+  // anche se /users/{id}/tenants ritorna array vuoto.
   const tenantFilteredUsers = useMemo(() => {
     if (!organizationId) return users;
     if (tenantFilterUnavailable) return users;
     return users.filter((u) => {
+      const role = getPrimaryRole(u);
+      // Ruoli non limitati: mostra sempre, indipendentemente dai tenant assegnati
+      if (!tenantRestrictedRoles.has(role)) return true;
       const tenantIds = userTenantsMap[String(u.id)];
       // Se non ha ancora completato il fetch, non escluderlo (evita flicker)
       if (!tenantIds) return true;
