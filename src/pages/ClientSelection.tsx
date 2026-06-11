@@ -52,7 +52,7 @@ const ClientSelection: React.FC = () => {
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase();
     return (org.name ?? '').toLowerCase().includes(query) || (org.code ?? '').toLowerCase().includes(query);
-  });
+  }).sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', 'it', { sensitivity: 'base' }));
 
   const handleSelectClient = (org: typeof organizations[0]) => {
     setSelectedOrganization(org);
