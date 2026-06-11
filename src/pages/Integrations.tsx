@@ -111,6 +111,16 @@ const Integrations = () => {
 
   const existingHipatch = hipatchServices.length > 0 ? hipatchServices[0] : null;
 
+  // Conteggio integrazioni ATTIVE (includono HiPatch esistente anche con status null
+  // perché HiPatch senza status è considerato attivo per retrocompatibilità).
+  // La card "Nessuna integrazione configurata" si mostra SOLO se non ce n'è
+  // nemmeno una attiva.
+  const hasActiveIntegration = useMemo(() => {
+    const activeFromIntegrations = integrations.some((i) => i.is_active === true);
+    const activeFromHipatch = hipatchServices.some((s: any) => s.status === 'active' || !s.status);
+    return activeFromIntegrations || activeFromHipatch;
+  }, [integrations, hipatchServices]);
+
   const createOrUpdateMutation = useMutation({
     mutationFn: async (data: IntegrationFormData) => {
       if (!organizationId) throw new Error('Nessuna organizzazione selezionata');
@@ -635,7 +645,7 @@ const Integrations = () => {
           })}
         </div>
 
-        {integrations.length === 0 && (
+        {!hasActiveIntegration && (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12">
               <Settings className="w-12 h-12 text-muted-foreground mb-4" />
