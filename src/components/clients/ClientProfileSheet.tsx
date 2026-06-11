@@ -309,15 +309,15 @@ const ChipSelect: React.FC<ChipSelectProps> = ({ label, options, value, onChange
     ? Array.isArray(value) ? value : []
     : (typeof value === 'string' ? [value] : []);
 
-  const toggle = (optValue: string) => {
+  const toggle = (optLabel: string) => {
     if (multi) {
-      const next = selected.includes(optValue)
-        ? selected.filter((v) => v !== optValue)
-        : [...selected, optValue];
+      const next = selected.includes(optLabel)
+        ? selected.filter((v) => v !== optLabel)
+        : [...selected, optLabel];
       onChange(next);
     } else {
       // single: click again to deselect
-      onChange(selected.includes(optValue) ? '' : optValue);
+      onChange(selected.includes(optLabel) ? '' : optLabel);
     }
   };
 
@@ -326,12 +326,14 @@ const ChipSelect: React.FC<ChipSelectProps> = ({ label, options, value, onChange
       <Label className="text-sm">{label}</Label>
       <div className="flex flex-wrap gap-1.5">
         {options.map((opt) => {
-          const isSelected = selected.includes(opt.value);
+          // Match by label (not by code/value) so the form state matches
+          // the human-readable text on the chip and the backend mappers work.
+          const isSelected = selected.includes(opt.label);
           return (
             <button
               key={opt.value}
               type="button"
-              onClick={() => toggle(opt.value)}
+              onClick={() => toggle(opt.label)}
               className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
                 isSelected
                   ? 'bg-primary text-primary-foreground border-primary'
