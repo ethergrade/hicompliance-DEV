@@ -236,6 +236,9 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     onSuccess: () => {
       refetchServices();
       queryClient.invalidateQueries({ queryKey: ['sidebar-org-flags'] });
+      // Also refresh the dashboard's `useServiceIntegrations` so the service tile
+      // appears/disappears in realtime when toggled (no manual refresh required).
+      queryClient.invalidateQueries({ queryKey: ['service-integrations', organizationId, groupId] });
       toast.success('Configurazione aggiornata');
     },
     onError: (err: Error) => toast.error(`Errore: ${getErrorDetail(err)}`),
@@ -257,6 +260,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     },
     onSuccess: () => {
       refetchServices();
+      queryClient.invalidateQueries({ queryKey: ['service-integrations', organizationId, groupId] });
       toast.success('Tier DarkRisk360 aggiornato');
     },
     onError: (err: Error) => toast.error(`Errore tier DarkRisk360: ${getErrorDetail(err)}`),
@@ -277,6 +281,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     },
     onSuccess: () => {
       refetchServices();
+      queryClient.invalidateQueries({ queryKey: ['service-integrations', organizationId, groupId] });
       toast.success('Dettagli contratto aggiornati');
     },
     onError: (err: Error) => toast.error(`Errore contratto: ${getErrorDetail(err)}`),
@@ -321,6 +326,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     },
     onSuccess: () => {
       refetchServices();
+      queryClient.invalidateQueries({ queryKey: ['service-integrations', organizationId, groupId] });
       toast.success('Servizio collegato con successo');
       setConnectingService(null);
       setApiUrl('');
@@ -335,6 +341,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     },
     onSuccess: () => {
       refetchServices();
+      queryClient.invalidateQueries({ queryKey: ['service-integrations', organizationId, groupId] });
       toast.success('Servizio scollegato');
     },
     onError: (err: Error) => toast.error(`Errore: ${getErrorDetail(err)}`),
