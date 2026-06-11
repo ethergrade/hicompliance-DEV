@@ -54,6 +54,32 @@ interface ProfileFormData {
 }
 
 const INITIAL: ProfileFormData = {
+
+  // ─── Revenue shorthand parser/formatter ───
+// Supports: 1.5M → 1500000, 500K → 500000, 2.5B → 2500000000
+const REVENUE_SUFFIXES: Record<string, number> = { k: 1e3, m: 1e6, b: 1e9 };
+
+const parseRevenue = (v: string): number | null => {
+  if (!v.trim()) return null;
+  const match = v.trim().toLowerCase().match(/^([\d,.]+)\s*([kmb])?$/);
+  if (!match) return Number(v) || null;
+  const num = parseFloat(match[1].replace(/,/g, ''));
+  const suffix = match[2];
+  if (isNaN(num)) return null;
+  return suffix ? num * (REVENUE_SUFFIXES[suffix] ?? 1) : num;
+};
+
+const formatRevenue = (v: number | string | null | undefined): string => {
+  if (v == null || v === '') return '';
+  const n = typeof v === 'string' ? parseFloat(v) : v;
+  if (isNaN(n)) return String(v);
+  if (n >= 1e9) return `${+(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `${+(n / 1e6).toFixed(2)}M`;
+  if (n >= 1e3) return `${+(n / 1e3).toFixed(2)}K`;
+  return String(n);
+};
+
+const INITIAL: ProfileFormData = {
   legal_name: '',
   vat_number: '',
   fiscal_code: '',
@@ -96,7 +122,7 @@ const resourceToForm = (data: TenantResource): ProfileFormData => ({
   primary_subnet: data.primary_subnet || '',
   secondary_domain: data.secondary_domain || '',
   secondary_subnet: data.secondary_subnet || '',
-  revenue: data.revenue ?? '',
+  revenue: formatRevenue(data.revenue),
   employees_count: data.employees_count ?? '',
   industry: data.industry ?? '',
   customer_sectors: data.customer_sectors ?? [],
@@ -143,7 +169,7 @@ const formToPayload = (data: ProfileFormData): UpdateTenantRequest => ({
   primary_subnet: data.primary_subnet || null,
   secondary_domain: data.secondary_domain || null,
   secondary_subnet: data.secondary_subnet || null,
-  revenue: data.revenue ? Number(data.revenue) || null : null,
+  revenue: parseRevenue(data.revenue),
   employees_count: data.employees_count ? parseInt(data.employees_count, 10) || null : null,
   customer_sectors: data.customer_sectors,
   implemented_technologies: data.implemented_technologies,
