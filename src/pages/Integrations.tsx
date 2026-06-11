@@ -203,6 +203,20 @@ const Integrations = () => {
     },
   });
 
+  const openHipatchDialog = () => {
+    const hpCatalog = services.find(s => s.code === 'hipatch');
+    const integrationLike = {
+      id: existingHipatch?.id ?? '',
+      organization_id: organizationId ?? '',
+      service_id: hpCatalog?.id ?? 'hipatch',
+      service_code: 'hipatch',
+      service_name: 'HiPatch',
+      api_url: '',
+      is_active: existingHipatch?.status === 'active',
+    } as IntegrationResource;
+    openDialog(integrationLike);
+  };
+
   const openDialog = (integration?: IntegrationResource) => {
     if (integration) {
       setSelectedIntegration(integration);
@@ -501,6 +515,62 @@ const Integrations = () => {
         </div>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {/* HiPatch integrations live in tenant_services (not organization_integrations).
+              Render them here so users see + can edit/delete their saved hipatch config. */}
+          {hipatchServices.map((hp) => {
+            const hpSettings = (hp as any).settings || {};
+            const tokenSet = !!hpSettings.connectsecure_client_auth_token;
+            const podSet = !!hpSettings.connectsecure_pod;
+            return (
+              <Card key={`hipatch-${hp.id}`} className="relative">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <Shield className="w-4 h-4" />
+                    HiPatch
+                  </CardTitle>
+                  <Badge variant={hp.status === 'active' ? 'default' : 'secondary'}>
+                    {hp.status === 'active' ? 'Attiva' : 'Inattiva'}
+                  </Badge>
+                </CardHeader>
+                <CardContent>
+                  <CardDescription className="mb-3">
+                    Configurazione servizio HiPatch (tenant-service)
+                  </CardDescription>
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <Label className="text-xs text-muted-foreground">ConnectSecure Company ID</Label>
+                      <p className="font-mono text-xs bg-muted p-1 rounded truncate">
+                        {hpSettings.connectsecure_company_id || <span className="text-muted-foreground italic">non impostato</span>}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">ConnectSecure Client Auth Token</Label>
+                      <p className="font-mono text-xs bg-muted p-1 rounded truncate">
+                        {tokenSet ? '••••••••' : <span className="text-muted-foreground italic">non impostato</span>}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">ConnectSecure Pod</Label>
+                      <p className="font-mono text-xs bg-muted p-1 rounded truncate">
+                        {podSet ? hpSettings.connectsecure_pod : <span className="text-muted-foreground italic">non impostato</span>}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={openHipatchDialog}
+                    >
+                      <Settings className="w-4 h-4 mr-2" /> Configura
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+
           {integrations.map((integration) => {
             const service = getServiceMeta(integration);
             const IconComponent = iconMap[service?.icon || ''] || Settings;
