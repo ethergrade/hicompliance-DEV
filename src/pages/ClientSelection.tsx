@@ -51,7 +51,7 @@ const ClientSelection: React.FC = () => {
   const filteredOrganizations = organizations.filter(org => {
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase();
-    return org.name.toLowerCase().includes(query) || org.code.toLowerCase().includes(query);
+    return (org.name ?? '').toLowerCase().includes(query) || (org.code ?? '').toLowerCase().includes(query);
   });
 
   const handleSelectClient = (org: typeof organizations[0]) => {
