@@ -291,7 +291,7 @@ const Users = () => {
     } else {
       setSelectedUser(null);
       form.reset({ email: "", name: "", role: roleOptions[0] ?? "viewer", password: "" });
-      setCreateTenantIds([]);
+      setCreateTenantIds(organizationId ? [organizationId] : []);
     }
     setIsDialogOpen(true);
   };
