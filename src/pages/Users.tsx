@@ -29,9 +29,10 @@ interface UserFormData {
 const fallbackRoles = ["admin", "viewer", "sales", "customer"];
 const tenantRestrictedRoles = new Set(["customer", "viewer", "editor"]);
 
-const getPrimaryRole = (user: UserResource) => user.roles?.[0] ?? "viewer";
+const getPrimaryRole = (user: UserResource) => user.roles?.[0] ?? null;
 
-const getRoleLabel = (role: string) => {
+const getRoleLabel = (role: string | null) => {
+  if (!role) return "N/A";
   const labels: Record<string, string> = {
     "super-admin": "Super Admin",
     master: "Master",
@@ -49,7 +50,8 @@ const getRoleLabel = (role: string) => {
   return labels[role] ?? role;
 };
 
-const getRoleVariant = (role: string): "default" | "destructive" | "secondary" | "outline" => {
+const getRoleVariant = (role: string | null): "default" | "destructive" | "secondary" | "outline" => {
+  if (!role) return "outline";
   if (role === "super-admin" || role === "super_admin" || role === "superadmin" || role === "master" || role === "admin") return "destructive";
   if (role === "manager" || role === "sales" || role === "editor") return "secondary";
   return "default";
@@ -118,7 +120,8 @@ const Users = () => {
     if (!organizationId) return users;
     return users.filter((u) => {
       const role = getPrimaryRole(u);
-      if (!tenantRestrictedRoles.has(role)) return true;
+      // No role = unrestricted (shouldn't happen but don't hide users)
+      if (!role || !tenantRestrictedRoles.has(role)) return true;
       const tenantIds = userTenantsMap[String(u.id)];
       if (!tenantIds) return true;
       return tenantIds.includes(organizationId);
@@ -240,7 +243,7 @@ const Users = () => {
   const openDialog = (user?: UserResource) => {
     if (user) {
       setSelectedUser(user);
-      form.reset({ email: user.email, name: user.name, role: getPrimaryRole(user), password: "" });
+      form.reset({ email: user.email, name: user.name, role: getPrimaryRole(user) ?? 'viewer', password: "" });
     } else {
       setSelectedUser(null);
       form.reset({ email: "", name: "", role: roleOptions[0] ?? "viewer", password: "" });
