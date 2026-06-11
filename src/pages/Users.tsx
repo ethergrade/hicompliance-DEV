@@ -29,7 +29,18 @@ interface UserFormData {
 const fallbackRoles = ["admin", "viewer", "sales", "customer"];
 const tenantRestrictedRoles = new Set(["customer", "viewer", "editor"]);
 
-const getPrimaryRole = (user: UserResource) => user.roles?.[0] ?? null;
+const getPrimaryRole = (user: UserResource, groupId?: string | null) => {
+  // Prefer group pivot role — it's scoped to the current group
+  if (groupId && user.groups?.length) {
+    const group = user.groups.find(g => g.id === groupId);
+    if (group?.role) return group.role;
+  }
+  // Fallback to group[0] if no groupId specified
+  if (!groupId && user.groups?.length) return user.groups[0].role;
+  // Then Spatie roles
+  if (user.roles?.length) return user.roles[0];
+  return null;
+};
 
 const getRoleLabel = (role: string | null) => {
   if (!role) return "N/A";
@@ -126,7 +137,7 @@ const Users = () => {
   const tenantFilteredUsers = useMemo(() => {
     if (!organizationId) return users;
     const filtered = users.filter((u) => {
-      const role = getPrimaryRole(u);
+      const role = getPrimaryRole(u, groupId);
       if (!role || !tenantRestrictedRoles.has(role)) return true;
       const tenantIds = userTenantsMap[String(u.id)];
       if (!tenantIds) return true;
@@ -137,7 +148,7 @@ const Users = () => {
         organizationId,
         total: users.length,
         filtered: filtered.length,
-        restricted: users.filter(u => tenantRestrictedRoles.has(getPrimaryRole(u) ?? '')).length,
+        restricted: users.filter(u => tenantRestrictedRoles.has(getPrimaryRole(u, groupId) ?? '')).length,
         mapKeys: Object.keys(userTenantsMap).length,
         sampleUsers: users.slice(0, 3).map(u => ({ id: u.id, name: u.name, roles: u.roles, groups: u.groups })),
         sampleTenants: Object.fromEntries(Object.entries(userTenantsMap).slice(0, 3)),
@@ -261,7 +272,7 @@ const Users = () => {
   const openDialog = (user?: UserResource) => {
     if (user) {
       setSelectedUser(user);
-      form.reset({ email: user.email, name: user.name, role: getPrimaryRole(user) ?? 'viewer', password: "" });
+      form.reset({ email: user.email, name: user.name, role: getPrimaryRole(user, groupId) ?? 'viewer', password: "" });
     } else {
       setSelectedUser(null);
       form.reset({ email: "", name: "", role: roleOptions[0] ?? "viewer", password: "" });
@@ -471,7 +482,7 @@ const Users = () => {
                 </TableHeader>
                 <TableBody>
                   {searchedUsers.map((user) => {
-                    const role = getPrimaryRole(user);
+                    const role = getPrimaryRole(user, groupId);
                     const canAssignTenants = tenantRestrictedRoles.has(role);
                     return (
                       <TableRow key={user.id}>
