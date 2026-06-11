@@ -448,9 +448,6 @@ const Users = () => {
                       </ScrollArea>
                     </div>
                   )}
-                  <p className="text-xs text-muted-foreground">
-                    L'utente verrà creato nel gruppo corrente{selectedOrganization?.name ? ` (${selectedOrganization.name})` : ''}.
-                  </p>
                   <DialogFooter>
                     <Button type="submit" disabled={createUserMutation.isPending || updateUserMutation.isPending}>
                       {createUserMutation.isPending || updateUserMutation.isPending ? 'Salvando...' : selectedUser ? 'Aggiorna' : 'Crea'}
