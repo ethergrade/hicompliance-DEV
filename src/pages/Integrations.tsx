@@ -50,6 +50,8 @@ const Integrations = () => {
   // HiPatch-specific form state
   const [hipatchFields, setHipatchFields] = useState({
     connectsecure_company_id: '',
+    connectsecure_client_auth_token: '',
+    connectsecure_pod: '',
     ninjaone_organization_id: '',
     ninjaone_organization_id_client: '',
     ninjaone_organization_secret: '',
@@ -117,6 +119,8 @@ const Integrations = () => {
         // HiPatch → usa tenant-services API con settings
         const settings = {
           connectsecure_company_id: hipatchFields.connectsecure_company_id,
+          connectsecure_client_auth_token: hipatchFields.connectsecure_client_auth_token,
+          connectsecure_pod: hipatchFields.connectsecure_pod,
           ninjaone_organization_id: hipatchFields.ninjaone_organization_id,
           ninjaone_organization_id_client: hipatchFields.ninjaone_organization_id_client,
           ninjaone_organization_secret: hipatchFields.ninjaone_organization_secret,
@@ -214,6 +218,8 @@ const Integrations = () => {
         const settings = existingHipatch?.settings ?? {};
         setHipatchFields({
           connectsecure_company_id: String((settings as any).connectsecure_company_id ?? ''),
+          connectsecure_client_auth_token: String((settings as any).connectsecure_client_auth_token ?? ''),
+          connectsecure_pod: String((settings as any).connectsecure_pod ?? ''),
           ninjaone_organization_id: String((settings as any).ninjaone_organization_id ?? ''),
           ninjaone_organization_id_client: String((settings as any).ninjaone_organization_id_client ?? ''),
           ninjaone_organization_secret: String((settings as any).ninjaone_organization_secret ?? ''),
@@ -221,6 +227,8 @@ const Integrations = () => {
       } else {
         setHipatchFields({
           connectsecure_company_id: '',
+          connectsecure_client_auth_token: '',
+          connectsecure_pod: '',
           ninjaone_organization_id: '',
           ninjaone_organization_id_client: '',
           ninjaone_organization_secret: '',
@@ -237,6 +245,8 @@ const Integrations = () => {
       });
       setHipatchFields({
         connectsecure_company_id: '',
+        connectsecure_client_auth_token: '',
+        connectsecure_pod: '',
         ninjaone_organization_id: '',
         ninjaone_organization_id_client: '',
         ninjaone_organization_secret: '',
@@ -402,6 +412,27 @@ const Integrations = () => {
                             value={hipatchFields.connectsecure_company_id}
                             onChange={(e) => setHipatchFields(prev => ({ ...prev, connectsecure_company_id: e.target.value }))}
                             placeholder="ID cliente su ConnectSecure"
+                          />
+                        </FormControl>
+                      </FormItem>
+                      <FormItem>
+                        <FormLabel>ConnectSecure Client Auth Token</FormLabel>
+                        <FormControl>
+                          <Input
+                            value={hipatchFields.connectsecure_client_auth_token}
+                            onChange={(e) => setHipatchFields(prev => ({ ...prev, connectsecure_client_auth_token: e.target.value }))}
+                            placeholder="Token di autenticazione client ConnectSecure (opzionale)"
+                            type="password"
+                          />
+                        </FormControl>
+                      </FormItem>
+                      <FormItem>
+                        <FormLabel>ConnectSecure Pod (URL)</FormLabel>
+                        <FormControl>
+                          <Input
+                            value={hipatchFields.connectsecure_pod}
+                            onChange={(e) => setHipatchFields(prev => ({ ...prev, connectsecure_pod: e.target.value }))}
+                            placeholder="URL del pod ConnectSecure (opzionale)"
                           />
                         </FormControl>
                       </FormItem>
