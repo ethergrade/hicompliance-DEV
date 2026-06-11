@@ -120,8 +120,24 @@ const resourceToForm = (data: TenantResource): ProfileFormData => ({
   primary_subnet: data.primary_subnet || '',
   secondary_domain: data.secondary_domain || '',
   secondary_subnet: data.secondary_subnet || '',
-  revenue: formatRevenue(data.revenue),
-  employees_count: data.employees_count ?? '',
+  revenue: (() => {
+    // Se è giá una stringa-label (es. "meno di €1M" o un vecchio shorthand "1.5M"),
+    // mostriamo direttamente; altrimenti mappiamo dal numeric value salvato.
+    const asNum = typeof data.revenue === 'number' ? data.revenue : parseFloat(data.revenue as any);
+    if (!isNaN(asNum) && asNum > 0) {
+      const m = findRevenueByNumeric(asNum);
+      if (m) return m.label;
+    }
+    return formatRevenue(data.revenue);
+  })(),
+  employees_count: (() => {
+    const asNum = typeof data.employees_count === 'number' ? data.employees_count : parseInt(data.employees_count as any, 10);
+    if (!isNaN(asNum) && asNum > 0) {
+      const m = findEmployeesByNumeric(asNum);
+      if (m) return m.label;
+    }
+    return data.employees_count ?? '';
+  })(),
   industry: data.industry ?? '',
   customer_sectors: data.customer_sectors ?? [],
   implemented_technologies: data.implemented_technologies ?? [],
@@ -167,8 +183,24 @@ const formToPayload = (data: ProfileFormData): UpdateTenantRequest => ({
   primary_subnet: data.primary_subnet || null,
   secondary_domain: data.secondary_domain || null,
   secondary_subnet: data.secondary_subnet || null,
-  revenue: parseRevenue(data.revenue),
-  employees_count: data.employees_count ? parseInt(data.employees_count, 10) || null : null,
+  // revenue è un chip-label nel form; al submit inviamo il numericValue associato
+  // (oppure null se il chip è stato deselezionato / il valore non è riconoscibile)
+  revenue: (() => {
+    const m = findRevenueByLabel(data.revenue);
+    if (m) return m.numericValue;
+    // fallback: se il valore è ancora un numeric (record legacy) o shorthand, parsalo
+    const parsed = parseRevenue(data.revenue);
+    return parsed;
+  })(),
+  employees_count: (() => {
+    const m = findEmployeesByLabel(data.employees_count);
+    if (m) return m.numericValue;
+    // fallback per valori legacy o numerici diretti
+    const s = (data.employees_count ?? '').toString().trim();
+    if (!s) return null;
+    const n = parseInt(s, 10);
+    return isNaN(n) ? null : n;
+  })(),
   customer_sectors: data.customer_sectors,
   implemented_technologies: data.implemented_technologies,
   extra: {
@@ -191,6 +223,134 @@ const NIS2_OPTIONS = [
   { value: 'soggetto_importante', label: 'Soggetto Importante' },
   { value: 'nessuna', label: 'Nessuna' },
 ];
+
+// ─── Anagrafica chip-based catalog (matches backend hiconsole anagrafica form) ───
+// Fatturato (revenue) — chip con range. Il backend valida `numeric`, quindi al submit
+// inviamo il valore numerico rappresentativo del bucket, non la stringa-label.
+const REVENUE_OPTIONS: { value: string; label: string; numericValue: number | null }[] = [
+  { value: 'lt_1m', label: 'meno di €1M', numericValue: 1000000 },
+  { value: '1m_5m', label: '€1M - €5M', numericValue: 3000000 },
+  { value: '5m_10m', label: '€5M - €10M', numericValue: 7000000 },
+  { value: 'gt_10m', label: 'più di €10M', numericValue: 10000000 },
+];
+
+// Numero dipendenti — chip con range. Backend valida `integer`.
+const EMPLOYEES_OPTIONS: { value: string; label: string; numericValue: number | null }[] = [
+  { value: '1_10', label: '1-10', numericValue: 5 },
+  { value: '11_50', label: '11-50', numericValue: 30 },
+  { value: '51_100', label: '51-100', numericValue: 75 },
+  { value: 'gt_100', label: 'più di 100', numericValue: 100 },
+];
+
+// Settore principale dove opera l'azienda (industry) — chip singolo selezionabile
+const INDUSTRY_OPTIONS: { value: string; label: string }[] = [
+  { value: 'Finance', label: 'Finance' },
+  { value: 'Fabbricazione, Manufacturing', label: 'Fabbricazione, Manufacturing' },
+  { value: 'Servizi di consulenza', label: 'Servizi di consulenza' },
+  { value: 'Energia', label: 'Energia' },
+  { value: 'Trasporti e Logistica', label: 'Trasporti e Logistica' },
+  { value: 'Salute', label: 'Salute' },
+  { value: 'Acqua potabile', label: 'Acqua potabile' },
+  { value: 'Acque reflue', label: 'Acque reflue' },
+  { value: 'Infrastrutture digitali', label: 'Infrastrutture digitali' },
+  { value: 'Gestione dei Servizi TIC', label: 'Gestione dei Servizi TIC' },
+  { value: 'Spazio', label: 'Spazio' },
+  { value: 'Servizi postali e di corriere', label: 'Servizi postali e di corriere' },
+  { value: 'Gestione dei rifiuti', label: 'Gestione dei rifiuti' },
+  { value: 'Fab, pr, dis, di sost. chimiche', label: 'Fab, pr, dis, di sost. chimiche' },
+  { value: 'Prod, tras, e dis. di alimenti', label: 'Prod, tras, e dis. di alimenti' },
+  { value: 'Fornitori di servizi digitali', label: 'Fornitori di servizi digitali' },
+  { value: 'Ricerca', label: 'Ricerca' },
+  { value: 'Altro', label: 'Altro' },
+];
+
+// Quali tecnologie hai implementato nella tua azienda (implemented_technologies) — multi
+const TECHNOLOGY_OPTIONS: { value: string; label: string }[] = [
+  { value: 'XDR', label: 'XDR' },
+  { value: 'Managed Detection Response o SOC', label: 'Managed Detection Response o SOC' },
+  { value: 'Firewall con protezione ZeroDay - Ransomware', label: 'Firewall con protezione ZeroDay - Ransomware' },
+  { value: 'Mobile Device Management', label: 'Mobile Device Management' },
+  { value: 'Log Management', label: 'Log Management' },
+  { value: 'Vulnerability Assessment Continuo', label: 'Vulnerability Assessment Continuo' },
+  { value: 'Patch Management Continuo', label: 'Patch Management Continuo' },
+  { value: 'Network Monitoring (Sicurezza e disponibilità)', label: 'Network Monitoring (Sicurezza e disponibilità)' },
+  { value: 'MFA', label: 'MFA' },
+];
+
+// Helpers to map between display label ↔ backend value (the code/keyword).
+// The form stores the LABEL (visible chip text) so it matches the backend anagrafica UX.
+const findRevenueByLabel = (label: string) => REVENUE_OPTIONS.find((o) => o.label === label);
+const findRevenueByNumeric = (n: number | string | null | undefined) => {
+  if (n == null) return undefined;
+  const num = typeof n === 'string' ? parseFloat(n) : n;
+  if (isNaN(num)) return undefined;
+  return REVENUE_OPTIONS.find((o) => o.numericValue === num);
+};
+const findEmployeesByLabel = (label: string) => EMPLOYEES_OPTIONS.find((o) => o.label === label);
+const findEmployeesByNumeric = (n: number | string | null | undefined) => {
+  if (n == null) return undefined;
+  const num = typeof n === 'string' ? parseInt(n, 10) : n;
+  if (isNaN(num)) return undefined;
+  return EMPLOYEES_OPTIONS.find((o) => o.numericValue === num);
+};
+
+// ─── ChipSelect component (single or multi) ───
+interface ChipSelectProps {
+  label: string;
+  options: { value: string; label: string }[];
+  value: string | string[];
+  onChange: (v: string | string[]) => void;
+  multi?: boolean;
+  error?: string;
+}
+
+const ChipSelect: React.FC<ChipSelectProps> = ({ label, options, value, onChange, multi, error }) => {
+  const selected = multi
+    ? Array.isArray(value) ? value : []
+    : (typeof value === 'string' ? [value] : []);
+
+  const toggle = (optValue: string) => {
+    if (multi) {
+      const next = selected.includes(optValue)
+        ? selected.filter((v) => v !== optValue)
+        : [...selected, optValue];
+      onChange(next);
+    } else {
+      // single: click again to deselect
+      onChange(selected.includes(optValue) ? '' : optValue);
+    }
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-sm">{label}</Label>
+      <div className="flex flex-wrap gap-1.5">
+        {options.map((opt) => {
+          const isSelected = selected.includes(opt.value);
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => toggle(opt.value)}
+              className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                isSelected
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground'
+              }`}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+      {error && (
+        <p className="text-xs text-destructive flex items-center gap-1">
+          <AlertCircle className="w-3 h-3" />{error}
+        </p>
+      )}
+    </div>
+  );
+};
 
 const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
   organizationId,
@@ -289,6 +449,15 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
   const updateListField = (field: 'customer_sectors' | 'implemented_technologies', values: string[]) => {
     setForm((prev) => {
       const next = { ...prev, [field]: values };
+      scheduleSave(next);
+      return next;
+    });
+  };
+
+  // Used by ChipSelect — single string field (industry, revenue, employees_count)
+  const updateChipField = (field: keyof ProfileFormData, value: string) => {
+    setForm((prev) => {
+      const next = { ...prev, [field]: value };
       scheduleSave(next);
       return next;
     });
@@ -513,23 +682,40 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
               {/* Settore, dimensione e tecnologie */}
               <div>
                 <h4 className="text-sm font-semibold mb-3">Settore, Dimensione e Tecnologie</h4>
-                <div className="grid grid-cols-1 gap-3">
-                  {renderField('industry', 'Settore (Industry)')}
-                  <div className="grid grid-cols-2 gap-3">
-                    {renderField('revenue', 'Fatturato', 'es. 1.5M')}
-                    {renderField('employees_count', 'N. Dipendenti', 'es. 50')}
-                  </div>
-                  <StringListField
-                    label="Settori Clientela (customer_sectors)"
-                    values={form.customer_sectors}
-                    onChange={(v) => updateListField('customer_sectors', v)}
-                    placeholder="es. Finance"
+                <div className="grid grid-cols-1 gap-4">
+                  <ChipSelect
+                    label="Settore principale dove opera l'azienda"
+                    options={INDUSTRY_OPTIONS}
+                    value={form.industry}
+                    onChange={(v) => updateChipField('industry', typeof v === 'string' ? v : (v[0] ?? ''))}
                   />
-                  <StringListField
-                    label="Tecnologie Implementate (implemented_technologies)"
-                    values={form.implemented_technologies}
-                    onChange={(v) => updateListField('implemented_technologies', v)}
-                    placeholder="es. Microsoft 365"
+                  <div className="grid grid-cols-2 gap-4">
+                    <ChipSelect
+                      label="Fatturato"
+                      options={REVENUE_OPTIONS}
+                      value={form.revenue}
+                      onChange={(v) => updateChipField('revenue', typeof v === 'string' ? v : (v[0] ?? ''))}
+                    />
+                    <ChipSelect
+                      label="Numero dipendenti in azienda"
+                      options={EMPLOYEES_OPTIONS}
+                      value={form.employees_count}
+                      onChange={(v) => updateChipField('employees_count', typeof v === 'string' ? v : (v[0] ?? ''))}
+                    />
+                  </div>
+                  <ChipSelect
+                    label="Settori dove operano i clienti"
+                    options={INDUSTRY_OPTIONS}
+                    value={form.customer_sectors}
+                    onChange={(v) => updateListField('customer_sectors', Array.isArray(v) ? v : (v ? [v] : []))}
+                    multi
+                  />
+                  <ChipSelect
+                    label="Quali tecnologie hai implementato nella tua azienda"
+                    options={TECHNOLOGY_OPTIONS}
+                    value={form.implemented_technologies}
+                    onChange={(v) => updateListField('implemented_technologies', Array.isArray(v) ? v : (v ? [v] : []))}
+                    multi
                   />
                 </div>
               </div>
