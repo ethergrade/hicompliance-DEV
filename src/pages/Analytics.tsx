@@ -261,6 +261,13 @@ const Analytics: React.FC = () => {
     },
   };
 
+  // True when no assessment exists for the selected company → no analytics data
+  const hasNoData =
+    !clientLoading &&
+    !trendsLoading &&
+    !!organizationId &&
+    assessmentId === null;
+
   return (
     <DashboardLayout>
       <div className="space-y-6" key={organizationId || 'loading'}>
@@ -296,6 +303,20 @@ const Analytics: React.FC = () => {
             </Button>
           </div>
         </div>
+
+        {/* ── Empty state: no assessment for this company → no analytics data ── */}
+        {hasNoData ? (
+          <Card className="border-border bg-card">
+            <CardContent className="p-12 flex flex-col items-center justify-center text-center gap-3">
+              <BarChart3 className="w-12 h-12 text-muted-foreground" />
+              <h2 className="text-xl font-semibold text-foreground">Nessun dato presente</h2>
+              <p className="text-sm text-muted-foreground max-w-md">
+                Non esiste ancora un assessment per l'azienda selezionata. Genera un assessment per visualizzare i trend di rischio, conformità e minacce.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+        <>
 
         {/* ── KPI Cards ── */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -510,6 +531,9 @@ const Analytics: React.FC = () => {
             </CardContent>
           </Card>
         </div>
+
+        </>
+        )}
 
       </div>
     </DashboardLayout>
