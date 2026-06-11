@@ -20,12 +20,14 @@ import ClientCrudDialog from '@/components/clients/ClientCrudDialog';
 import DeleteClientDialog from '@/components/clients/DeleteClientDialog';
 import type { TenantResource, Group } from '@/types/api';
 import { getErrorDetail } from "@/lib/api-client";
+import { useClientContext } from '@/contexts/ClientContext';
 
 const STATUS_LABELS: Record<number, string> = { 0: 'Inattivo', 1: 'Attivo', 2: 'Sospeso' };
 const STATUS_COLORS: Record<number, string> = { 0: 'secondary', 1: 'default', 2: 'outline' } as const;
 
 const AdminCompanies: React.FC = () => {
   const { user } = useAuth();
+  const { selectedOrganization } = useClientContext();
 
   /* ─── Gruppi ─── */
   const [groups, setGroups] = useState<Group[]>([]);
@@ -84,17 +86,19 @@ const AdminCompanies: React.FC = () => {
     }
   }, [selectedGroup, loadTenants]);
 
-  const filteredTenants = tenants.filter((t) => {
-    const q = searchQuery.toLowerCase();
-    const matchesSearch =
-      !q ||
-      t.name.toLowerCase().includes(q) ||
-      (t.customer_code ?? '').toLowerCase().includes(q) ||
-      (t.vat_number ?? '').toLowerCase().includes(q) ||
-      (t.primary_domain ?? '').toLowerCase().includes(q);
-    const matchesStatus = statusFilter === null || t.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  const filteredTenants = tenants
+    .filter((t) => {
+      const q = searchQuery.toLowerCase();
+      const matchesSearch =
+        !q ||
+        t.name.toLowerCase().includes(q) ||
+        (t.customer_code ?? '').toLowerCase().includes(q) ||
+        (t.vat_number ?? '').toLowerCase().includes(q) ||
+        (t.primary_domain ?? '').toLowerCase().includes(q);
+      const matchesStatus = statusFilter === null || t.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, 'it', { sensitivity: 'base' }));
 
   /* ─── Group CRUD ─── */
   const handleCreateGroup = async () => {
@@ -304,8 +308,17 @@ const AdminCompanies: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredTenants.map((t) => (
-                          <tr key={t.id} className="border-b border-border hover:bg-muted/50 transition-colors">
+                        {filteredTenants.map((t) => {
+                          const isCurrent = selectedOrganization?.id === t.id;
+                          return (
+                          <tr
+                            key={t.id}
+                            className={`border-b border-border transition-colors ${
+                              isCurrent
+                                ? 'bg-primary/10 hover:bg-primary/15 ring-1 ring-primary/30'
+                                : 'hover:bg-muted/50'
+                            }`}
+                          >
                             <td className="py-3 px-3 font-medium">{t.name}</td>
                             <td className="py-3 px-3 text-muted-foreground">{t.customer_code || '—'}</td>
                             <td className="py-3 px-3 text-muted-foreground">{t.vat_number || '—'}</td>
@@ -334,7 +347,8 @@ const AdminCompanies: React.FC = () => {
                               </div>
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
