@@ -27,7 +27,8 @@ interface ContactRow {
   email: string | null;
   phone: string | null;
   job_title: string | null;
-  auth_user_id: string | null;
+  /** Linked platform user (null until invite) */
+  user_id: string | null;
   is_platform_user: boolean;
   account_disabled: boolean;
 }
@@ -45,6 +46,8 @@ const ClientContactsDialog: React.FC<Props> = ({ open, onOpenChange, organizatio
     queryKey: ['org-contacts', organizationId, groupId],
     enabled: open && !!organizationId,
     queryFn: async () => {
+      // Backend returns ContactDirectory rows with full platform fields
+      // (user_id, is_platform_user, account_disabled). Map them verbatim.
       const apiContacts = await irpApi.contacts(organizationId, groupId);
       return (apiContacts ?? []).map(c => ({
         id: c.id,
@@ -53,9 +56,9 @@ const ClientContactsDialog: React.FC<Props> = ({ open, onOpenChange, organizatio
         email: c.email ?? null,
         phone: c.phone ?? null,
         job_title: c.job_title ?? null,
-        auth_user_id: c.id,
-        is_platform_user: false,
-        account_disabled: false,
+        user_id: c.user_id ?? null,
+        is_platform_user: !!c.is_platform_user,
+        account_disabled: !!c.account_disabled,
       } as ContactRow));
     },
   });
@@ -84,7 +87,7 @@ const ClientContactsDialog: React.FC<Props> = ({ open, onOpenChange, organizatio
     onSuccess: () => {
       toast.success('Contatto aggiunto');
       setNewContact({ first_name: '', last_name: '', email: '', phone: '', job_title: '' });
-      qc.invalidateQueries({ queryKey: ['org-contacts', organizationId] });
+      qc.invalidateQueries({ queryKey: ['org-contacts', organizationId, groupId] });
     },
     onError: (e: any) => toast.error(getErrorDetail(e)),
   });
@@ -95,14 +98,40 @@ const ClientContactsDialog: React.FC<Props> = ({ open, onOpenChange, organizatio
     },
     onSuccess: () => {
       toast.success('Contatto rimosso');
-      qc.invalidateQueries({ queryKey: ['org-contacts', organizationId] });
+      qc.invalidateQueries({ queryKey: ['org-contacts', organizationId, groupId] });
     },
     onError: (e: any) => toast.error(getErrorDetail(e)),
   });
 
+  /**
+   * Toggle the platform-user switch:
+   * - If turning ON and the contact has no linked user yet → call the dedicated
+   *   /invite endpoint (creates User, attaches to group, sends reset-password email).
+   * - If turning OFF → updateContact with is_platform_user=false so the linked
+   *   user is detached from the contact (account itself is not deleted).
+   */
+  const inviteMut = useMutation({
+    mutationFn: async (contactId: string) => {
+      return await irpApi.inviteContact(organizationId, contactId, groupId);
+    },
+    onSuccess: () => {
+      toast.success('Invito inviato: l’utente riceverà un’email per impostare la password.');
+      qc.invalidateQueries({ queryKey: ['org-contacts', organizationId, groupId] });
+    },
+    onError: (e: any) => toast.error(`Invito fallito: ${getErrorDetail(e)}`),
+  });
+
   const updateMut = useMutation({
-    mutationFn: async (patch: Partial<ContactRow> & { id: string }) => {
-      const { id, ...rest } = patch;
+    mutationFn: async (patch: Partial<ContactRow> & { id: string; mode?: 'full' | 'platform' | 'account' }) => {
+      const { id, mode, ...rest } = patch;
+      // Build payload based on the caller intent
+      if (mode === 'platform' || mode === 'account') {
+        await irpApi.updateContact(organizationId, id, {
+          is_platform_user: rest.is_platform_user,
+          account_disabled: rest.account_disabled,
+        }, groupId);
+        return;
+      }
       await irpApi.updateContact(organizationId, id, {
         first_name: rest.first_name,
         last_name: rest.last_name,
@@ -111,9 +140,26 @@ const ClientContactsDialog: React.FC<Props> = ({ open, onOpenChange, organizatio
         job_title: rest.job_title || undefined,
       }, groupId);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['org-contacts', organizationId] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['org-contacts', organizationId, groupId] }),
     onError: (e: any) => toast.error(`Aggiornamento fallito: ${getErrorDetail(e)}`),
   });
+
+  const handlePlatformToggle = (row: ContactRow, next: boolean) => {
+    if (next && !row.user_id) {
+      // First-time activation: trigger backend invite flow
+      if (!row.email) {
+        toast.error('Per attivare l’account piattaforma serve un’email sul contatto.');
+        return;
+      }
+      inviteMut.mutate(row.id);
+      return;
+    }
+    updateMut.mutate({ id: row.id, mode: 'platform', is_platform_user: next });
+  };
+
+  const handleAccountDisabledToggle = (row: ContactRow, disabled: boolean) => {
+    updateMut.mutate({ id: row.id, mode: 'account', is_platform_user: row.is_platform_user, account_disabled: disabled });
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -169,18 +215,29 @@ const ClientContactsDialog: React.FC<Props> = ({ open, onOpenChange, organizatio
                           <div className="flex items-center gap-2">
                             <Switch
                               checked={c.is_platform_user}
-                              onCheckedChange={(v) => updateMut.mutate({ id: c.id, is_platform_user: v })}
+                              disabled={inviteMut.isPending}
+                              onCheckedChange={(v) => handlePlatformToggle(c, v)}
                             />
-                            {c.is_platform_user && !c.auth_user_id && (
+                            {c.is_platform_user && !c.user_id && (
                               <Badge variant="outline" className="text-xs">non collegato</Badge>
+                            )}
+                            {inviteMut.isPending && (
+                              <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
                             )}
                           </div>
                         </td>
                         <td className="p-2">
-                          {c.is_platform_user ? (
-                            <Badge variant={c.account_disabled ? 'destructive' : 'default'}>
-                              {c.account_disabled ? 'Disattivato' : 'Attivo'}
-                            </Badge>
+                          {c.is_platform_user && c.user_id ? (
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                checked={!c.account_disabled}
+                                disabled={updateMut.isPending}
+                                onCheckedChange={(active) => handleAccountDisabledToggle(c, !active)}
+                              />
+                              <Badge variant={c.account_disabled ? 'destructive' : 'default'}>
+                                {c.account_disabled ? 'Disattivato' : 'Attivo'}
+                              </Badge>
+                            </div>
                           ) : <span className="text-muted-foreground text-xs">—</span>}
                         </td>
                         <td className="p-2 text-right">

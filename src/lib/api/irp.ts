@@ -53,6 +53,20 @@ export const irpApi = {
     );
   },
 
+  /**
+   * Invite a contact to the platform — creates a User account, adds them to the
+   * tenant's group with role 'customer', and sends a password-reset email.
+   * Backend: POST /companies/{company}/irp/contacts/{contact}/invite
+   */
+  async inviteContact(companyId: string, contactId: string, _g?: string | null): Promise<IrpContactResource> {
+    const res = await complianceApiClient.post<ApiResponse<IrpContactResource>>(
+      `/companies/${companyId}/irp/contacts/${contactId}/invite`,
+      undefined,
+      _h(companyId, _g)
+    );
+    return res.data;
+  },
+
   // ─── IRP Emergency Contacts ────────────────────────────────────────────────
 
   /** List all emergency contacts for a company */

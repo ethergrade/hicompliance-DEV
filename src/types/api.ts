@@ -826,6 +826,11 @@ export interface IrpContactResource {
   responsibilities?: string | null;
   notes?: string | null;
   directory_contact_id?: string | null;
+  /** Present when backend returns ContactDirectory rows (real platform fields) */
+  user_id?: string | null;
+  is_platform_user?: boolean;
+  account_disabled?: boolean;
+  module_permissions?: unknown[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -842,6 +847,8 @@ export interface StoreIrpContactRequest {
   responsibilities?: string | null;
   notes?: string | null;
   directory_contact_id?: string | null;
+  is_platform_user?: boolean;
+  account_disabled?: boolean;
 }
 
 // ─── IRP Emergency Contacts ─────────────────────────────────────────────────
