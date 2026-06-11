@@ -135,7 +135,7 @@ const formToPayload = (data: ProfileFormData): UpdateTenantRequest => ({
   pec: data.pec || null,
   phone: data.phone || null,
   email: data.email || null,
-  business_sector: data.business_sector || null,
+  // business_sector is not a backend field; map it to industry as fallback
   industry: data.industry || data.business_sector || null,
   nis2_classification: data.nis2_classification as any || null,
   ciso_substitute: data.ciso_substitute || null,
@@ -143,8 +143,8 @@ const formToPayload = (data: ProfileFormData): UpdateTenantRequest => ({
   primary_subnet: data.primary_subnet || null,
   secondary_domain: data.secondary_domain || null,
   secondary_subnet: data.secondary_subnet || null,
-  revenue: data.revenue || null,
-  employees_count: data.employees_count || null,
+  revenue: data.revenue ? Number(data.revenue) || null : null,
+  employees_count: data.employees_count ? parseInt(data.employees_count, 10) || null : null,
   customer_sectors: data.customer_sectors,
   implemented_technologies: data.implemented_technologies,
   extra: {

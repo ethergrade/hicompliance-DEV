@@ -151,7 +151,6 @@ export interface TenantResource {
   operational_address?: string | null;
   pec?: string | null;
   email?: string | null;
-  business_sector?: string | null;
   nis2_classification?: 'soggetto_essenziale' | 'soggetto_importante' | 'nessuna' | null;
   ciso_substitute?: string | null;
 }
@@ -237,7 +236,6 @@ export interface UpdateTenantRequest {
   operational_address?: string | null;
   pec?: string | null;
   email?: string | null;
-  business_sector?: string | null;
   nis2_classification?: 'soggetto_essenziale' | 'soggetto_importante' | 'nessuna' | null;
   ciso_substitute?: string | null;
 }
