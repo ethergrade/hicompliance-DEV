@@ -160,11 +160,17 @@ export const irpApi = {
     );
     const url = res.data.download_url;
     if (!url) throw new Error('Nessun link di download ricevuto dal server');
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `IRP_${companyName.replace(/\s+/g, '_')}.docx`;
-    a.target = '_blank';
-    a.click();
+    // Open the signed URL directly in a new tab — the URL is pre-signed
+    // and valid for 2 minutes, so the browser can fetch it without a Bearer token.
+    const opened = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!opened) {
+      // Popup blocked — fall back to programmatic anchor download
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `IRP_${companyName.replace(/\s+/g, '_')}.docx`;
+      a.rel = 'noopener noreferrer';
+      a.click();
+    }
   },
 
   // ─── Import Emergency Contacts from Directory ─────────────────────────────
