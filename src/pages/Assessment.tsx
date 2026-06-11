@@ -838,9 +838,9 @@ const Assessment: React.FC = () => {
                     Configura
                   </Button>
                   <ClientProfileSheet
-                    organizationId={organizationId ?? null}
+                    organizationId={orgId ?? null}
                     organizationName={selectedOrganization?.name}
-                    groupId={groupId}
+                    groupId={selectedOrganization?.group_id ?? null}
                     open={configSheetOpen}
                     onOpenChange={setConfigSheetOpen}
                   />
@@ -881,9 +881,9 @@ const Assessment: React.FC = () => {
                       Apri anagrafica
                     </Button>
                     <ClientProfileSheet
-                      organizationId={organizationId ?? null}
+                      organizationId={orgId ?? null}
                       organizationName={selectedOrganization?.name}
-                      groupId={groupId}
+                      groupId={selectedOrganization?.group_id ?? null}
                       open={anagraficaOpen}
                       onOpenChange={setAnagraficaOpen}
                     />
