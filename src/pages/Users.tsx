@@ -138,9 +138,14 @@ const Users = () => {
     if (!organizationId) return users;
     const filtered = users.filter((u) => {
       const role = getPrimaryRole(u, groupId);
+      // Unrestricted roles (admin, manager, sales, super-admin) always visible
       if (!role || !tenantRestrictedRoles.has(role)) return true;
       const tenantIds = userTenantsMap[String(u.id)];
+      // Tenant data not yet loaded — don't filter out
       if (!tenantIds) return true;
+      // No tenants assigned yet — still visible (not yet configured)
+      if (tenantIds.length === 0) return true;
+      // Has tenants — show only if current org is in the list
       return tenantIds.includes(organizationId);
     });
     if (import.meta.env.DEV) {
