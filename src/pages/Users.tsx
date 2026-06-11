@@ -339,7 +339,7 @@ const Users = () => {
                 Nuovo Utente
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-md">
+            <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{selectedUser ? "Modifica Utente" : "Nuovo Utente"}</DialogTitle>
                 <DialogDescription>
@@ -421,11 +421,11 @@ const Users = () => {
                   />
                   {!selectedUser && tenantRestrictedRoles.has(form.watch('role')) && companies.length > 0 && (
                     <div className="space-y-2 pt-2">
-                      <FormLabel className="text-sm font-medium">Tenant assegnati</FormLabel>
+                      <FormLabel className="text-sm font-medium">Clienti assegnati</FormLabel>
                       <p className="text-xs text-muted-foreground">
-                        Seleziona i tenant a cui questo utente può accedere. Lascia vuoto per configurare in seguito.
+                        Seleziona i clienti a cui questo utente può accedere. Lascia vuoto per configurare in seguito.
                       </p>
-                      <ScrollArea className="h-[180px] rounded-md border">
+                      <ScrollArea className="h-[160px] rounded-md border">
                         <div className="p-3 space-y-2">
                           {companies.map((company: TenantResource) => {
                             const checked = createTenantIds.includes(company.id);
