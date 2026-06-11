@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, Check, CloudOff, Building2, AlertCircle, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Check, CloudOff, Building2, AlertCircle, Plus, Trash2, X } from 'lucide-react';
 import { tenantsApi, tenantServicesApi } from '@/lib/api';
 import { parseMonitoredIpInput, parseMonitoredScopeMixedEntries } from '@/lib/ipRange';
 import type { ParsedMonitoredIpInput, MonitoredIpEntryType } from '@/lib/ipRange';
@@ -44,6 +44,11 @@ interface ProfileFormData {
   primary_subnet: string;
   secondary_domain: string;
   secondary_subnet: string;
+  revenue: string;
+  employees_count: string;
+  industry: string;
+  customer_sectors: string[];
+  implemented_technologies: string[];
   scopeEntries: ParsedMonitoredIpInput[];
   extra?: TenantDashboardExtra | null;
 }
@@ -64,6 +69,11 @@ const INITIAL: ProfileFormData = {
   primary_subnet: '',
   secondary_domain: '',
   secondary_subnet: '',
+  revenue: '',
+  employees_count: '',
+  industry: '',
+  customer_sectors: [],
+  implemented_technologies: [],
   scopeEntries: [],
   extra: null,
 };
@@ -86,6 +96,11 @@ const resourceToForm = (data: TenantResource): ProfileFormData => ({
   primary_subnet: data.primary_subnet || '',
   secondary_domain: data.secondary_domain || '',
   secondary_subnet: data.secondary_subnet || '',
+  revenue: data.revenue ?? '',
+  employees_count: data.employees_count ?? '',
+  industry: data.industry ?? '',
+  customer_sectors: data.customer_sectors ?? [],
+  implemented_technologies: data.implemented_technologies ?? [],
   extra: data.extra || null,
   scopeEntries: (() => {
     const domains = data.extra?.hicompliance_scope_domains || [];
@@ -121,13 +136,17 @@ const formToPayload = (data: ProfileFormData): UpdateTenantRequest => ({
   phone: data.phone || null,
   email: data.email || null,
   business_sector: data.business_sector || null,
-  industry: data.business_sector || null,
+  industry: data.industry || data.business_sector || null,
   nis2_classification: data.nis2_classification as any || null,
   ciso_substitute: data.ciso_substitute || null,
   primary_domain: data.primary_domain || null,
   primary_subnet: data.primary_subnet || null,
   secondary_domain: data.secondary_domain || null,
   secondary_subnet: data.secondary_subnet || null,
+  revenue: data.revenue || null,
+  employees_count: data.employees_count || null,
+  customer_sectors: data.customer_sectors,
+  implemented_technologies: data.implemented_technologies,
   extra: {
     ...(data.extra || {}),
     hicompliance_scope_domains: data.scopeEntries
@@ -238,6 +257,14 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
   const updateField = (field: keyof ProfileFormData, value: string) => {
     setForm((prev) => {
       const next = { ...prev, [field]: value };
+      scheduleSave(next);
+      return next;
+    });
+  };
+
+  const updateListField = (field: 'customer_sectors' | 'implemented_technologies', values: string[]) => {
+    setForm((prev) => {
+      const next = { ...prev, [field]: values };
       scheduleSave(next);
       return next;
     });
@@ -457,6 +484,32 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
                 </div>
               </div>
 
+              <Separator />
+
+              {/* Settore, dimensione e tecnologie */}
+              <div>
+                <h4 className="text-sm font-semibold mb-3">Settore, Dimensione e Tecnologie</h4>
+                <div className="grid grid-cols-1 gap-3">
+                  {renderField('industry', 'Settore (Industry)')}
+                  <div className="grid grid-cols-2 gap-3">
+                    {renderField('revenue', 'Fatturato', 'es. 1.5M')}
+                    {renderField('employees_count', 'N. Dipendenti', 'es. 50')}
+                  </div>
+                  <StringListField
+                    label="Settori Clientela (customer_sectors)"
+                    values={form.customer_sectors}
+                    onChange={(v) => updateListField('customer_sectors', v)}
+                    placeholder="es. Finance"
+                  />
+                  <StringListField
+                    label="Tecnologie Implementate (implemented_technologies)"
+                    values={form.implemented_technologies}
+                    onChange={(v) => updateListField('implemented_technologies', v)}
+                    placeholder="es. Microsoft 365"
+                  />
+                </div>
+              </div>
+
               {showNetworkFields && (
                 <>
                   <Separator />
@@ -560,3 +613,62 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
 };
 
 export default ClientProfileSheet;
+
+// ─── StringListField: chip input per liste di stringhe (customer_sectors, implemented_technologies) ───
+interface StringListFieldProps {
+  label: string;
+  values: string[];
+  onChange: (values: string[]) => void;
+  placeholder?: string;
+}
+const StringListField: React.FC<StringListFieldProps> = ({ label, values, onChange, placeholder }) => {
+  const [draft, setDraft] = React.useState('');
+  const add = () => {
+    const v = draft.trim();
+    if (!v || values.includes(v)) return;
+    onChange([...values, v]);
+    setDraft('');
+  };
+  const remove = (idx: number) => {
+    onChange(values.filter((_, i) => i !== idx));
+  };
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <div className="flex gap-2">
+        <Input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ',') {
+              e.preventDefault();
+              add();
+            }
+          }}
+          placeholder={placeholder}
+          className="h-9"
+        />
+        <Button type="button" variant="outline" size="sm" onClick={add}>
+          <Plus className="w-3.5 h-3.5" />
+        </Button>
+      </div>
+      {values.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-1.5">
+          {values.map((v, idx) => (
+            <Badge key={`${v}-${idx}`} variant="secondary" className="gap-1 pr-1">
+              {v}
+              <button
+                type="button"
+                onClick={() => remove(idx)}
+                className="ml-0.5 hover:text-destructive"
+                aria-label={`Rimuovi ${v}`}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
