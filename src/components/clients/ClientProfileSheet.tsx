@@ -53,9 +53,7 @@ interface ProfileFormData {
   extra?: TenantDashboardExtra | null;
 }
 
-const INITIAL: ProfileFormData = {
-
-  // ─── Revenue shorthand parser/formatter ───
+// ─── Revenue shorthand parser/formatter ───
 // Supports: 1.5M → 1500000, 500K → 500000, 2.5B → 2500000000
 const REVENUE_SUFFIXES: Record<string, number> = { k: 1e3, m: 1e6, b: 1e9 };
 
