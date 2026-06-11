@@ -106,6 +106,13 @@ const Users = () => {
     })),
   });
 
+  // DEBUG: log tenant query status
+  if (import.meta.env.DEV && tenantAssignmentsQueries.length > 0) {
+    const loaded = tenantAssignmentsQueries.filter(q => q.data !== undefined).length;
+    const errors = tenantAssignmentsQueries.filter(q => q.isError).length;
+    console.log('[Users] tenant queries:', { total: tenantAssignmentsQueries.length, loaded, errors, organizationId });
+  }
+
   // Mappa userId -> tenantIds (solo per utenti con fetch completato)
   const userTenantsMap = useMemo(() => {
     const map: Record<string, string[]> = {};
@@ -118,14 +125,23 @@ const Users = () => {
 
   const tenantFilteredUsers = useMemo(() => {
     if (!organizationId) return users;
-    return users.filter((u) => {
+    const filtered = users.filter((u) => {
       const role = getPrimaryRole(u);
-      // No role = unrestricted (shouldn't happen but don't hide users)
       if (!role || !tenantRestrictedRoles.has(role)) return true;
       const tenantIds = userTenantsMap[String(u.id)];
       if (!tenantIds) return true;
       return tenantIds.includes(organizationId);
     });
+    if (import.meta.env.DEV) {
+      console.log('[Users] tenant filter:', {
+        organizationId,
+        total: users.length,
+        filtered: filtered.length,
+        restricted: users.filter(u => tenantRestrictedRoles.has(getPrimaryRole(u) ?? '')).length,
+        mapKeys: Object.keys(userTenantsMap).length,
+      });
+    }
+    return filtered;
   }, [users, organizationId, userTenantsMap]);
 
   const tenantFilterLoading = tenantAssignmentsQueries.some((q) => q.isLoading);
