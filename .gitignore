@@ -33,4 +33,4 @@ snapshot.md
 test_roles.js
 .env
 .pi/
-graphify-out/
+graphify-out/.env*
