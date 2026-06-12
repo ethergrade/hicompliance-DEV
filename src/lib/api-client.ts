@@ -3,10 +3,21 @@ import type { ApiErrorResponse } from "@/types/api";
 const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
 const configuredComplianceBaseUrl = (import.meta.env.VITE_COMPLIANCE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
 
-const API_BASE_URL = import.meta.env.DEV ? "/api" : configuredBaseUrl || "https://hiconsole.hisolution.it/api";
+// Override baseUrl se il dominio contiene websoupcloud
+const isWebsoupCloud = typeof window !== "undefined" && window.location.hostname.includes("websoupcloud");
+const websoupCloudBaseUrl = "https://hiapi.websoupcloud.it";
+
+const API_BASE_URL = import.meta.env.DEV
+  ? "/api"
+  : isWebsoupCloud
+    ? websoupCloudBaseUrl
+    : configuredBaseUrl || "https://hiconsole.hisolution.it/api";
+
 const COMPLIANCE_API_BASE_URL = import.meta.env.DEV
   ? "/api"
-  : configuredComplianceBaseUrl || "https://hiconsole.hisolution.it/api";
+  : isWebsoupCloud
+    ? websoupCloudBaseUrl
+    : configuredComplianceBaseUrl || "https://hiconsole.hisolution.it/api";
 
 const CSRF_URL = import.meta.env.DEV
   ? "/sanctum/csrf-cookie"
