@@ -27,6 +27,13 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+          VITE_COMPLIANCE_API_BASE_URL: ${{ secrets.VITE_COMPLIANCE_API_BASE_URL }}
+          VITE_AUTH_TOKEN_KEY: ${{ secrets.VITE_AUTH_TOKEN_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_PROJECT_ID: ${{ secrets.VITE_SUPABASE_PROJECT_ID }}
 
       - name: Deploy to DEV
         uses: easingthemes/ssh-deploy@v6
