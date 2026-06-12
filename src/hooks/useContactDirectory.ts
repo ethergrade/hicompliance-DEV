@@ -4,10 +4,13 @@ import { useToast } from '@/hooks/use-toast';
 import { DirectoryContact } from '@/types/irp';
 import type { IrpContactResource } from '@/types/api';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { ApiError } from '@/lib/api-client';
 
 interface UseContactDirectoryReturn {
   contacts: DirectoryContact[];
   loading: boolean;
+  error: { status: number; message: string } | null;
+  refetch: () => Promise<void>;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   filteredContacts: DirectoryContact[];
@@ -35,6 +38,7 @@ const toDirectoryContact = (api: IrpContactResource): DirectoryContact => ({
 export const useContactDirectory = (): UseContactDirectoryReturn => {
   const [contacts, setContacts] = useState<DirectoryContact[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<{ status: number; message: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const { toast } = useToast();
   const { organizationId: clientOrgId, groupId, isLoading: clientLoading } = useClientOrganization();
@@ -43,16 +47,26 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
     if (clientLoading || !clientOrgId) return;
 
     setLoading(true);
+    setError(null);
     try {
       const apiContacts = await irpApi.contacts(clientOrgId, groupId);
       setContacts((apiContacts || []).map(toDirectoryContact));
-    } catch (error) {
-      console.error('Error fetching directory contacts:', error);
-      toast({
-        title: "Errore",
-        description: "Impossibile caricare la rubrica contatti",
-        variant: "destructive"
-      });
+    } catch (rawErr: any) {
+      const status: number = rawErr instanceof ApiError ? rawErr.status : (rawErr?.status ?? 0);
+      const message: string =
+        rawErr instanceof ApiError
+          ? rawErr.detail
+          : rawErr?.message || 'Errore di rete durante il caricamento della rubrica.';
+
+      // 401/403/404 sono errori “strutturali” (auth scaduta, permessi mancanti,
+      // org non selezionata): li mostriamo come errore inline con bottone Riprova,
+      // NON come toast che sparisce — l'utente su /incident-response altrimenti
+      // vede solo un flash senza capire perché la rubrica è vuota.
+      // 5xx / errori di rete: anche questi finiscono nell'errore inline; il toast
+      // si riserva ai casi in cui l'utente ha già fatto un'azione esplicita
+      // (crea/aggiorna/elimina contatto, vedi sotto).
+      console.error('Error fetching directory contacts:', rawErr);
+      setError({ status, message });
     } finally {
       setLoading(false);
     }
@@ -244,6 +258,8 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
   return {
     contacts,
     loading,
+    error,
+    refetch: fetchContacts,
     searchQuery,
     setSearchQuery,
     filteredContacts,

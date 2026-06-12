@@ -28,7 +28,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Search, Pencil, Trash2, Users, Download, Phone, Mail, Upload, FileSpreadsheet, FileDown } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Users, Download, Phone, Mail, Upload, FileSpreadsheet, FileDown, AlertCircle, RefreshCw } from 'lucide-react';
 import { useContactDirectory } from '@/hooks/useContactDirectory';
 import { ContactDirectoryForm } from './ContactDirectoryForm';
 import { DirectoryContact } from '@/types/irp';
@@ -38,6 +38,8 @@ import * as XLSX from 'xlsx';
 export const ContactDirectoryManager: React.FC = () => {
   const {
     loading,
+    error,
+    refetch,
     searchQuery,
     setSearchQuery,
     filteredContacts,
@@ -372,7 +374,35 @@ export const ContactDirectoryManager: React.FC = () => {
             />
           </div>
 
-          {loading ? (
+          {error ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5 sm:mt-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-destructive">
+                  {error.status === 401
+                    ? 'Sessione scaduta'
+                    : error.status === 403
+                      ? 'Permessi insufficienti per visualizzare la rubrica'
+                      : error.status === 404
+                        ? 'Risorsa non trovata'
+                        : 'Impossibile caricare la rubrica contatti'}
+                </p>
+                {error.message && (
+                  <p className="text-xs text-muted-foreground mt-1 break-words">{error.message}</p>
+                )}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => refetch()}
+                disabled={loading}
+                className="flex-shrink-0"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 mr-1 ${loading ? 'animate-spin' : ''}`} />
+                Riprova
+              </Button>
+            </div>
+          ) : loading ? (
             <div className="text-center py-8 text-muted-foreground">
               Caricamento contatti...
             </div>
