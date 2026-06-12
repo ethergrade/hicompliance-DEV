@@ -1,52 +1,68 @@
-import { useState, useEffect } from 'react';
-import { hipatchApi, type HipatchDashboardData } from '@/lib/api/hipatch';
+import { useQuery } from '@tanstack/react-query';
+import { hipatchApi } from '@/lib/api/hipatch';
+import type { HipatchSummary, HipatchAsset, HipatchOsPatch, HipatchSoftwarePatch, HipatchRemediation, HipatchCve } from '@/lib/api/hipatch';
 import { useClientOrganization } from './useClientOrganization';
 
+export interface HipatchDashboardData {
+  summary: HipatchSummary | null;
+  assets: HipatchAsset[];
+  osPatchesPending: HipatchOsPatch[];
+  osPatchesInstalled: HipatchOsPatch[];
+  softwarePatchesPending: HipatchSoftwarePatch[];
+  softwarePatchesInstalled: HipatchSoftwarePatch[];
+  remediations: HipatchRemediation[];
+  cves: HipatchCve[];
+  epssVulnerabilities: HipatchCve[];
+}
+
 const emptyData: HipatchDashboardData = {
+  summary: null,
   assets: [],
-  pending: [],
-  performed: [],
+  osPatchesPending: [],
+  osPatchesInstalled: [],
+  softwarePatchesPending: [],
+  softwarePatchesInstalled: [],
   remediations: [],
+  cves: [],
+  epssVulnerabilities: [],
 };
 
-interface UseHipatchResult {
-  data: HipatchDashboardData;
-  loading: boolean;
-  error: Error | null;
-  isActive: boolean; // true if hipatch service is configured
-}
-
-export function useHipatchDashboard(): UseHipatchResult {
+export function useHipatchDashboard(date?: string) {
   const { organizationId, groupId } = useClientOrganization();
-  const [data, setData] = useState<HipatchDashboardData>(emptyData);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
-  const [isActive, setIsActive] = useState(false);
 
-  useEffect(() => {
-    if (!organizationId) {
-      setLoading(false);
-      setIsActive(false);
-      return;
-    }
+  return useQuery<HipatchDashboardData>({
+    queryKey: ['hipatch-dashboard', organizationId, groupId, date],
+    queryFn: async () => {
+      if (!organizationId) return emptyData;
 
-    setLoading(true);
-    hipatchApi
-      .dashboard(organizationId, groupId)
-      .then((result) => {
-        setData(result);
-        // Service is active if we got any data or if arrays are empty but not null
-        setIsActive(true);
-        setError(null);
-      })
-      .catch((err) => {
-        setError(err);
-        setIsActive(false);
-      })
-      .finally(() => setLoading(false));
-  }, [organizationId, groupId]);
+      const [summary, assets, osPending, osInstalled, swPending, swInstalled, remediations, cves, epss] =
+        await Promise.all([
+          hipatchApi.summary(organizationId, groupId, date).catch(() => null),
+          hipatchApi.assets(organizationId, groupId, date).catch(() => []),
+          hipatchApi.osPatchesPending(organizationId, groupId, date).catch(() => []),
+          hipatchApi.osPatchesInstalled(organizationId, groupId, date).catch(() => []),
+          hipatchApi.softwarePatchesPending(organizationId, groupId, date).catch(() => []),
+          hipatchApi.softwarePatchesInstalled(organizationId, groupId, date).catch(() => []),
+          hipatchApi.remediations(organizationId, groupId, date).catch(() => []),
+          hipatchApi.cves(organizationId, groupId, date).catch(() => []),
+          hipatchApi.epssVulnerabilities(organizationId, groupId, date).catch(() => []),
+        ]);
 
-  return { data, loading, error, isActive };
+      return {
+        summary,
+        assets,
+        osPatchesPending: osPending,
+        osPatchesInstalled: osInstalled,
+        softwarePatchesPending: swPending,
+        softwarePatchesInstalled: swInstalled,
+        remediations,
+        cves,
+        epssVulnerabilities: epss,
+      };
+    },
+    enabled: !!organizationId,
+    staleTime: 5 * 60 * 1000,
+  });
 }
 
-export { type HipatchDashboardData } from '@/lib/api/hipatch';
+export type { HipatchSummary, HipatchAsset, HipatchOsPatch, HipatchSoftwarePatch, HipatchRemediation, HipatchCve } from '@/lib/api/hipatch';
