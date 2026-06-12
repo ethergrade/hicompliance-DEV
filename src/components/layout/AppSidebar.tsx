@@ -29,6 +29,7 @@ import {
   ChevronDown,
   Bot,
   KeyRound,
+  Download,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -138,7 +139,10 @@ export const AppSidebar: React.FC = () => {
         const darkRiskActive = orgServices.some(
           (s) => s.service_type === 'darkrisk' && s.status === 'active'
         );
-        return { hicompliance_enabled: hicomplianceActive, surface_scan360_enabled: surfaceScanActive, dark_risk360_enabled: darkRiskActive };
+        const hipatchActive = orgServices.some(
+          (s) => s.service_type === 'hipatch' && s.status === 'active'
+        );
+        return { hicompliance_enabled: hicomplianceActive, surface_scan360_enabled: surfaceScanActive, dark_risk360_enabled: darkRiskActive, hipatch_enabled: hipatchActive };
       } catch {
         return { hicompliance_enabled: false, surface_scan360_enabled: false, dark_risk360_enabled: false };
       }
@@ -151,6 +155,7 @@ export const AppSidebar: React.FC = () => {
   const hicomplianceOn = forceDemoAccessForSalesCliente1 ? true : !!orgFlags?.hicompliance_enabled;
   const surfaceScanOn = !!orgFlags?.surface_scan360_enabled;
   const darkRiskOn = !!orgFlags?.dark_risk360_enabled;
+  const hipatchOn = !!orgFlags?.hipatch_enabled;
   const { canViewRoute, hasCapability } = usePermissions();
 
   const isFeatureAllowed = (href: string) => {
@@ -158,6 +163,7 @@ export const AppSidebar: React.FC = () => {
     if (isConsoleUser && !selectedOrganization) return true;
     if (href === '/surface-scan' || href === '/surface-scan/exposure') return surfaceScanOn;
     if (href === '/dark-risk') return darkRiskOn;
+    if (href === '/dashboard/service/hi_patch') return hipatchOn;
     // HiCompliance core modules
     if (['/assessment', '/analytics', '/remediation', '/incident-response', '/compliance-events'].includes(href)) {
       return hicomplianceOn;
@@ -247,6 +253,7 @@ export const AppSidebar: React.FC = () => {
             <SidebarMenu>
               {filteredNavigation.map((item) => renderNavItem(item))}
               {servicesStandalone.map((item) => renderNavItem(item))}
+              {hipatchOn && isUserAllowed('/dashboard/service/hi_patch') && renderNavItem({ title: 'HiPatch', href: '/dashboard/service/hi_patch', icon: Download })}
               {/* HIDDEN: Threat Management page removed per client request (2026-06-05) */}
               {/* {isModuleEnabled('/threat-management') && renderNavItem({ title: 'Threat Management', href: '/threat-management', icon: Shield })} */}
             </SidebarMenu>
