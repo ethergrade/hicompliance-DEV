@@ -128,7 +128,7 @@ async function getHipatchServiceId(
   try {
     const services = await tenantServicesApi.listByOrganization(organizationId, groupId);
     const svc = services.find(
-      (s) => s.service_type?.toLowerCase() === "hipatch"
+      (s) => s.service_type?.toLowerCase() === "hipatch" && s.tenant_id === organizationId
     );
     return svc?.id || null;
   } catch {

@@ -44,7 +44,7 @@ const Integrations = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { organizationId, groupId, needsClientSelection } = useClientOrganization();
+  const { organizationId, groupId, needsClientSelection, selectedOrganization } = useClientOrganization();
   const { isSuperAdmin, loading: rolesLoading } = useUserRoles();
 
   // HiPatch-specific form state
@@ -105,7 +105,7 @@ const Integrations = () => {
     queryFn: async () => {
       if (!organizationId) return [];
       const all = await tenantServicesApi.listByOrganization(organizationId, groupId);
-      return all.filter((s: any) => s.service_type === 'HiPatch');
+      return all.filter((s: any) => s.service_type === 'HiPatch' && s.tenant_id === organizationId);
     },
   });
 
@@ -540,6 +540,9 @@ const Integrations = () => {
                   </Badge>
                 </CardHeader>
                 <CardContent>
+                  {selectedOrganization?.name && (
+                    <p className="text-xs text-muted-foreground mb-2 font-medium">{selectedOrganization.name}</p>
+                  )}
                   <CardDescription className="mb-3">
                     Configurazione servizio HiPatch (tenant-service)
                   </CardDescription>
@@ -593,6 +596,9 @@ const Integrations = () => {
                   </Badge>
                 </CardHeader>
                 <CardContent>
+                  {selectedOrganization?.name && (
+                    <p className="text-xs text-muted-foreground mb-2 font-medium">{selectedOrganization.name}</p>
+                  )}
                   <CardDescription className="mb-3">
                     {service?.description || 'Configurazione integrazione backend'}
                   </CardDescription>

@@ -280,7 +280,7 @@ const IncidentResponse: React.FC = () => {
 
   // Fetch emergency contacts from API
   const fetchEmergencyContacts = async () => {
-    if (!organizationId) { setLoading(false); return; }
+    if (!organizationId || !groupId) { setLoading(false); return; }
     try {
       const data = await irpApi.emergencyContacts(organizationId, groupId);
       setEmergencyContacts((data || []).map(c => ({
@@ -305,7 +305,7 @@ const IncidentResponse: React.FC = () => {
 
   useEffect(() => {
     fetchEmergencyContacts();
-  }, [organizationId]);
+  }, [organizationId, groupId]);
 
   const handleContactAdded = () => {
     fetchEmergencyContacts();

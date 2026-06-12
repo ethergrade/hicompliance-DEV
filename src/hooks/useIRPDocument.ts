@@ -40,7 +40,7 @@ export const useIRPDocument = () => {
 
   // Load existing document or create default
   const loadDocument = async () => {
-    if (clientLoading || !clientOrgId) {
+    if (clientLoading || !clientOrgId || !groupId) {
       setLoading(false);
       return;
     }
@@ -117,10 +117,10 @@ export const useIRPDocument = () => {
   };
 
   useEffect(() => {
-    if (!clientLoading && clientOrgId) {
+    if (!clientLoading && clientOrgId && groupId) {
       loadDocument();
     }
-  }, [clientLoading, clientOrgId]);
+  }, [clientLoading, clientOrgId, groupId]);
 
   return {
     document,

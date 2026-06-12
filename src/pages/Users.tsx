@@ -118,13 +118,6 @@ const Users = () => {
     })),
   });
 
-  // DEBUG: log tenant query status
-  if (import.meta.env.DEV && tenantAssignmentsQueries.length > 0) {
-    const loaded = tenantAssignmentsQueries.filter(q => q.data !== undefined).length;
-    const errors = tenantAssignmentsQueries.filter(q => q.isError).length;
-    console.log('[Users] tenant queries:', { total: tenantAssignmentsQueries.length, loaded, errors, organizationId });
-  }
-
   // Mappa userId -> tenantIds (solo per utenti con fetch completato)
   const userTenantsMap = useMemo(() => {
     const map: Record<string, string[]> = {};
@@ -149,19 +142,8 @@ const Users = () => {
       // Has tenants — show only if current org is in the list
       return tenantIds.includes(organizationId);
     });
-    if (import.meta.env.DEV) {
-      console.log('[Users] tenant filter:', {
-        organizationId,
-        total: users.length,
-        filtered: filtered.length,
-        restricted: users.filter(u => tenantRestrictedRoles.has(getPrimaryRole(u, groupId) ?? '')).length,
-        mapKeys: Object.keys(userTenantsMap).length,
-        sampleUsers: users.slice(0, 3).map(u => ({ id: u.id, name: u.name, roles: u.roles, groups: u.groups })),
-        sampleTenants: Object.fromEntries(Object.entries(userTenantsMap).slice(0, 3)),
-      });
-    }
     return filtered;
-  }, [users, organizationId, userTenantsMap]);
+  }, [users, organizationId, userTenantsMap, groupId]);
 
   const tenantFilterLoading = tenantAssignmentsQueries.some((q) => q.isLoading);
 

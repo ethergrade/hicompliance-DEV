@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useClientContext } from '@/contexts/ClientContext';
@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, Building2, Calendar, ArrowRight, Users, FileText, Server, Plug, Pencil, Trash2, ShieldCheck, Plus } from 'lucide-react';
+import { Search, X, Building2, Calendar, ArrowRight, Users, FileText, Server, Plug, Pencil, Trash2, ShieldCheck, Plus } from 'lucide-react';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { groupsApi } from '@/lib/api';
@@ -28,7 +28,11 @@ const ClientSelection: React.FC = () => {
   const location = useLocation();
   const { organizations, setSelectedOrganization, isLoadingClients, selectedOrganization, fetchOrganizations } = useClientContext();
   const { isSuperAdmin } = useUserRoles();
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(() => selectedOrganization?.name ?? '');
+
+  useEffect(() => {
+    setSearchQuery(selectedOrganization?.name ?? '');
+  }, [selectedOrganization?.id]);
   const [editingOrgId, setEditingOrgId] = useState<string | null>(null);
   const [editingOrgName, setEditingOrgName] = useState<string>('');
   const [profileOpen, setProfileOpen] = useState(false);
@@ -177,8 +181,16 @@ const ClientSelection: React.FC = () => {
             placeholder="Cerca per nome o codice cliente..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
+            className="pl-10 pr-8"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* Stats */}

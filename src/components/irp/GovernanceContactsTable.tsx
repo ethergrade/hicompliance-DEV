@@ -55,7 +55,7 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
   };
 
   const fetchContacts = async () => {
-    if (!organizationId) { setLoading(false); return; }
+    if (!organizationId || !groupId) { setLoading(false); return; }
     try {
       const data = await irpApi.contacts(organizationId, groupId);
 
@@ -86,7 +86,7 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
 
   useEffect(() => {
     fetchContacts();
-  }, [organizationId]);
+  }, [organizationId, groupId]);
 
   const handleDeleteContact = async (contactId: string) => {
     if (!organizationId) return;

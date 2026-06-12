@@ -482,9 +482,8 @@ const Assessment: React.FC = () => {
 
   const missingNetworkFields = useMemo(() => {
     if (!networkFields || !hicomplianceActive) return [];
-    return (Object.entries(networkFields) as [keyof typeof networkFields, string][])
-      .filter(([, v]) => !v)
-      .map(([k]) => k);
+    const primaryFields: (keyof typeof networkFields)[] = ['primary_domain', 'primary_subnet'];
+    return primaryFields.filter((k) => !networkFields[k]);
   }, [networkFields, hicomplianceActive]);
 
   // Persistent preferences

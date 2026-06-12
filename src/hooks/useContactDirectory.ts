@@ -44,7 +44,7 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
   const { organizationId: clientOrgId, groupId, isLoading: clientLoading } = useClientOrganization();
 
   const fetchContacts = useCallback(async () => {
-    if (clientLoading || !clientOrgId) return;
+    if (clientLoading || !clientOrgId || !groupId) return;
 
     setLoading(true);
     setError(null);
@@ -70,13 +70,13 @@ export const useContactDirectory = (): UseContactDirectoryReturn => {
     } finally {
       setLoading(false);
     }
-  }, [toast, clientOrgId, clientLoading]);
+  }, [toast, clientOrgId, clientLoading, groupId]);
 
   useEffect(() => {
-    if (!clientLoading && clientOrgId) {
+    if (!clientLoading && clientOrgId && groupId) {
       fetchContacts();
     }
-  }, [fetchContacts, clientLoading, clientOrgId]);
+  }, [fetchContacts, clientLoading, clientOrgId, groupId]);
 
   const filteredContacts = contacts.filter(contact => {
     if (!searchQuery.trim()) return true;

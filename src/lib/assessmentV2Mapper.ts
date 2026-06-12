@@ -48,12 +48,13 @@ export async function loadV2AssessmentData() {
  */
 export function mapToV2Status(
   uiStatus: string | null | undefined
-): 'not_applicable' | 'planned_in_progress' | 'completed' | null {
+): 'not_applicable' | 'planned_in_progress' | 'completed' | 'not_started' | null {
   if (!uiStatus) return null;
-  const map: Record<string, 'not_applicable' | 'planned_in_progress' | 'completed'> = {
+  const map: Record<string, 'not_applicable' | 'planned_in_progress' | 'completed' | 'not_started'> = {
     completato: 'completed',
     pianificato_in_corso: 'planned_in_progress',
     non_applicabile: 'not_applicable',
+    non_iniziato: 'not_started',
   };
   return map[uiStatus] ?? null;
 }
@@ -65,10 +66,11 @@ export function mapToUiStatus(
   v2Status: string | null | undefined
 ): 'completato' | 'pianificato_in_corso' | 'non_iniziato' | 'non_applicabile' | null {
   if (!v2Status) return null;
-  const map: Record<string, 'completato' | 'pianificato_in_corso' | 'non_applicabile'> = {
+  const map: Record<string, 'completato' | 'pianificato_in_corso' | 'non_applicabile' | 'non_iniziato'> = {
     completed: 'completato',
     planned_in_progress: 'pianificato_in_corso',
     not_applicable: 'non_applicabile',
+    not_started: 'non_iniziato',
   };
   return map[v2Status] ?? null;
 }

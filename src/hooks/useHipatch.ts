@@ -61,7 +61,8 @@ export function useHipatchDashboard(date?: string) {
       };
     },
     enabled: !!organizationId,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
+    gcTime: 0,
   });
 }
 

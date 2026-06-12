@@ -8,7 +8,7 @@ import type {
 
 const API_BASE_URL = import.meta.env.DEV
   ? "/api"
-  : (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") || "https://hiapi.websoupcloud.it";
+  : (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") || "https://hiconsole.hisolution.it/api";
 
 const _h = (companyId: string, groupId?: string | null) => ({
   headers: { "X-Group-Id": groupId || companyId },

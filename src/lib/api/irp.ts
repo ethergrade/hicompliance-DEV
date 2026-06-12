@@ -1,4 +1,4 @@
-import { complianceApiClient } from "@/lib/api-client";
+import { apiClient as complianceApiClient } from "@/lib/api-client";
 import type {
   ApiResponse,
   Group,
