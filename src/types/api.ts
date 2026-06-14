@@ -70,11 +70,43 @@ export interface LoginUser {
   groups: Group[];
   /** Dotted capabilities map from /auth/me (e.g. `users.manage`, `hicompliance.assessment.view`). */
   capabilities?: Record<string, boolean>;
+  /** MFA already configured by this user */
+  mfa_configured?: boolean;
+  /** MFA not mandatory but user hasn't set it up yet */
+  mfa_recommended?: boolean;
 }
 
 export interface LoginData {
+  token?: string;
+  mfa_required: boolean;
+  mfa_configured: boolean;
+  /** Present only when mfa_configured=true — no token yet */
+  mfa_challenge_token?: string;
+  user?: LoginUser;
+}
+
+export interface MfaVerifyRequest {
+  mfa_challenge_token: string;
+  code: string;
+}
+
+export interface MfaVerifyData {
   token: string;
   user: LoginUser;
+}
+
+export interface MfaSetupData {
+  secret: string;
+  qr_code: string;
+  qr_mime: string;
+}
+
+export interface MfaEnableData {
+  recovery_codes: string[];
+}
+
+export interface MfaRecoveryCodesData {
+  recovery_codes: string[];
 }
 
 export interface ChangePasswordRequest {
@@ -587,6 +619,26 @@ export interface AssessmentSnapshot {
   shodan_data?: unknown | null;
   intelx_data?: unknown | null;
   created_at: string;
+}
+
+export type SnapshotJobStatus = 'pending' | 'running' | 'done' | 'failed';
+
+export interface AssessmentSnapshotStatus {
+  snapshot_id: string;
+  snapshot_year: number;
+  shodan: SnapshotJobStatus;
+  intelx: SnapshotJobStatus;
+  openai: SnapshotJobStatus;
+  updated_at: string;
+}
+
+export interface OpenAiTextBlock {
+  type: 'text';
+  text: { value: string; annotations: unknown[] };
+}
+
+export interface UpdateSnapshotAiTextRequest {
+  openai_data: OpenAiTextBlock[];
 }
 
 export interface RemediationTemplate {

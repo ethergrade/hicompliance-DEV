@@ -5,6 +5,8 @@ import type {
   AssessmentQuestion,
   AssessmentResponseItem,
   AssessmentSnapshot,
+  AssessmentSnapshotStatus,
+  UpdateSnapshotAiTextRequest,
   BatchAssessmentResponseRequest,
   RemediationTemplate,
 } from "@/types/api";
@@ -85,6 +87,26 @@ export const assessmentV2Api = {
     const res = await apiClient.post<ApiResponse<AssessmentSnapshot>>(
       `/companies/${companyId}/assessment-snapshots`,
       undefined,
+      _h(companyId, _g)
+    );
+    return res.data;
+  },
+
+  /** Get elaboration status for a snapshot (admin/superadmin only) */
+  async snapshotStatus(companyId: string, snapshotId: string, _g?: string | null): Promise<AssessmentSnapshotStatus> {
+    const res = await apiClient.get<ApiResponse<AssessmentSnapshotStatus>>(
+      `/companies/${companyId}/assessment-snapshots/${snapshotId}/status`,
+      undefined,
+      _h(companyId, _g)
+    );
+    return res.data;
+  },
+
+  /** Update AI-generated text for a snapshot (admin/superadmin only, only when openai=done) */
+  async updateSnapshotAiText(companyId: string, snapshotId: string, payload: UpdateSnapshotAiTextRequest, _g?: string | null): Promise<AssessmentSnapshot> {
+    const res = await apiClient.patch<ApiResponse<AssessmentSnapshot>>(
+      `/companies/${companyId}/assessment-snapshots/${snapshotId}/ai-text`,
+      payload,
       _h(companyId, _g)
     );
     return res.data;

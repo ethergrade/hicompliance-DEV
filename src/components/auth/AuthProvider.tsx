@@ -4,23 +4,35 @@ import { getToken, clearToken, handleUnauthorized, ApiError, isTokenExpired } fr
 import { useToast } from '@/hooks/use-toast';
 import type { LoginUser } from '@/types/api';
 
+export type MfaState =
+  | { step: 'none' }
+  | { step: 'verify'; challengeToken: string }
+  | { step: 'setup' };
+
 interface AuthContextType {
   user: LoginUser | null;
   capabilities: Record<string, boolean> | undefined;
   loading: boolean;
+  mfaState: MfaState;
   signIn: (login: string, password: string) => Promise<{ error: unknown }>;
+  completeMfaVerify: (challengeToken: string, code: string) => Promise<{ error: unknown }>;
   signOut: () => Promise<void>;
   /** Ricarica /auth/me con X-Group-Id per ottenere le capabilities corrette del gruppo */
   refreshCapabilities: (groupId: string) => Promise<void>;
+  /** Ricarica /auth/me e aggiorna user (es. dopo setup MFA) */
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   capabilities: undefined,
   loading: true,
+  mfaState: { step: 'none' },
   signIn: async () => ({ error: null }),
+  completeMfaVerify: async () => ({ error: null }),
   signOut: async () => {},
   refreshCapabilities: async () => {},
+  refreshUser: async () => {},
 });
 
 export const useAuth = () => {
@@ -35,6 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<LoginUser | null>(null);
   const [capabilities, setCapabilities] = useState<Record<string, boolean> | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  const [mfaState, setMfaState] = useState<MfaState>({ step: 'none' });
   const { toast } = useToast();
 
   // Legge il group_id dell'organizzazione selezionata da localStorage
@@ -108,28 +121,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => window.removeEventListener('auth:unauthorized', handleAuthUnauthorized);
   }, [toast]);
 
+  const finalizeLogin = useCallback(async (loggedUser: LoginUser) => {
+    const firstGroupId = loggedUser.groups?.[0]?.id;
+    try {
+      // Sempre ricarica /auth/me per avere mfa_recommended e capabilities aggiornati
+      const me = await authApi.me(firstGroupId && !loggedUser.is_super_admin ? firstGroupId : undefined);
+      setUser(me);
+      setCapabilities(me.capabilities);
+    } catch {
+      // Fallback ai dati del login se /auth/me fallisce
+      setUser(loggedUser);
+    }
+    setMfaState({ step: 'none' });
+    toast({ title: "Accesso effettuato", description: "Benvenuto in HiConsole" });
+  }, [toast]);
+
   const signIn = useCallback(async (login: string, password: string) => {
     try {
-      const { user: loggedUser } = await authApi.login({ login, password });
+      const data = await authApi.login({ login, password });
 
-      // Subito dopo il login, tentiamo di caricare capabilities del primo gruppo
-      // in modo che il sidebar sia già corretto al primo render
-      const firstGroupId = loggedUser.groups?.[0]?.id;
-      if (firstGroupId && !loggedUser.is_super_admin) {
-        try {
-          const meWithCaps = await authApi.me(firstGroupId);
-          setCapabilities(meWithCaps.capabilities);
-        } finally {
-          setUser(loggedUser);
-        }
-      } else {
-        setUser(loggedUser);
+      // Caso 3: MFA configurato — challenge in attesa
+      if (data.mfa_required && data.mfa_configured && data.mfa_challenge_token) {
+        setMfaState({ step: 'verify', challengeToken: data.mfa_challenge_token });
+        return { error: null };
       }
 
-      toast({
-        title: "Accesso effettuato",
-        description: "Benvenuto in HiConsole",
-      });
+      // Caso 2: MFA obbligatorio ma non configurato — setup forzato
+      if (data.mfa_required && !data.mfa_configured && data.user) {
+        setMfaState({ step: 'setup' });
+        // Token già salvato da authApi.login — accesso parziale per poter chiamare /auth/mfa/setup
+        window.location.href = '/auth/mfa-setup';
+        return { error: null };
+      }
+
+      // Caso 1: login normale senza MFA
+      if (data.user) {
+        await finalizeLogin(data.user);
+      }
 
       return { error: null };
     } catch (error) {
@@ -137,15 +165,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ? error.message
         : "Si è verificato un errore durante l'accesso";
 
-      toast({
-        title: "Errore di accesso",
-        description: message,
-        variant: "destructive",
-      });
-
+      toast({ title: "Errore di accesso", description: message, variant: "destructive" });
       return { error };
     }
-  }, [toast]);
+  }, [toast, finalizeLogin]);
+
+  const completeMfaVerify = useCallback(async (challengeToken: string, code: string) => {
+    try {
+      const { user: loggedUser } = await authApi.mfaVerify({ mfa_challenge_token: challengeToken, code });
+      await finalizeLogin(loggedUser);
+      return { error: null };
+    } catch (error) {
+      const message = error instanceof ApiError
+        ? error.message
+        : "Codice non valido";
+
+      // Challenge scaduta (401) — rimanda al login
+      if (error instanceof ApiError && error.status === 401) {
+        setMfaState({ step: 'none' });
+        toast({ title: "Sessione scaduta", description: "Rieffettua il login", variant: "destructive" });
+      } else {
+        toast({ title: "Verifica fallita", description: message, variant: "destructive" });
+      }
+      return { error };
+    }
+  }, [toast, finalizeLogin]);
+
+  const refreshUser = useCallback(async () => {
+    try {
+      const storedGroupId = getStoredGroupId();
+      const me = await authApi.me(storedGroupId ?? undefined);
+      setUser(me);
+      setCapabilities(me.capabilities);
+    } catch { /* ignora */ }
+  }, []);
 
   const signOut = useCallback(async () => {
     try {
@@ -155,19 +208,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     clearToken();
     setUser(null);
-    toast({
-      title: "Disconnesso",
-      description: "Sei stato disconnesso con successo",
-    });
+    setMfaState({ step: 'none' });
+    toast({ title: "Disconnesso", description: "Sei stato disconnesso con successo" });
   }, [toast]);
 
   const value: AuthContextType = {
     user,
     capabilities,
     loading,
+    mfaState,
     signIn,
+    completeMfaVerify,
     signOut,
     refreshCapabilities,
+    refreshUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

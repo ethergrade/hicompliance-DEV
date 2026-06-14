@@ -30,6 +30,8 @@ import {
 import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { AssessmentAiPanel } from '@/components/assessment/AssessmentAiPanel';
+import type { AssessmentSnapshot } from '@/types/api';
 import { useServiceIntegrations } from '@/hooks/useServiceIntegrations';
 import { NIS2_LABELS } from '@/types/organization';
 import { useUserPreferences } from '@/hooks/useUserPreferences';
@@ -184,7 +186,8 @@ const Assessment: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { selectedOrganization, userOrganizationId, canManageMultipleClients } = useClientContext();
-  const { isSales } = useUserRoles();
+  const { isSales, isSuperAdmin } = useUserRoles();
+  const isAdmin = user?.is_super_admin || isSuperAdmin;
   const orgId = selectedOrganization?.id || userOrganizationId;
   const isReadOnlyView = canManageMultipleClients && isSales;
 
@@ -202,6 +205,7 @@ const Assessment: React.FC = () => {
   const [configSheetOpen, setConfigSheetOpen] = useState(false);
   const [anagraficaOpen, setAnagraficaOpen] = useState(false);
   const [v1AssessmentId, setV1AssessmentId] = useState<string | null>(null);
+  const [latestSnapshot, setLatestSnapshot] = useState<AssessmentSnapshot | null>(null);
   const categoriesLoaded = useRef(false);
   const guidedOrgRef = useRef<string | null>(null);
 
@@ -308,6 +312,20 @@ const Assessment: React.FC = () => {
       loadOrCreateV1Assessment();
     });
   }, [orgId, selectedOrganization?.group_id]);
+
+  // Load latest snapshot for admin AI panel
+  useEffect(() => {
+    if (!orgId || !isAdmin) return;
+    const groupId = selectedOrganization?.group_id ?? null;
+    assessmentV2Api.snapshots(orgId, groupId)
+      .then(snaps => {
+        if (snaps.length > 0) {
+          const sorted = [...snaps].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+          setLatestSnapshot(sorted[0]);
+        }
+      })
+      .catch(() => { /* silently ignore — admin panel is non-critical */ });
+  }, [orgId, isAdmin, selectedOrganization?.group_id]);
 
   // Load existing assessment responses from the v2 API
   useEffect(() => {
@@ -1400,6 +1418,16 @@ const Assessment: React.FC = () => {
           </CardContent>
         </Card>
         </>
+        )}
+
+        {/* Admin/SuperAdmin: AI elaboration status + text editor */}
+        {isAdmin && latestSnapshot && orgId && (
+          <AssessmentAiPanel
+            companyId={orgId}
+            snapshotId={latestSnapshot.id}
+            groupId={selectedOrganization?.group_id ?? null}
+            openaiData={latestSnapshot.openai_data}
+          />
         )}
       </div>
     </DashboardLayout>

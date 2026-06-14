@@ -39,6 +39,7 @@ import AssessmentGanttTest from "./pages/AssessmentGanttTest";
 // HIDDEN: supabase-only (ai_ciso_conversations), no backend model
 // import AICiso from "./pages/AICiso";
 import HiConsoleLanding from "./pages/HiConsoleLanding";
+import MfaSetup from "./pages/MfaSetup";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -56,6 +57,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/hiconsole" element={<HiConsoleLanding />} />
             <Route path="/auth" element={<LoginPage />} />
+            <Route path="/auth/mfa-setup" element={<MfaSetup />} />
             <Route path="/admin/clients" element={<ClientSelection />} />
             <Route path="/dashboard" element={<ClientSelectionGuard><Dashboard /></ClientSelectionGuard>} />
             <Route path="/cyber-news" element={<ClientSelectionGuard><CyberNews /></ClientSelectionGuard>} />

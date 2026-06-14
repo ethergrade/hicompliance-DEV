@@ -4,6 +4,11 @@ import type {
   LoginRequest,
   LoginData,
   LoginUser,
+  MfaVerifyRequest,
+  MfaVerifyData,
+  MfaSetupData,
+  MfaEnableData,
+  MfaRecoveryCodesData,
   ChangePasswordRequest,
   Group,
 } from "@/types/api";
@@ -12,8 +17,41 @@ export const authApi = {
   async login(credentials: LoginRequest): Promise<LoginData> {
     await fetchCsrfCookie();
     const res = await apiClient.post<ApiResponse<LoginData>>("/auth/login", credentials);
+    // Save token only when MFA is not pending verification
+    if (res.data.token) {
+      setToken(res.data.token);
+    }
+    return res.data;
+  },
+
+  async mfaVerify(payload: MfaVerifyRequest): Promise<MfaVerifyData> {
+    const res = await apiClient.post<ApiResponse<MfaVerifyData>>("/auth/mfa/verify", payload);
     setToken(res.data.token);
     return res.data;
+  },
+
+  async mfaSetup(): Promise<MfaSetupData> {
+    const res = await apiClient.get<ApiResponse<MfaSetupData>>("/auth/mfa/setup");
+    return res.data;
+  },
+
+  async mfaEnable(code: string): Promise<MfaEnableData> {
+    const res = await apiClient.post<ApiResponse<MfaEnableData>>("/auth/mfa/enable", { code });
+    return res.data;
+  },
+
+  async mfaRecoveryCodes(): Promise<MfaRecoveryCodesData> {
+    const res = await apiClient.get<ApiResponse<MfaRecoveryCodesData>>("/auth/mfa/recovery-codes");
+    return res.data;
+  },
+
+  async mfaRegenerateRecoveryCodes(code: string): Promise<MfaRecoveryCodesData> {
+    const res = await apiClient.post<ApiResponse<MfaRecoveryCodesData>>("/auth/mfa/recovery-codes/regenerate", { code });
+    return res.data;
+  },
+
+  async mfaDisable(payload: { password?: string; code?: string }): Promise<void> {
+    await apiClient.post<ApiResponse<null>>("/auth/mfa/disable", payload);
   },
 
   async logout(): Promise<void> {

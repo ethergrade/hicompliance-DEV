@@ -212,6 +212,14 @@ async function request<T>(
     // Note: 401 on API data endpoints does NOT auto-logout.
     // Only authApi.me() and authApi.login() call handleUnauthorized() explicitly.
     // This prevents a single expired API call from destroying the entire session.
+
+    // 403 with mfa_setup_required → redirect to MFA setup page
+    if (response.status === 403 && (body as any)?.mfa_setup_required === true) {
+      if (typeof window !== 'undefined' && window.location.pathname !== '/auth/mfa-setup') {
+        window.location.href = '/auth/mfa-setup';
+      }
+    }
+
     throw new ApiError(response.status, body as ApiErrorResponse);
   }
 
