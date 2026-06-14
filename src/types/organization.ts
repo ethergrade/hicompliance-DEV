@@ -21,7 +21,7 @@ export interface OrganizationProfile {
 export const NIS2_LABELS: Record<NIS2Classification, string> = {
   soggetto_essenziale: 'Soggetto Essenziale',
   soggetto_importante: 'Soggetto Importante',
-  nessuna: 'Nessuna delle due'
+  nessuna: 'Nessuna'
 };
 
 export const NIS2_DESCRIPTIONS: Record<NIS2Classification, string> = {
