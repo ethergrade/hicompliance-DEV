@@ -19,14 +19,14 @@ import {
 } from '@/components/ui/breadcrumb';
 
 const serviceNameMap: Record<string, string> = {
-  'hi_patch': 'HiPatch',
-  'hi_firewall': 'HiFirewall',
-  'hi_endpoint': 'HiEndpoint',
-  'hi_mail': 'HiMail',
-  'hi_log': 'HiLog',
-  'surface_scan': 'SurfaceScan360',
-  'hi_detect': 'HiDetect',
-  'hi_mobile': 'HiMobile',
+  'hipatch':     'HiPatch',
+  'hifirewall':  'HiFirewall',
+  'hiendpoint':  'HiEndpoint',
+  'himail':      'HiMail',
+  'hilog':       'HiLog',
+  'surfacescan': 'SurfaceScan360',
+  'hidetect':    'HiDetect',
+  'himobile':    'HiMobile',
 };
 
 const ServiceDashboard: React.FC = () => {
@@ -35,21 +35,21 @@ const ServiceDashboard: React.FC = () => {
 
   const renderServiceContent = () => {
     switch (serviceCode) {
-      case 'hi_patch':
+      case 'hipatch':
         return <HiPatchDashboard />;
-      case 'hi_firewall':
+      case 'hifirewall':
         return <HiFirewallDashboard />;
-      case 'hi_endpoint':
+      case 'hiendpoint':
         return <HiEndpointDashboard />;
-      case 'hi_mail':
+      case 'himail':
         return <HiMailDashboard />;
-      case 'hi_log':
+      case 'hilog':
         return <HiLogDashboard />;
-      case 'surface_scan':
+      case 'surfacescan':
         return <SurfaceScanDashboard />;
-      case 'hi_detect':
+      case 'hidetect':
         return <HiDetectDashboard />;
-      case 'hi_mobile':
+      case 'himobile':
         return <HiMobileDashboard />;
       default:
         return (

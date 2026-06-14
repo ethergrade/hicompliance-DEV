@@ -105,7 +105,7 @@ const Integrations = () => {
     queryFn: async () => {
       if (!organizationId) return [];
       const all = await tenantServicesApi.listByOrganization(organizationId, groupId);
-      return all.filter((s: any) => s.service_type === 'HiPatch' && s.tenant_id === organizationId);
+      return all.filter((s: any) => s.service_type === 'hipatch' && s.tenant_id === organizationId);
     },
   });
 
@@ -141,7 +141,7 @@ const Integrations = () => {
           return tenantServicesApi.create(
             {
               tenant_id: organizationId,
-              service_type: 'HiPatch',
+              service_type: 'hipatch',
               status: 'active',
               settings,
             },
@@ -217,7 +217,7 @@ const Integrations = () => {
       organization_id: organizationId ?? '',
       service_id: hpCatalog?.id ?? 'hipatch',
       service_code: 'hipatch',
-      service_name: 'HiPatch',
+      service_name: 'hipatch',
       api_url: '',
       is_active: existingHipatch?.status === 'active',
     } as IntegrationResource;

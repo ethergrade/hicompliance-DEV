@@ -15,13 +15,17 @@ import { useDashboardMetrics } from "@/hooks/useDashboardMetrics";
 import { useAssessmentTrends } from "@/hooks/useAssessmentTrends";
 import { AssessmentRadarChart } from "@/components/assessment/AssessmentRadarChart";
 import ClientServicesDialog from "@/components/clients/ClientServicesDialog";
-import { Shield, BarChart3, Link2, Unlink, Settings } from "lucide-react";
+import { Shield, BarChart3, Unlink, Settings } from "lucide-react";
 
 const getServiceIcon = (code: string) => {
   const key = code.toLowerCase().replace(/[^a-z0-9]/g, "");
   switch (key) {
     case "surfacescan":
       return <BarChart3 className="w-4 h-4" />;
+    case "hipatch":
+      return <Shield className="w-4 h-4" />;
+    case "darkrisk":
+      return <Shield className="w-4 h-4" />;
     default:
       return <Shield className="w-4 h-4" />;
   }
@@ -54,7 +58,16 @@ const Dashboard: React.FC = () => {
   // Catalogo servizi — chiavi normalizzate (lowercase, no underscore/punteggiatura)
   // per confronto case-insensitive con i service_type del backend.
   const SERVICE_CATALOG: Record<string, { name: string; icon: string }> = {
-    surfacescan: { name: "SurfaceScan360", icon: "chart" },
+    hicompliance: { name: "HiCompliance", icon: "shield" },
+    surfacescan:  { name: "SurfaceScan360", icon: "chart" },
+    darkrisk:     { name: "DarkRisk360", icon: "shield" },
+    hipatch:      { name: "HiPatch", icon: "shield" },
+    hifirewall:   { name: "HiFirewall", icon: "shield" },
+    hiendpoint:   { name: "HiEndpoint", icon: "shield" },
+    himail:       { name: "HiMail", icon: "shield" },
+    hidetect:     { name: "HiDetect", icon: "shield" },
+    hilog:        { name: "HiLog", icon: "shield" },
+    himobile:     { name: "HiMobile", icon: "shield" },
   };
 
   const normalizeCode = (code: string) =>
@@ -135,12 +148,7 @@ const Dashboard: React.FC = () => {
             />
           </div>
           <div className="flex items-center gap-2">
-            {moduleEnabled ? (
-              <Badge className="bg-green-500/15 text-green-500 border-green-500/30 text-[10px] px-1.5 py-0">
-                <Link2 className="w-3 h-3 mr-1" />
-                API
-              </Badge>
-            ) : (
+            {!moduleEnabled && (
               <Badge
                 variant="outline"
                 className="text-muted-foreground text-[10px] px-1.5 py-0"
