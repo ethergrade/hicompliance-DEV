@@ -39,7 +39,7 @@ const getHiServiceIcon = (code: string) => {
     hi_mail: Mail,
     hi_log: FileText,
     hi_patch: Download,
-    hi_track: Activity,
+    surface_scan: Activity,
     hi_detect: Monitor,
   };
   return iconMap[code] || Shield;
@@ -74,7 +74,7 @@ const getResolvedCount = (code: string): number => {
     hi_mail: 98,
     hi_log: 54,
     hi_patch: 78,
-    hi_track: 89,
+    surface_scan: 89,
     hi_detect: 127,
   };
   return resolvedMap[code] || 0;

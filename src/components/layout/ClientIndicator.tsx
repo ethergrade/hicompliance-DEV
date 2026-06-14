@@ -15,7 +15,7 @@ import {
 // Map routes to required service types
 const SERVICE_ROUTE_MAP: Record<string, string> = {
   '/dark-risk': 'darkrisk',
-  '/surface-scan': 'hitrack',
+  '/surface-scan': 'surfacescan',
 };
 
 export const ClientIndicator: React.FC = () => {

@@ -38,7 +38,7 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
   hifirewall: <Shield className="w-4 h-4" />,
   hiendpoint: <Monitor className="w-4 h-4" />,
   himail: <Mail className="w-4 h-4" />,
-  hitrack: <Activity className="w-4 h-4" />,
+  surfacescan: <Activity className="w-4 h-4" />,
   hilog: <Server className="w-4 h-4" />,
   hidetect: <SearchIcon className="w-4 h-4" />,
   himobile: <Smartphone className="w-4 h-4" />,
@@ -47,7 +47,7 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
 /** Derive feature flags from tenant-services list */
 function deriveFlags(services: TenantServiceResource[]) {
   const hc = services.find(s => s.service_type === 'hicompliance' && (s.status === 'active' || !s.status));
-  const ht = services.find(s => s.service_type === 'hitrack' && (s.status === 'active' || !s.status));
+  const ht = services.find(s => s.service_type === 'surfacescan' && (s.status === 'active' || !s.status));
   const dr = services.find(s => s.service_type === 'darkrisk' && (s.status === 'active' || !s.status));
   const hp = services.find(s => s.service_type === 'hipatch' && (s.status === 'active' || !s.status));
   return {
@@ -145,7 +145,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
       }
       // SurfaceScan360 toggle OFF
       if (patch.surface_scan360_enabled === false) {
-        const ht = ts.find(s => s.service_type === 'hitrack');
+        const ht = ts.find(s => s.service_type === 'surfacescan');
         if (ht) await tenantServicesApi.delete(ht.id, groupId);
       }
       // DarkRisk360 toggle OFF
@@ -169,13 +169,13 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
       }
       // SurfaceScan360 toggle ON — eredita contract_start da HiCompliance se presente
       if (patch.surface_scan360_enabled === true) {
-        const ht = ts.find(s => s.service_type === 'hitrack');
+        const ht = ts.find(s => s.service_type === 'surfacescan');
         if (!ht) {
           const hcSettings = (ts.find(s => s.service_type === 'hicompliance')?.settings as any) || {};
           const defaultStart = hcSettings.contract_start || '';
           await tenantServicesApi.create({
             tenant_id: organizationId,
-            service_type: 'hitrack',
+            service_type: 'surfacescan',
             status: 'active',
             settings: { duration: '3', extended_range: false, ...(defaultStart ? { contract_start: defaultStart } : {}) },
           }, groupId);
@@ -227,7 +227,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
       }
       // SurfaceScan extended toggle (skip if service was just toggled OFF)
       if ('surface_scan_extended' in patch && patch.surface_scan360_enabled !== false) {
-        const ht = ts.find(s => s.service_type === 'hitrack');
+        const ht = ts.find(s => s.service_type === 'surfacescan');
         if (ht) {
           await tenantServicesApi.update(ht.id, { settings: { ...(ht.settings as any || {}), extended_range: patch.surface_scan_extended } }, groupId);
         }
@@ -553,7 +553,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 
               {orgFlags?.surface_scan360_enabled && (
                 <div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
-                  {renderContractRow('hitrack')}
+                  {renderContractRow('surfacescan')}
                   <div className="flex items-center justify-between rounded-md border p-2.5">
                     <div className="flex items-center gap-3">
                       <Radar className="w-4 h-4 text-muted-foreground" />

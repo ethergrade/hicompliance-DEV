@@ -24,7 +24,7 @@ const serviceNameMap: Record<string, string> = {
   'hi_endpoint': 'HiEndpoint',
   'hi_mail': 'HiMail',
   'hi_log': 'HiLog',
-  'hi_track': 'SurfaceScan360',
+  'surface_scan': 'SurfaceScan360',
   'hi_detect': 'HiDetect',
   'hi_mobile': 'HiMobile',
 };
@@ -45,7 +45,7 @@ const ServiceDashboard: React.FC = () => {
         return <HiMailDashboard />;
       case 'hi_log':
         return <HiLogDashboard />;
-      case 'hi_track':
+      case 'surface_scan':
         return <SurfaceScanDashboard />;
       case 'hi_detect':
         return <HiDetectDashboard />;

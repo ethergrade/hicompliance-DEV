@@ -20,7 +20,7 @@ import { Shield, BarChart3, Link2, Unlink, Settings } from "lucide-react";
 const getServiceIcon = (code: string) => {
   const key = code.toLowerCase().replace(/[^a-z0-9]/g, "");
   switch (key) {
-    case "hitrack":
+    case "surfacescan":
       return <BarChart3 className="w-4 h-4" />;
     default:
       return <Shield className="w-4 h-4" />;
@@ -54,7 +54,7 @@ const Dashboard: React.FC = () => {
   // Catalogo servizi — chiavi normalizzate (lowercase, no underscore/punteggiatura)
   // per confronto case-insensitive con i service_type del backend.
   const SERVICE_CATALOG: Record<string, { name: string; icon: string }> = {
-    hitrack: { name: "SurfaceScan360", icon: "chart" },
+    surfacescan: { name: "SurfaceScan360", icon: "chart" },
   };
 
   const normalizeCode = (code: string) =>

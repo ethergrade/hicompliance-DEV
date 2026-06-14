@@ -8,7 +8,7 @@ import type { ServiceCatalogItem } from '@/types/api';
  */
 export const FALLBACK_SERVICE_CATALOG: ServiceCatalogItem[] = [
   { id: 'hicompliance', code: 'hicompliance', name: 'HiCompliance', description: 'Assessment, Analisi, Remediation, Incident', icon: 'shield' },
-  { id: 'hitrack', code: 'hitrack', name: 'SurfaceScan360', description: 'Scansione attack surface esterna', icon: 'search' },
+  { id: 'surfacescan', code: 'surfacescan', name: 'SurfaceScan360', description: 'Scansione attack surface esterna', icon: 'search' },
   { id: 'darkrisk', code: 'darkrisk', name: 'DarkRisk360', description: 'Monitoraggio Dark Risk', icon: 'shield-alert' },
   { id: 'hipatch', code: 'hipatch', name: 'HiPatch', description: 'Patch Management', icon: 'download' },
   { id: 'hifirewall', code: 'hifirewall', name: 'HiFirewall', description: 'Firewall Management', icon: 'shield-check' },

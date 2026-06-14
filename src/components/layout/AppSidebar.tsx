@@ -134,7 +134,7 @@ export const AppSidebar: React.FC = () => {
           (s) => s.service_type === 'hicompliance' && s.status === 'active'
         );
         const surfaceScanActive = orgServices.some(
-          (s) => s.service_type === 'hitrack' && s.status === 'active'
+          (s) => s.service_type === 'surfacescan' && s.status === 'active'
         );
         const darkRiskActive = orgServices.some(
           (s) => s.service_type === 'darkrisk' && s.status === 'active'
