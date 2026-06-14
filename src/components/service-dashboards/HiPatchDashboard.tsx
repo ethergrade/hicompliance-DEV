@@ -253,6 +253,37 @@ export const HiPatchDashboard: React.FC = () => {
         </div>
       </section>
 
+      {/* CVE / Vulnerabilities */}
+      <section className="space-y-4">
+        <h2 className="text-2xl font-bold">CVE rilevate</h2>
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle className="text-lg">
+              Vulnerabilità
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              {mappedCves.length > 0
+                ? (() => {
+                    const affectedIds = new Set(mappedCves.flatMap(c => (c.assets ?? []).map(a => a['data.id'])));
+                    const devicePart = affectedIds.size > 0 ? ` su ${affectedIds.size} device` : '';
+                    return `${mappedCves.length} CVE${devicePart} — ordinate per severità`;
+                  })()
+                : 'Nessuna CVE rilevata'}
+            </p>
+          </CardHeader>
+          <CardContent>
+            {mappedCves.length > 0 ? (
+              <VulnerabilitiesTable vulnerabilities={mappedCves} />
+            ) : (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                <Info className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                Nessun dato disponibile
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </section>
+
       {/* Assets monitorati */}
       {assets.length > 0 && (
         <section className="space-y-4">
@@ -318,37 +349,6 @@ export const HiPatchDashboard: React.FC = () => {
           </Card>
         </section>
       )}
-
-      {/* CVE / Vulnerabilities */}
-      <section className="space-y-4">
-        <h2 className="text-2xl font-bold">CVE rilevate</h2>
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="text-lg">
-              Vulnerabilità
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              {mappedCves.length > 0
-                ? (() => {
-                    const affectedIds = new Set(mappedCves.flatMap(c => (c.assets ?? []).map(a => a['data.id'])));
-                    const devicePart = affectedIds.size > 0 ? ` su ${affectedIds.size} device` : '';
-                    return `${mappedCves.length} CVE${devicePart} — ordinate per severità`;
-                  })()
-                : 'Nessuna CVE rilevata'}
-            </p>
-          </CardHeader>
-          <CardContent>
-            {mappedCves.length > 0 ? (
-              <VulnerabilitiesTable vulnerabilities={mappedCves} />
-            ) : (
-              <div className="text-center py-8 text-muted-foreground text-sm">
-                <Info className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                Nessun dato disponibile
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </section>
 
       {/* OS Patches */}
       <section className="space-y-4">
