@@ -217,7 +217,13 @@ const Users = () => {
       toast({ title: "Successo", description: "Utente creato con successo" });
     },
     onError: (error) => {
-      toast({ title: "Errore", description: getErrorMessage(error), variant: "destructive" });
+      if (error instanceof ApiError && error.errors) {
+        Object.entries(error.errors).forEach(([field, messages]) => {
+          form.setError(field as keyof UserFormData, { message: messages[0] });
+        });
+      } else {
+        toast({ title: "Errore", description: getErrorMessage(error), variant: "destructive" });
+      }
     },
   });
 
@@ -238,7 +244,13 @@ const Users = () => {
       toast({ title: "Successo", description: "Utente aggiornato con successo" });
     },
     onError: (error) => {
-      toast({ title: "Errore", description: getErrorMessage(error), variant: "destructive" });
+      if (error instanceof ApiError && error.errors) {
+        Object.entries(error.errors).forEach(([field, messages]) => {
+          form.setError(field as keyof UserFormData, { message: messages[0] });
+        });
+      } else {
+        toast({ title: "Errore", description: getErrorMessage(error), variant: "destructive" });
+      }
     },
   });
 
