@@ -18,32 +18,66 @@ interface Props {
   openaiData?: unknown | null;
 }
 
-function parseBlocks(data: unknown): OpenAiTextBlock[] | null {
+function parseArray(data: unknown): unknown[] | null {
   if (!data) return null;
-  if (Array.isArray(data)) return data as OpenAiTextBlock[];
+  if (Array.isArray(data)) return data;
   if (typeof data === 'string') {
     try {
       const parsed = JSON.parse(data);
-      if (Array.isArray(parsed)) return parsed as OpenAiTextBlock[];
-    } catch {
-      return null;
-    }
+      if (Array.isArray(parsed)) return parsed;
+    } catch { return null; }
   }
   return null;
 }
 
 function extractText(data: unknown): string {
-  const blocks = parseBlocks(data);
-  return blocks?.[0]?.text?.value ?? '';
+  const arr = parseArray(data);
+  if (!arr || arr.length === 0) return '';
+
+  const first = arr[0] as Record<string, unknown>;
+
+  // Formato thread message OpenAI: [{ content: [{ type: 'text', text: { value } }] }]
+  const content = first?.content;
+  if (Array.isArray(content) && content.length > 0) {
+    const block = content[0] as Record<string, unknown>;
+    const text = block?.text as Record<string, unknown> | undefined;
+    if (typeof text?.value === 'string') return text.value;
+  }
+
+  // Formato semplice: [{ type: 'text', text: { value } }]
+  const text = first?.text as Record<string, unknown> | undefined;
+  if (typeof text?.value === 'string') return text.value;
+
+  return '';
 }
 
 function rebuildBlocks(data: unknown, newText: string): OpenAiTextBlock[] {
-  const blocks = parseBlocks(data);
-  if (blocks && blocks.length > 0) {
-    return blocks.map((block, i) =>
+  const arr = parseArray(data);
+
+  // Formato thread message: aggiorna content[0].text.value, mantieni tutto il resto
+  if (arr && arr.length > 0) {
+    const first = arr[0] as Record<string, unknown>;
+    if (Array.isArray(first?.content)) {
+      const newArr = arr.map((msg, mi) => {
+        if (mi !== 0) return msg;
+        const m = msg as Record<string, unknown>;
+        const newContent = (m.content as unknown[]).map((block, bi) => {
+          if (bi !== 0) return block;
+          const b = block as Record<string, unknown>;
+          const t = b.text as Record<string, unknown> | undefined;
+          return { ...b, text: { ...t, value: newText } };
+        });
+        return { ...m, content: newContent };
+      });
+      return newArr as unknown as OpenAiTextBlock[];
+    }
+
+    // Formato semplice
+    return (arr as OpenAiTextBlock[]).map((block, i) =>
       i === 0 ? { ...block, text: { ...block.text, value: newText } } : block
     );
   }
+
   return [{ type: 'text', text: { value: newText, annotations: [] } }];
 }
 
