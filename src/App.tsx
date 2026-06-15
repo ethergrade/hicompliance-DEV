@@ -40,6 +40,8 @@ import AssessmentGanttTest from "./pages/AssessmentGanttTest";
 // import AICiso from "./pages/AICiso";
 import HiConsoleLanding from "./pages/HiConsoleLanding";
 import MfaSetup from "./pages/MfaSetup";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -58,6 +60,8 @@ const App = () => (
             <Route path="/hiconsole" element={<HiConsoleLanding />} />
             <Route path="/auth" element={<LoginPage />} />
             <Route path="/auth/mfa-setup" element={<MfaSetup />} />
+            <Route path="/auth/forgot-password" element={<ForgotPassword />} />
+            <Route path="/auth/reset-password" element={<ResetPassword />} />
             <Route path="/admin/clients" element={<ClientSelection />} />
             <Route path="/dashboard" element={<ClientSelectionGuard><Dashboard /></ClientSelectionGuard>} />
             <Route path="/cyber-news" element={<ClientSelectionGuard><CyberNews /></ClientSelectionGuard>} />

@@ -68,6 +68,16 @@ export const authApi = {
     return res.data;
   },
 
+  async forgotPassword(email: string): Promise<void> {
+    await fetchCsrfCookie();
+    await apiClient.post<ApiResponse<null>>("/auth/forgot-password", { email });
+  },
+
+  async resetPassword(payload: { token: string; email: string; password: string; password_confirmation: string }): Promise<void> {
+    await fetchCsrfCookie();
+    await apiClient.post<ApiResponse<null>>("/auth/reset-password", payload);
+  },
+
   async changePassword(payload: ChangePasswordRequest): Promise<void> {
     await apiClient.patch<ApiResponse<null>>("/auth/password", payload);
   },

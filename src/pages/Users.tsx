@@ -15,6 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { companiesApi, configApi, usersApi } from "@/lib/api";
+import { ApiError } from "@/lib/api-client";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import type { TenantResource, UserResource } from "@/types/api";
 import { User, Plus, Edit, Trash2, UserCheck, UserX, Building2, Search, X } from "lucide-react";
@@ -69,6 +70,10 @@ const getRoleVariant = (role: string | null): "default" | "destructive" | "secon
 };
 
 const getErrorMessage = (error: unknown) => {
+  if (error instanceof ApiError && error.errors) {
+    const fieldErrors = Object.values(error.errors).flat().join(' ');
+    return fieldErrors || error.message;
+  }
   if (error instanceof Error) return error.message;
   return "Operazione non riuscita";
 };

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Navigate } from 'react-router-dom';
+import { Navigate, Link } from 'react-router-dom';
 import { ShieldCheck, KeyRound } from 'lucide-react';
 
 // ─── Schermata login ──────────────────────────────────────────────────────────
@@ -40,6 +40,11 @@ const LoginForm: React.FC = () => {
           <Button type="submit" className="w-full bg-gradient-cyber hover:opacity-90" disabled={isLoading}>
             {isLoading ? 'Accesso in corso...' : 'Accedi'}
           </Button>
+          <div className="text-center">
+            <Link to="/auth/forgot-password" className="text-xs text-muted-foreground hover:text-foreground underline">
+              Password dimenticata?
+            </Link>
+          </div>
         </form>
       </CardContent>
     </Card>
