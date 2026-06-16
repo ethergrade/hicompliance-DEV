@@ -772,6 +772,71 @@ const SurfaceScan360: React.FC = () => {
           <SurfaceScanJobsPanel />
 
 
+          <SubdomainDumpPanel isAdmin={isAdminUser} />
+
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">
+                      Host unici scansionati
+                    </p>
+                    <p className="text-2xl font-bold text-foreground">
+                      {scanDiscovery.scannedDomains.length +
+                        scanDiscovery.scannedIps.length}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Target lanciati: {scanDiscovery.scannedTargets.length}
+                    </p>
+                  </div>
+                  <Globe className="w-8 h-8 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-sm text-muted-foreground">
+                        Vulnerabilità Critiche
+                      </p>
+                      <AlertBellButton
+                        alertCount={activeAlertsCount}
+                        onClick={() => setAlertDialogOpen(true)}
+                      />
+                    </div>
+                    <p className="text-2xl font-bold text-red-500">
+                      {findingsCounts.critical}
+                    </p>
+                  </div>
+                  <AlertTriangle className="w-8 h-8 text-red-500" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">
+                      Finding Totali
+                    </p>
+                    <p className="text-2xl font-bold text-foreground">
+                      {findingsCounts.total}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      High: {findingsCounts.high} • Medium:{" "}
+                      {findingsCounts.medium} • Low: {findingsCounts.low}
+                    </p>
+                  </div>
+                  <Shield className="w-8 h-8 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
+
 
             <Card className="border-border">
               <CardContent className="p-4">
