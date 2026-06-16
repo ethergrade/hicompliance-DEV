@@ -87,6 +87,7 @@ const Users = () => {
   const [tenantUser, setTenantUser] = useState<UserResource | null>(null);
   const [selectedTenantIds, setSelectedTenantIds] = useState<string[]>([]);
   const [createTenantIds, setCreateTenantIds] = useState<string[]>([]);
+  const [tenantSearchQuery, setTenantSearchQuery] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const tenantInitialLoadDone = useRef(false);
   const { toast } = useToast();
@@ -382,7 +383,7 @@ const Users = () => {
                     <FormField
                       control={form.control}
                       name="password"
-                      rules={{ required: "Password è richiesta", minLength: { value: 8, message: "Password deve essere di almeno 8 caratteri" } }}
+                      rules={{ validate: (value: string) => !value || value.length >= 8 || "Password deve essere di almeno 8 caratteri" }}
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Password</FormLabel>
@@ -424,6 +425,23 @@ const Users = () => {
                       <p className="text-xs text-muted-foreground">
                         Seleziona i clienti a cui questo utente può accedere. Lascia vuoto per configurare in seguito.
                       </p>
+            <div className="relative mb-2">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Cerca cliente..."
+                value={tenantSearchQuery}
+                onChange={(e) => setTenantSearchQuery(e.target.value)}
+                className="pl-8 pr-8"
+              />
+              {tenantSearchQuery && (
+                <button
+                  onClick={() => setTenantSearchQuery('')}
+                  className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
                       <ScrollArea className="h-[160px] rounded-md border">
                         <div className="p-3 space-y-2">
                           {companies.map((company: TenantResource) => {
