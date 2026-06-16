@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Clock, Database, Globe2, Loader2, PlayCircle, Radar, RefreshCcw, Route, ShieldAlert, Target, TerminalSquare } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, Database, Download, ExternalLink, Globe2, Loader2, PlayCircle, Radar, RefreshCcw, Route, ShieldAlert, Target, TerminalSquare } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from 'recharts';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -19,7 +19,18 @@ import { useUserRoles } from '@/hooks/useUserRoles';
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL, supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 
-type NucleiProfile = 'baseline_headers' | 'exposure_medium' | 'web_vuln_safe' | 'web_vuln_authorized';
+type NucleiProfile =
+  | 'baseline_headers'
+  | 'exposure_medium'
+  | 'web_vuln_safe'
+  | 'web_cve_recent'
+  | 'web_cve_2026'
+  | 'web_cve_2025'
+  | 'web_cve_2024'
+  | 'web_cve_2023'
+  | 'web_cve_2022'
+  | 'web_vuln_authorized';
+type NmapProfile = 'web_top' | 'tcp_top_100' | 'service_light' | 'custom_tcp';
 
 type NucleiFinding = {
   template_id?: string;
@@ -30,6 +41,7 @@ type NucleiFinding = {
   matcher_name?: string | null;
   extracted_results?: string[];
   tags?: string[];
+  cve_ids?: string[];
 };
 
 type NucleiResult = {
@@ -52,8 +64,27 @@ type NucleiJob = {
   organization_id: string;
   source?: string | null;
   target_url: string;
+  normalized_target_url?: string | null;
   resolved_target_url?: string | null;
   target_host?: string | null;
+  target_input?: string | null;
+  target_kind?: string | null;
+  nmap_target?: string | null;
+  nmap_profile?: NmapProfile | null;
+  stage?: 'queued' | 'nmap_running' | 'waiting_nuclei' | 'nuclei_running' | 'completed' | 'failed' | 'timeout' | 'cancelled' | null;
+  next_run_at?: string | null;
+  nmap_status?: string | null;
+  nmap_started_at?: string | null;
+  nmap_completed_at?: string | null;
+  nmap_duration_ms?: number | null;
+  nmap_version?: string | null;
+  open_port_count?: number | null;
+  fingerprint_status?: string | null;
+  fingerprint_duration_ms?: number | null;
+  technology_count?: number | null;
+  nmap_warnings?: string[] | null;
+  raw_nmap_result?: Record<string, unknown> | null;
+  raw_technology_result?: Record<string, unknown> | null;
   profile: NucleiProfile;
   status: 'queued' | 'running' | 'completed' | 'failed' | 'timeout' | 'cancelled';
   attempt_count?: number | null;
@@ -73,6 +104,59 @@ type NucleiJob = {
   created_at?: string | null;
   started_at?: string | null;
   completed_at?: string | null;
+};
+
+type NmapOpenPort = {
+  id?: string;
+  host?: string | null;
+  hostname?: string | null;
+  protocol?: string | null;
+  port?: number | null;
+  state?: string | null;
+  service?: string | null;
+  product?: string | null;
+  version?: string | null;
+  extrainfo?: string | null;
+  cpe?: string[];
+  url_candidates?: string[];
+};
+
+type TechnologyFingerprint = {
+  id?: string;
+  port_id?: string | null;
+  url?: string | null;
+  asset_host?: string | null;
+  port?: number | null;
+  name?: string | null;
+  version?: string | null;
+  source?: string | null;
+  confidence?: 'high' | 'medium' | 'low' | null;
+  category?: string | null;
+  evidence?: Record<string, unknown> | null;
+  cpe_candidates?: string[];
+};
+
+type CveMatch = {
+  id?: string;
+  cve_id: string;
+  severity?: string | null;
+  asset_host?: string | null;
+  template_id?: string | null;
+  matched_at?: string | null;
+  cvss_score?: number | null;
+  cvss_vector?: string | null;
+  cvss_version?: string | null;
+  epss_score?: number | null;
+  epss_percentile?: number | null;
+  kev_known_exploited?: boolean | null;
+  match_status?: 'confirmed' | 'potential' | null;
+  confidence?: 'high' | 'medium' | 'low' | null;
+  source?: string | null;
+  cpe?: string | null;
+  description?: string | null;
+  nvd_status?: string | null;
+  published_at?: string | null;
+  last_modified_at?: string | null;
 };
 
 type ScannableTarget = {
@@ -118,6 +202,12 @@ const PROFILE_LABELS: Record<NucleiProfile, string> = {
   baseline_headers: 'Baseline headers + TLS',
   exposure_medium: 'Exposure medium',
   web_vuln_safe: 'Web vuln safe',
+  web_cve_recent: 'CVE recenti',
+  web_cve_2026: 'CVE 2026',
+  web_cve_2025: 'CVE 2025',
+  web_cve_2024: 'CVE 2024',
+  web_cve_2023: 'CVE 2023',
+  web_cve_2022: 'CVE 2022',
   web_vuln_authorized: 'Web vuln authorized',
 };
 
@@ -125,7 +215,29 @@ const PROFILE_DESCRIPTIONS: Record<NucleiProfile, string> = {
   baseline_headers: 'Solo header di sicurezza e TLS basic. Profilo rapido per smoke test.',
   exposure_medium: 'Exposure, misconfiguration, file disclosure, panel e tecnologie con template non distruttivi.',
   web_vuln_safe: 'Vulnerabilità HTTP non distruttive low/medium/high/critical.',
+  web_cve_recent: 'Template CVE HTTP 2022-2026, profilo LAB consigliato per validazione CVE.',
+  web_cve_2026: 'Solo template CVE HTTP pubblicati nel 2026.',
+  web_cve_2025: 'Solo template CVE HTTP pubblicati nel 2025.',
+  web_cve_2024: 'Solo template CVE HTTP pubblicati nel 2024.',
+  web_cve_2023: 'Solo template CVE HTTP pubblicati nel 2023.',
+  web_cve_2022: 'Solo template CVE HTTP pubblicati nel 2022.',
   web_vuln_authorized: 'DAST/fuzz a bassa aggressività. Richiede autorizzazione esplicita.',
+};
+
+const isCveProfile = (value: NucleiProfile) => value === 'web_vuln_safe' || value.startsWith('web_cve_');
+
+const NMAP_PROFILE_LABELS: Record<NmapProfile, string> = {
+  web_top: 'Web top ports',
+  tcp_top_100: 'TCP top 100',
+  service_light: 'Service light',
+  custom_tcp: 'Custom TCP',
+};
+
+const NMAP_PROFILE_DESCRIPTIONS: Record<NmapProfile, string> = {
+  web_top: 'Porte web comuni senza script NSE.',
+  tcp_top_100: 'Top 100 TCP, utile per IP pubblici.',
+  service_light: 'Porte web con rilevamento servizio leggero.',
+  custom_tcp: 'Riservato a chiamate API con porte esplicite.',
 };
 
 const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info'];
@@ -192,6 +304,35 @@ const statusClass = (status?: string | null) => {
   }
 };
 
+const stageClass = (stage?: string | null) => {
+  switch (String(stage || '').toLowerCase()) {
+    case 'completed':
+      return 'bg-green-600 text-white';
+    case 'nmap_running':
+    case 'nuclei_running':
+      return 'bg-primary text-primary-foreground';
+    case 'waiting_nuclei':
+      return 'bg-sky-600 text-white';
+    case 'failed':
+    case 'timeout':
+      return 'bg-destructive text-destructive-foreground';
+    case 'queued':
+      return 'bg-amber-500 text-white';
+    default:
+      return 'bg-muted text-muted-foreground';
+  }
+};
+
+const formatCountdown = (value?: string | null) => {
+  if (!value) return '—';
+  const ms = new Date(value).getTime() - Date.now();
+  if (!Number.isFinite(ms)) return '—';
+  if (ms <= 0) return 'pronto';
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.ceil((ms % 60000) / 1000);
+  return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+};
+
 const formatDateTime = (value?: string | null) => {
   if (!value) return '—';
   try {
@@ -205,6 +346,19 @@ const formatDateTime = (value?: string | null) => {
     return '—';
   }
 };
+
+const formatScore = (value?: number | null) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed.toFixed(1).replace(/\.0$/, '') : '—';
+};
+
+const formatPercent = (value?: number | null) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return '—';
+  return `${Math.round(parsed * 1000) / 10}%`;
+};
+
+const nvdDetailUrl = (cveId: string) => `https://nvd.nist.gov/vuln/detail/${encodeURIComponent(cveId)}`;
 
 const clampNumber = (value: unknown, fallback: number, min: number, max: number) => {
   const parsed = Number(value);
@@ -247,6 +401,7 @@ type NucleiFunctionBody = {
   job_id?: string;
   target_url?: string;
   targets?: string[];
+  nmap_profile?: NmapProfile;
   include_discovered_targets?: boolean;
   surface_asset_limit?: number;
   target_limit?: number;
@@ -562,17 +717,22 @@ const NucleiScan360: React.FC = () => {
   const [scannableTargets, setScannableTargets] = useState<ScannableTarget[]>([]);
   const [selectedTargetUrls, setSelectedTargetUrls] = useState<string[]>([]);
   const [targetsLoading, setTargetsLoading] = useState(false);
-  const [profile, setProfile] = useState<NucleiProfile>('baseline_headers');
+  const [nmapProfile, setNmapProfile] = useState<NmapProfile>('service_light');
+  const [profile, setProfile] = useState<NucleiProfile>('web_cve_recent');
   const [authorizedScan, setAuthorizedScan] = useState(false);
-  const [timeoutSeconds, setTimeoutSeconds] = useState(45);
-  const [rateLimit, setRateLimit] = useState(5);
-  const [maxFindings, setMaxFindings] = useState(25);
+  const [timeoutSeconds, setTimeoutSeconds] = useState(150);
+  const [rateLimit, setRateLimit] = useState(3);
+  const [maxFindings, setMaxFindings] = useState(50);
   const [loading, setLoading] = useState(false);
   const [queueLoading, setQueueLoading] = useState(false);
   const [processingQueue, setProcessingQueue] = useState(false);
   const [smokeLoading, setSmokeLoading] = useState(false);
   const [jobs, setJobs] = useState<NucleiJob[]>([]);
   const [selectedJobId, setSelectedJobId] = useState('');
+  const [selectedJob, setSelectedJob] = useState<NucleiJob | null>(null);
+  const [openPorts, setOpenPorts] = useState<NmapOpenPort[]>([]);
+  const [technologies, setTechnologies] = useState<TechnologyFingerprint[]>([]);
+  const [cveMatches, setCveMatches] = useState<CveMatch[]>([]);
   const [result, setResult] = useState<NucleiResult | null>(null);
   const [rawResult, setRawResult] = useState('');
   const [lastDiagnostic, setLastDiagnostic] = useState<NucleiInvokeDiagnostic | null>(null);
@@ -585,6 +745,14 @@ const NucleiScan360: React.FC = () => {
   );
 
   const selectedTargetSet = useMemo(() => new Set(selectedTargetUrls), [selectedTargetUrls]);
+  const confirmedCveMatches = useMemo(
+    () => cveMatches.filter((match) => (match.match_status || 'confirmed') === 'confirmed'),
+    [cveMatches],
+  );
+  const potentialCveMatches = useMemo(
+    () => cveMatches.filter((match) => match.match_status === 'potential'),
+    [cveMatches],
+  );
 
   const recordDiagnostic = useCallback((error: unknown, fallback: string) => {
     const diagnostic = (error as NucleiFunctionError)?.diagnostic || {
@@ -706,9 +874,9 @@ const NucleiScan360: React.FC = () => {
       });
       return;
     }
-    const safeTimeoutSeconds = clampNumber(timeoutSeconds, profile === 'baseline_headers' ? 45 : 120, 15, 180);
-    const safeRateLimit = clampNumber(rateLimit, profile === 'web_vuln_authorized' ? 2 : 5, 1, profile === 'web_vuln_authorized' ? 2 : 10);
-    const safeMaxFindings = clampNumber(maxFindings, 25, 1, 200);
+    const safeTimeoutSeconds = clampNumber(timeoutSeconds, profile === 'baseline_headers' ? 45 : isCveProfile(profile) ? 150 : 120, 15, 180);
+    const safeRateLimit = clampNumber(rateLimit, profile === 'web_vuln_authorized' ? 2 : isCveProfile(profile) ? 3 : 5, 1, profile === 'web_vuln_authorized' ? 2 : 10);
+    const safeMaxFindings = clampNumber(maxFindings, isCveProfile(profile) ? 50 : 25, 1, 200);
     if (safeTimeoutSeconds !== timeoutSeconds) setTimeoutSeconds(safeTimeoutSeconds);
     if (safeRateLimit !== rateLimit) setRateLimit(safeRateLimit);
     if (safeMaxFindings !== maxFindings) setMaxFindings(safeMaxFindings);
@@ -724,6 +892,7 @@ const NucleiScan360: React.FC = () => {
         action: 'enqueue',
         organization_id: selectedOrgId,
         targets: targetList,
+        nmap_profile: nmapProfile,
         include_discovered_targets: includeSurfaceAssets && selectedTargetUrls.length === 0,
         surface_asset_limit: 25,
         profile,
@@ -755,26 +924,38 @@ const NucleiScan360: React.FC = () => {
 
   const openJob = async (job: NucleiJob) => {
     setSelectedJobId(job.id);
-    if (job.raw_result && Object.keys(job.raw_result).length > 0) {
-      setResult(job.raw_result);
-      setRawResult(JSON.stringify(job.raw_result, null, 2));
-      return;
-    }
+    setSelectedJob(job);
+    setOpenPorts([]);
+    setTechnologies([]);
+    setCveMatches([]);
 
     setQueueLoading(true);
     try {
       const data = await invokeNucleiScan360<{
         ok?: boolean;
         error?: string;
-        job?: { raw_result?: NucleiResult | null };
+        job?: NucleiJob & { raw_result?: NucleiResult | null };
+        open_ports?: NmapOpenPort[];
+        cve_matches?: CveMatch[];
+        technologies?: TechnologyFingerprint[];
       }>({
         action: 'get',
         job_id: job.id,
       });
       if (!data?.ok) throw new Error(data?.error || 'Impossibile aprire job NucleiScan360');
+      setSelectedJob((data.job || job) as NucleiJob);
+      setOpenPorts((data.open_ports || []) as NmapOpenPort[]);
+      setTechnologies((data.technologies || []) as TechnologyFingerprint[]);
+      setCveMatches((data.cve_matches || []) as CveMatch[]);
       const nextResult = (data.job?.raw_result || null) as NucleiResult | null;
       setResult(nextResult);
-      setRawResult(nextResult ? JSON.stringify(nextResult, null, 2) : JSON.stringify(data, null, 2));
+      setRawResult(JSON.stringify({
+        job: data.job,
+        open_ports: data.open_ports || [],
+        technologies: data.technologies || [],
+        cve_matches: data.cve_matches || [],
+        nuclei_result: nextResult,
+      }, null, 2));
     } catch (error) {
       recordDiagnostic(error, 'Apertura job fallita');
       const message = await extractInvokeErrorMessage(error, 'Apertura job fallita');
@@ -800,6 +981,8 @@ const NucleiScan360: React.FC = () => {
           error?: string;
           job_id?: string;
           result?: NucleiResult;
+          nmap_result?: Record<string, unknown>;
+          stage?: string;
         }>;
       }>({
         action: 'process_queue',
@@ -813,10 +996,17 @@ const NucleiScan360: React.FC = () => {
         setResult(processed.result as NucleiResult);
         setRawResult(JSON.stringify(processed.result, null, 2));
         setSelectedJobId(processed.job_id || '');
+      } else if (processed?.nmap_result) {
+        setRawResult(JSON.stringify(processed.nmap_result, null, 2));
+        setSelectedJobId(processed.job_id || '');
       }
       toast({
-        title: processed ? `Job ${processed.status}` : 'Nessun job in coda',
-        description: processed?.error || (processed?.result ? `${(processed.result.findings || []).length} finding salvati in Supabase.` : 'La coda è vuota.'),
+        title: processed ? `Job ${processed.stage || processed.status}` : 'Nessun job in coda',
+        description: processed?.error || (processed?.result
+          ? `${(processed.result.findings || []).length} finding salvati in Supabase.`
+          : processed?.nmap_result
+            ? `${processed.nmap_result.open_port_count || 0} porte aperte salvate. Nuclei partirà dopo la finestra di attesa.`
+            : 'La coda è vuota.'),
         variant: processed?.status === 'failed' || processed?.status === 'timeout' ? 'destructive' : 'default',
       });
       await refreshJobs(selectedOrgId);
@@ -869,6 +1059,147 @@ const NucleiScan360: React.FC = () => {
       setSmokeLoading(false);
     }
   };
+
+  const downloadSelectedJobReport = () => {
+    if (!selectedJob) return;
+    const payload = {
+      report_type: 'nuclei_scan360_lab_job',
+      generated_at: new Date().toISOString(),
+      organization: {
+        id: selectedOrgId || selectedJob.organization_id,
+        name: selectedOrganizationName,
+      },
+      job: selectedJob,
+      open_ports: openPorts,
+      technologies,
+      cve_matches: cveMatches,
+      nuclei_findings: findings,
+      nuclei_result: result,
+      interpretation: {
+        confirmed_cve_count: confirmedCveMatches.length,
+        potential_cve_count: potentialCveMatches.length,
+        technology_count: technologies.length,
+        open_port_count: openPorts.length,
+        note: '0 CVE indica nessun match confermato/potenziale nella pipeline Nmap/httpx/NVD/Nuclei, non assenza assoluta di vulnerabilita.',
+      },
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `NUCLEI_SCAN360_${selectedJob.target_host || selectedJob.target_input || 'job'}_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    toast({
+      title: 'Report esportato',
+      description: 'Report JSON NUCLEI-SCAN360 generato dal job selezionato.',
+    });
+  };
+
+  const renderCveRows = (matches: CveMatch[], emptyLabel: string) => (
+    matches.length === 0 ? (
+      <TableRow>
+        <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">{emptyLabel}</TableCell>
+      </TableRow>
+    ) : matches.map((match) => (
+      <TableRow key={`${match.id || match.cve_id}-${match.match_status || 'confirmed'}-${match.asset_host || match.cpe || ''}`}>
+        <TableCell>
+          <div className="flex flex-col gap-1">
+            <a
+              href={nvdDetailUrl(match.cve_id)}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex w-fit items-center gap-1 font-medium text-primary hover:underline"
+            >
+              {match.cve_id}
+              <ExternalLink className="h-3 w-3" />
+            </a>
+            <div className="flex flex-wrap gap-1">
+              <Badge variant={match.match_status === 'potential' ? 'outline' : 'secondary'}>
+                {match.match_status === 'potential' ? 'potential' : 'confirmed'}
+              </Badge>
+              {match.confidence && <Badge variant="outline">{match.confidence}</Badge>}
+              {match.source && <Badge variant="outline">{match.source}</Badge>}
+            </div>
+          </div>
+        </TableCell>
+        <TableCell className="max-w-[220px]">
+          <div className="flex flex-col gap-1">
+            <span className="truncate font-mono text-xs">{match.asset_host || match.matched_at || '—'}</span>
+            {match.cpe && <span className="line-clamp-2 font-mono text-[11px] text-muted-foreground">{match.cpe}</span>}
+          </div>
+        </TableCell>
+        <TableCell>
+          <div className="flex flex-col gap-1">
+            <Badge className={severityClass(match.severity)}>{match.severity || 'info'}</Badge>
+            {match.nvd_status && <span className="text-xs text-muted-foreground">{match.nvd_status}</span>}
+          </div>
+        </TableCell>
+        <TableCell className="text-xs text-muted-foreground">
+          <div className="flex flex-col gap-1">
+            <span>CVSS {formatScore(match.cvss_score)}{match.cvss_version ? ` v${match.cvss_version}` : ''}</span>
+            <span>EPSS {formatPercent(match.epss_score)}{match.kev_known_exploited ? ' · KEV' : ''}</span>
+          </div>
+        </TableCell>
+        <TableCell className="max-w-[320px]">
+          <div className="line-clamp-3 text-xs text-muted-foreground">{match.description || '—'}</div>
+        </TableCell>
+      </TableRow>
+    ))
+  );
+
+  const renderTechnologyRows = () => (
+    technologies.length === 0 ? (
+      <TableRow>
+        <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
+          Nessuna tecnologia rilevata da httpx/Wappalyzer per questo job. Versione non rilevata non significa tecnologia assente.
+        </TableCell>
+      </TableRow>
+    ) : technologies.map((technology) => {
+      const evidence = technology.evidence || {};
+      const evidenceLine = [
+        evidence.status_code ? `HTTP ${evidence.status_code}` : '',
+        evidence.webserver ? `server ${evidence.webserver}` : '',
+        evidence.title ? `title ${String(evidence.title).slice(0, 64)}` : '',
+      ].filter(Boolean).join(' · ');
+      return (
+        <TableRow key={`${technology.id || technology.name}-${technology.url || technology.port}`}>
+          <TableCell>
+            <div className="flex flex-col gap-1">
+              <span className="font-medium">{technology.name || '—'}</span>
+              <span className="text-xs text-muted-foreground">{technology.version || 'versione non rilevata'}</span>
+            </div>
+          </TableCell>
+          <TableCell>
+            <div className="flex flex-wrap gap-1">
+              {technology.source && <Badge variant="outline">{technology.source}</Badge>}
+              {technology.confidence && <Badge variant={technology.confidence === 'medium' ? 'secondary' : 'outline'}>{technology.confidence}</Badge>}
+            </div>
+          </TableCell>
+          <TableCell className="max-w-[240px]">
+            <div className="flex flex-col gap-1">
+              <span className="truncate font-mono text-xs">{technology.url || technology.asset_host || '—'}</span>
+              {technology.port && <span className="text-xs text-muted-foreground">porta {technology.port}</span>}
+            </div>
+          </TableCell>
+          <TableCell className="max-w-[260px]">
+            <div className="flex flex-col gap-1">
+              {(technology.cpe_candidates || []).length === 0 ? (
+                <span className="text-xs text-muted-foreground">CPE non generato senza versione concreta</span>
+              ) : technology.cpe_candidates?.map((cpe) => (
+                <span key={cpe} className="line-clamp-2 font-mono text-[11px] text-muted-foreground">{cpe}</span>
+              ))}
+            </div>
+          </TableCell>
+          <TableCell className="max-w-[260px]">
+            <div className="line-clamp-3 text-xs text-muted-foreground">{evidenceLine || '—'}</div>
+          </TableCell>
+        </TableRow>
+      );
+    })
+  );
 
   if (rolesLoading || isLoadingClients) {
     return (
@@ -956,9 +1287,9 @@ const NucleiScan360: React.FC = () => {
                   value={targetUrl}
                   onChange={(event) => setTargetUrl(event.target.value)}
                   className="min-h-20"
-                  placeholder="https://example.com oppure dominio.it"
+                  placeholder="hisolution.it, etruriaretail.it, 203.0.113.10 oppure 203.0.113.0/28"
                 />
-                <p className="text-xs text-muted-foreground">Puoi separare più target con virgole o nuove righe.</p>
+                <p className="text-xs text-muted-foreground">Puoi separare più IP, domini, CIDR pubblici o URL con virgole o nuove righe.</p>
               </div>
 
               <div className="flex items-start gap-3 rounded-lg border p-3">
@@ -1025,7 +1356,24 @@ const NucleiScan360: React.FC = () => {
               </Card>
 
               <div className="flex flex-col gap-2">
-                <Label>Profilo</Label>
+                <Label>Profilo Nmap</Label>
+                <Select value={nmapProfile} onValueChange={(value) => setNmapProfile(value as NmapProfile)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(NMAP_PROFILE_LABELS).map(([key, label]) => (
+                      <SelectItem key={key} value={key}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">{NMAP_PROFILE_DESCRIPTIONS[nmapProfile]}</p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label>Profilo Nuclei</Label>
                 <Select value={profile} onValueChange={(value) => setProfile(value as NucleiProfile)}>
                   <SelectTrigger>
                     <SelectValue />
@@ -1171,13 +1519,16 @@ const NucleiScan360: React.FC = () => {
                       <TableRow key={job.id} className={cn(selectedJobId === job.id && 'bg-muted/40')}>
                         <TableCell>
                           <div className="flex flex-col gap-1">
+                            <Badge className={stageClass(job.stage || job.status)}>{job.stage || job.status}</Badge>
                             <Badge className={statusClass(job.status)}>{job.status}</Badge>
+                            {job.stage === 'waiting_nuclei' && <span className="text-xs text-muted-foreground">Nuclei tra {formatCountdown(job.next_run_at)}</span>}
                             {job.source && <span className="text-xs text-muted-foreground">{job.source}</span>}
                           </div>
                         </TableCell>
                         <TableCell className="max-w-[280px]">
                           <div className="flex flex-col gap-1">
                             <span className="truncate font-mono text-xs">{job.target_url}</span>
+                            {job.nmap_target && <span className="truncate text-xs text-muted-foreground">nmap: {job.nmap_target}</span>}
                             {job.resolved_target_url && job.resolved_target_url !== job.target_url && (
                               <span className="truncate text-xs text-muted-foreground">→ {job.resolved_target_url}</span>
                             )}
@@ -1187,14 +1538,15 @@ const NucleiScan360: React.FC = () => {
                         <TableCell>
                           <div className="flex flex-col gap-1">
                             <Badge variant="outline">{PROFILE_LABELS[job.profile] || job.profile}</Badge>
+                            <span className="text-xs text-muted-foreground">Nmap {NMAP_PROFILE_LABELS[job.nmap_profile || 'service_light']}</span>
                             <span className="text-xs text-muted-foreground">rate {job.rate_limit || '—'} · timeout {job.timeout_seconds || '—'}s</span>
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex flex-col items-end gap-1">
-                            <span className="font-semibold">{job.findings_count ?? 0}</span>
-                            <span className="text-xs text-muted-foreground">{job.templates_executed_count ?? 0} template</span>
-                          </div>
+	                            <span className="font-semibold">{job.findings_count ?? 0}</span>
+	                            <span className="text-xs text-muted-foreground">{job.open_port_count ?? 0} porte · {job.technology_count ?? 0} tech · {job.templates_executed_count ?? 0} template</span>
+	                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -1213,6 +1565,146 @@ const NucleiScan360: React.FC = () => {
                 </Table>
               </CardContent>
             </Card>
+
+            {selectedJob && (
+              <Card className="border-primary/20">
+                <CardHeader>
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <CardTitle>Pipeline detail</CardTitle>
+                      <CardDescription>
+                        {selectedJob.target_input || selectedJob.target_url} · stage {selectedJob.stage || selectedJob.status}
+                        {selectedJob.stage === 'waiting_nuclei' ? ` · Nuclei tra ${formatCountdown(selectedJob.next_run_at)}` : ''}
+                      </CardDescription>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={downloadSelectedJobReport}>
+                      <Download className="mr-2 h-4 w-4" />
+                      Report JSON
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="grid gap-4 xl:grid-cols-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Nmap open ports</CardTitle>
+                      <CardDescription>
+                        {selectedJob.nmap_version || 'versione nmap non ancora disponibile'} · durata {selectedJob.nmap_duration_ms ? `${Math.round(selectedJob.nmap_duration_ms / 1000)}s` : '—'}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Porta</TableHead>
+                            <TableHead>Servizio</TableHead>
+                            <TableHead>Host</TableHead>
+                            <TableHead>URL</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {openPorts.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={4} className="py-6 text-center text-muted-foreground">Nessuna porta aperta salvata per questo job.</TableCell>
+                            </TableRow>
+                          ) : openPorts.map((port) => (
+                            <TableRow key={`${port.host || port.hostname}-${port.port}-${port.service}`}>
+                              <TableCell>
+                                <Badge variant="outline">{port.protocol || 'tcp'}/{port.port}</Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex flex-col gap-1">
+                                  <span className="font-medium">{port.service || 'unknown'}</span>
+                                  <span className="text-xs text-muted-foreground">{[port.product, port.version].filter(Boolean).join(' ') || '—'}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="max-w-[180px] truncate font-mono text-xs">{port.hostname || port.host || '—'}</TableCell>
+                              <TableCell className="max-w-[220px] truncate font-mono text-xs">{port.url_candidates?.[0] || '—'}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+	                    </CardContent>
+	                  </Card>
+
+	                  <Card className="xl:col-span-2">
+	                    <CardHeader>
+	                      <CardTitle className="text-base">Tecnologie rilevate</CardTitle>
+	                      <CardDescription>
+	                        httpx/Wappalyzer HTTP fingerprint · {selectedJob.fingerprint_status || 'non avviato'} · {selectedJob.fingerprint_duration_ms ? `${Math.round(selectedJob.fingerprint_duration_ms / 1000)}s` : '—'} · {technologies.length} tecnologie. Versioni e CPE sono usati solo quando concreti.
+	                      </CardDescription>
+	                    </CardHeader>
+	                    <CardContent>
+	                      <Table>
+	                        <TableHeader>
+	                          <TableRow>
+	                            <TableHead>Tecnologia</TableHead>
+	                            <TableHead>Fonte</TableHead>
+	                            <TableHead>URL/porta</TableHead>
+	                            <TableHead>CPE candidato</TableHead>
+	                            <TableHead>Evidenza</TableHead>
+	                          </TableRow>
+	                        </TableHeader>
+	                        <TableBody>
+	                          {renderTechnologyRows()}
+	                        </TableBody>
+	                      </Table>
+	                    </CardContent>
+	                  </Card>
+
+	                  <Card className="xl:col-span-2">
+	                    <CardHeader>
+	                      <CardTitle className="text-base">CVE intelligence</CardTitle>
+                      <CardDescription>
+                        {confirmedCveMatches.length} confermate da Nuclei · {potentialCveMatches.length} potenziali da NVD/CPE. Zero CVE indica nessun match in questa pipeline, non assenza assoluta di vulnerabilità.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-col gap-5">
+                      <div>
+                        <div className="mb-2 flex items-center justify-between">
+                          <h3 className="text-sm font-medium">Confermate da Nuclei</h3>
+                          <Badge variant="secondary">{confirmedCveMatches.length}</Badge>
+                        </div>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>CVE</TableHead>
+                              <TableHead>Asset/CPE</TableHead>
+                              <TableHead>Sev</TableHead>
+                              <TableHead>Score</TableHead>
+                              <TableHead>Descrizione NVD</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {renderCveRows(confirmedCveMatches, 'Nessuna CVE confermata dai template Nuclei per questo job.')}
+                          </TableBody>
+                        </Table>
+                      </div>
+
+                      <div>
+                        <div className="mb-2 flex items-center justify-between">
+	                          <h3 className="text-sm font-medium">Potenziali da CPE/NVD e Tech/NVD</h3>
+                          <Badge variant="outline">{potentialCveMatches.length}</Badge>
+                        </div>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>CVE</TableHead>
+                              <TableHead>Asset/CPE</TableHead>
+                              <TableHead>Sev</TableHead>
+                              <TableHead>Score</TableHead>
+                              <TableHead>Descrizione NVD</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+	                            {renderCveRows(potentialCveMatches, 'Nessuna CVE potenziale da CPE Nmap/NVD o tecnologia versionata per questo job.')}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </CardContent>
+              </Card>
+            )}
 
             {result && (
               <Card className="border-primary/20">

@@ -7,9 +7,9 @@
     "enabled": true
   },
   "vars": {
-    "NUCLEI_CONTAINER_INSTANCE": "surfacescan360-nuclei-v5-egress",
+    "NUCLEI_CONTAINER_INSTANCE": "surfacescan360-nuclei-v9-cve-recent",
     "NUCLEI_TIMEOUT_SECONDS": "45",
-    "NUCLEI_MAX_TIMEOUT_SECONDS": "120",
+    "NUCLEI_MAX_TIMEOUT_SECONDS": "300",
     "NUCLEI_RATE_LIMIT": "5",
     "NUCLEI_MAX_FINDINGS": "100",
     "NUCLEI_EGRESS_ALLOWED_HOSTS": "*",

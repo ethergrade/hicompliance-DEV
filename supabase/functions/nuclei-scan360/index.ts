@@ -10,6 +10,12 @@ type NucleiProfile =
   | "baseline_headers"
   | "exposure_medium"
   | "web_vuln_safe"
+  | "web_cve_recent"
+  | "web_cve_2026"
+  | "web_cve_2025"
+  | "web_cve_2024"
+  | "web_cve_2023"
+  | "web_cve_2022"
   | "web_vuln_authorized";
 
 type NucleiAction = "direct_scan" | "enqueue" | "list" | "get" | "retrieve_targets" | "process_queue" | "smoke_test";
@@ -20,6 +26,7 @@ type RequestBody = {
   job_id?: string;
   target_url?: string;
   targets?: string[];
+  nmap_profile?: NmapProfile;
   include_surface_assets?: boolean;
   include_discovered_targets?: boolean;
   surface_asset_limit?: number;
@@ -59,6 +66,119 @@ type NucleiResult = {
   [key: string]: unknown;
 };
 
+type NmapProfile = "web_top" | "tcp_top_100" | "service_light" | "custom_tcp";
+
+type NmapPort = {
+  host?: string | null;
+  hostname?: string | null;
+  protocol?: string | null;
+  port?: number | string | null;
+  state?: string | null;
+  service?: string | null;
+  product?: string | null;
+  version?: string | null;
+  extrainfo?: string | null;
+  cpe?: unknown[];
+  [key: string]: unknown;
+};
+
+type TechnologyFingerprint = {
+  url?: string | null;
+  host?: string | null;
+  port?: number | string | null;
+  protocol?: string | null;
+  status_code?: number | string | null;
+  title?: string | null;
+  webserver?: string | null;
+  content_type?: string | null;
+  content_length?: number | string | null;
+  response_time?: string | null;
+  favicon_hash?: string | number | null;
+  technologies?: Array<{
+    name?: string | null;
+    version?: string | null;
+    source?: string | null;
+    confidence?: "high" | "medium" | "low" | string | null;
+    category?: string | null;
+    evidence?: Record<string, unknown> | null;
+    [key: string]: unknown;
+  }>;
+  raw?: Record<string, unknown> | null;
+  [key: string]: unknown;
+};
+
+type NmapHost = {
+  address?: string | null;
+  hostname?: string | null;
+  open_ports?: NmapPort[];
+  [key: string]: unknown;
+};
+
+type NmapResult = {
+  target?: string;
+  profile?: NmapProfile;
+  hosts?: NmapHost[];
+  open_ports?: NmapPort[];
+  open_port_count?: number;
+  warnings?: unknown[];
+  duration_ms?: number;
+  nmap_version?: string;
+  httpx_version?: string;
+  nmap_command_sanitized?: string;
+  fingerprint_status?: string;
+  fingerprint_duration_ms?: number;
+  fingerprint_warnings?: unknown[];
+  technology_fingerprints?: TechnologyFingerprint[];
+  technology_count?: number;
+  [key: string]: unknown;
+};
+
+type OpenPortRow = {
+  id: string;
+  job_id?: string;
+  host?: string | null;
+  hostname?: string | null;
+  protocol?: string | null;
+  port?: number | null;
+  service?: string | null;
+  product?: string | null;
+  version?: string | null;
+  extrainfo?: string | null;
+  cpe?: string[] | null;
+  url_candidates?: string[] | null;
+  raw_port?: Record<string, unknown> | null;
+};
+
+type TechnologyRow = {
+  id: string;
+  job_id?: string;
+  port_id?: string | null;
+  url?: string | null;
+  asset_host?: string | null;
+  port?: number | null;
+  name?: string | null;
+  version?: string | null;
+  source?: string | null;
+  confidence?: string | null;
+  cpe_candidates?: string[] | null;
+  raw_technology?: Record<string, unknown> | null;
+};
+
+type NvdCveDetails = {
+  cve_id: string;
+  description: string | null;
+  severity: string | null;
+  cvss_score: number | null;
+  cvss_vector: string | null;
+  cvss_version: string | null;
+  nvd_status: string | null;
+  published_at: string | null;
+  last_modified_at: string | null;
+  cpe_json?: unknown[];
+  references_json?: unknown[];
+  raw?: unknown;
+};
+
 type ScanPayload = {
   target_url: string;
   profile: NucleiProfile;
@@ -74,6 +194,13 @@ type NucleiJob = {
   customer_id: string;
   target_url: string;
   normalized_target_url: string;
+  target_host?: string | null;
+  target_input?: string | null;
+  target_kind?: string | null;
+  nmap_target?: string | null;
+  nmap_profile?: NmapProfile | null;
+  stage?: string | null;
+  next_run_at?: string | null;
   profile: NucleiProfile;
   authorized_scan: boolean;
   timeout_seconds: number;
@@ -81,6 +208,16 @@ type NucleiJob = {
   max_findings: number;
   status: string;
   attempt_count: number;
+  started_at?: string | null;
+};
+
+type PipelineTarget = {
+  targetInput: string;
+  targetUrl: string;
+  normalizedTargetUrl: string;
+  nmapTarget: string;
+  targetHost: string;
+  targetKind: "domain" | "subdomain" | "url" | "ipv4" | "ipv4_cidr";
 };
 
 type ScannableTarget = {
@@ -115,6 +252,12 @@ const ALLOWED_PROFILES = new Set<NucleiProfile>([
   "baseline_headers",
   "exposure_medium",
   "web_vuln_safe",
+  "web_cve_recent",
+  "web_cve_2026",
+  "web_cve_2025",
+  "web_cve_2024",
+  "web_cve_2023",
+  "web_cve_2022",
   "web_vuln_authorized",
 ]);
 
@@ -128,7 +271,25 @@ const PRIVATE_IPV4_RANGES = [
 ];
 
 const HTTP_ACTION_TIMEOUT_SECONDS = 165;
+const NUCLEI_WAIT_MINUTES = 8;
+const NVD_CVES_BASE = "https://services.nvd.nist.gov/rest/json/cves/2.0";
+const NVD_MAX_CPE_QUERIES_PER_JOB = 8;
+const NVD_MAX_CVES_PER_CPE = 20;
 const DOMAIN_REGEX = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
+const IPV4_REGEX = /^(\d{1,3})(?:\.(\d{1,3})){3}$/;
+const IPV4_CIDR_REGEX = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/;
+const CVE_REGEX = /\bCVE-\d{4}-\d{4,}\b/gi;
+const WEB_PORT_PROTOCOLS: Record<number, "http" | "https"> = {
+  80: "http",
+  443: "https",
+  8080: "http",
+  8443: "https",
+  8000: "http",
+  3000: "http",
+  5000: "http",
+  9443: "https",
+};
+const ALLOWED_NMAP_PROFILES = new Set<NmapProfile>(["web_top", "tcp_top_100", "service_light", "custom_tcp"]);
 const nucleiCorsHeaders = {
   ...corsHeaders,
   "Access-Control-Allow-Headers": `${corsHeaders["Access-Control-Allow-Headers"]}, x-nuclei-scan360-request-id`,
@@ -209,6 +370,19 @@ function traceLog(ctx: TraceContext, status: string, extra: Record<string, unkno
 const tracedJsonResponse = (ctx: TraceContext, body: Record<string, unknown>, status = 200) =>
   jsonResponse({ request_id: ctx.requestId, ...body }, status);
 
+function isInternalRequest(req: Request): boolean {
+  const authHeader = String(req.headers.get("authorization") || "").trim();
+  const apikey = String(req.headers.get("apikey") || "").trim();
+  const surfaceSecretHeader = String(req.headers.get("x-surface-internal-secret") || "").trim();
+  const nucleiSecretHeader = String(req.headers.get("x-nuclei-scan360-internal-secret") || "").trim();
+  const serviceRoleKey = String(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+  const surfaceSecret = String(Deno.env.get("SURFACESCAN_INTERNAL_SECRET") || Deno.env.get("SURFACESCAN_CRON_INTERNAL_SECRET") || "").trim();
+  const nucleiSecret = String(Deno.env.get("NUCLEI_SCAN360_INTERNAL_SECRET") || "").trim();
+  return Boolean(serviceRoleKey && (authHeader === `Bearer ${serviceRoleKey}` || apikey === serviceRoleKey))
+    || Boolean(surfaceSecret && surfaceSecretHeader === surfaceSecret)
+    || Boolean(nucleiSecret && nucleiSecretHeader === nucleiSecret);
+}
+
 function clampInt(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -241,10 +415,93 @@ function normalizeTargetUrl(value: unknown): string {
   return url.toString();
 }
 
+function normalizeIpv4(value: unknown): string {
+  const raw = String(value || "").trim();
+  if (!IPV4_REGEX.test(raw)) return "";
+  const parts = raw.split(".").map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return "";
+  return parts.join(".");
+}
+
+function isPrivateIpv4(value: string): boolean {
+  return PRIVATE_IPV4_RANGES.some((range) => range.test(value));
+}
+
+function normalizePipelineTarget(value: unknown): PipelineTarget {
+  const raw = String(value || "").trim().replace(/^\*\./, "").replace(/\.$/, "");
+  if (!raw) throw new Error("target is required");
+
+  if (/^https?:\/\//i.test(raw)) {
+    const targetUrl = normalizeTargetUrl(raw);
+    const url = new URL(targetUrl);
+    const host = url.hostname.toLowerCase();
+    const ip = normalizeIpv4(host);
+    return {
+      targetInput: raw,
+      targetUrl,
+      normalizedTargetUrl: targetUrl,
+      nmapTarget: host,
+      targetHost: host,
+      targetKind: ip ? "ipv4" : host.split(".").length > 2 ? "subdomain" : "url",
+    };
+  }
+
+  const cidr = raw.toLowerCase().match(IPV4_CIDR_REGEX);
+  if (cidr) {
+    const ip = normalizeIpv4(cidr[1]);
+    const prefix = Number(cidr[2]);
+    if (!ip || isPrivateIpv4(ip) || prefix < 28 || prefix > 32) {
+      throw new Error("Only public IPv4 CIDR targets /28 or smaller are allowed");
+    }
+    return {
+      targetInput: raw,
+      targetUrl: raw,
+      normalizedTargetUrl: `cidr:${ip}/${prefix}`,
+      nmapTarget: `${ip}/${prefix}`,
+      targetHost: ip,
+      targetKind: "ipv4_cidr",
+    };
+  }
+
+  const ip = normalizeIpv4(raw);
+  if (ip) {
+    if (isPrivateIpv4(ip)) throw new Error("Private IPv4 targets are not allowed");
+    return {
+      targetInput: raw,
+      targetUrl: `https://${ip}/`,
+      normalizedTargetUrl: `https://${ip}/`,
+      nmapTarget: ip,
+      targetHost: ip,
+      targetKind: "ipv4",
+    };
+  }
+
+  const domain = normalizeDomainCandidate(raw);
+  if (!domain) throw new Error("Target must be a public IP, CIDR, domain or HTTP URL");
+  return {
+    targetInput: raw,
+    targetUrl: `https://${domain}/`,
+    normalizedTargetUrl: `https://${domain}/`,
+    nmapTarget: domain,
+    targetHost: domain,
+    targetKind: domain.split(".").length > 2 ? "subdomain" : "domain",
+  };
+}
+
 function normalizeProfile(value: unknown): NucleiProfile {
-  const profile = String(value || "baseline_headers").trim() as NucleiProfile;
+  const profile = String(value || "web_cve_recent").trim() as NucleiProfile;
   if (!ALLOWED_PROFILES.has(profile)) throw new Error("Unsupported Nuclei profile");
   return profile;
+}
+
+function normalizeNmapProfile(value: unknown): NmapProfile {
+  const profile = String(value || "service_light").trim() as NmapProfile;
+  if (!ALLOWED_NMAP_PROFILES.has(profile)) throw new Error("Unsupported Nmap profile");
+  return profile;
+}
+
+function isCveProfile(profile: NucleiProfile): boolean {
+  return profile === "web_vuln_safe" || profile.startsWith("web_cve_");
 }
 
 function normalizeOptions(body: RequestBody): Omit<ScanPayload, "target_url"> {
@@ -253,11 +510,13 @@ function normalizeOptions(body: RequestBody): Omit<ScanPayload, "target_url"> {
   if (profile === "web_vuln_authorized" && !authorizedScan) {
     throw new Error("authorized_scan=true is required for web_vuln_authorized");
   }
+  const defaultTimeout = profile === "baseline_headers" ? 45 : isCveProfile(profile) ? 150 : 120;
+  const defaultRate = profile === "web_vuln_authorized" ? 2 : isCveProfile(profile) ? 3 : 5;
   return {
     profile,
-    timeout_seconds: clampInt(body.timeout_seconds, profile === "baseline_headers" ? 45 : 120, 15, 180),
-    rate_limit: clampInt(body.rate_limit, profile === "web_vuln_authorized" ? 2 : 5, 1, profile === "web_vuln_authorized" ? 2 : 10),
-    max_findings: clampInt(body.max_findings, 25, 1, 200),
+    timeout_seconds: clampInt(body.timeout_seconds, defaultTimeout, 15, 180),
+    rate_limit: clampInt(body.rate_limit, defaultRate, 1, profile === "web_vuln_authorized" ? 2 : 10),
+    max_findings: clampInt(body.max_findings, isCveProfile(profile) ? 50 : 25, 1, 200),
     authorized_scan: authorizedScan,
   };
 }
@@ -376,6 +635,15 @@ function getServiceConfig() {
   return { serviceUrl, sharedSecret };
 }
 
+function getNmapServiceConfig() {
+  const serviceUrl = String(Deno.env.get("NMAP_SCAN360_SERVICE_URL") || "").replace(/\/+$/, "");
+  const sharedSecret = String(Deno.env.get("NMAP_SCAN360_SHARED_SECRET") || "").trim();
+  if (!serviceUrl || !sharedSecret) {
+    throw new Error("Nmap Scan360 service is not configured");
+  }
+  return { serviceUrl, sharedSecret };
+}
+
 function classifyFinding(finding: NucleiFinding): string {
   const tags = (Array.isArray(finding.tags) ? finding.tags : []).map((tag) => String(tag || "").toLowerCase());
   if (tags.includes("cve")) return "CVE";
@@ -419,6 +687,648 @@ function buildSummary(result: NucleiResult): Record<string, unknown> {
   };
 }
 
+function uniqueStrings(values: unknown[]): string[] {
+  return Array.from(new Set(values.map((value) => String(value || "").trim()).filter(Boolean)));
+}
+
+function extractCveIds(value: unknown): string[] {
+  const text = typeof value === "string" ? value : JSON.stringify(value || {});
+  return uniqueStrings((text.match(CVE_REGEX) || []).map((cve) => cve.toUpperCase()));
+}
+
+function extractFindingCves(finding: NucleiFinding): string[] {
+  return extractCveIds({
+    template_id: finding.template_id,
+    name: finding.name,
+    tags: finding.tags,
+    matcher_name: finding.matcher_name,
+    matched_at: finding.matched_at,
+    extracted_results: finding.extracted_results,
+    raw: finding,
+  });
+}
+
+function firstNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function inferCvssScore(finding: NucleiFinding): number | null {
+  const info = (finding.info || {}) as Record<string, unknown>;
+  const classification = (info.classification || finding.classification || {}) as Record<string, unknown>;
+  return firstNumber(
+    finding.cvss_score,
+    finding.cvss,
+    classification.cvss_score,
+    classification["cvss-score"],
+    classification.cvss,
+  );
+}
+
+function inferEpssScore(finding: NucleiFinding): number | null {
+  const info = (finding.info || {}) as Record<string, unknown>;
+  const classification = (info.classification || finding.classification || {}) as Record<string, unknown>;
+  return firstNumber(
+    finding.epss_score,
+    finding.epss,
+    classification.epss_score,
+    classification["epss-score"],
+    classification.epss,
+  );
+}
+
+function inferKevKnownExploited(finding: NucleiFinding): boolean {
+  const text = JSON.stringify(finding || {}).toLowerCase();
+  return text.includes("known-exploited") || text.includes("kev") || text.includes("cisa-kev");
+}
+
+function getNvdApiKey(): string {
+  return String(Deno.env.get("NVD_API_KEY") || "").trim();
+}
+
+async function fetchNvdJson(url: string): Promise<Record<string, unknown>> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  const headers: HeadersInit = {};
+  const apiKey = getNvdApiKey();
+  if (apiKey) headers.apiKey = apiKey;
+  try {
+    const response = await fetch(url, { headers, signal: controller.signal });
+    if (!response.ok) throw new Error(`nvd_http_${response.status}`);
+    const data = await response.json();
+    return data && typeof data === "object" ? data as Record<string, unknown> : {};
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function nvdMetric(cve: Record<string, unknown>): {
+  severity: string | null;
+  score: number | null;
+  vector: string | null;
+  version: string | null;
+} {
+  const metrics = (cve.metrics || {}) as Record<string, unknown>;
+  const pick = (name: string, version: string) => {
+    const rows = Array.isArray(metrics[name]) ? metrics[name] as Record<string, unknown>[] : [];
+    const metric = rows[0] || {};
+    const cvssData = (metric.cvssData || {}) as Record<string, unknown>;
+    return {
+      severity: cvssData.baseSeverity ? String(cvssData.baseSeverity) : metric.baseSeverity ? String(metric.baseSeverity) : null,
+      score: firstNumber(cvssData.baseScore),
+      vector: cvssData.vectorString ? String(cvssData.vectorString) : null,
+      version,
+    };
+  };
+
+  const v31 = pick("cvssMetricV31", "3.1");
+  if (v31.score !== null) return v31;
+  const v30 = pick("cvssMetricV30", "3.0");
+  if (v30.score !== null) return v30;
+  const v2 = pick("cvssMetricV2", "2.0");
+  return v2;
+}
+
+function parseNvdCveDetails(entry: unknown): NvdCveDetails | null {
+  const wrapper = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
+  const cve = (wrapper.cve && typeof wrapper.cve === "object" ? wrapper.cve : wrapper) as Record<string, unknown>;
+  const cveId = String(cve.id || "").toUpperCase();
+  CVE_REGEX.lastIndex = 0;
+  if (!CVE_REGEX.test(cveId)) return null;
+  CVE_REGEX.lastIndex = 0;
+
+  const descriptions = Array.isArray(cve.descriptions) ? cve.descriptions as Record<string, unknown>[] : [];
+  const description = descriptions.find((item) => item.lang === "en")?.value || descriptions[0]?.value || null;
+  const metric = nvdMetric(cve);
+  const references = Array.isArray(cve.references) ? cve.references : [];
+  const cpeJson: unknown[] = [];
+  const configurations = Array.isArray(cve.configurations) ? cve.configurations as Record<string, unknown>[] : [];
+  for (const config of configurations) {
+    const nodes = Array.isArray(config.nodes) ? config.nodes as Record<string, unknown>[] : [];
+    for (const node of nodes) {
+      const cpeMatches = Array.isArray(node.cpeMatch) ? node.cpeMatch as Record<string, unknown>[] : [];
+      for (const match of cpeMatches) {
+        if (match.criteria) {
+          cpeJson.push({ criteria: match.criteria, vulnerable: match.vulnerable === true });
+        }
+      }
+    }
+  }
+
+  return {
+    cve_id: cveId,
+    description: description ? String(description) : null,
+    severity: metric.severity ? metric.severity.toLowerCase() : null,
+    cvss_score: metric.score,
+    cvss_vector: metric.vector,
+    cvss_version: metric.version,
+    nvd_status: cve.vulnStatus ? String(cve.vulnStatus) : null,
+    published_at: cve.published ? String(cve.published) : null,
+    last_modified_at: cve.lastModified ? String(cve.lastModified) : null,
+    cpe_json: cpeJson.slice(0, 100),
+    references_json: references,
+    raw: cve,
+  };
+}
+
+async function fetchNvdCvesForCpe(cpe: string): Promise<NvdCveDetails[]> {
+  const query = new URLSearchParams({
+    cpeName: cpe,
+    resultsPerPage: String(NVD_MAX_CVES_PER_CPE),
+  });
+  const data = await fetchNvdJson(`${NVD_CVES_BASE}?${query.toString()}&isVulnerable`);
+  const vulnerabilities = Array.isArray(data.vulnerabilities) ? data.vulnerabilities : [];
+  return vulnerabilities
+    .map((entry) => parseNvdCveDetails(entry))
+    .filter((entry): entry is NvdCveDetails => Boolean(entry));
+}
+
+function normalizeCpeForNvd(value: unknown): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const requireConcreteVersion = (cpe23: string) => {
+    const parts = cpe23.split(":");
+    const version = String(parts[5] || "").trim();
+    return version && version !== "*" && version !== "-" ? cpe23 : "";
+  };
+  if (raw.startsWith("cpe:2.3:")) return requireConcreteVersion(raw);
+  if (!raw.startsWith("cpe:/")) return "";
+  const parts = raw.slice("cpe:/".length).split(":").map((part) => part || "*");
+  if (parts.length < 4) return "";
+  while (parts.length < 11) parts.push("*");
+  return requireConcreteVersion(`cpe:2.3:${parts.slice(0, 11).join(":")}`);
+}
+
+function normalizeVersion(value: unknown): string {
+  const version = String(value || "")
+    .trim()
+    .replace(/^v/i, "")
+    .replace(/[^\w.+:-]/g, "")
+    .slice(0, 80);
+  return /\d/.test(version) ? version : "";
+}
+
+function cpePart(value: string): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\\/g, "\\\\")
+    .replace(/:/g, "\\:")
+    .replace(/\s+/g, "_")
+    .replace(/[^\w.\\:-]/g, "_")
+    .slice(0, 120);
+}
+
+function technologyCpeCandidates(name: unknown, versionValue: unknown): string[] {
+  const normalizedName = String(name || "").trim().toLowerCase();
+  const version = normalizeVersion(versionValue);
+  if (!normalizedName || !version) return [];
+
+  const mappings: Array<{ patterns: RegExp[]; part: string; vendor: string; product: string }> = [
+    { patterns: [/^apache(?: httpd)?$/, /^apache http server$/], part: "a", vendor: "apache", product: "http_server" },
+    { patterns: [/^nginx$/], part: "a", vendor: "nginx", product: "nginx" },
+    { patterns: [/^wordpress$/], part: "a", vendor: "wordpress", product: "wordpress" },
+    { patterns: [/^php$/], part: "a", vendor: "php", product: "php" },
+    { patterns: [/^openssl$/], part: "a", vendor: "openssl", product: "openssl" },
+    { patterns: [/^openssh$/], part: "a", vendor: "openbsd", product: "openssh" },
+    { patterns: [/^jquery$/], part: "a", vendor: "jquery", product: "jquery" },
+  ];
+
+  const mapping = mappings.find((entry) => entry.patterns.some((pattern) => pattern.test(normalizedName)));
+  if (!mapping) return [];
+  return [`cpe:2.3:${mapping.part}:${mapping.vendor}:${mapping.product}:${cpePart(version)}:*:*:*:*:*:*:*`];
+}
+
+function safeConfidence(value: unknown, fallback: "high" | "medium" | "low" = "low"): "high" | "medium" | "low" {
+  const confidence = String(value || "").toLowerCase();
+  if (confidence === "high" || confidence === "medium" || confidence === "low") return confidence;
+  return fallback;
+}
+
+function portUrlMatches(port: OpenPortRow, url: string): boolean {
+  if (!url) return false;
+  const candidates = Array.isArray(port.url_candidates) ? port.url_candidates : [];
+  return candidates.some((candidate) => String(candidate || "").replace(/\/+$/, "") === url.replace(/\/+$/, ""));
+}
+
+function findPortForFingerprint(fingerprint: TechnologyFingerprint, openPorts: OpenPortRow[]): OpenPortRow | null {
+  const url = String(fingerprint.url || "").trim();
+  const portNumber = Number(fingerprint.port);
+  const host = String(fingerprint.host || "").trim().toLowerCase();
+  return openPorts.find((port) => portUrlMatches(port, url))
+    || openPorts.find((port) => portNumber && Number(port.port) === portNumber && (!host || String(port.hostname || port.host || "").toLowerCase() === host))
+    || openPorts.find((port) => portNumber && Number(port.port) === portNumber)
+    || null;
+}
+
+async function waitForNvdWindow() {
+  await new Promise((resolve) => setTimeout(resolve, getNvdApiKey() ? 250 : 6500));
+}
+
+async function loadCveIntelCache(adminClient: SupabaseClient, cveIds: string[]) {
+  const uniqueCves = uniqueStrings(cveIds.map((cve) => cve.toUpperCase())).slice(0, 100);
+  if (uniqueCves.length === 0) return new Map<string, Record<string, unknown>>();
+  const { data, error } = await adminClient
+    .from("cve_intel_cache")
+    .select("cve_id, description, cvss_v3_score, cvss_v3_vector, cvss_v3_severity, cvss_v2_score, cvss_v2_vector, epss_score, epss_percentile, cisa_kev, kev_date_added, kev_due_date, kev_required_action, published_at, last_modified_at, nvd_status, cpe_json, references_json, exploit_links")
+    .in("cve_id", uniqueCves);
+  if (error) return new Map<string, Record<string, unknown>>();
+  return new Map((data || []).map((row: Record<string, unknown>) => [String(row.cve_id || "").toUpperCase(), row]));
+}
+
+function mergeCveMatchWithCache(match: Record<string, unknown>, cache: Record<string, unknown> | undefined) {
+  if (!cache) return match;
+  const cvssScore = match.cvss_score ?? cache.cvss_v3_score ?? cache.cvss_v2_score ?? null;
+  return {
+    ...match,
+    severity: match.severity || (cache.cvss_v3_severity ? String(cache.cvss_v3_severity).toLowerCase() : null),
+    description: match.description || cache.description || null,
+    cvss_score: cvssScore,
+    cvss_vector: match.cvss_vector || cache.cvss_v3_vector || cache.cvss_v2_vector || null,
+    cvss_version: match.cvss_version || (cache.cvss_v3_score ? "3.x" : cache.cvss_v2_score ? "2.0" : null),
+    epss_score: match.epss_score ?? cache.epss_score ?? null,
+    epss_percentile: match.epss_percentile ?? cache.epss_percentile ?? null,
+    kev_known_exploited: match.kev_known_exploited === true || cache.cisa_kev === true,
+    published_at: match.published_at || cache.published_at || null,
+    last_modified_at: match.last_modified_at || cache.last_modified_at || null,
+    nvd_status: match.nvd_status || cache.nvd_status || null,
+    cve_intel: cache,
+  };
+}
+
+async function enrichCveMatchesForResponse(adminClient: SupabaseClient, matches: Record<string, unknown>[]) {
+  const cache = await loadCveIntelCache(adminClient, matches.map((match) => String(match.cve_id || "")));
+  return matches.map((match) => mergeCveMatchWithCache(match, cache.get(String(match.cve_id || "").toUpperCase())));
+}
+
+async function persistPotentialCveMatches(
+  adminClient: SupabaseClient,
+  job: NucleiJob,
+  openPorts: OpenPortRow[],
+): Promise<{ potential_count: number; cpe_count: number; warnings: string[] }> {
+  const cpeToPorts = new Map<string, OpenPortRow[]>();
+  for (const port of openPorts) {
+    const cpes = Array.isArray(port.cpe) ? port.cpe : [];
+    for (const rawCpe of cpes) {
+      const cpe = normalizeCpeForNvd(rawCpe);
+      if (!cpe) continue;
+      cpeToPorts.set(cpe, [...(cpeToPorts.get(cpe) || []), port]);
+    }
+  }
+
+  const cpes = Array.from(cpeToPorts.keys()).slice(0, NVD_MAX_CPE_QUERIES_PER_JOB);
+  const warnings: string[] = [];
+  const rows: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+
+  for (const [index, cpe] of cpes.entries()) {
+    try {
+      const cves = await fetchNvdCvesForCpe(cpe);
+      const ports = cpeToPorts.get(cpe) || [];
+      for (const cve of cves) {
+        for (const port of ports) {
+          const key = `${cve.cve_id}:${cpe}:${port.id}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          rows.push({
+            job_id: job.id,
+            finding_id: null,
+            port_id: port.id,
+            organization_id: job.organization_id,
+            customer_id: job.customer_id,
+            asset_host: port.hostname || port.host || job.target_host || job.nmap_target || null,
+            cve_id: cve.cve_id,
+            severity: cve.severity,
+            template_id: null,
+            matched_at: port.port ? `${port.protocol || "tcp"}/${port.port}` : null,
+            cvss_score: cve.cvss_score,
+            epss_score: null,
+            kev_known_exploited: false,
+            source: "nvd_cpe",
+            match_status: "potential",
+            confidence: "medium",
+            cpe,
+            description: cve.description,
+            nvd_status: cve.nvd_status,
+            cvss_vector: cve.cvss_vector,
+            cvss_version: cve.cvss_version,
+            published_at: cve.published_at,
+            last_modified_at: cve.last_modified_at,
+            details: {
+              source: "nvd_cpe",
+              cpe,
+              port,
+              nvd: {
+                references_json: cve.references_json,
+                cpe_json: cve.cpe_json,
+              },
+            },
+          });
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      warnings.push(`nvd_cpe:${cpe}:${message || "query_failed"}`);
+    }
+    if (index < cpes.length - 1) await waitForNvdWindow();
+  }
+
+  if (rows.length > 0) {
+    const { error } = await adminClient.from("nuclei_scan360_cve_matches").insert(rows);
+    if (error) warnings.push(`nvd_cpe_persist:${error.message || "insert_failed"}`);
+    try {
+      await adminClient.rpc("enqueue_cve_enrichment", {
+        _org_id: job.organization_id,
+        _cves: uniqueStrings(rows.map((row) => row.cve_id)),
+        _source: "nuclei_scan360_nvd_cpe",
+      });
+    } catch {
+      warnings.push("nvd_cpe_enrichment_queue_failed");
+    }
+  }
+
+  return { potential_count: rows.length, cpe_count: cpes.length, warnings };
+}
+
+async function persistPotentialTechnologyCveMatches(
+  adminClient: SupabaseClient,
+  job: NucleiJob,
+  technologies: TechnologyRow[],
+): Promise<{ potential_count: number; cpe_count: number; warnings: string[] }> {
+  const cpeToTechnologies = new Map<string, TechnologyRow[]>();
+  for (const technology of technologies) {
+    const cpes = Array.isArray(technology.cpe_candidates) ? technology.cpe_candidates : [];
+    for (const rawCpe of cpes) {
+      const cpe = normalizeCpeForNvd(rawCpe);
+      if (!cpe) continue;
+      cpeToTechnologies.set(cpe, [...(cpeToTechnologies.get(cpe) || []), technology]);
+    }
+  }
+
+  const cpes = Array.from(cpeToTechnologies.keys()).slice(0, NVD_MAX_CPE_QUERIES_PER_JOB);
+  const warnings: string[] = [];
+  const rows: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+
+  for (const [index, cpe] of cpes.entries()) {
+    try {
+      const cves = await fetchNvdCvesForCpe(cpe);
+      const technologyRows = cpeToTechnologies.get(cpe) || [];
+      for (const cve of cves) {
+        for (const technology of technologyRows) {
+          const key = `${cve.cve_id}:${cpe}:${technology.id}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          rows.push({
+            job_id: job.id,
+            finding_id: null,
+            port_id: technology.port_id || null,
+            organization_id: job.organization_id,
+            customer_id: job.customer_id,
+            asset_host: technology.asset_host || job.target_host || job.nmap_target || null,
+            cve_id: cve.cve_id,
+            severity: cve.severity,
+            template_id: null,
+            matched_at: technology.url || (technology.port ? `tcp/${technology.port}` : null),
+            cvss_score: cve.cvss_score,
+            epss_score: null,
+            kev_known_exploited: false,
+            source: "nvd_tech_cpe",
+            match_status: "potential",
+            confidence: "medium",
+            cpe,
+            description: cve.description,
+            nvd_status: cve.nvd_status,
+            cvss_vector: cve.cvss_vector,
+            cvss_version: cve.cvss_version,
+            published_at: cve.published_at,
+            last_modified_at: cve.last_modified_at,
+            details: {
+              source: "nvd_tech_cpe",
+              technology,
+              cpe,
+              nvd: {
+                references_json: cve.references_json,
+                cpe_json: cve.cpe_json,
+              },
+            },
+          });
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      warnings.push(`nvd_tech_cpe:${cpe}:${message || "query_failed"}`);
+    }
+    if (index < cpes.length - 1) await waitForNvdWindow();
+  }
+
+  if (rows.length > 0) {
+    const { error } = await adminClient.from("nuclei_scan360_cve_matches").insert(rows);
+    if (error) warnings.push(`nvd_tech_cpe_persist:${error.message || "insert_failed"}`);
+    try {
+      await adminClient.rpc("enqueue_cve_enrichment", {
+        _org_id: job.organization_id,
+        _cves: uniqueStrings(rows.map((row) => row.cve_id)),
+        _source: "nuclei_scan360_nvd_tech_cpe",
+      });
+    } catch {
+      warnings.push("nvd_tech_cpe_enrichment_queue_failed");
+    }
+  }
+
+  return { potential_count: rows.length, cpe_count: cpes.length, warnings };
+}
+
+async function persistTechnologyFingerprints(
+  adminClient: SupabaseClient,
+  job: NucleiJob,
+  nmapResult: NmapResult,
+  openPorts: OpenPortRow[],
+): Promise<{ rows: TechnologyRow[]; warnings: string[] }> {
+  await adminClient.from("nuclei_scan360_technologies").delete().eq("job_id", job.id);
+  const fingerprints = Array.isArray(nmapResult.technology_fingerprints) ? nmapResult.technology_fingerprints : [];
+  const rows: Record<string, unknown>[] = [];
+
+  for (const fingerprint of fingerprints) {
+    const technologies = Array.isArray(fingerprint.technologies) ? fingerprint.technologies : [];
+    const matchedPort = findPortForFingerprint(fingerprint, openPorts);
+    const url = fingerprint.url ? String(fingerprint.url) : null;
+    const assetHost = fingerprint.host ? String(fingerprint.host) : matchedPort?.hostname || matchedPort?.host || job.target_host || null;
+    const portNumber = Number(fingerprint.port || matchedPort?.port || 0);
+    for (const technology of technologies) {
+      const name = String(technology.name || "").trim();
+      if (!name) continue;
+      const version = normalizeVersion(technology.version) || null;
+      const cpeCandidates = technologyCpeCandidates(name, version);
+      rows.push({
+        job_id: job.id,
+        port_id: matchedPort?.id || null,
+        organization_id: job.organization_id,
+        customer_id: job.customer_id,
+        url,
+        asset_host: assetHost,
+        port: Number.isInteger(portNumber) && portNumber >= 1 && portNumber <= 65535 ? portNumber : null,
+        name,
+        version,
+        source: technology.source ? String(technology.source) : "httpx_wappalyzer",
+        confidence: safeConfidence(technology.confidence, version ? "medium" : "low"),
+        category: technology.category ? String(technology.category) : null,
+        evidence: technology.evidence && typeof technology.evidence === "object" ? technology.evidence : {
+          status_code: fingerprint.status_code ?? null,
+          title: fingerprint.title || null,
+          webserver: fingerprint.webserver || null,
+          content_type: fingerprint.content_type || null,
+          favicon_hash: fingerprint.favicon_hash || null,
+        },
+        cpe_candidates: cpeCandidates,
+        raw_technology: {
+          technology,
+          fingerprint,
+        },
+      });
+    }
+  }
+
+  if (rows.length === 0) return { rows: [], warnings: [] };
+  const { data, error } = await adminClient
+    .from("nuclei_scan360_technologies")
+    .insert(rows)
+    .select("id, job_id, port_id, url, asset_host, port, name, version, source, confidence, cpe_candidates, raw_technology");
+  if (error) return { rows: [], warnings: [`technology_persist:${error.message || "insert_failed"}`] };
+  return { rows: (data || []) as TechnologyRow[], warnings: [] };
+}
+
+function buildUrlCandidates(job: NucleiJob, nmapResult: NmapResult): string[] {
+  const ports = Array.isArray(nmapResult.open_ports) ? nmapResult.open_ports : [];
+  const fallbackHost = String(job.nmap_target || job.target_host || job.target_url || "").replace(/^https?:\/\//, "").split("/")[0];
+  const candidates: string[] = [];
+  for (const port of ports) {
+    const portNumber = Number(port.port);
+    if (!Number.isInteger(portNumber) || !WEB_PORT_PROTOCOLS[portNumber]) continue;
+    const host = String(port.hostname || port.host || fallbackHost || "").trim();
+    if (!host) continue;
+    const protocol = WEB_PORT_PROTOCOLS[portNumber];
+    const defaultPort = protocol === "https" ? 443 : 80;
+    const portSuffix = portNumber === defaultPort ? "" : `:${portNumber}`;
+    candidates.push(`${protocol}://${host}${portSuffix}/`);
+  }
+
+  if (candidates.length === 0 && /^https?:\/\//i.test(job.normalized_target_url)) {
+    candidates.push(job.normalized_target_url);
+  }
+
+  return uniqueStrings(candidates).slice(0, 8);
+}
+
+function buildPortUrlCandidates(port: NmapPort, fallbackHost: string): string[] {
+  const portNumber = Number(port.port);
+  const protocol = WEB_PORT_PROTOCOLS[portNumber];
+  if (!protocol) return [];
+  const host = String(port.hostname || port.host || fallbackHost || "").trim();
+  if (!host) return [];
+  const defaultPort = protocol === "https" ? 443 : 80;
+  const portSuffix = portNumber === defaultPort ? "" : `:${portNumber}`;
+  return [`${protocol}://${host}${portSuffix}/`];
+}
+
+async function persistNmapResult(adminClient: SupabaseClient, job: NucleiJob, nmapResult: NmapResult) {
+  const ports = Array.isArray(nmapResult.open_ports) ? nmapResult.open_ports : [];
+  const fallbackHost = String(job.nmap_target || job.target_url || "").replace(/^https?:\/\//, "").split("/")[0];
+  await adminClient.from("nuclei_scan360_open_ports").delete().eq("job_id", job.id);
+  await adminClient.from("nuclei_scan360_cve_matches").delete().eq("job_id", job.id).eq("match_status", "potential");
+  let insertedOpenPorts: OpenPortRow[] = [];
+
+  if (ports.length > 0) {
+    const rows = ports.map((port) => ({
+      job_id: job.id,
+      organization_id: job.organization_id,
+      customer_id: job.customer_id,
+      host: port.host ? String(port.host) : null,
+      hostname: port.hostname ? String(port.hostname) : null,
+      protocol: port.protocol ? String(port.protocol) : "tcp",
+      port: Number(port.port),
+      state: port.state ? String(port.state) : "open",
+      service: port.service ? String(port.service) : null,
+      product: port.product ? String(port.product) : null,
+      version: port.version ? String(port.version) : null,
+      extrainfo: port.extrainfo ? String(port.extrainfo) : null,
+      cpe: Array.isArray(port.cpe) ? port.cpe.map((entry) => String(entry || "")).filter(Boolean) : [],
+      url_candidates: buildPortUrlCandidates(port, fallbackHost),
+      raw_port: port,
+    })).filter((row) => Number.isInteger(row.port) && row.port >= 1 && row.port <= 65535);
+
+    if (rows.length > 0) {
+      const { data: insertedRows, error: insertError } = await adminClient
+        .from("nuclei_scan360_open_ports")
+        .insert(rows)
+        .select("id, job_id, host, hostname, protocol, port, service, product, version, extrainfo, cpe, url_candidates, raw_port");
+      if (insertError) throw new Error(insertError.message || "Unable to persist Nmap open ports");
+      insertedOpenPorts = (insertedRows || []) as OpenPortRow[];
+    }
+  }
+
+  const technologyResult = await persistTechnologyFingerprints(adminClient, job, nmapResult, insertedOpenPorts);
+  const nvdCpeResult = await persistPotentialCveMatches(adminClient, job, insertedOpenPorts);
+  const nvdTechnologyResult = await persistPotentialTechnologyCveMatches(adminClient, job, technologyResult.rows);
+  const candidates = buildUrlCandidates(job, nmapResult);
+  const warnings = uniqueStrings([
+    ...(Array.isArray(nmapResult.warnings) ? nmapResult.warnings : []),
+    ...(Array.isArray(nmapResult.fingerprint_warnings) ? nmapResult.fingerprint_warnings : []),
+    ...technologyResult.warnings,
+    ...nvdCpeResult.warnings,
+    ...nvdTechnologyResult.warnings,
+  ]);
+  const { error: updateError } = await adminClient
+    .from("nuclei_scan360_jobs")
+    .update({
+      stage: "waiting_nuclei",
+      status: "running",
+      nmap_status: "completed",
+      nmap_completed_at: new Date().toISOString(),
+      nmap_duration_ms: Number.isFinite(Number(nmapResult.duration_ms)) ? Math.round(Number(nmapResult.duration_ms)) : null,
+      nmap_version: nmapResult.nmap_version || null,
+      open_port_count: Number.isFinite(Number(nmapResult.open_port_count)) ? Math.round(Number(nmapResult.open_port_count)) : ports.length,
+      fingerprint_status: nmapResult.fingerprint_status || null,
+      fingerprint_duration_ms: Number.isFinite(Number(nmapResult.fingerprint_duration_ms)) ? Math.round(Number(nmapResult.fingerprint_duration_ms)) : null,
+      technology_count: technologyResult.rows.length,
+      nmap_warnings: warnings,
+      raw_technology_result: {
+        httpx_version: nmapResult.httpx_version || null,
+        fingerprint_status: nmapResult.fingerprint_status || null,
+        fingerprint_duration_ms: nmapResult.fingerprint_duration_ms || null,
+        fingerprint_warnings: nmapResult.fingerprint_warnings || [],
+        technology_fingerprints: nmapResult.technology_fingerprints || [],
+        technology_count: technologyResult.rows.length,
+        nvd_tech_cpe: {
+          cpe_count: nvdTechnologyResult.cpe_count,
+          potential_count: nvdTechnologyResult.potential_count,
+          warning_count: nvdTechnologyResult.warnings.length,
+        },
+      },
+      raw_nmap_result: {
+        ...nmapResult,
+        nuclei_url_candidates: candidates,
+        nvd_cpe_cve: {
+          cpe_count: nvdCpeResult.cpe_count,
+          potential_count: nvdCpeResult.potential_count,
+          warning_count: nvdCpeResult.warnings.length,
+        },
+        nvd_tech_cpe: {
+          cpe_count: nvdTechnologyResult.cpe_count,
+          potential_count: nvdTechnologyResult.potential_count,
+          warning_count: nvdTechnologyResult.warnings.length,
+        },
+      },
+      next_run_at: new Date(Date.now() + NUCLEI_WAIT_MINUTES * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", job.id);
+  if (updateError) throw new Error(updateError.message || "Unable to update Nmap stage");
+}
+
 async function callNucleiService(payload: ScanPayload): Promise<NucleiResult> {
   const { serviceUrl, sharedSecret } = getServiceConfig();
   const controller = new AbortController();
@@ -444,6 +1354,13 @@ async function callNucleiService(payload: ScanPayload): Promise<NucleiResult> {
 
     if (!response.ok) {
       const errorPayload = parsed as Record<string, unknown>;
+      if (String(errorPayload.error || "") === "nuclei_timeout" && Array.isArray(errorPayload.warnings)) {
+        return {
+          ...(errorPayload as NucleiResult),
+          findings: Array.isArray(errorPayload.findings) ? errorPayload.findings as NucleiFinding[] : [],
+          warnings: uniqueStrings([...(errorPayload.warnings as unknown[]), "nuclei_timeout_partial_result"]),
+        };
+      }
       throw new Error(String(errorPayload.error || errorPayload.message || `Nuclei service HTTP ${response.status}`));
     }
 
@@ -472,6 +1389,66 @@ async function callNucleiHealth(): Promise<Record<string, unknown>> {
     if (!response.ok) {
       const errorPayload = parsed as Record<string, unknown>;
       throw new Error(String(errorPayload.error || errorPayload.message || `Nuclei health HTTP ${response.status}`));
+    }
+    return parsed as Record<string, unknown>;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function callNmapService(payload: { target: string; profile: NmapProfile; timeout_seconds: number; ports?: string }): Promise<NmapResult> {
+  const { serviceUrl, sharedSecret } = getNmapServiceConfig();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), (payload.timeout_seconds + 25) * 1000);
+  try {
+    const response = await fetch(`${serviceUrl}/nmap/scan`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${sharedSecret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    const text = await response.text();
+    let parsed: unknown;
+    try {
+      parsed = text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error(`Nmap service returned malformed JSON: ${text.slice(0, 500)}`);
+    }
+
+    if (!response.ok) {
+      const errorPayload = parsed as Record<string, unknown>;
+      throw new Error(String(errorPayload.error || errorPayload.message || `Nmap service HTTP ${response.status}`));
+    }
+
+    return parsed as NmapResult;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function callNmapHealth(): Promise<Record<string, unknown>> {
+  const { serviceUrl } = getNmapServiceConfig();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(`${serviceUrl}/health`, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    let parsed: unknown = {};
+    try {
+      parsed = text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error(`Nmap health returned malformed JSON: ${text.slice(0, 300)}`);
+    }
+    if (!response.ok) {
+      const errorPayload = parsed as Record<string, unknown>;
+      throw new Error(String(errorPayload.error || errorPayload.message || `Nmap health HTTP ${response.status}`));
     }
     return parsed as Record<string, unknown>;
   } finally {
@@ -676,6 +1653,7 @@ async function enqueueJobs(
   await loadOrganization(adminClient, organizationId);
 
   const options = normalizeOptions(body);
+  const nmapProfile = normalizeNmapProfile(body.nmap_profile);
   const manualTargets = [
     body.target_url,
     ...(Array.isArray(body.targets) ? body.targets : []),
@@ -697,8 +1675,13 @@ async function enqueueJobs(
       ? "surface_assets"
       : "manual";
 
-  const normalizedTargets = Array.from(new Set([...manualTargets, ...surfaceTargets].map(normalizeTargetUrl))).slice(0, 50);
-  if (normalizedTargets.length === 0) throw new Error("At least one target or SurfaceScan360 asset is required");
+  const pipelineTargets = Array.from(new Map(
+    [...manualTargets, ...surfaceTargets]
+      .map((target) => normalizePipelineTarget(target))
+      .map((target) => [target.normalizedTargetUrl, target] as const),
+  ).values()).slice(0, 50);
+  if (pipelineTargets.length === 0) throw new Error("At least one target or SurfaceScan360 asset is required");
+  const normalizedTargets = pipelineTargets.map((target) => target.normalizedTargetUrl);
 
   const { data: activeJobs, error: activeError } = await adminClient
     .from("nuclei_scan360_jobs")
@@ -715,22 +1698,33 @@ async function enqueueJobs(
     return { queued: [], queued_count: 0, skipped_duplicates: normalizedTargets.length, warnings };
   }
 
-  const rows = newTargets.map((targetUrl) => ({
+  const targetByNormalized = new Map(pipelineTargets.map((target) => [target.normalizedTargetUrl, target] as const));
+  const rows = newTargets.map((targetUrl) => {
+    const pipelineTarget = targetByNormalized.get(targetUrl);
+    if (!pipelineTarget) throw new Error("Unable to resolve normalized target");
+    return ({
     organization_id: organizationId,
     customer_id: organizationId,
     created_by: authUserId,
     created_by_email: email,
     source,
-    target_url: targetUrl,
-    normalized_target_url: targetUrl,
-    target_host: getTargetHost(targetUrl),
+    target_url: pipelineTarget.targetUrl,
+    normalized_target_url: pipelineTarget.normalizedTargetUrl,
+    target_host: pipelineTarget.targetHost,
+    target_input: pipelineTarget.targetInput,
+    target_kind: pipelineTarget.targetKind,
+    nmap_target: pipelineTarget.nmapTarget,
+    nmap_profile: nmapProfile,
     profile: options.profile,
     authorized_scan: options.authorized_scan,
     timeout_seconds: options.timeout_seconds,
     rate_limit: options.rate_limit,
     max_findings: options.max_findings,
+    stage: "queued",
+    next_run_at: new Date().toISOString(),
     status: "queued",
-  }));
+    });
+  });
 
   const { data, error } = await adminClient
     .from("nuclei_scan360_jobs")
@@ -748,7 +1742,7 @@ async function listJobs(adminClient: SupabaseClient, body: RequestBody) {
 
   const { data, error } = await adminClient
     .from("nuclei_scan360_jobs")
-    .select("id, organization_id, customer_id, source, target_url, resolved_target_url, target_host, profile, status, attempt_count, last_error, timeout_seconds, rate_limit, max_findings, authorized_scan, duration_ms, nuclei_version, templates_loaded_count, templates_executed_count, findings_count, warnings, summary, raw_result, created_at, started_at, completed_at")
+    .select("id, organization_id, customer_id, source, target_url, normalized_target_url, resolved_target_url, target_host, target_input, target_kind, nmap_target, nmap_profile, stage, next_run_at, nmap_status, nmap_started_at, nmap_completed_at, nmap_duration_ms, nmap_version, open_port_count, fingerprint_status, fingerprint_duration_ms, technology_count, nmap_warnings, raw_nmap_result, raw_technology_result, profile, status, attempt_count, last_error, timeout_seconds, rate_limit, max_findings, authorized_scan, duration_ms, nuclei_version, templates_loaded_count, templates_executed_count, findings_count, warnings, summary, raw_result, created_at, started_at, completed_at")
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false })
     .limit(clampInt(body.limit, 25, 1, 100));
@@ -776,12 +1770,36 @@ async function getJob(adminClient: SupabaseClient, body: RequestBody) {
     .order("created_at", { ascending: true });
   if (findingsError) throw new Error(findingsError.message || "Unable to load NucleiScan360 findings");
 
-  return { job, findings: findings || [] };
+  const { data: openPorts, error: openPortsError } = await adminClient
+    .from("nuclei_scan360_open_ports")
+    .select("*")
+    .eq("job_id", jobId)
+    .order("port", { ascending: true });
+  if (openPortsError) throw new Error(openPortsError.message || "Unable to load NucleiScan360 open ports");
+
+  const { data: cveMatches, error: cveMatchesError } = await adminClient
+    .from("nuclei_scan360_cve_matches")
+    .select("*")
+    .eq("job_id", jobId)
+    .order("match_status", { ascending: true })
+    .order("created_at", { ascending: true });
+  if (cveMatchesError) throw new Error(cveMatchesError.message || "Unable to load NucleiScan360 CVE matches");
+  const enrichedCveMatches = await enrichCveMatchesForResponse(adminClient, (cveMatches || []) as Record<string, unknown>[]);
+
+  const { data: technologies, error: technologiesError } = await adminClient
+    .from("nuclei_scan360_technologies")
+    .select("*")
+    .eq("job_id", jobId)
+    .order("created_at", { ascending: true });
+  if (technologiesError) throw new Error(technologiesError.message || "Unable to load NucleiScan360 technologies");
+
+  return { job, findings: findings || [], open_ports: openPorts || [], cve_matches: enrichedCveMatches, technologies: technologies || [] };
 }
 
 async function persistResult(adminClient: SupabaseClient, job: NucleiJob, result: NucleiResult) {
   const findings = Array.isArray(result.findings) ? result.findings : [];
   await adminClient.from("nuclei_scan360_findings").delete().eq("job_id", job.id);
+  await adminClient.from("nuclei_scan360_cve_matches").delete().eq("job_id", job.id).eq("match_status", "confirmed");
 
   if (findings.length > 0) {
     const rows = findings.map((finding) => ({
@@ -798,11 +1816,65 @@ async function persistResult(adminClient: SupabaseClient, job: NucleiJob, result
       asset_host: extractAssetHost(finding.matched_at),
       extracted_results: Array.isArray(finding.extracted_results) ? finding.extracted_results : [],
       tags: Array.isArray(finding.tags) ? finding.tags : [],
+      cve_ids: extractFindingCves(finding),
+      cvss_score: inferCvssScore(finding),
+      epss_score: inferEpssScore(finding),
+      kev_known_exploited: inferKevKnownExploited(finding),
+      cve_details: {},
       raw_finding: finding,
     }));
 
-    const { error: insertError } = await adminClient.from("nuclei_scan360_findings").insert(rows);
+    const { data: insertedFindings, error: insertError } = await adminClient
+      .from("nuclei_scan360_findings")
+      .insert(rows)
+      .select("id, template_id, severity, matched_at, asset_host, cve_ids, cvss_score, epss_score, kev_known_exploited, raw_finding");
     if (insertError) throw new Error(insertError.message || "Unable to persist NucleiScan360 findings");
+
+    const cveRows = (insertedFindings || []).flatMap((findingRow: Record<string, unknown>) => {
+      const cves = Array.isArray(findingRow.cve_ids) ? findingRow.cve_ids.map((cve) => String(cve || "")).filter(Boolean) : [];
+      return cves.map((cveId) => ({
+        job_id: job.id,
+        finding_id: findingRow.id,
+        organization_id: job.organization_id,
+        customer_id: job.customer_id,
+        asset_host: findingRow.asset_host ? String(findingRow.asset_host) : null,
+        cve_id: cveId,
+        severity: findingRow.severity ? String(findingRow.severity) : null,
+        template_id: findingRow.template_id ? String(findingRow.template_id) : null,
+        matched_at: findingRow.matched_at ? String(findingRow.matched_at) : null,
+        cvss_score: findingRow.cvss_score ?? null,
+        epss_score: findingRow.epss_score ?? null,
+        kev_known_exploited: findingRow.kev_known_exploited === true,
+        source: "nuclei",
+        match_status: "confirmed",
+        confidence: "high",
+        cpe: null,
+        port_id: null,
+        description: null,
+        nvd_status: null,
+        cvss_vector: null,
+        cvss_version: null,
+        epss_percentile: null,
+        published_at: null,
+        last_modified_at: null,
+        details: findingRow.raw_finding || {},
+      }));
+    });
+
+    if (cveRows.length > 0) {
+      const { error: cveInsertError } = await adminClient.from("nuclei_scan360_cve_matches").insert(cveRows);
+      if (cveInsertError) throw new Error(cveInsertError.message || "Unable to persist NucleiScan360 CVE matches");
+
+      try {
+        await adminClient.rpc("enqueue_cve_enrichment", {
+          _org_id: job.organization_id,
+          _cves: uniqueStrings(cveRows.map((row) => row.cve_id)),
+          _source: "nuclei_scan360",
+        });
+      } catch {
+        // CVE enrichment is best-effort; persisted matches remain the source of truth for this job.
+      }
+    }
   }
 
   const summary = buildSummary(result);
@@ -810,7 +1882,9 @@ async function persistResult(adminClient: SupabaseClient, job: NucleiJob, result
     .from("nuclei_scan360_jobs")
     .update({
       status: "completed",
+      stage: "completed",
       completed_at: new Date().toISOString(),
+      next_run_at: null,
       duration_ms: Number.isFinite(Number(result.duration_ms)) ? Math.round(Number(result.duration_ms)) : null,
       resolved_target_url: result.resolved_target_url || result.target_url || job.target_url,
       nuclei_version: result.nuclei_version || null,
@@ -834,8 +1908,10 @@ async function markJobFailed(adminClient: SupabaseClient, job: NucleiJob, error:
     .from("nuclei_scan360_jobs")
     .update({
       status: isTimeout || /timeout|aborted/i.test(message) ? "timeout" : "failed",
+      stage: isTimeout || /timeout|aborted/i.test(message) ? "timeout" : "failed",
       completed_at: new Date().toISOString(),
       last_error: message.slice(0, 1000),
+      next_run_at: null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", job.id);
@@ -844,41 +1920,87 @@ async function markJobFailed(adminClient: SupabaseClient, job: NucleiJob, error:
 
 async function processQueue(adminClient: SupabaseClient, body: RequestBody) {
   getServiceConfig();
+  getNmapServiceConfig();
   const organizationId = String(body.organization_id || "").trim();
-  if (!organizationId) throw new Error("organization_id is required");
-  await loadOrganization(adminClient, organizationId);
+  if (organizationId) await loadOrganization(adminClient, organizationId);
 
   const maxJobs = clampInt(body.limit, 1, 1, 2);
-  const { data: queued, error } = await adminClient
+  let query = adminClient
     .from("nuclei_scan360_jobs")
     .select("*")
-    .eq("organization_id", organizationId)
-    .eq("status", "queued")
+    .in("stage", ["queued", "waiting_nuclei"])
+    .or(`next_run_at.is.null,next_run_at.lte.${new Date().toISOString()}`)
     .order("created_at", { ascending: true })
     .limit(maxJobs);
+  if (organizationId) query = query.eq("organization_id", organizationId);
+
+  const { data: queued, error } = await query;
   if (error) throw new Error(error.message || "Unable to load queued NucleiScan360 jobs");
 
-  const processed: Array<{ job_id: string; status: string; result?: NucleiResult; error?: string }> = [];
+  const processed: Array<{ job_id: string; status: string; stage?: string; result?: NucleiResult; nmap_result?: NmapResult; error?: string }> = [];
   for (const job of (queued || []) as NucleiJob[]) {
-    const { data: claimed, error: claimError } = await adminClient
-      .from("nuclei_scan360_jobs")
-      .update({
-        status: "running",
-        started_at: new Date().toISOString(),
-        attempt_count: (job.attempt_count || 0) + 1,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", job.id)
-      .eq("status", "queued")
-      .select("*")
-      .maybeSingle();
-    if (claimError) throw new Error(claimError.message || "Unable to claim NucleiScan360 job");
-    if (!claimed?.id) continue;
+    if ((job.stage || "queued") === "queued") {
+      const { data: claimed, error: claimError } = await adminClient
+        .from("nuclei_scan360_jobs")
+        .update({
+          status: "running",
+          stage: "nmap_running",
+          nmap_status: "running",
+          started_at: job.started_at || new Date().toISOString(),
+          nmap_started_at: new Date().toISOString(),
+          attempt_count: (job.attempt_count || 0) + 1,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", job.id)
+        .eq("stage", "queued")
+        .select("*")
+        .maybeSingle();
+      if (claimError) throw new Error(claimError.message || "Unable to claim NucleiScan360 Nmap job");
+      if (!claimed?.id) continue;
 
-    const runningJob = claimed as NucleiJob;
-    try {
+      const runningJob = claimed as NucleiJob;
+      try {
+        const nmapResult = await callNmapService({
+          target: String(runningJob.nmap_target || runningJob.target_input || runningJob.target_host || runningJob.target_url),
+          profile: normalizeNmapProfile(runningJob.nmap_profile || body.nmap_profile),
+          timeout_seconds: Math.min(runningJob.timeout_seconds || 60, 180),
+        });
+        await persistNmapResult(adminClient, runningJob, nmapResult);
+        processed.push({ job_id: runningJob.id, status: "running", stage: "waiting_nuclei", nmap_result: nmapResult });
+      } catch (error) {
+        const message = await markJobFailed(adminClient, runningJob, error);
+        processed.push({ job_id: runningJob.id, status: /timeout|aborted/i.test(message) ? "timeout" : "failed", stage: /timeout|aborted/i.test(message) ? "timeout" : "failed", error: message });
+      }
+      continue;
+    }
+
+    if ((job.stage || "") === "waiting_nuclei") {
+      const { data: claimed, error: claimError } = await adminClient
+        .from("nuclei_scan360_jobs")
+        .update({
+          status: "running",
+          stage: "nuclei_running",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", job.id)
+        .eq("stage", "waiting_nuclei")
+        .or(`next_run_at.is.null,next_run_at.lte.${new Date().toISOString()}`)
+        .select("*")
+        .maybeSingle();
+      if (claimError) throw new Error(claimError.message || "Unable to claim NucleiScan360 Nuclei job");
+      if (!claimed?.id) continue;
+
+      const runningJob = claimed as NucleiJob;
+      try {
+        const rawNmap = (runningJob as unknown as { raw_nmap_result?: Record<string, unknown> }).raw_nmap_result || {};
+        const candidates = Array.isArray(rawNmap.nuclei_url_candidates)
+          ? rawNmap.nuclei_url_candidates.map((candidate) => String(candidate || "")).filter(Boolean)
+          : buildUrlCandidates(runningJob, rawNmap as NmapResult);
+        const targetUrl = candidates[0] || (/^https?:\/\//i.test(runningJob.normalized_target_url) ? runningJob.normalized_target_url : "");
+        if (!targetUrl) throw new Error("No HTTP/HTTPS candidate available for Nuclei after Nmap");
+
       const result = await callNucleiService({
-        target_url: runningJob.normalized_target_url,
+        target_url: targetUrl,
         profile: runningJob.profile,
         timeout_seconds: Math.min(runningJob.timeout_seconds, HTTP_ACTION_TIMEOUT_SECONDS),
         rate_limit: runningJob.rate_limit,
@@ -886,10 +2008,11 @@ async function processQueue(adminClient: SupabaseClient, body: RequestBody) {
         authorized_scan: runningJob.authorized_scan,
       });
       await persistResult(adminClient, runningJob, result);
-      processed.push({ job_id: runningJob.id, status: "completed", result });
+        processed.push({ job_id: runningJob.id, status: "completed", stage: "completed", result });
     } catch (error) {
       const message = await markJobFailed(adminClient, runningJob, error);
-      processed.push({ job_id: runningJob.id, status: /timeout|aborted/i.test(message) ? "timeout" : "failed", error: message });
+        processed.push({ job_id: runningJob.id, status: /timeout|aborted/i.test(message) ? "timeout" : "failed", stage: /timeout|aborted/i.test(message) ? "timeout" : "failed", error: message });
+      }
     }
   }
 
@@ -939,17 +2062,24 @@ async function smokeTest(adminClient: SupabaseClient, body: RequestBody) {
     return { configured: true, service_url_host: new URL(serviceUrl).host };
   });
 
+  await runCheck("nmap_service_config", async () => {
+    const { serviceUrl } = getNmapServiceConfig();
+    return { configured: true, service_url_host: new URL(serviceUrl).host };
+  });
+
   await runCheck("organization", async () => {
     if (!organizationId) throw new Error("organization_id is required");
     const organization = await loadOrganization(adminClient, organizationId);
     return { id: organization.id, name: organization.name, code: organization.code };
   });
 
-  await runCheck("target_repository", async () => {
-    if (!organizationId) throw new Error("organization_id is required");
-    const repository = await collectScannableTargets(adminClient, organizationId, clampInt(body.target_limit, 25, 1, 80));
-    return { target_count: repository.targets.length, counts: repository.counts, warnings: repository.warnings };
-  });
+  if (body.include_discovered_targets === true) {
+    await runCheck("target_repository", async () => {
+      if (!organizationId) throw new Error("organization_id is required");
+      const repository = await collectScannableTargets(adminClient, organizationId, clampInt(body.target_limit, 10, 1, 25));
+      return { target_count: repository.targets.length, counts: repository.counts, warnings: repository.warnings };
+    });
+  }
 
   await runCheck("queue_table", async () => {
     if (!organizationId) throw new Error("organization_id is required");
@@ -961,8 +2091,47 @@ async function smokeTest(adminClient: SupabaseClient, body: RequestBody) {
     return { dry_run_insert: false, existing_jobs: count || 0 };
   });
 
+  await runCheck("open_ports_table", async () => {
+    if (!organizationId) throw new Error("organization_id is required");
+    const { count, error } = await adminClient
+      .from("nuclei_scan360_open_ports")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organizationId);
+    if (error) throw new Error(error.message || "open_ports_table_failed");
+    return { existing_open_ports: count || 0 };
+  });
+
+  await runCheck("cve_matches_table", async () => {
+    if (!organizationId) throw new Error("organization_id is required");
+    const { count, error } = await adminClient
+      .from("nuclei_scan360_cve_matches")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organizationId);
+    if (error) throw new Error(error.message || "cve_matches_table_failed");
+    return { existing_cve_matches: count || 0 };
+  });
+
+  await runCheck("nvd_api", async () => {
+    if (!getNvdApiKey()) throw new Error("NVD_API_KEY is not configured");
+    const cveQuery = new URLSearchParams({ cveIds: "CVE-2024-3400", resultsPerPage: "1" });
+    const cveData = await fetchNvdJson(`${NVD_CVES_BASE}?${cveQuery.toString()}`);
+    const cveCount = Array.isArray(cveData.vulnerabilities) ? cveData.vulnerabilities.length : 0;
+    const cpeData = await fetchNvdJson(`${NVD_CVES_BASE}?cpeName=${encodeURIComponent("cpe:2.3:a:apache:http_server:2.4.49:*:*:*:*:*:*:*")}&resultsPerPage=1&isVulnerable`);
+    const cpeCount = Array.isArray(cpeData.vulnerabilities) ? cpeData.vulnerabilities.length : 0;
+    return {
+      configured: true,
+      cve_sample_ok: cveCount > 0,
+      cpe_sample_ok: cpeCount > 0,
+    };
+  });
+
   await runCheck("container_health", async () => {
     const health = await callNucleiHealth();
+    return health;
+  });
+
+  await runCheck("nmap_container_health", async () => {
+    const health = await callNmapHealth();
     return health;
   });
 
@@ -1001,16 +2170,29 @@ serve(async (req: Request) => {
 
   try {
     const { userClient, adminClient } = makeSupabaseClients(req);
-    const { data: authData, error: authError } = await userClient.auth.getUser();
-    if (authError || !authData.user) {
-      traceLog(ctx, "unauthorized", { phase: "auth", http_status: 401, message: authError?.message || "no_user" });
-      return tracedJsonResponse(ctx, { ok: false, error: "Unauthorized", phase: "auth" }, 401);
-    }
+    const internalRequest = isInternalRequest(req);
+    let authUserId = "00000000-0000-0000-0000-000000000000";
+    let callerEmail = "scan360-internal";
 
-    const caller = await getCallerProfile(adminClient, authData.user.id);
-    if (!caller.isSuperAdmin) {
-      traceLog(ctx, "forbidden", { phase: "auth", http_status: 403, email: caller.email });
-      return tracedJsonResponse(ctx, { ok: false, error: "Only super admins can use NucleiScan360", phase: "auth" }, 403);
+    if (internalRequest) {
+      if (!["process_queue", "smoke_test"].includes(action)) {
+        traceLog(ctx, "internal_action_forbidden", { phase: "auth", http_status: 403 });
+        return tracedJsonResponse(ctx, { ok: false, error: "Internal calls can only process the queue or run smoke tests", phase: "auth" }, 403);
+      }
+    } else {
+      const { data: authData, error: authError } = await userClient.auth.getUser();
+      if (authError || !authData.user) {
+        traceLog(ctx, "unauthorized", { phase: "auth", http_status: 401, message: authError?.message || "no_user" });
+        return tracedJsonResponse(ctx, { ok: false, error: "Unauthorized", phase: "auth" }, 401);
+      }
+
+      const caller = await getCallerProfile(adminClient, authData.user.id);
+      if (!caller.isSuperAdmin) {
+        traceLog(ctx, "forbidden", { phase: "auth", http_status: 403, email: caller.email });
+        return tracedJsonResponse(ctx, { ok: false, error: "Only super admins can use NucleiScan360", phase: "auth" }, 403);
+      }
+      authUserId = authData.user.id;
+      callerEmail = authData.user.email || caller.email;
     }
 
     let payload: Record<string, unknown>;
@@ -1018,7 +2200,7 @@ serve(async (req: Request) => {
     if (action === "direct_scan") {
       payload = await directScan(body);
     } else if (action === "enqueue") {
-      payload = await enqueueJobs(adminClient, body, authData.user.id, authData.user.email || caller.email);
+      payload = await enqueueJobs(adminClient, body, authUserId, callerEmail);
     } else if (action === "list") {
       payload = await listJobs(adminClient, body);
     } else if (action === "get") {

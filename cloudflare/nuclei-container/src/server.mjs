@@ -93,6 +93,57 @@ const PROFILE_CONFIG = {
     excludedTags: EXCLUDED_PUBLIC_TAGS,
     requestTimeoutSeconds: 8,
   },
+  web_cve_recent: {
+    templatePaths: [
+      { root: 'official', path: 'http/cves/2026' },
+      { root: 'official', path: 'http/cves/2025' },
+    ],
+    severities: ['low', 'medium', 'high', 'critical'],
+    types: ['http'],
+    excludedTags: EXCLUDED_PUBLIC_TAGS,
+    concurrency: 2,
+    requestTimeoutSeconds: 8,
+  },
+  web_cve_2026: {
+    templatePaths: [{ root: 'official', path: 'http/cves/2026' }],
+    severities: ['low', 'medium', 'high', 'critical'],
+    types: ['http'],
+    excludedTags: EXCLUDED_PUBLIC_TAGS,
+    concurrency: 2,
+    requestTimeoutSeconds: 8,
+  },
+  web_cve_2025: {
+    templatePaths: [{ root: 'official', path: 'http/cves/2025' }],
+    severities: ['low', 'medium', 'high', 'critical'],
+    types: ['http'],
+    excludedTags: EXCLUDED_PUBLIC_TAGS,
+    concurrency: 2,
+    requestTimeoutSeconds: 8,
+  },
+  web_cve_2024: {
+    templatePaths: [{ root: 'official', path: 'http/cves/2024' }],
+    severities: ['low', 'medium', 'high', 'critical'],
+    types: ['http'],
+    excludedTags: EXCLUDED_PUBLIC_TAGS,
+    concurrency: 2,
+    requestTimeoutSeconds: 8,
+  },
+  web_cve_2023: {
+    templatePaths: [{ root: 'official', path: 'http/cves/2023' }],
+    severities: ['low', 'medium', 'high', 'critical'],
+    types: ['http'],
+    excludedTags: EXCLUDED_PUBLIC_TAGS,
+    concurrency: 2,
+    requestTimeoutSeconds: 8,
+  },
+  web_cve_2022: {
+    templatePaths: [{ root: 'official', path: 'http/cves/2022' }],
+    severities: ['low', 'medium', 'high', 'critical'],
+    types: ['http'],
+    excludedTags: EXCLUDED_PUBLIC_TAGS,
+    concurrency: 2,
+    requestTimeoutSeconds: 8,
+  },
   web_vuln_authorized: {
     templatePaths: [
       { root: 'official', path: 'http/vulnerabilities' },
@@ -359,8 +410,23 @@ async function runNuclei(body) {
   const redirectResult = await resolveRedirectTarget(target);
   const resolvedTargetUrl = redirectResult.resolvedTargetUrl;
   const templateDescriptors = resolveTemplatePaths(profileConfig);
-  const templatePaths = templateDescriptors.map((entry) => entry.absolute);
-  const templateCount = await countTemplateFiles(templatePaths);
+  const allTemplatePaths = templateDescriptors.map((entry) => entry.absolute);
+  const templateCount = await countTemplateFiles(allTemplatePaths);
+  const templatePaths = [];
+  for (const templatePath of allTemplatePaths) {
+    if (await pathExists(templatePath)) templatePaths.push(templatePath);
+  }
+  if (templatePaths.length === 0) {
+    return {
+      status: 503,
+      payload: {
+        error: 'no_templates_available',
+        profile,
+        template_paths: allTemplatePaths,
+        warnings: templateCount.missing.map((path) => `template_path_missing:${path}`),
+      },
+    };
+  }
   const effectiveRateLimit = Math.min(requestedRateLimit, profileConfig.maxRateLimit || requestedRateLimit);
 
   const started = Date.now();
@@ -395,7 +461,7 @@ async function runNuclei(body) {
     '-rate-limit',
     String(effectiveRateLimit),
     '-concurrency',
-    String(profileConfig.enableDast ? 2 : 5),
+    String(profileConfig.concurrency || (profileConfig.enableDast ? 2 : 5)),
     '-retries',
     '0',
     '-timeout',
