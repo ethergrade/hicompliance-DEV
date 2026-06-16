@@ -386,6 +386,46 @@ const Assessment: React.FC = () => {
   const responsesRef = useRef(responses);
   responsesRef.current = responses;
 
+
+  // Helper: check if a question is visible based on its dependency
+  const isQuestionVisible = useCallback((q: { id: number; dependency?: string }, allResponses: Record<number, string | null>, allCategories: any[]) => {
+    const dep = q.dependency;
+    if (!dep) return true;
+    const depIdx = parseInt(dep, 10);
+    if (isNaN(depIdx) || depIdx < 1) return true;
+    
+    // Find parent question by order_index
+    const parentQ = allCategories.flatMap(c => c.questions).find(pq => pq.id === depIdx);
+    if (!parentQ) return true;
+    
+    const parentStatus = allResponses[parentQ.id] || null;
+    return parentStatus === 'pianificato_in_corso' || parentStatus === 'completato';
+  }, []);
+
+  // Helper: get all descendant question IDs (recursive)
+  const getDescendants = useCallback((questionId: number, allCategories: any[]): number[] => {
+    const allQuestions = allCategories.flatMap(c => c.questions);
+    const question = allQuestions.find(q => q.id === questionId);
+    if (!question) return [];
+    
+    const orderIndex = question.id; // order_index matches id
+    const directChildren = allQuestions.filter(q => {
+      const dep = q.dependency;
+      if (!dep) return false;
+      const depIdx = parseInt(dep, 10);
+      return depIdx === orderIndex;
+    });
+    
+    const descendants: number[] = [];
+    directChildren.forEach(child => {
+      descendants.push(child.id);
+      descendants.push(...getDescendants(child.id, allCategories));
+    });
+    
+    return descendants;
+  }, []);
+
+
   const saveResponsesImmediate = useCallback(async () => {
     if (!orgId || !user || Object.keys(indexToUuid).length === 0) return;
     const currentResponses = responsesRef.current;
@@ -465,44 +505,6 @@ const Assessment: React.FC = () => {
   }, [triggerAutoSave]);
 
   // Compute counts per category from responses
-
-  // Helper: check if a question is visible based on its dependency
-  const isQuestionVisible = useCallback((q: { id: number; dependency?: string }, allResponses: Record<number, string | null>, allCategories: any[]) => {
-    const dep = q.dependency;
-    if (!dep) return true;
-    const depIdx = parseInt(dep, 10);
-    if (isNaN(depIdx) || depIdx < 1) return true;
-    
-    // Find parent question by order_index
-    const parentQ = allCategories.flatMap(c => c.questions).find(pq => pq.id === depIdx);
-    if (!parentQ) return true;
-    
-    const parentStatus = allResponses[parentQ.id] || null;
-    return parentStatus === 'pianificato_in_corso' || parentStatus === 'completato';
-  }, []);
-
-  // Helper: get all descendant question IDs (recursive)
-  const getDescendants = useCallback((questionId: number, allCategories: any[]): number[] => {
-    const allQuestions = allCategories.flatMap(c => c.questions);
-    const question = allQuestions.find(q => q.id === questionId);
-    if (!question) return [];
-    
-    const orderIndex = question.id; // order_index matches id
-    const directChildren = allQuestions.filter(q => {
-      const dep = q.dependency;
-      if (!dep) return false;
-      const depIdx = parseInt(dep, 10);
-      return depIdx === orderIndex;
-    });
-    
-    const descendants: number[] = [];
-    directChildren.forEach(child => {
-      descendants.push(child.id);
-      descendants.push(...getDescendants(child.id, allCategories));
-    });
-    
-    return descendants;
-  }, []);
 
   const getCategoryCounts = useCallback((categoryName: string) => {
     const cat = (v2Categories.length > 0 ? v2Categories : []).find(c => c.name === categoryName);
