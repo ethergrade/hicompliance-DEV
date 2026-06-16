@@ -166,6 +166,26 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
         if (!hc) {
           await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'hicompliance', status: 'active', settings: { duration: '3', extended_range: false } }, groupId);
         }
+    // Card #47: Auto-enable SurfaceScan360 (standard) when hicompliance is activated
+    const autoHt = ts.find(s => s.service_type === 'surfacescan');
+    if (!autoHt) {
+      await tenantServicesApi.create({
+        tenant_id: organizationId,
+        service_type: 'surfacescan',
+        status: 'active',
+        settings: { duration: '3', extended_range: false },
+      }, groupId);
+    }
+    // Card #47: Auto-enable DarkRisk360 (standard) when hicompliance is activated
+    const autoDr = ts.find(s => s.service_type === 'darkrisk');
+    if (!autoDr) {
+      await tenantServicesApi.create({
+        tenant_id: organizationId,
+        service_type: 'darkrisk',
+        status: 'active',
+        settings: { tier: 'standard' },
+      }, groupId);
+    }
       }
       // SurfaceScan360 toggle ON — eredita contract_start da HiCompliance se presente
       if (patch.surface_scan360_enabled === true) {
