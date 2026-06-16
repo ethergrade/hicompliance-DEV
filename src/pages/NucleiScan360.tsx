@@ -17,6 +17,9 @@ import { useClientContext } from '@/contexts/ClientContext';
 import { useToast } from '@/hooks/use-toast';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL, supabase } from '@/integrations/supabase/client';
+import { adaptNucleiScan360JobToSurfaceReport } from '@/lib/nucleiScan360SurfaceReportAdapter';
+import { generateSurfaceScan360Docx } from '@/lib/surfaceScan360DocxReport';
+import { generateSurfaceScan360Pdf } from '@/lib/surfaceScan360PdfReport';
 import { cn } from '@/lib/utils';
 
 type NucleiProfile =
@@ -801,6 +804,7 @@ const NucleiScan360: React.FC = () => {
   const [result, setResult] = useState<NucleiResult | null>(null);
   const [rawResult, setRawResult] = useState('');
   const [lastDiagnostic, setLastDiagnostic] = useState<NucleiInvokeDiagnostic | null>(null);
+  const [reportExporting, setReportExporting] = useState<'pdf' | 'docx' | null>(null);
 
   const analysis = useMemo(() => parseNucleiResult(result), [result]);
   const findings = analysis.findings;
@@ -1136,7 +1140,22 @@ const NucleiScan360: React.FC = () => {
     }
   };
 
-  const downloadSelectedJobReport = () => {
+  const buildSelectedSurfaceReport = () => {
+    if (!selectedJob) return null;
+    return adaptNucleiScan360JobToSurfaceReport({
+      organizationId: selectedOrgId || selectedJob.organization_id,
+      organizationName: selectedOrganizationName,
+      job: selectedJob,
+      openPorts,
+      technologies,
+      niktoFindings,
+      cveMatches,
+      nucleiFindings: findings,
+      nucleiResult: result,
+    });
+  };
+
+  const downloadSelectedJobJsonReport = () => {
     if (!selectedJob) return;
     const payload = {
       report_type: 'nuclei_scan360_lab_job',
@@ -1175,6 +1194,48 @@ const NucleiScan360: React.FC = () => {
       title: 'Report esportato',
       description: 'Report JSON NUCLEI-SCAN360 generato dal job selezionato.',
     });
+  };
+
+  const downloadSelectedJobPdfReport = () => {
+    const report = buildSelectedSurfaceReport();
+    if (!report) return;
+    setReportExporting('pdf');
+    try {
+      generateSurfaceScan360Pdf(report);
+      toast({
+        title: 'Report PDF generato',
+        description: 'Template SurfaceScan360 con evidenze Nmap/httpx, Nikto, Nuclei e verdetto unico.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Export PDF fallito',
+        description: error instanceof Error ? error.message : 'Impossibile generare il report PDF.',
+        variant: 'destructive',
+      });
+    } finally {
+      setReportExporting(null);
+    }
+  };
+
+  const downloadSelectedJobDocxReport = async () => {
+    const report = buildSelectedSurfaceReport();
+    if (!report) return;
+    setReportExporting('docx');
+    try {
+      await generateSurfaceScan360Docx(report);
+      toast({
+        title: 'Report DOCX generato',
+        description: 'Documento editabile SurfaceScan360 con pipeline LAB multi-engine.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Export DOCX fallito',
+        description: error instanceof Error ? error.message : 'Impossibile generare il report DOCX.',
+        variant: 'destructive',
+      });
+    } finally {
+      setReportExporting(null);
+    }
   };
 
   const renderCveRows = (matches: CveMatch[], emptyLabel: string) => (
@@ -1359,7 +1420,7 @@ const NucleiScan360: React.FC = () => {
                   <h1 className="text-3xl font-bold tracking-tight text-foreground">NUCLEI-SCAN360</h1>
                   <Badge variant="outline">Super Admin Lab</Badge>
                 </div>
-                <p className="text-muted-foreground">Scanner Nuclei via Cloudflare Container, separato da SurfaceScan360 e pensato per analisi controllate.</p>
+                <p className="text-muted-foreground">LAB multi-engine con Nmap/httpx, Nikto e Nuclei su Cloudflare Container, reportizzato nel formato SurfaceScan360.</p>
               </div>
             </div>
             <div>
@@ -1699,10 +1760,20 @@ const NucleiScan360: React.FC = () => {
                         {selectedJob.stage === 'waiting_nuclei' ? ` · Nuclei tra ${formatCountdown(selectedJob.next_run_at)}` : ''}
                       </CardDescription>
                     </div>
-                    <Button variant="outline" size="sm" onClick={downloadSelectedJobReport}>
-                      <Download className="mr-2 h-4 w-4" />
-                      Report JSON
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="default" size="sm" onClick={downloadSelectedJobPdfReport} disabled={reportExporting !== null}>
+                        {reportExporting === 'pdf' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                        Report PDF
+                      </Button>
+                      <Button variant="secondary" size="sm" onClick={downloadSelectedJobDocxReport} disabled={reportExporting !== null}>
+                        {reportExporting === 'docx' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                        Report DOCX
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={downloadSelectedJobJsonReport} disabled={reportExporting !== null}>
+                        <Download className="mr-2 h-4 w-4" />
+                        JSON
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="grid gap-4 xl:grid-cols-2">
