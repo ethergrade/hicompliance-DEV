@@ -903,9 +903,9 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
                     <h4 className="text-sm font-semibold mb-3">Rete</h4>
                     <div className="grid grid-cols-2 gap-3">
                       {renderField("primary_domain", "Dominio Primario")}
-                      {renderField("primary_subnet", "Subnet Primaria")}
+                      {renderField("primary_subnet", "IP Primario")}
                       {renderField("secondary_domain", "Dominio Secondario")}
-                      {renderField("secondary_subnet", "Subnet Secondaria")}
+                      {renderField("secondary_subnet", "IP Secondario")}
                     </div>
 
                     {isExtendedLicense && (
