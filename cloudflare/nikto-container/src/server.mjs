@@ -259,13 +259,12 @@ function buildArgs(target, body, outputPath) {
     '-output',
     outputPath,
     '-nointeractive',
-    '-nolookup',
     '-nocheck',
     '-followredirects',
     '-timeout',
     '8',
     '-maxtime',
-    `${timeoutSeconds}s`,
+    String(timeoutSeconds),
     '-Tuning',
     tuning,
     '-Plugins',
@@ -310,9 +309,14 @@ async function runScan(body) {
   try {
     rawJson = await fs.readFile(outputPath, 'utf8');
   } catch {
-    rawJson = stdout.trim().startsWith('[') || stdout.trim().startsWith('{') ? stdout.trim() : '';
+    try {
+      rawJson = await fs.readFile(`${outputPath}.json`, 'utf8');
+    } catch {
+      rawJson = stdout.trim().startsWith('[') || stdout.trim().startsWith('{') ? stdout.trim() : '';
+    }
   } finally {
     await fs.rm(outputPath, { force: true }).catch(() => {});
+    await fs.rm(`${outputPath}.json`, { force: true }).catch(() => {});
   }
 
   const parsed = parseNiktoJson(rawJson);
