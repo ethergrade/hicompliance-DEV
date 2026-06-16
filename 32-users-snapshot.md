@@ -1,0 +1,184 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - generic [ref=e4]:
+    - generic [ref=e8]:
+      - generic [ref=e10]:
+        - img "HiSolution Console Logo" [ref=e88]
+        - generic [ref=e13]:
+          - heading "HiSolution Console" [level=2] [ref=e89]
+          - paragraph [ref=e15]: Admin Console
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - generic [ref=e18]: Generale
+          - list [ref=e91]:
+            - listitem [ref=e92]:
+              - link "Home" [ref=e93] [cursor=pointer]:
+                - /url: /
+                - img [ref=e94]
+                - generic [ref=e97]: Home
+            - listitem [ref=e98]:
+              - link "Dashboard" [ref=e99] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e100]
+                - generic [ref=e105]: Dashboard
+            - listitem [ref=e106]:
+              - link "CyberNews" [ref=e107] [cursor=pointer]:
+                - /url: /cyber-news
+                - img [ref=e108]
+                - generic [ref=e111]: CyberNews
+            - listitem [ref=e112]:
+              - link "Inventario Asset" [ref=e113] [cursor=pointer]:
+                - /url: /asset-inventory
+                - img [ref=e114]
+                - generic [ref=e118]: Inventario Asset
+            - listitem [ref=e119]:
+              - link "SurfaceScan360" [ref=e120] [cursor=pointer]:
+                - /url: /surface-scan
+                - img [ref=e121]
+                - generic [ref=e124]: SurfaceScan360
+            - listitem [ref=e125]:
+              - link "HiPatch" [ref=e126] [cursor=pointer]:
+                - /url: /dashboard/service/hi_patch
+                - img [ref=e127]
+                - generic [ref=e130]: HiPatch
+        - generic [ref=e131]:
+          - generic [ref=e132]: Impostazioni
+          - list [ref=e134]:
+            - listitem [ref=e135]:
+              - link "Utenti" [ref=e136] [cursor=pointer]:
+                - /url: /settings/users
+                - img [ref=e137]
+                - generic [ref=e142]: Utenti
+            - listitem [ref=e143]:
+              - link "Integrazioni" [ref=e144] [cursor=pointer]:
+                - /url: /settings/integrations
+                - img [ref=e145]
+                - generic [ref=e147]: Integrazioni
+        - generic [ref=e148]:
+          - generic [ref=e149]: Gestione Multi-Cliente
+          - list [ref=e151]:
+            - listitem [ref=e152]:
+              - link "Gestione Clienti" [ref=e153] [cursor=pointer]:
+                - /url: /admin/clients
+                - img [ref=e154]
+                - generic [ref=e158]: Gestione Clienti
+            - listitem [ref=e159]:
+              - link "Aziende & Clienti" [ref=e160] [cursor=pointer]:
+                - /url: /admin/companies
+                - img [ref=e161]
+                - generic [ref=e164]: Aziende & Clienti
+            - listitem [ref=e165]:
+              - link "Utenti Elevated" [ref=e166] [cursor=pointer]:
+                - /url: /admin/elevated-users
+                - img [ref=e167]
+                - generic [ref=e169]: Utenti Elevated
+            - listitem [ref=e170]:
+              - link "Gestione Ruoli" [ref=e171] [cursor=pointer]:
+                - /url: /admin/role-settings
+                - img [ref=e172]
+                - generic [ref=e175]: Gestione Ruoli
+      - generic [ref=e20]:
+        - generic [ref=e21]:
+          - paragraph
+          - paragraph [ref=e22]: Azienda Demo
+          - paragraph [ref=e23]: Super Admin
+        - button "Cambia Password" [ref=e24] [cursor=pointer]:
+          - img
+          - text: Cambia Password
+        - button "Disconnetti" [ref=e25] [cursor=pointer]:
+          - img
+          - text: Disconnetti
+    - generic [ref=e26]:
+      - generic [ref=e176]:
+        - img [ref=e177]
+        - generic [ref=e179]:
+          - text: L'autenticazione a due fattori non è attiva sul tuo account.
+          - link "Configurala ora" [ref=e180] [cursor=pointer]:
+            - /url: /auth/mfa-setup
+          - text: per aumentare la sicurezza.
+      - generic [ref=e181]:
+        - generic [ref=e182]:
+          - img [ref=e183]
+          - generic [ref=e187]: "Clienti:"
+        - generic [ref=e188]:
+          - combobox [disabled] [ref=e189]:
+            - img [ref=e190]
+          - generic [ref=e192]: Azienda Demo
+      - main [ref=e27]:
+        - generic [ref=e28]:
+          - generic [ref=e29]:
+            - generic [ref=e30]:
+              - heading "Gestione Utenti" [level=1] [ref=e31]
+              - paragraph [ref=e32]: Gestisci accessi, ruoli e tenant assegnati agli utenti limitati
+              - paragraph [ref=e33]:
+                - text: "Filtro attivo: utenti assegnati al cliente"
+                - strong [ref=e34]: Azienda Demo
+            - button "Nuovo Utente" [ref=e35] [cursor=pointer]:
+              - img
+              - text: Nuovo Utente
+          - generic [ref=e36]:
+            - generic [ref=e37]:
+              - heading "Utenti del Sistema" [level=3] [ref=e38]:
+                - img [ref=e39]
+                - text: Utenti del Sistema
+              - paragraph [ref=e42]: Lista completa degli utenti con ruoli, gruppi e tenant assegnati se il ruolo è limitato
+              - generic [ref=e43]:
+                - img [ref=e44]
+                - textbox "Cerca per nome o email..." [ref=e47]
+            - generic [ref=e50]: Caricamento utenti...
+        - generic [ref=e51]:
+          - generic [ref=e52]:
+            - generic [ref=e53]:
+              - generic [ref=e54]: HISOLUTION SRL
+              - paragraph [ref=e55]:
+                - text: Via della Canapiglia 5,
+                - text: 56019 Vecchiano, PI, Italia
+                - text: "Tel: +39 050 6397401"
+                - text: "Fax: +39 050 6390237"
+                - link "info@hisolution.it" [ref=e56] [cursor=pointer]:
+                  - /url: mailto:info@hisolution.it
+              - generic [ref=e57]:
+                - generic [ref=e58]:
+                  - text: HELP DESK
+                  - text: +39 050 6397469
+                - paragraph [ref=e59]:
+                  - text: Dal lunedì al venerdì,
+                  - text: dalle 8:30 alle 18:30
+            - generic [ref=e60]:
+              - generic [ref=e61]: SCOPRI DI PIÙ
+              - list [ref=e62]:
+                - listitem [ref=e63]:
+                  - link "VoIP e UCC" [ref=e64] [cursor=pointer]:
+                    - /url: https://hisolution.it/servizi-voip_ucc/
+                - listitem [ref=e65]:
+                  - link "Networking" [ref=e66] [cursor=pointer]:
+                    - /url: https://hisolution.it/networking/
+                - listitem [ref=e67]:
+                  - link "Security" [ref=e68] [cursor=pointer]:
+                    - /url: https://hisolution.it/hisecurity/
+                - listitem [ref=e69]:
+                  - link "Information Technology" [ref=e70] [cursor=pointer]:
+                    - /url: https://hisolution.it/blog/information-technology/
+                - listitem [ref=e71]:
+                  - link "Business Case" [ref=e72] [cursor=pointer]:
+                    - /url: https://hisolution.it/business-case-study/
+                - listitem [ref=e73]:
+                  - link "Webinar" [ref=e74] [cursor=pointer]:
+                    - /url: https://hisolution.it/webinar/
+            - generic [ref=e75]:
+              - generic [ref=e76]: LINK UTILI
+              - list [ref=e77]:
+                - listitem [ref=e78]:
+                  - link "Hi-There" [ref=e79] [cursor=pointer]:
+                    - /url: https://hisolution.it/blog/hi-there/
+                - listitem [ref=e80]:
+                  - link "Lavora con noi" [ref=e81] [cursor=pointer]:
+                    - /url: https://hisolution.it/lavora-con-noi/
+                - listitem [ref=e82]:
+                  - link "Protezione dei dati personali" [ref=e83] [cursor=pointer]:
+                    - /url: https://hisolution.it/protezione-dei-dati-personali/
+          - generic [ref=e85]:
+            - generic [ref=e86]: © 2026 Hisolution Srl — P.IVA 02008500460
+            - link "LinkedIn" [ref=e87] [cursor=pointer]:
+              - /url: https://www.linkedin.com/company/hisolution/
