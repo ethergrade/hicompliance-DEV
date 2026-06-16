@@ -339,6 +339,55 @@ export interface GanttItem {
   [key: string]: unknown;
 }
 
+/**
+ * RemediationTask — v2 API (Trello #55)
+ * Backend: GET/POST /api/companies/{companyId}/remediation-tasks
+ *          GET/PUT/DELETE /api/companies/{companyId}/remediation-tasks/{taskId}
+ * Replace legacy v1 `assessment.custom_gantt` array.
+ * Filter `is_deleted = false` client-side.
+ */
+export interface RemediationTask {
+  id: string;
+  tenant_id: string;
+  task: string;
+  category: string;
+  priority: 'low' | 'medium' | 'high' | 'critical' | string;
+  color: string;
+  start_date: string;
+  end_date: string;
+  progress: number;
+  assignee: string | null;
+  budget: number | null;
+  dependencies: string[] | null;
+  display_order: number | null;
+  is_deleted: boolean;
+  is_hidden: boolean;
+  source: 'assessment_v2' | string | null;
+  source_ref: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StoreRemediationTaskRequest {
+  task: string;
+  category: string;
+  start_date: string;
+  end_date: string;
+  priority?: 'low' | 'medium' | 'high' | 'critical';
+  color?: string;
+  progress?: number;
+  assignee?: string | null;
+  budget?: number | null;
+  display_order?: number | null;
+  is_deleted?: boolean;
+  is_hidden?: boolean;
+  source?: string | null;
+  source_ref?: string | null;
+  dependencies?: string[] | null;
+}
+
+export type UpdateRemediationTaskRequest = Partial<StoreRemediationTaskRequest>;
+
 export interface OpenAIAnalysis {
   intro: string[];
   analysis: string[];

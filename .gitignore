@@ -33,4 +33,8 @@ snapshot.md
 test_roles.js
 .env
 .pi/
-graphify-out/.env*
+graphify-out/
+.env*
+
+# Local Pi runtime state
+.atl/
