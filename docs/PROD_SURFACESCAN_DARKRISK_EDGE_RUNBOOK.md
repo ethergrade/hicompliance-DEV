@@ -1,7 +1,9 @@
 # SurfaceScan360 + DarkRisk360 — Runbook Produzione (Supabase Edge)
 
 ## 1) Obiettivo
+
 Guida interna per portare **SurfaceScan360** e **DarkRisk360** in produzione in modo ripetibile, con:
+
 - deploy Edge Functions Supabase,
 - migrazioni DB,
 - schedulazioni automatiche,
@@ -15,16 +17,19 @@ Guida interna per portare **SurfaceScan360** e **DarkRisk360** in produzione in 
 ## 2) Prerequisiti
 
 ## 2.1 Accessi
+
 - Accesso repo Git (`PRODOTTO`).
 - Supabase project collegato (CLI `supabase link`).
 - Permessi deploy functions + query DB remoto.
 
 ## 2.2 Tooling locale
+
 - Node + npm.
 - Supabase CLI.
 - Deno (per check locale functions, opzionale).
 
 ## 2.3 Variabili/secret minimi (Supabase)
+
 Impostare in Supabase `Project Settings -> Edge Functions Secrets`:
 
 - Core
@@ -60,24 +65,30 @@ Impostare in Supabase `Project Settings -> Edge Functions Secrets`:
 ## 3) Database: migrazioni
 
 ## 3.1 Strategia
+
 1. Applicare migrazioni additive in ordine cronologico.
 2. Verificare RLS e indici.
 3. Verificare job cron (`pg_cron`, `pg_net`).
 
 ## 3.2 Comandi
+
 - Standard (repo con history coerente):
+
 ```bash
 supabase db push
 ```
 
 - Se `db push` fallisce per mismatch storico migrazioni legacy:
   - applicare SQL puntuale con query linked:
+
 ```bash
 supabase db query --linked -f supabase/migrations/<TIMESTAMP>_<name>.sql
 ```
-  - poi riallineare storico in ambiente controllato con `migration repair`.
+
+- poi riallineare storico in ambiente controllato con `migration repair`.
 
 ## 3.3 Migrazioni da verificare per questi moduli
+
 - SurfaceScan360 schema/guard/report:
   - `20260522160000_surfacescan_schema_compat.sql`
   - `20260523100000_surface_scan_scope_guard_hardening.sql`
@@ -104,6 +115,7 @@ supabase db query --linked -f supabase/migrations/<TIMESTAMP>_<name>.sql
 ## 4) Edge Functions: mappa operativa
 
 ## 4.1 SurfaceScan360 core
+
 - `surfacescan360-start-scan`
   - crea job e mette in coda pipeline.
 - `surfacescan360-run-enrichment`
@@ -116,6 +128,7 @@ supabase db query --linked -f supabase/migrations/<TIMESTAMP>_<name>.sql
   - genera/aggiorna report canonico (single job o organization scope).
 
 ## 4.2 Exposure pipeline
+
 - `ptools-start-exposure-scan`
   - avvia scansione exposure multi-target.
 - `ptools-poll-scans`
@@ -128,6 +141,7 @@ supabase db query --linked -f supabase/migrations/<TIMESTAMP>_<name>.sql
   - orchestrazione e integrazione provider exposure.
 
 ## 4.3 DarkRisk360
+
 - `darkrisk360-sync-surfacescan`
   - sincronizza scope/asset da SurfaceScan360 e lancia intelligence pipeline.
 - `darkrisk360-overview`
@@ -146,6 +160,7 @@ supabase db query --linked -f supabase/migrations/<TIMESTAMP>_<name>.sql
   - retention e cleanup.
 
 ## 4.4 CVE/KEV support
+
 - `cve-enrichment`
 - `cisa-kev-sync`
 
@@ -154,6 +169,7 @@ supabase db query --linked -f supabase/migrations/<TIMESTAMP>_<name>.sql
 ## 5) Deploy Edge Functions (produzione)
 
 ## 5.1 Deploy selettivo (consigliato)
+
 ```bash
 supabase functions deploy surfacescan360-start-scan --project-ref <PROJECT_REF>
 supabase functions deploy surfacescan360-run-enrichment --project-ref <PROJECT_REF>
@@ -181,6 +197,7 @@ supabase functions deploy cisa-kev-sync --project-ref <PROJECT_REF>
 ```
 
 ## 5.2 Deploy rapido full set
+
 ```bash
 supabase functions deploy --project-ref <PROJECT_REF>
 ```
@@ -190,12 +207,14 @@ supabase functions deploy --project-ref <PROJECT_REF>
 ## 6) Chiamate Edge (contratti minimi)
 
 ## 6.1 Start scan SurfaceScan360
+
 Endpoint: `POST /functions/v1/surfacescan360-start-scan`
 
 Body esempio:
+
 ```json
 {
-  "target": "panapesca.it",
+  "target": "dominio.it",
   "customer_id": "<ORG_UUID>",
   "scan_profile": "domain_exposure",
   "authorization_confirmed": true,
@@ -205,10 +224,12 @@ Body esempio:
 ```
 
 Note:
+
 - hard scope guard attivo: target fuori scope => 400 con `code` semantico.
 - `cve_api_validation` resta admin-only.
 
 ## 6.2 Run enrichment manuale
+
 Endpoint: `POST /functions/v1/surfacescan360-run-enrichment`
 
 ```json
@@ -219,6 +240,7 @@ Endpoint: `POST /functions/v1/surfacescan360-run-enrichment`
 ```
 
 ## 6.3 Start exposure scan (admin/internal)
+
 Endpoint: `POST /functions/v1/ptools-start-exposure-scan`
 
 ```json
@@ -226,7 +248,7 @@ Endpoint: `POST /functions/v1/ptools-start-exposure-scan`
   "tenant_id": "<ORG_UUID>",
   "customer_id": "<ORG_UUID>",
   "scan_name": "Exposure Full Scan",
-  "root_domains": ["panapesca.it", "panapesca.eu"],
+  "root_domains": ["dominio.it", "dominio.eu"],
   "public_ips": ["93.144.77.39"],
   "include_subdomain_discovery": true,
   "include_port_scan": true,
@@ -243,17 +265,21 @@ Endpoint: `POST /functions/v1/ptools-start-exposure-scan`
 ```
 
 ## 6.4 Poll exposure scans
+
 Endpoint: `POST /functions/v1/ptools-poll-scans`
 
 Body opzionale:
+
 ```json
 { "max_tasks": 80 }
 ```
 
 ## 6.5 Report SurfaceScan360 (repository)
+
 Endpoint: `POST /functions/v1/surfacescan360-ai-report`
 
 Organization-scope canonico:
+
 ```json
 {
   "organization_id": "<ORG_UUID>",
@@ -264,9 +290,11 @@ Organization-scope canonico:
 ```
 
 ## 6.6 Sync DarkRisk360 da scope Surface
+
 Endpoint: `POST /functions/v1/darkrisk360-sync-surfacescan`
 
 Body minimo:
+
 ```json
 {
   "customer_id": "<ORG_UUID>",
@@ -275,6 +303,7 @@ Body minimo:
 ```
 
 ## 6.7 Overview DarkRisk360
+
 Endpoint: `POST /functions/v1/darkrisk360-overview`
 
 ```json
@@ -284,6 +313,7 @@ Endpoint: `POST /functions/v1/darkrisk360-overview`
 ```
 
 ## 6.8 Report DarkRisk360
+
 Endpoint: `POST /functions/v1/darkrisk360-generate-report`
 
 ```json
@@ -295,6 +325,7 @@ Endpoint: `POST /functions/v1/darkrisk360-generate-report`
 ```
 
 ## 6.9 Accesso export report DarkRisk360
+
 Endpoint: `POST /functions/v1/darkrisk360-report-access`
 
 ```json
@@ -312,6 +343,7 @@ Endpoint: `POST /functions/v1/darkrisk360-report-access`
 ## 7) Automazioni e scheduler
 
 ## 7.1 SurfaceScan360 weekly
+
 - Cron SQL già previsto in migrazione `20260525113000_surface_scan_weekly_cron_refresh.sql`.
 - Frequenza: lunedì 04:00 (DB timezone).
 - Azioni cron:
@@ -320,11 +352,13 @@ Endpoint: `POST /functions/v1/darkrisk360-report-access`
   3. rigenera report canonico organization-scope.
 
 ## 7.2 CVE/KEV
+
 - Tenere attivi job periodici:
   - queue drain CVE enrichment,
   - sync catalogo KEV giornaliero.
 
 ## 7.3 DarkRisk360 retention
+
 - Schedulare `darkrisk360-retention-cleanup` (giornaliero/notturno).
 
 ---
@@ -332,12 +366,15 @@ Endpoint: `POST /functions/v1/darkrisk360-report-access`
 ## 8) Flusso standard cliente (produzione)
 
 ## 8.1 Abilitazione moduli
+
 In `organizations`:
+
 - `surface_scan360_enabled = true`
 - `dark_risk360_enabled = true` (se richiesto)
 - `pentest_tools_auto_validation = true` (default obbligatorio)
 
 ## 8.2 Onboarding scope
+
 - inserire regole in `surface_scan_monitored_ips`:
   - domini,
   - IP singoli,
@@ -345,10 +382,12 @@ In `organizations`:
   - CIDR.
 
 ## 8.3 Esecuzione automatica
+
 - allineamento scope -> queue scansioni.
 - weekly refresh automatico su tutto lo scope.
 
 ## 8.4 Reporting
+
 - SurfaceScan360: 1 report repository canonico organization-scope, aggiornato.
 - DarkRisk360: snapshot report con export signed URL.
 
@@ -357,6 +396,7 @@ In `organizations`:
 ## 9) Smoke test post-deploy (obbligatorio)
 
 ## 9.1 Surface start + status
+
 1. Start scan `domain_exposure` su dominio in scope.
 2. Verificare `surface_scan_jobs.status` da `queued` -> `running` -> `completed/partial`.
 3. Verificare scrittura in:
@@ -366,6 +406,7 @@ In `organizations`:
    - `surface_scan_module_results`.
 
 ## 9.2 Exposure
+
 1. Start exposure scan full-scope.
 2. Eseguire `ptools-poll-scans` fino a completion.
 3. Verificare dati:
@@ -375,11 +416,13 @@ In `organizations`:
    - `surface_exposure_findings`.
 
 ## 9.3 DarkRisk360
+
 1. `darkrisk360-sync-surfacescan`.
 2. Verificare overview + findings + coverage controls.
 3. `darkrisk360-generate-recommendations` e `darkrisk360-generate-report`.
 
 ## 9.4 Report
+
 - SurfaceScan360 report: nessun placeholder generico, evidenze tecniche valorizzate.
 - Report repository aggiornato con nuovo timestamp.
 - PDF non deve includere screenshot raw.
@@ -389,11 +432,13 @@ In `organizations`:
 ## 10) Monitoraggio e audit
 
 Tabelle audit principali:
+
 - `surface_scan_audit_log`
 - `external_scan_audit_log`
 - `darkrisk_audit_log`
 
 Controlli giornalieri:
+
 - job bloccati > 30 min,
 - poll retry loop anomali,
 - growth anomalo findings,
@@ -414,6 +459,7 @@ Controlli giornalieri:
 ## 12) Rollback
 
 In caso regressione:
+
 1. Redeploy versione precedente funzioni critiche:
    - `surfacescan360-start-scan`
    - `surfacescan360-run-enrichment`
@@ -434,4 +480,3 @@ In caso regressione:
 - [ ] Smoke test su cliente test (scope multi-dominio/IP) superato.
 - [ ] Report SurfaceScan360 e DarkRisk360 generati correttamente.
 - [ ] Audit log valorizzati e senza errori critici.
-
