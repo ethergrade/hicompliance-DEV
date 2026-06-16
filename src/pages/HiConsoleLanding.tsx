@@ -396,7 +396,7 @@ const HiConsoleLanding: React.FC = () => {
                     </div>
                     <div className="text-xs text-muted-foreground mt-1 uppercase tracking-wider">True Risk Score</div>
                     <div className="text-[10px] text-red-500 mt-1 flex items-center gap-1">
-                      <TrendingUp className="w-3 h-3" /> +8 negli ultimi 90gg
+                      <TrendingUp className="w-3 h-3" /> Aggiornato in tempo reale
                     </div>
                   </div>
                 </div>
@@ -436,7 +436,7 @@ const HiConsoleLanding: React.FC = () => {
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
               {irpFeatures.map((f) => (
-                <Card key={f.title} className="border-border/50">
+                <Card key={f.title} className="border-border/50 h-full">
                   <CardContent className="p-4 space-y-2">
                     <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
                       <f.icon className="w-5 h-5 text-primary" />
