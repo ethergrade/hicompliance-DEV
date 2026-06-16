@@ -140,6 +140,7 @@ export interface UpdateUserRequest {
   email?: string;
   role?: string;
   tenant_id?: string | null;
+  password?: string;
 }
 
 // ─── Tenant ─────────────────────────────────────────────────────────────────

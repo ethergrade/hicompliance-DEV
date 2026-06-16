@@ -24,6 +24,7 @@ import IncidentResponse from "./pages/IncidentResponse";
 import ThreatManagement from "./pages/ThreatManagement";
 import Integrations from "./pages/Integrations";
 import Users from "./pages/Users";
+import AdminElevatedUsers from "./pages/AdminElevatedUsers";
 import RoleSettings from "./pages/RoleSettings";
 import Settings from "./pages/Settings";
 // HIDDEN: supabase-only (PRODOTTO SurfaceScan alerts), no backend API
@@ -86,6 +87,7 @@ const App = () => (
             {/* <Route path="/settings/surface-scan-alerts" element={<ClientSelectionGuard><SurfaceScanSettings /></ClientSelectionGuard>} /> */}
             <Route path="/admin/role-settings" element={<ClientSelectionGuard><RoleSettings /></ClientSelectionGuard>} />
             <Route path="/admin/companies" element={<AdminCompanies />} />
+            <Route path="/admin/elevated-users" element={<AdminElevatedUsers />} />
             <Route path="/test/assessment-gantt" element={<ClientSelectionGuard><AssessmentGanttTest /></ClientSelectionGuard>} />
             {/* HIDDEN: supabase-only */}
             {/* <Route path="/admin/reporting" element={<AdminReporting />} /> */}

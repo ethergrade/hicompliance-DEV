@@ -99,6 +99,12 @@ const adminNavigation = [
   },
   // { title: 'Reportistica Aggregata', href: '/admin/reporting', icon: PieChart }, // HIDDEN: supabase-only, no backend API
   {
+    title: 'Utenti Elevated',
+    href: '/admin/elevated-users',
+    icon: Shield,
+    superAdminOnly: true,
+  },
+  {
     title: 'Gestione Ruoli',
     href: '/admin/role-settings',
     icon: Settings,
