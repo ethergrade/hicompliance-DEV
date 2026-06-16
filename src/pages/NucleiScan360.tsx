@@ -71,7 +71,7 @@ type NucleiJob = {
   target_kind?: string | null;
   nmap_target?: string | null;
   nmap_profile?: NmapProfile | null;
-  stage?: 'queued' | 'nmap_running' | 'waiting_nuclei' | 'nuclei_running' | 'completed' | 'failed' | 'timeout' | 'cancelled' | null;
+  stage?: 'queued' | 'nmap_running' | 'nikto_running' | 'waiting_nuclei' | 'nuclei_running' | 'completed' | 'failed' | 'timeout' | 'cancelled' | null;
   next_run_at?: string | null;
   nmap_status?: string | null;
   nmap_started_at?: string | null;
@@ -85,6 +85,14 @@ type NucleiJob = {
   nmap_warnings?: string[] | null;
   raw_nmap_result?: Record<string, unknown> | null;
   raw_technology_result?: Record<string, unknown> | null;
+  nikto_status?: string | null;
+  nikto_started_at?: string | null;
+  nikto_completed_at?: string | null;
+  nikto_duration_ms?: number | null;
+  nikto_version?: string | null;
+  nikto_findings_count?: number | null;
+  raw_nikto_result?: Record<string, unknown> | null;
+  unified_verdict?: UnifiedVerdict | null;
   profile: NucleiProfile;
   status: 'queued' | 'running' | 'completed' | 'failed' | 'timeout' | 'cancelled';
   attempt_count?: number | null;
@@ -134,6 +142,37 @@ type TechnologyFingerprint = {
   category?: string | null;
   evidence?: Record<string, unknown> | null;
   cpe_candidates?: string[];
+};
+
+type NiktoFinding = {
+  id?: string;
+  target_url?: string | null;
+  asset_host?: string | null;
+  port?: number | null;
+  tls?: boolean | null;
+  severity?: 'critical' | 'high' | 'medium' | 'low' | 'info' | string | null;
+  category?: string | null;
+  nikto_id?: string | null;
+  method?: string | null;
+  uri?: string | null;
+  message?: string | null;
+  references?: string[];
+  raw_finding?: Record<string, unknown> | null;
+};
+
+type UnifiedVerdict = {
+  level?: 'clean' | 'informational' | 'watch' | 'elevated' | 'critical' | string;
+  score?: number;
+  reasons?: string[];
+  generated_at?: string;
+  engines?: {
+    nmap?: Record<string, unknown>;
+    httpx?: Record<string, unknown>;
+    nikto?: Record<string, unknown>;
+    nuclei?: Record<string, unknown>;
+    nvd?: Record<string, unknown>;
+  };
+  semantics?: Record<string, unknown>;
 };
 
 type CveMatch = {
@@ -309,6 +348,7 @@ const stageClass = (stage?: string | null) => {
     case 'completed':
       return 'bg-green-600 text-white';
     case 'nmap_running':
+    case 'nikto_running':
     case 'nuclei_running':
       return 'bg-primary text-primary-foreground';
     case 'waiting_nuclei':
@@ -356,6 +396,30 @@ const formatPercent = (value?: number | null) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return '—';
   return `${Math.round(parsed * 1000) / 10}%`;
+};
+
+const verdictClass = (level?: string | null) => {
+  switch (String(level || '').toLowerCase()) {
+    case 'critical':
+      return 'bg-red-600 text-white';
+    case 'elevated':
+      return 'bg-orange-500 text-white';
+    case 'watch':
+      return 'bg-amber-500 text-white';
+    case 'informational':
+      return 'bg-sky-600 text-white';
+    case 'clean':
+      return 'bg-green-600 text-white';
+    default:
+      return 'bg-muted text-muted-foreground';
+  }
+};
+
+const formatEngineValue = (value: unknown) => {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'boolean') return value ? 'si' : 'no';
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '—';
+  return String(value);
 };
 
 const nvdDetailUrl = (cveId: string) => `https://nvd.nist.gov/vuln/detail/${encodeURIComponent(cveId)}`;
@@ -732,6 +796,7 @@ const NucleiScan360: React.FC = () => {
   const [selectedJob, setSelectedJob] = useState<NucleiJob | null>(null);
   const [openPorts, setOpenPorts] = useState<NmapOpenPort[]>([]);
   const [technologies, setTechnologies] = useState<TechnologyFingerprint[]>([]);
+  const [niktoFindings, setNiktoFindings] = useState<NiktoFinding[]>([]);
   const [cveMatches, setCveMatches] = useState<CveMatch[]>([]);
   const [result, setResult] = useState<NucleiResult | null>(null);
   const [rawResult, setRawResult] = useState('');
@@ -753,6 +818,7 @@ const NucleiScan360: React.FC = () => {
     () => cveMatches.filter((match) => match.match_status === 'potential'),
     [cveMatches],
   );
+  const unifiedVerdict = selectedJob?.unified_verdict || null;
 
   const recordDiagnostic = useCallback((error: unknown, fallback: string) => {
     const diagnostic = (error as NucleiFunctionError)?.diagnostic || {
@@ -927,6 +993,7 @@ const NucleiScan360: React.FC = () => {
     setSelectedJob(job);
     setOpenPorts([]);
     setTechnologies([]);
+    setNiktoFindings([]);
     setCveMatches([]);
 
     setQueueLoading(true);
@@ -938,6 +1005,7 @@ const NucleiScan360: React.FC = () => {
         open_ports?: NmapOpenPort[];
         cve_matches?: CveMatch[];
         technologies?: TechnologyFingerprint[];
+        nikto_findings?: NiktoFinding[];
       }>({
         action: 'get',
         job_id: job.id,
@@ -946,6 +1014,7 @@ const NucleiScan360: React.FC = () => {
       setSelectedJob((data.job || job) as NucleiJob);
       setOpenPorts((data.open_ports || []) as NmapOpenPort[]);
       setTechnologies((data.technologies || []) as TechnologyFingerprint[]);
+      setNiktoFindings((data.nikto_findings || []) as NiktoFinding[]);
       setCveMatches((data.cve_matches || []) as CveMatch[]);
       const nextResult = (data.job?.raw_result || null) as NucleiResult | null;
       setResult(nextResult);
@@ -953,6 +1022,7 @@ const NucleiScan360: React.FC = () => {
         job: data.job,
         open_ports: data.open_ports || [],
         technologies: data.technologies || [],
+        nikto_findings: data.nikto_findings || [],
         cve_matches: data.cve_matches || [],
         nuclei_result: nextResult,
       }, null, 2));
@@ -982,6 +1052,7 @@ const NucleiScan360: React.FC = () => {
           job_id?: string;
           result?: NucleiResult;
           nmap_result?: Record<string, unknown>;
+          nikto_result?: Record<string, unknown>;
           stage?: string;
         }>;
       }>({
@@ -999,13 +1070,18 @@ const NucleiScan360: React.FC = () => {
       } else if (processed?.nmap_result) {
         setRawResult(JSON.stringify(processed.nmap_result, null, 2));
         setSelectedJobId(processed.job_id || '');
+      } else if (processed?.nikto_result) {
+        setRawResult(JSON.stringify(processed.nikto_result, null, 2));
+        setSelectedJobId(processed.job_id || '');
       }
       toast({
         title: processed ? `Job ${processed.stage || processed.status}` : 'Nessun job in coda',
         description: processed?.error || (processed?.result
           ? `${(processed.result.findings || []).length} finding salvati in Supabase.`
           : processed?.nmap_result
-            ? `${processed.nmap_result.open_port_count || 0} porte aperte salvate. Nuclei partirà dopo la finestra di attesa.`
+            ? `${processed.nmap_result.open_port_count || 0} porte aperte salvate. Nikto è il prossimo stage.`
+            : processed?.nikto_result
+              ? `${processed.nikto_result.findings_count || 0} finding Nikto salvati. Nuclei partirà dopo la finestra di attesa.`
             : 'La coda è vuota.'),
         variant: processed?.status === 'failed' || processed?.status === 'timeout' ? 'destructive' : 'default',
       });
@@ -1070,14 +1146,17 @@ const NucleiScan360: React.FC = () => {
         name: selectedOrganizationName,
       },
       job: selectedJob,
+      unified_verdict: selectedJob.unified_verdict || null,
       open_ports: openPorts,
       technologies,
+      nikto_findings: niktoFindings,
       cve_matches: cveMatches,
       nuclei_findings: findings,
       nuclei_result: result,
       interpretation: {
         confirmed_cve_count: confirmedCveMatches.length,
         potential_cve_count: potentialCveMatches.length,
+        nikto_finding_count: niktoFindings.length,
         technology_count: technologies.length,
         open_port_count: openPorts.length,
         note: '0 CVE indica nessun match confermato/potenziale nella pipeline Nmap/httpx/NVD/Nuclei, non assenza assoluta di vulnerabilita.',
@@ -1199,6 +1278,49 @@ const NucleiScan360: React.FC = () => {
         </TableRow>
       );
     })
+  );
+
+  const renderNiktoRows = () => (
+    niktoFindings.length === 0 ? (
+      <TableRow>
+        <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
+          Nessun finding Nikto salvato per questo job. Nikto segnala configurazioni e superfici sospette; Nuclei conferma CVE tecniche.
+        </TableCell>
+      </TableRow>
+    ) : niktoFindings.map((finding) => (
+      <TableRow key={`${finding.id || finding.nikto_id}-${finding.target_url || finding.uri}`}>
+        <TableCell>
+          <div className="flex flex-col gap-1">
+            <Badge className={severityClass(finding.severity)}>{finding.severity || 'info'}</Badge>
+            {finding.nikto_id && <span className="font-mono text-xs text-muted-foreground">{finding.nikto_id}</span>}
+          </div>
+        </TableCell>
+        <TableCell>
+          <div className="flex flex-col gap-1">
+            <span className="font-medium">{finding.category || 'web_exposure'}</span>
+            <span className="text-xs text-muted-foreground">{finding.method || 'GET'} · {finding.tls ? 'TLS' : 'HTTP'}</span>
+          </div>
+        </TableCell>
+        <TableCell className="max-w-[260px]">
+          <div className="flex flex-col gap-1">
+            <span className="truncate font-mono text-xs">{finding.target_url || finding.asset_host || '—'}</span>
+            <span className="truncate font-mono text-xs text-muted-foreground">{finding.uri || '/'}</span>
+          </div>
+        </TableCell>
+        <TableCell className="max-w-[380px]">
+          <div className="line-clamp-3 text-xs text-muted-foreground">{finding.message || '—'}</div>
+        </TableCell>
+        <TableCell className="max-w-[240px]">
+          <div className="flex flex-col gap-1">
+            {(finding.references || []).length === 0 ? (
+              <span className="text-xs text-muted-foreground">—</span>
+            ) : finding.references?.slice(0, 3).map((reference) => (
+              <span key={reference} className="truncate font-mono text-[11px] text-muted-foreground">{reference}</span>
+            ))}
+          </div>
+        </TableCell>
+      </TableRow>
+    ))
   );
 
   if (rolesLoading || isLoadingClients) {
@@ -1545,7 +1667,7 @@ const NucleiScan360: React.FC = () => {
                         <TableCell className="text-right">
                           <div className="flex flex-col items-end gap-1">
 	                            <span className="font-semibold">{job.findings_count ?? 0}</span>
-	                            <span className="text-xs text-muted-foreground">{job.open_port_count ?? 0} porte · {job.technology_count ?? 0} tech · {job.templates_executed_count ?? 0} template</span>
+	                            <span className="text-xs text-muted-foreground">{job.open_port_count ?? 0} porte · {job.technology_count ?? 0} tech · {job.nikto_findings_count ?? 0} nikto · {job.templates_executed_count ?? 0} template</span>
 	                          </div>
                         </TableCell>
                         <TableCell>
@@ -1584,6 +1706,46 @@ const NucleiScan360: React.FC = () => {
                   </div>
                 </CardHeader>
                 <CardContent className="grid gap-4 xl:grid-cols-2">
+                  <Card className="xl:col-span-2">
+                    <CardHeader>
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div>
+                          <CardTitle className="text-base">Verdetto unico</CardTitle>
+                          <CardDescription>
+                            Sintesi multi-engine: Nmap/httpx per contesto, Nikto per misconfiguration/exposure, Nuclei per CVE confermate e NVD per CVE potenziali.
+                          </CardDescription>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge className={verdictClass(unifiedVerdict?.level)}>{unifiedVerdict?.level || 'non calcolato'}</Badge>
+                          <Badge variant="outline">score {formatScore(unifiedVerdict?.score)}</Badge>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="grid gap-4 lg:grid-cols-[1fr_1.4fr]">
+                      <div className="rounded-lg border p-3">
+                        <h3 className="mb-2 text-sm font-medium">Motivazioni</h3>
+                        <div className="flex flex-col gap-2">
+                          {(unifiedVerdict?.reasons || ['Verdetto non ancora disponibile: completa Nmap, Nikto e Nuclei.']).map((reason) => (
+                            <div key={reason} className="text-sm text-muted-foreground">{reason}</div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-5">
+                        {(['nmap', 'httpx', 'nikto', 'nuclei', 'nvd'] as const).map((engine) => {
+                          const values = (unifiedVerdict?.engines?.[engine] || {}) as Record<string, unknown>;
+                          const firstMetric = Object.entries(values)[0];
+                          return (
+                            <div key={engine} className="rounded-lg border p-3">
+                              <div className="text-xs uppercase text-muted-foreground">{engine}</div>
+                              <div className="mt-1 text-lg font-semibold">{formatEngineValue(firstMetric?.[1])}</div>
+                              <div className="truncate text-xs text-muted-foreground">{firstMetric?.[0]?.replace(/_/g, ' ') || '—'}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+
                   <Card>
                     <CardHeader>
                       <CardTitle className="text-base">Nmap open ports</CardTitle>
@@ -1646,6 +1808,31 @@ const NucleiScan360: React.FC = () => {
 	                        </TableHeader>
 	                        <TableBody>
 	                          {renderTechnologyRows()}
+	                        </TableBody>
+	                      </Table>
+	                    </CardContent>
+	                  </Card>
+
+	                  <Card className="xl:col-span-2">
+	                    <CardHeader>
+	                      <CardTitle className="text-base">Nikto</CardTitle>
+	                      <CardDescription>
+	                        {selectedJob.nikto_version || 'versione Nikto non ancora disponibile'} · {selectedJob.nikto_status || 'non avviato'} · durata {selectedJob.nikto_duration_ms ? `${Math.round(selectedJob.nikto_duration_ms / 1000)}s` : '—'} · {niktoFindings.length} finding. Nikto segnala configurazioni e superfici sospette; Nuclei conferma CVE tecniche.
+	                      </CardDescription>
+	                    </CardHeader>
+	                    <CardContent>
+	                      <Table>
+	                        <TableHeader>
+	                          <TableRow>
+	                            <TableHead>Sev</TableHead>
+	                            <TableHead>Categoria</TableHead>
+	                            <TableHead>URL/URI</TableHead>
+	                            <TableHead>Evidenza</TableHead>
+	                            <TableHead>Reference</TableHead>
+	                          </TableRow>
+	                        </TableHeader>
+	                        <TableBody>
+	                          {renderNiktoRows()}
 	                        </TableBody>
 	                      </Table>
 	                    </CardContent>

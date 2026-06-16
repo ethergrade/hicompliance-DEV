@@ -133,6 +133,52 @@ type NmapResult = {
   [key: string]: unknown;
 };
 
+type NiktoFinding = {
+  nikto_id?: string | null;
+  severity?: string | null;
+  category?: string | null;
+  method?: string | null;
+  uri?: string | null;
+  message?: string | null;
+  references?: unknown[];
+  host?: string | null;
+  ip?: string | null;
+  port?: number | string | null;
+  tls?: boolean | null;
+  raw_finding?: Record<string, unknown> | null;
+  [key: string]: unknown;
+};
+
+type NiktoResult = {
+  target_url?: string;
+  resolved_target_url?: string;
+  target_host?: string;
+  target_port?: number;
+  profile?: string;
+  tuning?: string;
+  findings?: NiktoFinding[];
+  findings_count?: number;
+  summary?: Record<string, unknown>;
+  warnings?: unknown[];
+  duration_ms?: number;
+  nikto_version?: string;
+  nikto_command_sanitized?: string;
+  raw_result?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+type NiktoAggregateResult = {
+  target_urls: string[];
+  results: NiktoResult[];
+  findings: Array<NiktoFinding & { target_url?: string | null }>;
+  findings_count: number;
+  warnings: string[];
+  duration_ms: number;
+  nikto_version: string | null;
+  status: "completed" | "completed_with_warnings" | "skipped" | "failed";
+  summary: Record<string, unknown>;
+};
+
 type OpenPortRow = {
   id: string;
   job_id?: string;
@@ -201,6 +247,7 @@ type NucleiJob = {
   nmap_profile?: NmapProfile | null;
   stage?: string | null;
   next_run_at?: string | null;
+  raw_nmap_result?: Record<string, unknown> | null;
   profile: NucleiProfile;
   authorized_scan: boolean;
   timeout_seconds: number;
@@ -272,6 +319,7 @@ const PRIVATE_IPV4_RANGES = [
 
 const HTTP_ACTION_TIMEOUT_SECONDS = 165;
 const NUCLEI_WAIT_MINUTES = 8;
+const NIKTO_ACTION_TIMEOUT_SECONDS = 150;
 const NVD_CVES_BASE = "https://services.nvd.nist.gov/rest/json/cves/2.0";
 const NVD_MAX_CPE_QUERIES_PER_JOB = 8;
 const NVD_MAX_CVES_PER_CPE = 20;
@@ -640,6 +688,15 @@ function getNmapServiceConfig() {
   const sharedSecret = String(Deno.env.get("NMAP_SCAN360_SHARED_SECRET") || "").trim();
   if (!serviceUrl || !sharedSecret) {
     throw new Error("Nmap Scan360 service is not configured");
+  }
+  return { serviceUrl, sharedSecret };
+}
+
+function getNiktoServiceConfig() {
+  const serviceUrl = String(Deno.env.get("NIKTO_SCAN360_SERVICE_URL") || "").replace(/\/+$/, "");
+  const sharedSecret = String(Deno.env.get("NIKTO_SCAN360_SHARED_SECRET") || "").trim();
+  if (!serviceUrl || !sharedSecret) {
+    throw new Error("Nikto Scan360 service is not configured");
   }
   return { serviceUrl, sharedSecret };
 }
@@ -1223,6 +1280,23 @@ function buildUrlCandidates(job: NucleiJob, nmapResult: NmapResult): string[] {
   return uniqueStrings(candidates).slice(0, 8);
 }
 
+function buildNiktoUrlCandidates(job: NucleiJob, nmapResult: NmapResult): string[] {
+  const candidates = buildUrlCandidates(job, nmapResult)
+    .filter((candidate) => /^https?:\/\//i.test(candidate));
+  const targetHost = String(job.target_host || job.nmap_target || "").toLowerCase();
+  return uniqueStrings(candidates)
+    .sort((a, b) => {
+      const aUrl = new URL(a);
+      const bUrl = new URL(b);
+      const aHostMatch = targetHost && aUrl.hostname.toLowerCase() === targetHost ? -1 : 0;
+      const bHostMatch = targetHost && bUrl.hostname.toLowerCase() === targetHost ? -1 : 0;
+      if (aHostMatch !== bHostMatch) return aHostMatch - bHostMatch;
+      if (aUrl.protocol !== bUrl.protocol) return aUrl.protocol === "https:" ? -1 : 1;
+      return a.localeCompare(b);
+    })
+    .slice(0, 2);
+}
+
 function buildPortUrlCandidates(port: NmapPort, fallbackHost: string): string[] {
   const portNumber = Number(port.port);
   const protocol = WEB_PORT_PROTOCOLS[portNumber];
@@ -1232,6 +1306,106 @@ function buildPortUrlCandidates(port: NmapPort, fallbackHost: string): string[] 
   const defaultPort = protocol === "https" ? 443 : 80;
   const portSuffix = portNumber === defaultPort ? "" : `:${portNumber}`;
   return [`${protocol}://${host}${portSuffix}/`];
+}
+
+function safeSeverity(value: unknown): "critical" | "high" | "medium" | "low" | "info" {
+  const severity = String(value || "info").toLowerCase();
+  if (severity === "critical" || severity === "high" || severity === "medium" || severity === "low" || severity === "info") return severity;
+  return "info";
+}
+
+function safeNiktoCategory(value: unknown): string {
+  return String(value || "web_exposure").trim().slice(0, 80) || "web_exposure";
+}
+
+function parsePortFromUrl(value: unknown): number | null {
+  try {
+    const url = new URL(String(value || ""));
+    if (url.port) return Number(url.port);
+    return url.protocol === "https:" ? 443 : url.protocol === "http:" ? 80 : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseHostFromUrl(value: unknown): string {
+  try {
+    return new URL(String(value || "")).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function summarizeNiktoAggregate(results: NiktoResult[], findings: NiktoAggregateResult["findings"]) {
+  const bySeverity = findings.reduce<Record<string, number>>((acc, finding) => {
+    const severity = safeSeverity(finding.severity);
+    acc[severity] = (acc[severity] || 0) + 1;
+    return acc;
+  }, {});
+  const byCategory = findings.reduce<Record<string, number>>((acc, finding) => {
+    const category = safeNiktoCategory(finding.category);
+    acc[category] = (acc[category] || 0) + 1;
+    return acc;
+  }, {});
+  return {
+    by_severity: bySeverity,
+    by_category: byCategory,
+    targets_scanned: results.map((result) => result.target_url).filter(Boolean),
+  };
+}
+
+async function runNiktoForCandidates(candidates: string[], timeoutSeconds: number, maxFindings: number): Promise<NiktoAggregateResult> {
+  const startedAt = Date.now();
+  if (candidates.length === 0) {
+    return {
+      target_urls: [],
+      results: [],
+      findings: [],
+      findings_count: 0,
+      warnings: ["nikto_no_web_url_candidates"],
+      duration_ms: Date.now() - startedAt,
+      nikto_version: null,
+      status: "skipped",
+      summary: { by_severity: {}, by_category: {}, targets_scanned: [] },
+    };
+  }
+
+  const settled = await Promise.allSettled(candidates.map((targetUrl) => callNiktoService({
+    target_url: targetUrl,
+    timeout_seconds: timeoutSeconds,
+    max_findings: maxFindings,
+  })));
+  const results: NiktoResult[] = [];
+  const warnings: string[] = [];
+  settled.forEach((result, index) => {
+    if (result.status === "fulfilled") {
+      results.push(result.value);
+    } else {
+      const message = result.reason instanceof Error ? result.reason.message : String(result.reason || "nikto_failed");
+      warnings.push(`nikto:${candidates[index]}:${message.slice(0, 180)}`);
+    }
+  });
+
+  const findings = results.flatMap((result) => {
+    const targetUrl = result.target_url || result.resolved_target_url || null;
+    return (Array.isArray(result.findings) ? result.findings : []).map((finding) => ({ ...finding, target_url: targetUrl }));
+  });
+  const allWarnings = uniqueStrings([
+    ...warnings,
+    ...results.flatMap((result) => Array.isArray(result.warnings) ? result.warnings : []),
+  ]);
+  const status = results.length === 0 ? "failed" : allWarnings.length > 0 ? "completed_with_warnings" : "completed";
+  return {
+    target_urls: candidates,
+    results,
+    findings,
+    findings_count: findings.length,
+    warnings: allWarnings,
+    duration_ms: Date.now() - startedAt,
+    nikto_version: results.find((result) => result.nikto_version)?.nikto_version || null,
+    status,
+    summary: summarizeNiktoAggregate(results, findings),
+  };
 }
 
 async function persistNmapResult(adminClient: SupabaseClient, job: NucleiJob, nmapResult: NmapResult) {
@@ -1284,7 +1458,7 @@ async function persistNmapResult(adminClient: SupabaseClient, job: NucleiJob, nm
   const { error: updateError } = await adminClient
     .from("nuclei_scan360_jobs")
     .update({
-      stage: "waiting_nuclei",
+      stage: "nikto_running",
       status: "running",
       nmap_status: "completed",
       nmap_completed_at: new Date().toISOString(),
@@ -1322,11 +1496,208 @@ async function persistNmapResult(adminClient: SupabaseClient, job: NucleiJob, nm
           warning_count: nvdTechnologyResult.warnings.length,
         },
       },
-      next_run_at: new Date(Date.now() + NUCLEI_WAIT_MINUTES * 60 * 1000).toISOString(),
+      nikto_status: "queued",
+      next_run_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
     .eq("id", job.id);
   if (updateError) throw new Error(updateError.message || "Unable to update Nmap stage");
+}
+
+async function persistNiktoResult(adminClient: SupabaseClient, job: NucleiJob, niktoResult: NiktoAggregateResult) {
+  await adminClient.from("nuclei_scan360_nikto_findings").delete().eq("job_id", job.id);
+
+  const { data: openPorts } = await adminClient
+    .from("nuclei_scan360_open_ports")
+    .select("id, host, hostname, port, url_candidates")
+    .eq("job_id", job.id);
+  const ports = (openPorts || []) as OpenPortRow[];
+
+  const portForFinding = (finding: NiktoFinding & { target_url?: string | null }) => {
+    const targetUrl = String(finding.target_url || "");
+    const host = String(finding.host || parseHostFromUrl(targetUrl) || "").toLowerCase();
+    const portNumber = Number(finding.port || parsePortFromUrl(targetUrl) || 0);
+    return ports.find((port) => {
+      const candidates = Array.isArray(port.url_candidates) ? port.url_candidates : [];
+      const portHost = String(port.hostname || port.host || "").toLowerCase();
+      return (targetUrl && candidates.includes(targetUrl))
+        || (portNumber && Number(port.port) === portNumber && (!host || !portHost || portHost === host));
+    });
+  };
+
+  if (niktoResult.findings.length > 0) {
+    const rows = niktoResult.findings.map((finding) => {
+      const matchedPort = portForFinding(finding);
+      const targetUrl = String(finding.target_url || "");
+      return {
+        job_id: job.id,
+        organization_id: job.organization_id,
+        customer_id: job.customer_id,
+        port_id: matchedPort?.id || null,
+        target_url: targetUrl || null,
+        asset_host: String(finding.host || parseHostFromUrl(targetUrl) || job.target_host || job.nmap_target || "").slice(0, 255) || null,
+        port: Number(finding.port || parsePortFromUrl(targetUrl) || matchedPort?.port || 0) || null,
+        tls: Boolean(finding.tls) || /^https:/i.test(targetUrl),
+        severity: safeSeverity(finding.severity),
+        category: safeNiktoCategory(finding.category),
+        nikto_id: finding.nikto_id ? String(finding.nikto_id).slice(0, 80) : null,
+        method: finding.method ? String(finding.method).slice(0, 20) : null,
+        uri: finding.uri ? String(finding.uri).slice(0, 1000) : null,
+        message: String(finding.message || "Nikto finding").slice(0, 2000),
+        references: Array.isArray(finding.references) ? finding.references.map((entry) => String(entry || "").trim()).filter(Boolean).slice(0, 30) : [],
+        raw_finding: finding.raw_finding && typeof finding.raw_finding === "object" ? finding.raw_finding : finding,
+      };
+    });
+    const { error: insertError } = await adminClient.from("nuclei_scan360_nikto_findings").insert(rows);
+    if (insertError) throw new Error(insertError.message || "Unable to persist Nikto findings");
+  }
+
+  const { error: updateError } = await adminClient
+    .from("nuclei_scan360_jobs")
+    .update({
+      stage: "waiting_nuclei",
+      status: "running",
+      nikto_status: niktoResult.status,
+      nikto_completed_at: new Date().toISOString(),
+      nikto_duration_ms: Math.round(niktoResult.duration_ms),
+      nikto_version: niktoResult.nikto_version,
+      nikto_findings_count: niktoResult.findings_count,
+      raw_nikto_result: {
+        target_urls: niktoResult.target_urls,
+        findings_count: niktoResult.findings_count,
+        warnings: niktoResult.warnings,
+        summary: niktoResult.summary,
+        results: niktoResult.results,
+      },
+      next_run_at: new Date(Date.now() + NUCLEI_WAIT_MINUTES * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", job.id);
+  if (updateError) throw new Error(updateError.message || "Unable to update Nikto stage");
+}
+
+function severityScore(value: unknown): number {
+  const severity = safeSeverity(value);
+  if (severity === "critical") return 80;
+  if (severity === "high") return 65;
+  if (severity === "medium") return 40;
+  if (severity === "low") return 15;
+  return 5;
+}
+
+function verdictLevel(score: number): "clean" | "informational" | "watch" | "elevated" | "critical" {
+  if (score >= 75) return "critical";
+  if (score >= 50) return "elevated";
+  if (score >= 25) return "watch";
+  if (score > 0) return "informational";
+  return "clean";
+}
+
+async function buildUnifiedVerdict(adminClient: SupabaseClient, job: NucleiJob): Promise<Record<string, unknown>> {
+  const [cveResponse, nucleiResponse, niktoResponse, openPortsResponse, techResponse] = await Promise.all([
+    adminClient
+      .from("nuclei_scan360_cve_matches")
+      .select("cve_id, match_status, severity, cvss_score, kev_known_exploited, source")
+      .eq("job_id", job.id),
+    adminClient
+      .from("nuclei_scan360_findings")
+      .select("severity, category, cve_ids")
+      .eq("job_id", job.id),
+    adminClient
+      .from("nuclei_scan360_nikto_findings")
+      .select("severity, category, nikto_id, message")
+      .eq("job_id", job.id),
+    adminClient
+      .from("nuclei_scan360_open_ports")
+      .select("port, service, product, version")
+      .eq("job_id", job.id),
+    adminClient
+      .from("nuclei_scan360_technologies")
+      .select("name, version, cpe_candidates")
+      .eq("job_id", job.id),
+  ]);
+
+  const cveMatches = (cveResponse.data || []) as Array<Record<string, unknown>>;
+  const nucleiFindings = (nucleiResponse.data || []) as Array<Record<string, unknown>>;
+  const niktoFindings = (niktoResponse.data || []) as Array<Record<string, unknown>>;
+  const openPorts = (openPortsResponse.data || []) as Array<Record<string, unknown>>;
+  const technologies = (techResponse.data || []) as Array<Record<string, unknown>>;
+  const reasons: string[] = [];
+  let score = 0;
+
+  const confirmedCves = cveMatches.filter((match) => match.match_status === "confirmed");
+  const potentialCves = cveMatches.filter((match) => match.match_status === "potential");
+  if (confirmedCves.length > 0) {
+    const maxConfirmed = Math.max(...confirmedCves.map((match) => Number(match.cvss_score) >= 9 ? 85 : severityScore(match.severity)));
+    score = Math.max(score, maxConfirmed);
+    reasons.push(`${confirmedCves.length} CVE confermate da Nuclei`);
+  }
+  if (potentialCves.length > 0) {
+    const maxPotential = Math.max(...potentialCves.map((match) => Number(match.cvss_score) >= 9 ? 55 : Math.min(severityScore(match.severity), 45)));
+    score = Math.max(score, maxPotential);
+    reasons.push(`${potentialCves.length} CVE potenziali da NVD/CPE`);
+  }
+
+  if (nucleiFindings.length > 0) {
+    const nucleiScore = Math.max(...nucleiFindings.map((finding) => severityScore(finding.severity)));
+    score = Math.max(score, nucleiScore);
+    reasons.push(`${nucleiFindings.length} finding Nuclei`);
+  }
+
+  if (niktoFindings.length > 0) {
+    const niktoScore = Math.max(...niktoFindings.map((finding) => Math.min(severityScore(finding.severity), 45)));
+    score = Math.max(score, niktoScore);
+    const highRiskNikto = niktoFindings.filter((finding) => ["high", "medium"].includes(safeSeverity(finding.severity))).length;
+    reasons.push(`${niktoFindings.length} finding Nikto${highRiskNikto ? ` (${highRiskNikto} medium/high)` : ""}`);
+  }
+
+  const exposedInterestingPorts = openPorts.filter((port) => ![80, 443].includes(Number(port.port))).length;
+  const versionedTechnologies = technologies.filter((technology) => String(technology.version || "").trim()).length;
+  if (exposedInterestingPorts > 0) {
+    score = Math.max(score, Math.min(20 + exposedInterestingPorts * 5, 35));
+    reasons.push(`${exposedInterestingPorts} porte esposte oltre HTTP/HTTPS standard`);
+  }
+  if (versionedTechnologies > 0) {
+    score = Math.max(score, Math.min(score + 5, 100));
+    reasons.push(`${versionedTechnologies} tecnologie con versione rilevata`);
+  }
+
+  if (reasons.length === 0) {
+    reasons.push("Nessun finding o CVE nella pipeline Nmap/httpx/Nikto/Nuclei/NVD");
+  }
+
+  return {
+    level: verdictLevel(score),
+    score,
+    reasons,
+    generated_at: new Date().toISOString(),
+    engines: {
+      nmap: {
+        open_port_count: openPorts.length,
+        exposed_non_standard_count: exposedInterestingPorts,
+      },
+      httpx: {
+        technology_count: technologies.length,
+        versioned_technology_count: versionedTechnologies,
+      },
+      nikto: {
+        finding_count: niktoFindings.length,
+        max_severity: niktoFindings.length ? ["critical", "high", "medium", "low", "info"].find((severity) => niktoFindings.some((finding) => safeSeverity(finding.severity) === severity)) : "none",
+      },
+      nuclei: {
+        finding_count: nucleiFindings.length,
+        confirmed_cve_count: confirmedCves.length,
+      },
+      nvd: {
+        potential_cve_count: potentialCves.length,
+      },
+    },
+    semantics: {
+      confirmed_cve: "validata tecnicamente da Nuclei",
+      potential_cve: "correlata da CPE/versione con NVD, non validata come exploit presente",
+      nikto: "misconfiguration, exposure e information disclosure",
+    },
+  };
 }
 
 async function callNucleiService(payload: ScanPayload): Promise<NucleiResult> {
@@ -1449,6 +1820,66 @@ async function callNmapHealth(): Promise<Record<string, unknown>> {
     if (!response.ok) {
       const errorPayload = parsed as Record<string, unknown>;
       throw new Error(String(errorPayload.error || errorPayload.message || `Nmap health HTTP ${response.status}`));
+    }
+    return parsed as Record<string, unknown>;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function callNiktoService(payload: { target_url: string; timeout_seconds: number; max_findings: number }): Promise<NiktoResult> {
+  const { serviceUrl, sharedSecret } = getNiktoServiceConfig();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), (payload.timeout_seconds + 35) * 1000);
+  try {
+    const response = await fetch(`${serviceUrl}/nikto/scan`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${sharedSecret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    const text = await response.text();
+    let parsed: unknown;
+    try {
+      parsed = text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error(`Nikto service returned malformed JSON: ${text.slice(0, 500)}`);
+    }
+
+    if (!response.ok) {
+      const errorPayload = parsed as Record<string, unknown>;
+      throw new Error(String(errorPayload.error || errorPayload.message || `Nikto service HTTP ${response.status}`));
+    }
+
+    return parsed as NiktoResult;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function callNiktoHealth(): Promise<Record<string, unknown>> {
+  const { serviceUrl } = getNiktoServiceConfig();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(`${serviceUrl}/health`, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    let parsed: unknown = {};
+    try {
+      parsed = text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error(`Nikto health returned malformed JSON: ${text.slice(0, 300)}`);
+    }
+    if (!response.ok) {
+      const errorPayload = parsed as Record<string, unknown>;
+      throw new Error(String(errorPayload.error || errorPayload.message || `Nikto health HTTP ${response.status}`));
     }
     return parsed as Record<string, unknown>;
   } finally {
@@ -1742,7 +2173,7 @@ async function listJobs(adminClient: SupabaseClient, body: RequestBody) {
 
   const { data, error } = await adminClient
     .from("nuclei_scan360_jobs")
-    .select("id, organization_id, customer_id, source, target_url, normalized_target_url, resolved_target_url, target_host, target_input, target_kind, nmap_target, nmap_profile, stage, next_run_at, nmap_status, nmap_started_at, nmap_completed_at, nmap_duration_ms, nmap_version, open_port_count, fingerprint_status, fingerprint_duration_ms, technology_count, nmap_warnings, raw_nmap_result, raw_technology_result, profile, status, attempt_count, last_error, timeout_seconds, rate_limit, max_findings, authorized_scan, duration_ms, nuclei_version, templates_loaded_count, templates_executed_count, findings_count, warnings, summary, raw_result, created_at, started_at, completed_at")
+    .select("id, organization_id, customer_id, source, target_url, normalized_target_url, resolved_target_url, target_host, target_input, target_kind, nmap_target, nmap_profile, stage, next_run_at, nmap_status, nmap_started_at, nmap_completed_at, nmap_duration_ms, nmap_version, open_port_count, fingerprint_status, fingerprint_duration_ms, technology_count, nmap_warnings, raw_nmap_result, raw_technology_result, nikto_status, nikto_started_at, nikto_completed_at, nikto_duration_ms, nikto_version, nikto_findings_count, raw_nikto_result, unified_verdict, profile, status, attempt_count, last_error, timeout_seconds, rate_limit, max_findings, authorized_scan, duration_ms, nuclei_version, templates_loaded_count, templates_executed_count, findings_count, warnings, summary, raw_result, created_at, started_at, completed_at")
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false })
     .limit(clampInt(body.limit, 25, 1, 100));
@@ -1793,7 +2224,14 @@ async function getJob(adminClient: SupabaseClient, body: RequestBody) {
     .order("created_at", { ascending: true });
   if (technologiesError) throw new Error(technologiesError.message || "Unable to load NucleiScan360 technologies");
 
-  return { job, findings: findings || [], open_ports: openPorts || [], cve_matches: enrichedCveMatches, technologies: technologies || [] };
+  const { data: niktoFindings, error: niktoFindingsError } = await adminClient
+    .from("nuclei_scan360_nikto_findings")
+    .select("*")
+    .eq("job_id", jobId)
+    .order("created_at", { ascending: true });
+  if (niktoFindingsError) throw new Error(niktoFindingsError.message || "Unable to load Nikto findings");
+
+  return { job, findings: findings || [], open_ports: openPorts || [], cve_matches: enrichedCveMatches, technologies: technologies || [], nikto_findings: niktoFindings || [] };
 }
 
 async function persistResult(adminClient: SupabaseClient, job: NucleiJob, result: NucleiResult) {
@@ -1878,6 +2316,7 @@ async function persistResult(adminClient: SupabaseClient, job: NucleiJob, result
   }
 
   const summary = buildSummary(result);
+  const unifiedVerdict = await buildUnifiedVerdict(adminClient, job);
   const { error: updateError } = await adminClient
     .from("nuclei_scan360_jobs")
     .update({
@@ -1894,6 +2333,7 @@ async function persistResult(adminClient: SupabaseClient, job: NucleiJob, result
       warnings: Array.isArray(result.warnings) ? result.warnings : [],
       summary,
       raw_result: result,
+      unified_verdict: unifiedVerdict,
       last_error: null,
       updated_at: new Date().toISOString(),
     })
@@ -1921,6 +2361,7 @@ async function markJobFailed(adminClient: SupabaseClient, job: NucleiJob, error:
 async function processQueue(adminClient: SupabaseClient, body: RequestBody) {
   getServiceConfig();
   getNmapServiceConfig();
+  getNiktoServiceConfig();
   const organizationId = String(body.organization_id || "").trim();
   if (organizationId) await loadOrganization(adminClient, organizationId);
 
@@ -1928,7 +2369,7 @@ async function processQueue(adminClient: SupabaseClient, body: RequestBody) {
   let query = adminClient
     .from("nuclei_scan360_jobs")
     .select("*")
-    .in("stage", ["queued", "waiting_nuclei"])
+    .in("stage", ["queued", "nikto_running", "waiting_nuclei"])
     .or(`next_run_at.is.null,next_run_at.lte.${new Date().toISOString()}`)
     .order("created_at", { ascending: true })
     .limit(maxJobs);
@@ -1937,7 +2378,7 @@ async function processQueue(adminClient: SupabaseClient, body: RequestBody) {
   const { data: queued, error } = await query;
   if (error) throw new Error(error.message || "Unable to load queued NucleiScan360 jobs");
 
-  const processed: Array<{ job_id: string; status: string; stage?: string; result?: NucleiResult; nmap_result?: NmapResult; error?: string }> = [];
+  const processed: Array<{ job_id: string; status: string; stage?: string; result?: NucleiResult; nmap_result?: NmapResult; nikto_result?: NiktoAggregateResult; error?: string }> = [];
   for (const job of (queued || []) as NucleiJob[]) {
     if ((job.stage || "queued") === "queued") {
       const { data: claimed, error: claimError } = await adminClient
@@ -1966,7 +2407,43 @@ async function processQueue(adminClient: SupabaseClient, body: RequestBody) {
           timeout_seconds: Math.min(runningJob.timeout_seconds || 60, 180),
         });
         await persistNmapResult(adminClient, runningJob, nmapResult);
-        processed.push({ job_id: runningJob.id, status: "running", stage: "waiting_nuclei", nmap_result: nmapResult });
+        processed.push({ job_id: runningJob.id, status: "running", stage: "nikto_running", nmap_result: nmapResult });
+      } catch (error) {
+        const message = await markJobFailed(adminClient, runningJob, error);
+        processed.push({ job_id: runningJob.id, status: /timeout|aborted/i.test(message) ? "timeout" : "failed", stage: /timeout|aborted/i.test(message) ? "timeout" : "failed", error: message });
+      }
+      continue;
+    }
+
+    if ((job.stage || "") === "nikto_running") {
+      const { data: claimed, error: claimError } = await adminClient
+        .from("nuclei_scan360_jobs")
+        .update({
+          status: "running",
+          stage: "nikto_running",
+          nikto_status: "running",
+          nikto_started_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", job.id)
+        .eq("stage", "nikto_running")
+        .or(`next_run_at.is.null,next_run_at.lte.${new Date().toISOString()}`)
+        .select("*")
+        .maybeSingle();
+      if (claimError) throw new Error(claimError.message || "Unable to claim NucleiScan360 Nikto job");
+      if (!claimed?.id) continue;
+
+      const runningJob = claimed as NucleiJob;
+      try {
+        const rawNmap = runningJob.raw_nmap_result || {};
+        const candidates = buildNiktoUrlCandidates(runningJob, rawNmap as NmapResult);
+        const niktoResult = await runNiktoForCandidates(
+          candidates,
+          clampInt(runningJob.timeout_seconds, 90, 30, NIKTO_ACTION_TIMEOUT_SECONDS),
+          clampInt(runningJob.max_findings, 200, 1, 500),
+        );
+        await persistNiktoResult(adminClient, runningJob, niktoResult);
+        processed.push({ job_id: runningJob.id, status: "running", stage: "waiting_nuclei", nikto_result: niktoResult });
       } catch (error) {
         const message = await markJobFailed(adminClient, runningJob, error);
         processed.push({ job_id: runningJob.id, status: /timeout|aborted/i.test(message) ? "timeout" : "failed", stage: /timeout|aborted/i.test(message) ? "timeout" : "failed", error: message });
@@ -2067,6 +2544,11 @@ async function smokeTest(adminClient: SupabaseClient, body: RequestBody) {
     return { configured: true, service_url_host: new URL(serviceUrl).host };
   });
 
+  await runCheck("nikto_service_config", async () => {
+    const { serviceUrl } = getNiktoServiceConfig();
+    return { configured: true, service_url_host: new URL(serviceUrl).host };
+  });
+
   await runCheck("organization", async () => {
     if (!organizationId) throw new Error("organization_id is required");
     const organization = await loadOrganization(adminClient, organizationId);
@@ -2111,6 +2593,16 @@ async function smokeTest(adminClient: SupabaseClient, body: RequestBody) {
     return { existing_cve_matches: count || 0 };
   });
 
+  await runCheck("nikto_findings_table", async () => {
+    if (!organizationId) throw new Error("organization_id is required");
+    const { count, error } = await adminClient
+      .from("nuclei_scan360_nikto_findings")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organizationId);
+    if (error) throw new Error(error.message || "nikto_findings_table_failed");
+    return { existing_nikto_findings: count || 0 };
+  });
+
   await runCheck("nvd_api", async () => {
     if (!getNvdApiKey()) throw new Error("NVD_API_KEY is not configured");
     const cveQuery = new URLSearchParams({ cveIds: "CVE-2024-3400", resultsPerPage: "1" });
@@ -2132,6 +2624,11 @@ async function smokeTest(adminClient: SupabaseClient, body: RequestBody) {
 
   await runCheck("nmap_container_health", async () => {
     const health = await callNmapHealth();
+    return health;
+  });
+
+  await runCheck("nikto_container_health", async () => {
+    const health = await callNiktoHealth();
     return health;
   });
 

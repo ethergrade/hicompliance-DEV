@@ -1,0 +1,40 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "surfacescan360-nikto",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-16",
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "NIKTO_CONTAINER_INSTANCE": "surfacescan360-nikto-v1-safe-lab",
+    "NIKTO_TIMEOUT_SECONDS": "180",
+    "NIKTO_MAX_TIMEOUT_SECONDS": "240",
+    "NIKTO_TUNING": "123be",
+    "NIKTO_ALLOWED_HOSTS": "*",
+    "NIKTO_DENIED_HOSTS": "localhost,*.localhost,127.*,10.*,172.16.*,172.17.*,172.18.*,172.19.*,172.20.*,172.21.*,172.22.*,172.23.*,172.24.*,172.25.*,172.26.*,172.27.*,172.28.*,172.29.*,172.30.*,172.31.*,192.168.*,169.254.*"
+  },
+  "containers": [
+    {
+      "class_name": "NiktoContainer",
+      "image": "./Dockerfile",
+      "max_instances": 3
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "NIKTO_CONTAINER",
+        "class_name": "NiktoContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "NiktoContainer"
+      ]
+    }
+  ]
+}
