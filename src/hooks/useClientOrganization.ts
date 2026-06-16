@@ -20,9 +20,9 @@
    } = useClientContext();
 
    // L'organization_id da usare nelle query
-   const effectiveOrganizationId = canManageMultipleClients
-     ? selectedOrganization?.id || null
-     : userOrganizationId;
+   // Prefer selectedOrganization for all users (auto-loaded for single-org clients).
+   const effectiveOrganizationId = selectedOrganization?.id || userOrganizationId;
+
 
    // Allow pass-through if localStorage has a stored org (even if selectedOrganization is null
    // during the initial mount before ClientProvider restores it).

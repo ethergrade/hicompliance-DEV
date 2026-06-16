@@ -80,8 +80,12 @@ export const ClientIndicator: React.FC = () => {
 
   const showGroupSelector = groups.length > 1;
 
+  // Show selector if the user can manage multiple clients OR if the client
+  // belongs to multiple organizations (card #54).
+  const showClientSelector = canManageMultipleClients || organizations.length > 1;
+
   // Return condizionale DOPO tutti gli hook
-  if (!canManageMultipleClients) return null;
+  if (!showClientSelector) return null;
 
   return (
     <div className="flex flex-col gap-3 border-b border-border bg-primary/5 px-4 py-3 md:flex-row md:items-center">

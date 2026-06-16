@@ -88,7 +88,10 @@
          try {
            const tenants = await tenantsApi.listAll(resolveGroupId);
            setOrganizations(tenants);
-           if (tenants.length > 0) setSelectedOrganizationState(tenants[0]);
+           if (tenants.length > 0) {
+             setSelectedOrganizationState(tenants[0]);
+             localStorage.setItem(STORAGE_KEY, JSON.stringify(tenants[0]));
+           }
          } catch { /* ignore */ }
        }
      } catch (error) {
