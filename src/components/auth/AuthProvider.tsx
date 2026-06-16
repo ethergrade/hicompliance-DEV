@@ -224,5 +224,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     refreshUser,
   };
 
+
+  // Prevent rendering children when session expired (avoids black screen / context errors)
+  if (!loading && !user) {
+    const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+    if (!pathname.startsWith('/auth')) {
+      return <AuthContext.Provider value={value} />;
+    }
+  }
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
