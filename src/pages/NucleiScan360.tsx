@@ -427,6 +427,65 @@ const formatEngineValue = (value: unknown) => {
 
 const nvdDetailUrl = (cveId: string) => `https://nvd.nist.gov/vuln/detail/${encodeURIComponent(cveId)}`;
 
+const isJobActive = (job?: NucleiJob | null) =>
+  Boolean(job && ['queued', 'running'].includes(String(job.status || '').toLowerCase()));
+
+const engineStatusMeta = (
+  engine: 'nmap' | 'httpx' | 'nikto' | 'nuclei' | 'report',
+  job?: NucleiJob | null,
+): { label: string; progress: number; className: string; detail: string } => {
+  if (!job) {
+    return { label: 'In attesa', progress: 0, className: 'bg-muted text-muted-foreground', detail: 'Nessun job selezionato' };
+  }
+  const stage = String(job.stage || job.status || '').toLowerCase();
+  const done = { label: 'Completato', progress: 100, className: 'bg-green-600 text-white' };
+  const running = { label: 'In corso', progress: 65, className: 'bg-primary text-primary-foreground' };
+  const queued = { label: 'In coda', progress: 25, className: 'bg-amber-500 text-white' };
+  const failed = { label: 'Errore', progress: 100, className: 'bg-destructive text-destructive-foreground' };
+  if (['failed', 'timeout', 'cancelled'].includes(stage)) {
+    return { ...failed, detail: job.last_error || 'Stage interrotto' };
+  }
+
+  if (engine === 'nmap') {
+    if (job.nmap_status === 'completed' || ['nikto_running', 'waiting_nuclei', 'nuclei_running', 'completed'].includes(stage)) {
+      return { ...done, detail: `${job.open_port_count ?? 0} porte · ${job.nmap_version || 'nmap'}` };
+    }
+    if (stage === 'nmap_running') return { ...running, detail: 'Nmap + service detection' };
+    return { ...queued, detail: 'Primo motore della pipeline' };
+  }
+
+  if (engine === 'httpx') {
+    if (job.fingerprint_status || ['nikto_running', 'waiting_nuclei', 'nuclei_running', 'completed'].includes(stage)) {
+      return { ...done, detail: `${job.technology_count ?? 0} tecnologie · ${job.fingerprint_status || 'done'}` };
+    }
+    if (stage === 'nmap_running') return { ...running, detail: 'Safe HTTP fingerprint' };
+    return { ...queued, detail: 'Dopo rilevamento porte web' };
+  }
+
+  if (engine === 'nikto') {
+    if (job.nikto_status && !['queued', 'running'].includes(String(job.nikto_status).toLowerCase())) {
+      return { ...done, detail: `${job.nikto_findings_count ?? 0} finding · ${job.nikto_version || 'Nikto'}` };
+    }
+    if (stage === 'nikto_running') return { ...running, detail: 'Nikto safe LAB sui target web' };
+    if (['waiting_nuclei', 'nuclei_running', 'completed'].includes(stage)) {
+      return { ...done, detail: `${job.nikto_findings_count ?? 0} finding` };
+    }
+    return { ...queued, detail: 'Dopo Nmap/httpx' };
+  }
+
+  if (engine === 'nuclei') {
+    if (stage === 'completed') return { ...done, detail: `${job.findings_count ?? 0} finding · ${job.templates_executed_count ?? 0} template` };
+    if (stage === 'nuclei_running') return { ...running, detail: 'Template CVE/exposure in esecuzione' };
+    if (stage === 'waiting_nuclei') return { ...queued, progress: 50, detail: `Finestra safe: ${formatCountdown(job.next_run_at)}` };
+    return { ...queued, detail: 'Parte dopo Nikto e attesa persistita' };
+  }
+
+  if (stage === 'completed') {
+    return { ...done, detail: `Verdetto ${job.unified_verdict?.level || 'calcolato'} · PDF/DOCX pronti` };
+  }
+  return { ...queued, detail: 'Pronto quando i motori finiscono' };
+};
+
 const clampNumber = (value: unknown, fallback: number, min: number, max: number) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -456,6 +515,7 @@ const extractInvokeErrorMessage = async (error: unknown, fallback = 'Errore funz
 type NucleiAction =
   | 'direct_scan'
   | 'enqueue'
+  | 'start_lab_scan'
   | 'list'
   | 'get'
   | 'retrieve_targets'
@@ -935,11 +995,11 @@ const NucleiScan360: React.FC = () => {
     });
   };
 
-  const enqueueScan = async () => {
+  const startLabScan = async () => {
     if (!selectedOrgId) {
       toast({
         title: 'Seleziona un cliente',
-        description: 'La coda NUCLEI-SCAN360 salva ogni job su un cliente esistente.',
+        description: 'Il LAB Scan360 salva ogni job su un cliente esistente.',
         variant: 'destructive',
       });
       return;
@@ -958,8 +1018,10 @@ const NucleiScan360: React.FC = () => {
         error?: string;
         queued_count?: number;
         skipped_duplicates?: number;
+        processed_count?: number;
+        jobs?: NucleiJob[];
       }>({
-        action: 'enqueue',
+        action: 'start_lab_scan',
         organization_id: selectedOrgId,
         targets: targetList,
         nmap_profile: nmapProfile,
@@ -975,15 +1037,20 @@ const NucleiScan360: React.FC = () => {
       if (!data?.ok) throw new Error(data?.error || 'NucleiScan360 enqueue failed');
 
       toast({
-        title: 'Job accodati',
-        description: `${data.queued_count || 0} target in coda per ${selectedOrganizationName}. Duplicati saltati: ${data.skipped_duplicates || 0}.`,
+        title: 'LAB Scan360 avviato',
+        description: `${data.queued_count || 0} target in pipeline Nmap/httpx/Nikto/Nuclei per ${selectedOrganizationName}. Kickstart: ${data.processed_count || 0} stage. Duplicati saltati: ${data.skipped_duplicates || 0}.`,
       });
+      if (Array.isArray(data.jobs)) {
+        setJobs(data.jobs as NucleiJob[]);
+        const firstJob = (data.jobs as NucleiJob[]).find((job) => isJobActive(job)) || (data.jobs as NucleiJob[])[0];
+        if (firstJob) await openJob(firstJob);
+      }
       await refreshJobs(selectedOrgId);
     } catch (error) {
-      recordDiagnostic(error, 'NucleiScan360 enqueue errore');
-      const message = await extractInvokeErrorMessage(error, 'NucleiScan360 enqueue errore');
+      recordDiagnostic(error, 'LAB Scan360 start errore');
+      const message = await extractInvokeErrorMessage(error, 'LAB Scan360 start errore');
       toast({
-        title: 'NucleiScan360 enqueue errore',
+        title: 'LAB Scan360 start errore',
         description: message,
         variant: 'destructive',
       });
@@ -1042,6 +1109,22 @@ const NucleiScan360: React.FC = () => {
       setQueueLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!selectedOrgId || !isSuperAdmin) return;
+    const hasActiveJobs = jobs.some((job) => isJobActive(job)) || isJobActive(selectedJob);
+    if (!hasActiveJobs) return;
+
+    const timer = window.setInterval(async () => {
+      await refreshJobs(selectedOrgId);
+      if (selectedJobId) {
+        const latestSelectedJob = jobs.find((job) => job.id === selectedJobId);
+        if (latestSelectedJob) await openJob(latestSelectedJob);
+      }
+    }, 15000);
+
+    return () => window.clearInterval(timer);
+  }, [isSuperAdmin, jobs, refreshJobs, selectedJob, selectedJobId, selectedOrgId]);
 
   const processNextJob = async () => {
     if (!selectedOrgId) return;
@@ -1620,14 +1703,14 @@ const NucleiScan360: React.FC = () => {
                 </div>
               </div>
 
-              <Button className="w-full" onClick={enqueueScan} disabled={loading || !selectedOrgId || (!targetList.length && !includeSurfaceAssets)}>
+              <Button className="w-full" onClick={startLabScan} disabled={loading || !selectedOrgId || (!targetList.length && !includeSurfaceAssets)}>
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
-                Accoda target
+                Avvia LAB Scan360
               </Button>
 
               <Button className="w-full" variant="secondary" onClick={processNextJob} disabled={processingQueue || !selectedOrgId}>
                 {processingQueue ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlayCircle className="mr-2 h-4 w-4" />}
-                Processa prossimo job
+                Processa prossimo stage
               </Button>
               <Button className="w-full" variant="outline" onClick={runSmokeTest} disabled={smokeLoading || !selectedOrgId}>
                 {smokeLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TerminalSquare className="mr-2 h-4 w-4" />}
@@ -1670,7 +1753,7 @@ const NucleiScan360: React.FC = () => {
                   <div>
                     <CardTitle>Coda NUCLEI-SCAN360</CardTitle>
                     <CardDescription>
-                      Job salvati su Supabase per {selectedOrganizationName}. Processali uno alla volta per gestire scan lunghi senza bloccare tutto.
+                      Job persistenti su Supabase per {selectedOrganizationName}. Il cron LAB processa Nmap/httpx, Nikto, attesa safe e Nuclei fino al report finale.
                     </CardDescription>
                   </div>
                   <Button variant="outline" size="sm" onClick={() => refreshJobs()} disabled={queueLoading || !selectedOrgId}>
@@ -1695,7 +1778,7 @@ const NucleiScan360: React.FC = () => {
                     {jobs.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                          Nessun job Nuclei per questo cliente. Accoda un target manuale o importa asset SurfaceScan360.
+                          Nessun job LAB per questo cliente. Inserisci IP, dominio o CIDR e avvia LAB Scan360.
                         </TableCell>
                       </TableRow>
                     ) : jobs.map((job) => (
@@ -1792,6 +1875,32 @@ const NucleiScan360: React.FC = () => {
                         </div>
                       </div>
                     </CardHeader>
+                    <CardContent className="grid gap-3 md:grid-cols-5">
+                      {([
+                        ['nmap', 'Nmap'],
+                        ['httpx', 'httpx tech'],
+                        ['nikto', 'Nikto'],
+                        ['nuclei', 'Nuclei'],
+                        ['report', 'Report'],
+                      ] as const).map(([engine, label]) => {
+                        const meta = engineStatusMeta(engine, selectedJob);
+                        return (
+                          <div key={engine} className="rounded-lg border p-3">
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                              <span className="text-sm font-medium">{label}</span>
+                              <Badge className={meta.className}>{meta.label}</Badge>
+                            </div>
+                            <div className="h-2 overflow-hidden rounded-full bg-muted">
+                              <div className="h-full bg-primary transition-all" style={{ width: `${meta.progress}%` }} />
+                            </div>
+                            <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{meta.detail}</p>
+                          </div>
+                        );
+                      })}
+                    </CardContent>
+                  </Card>
+
+                  <Card className="xl:col-span-2">
                     <CardContent className="grid gap-4 lg:grid-cols-[1fr_1.4fr]">
                       <div className="rounded-lg border p-3">
                         <h3 className="mb-2 text-sm font-medium">Motivazioni</h3>

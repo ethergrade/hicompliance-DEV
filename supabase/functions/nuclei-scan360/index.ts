@@ -18,7 +18,15 @@ type NucleiProfile =
   | "web_cve_2022"
   | "web_vuln_authorized";
 
-type NucleiAction = "direct_scan" | "enqueue" | "list" | "get" | "retrieve_targets" | "process_queue" | "smoke_test";
+type NucleiAction =
+  | "direct_scan"
+  | "enqueue"
+  | "start_lab_scan"
+  | "list"
+  | "get"
+  | "retrieve_targets"
+  | "process_queue"
+  | "smoke_test";
 
 type RequestBody = {
   action?: NucleiAction;
@@ -2166,6 +2174,58 @@ async function enqueueJobs(
   return { queued: data || [], queued_count: data?.length || 0, skipped_duplicates: normalizedTargets.length - (data?.length || 0), warnings };
 }
 
+async function startLabScan(
+  adminClient: SupabaseClient,
+  body: RequestBody,
+  authUserId: string,
+  email: string,
+) {
+  const enqueueResult = await enqueueJobs(adminClient, body, authUserId, email);
+  const organizationId = String(body.organization_id || "").trim();
+  const warnings = Array.isArray(enqueueResult.warnings) ? [...enqueueResult.warnings] : [];
+  let kickstart: Record<string, unknown> = {
+    processed: [],
+    processed_count: 0,
+    remaining_hint: 0,
+  };
+
+  if ((enqueueResult.queued_count || 0) > 0) {
+    try {
+      kickstart = await processQueue(adminClient, {
+        ...body,
+        action: "process_queue",
+        organization_id: organizationId,
+        limit: clampInt(body.limit, 1, 1, 2),
+      }) as Record<string, unknown>;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      warnings.push(`kickstart:${message || "process_queue_failed"}`);
+    }
+  }
+
+  const jobsPayload = await listJobs(adminClient, {
+    action: "list",
+    organization_id: organizationId,
+    limit: Math.max(30, clampInt(body.limit, 30, 1, 100)),
+  });
+
+  return {
+    ...enqueueResult,
+    warnings,
+    kickstart,
+    processed: Array.isArray(kickstart.processed) ? kickstart.processed : [],
+    processed_count: Number(kickstart.processed_count || 0),
+    jobs: jobsPayload.jobs || [],
+    lab_pipeline: {
+      engines: ["nmap", "httpx_tech_detect", "nikto", "nuclei", "nvd_cve_enrichment"],
+      stages: ["queued", "nmap_running", "nikto_running", "waiting_nuclei", "nuclei_running", "completed"],
+      report_template: "SurfaceScan360",
+      wait_window_minutes: NUCLEI_WAIT_MINUTES,
+      background_processing: "pg_cron_process_queue_every_minute",
+    },
+  };
+}
+
 async function listJobs(adminClient: SupabaseClient, body: RequestBody) {
   const organizationId = String(body.organization_id || "").trim();
   if (!organizationId) throw new Error("organization_id is required");
@@ -2698,6 +2758,8 @@ serve(async (req: Request) => {
       payload = await directScan(body);
     } else if (action === "enqueue") {
       payload = await enqueueJobs(adminClient, body, authUserId, callerEmail);
+    } else if (action === "start_lab_scan") {
+      payload = await startLabScan(adminClient, body, authUserId, callerEmail);
     } else if (action === "list") {
       payload = await listJobs(adminClient, body);
     } else if (action === "get") {
