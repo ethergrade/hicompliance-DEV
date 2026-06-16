@@ -27,6 +27,7 @@ export async function loadV2AssessmentData() {
           id: uuidToIndex[q.id] ?? 0,
           question: q.question_text,
           priority: "MEDIA" as const,
+          dependency: q.dependency || undefined,
         })),
     }));
 

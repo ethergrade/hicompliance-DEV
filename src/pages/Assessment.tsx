@@ -428,7 +428,7 @@ const Assessment: React.FC = () => {
       console.error('Auto-save error:', err);
       setSaveStatus('error');
     }
-  }, [orgId, user, indexToUuid, isUsingFallbackData, v1AssessmentId]);
+  }, [orgId, user, indexToUuid, isUsingFallbackData, v1AssessmentId, v2Categories, isQuestionVisible]);
 
   const triggerAutoSave = useCallback(() => {
     if (!orgId || !user || Object.keys(indexToUuid).length === 0) return;
@@ -465,17 +465,59 @@ const Assessment: React.FC = () => {
   }, [triggerAutoSave]);
 
   // Compute counts per category from responses
+
+  // Helper: check if a question is visible based on its dependency
+  const isQuestionVisible = useCallback((q: { id: number; dependency?: string }, allResponses: Record<number, string | null>, allCategories: any[]) => {
+    const dep = q.dependency;
+    if (!dep) return true;
+    const depIdx = parseInt(dep, 10);
+    if (isNaN(depIdx) || depIdx < 1) return true;
+    
+    // Find parent question by order_index
+    const parentQ = allCategories.flatMap(c => c.questions).find(pq => pq.id === depIdx);
+    if (!parentQ) return true;
+    
+    const parentStatus = allResponses[parentQ.id] || null;
+    return parentStatus === 'pianificato_in_corso' || parentStatus === 'completato';
+  }, []);
+
+  // Helper: get all descendant question IDs (recursive)
+  const getDescendants = useCallback((questionId: number, allCategories: any[]): number[] => {
+    const allQuestions = allCategories.flatMap(c => c.questions);
+    const question = allQuestions.find(q => q.id === questionId);
+    if (!question) return [];
+    
+    const orderIndex = question.id; // order_index matches id
+    const directChildren = allQuestions.filter(q => {
+      const dep = q.dependency;
+      if (!dep) return false;
+      const depIdx = parseInt(dep, 10);
+      return depIdx === orderIndex;
+    });
+    
+    const descendants: number[] = [];
+    directChildren.forEach(child => {
+      descendants.push(child.id);
+      descendants.push(...getDescendants(child.id, allCategories));
+    });
+    
+    return descendants;
+  }, []);
+
   const getCategoryCounts = useCallback((categoryName: string) => {
     const cat = (v2Categories.length > 0 ? v2Categories : []).find(c => c.name === categoryName);
     if (!cat) return { completato: 0, pianificato_in_corso: 0, non_iniziato: 0, non_applicabile: 0, unanswered: 0 };
+    const allCategories = v2Categories.length > 0 ? v2Categories : ASSESSMENT_CATEGORIES;
     const counts = { completato: 0, pianificato_in_corso: 0, non_iniziato: 0, non_applicabile: 0, unanswered: 0 };
     cat.questions.forEach(q => {
+      // Only count visible questions
+      if (!isQuestionVisible(q, responses, allCategories)) return;
       const r = responses[q.id];
       if (r && r in counts) counts[r as keyof typeof counts]++;
       else counts.unanswered++;
     });
     return counts;
-  }, [responses]);
+  }, [responses, v2Categories, isQuestionVisible]);
 
   
 

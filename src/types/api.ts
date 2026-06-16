@@ -630,6 +630,7 @@ export interface AssessmentQuestion {
   category_id: string;
   question_text: string;
   order_index: number;
+  dependency?: string | null;
 }
 
 export interface AssessmentResponseItem {
