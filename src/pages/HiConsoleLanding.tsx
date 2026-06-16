@@ -135,7 +135,7 @@ const HiConsoleLanding: React.FC = () => {
 
         <div className="grid md:grid-cols-3 gap-6 max-w-6xl mx-auto">
           {modules.map((m) => (
-            <Card key={m.title} className="relative overflow-hidden border-border/50 hover:border-primary/50 transition-colors">
+            <Card key={m.title} className="relative overflow-hidden border-border/50 hover:border-primary/50 transition-colors h-full">
               <div className={`absolute inset-0 bg-gradient-to-br ${m.color} opacity-50`} />
               <CardContent className="relative p-6 space-y-4">
                 <div className="w-12 h-12 rounded-xl bg-background/80 backdrop-blur flex items-center justify-center border">
@@ -234,10 +234,10 @@ const HiConsoleLanding: React.FC = () => {
               <div className="flex justify-center md:justify-end">
                 <div className="relative w-56 h-56 rounded-full bg-gradient-to-br from-primary/30 to-primary/5 border-4 border-primary/40 flex items-center justify-center shadow-2xl shadow-primary/20">
                   <div className="absolute inset-3 rounded-full bg-background/60 backdrop-blur flex flex-col items-center justify-center">
-                    <div className="text-5xl font-bold bg-gradient-to-br from-primary to-primary/60 bg-clip-text text-transparent">72</div>
+                    <div className="text-5xl font-bold bg-gradient-to-br from-primary to-primary/60 bg-clip-text text-transparent">—</div>
                     <div className="text-xs text-muted-foreground mt-1 uppercase tracking-wider">True Risk Score</div>
-                    <div className="text-[10px] text-emerald-500 mt-1 flex items-center gap-1">
-                      <TrendingUp className="w-3 h-3" /> +8 negli ultimi 90gg
+                    <div className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
+                      <TrendingUp className="w-3 h-3" /> Aggiornato in tempo reale
                     </div>
                   </div>
                 </div>
@@ -278,7 +278,7 @@ const HiConsoleLanding: React.FC = () => {
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
               {irpFeatures.map((f) => (
-                <Card key={f.title} className="border-border/50">
+                <Card key={f.title} className="border-border/50 h-full">
                   <CardContent className="p-4 space-y-2">
                     <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
                       <f.icon className="w-5 h-5 text-primary" />
@@ -305,7 +305,7 @@ const HiConsoleLanding: React.FC = () => {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-w-5xl mx-auto">
             {hiSolutionServices.map((s) => (
-              <Card key={s.name} className="border-border/50 hover:border-primary/50 transition-colors">
+              <Card key={s.name} className="border-border/50 hover:border-primary/50 transition-colors h-full">
                 <CardContent className="p-4 flex items-start gap-3">
                   <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                     <s.icon className="w-5 h-5 text-primary" />
