@@ -46,7 +46,7 @@ export const useAssessmentSnapshots = () => {
   const [saving, setSaving] = useState(false);
 
   const loadSnapshots = useCallback(async () => {
-    if (!orgId) return;
+    if (!orgId || !groupId) return;
     setLoading(true);
     try {
       const items = await assessmentV2Api.snapshots(orgId, groupId);
@@ -64,7 +64,7 @@ export const useAssessmentSnapshots = () => {
 
   /** Trigger a snapshot recalculation on the backend (no manual data needed) */
   const saveSnapshot = useCallback(async () => {
-    if (!orgId) return;
+    if (!orgId || !groupId) return;
     setSaving(true);
     try {
       await assessmentV2Api.createSnapshot(orgId, groupId);
