@@ -56,7 +56,7 @@ export const useAssessmentSnapshots = () => {
     } finally {
       setLoading(false);
     }
-  }, [orgId]);
+  }, [orgId, groupId]);
 
   useEffect(() => {
     loadSnapshots();
@@ -76,7 +76,7 @@ export const useAssessmentSnapshots = () => {
     } finally {
       setSaving(false);
     }
-  }, [orgId, loadSnapshots]);
+  }, [orgId, groupId, loadSnapshots]);
 
   return { snapshots, loading, saving, saveSnapshot };
 };
