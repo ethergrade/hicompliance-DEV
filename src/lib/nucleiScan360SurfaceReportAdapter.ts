@@ -25,6 +25,25 @@ const asNumber = (value: unknown): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const neutralizeInternalToolNames = (value: unknown): string =>
+  String(value || '')
+    .replace(/\bnmap\b/gi, 'scansione rete')
+    .replace(/\bnuclei\b/gi, 'validazione tecnica')
+    .replace(/\bnikto\b/gi, 'verifica web')
+    .replace(/\bhttpx\b/gi, 'fingerprint HTTP')
+    .replace(/\bwappalyzer\b/gi, 'catalogo fingerprint');
+
+const reportSourceLabel = (value: unknown): string | null => {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  if (lower.includes('nuclei')) return 'validated_scan';
+  if (lower.includes('nikto')) return 'web_hardening_scan';
+  if (lower.includes('nmap') || lower.includes('httpx')) return 'network_fingerprint';
+  if (lower.includes('nvd')) return 'cve_catalog';
+  return neutralizeInternalToolNames(text);
+};
+
 const uniq = <T,>(values: T[]): T[] => Array.from(new Set(values));
 
 const normalizeSeverity = (value: unknown, fallback = 'info'): string => {
@@ -57,6 +76,16 @@ const targetLabel = (job: any): string =>
 
 const targetHost = (job: any): string => {
   const raw = targetLabel(job);
+  try {
+    return new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).hostname || raw;
+  } catch {
+    return raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '') || raw;
+  }
+};
+
+const hostFromValue = (value: unknown): string => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
   try {
     return new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).hostname || raw;
   } catch {
@@ -112,47 +141,53 @@ const buildCveCatalog = (matches: any[]) => {
 
 const buildFindings = (input: ReportInput): any[] => {
   const target = targetHost(input.job);
-  const portFindings = (input.openPorts || []).map((port) => ({
-    provider: 'nuclei_scan360',
-    module: 'nmap',
-    finding_type: 'open.port',
-    title: `Porta ${asText(port?.protocol, 'tcp')}/${asText(port?.port)} aperta${port?.service ? ` (${port.service})` : ''}`,
-    description: 'La scansione ha rilevato una porta aperta sul target. Il report non espone tecnologie, prodotti o versioni rilevate.',
-    severity: severityForPort(port?.port, port?.service),
-    affected_asset: asText(port?.hostname || port?.host || target, target),
-    affected_url: (port?.url_candidates || [])[0] || null,
-    ip: port?.host || null,
-    port: port?.port || null,
-    protocol: port?.protocol || 'tcp',
-    remediation: 'Verificare che il servizio esposto sia necessario, aggiornato e protetto da controlli di accesso adeguati.',
-    cve: [],
-    cwe: [],
-    cvss: null,
-    evidence: {
-      service: port?.service || null,
-    },
-    attribution_confidence: 'high',
-    created_at: input.job?.nmap_completed_at || input.job?.created_at || new Date().toISOString(),
-  }));
+  const portFindings = (input.openPorts || []).map((port) => {
+    const productVersion = [port?.product, port?.version].filter(Boolean).join(' ').trim();
+    return {
+      provider: 'scan360_lab',
+      module: 'network_exposure',
+      finding_type: 'open.port',
+      title: `Porta ${asText(port?.protocol, 'tcp')}/${asText(port?.port)} aperta${port?.service ? ` (${port.service})` : ''}`,
+      description: `La scansione ha rilevato una porta aperta sul target.${productVersion ? ` Tecnologia rilevata: ${productVersion}.` : ''}`,
+      severity: severityForPort(port?.port, port?.service),
+      affected_asset: asText(port?.hostname || port?.host || target, target),
+      affected_url: (port?.url_candidates || [])[0] || null,
+      ip: port?.host || null,
+      port: port?.port || null,
+      protocol: port?.protocol || 'tcp',
+      remediation: 'Verificare che il servizio esposto sia necessario, aggiornato e protetto da controlli di accesso adeguati.',
+      cve: [],
+      cwe: [],
+      cvss: null,
+      evidence: {
+        service: port?.service || null,
+        product: port?.product || null,
+        version: port?.version || null,
+        cpe: port?.cpe || null,
+      },
+      attribution_confidence: 'high',
+      created_at: input.job?.nmap_completed_at || input.job?.created_at || new Date().toISOString(),
+    };
+  });
 
   const niktoReportFindings = (input.niktoFindings || []).map((finding) => ({
-    provider: 'nuclei_scan360',
-    module: 'nikto',
-    finding_type: `nikto.${asText(finding?.category, 'web_exposure')}`,
-    title: asText(finding?.message || finding?.category, 'Finding Nikto'),
-    description: asText(finding?.message, 'Nikto ha rilevato una configurazione o esposizione da verificare.'),
+    provider: 'scan360_lab',
+    module: 'web_hardening',
+    finding_type: `web.${asText(finding?.category, 'exposure')}`,
+    title: asText(finding?.message || finding?.category, 'Finding web'),
+    description: asText(finding?.message, 'La scansione ha rilevato una configurazione o esposizione da verificare.'),
     severity: normalizeSeverity(finding?.severity),
     affected_asset: asText(finding?.asset_host || target, target),
     affected_url: finding?.target_url || null,
     ip: null,
     port: finding?.port || null,
     protocol: finding?.tls ? 'https' : 'http',
-    remediation: 'Validare il finding Nikto, ridurre l esposizione pubblica e applicare hardening applicativo/web server.',
+    remediation: 'Validare il finding, ridurre l esposizione pubblica e applicare hardening applicativo/web server.',
     cve: [],
     cwe: [],
     cvss: null,
     evidence: {
-      nikto_id: finding?.nikto_id || null,
+      finding_id: finding?.nikto_id || null,
       method: finding?.method || 'GET',
       uri: finding?.uri || '/',
       references: finding?.references || [],
@@ -165,12 +200,12 @@ const buildFindings = (input: ReportInput): any[] => {
     const status = match?.match_status === 'potential' ? 'potential' : 'confirmed';
     const severity = normalizeSeverity(match?.severity, severityFromCvss(match?.cvss_score));
     return {
-      provider: 'nuclei_scan360',
-      module: status === 'confirmed' ? 'nuclei' : 'nvd_cpe',
+      provider: 'scan360_lab',
+      module: status === 'confirmed' ? 'validated_cve' : 'cve_correlation',
       finding_type: `cve.${status}`,
-      title: `${match?.cve_id || 'CVE'} ${status === 'confirmed' ? 'confermata da Nuclei' : 'potenziale da NVD/CPE'}`,
+      title: `${match?.cve_id || 'CVE'} ${status === 'confirmed' ? 'confermata' : 'potenziale da CPE'}`,
       description: asText(match?.description, status === 'confirmed'
-        ? 'CVE rilevata da template Nuclei.'
+        ? 'CVE validata dalla scansione tecnica.'
         : 'CVE potenziale correlata a CPE/versione: richiede verifica tecnica prima della remediation.'),
       severity,
       affected_asset: asText(match?.asset_host || target, target),
@@ -179,15 +214,16 @@ const buildFindings = (input: ReportInput): any[] => {
       port: null,
       protocol: null,
       remediation: status === 'confirmed'
-        ? 'Applicare patch o mitigazione vendor e rieseguire Nuclei per confermare la chiusura.'
+        ? 'Applicare patch o mitigazione vendor e rieseguire la validazione tecnica per confermare la chiusura.'
         : 'Confermare prodotto e versione installata prima di pianificare patch o mitigazione.',
       cve: match?.cve_id ? [String(match.cve_id).toUpperCase()] : [],
       cwe: [],
       cvss: asNumber(match?.cvss_score),
       evidence: {
-        source: match?.source || null,
+        source: reportSourceLabel(match?.source),
         confidence: match?.confidence || null,
-        nvd_status: match?.nvd_status || null,
+        cpe: match?.cpe || null,
+        catalog_status: match?.nvd_status || null,
       },
       attribution_confidence: status === 'confirmed' ? 'high' : 'medium',
       created_at: match?.matched_at || input.job?.completed_at || new Date().toISOString(),
@@ -197,18 +233,18 @@ const buildFindings = (input: ReportInput): any[] => {
   const nucleiReportFindings = (input.nucleiFindings || [])
     .filter((finding) => !(finding?.cve_ids || []).length)
     .map((finding) => ({
-      provider: 'nuclei_scan360',
-      module: 'nuclei',
-      finding_type: `nuclei.${asText(finding?.category || finding?.type, 'finding').toLowerCase()}`,
-      title: asText(finding?.label || finding?.name || finding?.template_id, 'Finding Nuclei'),
-      description: asText(finding?.evidence, 'Finding tecnico rilevato da Nuclei.'),
+      provider: 'scan360_lab',
+      module: 'technical_finding',
+      finding_type: `technical.${asText(finding?.category || finding?.type, 'finding').toLowerCase()}`,
+      title: asText(finding?.label || finding?.name || finding?.template_id, 'Finding tecnico'),
+      description: asText(finding?.evidence, 'Finding tecnico rilevato dalla scansione.'),
       severity: normalizeSeverity(finding?.severityKey || finding?.severity),
       affected_asset: asText(finding?.asset || target, target),
       affected_url: finding?.matched_at || null,
       ip: null,
       port: null,
       protocol: null,
-      remediation: 'Analizzare il template Nuclei, correggere la configurazione o vulnerabilita e rieseguire il controllo.',
+      remediation: 'Analizzare l evidenza, correggere la configurazione o vulnerabilita e rieseguire il controllo.',
       cve: [],
       cwe: [],
       cvss: null,
@@ -235,12 +271,12 @@ const buildRecommendations = (input: ReportInput, findings: any[]) => {
   return [
     {
       priority: 1,
-      title: confirmed.length > 0 ? 'Correggere le CVE confermate da Nuclei' : 'Confermare assenza di CVE tecniche con scansioni ricorrenti',
+      title: confirmed.length > 0 ? 'Correggere le CVE confermate' : 'Confermare assenza di CVE tecniche con scansioni ricorrenti',
       rationale: confirmed.length > 0
-        ? `${confirmed.length} CVE sono state confermate da template Nuclei sul perimetro LAB.`
+        ? `${confirmed.length} CVE sono state confermate sul perimetro LAB.`
         : 'Nessuna CVE confermata: mantenere la validazione ricorrente per intercettare nuove esposizioni.',
       action: confirmed.length > 0
-        ? 'Applicare patch vendor o mitigazioni compensative e rieseguire NUCLEI-SCAN360 sullo stesso target.'
+        ? 'Applicare patch vendor o mitigazioni compensative e rieseguire la scansione sullo stesso target.'
         : 'Schedulare scansioni periodiche con profili CVE recenti e confrontare le variazioni dei risultati.',
       affected_assets: affectedAssets,
       severity: confirmed.some((match) => ['critical', 'high'].includes(normalizeSeverity(match?.severity, severityFromCvss(match?.cvss_score)))) ? 'critical' : 'medium',
@@ -249,14 +285,14 @@ const buildRecommendations = (input: ReportInput, findings: any[]) => {
       priority: 2,
       title: 'Verificare CVE potenziali con validazione tecnica',
       rationale: `${potential.length} CVE potenziali sono state correlate da fonti esterne e richiedono conferma tecnica.`,
-      action: 'Validare componente installato e configurazione prima di aprire remediation operative, senza riportare tecnologie o versioni nel report.',
+      action: 'Validare componente installato, versione rilevata e configurazione prima di aprire remediation operative.',
       affected_assets: affectedAssets,
       severity: potential.length > 0 ? 'high' : 'low',
     },
     {
       priority: 3,
-      title: 'Risolvere finding Nikto di configurazione',
-      rationale: `${highNikto.length} finding Nikto richiedono verifica di hardening web server o esposizione applicativa.`,
+      title: 'Risolvere finding di configurazione web',
+      rationale: `${highNikto.length} finding richiedono verifica di hardening web server o esposizione applicativa.`,
       action: 'Applicare header/cookie hardening, rimuovere file esposti e validare directory o endpoint segnalati.',
       affected_assets: affectedAssets,
       severity: highNikto.length > 0 ? 'medium' : 'low',
@@ -272,8 +308,8 @@ const buildRecommendations = (input: ReportInput, findings: any[]) => {
     {
       priority: 5,
       title: 'Rieseguire report dopo remediation',
-      rationale: 'Il verdetto unico cambia solo con evidenze tecniche aggiornate dai tre motori.',
-      action: 'Rilanciare Nmap/httpx, Nikto e Nuclei dopo ogni remediation e allegare il nuovo report al ticket cliente.',
+      rationale: 'Il verdetto unico cambia solo con evidenze tecniche aggiornate.',
+      action: 'Rilanciare la scansione dopo ogni remediation e allegare il nuovo report al ticket cliente.',
       affected_assets: affectedAssets,
       severity: 'low',
     },
@@ -281,10 +317,36 @@ const buildRecommendations = (input: ReportInput, findings: any[]) => {
 };
 
 const buildAssetModuleDetails = (input: ReportInput) => {
-  return reportTargets(input).slice(0, 100).map((asset) => ({
-    asset,
-    asset_type: inferAssetType(asset),
-  }));
+  const technologiesByAsset = new Map<string, any[]>();
+  for (const technology of input.technologies || []) {
+    const asset = hostFromValue(technology?.url || technology?.asset_host || technology?.host || targetHost(input.job));
+    if (!asset) continue;
+    const list = technologiesByAsset.get(asset) || [];
+    list.push({
+      name: asText(technology?.name || technology?.technology_name || technology?.raw_technology, ''),
+      version: technology?.version || technology?.technology_version || null,
+      category: technology?.category || null,
+    });
+    technologiesByAsset.set(asset, list);
+  }
+
+  return reportTargets(input).slice(0, 100).map((asset) => {
+    const normalizedAsset = asset.toLowerCase();
+    const technologiesForAsset = Array.from(technologiesByAsset.entries())
+      .filter(([technologyAsset]) => {
+        const normalizedTechnologyAsset = technologyAsset.toLowerCase();
+        return normalizedTechnologyAsset === normalizedAsset
+          || normalizedTechnologyAsset.endsWith(`.${normalizedAsset}`)
+          || normalizedAsset.endsWith(`.${normalizedTechnologyAsset}`);
+      })
+      .flatMap(([, values]) => values);
+    return {
+      asset,
+      asset_type: inferAssetType(asset),
+      technologies: uniq(technologiesForAsset.filter((technology) => technology.name).map((technology) => JSON.stringify(technology)))
+        .map((technology) => JSON.parse(technology)),
+    };
+  });
 };
 
 const buildObservations = (input: ReportInput): any[] => {
@@ -296,24 +358,24 @@ const buildObservations = (input: ReportInput): any[] => {
   ];
   return [
     {
-      provider: 'nuclei_scan360',
+      provider: 'scan360_lab',
       module: 'pipeline',
-      title: 'Pipeline LAB multi-engine',
+      title: 'Pipeline LAB autorizzata',
       severity: 'info',
-      description: `Stage finale: ${asText(job?.stage || job?.status)}. Le evidenze tecniche sono salvate e correlate nel verdetto unico senza riportare tecnologie o versioni rilevate.`,
+      description: `Stage finale: ${asText(job?.stage || job?.status)}. Le evidenze tecniche, le tecnologie rilevate e le CVE sono salvate e correlate nel verdetto unico.`,
       raw: {
-        nmap_status: job?.nmap_status || null,
-        fingerprint_status: job?.fingerprint_status || null,
-        nikto_status: job?.nikto_status || null,
-        nuclei_status: job?.status || null,
+        network_status: job?.nmap_status || null,
+        technology_status: job?.fingerprint_status || null,
+        web_status: job?.nikto_status || null,
+        validation_status: job?.status || null,
       },
     },
     ...rawWarnings.slice(0, 20).map((warning) => ({
-      provider: 'nuclei_scan360',
+      provider: 'scan360_lab',
       module: 'warning',
       title: 'Warning tecnico pipeline',
       severity: 'low',
-      description: String(warning),
+      description: neutralizeInternalToolNames(warning),
     })),
   ];
 };
@@ -390,7 +452,7 @@ export function adaptNucleiScan360JobToSurfaceReport(input: ReportInput): Surfac
       asset_value: entry,
       hostname: entry,
       ip: null,
-      source: 'nuclei_scan360_lab',
+      source: 'scan360_lab',
     })),
     findings,
     findings_by_severity: countBySeverity(findings),
@@ -407,16 +469,16 @@ export function adaptNucleiScan360JobToSurfaceReport(input: ReportInput): Surfac
     monitored_scope: targets.map((entry) => ({
       entry_type: entry.includes('/') ? 'range' : (entry.match(/^\d+\.\d+\.\d+\.\d+$/) ? 'ipv4' : 'target'),
       input_value: entry,
-      discovered_via: 'nuclei_scan360_lab',
+      discovered_via: 'scan360_lab',
     })),
     subdomain_dumps: [],
     remediation_tasks: [],
     kev_generation: { created: 0, total_kev: cveCatalog.filter((entry) => entry.cisa_kev).length, existing: 0 },
     ai: {
       executive_summary:
-        `NUCLEI-SCAN360 ha eseguito la pipeline LAB sul perimetro autorizzato ${target}. ` +
+        `La pipeline LAB ha eseguito la scansione sul perimetro autorizzato ${target}. ` +
         `Risultato: ${input.openPorts.length} porte aperte, ` +
-        `${input.niktoFindings.length} finding Nikto, ${confirmedCount} CVE confermate e ${potentialCount} CVE potenziali. ` +
+        `${input.technologies.length} tecnologie rilevate, ${input.niktoFindings.length} finding web/configurazione, ${confirmedCount} CVE confermate e ${potentialCount} CVE potenziali. ` +
         `Il verdetto unico e ${levelLabel(verdict?.level)}; 0 CVE significa nessun match confermato/potenziale nella pipeline, non assenza assoluta di vulnerabilita.`,
       risk_score: verdictScore,
       risk_level: levelLabel(verdict?.level),
@@ -424,9 +486,9 @@ export function adaptNucleiScan360JobToSurfaceReport(input: ReportInput): Surfac
       correlations: [
         'La pipeline definisce la superficie esposta, identifica configurazioni da verificare e valida CVE tecniche quando disponibili.',
         'Le CVE potenziali richiedono conferma tecnica prima di essere trattate come vulnerabilita provate.',
-        ...(Array.isArray(verdict?.reasons) ? verdict.reasons.slice(0, 5) : []),
+        ...(Array.isArray(verdict?.reasons) ? verdict.reasons.slice(0, 5).map(neutralizeInternalToolNames) : []),
       ],
-      compliance_notes: 'Report LAB normalizzato sul template SurfaceScan360 per uso operativo multi-cliente. Il report non espone tecnologie, prodotti o versioni rilevate.',
+      compliance_notes: 'Report LAB normalizzato sul template SurfaceScan360 per uso operativo multi-cliente. Le tecnologie rilevate e le CVE sono riportate come evidenze tecniche.',
     },
     ai_error: null,
   };

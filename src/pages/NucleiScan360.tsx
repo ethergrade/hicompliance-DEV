@@ -435,13 +435,55 @@ const groupJobsByRun = (rows: NucleiJob[]): NucleiRunGroup[] => {
   return Array.from(groups.values()).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 };
 
-const stripTechnologyFields = <T extends Record<string, unknown>>(value: T): Omit<T, 'raw_technology_result' | 'technology_count'> => {
-  const {
-    raw_technology_result: _rawTechnologyResult,
-    technology_count: _technologyCount,
-    ...rest
-  } = value;
-  return rest;
+const sanitizeScan360ReportJob = <T extends Record<string, unknown>>(value: T): Record<string, unknown> => {
+  return {
+    id: value.id,
+    organization_id: value.organization_id,
+    target_input: value.target_input,
+    target_url: value.target_url,
+    normalized_target_url: value.normalized_target_url,
+    target_host: value.target_host,
+    target_kind: value.target_kind,
+    status: value.status,
+    stage: value.stage,
+    created_at: value.created_at,
+    started_at: value.started_at,
+    completed_at: value.completed_at,
+    next_run_at: value.next_run_at,
+    scan_profile: value.profile,
+    network_profile: value.nmap_profile,
+    timeout_seconds: value.timeout_seconds,
+    rate_limit: value.rate_limit,
+    max_findings: value.max_findings,
+    authorized_scan: value.authorized_scan,
+    open_port_count: value.open_port_count,
+    technology_count: value.technology_count,
+    web_finding_count: value.nikto_findings_count,
+    technical_finding_count: value.findings_count,
+    unified_verdict: value.unified_verdict,
+    warnings: value.warnings,
+  };
+};
+
+const neutralizeReportText = (value: string): string =>
+  value
+    .replace(/\bnmap\b/gi, 'network_scan')
+    .replace(/\bnuclei\b/gi, 'technical_validation')
+    .replace(/\bnikto\b/gi, 'web_hardening')
+    .replace(/\bhttpx\b/gi, 'http_fingerprint')
+    .replace(/\bwappalyzer\b/gi, 'technology_fingerprint');
+
+const sanitizeReportKey = (key: string): string => neutralizeReportText(key);
+
+const sanitizeReportValue = (value: unknown): unknown => {
+  if (typeof value === 'string') return neutralizeReportText(value);
+  if (Array.isArray(value)) return value.map(sanitizeReportValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.entries(value as Record<string, unknown>).reduce<Record<string, unknown>>((acc, [key, entry]) => {
+    if (/^raw_/i.test(key)) return acc;
+    acc[sanitizeReportKey(key)] = sanitizeReportValue(entry);
+    return acc;
+  }, {});
 };
 
 const formatScore = (value?: number | null) => {
@@ -1259,6 +1301,7 @@ const NucleiScan360: React.FC = () => {
       job?: NucleiJob & { raw_result?: NucleiResult | null };
       open_ports?: NmapOpenPort[];
       cve_matches?: CveMatch[];
+      technologies?: TechnologyFingerprint[];
       nikto_findings?: NiktoFinding[];
     }>({
       action: 'get',
@@ -1269,6 +1312,7 @@ const NucleiScan360: React.FC = () => {
       job: (data.job || job) as NucleiJob & { raw_result?: NucleiResult | null },
       open_ports: (data.open_ports || []) as NmapOpenPort[],
       cve_matches: (data.cve_matches || []) as CveMatch[],
+      technologies: (data.technologies || []) as TechnologyFingerprint[],
       nikto_findings: (data.nikto_findings || []) as NiktoFinding[],
       nuclei_findings: ((data.job?.raw_result?.findings || []) as NucleiFinding[]),
       nuclei_result: (data.job?.raw_result || null) as NucleiResult | null,
@@ -1395,7 +1439,7 @@ const NucleiScan360: React.FC = () => {
       organizationName: selectedOrganizationName,
       job: selectedJob,
       openPorts,
-      technologies: [],
+      technologies,
       niktoFindings,
       cveMatches,
       nucleiFindings: findings,
@@ -1406,39 +1450,40 @@ const NucleiScan360: React.FC = () => {
   const downloadSelectedJobJsonReport = () => {
     if (!selectedJob) return;
     const payload = {
-      report_type: 'nuclei_scan360_lab_job',
+      report_type: 'scan360_lab_job',
       generated_at: new Date().toISOString(),
       organization: {
         id: selectedOrgId || selectedJob.organization_id,
         name: selectedOrganizationName,
       },
-      job: stripTechnologyFields(selectedJob as unknown as Record<string, unknown>),
-      unified_verdict: selectedJob.unified_verdict || null,
-      open_ports: openPorts,
-      nikto_findings: niktoFindings,
-      cve_matches: cveMatches,
-      nuclei_findings: findings,
-      nuclei_result: result,
+      job: sanitizeReportValue(sanitizeScan360ReportJob(selectedJob as unknown as Record<string, unknown>)),
+      unified_verdict: sanitizeReportValue(selectedJob.unified_verdict || null),
+      open_ports: sanitizeReportValue(openPorts),
+      technologies: sanitizeReportValue(technologies),
+      web_exposure_findings: sanitizeReportValue(niktoFindings),
+      cve_matches: sanitizeReportValue(cveMatches),
+      technical_findings: sanitizeReportValue(findings),
       interpretation: {
         confirmed_cve_count: confirmedCveMatches.length,
         potential_cve_count: potentialCveMatches.length,
-        nikto_finding_count: niktoFindings.length,
+        technology_count: technologies.length,
+        web_exposure_finding_count: niktoFindings.length,
         open_port_count: openPorts.length,
-        note: '0 CVE indica nessun match confermato/potenziale nella pipeline Nmap/httpx/NVD/Nuclei, non assenza assoluta di vulnerabilita.',
+        note: '0 CVE indica nessun match confermato/potenziale nella pipeline LAB, non assenza assoluta di vulnerabilita.',
       },
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `NUCLEI_SCAN360_${selectedJob.target_host || selectedJob.target_input || 'job'}_${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.download = `SCAN360_LAB_${selectedJob.target_host || selectedJob.target_input || 'job'}_${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
     toast({
       title: 'Report esportato',
-      description: 'Report JSON NUCLEI-SCAN360 generato dal job selezionato.',
+      description: 'Report JSON Scan360 LAB generato dal job selezionato.',
     });
   };
 
@@ -1450,7 +1495,7 @@ const NucleiScan360: React.FC = () => {
       generateSurfaceScan360Pdf(report);
       toast({
         title: 'Report PDF generato',
-        description: 'Template SurfaceScan360 con evidenze Nmap/httpx, Nikto, Nuclei e verdetto unico.',
+        description: 'Template SurfaceScan360 con evidenze tecniche, tecnologie, CVE e verdetto unico.',
       });
     } catch (error) {
       toast({
@@ -1466,7 +1511,7 @@ const NucleiScan360: React.FC = () => {
   const buildRunReportData = async (group: NucleiRunGroup) => {
     const details = await Promise.all(group.jobs.map((job) => fetchJobDetail(job)));
     const runJobs = details.map((detail) => {
-      return stripTechnologyFields(detail.job as unknown as Record<string, unknown>);
+      return sanitizeScan360ReportJob(detail.job as unknown as Record<string, unknown>);
     });
     const representative = {
       ...runJobs[0],
@@ -1484,6 +1529,7 @@ const NucleiScan360: React.FC = () => {
     };
 
     const openPortsAll = details.flatMap((detail) => detail.open_ports);
+    const technologiesAll = details.flatMap((detail) => detail.technologies);
     const niktoAll = details.flatMap((detail) => detail.nikto_findings);
     const cveAll = details.flatMap((detail) => detail.cve_matches);
     const nucleiFindingsAll = details.flatMap((detail) => detail.nuclei_findings);
@@ -1497,14 +1543,14 @@ const NucleiScan360: React.FC = () => {
         job: representative,
         runJobs,
         openPorts: openPortsAll,
-        technologies: [],
+        technologies: technologiesAll,
         niktoFindings: niktoAll,
         cveMatches: cveAll,
         nucleiFindings: nucleiFindingsAll,
         nucleiResult: null,
       }),
       json: {
-        report_type: 'nuclei_scan360_lab_run',
+        report_type: 'scan360_lab_run',
         generated_at: new Date().toISOString(),
         organization: {
           id: selectedOrgId || representative.organization_id,
@@ -1519,17 +1565,19 @@ const NucleiScan360: React.FC = () => {
           active: group.active,
           failed: group.failed,
         },
-        jobs: runJobs,
-        open_ports: openPortsAll,
-        nikto_findings: niktoAll,
-        cve_matches: cveAll,
-        nuclei_findings: nucleiFindingsAll,
+        jobs: sanitizeReportValue(runJobs),
+        open_ports: sanitizeReportValue(openPortsAll),
+        technologies: sanitizeReportValue(technologiesAll),
+        web_exposure_findings: sanitizeReportValue(niktoAll),
+        cve_matches: sanitizeReportValue(cveAll),
+        technical_findings: sanitizeReportValue(nucleiFindingsAll),
         interpretation: {
           confirmed_cve_count: cveAll.filter((match) => (match.match_status || 'confirmed') === 'confirmed').length,
           potential_cve_count: cveAll.filter((match) => match.match_status === 'potential').length,
-          nikto_finding_count: niktoAll.length,
+          technology_count: technologiesAll.length,
+          web_exposure_finding_count: niktoAll.length,
           open_port_count: openPortsAll.length,
-          note: 'Questo report run non espone tecnologie, prodotti o versioni rilevate.',
+          note: 'Tecnologie rilevate e CVE sono incluse come evidenze tecniche; 0 CVE non equivale ad assenza assoluta di vulnerabilita.',
         },
       },
     };
@@ -1543,7 +1591,7 @@ const NucleiScan360: React.FC = () => {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `NUCLEI_SCAN360_RUN_${runTimestampKey(group.created_at).replace(/[:.]/g, '-')}.json`;
+      anchor.download = `SCAN360_LAB_RUN_${runTimestampKey(group.created_at).replace(/[:.]/g, '-')}.json`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -1602,7 +1650,7 @@ const NucleiScan360: React.FC = () => {
       await generateSurfaceScan360Docx(report);
       toast({
         title: 'Report DOCX generato',
-        description: 'Documento editabile SurfaceScan360 con pipeline LAB multi-engine.',
+        description: 'Documento editabile SurfaceScan360 con evidenze tecniche, tecnologie e CVE.',
       });
     } catch (error) {
       toast({

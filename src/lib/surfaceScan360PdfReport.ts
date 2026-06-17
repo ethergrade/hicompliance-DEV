@@ -49,7 +49,7 @@ export interface SurfaceScan360Report {
   observations?: any[];
   asset_module_details?: Array<{
     asset: string;
-    asset_type: 'domain' | 'subdomain';
+    asset_type: 'domain' | 'subdomain' | 'ipv4' | 'range';
     http?: { score: number; grade: string | null; statusCode: number | null; checks: Record<string, boolean> };
     http_findings?: Array<{ header: string; status: string; note: string }>;
     dns?: Record<string, any>;
@@ -154,21 +154,14 @@ const redactReportWords = (value: string) => {
     /\bpentest-?tools?\b/gi,
     /\bweb[\s-]?check\b/gi,
     /\burlscan\b/gi,
-  ];
-  const technologyTokens = [
-    /\bapache\b/gi,
-    /\bnginx\b/gi,
-    /\bwordpress\b/gi,
-    /\bphp\b/gi,
-    /\bopenssl\b/gi,
-    /\biis\b/gi,
-    /\btomcat\b/gi,
-    /\bdrupal\b/gi,
-    /\bjoomla\b/gi,
+    /\bnmap\b/gi,
+    /\bnuclei\b/gi,
+    /\bnikto\b/gi,
+    /\bhttpx\b/gi,
+    /\bwappalyzer\b/gi,
   ];
   let out = String(value || '');
   for (const token of providerTokens) out = out.replace(token, 'SurfaceScan360');
-  for (const token of technologyTokens) out = out.replace(token, 'componente tecnologica');
   return out.replace(/\s{2,}/g, ' ').trim();
 };
 
@@ -1229,6 +1222,20 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
       if (s.subject) sslRows.push(['Soggetto certificato', String(s.subject).slice(0, 80)]);
       if (s.issuer) sslRows.push(['Emittente (CA)', String(s.issuer).slice(0, 80)]);
       if (sslRows.length > 0) drawTable(['Campo', 'Valore'], sslRows, [200, 315]);
+    }
+
+    // Tecnologie rilevate
+    if (Array.isArray(a.technologies) && a.technologies.length > 0) {
+      text('Tecnologie rilevate', { size: 9, bold: true, color: [BRAND.r, BRAND.g, BRAND.b], indent: 8 });
+      drawTable(
+        ['Tecnologia', 'Versione', 'Categoria'],
+        a.technologies.slice(0, 12).map((technology) => [
+          String(technology.name || '-').slice(0, 80),
+          String(technology.version || '-').slice(0, 40),
+          String(technology.category || '-').slice(0, 60),
+        ]),
+        [210, 110, 195]
+      );
     }
 
     // WHOIS / RDAP
