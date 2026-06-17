@@ -104,7 +104,16 @@ const Dashboard: React.FC = () => {
   const alertServicesCount = 0;
   const operativeServicesCount = connectedServicesCount;
 
-  const handleServiceClick = (service: { code: string }) => {
+  const handleServiceClick = (service: { code: string; name: string }) => {
+    // HiCompliance è il container dei servizi hisolution, non ha una pagina
+    // dashboard dedicata → resta sulla dashboard generale.
+    if (
+      service.code.toLowerCase().includes('compliance') ||
+      service.name.toLowerCase().includes('compliance')
+    ) {
+      navigate('/dashboard');
+      return;
+    }
     navigate(`/dashboard/service/${service.code}`);
   };
 
