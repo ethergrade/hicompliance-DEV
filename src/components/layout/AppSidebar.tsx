@@ -395,9 +395,9 @@ export const AppSidebar: React.FC = () => {
             <div className="text-sm">
               <p className="text-sidebar-foreground font-medium">{userProfile?.full_name}</p>
               <p className="text-sidebar-foreground/60 text-xs">
-              {canManageMultipleClients && selectedOrganization 
-                ? selectedOrganization.name 
-                : userProfile?.organizations?.name || 'Organizzazione'}
+              {selectedOrganization?.name
+                || userProfile?.organizations?.name
+                || 'Organizzazione'}
               </p>
               <p className="text-xs text-cyan-400">
                 {isSuperAdmin ? 'Super Admin' : isSales ? 'Sales' : isAdmin ? 'Amministratore' : 'Cliente'}
