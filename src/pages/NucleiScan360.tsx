@@ -501,6 +501,12 @@ const clampNumber = (value: unknown, fallback: number, min: number, max: number)
   return Math.max(min, Math.min(max, Math.round(parsed)));
 };
 
+const clampNumberInput = (value: unknown, fallback: number, max: number) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(0, Math.round(parsed)));
+};
+
 const extractInvokeErrorMessage = async (error: unknown, fallback = 'Errore funzione Supabase') => {
   const diagnostic = (error as NucleiFunctionError)?.diagnostic;
   if (diagnostic) return formatDiagnosticMessage(diagnostic);
@@ -1745,7 +1751,8 @@ const NucleiScan360: React.FC = () => {
                     min={15}
                     max={180}
                     value={timeoutSeconds}
-                    onChange={(event) => setTimeoutSeconds(Number(event.target.value))}
+                    onChange={(event) => setTimeoutSeconds(clampNumberInput(event.target.value, timeoutSeconds, 180))}
+                    onBlur={() => setTimeoutSeconds((current) => clampNumber(current, 180, 15, 180))}
                   />
                 </div>
                 <div className="flex flex-col gap-2">
