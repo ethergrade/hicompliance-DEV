@@ -427,6 +427,15 @@ const formatEngineValue = (value: unknown) => {
 
 const nvdDetailUrl = (cveId: string) => `https://nvd.nist.gov/vuln/detail/${encodeURIComponent(cveId)}`;
 
+const normalizeManualTargetToken = (value: string): string => {
+  const cleaned = String(value || '')
+    .trim()
+    .replace(/^[`'"]+/, '')
+    .replace(/[`'"]+$/, '')
+    .trim();
+  return /^[`'".,;\s]+$/.test(cleaned) ? '' : cleaned;
+};
+
 const isJobActive = (job?: NucleiJob | null) =>
   Boolean(job && ['queued', 'running'].includes(String(job.status || '').toLowerCase()));
 
@@ -978,8 +987,8 @@ const NucleiScan360: React.FC = () => {
   const targetList = useMemo(
     () => Array.from(new Set([
       ...targetUrl
-      .split(/[\n,]+/)
-      .map((target) => target.trim())
+      .split(/[\n,;]+/)
+      .map(normalizeManualTargetToken)
       .filter(Boolean),
       ...selectedTargetUrls,
     ])),

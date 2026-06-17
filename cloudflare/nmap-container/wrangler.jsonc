@@ -7,10 +7,10 @@
     "enabled": true
   },
   "vars": {
-    "NMAP_CONTAINER_INSTANCE": "surfacescan360-nmap-v6-httpx-tech-dedupe",
+    "NMAP_CONTAINER_INSTANCE": "surfacescan360-nmap-v7-httpx-tech-cidr24",
     "NMAP_TIMEOUT_SECONDS": "60",
     "NMAP_MAX_TIMEOUT_SECONDS": "180",
-    "NMAP_MAX_CIDR_PREFIX_V4": "28",
+    "NMAP_MAX_CIDR_PREFIX_V4": "24",
     "NMAP_DEFAULT_PROFILE": "web_top",
     "NMAP_ALLOWED_HOSTS": "*",
     "NMAP_DENIED_HOSTS": "localhost,*.localhost,127.*,10.*,172.16.*,172.17.*,172.18.*,172.19.*,172.20.*,172.21.*,172.22.*,172.23.*,172.24.*,172.25.*,172.26.*,172.27.*,172.28.*,172.29.*,172.30.*,172.31.*,192.168.*,169.254.*"

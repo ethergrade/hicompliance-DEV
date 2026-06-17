@@ -506,8 +506,8 @@ function normalizePipelineTarget(value: unknown): PipelineTarget {
   if (cidr) {
     const ip = normalizeIpv4(cidr[1]);
     const prefix = Number(cidr[2]);
-    if (!ip || isPrivateIpv4(ip) || prefix < 28 || prefix > 32) {
-      throw new Error("Only public IPv4 CIDR targets /28 or smaller are allowed");
+    if (!ip || isPrivateIpv4(ip) || prefix < 24 || prefix > 32) {
+      throw new Error("Only public IPv4 CIDR targets /24 or smaller are allowed");
     }
     return {
       targetInput: raw,
@@ -542,6 +542,15 @@ function normalizePipelineTarget(value: unknown): PipelineTarget {
     targetHost: domain,
     targetKind: domain.split(".").length > 2 ? "subdomain" : "domain",
   };
+}
+
+function normalizeTargetInputToken(value: unknown): string {
+  const cleaned = String(value || "")
+    .trim()
+    .replace(/^[`'"]+/, "")
+    .replace(/[`'"]+$/, "")
+    .trim();
+  return /^[`'".,;\s]+$/.test(cleaned) ? "" : cleaned;
 }
 
 function normalizeProfile(value: unknown): NucleiProfile {
@@ -2096,7 +2105,9 @@ async function enqueueJobs(
   const manualTargets = [
     body.target_url,
     ...(Array.isArray(body.targets) ? body.targets : []),
-  ].filter(Boolean) as string[];
+  ]
+    .map(normalizeTargetInputToken)
+    .filter(Boolean) as string[];
   const warnings: string[] = [];
   let surfaceTargets: string[] = [];
   const shouldLoadDiscoveredTargets = Boolean(body.include_discovered_targets) || (manualTargets.length === 0 && Boolean(body.include_surface_assets));
@@ -2114,10 +2125,17 @@ async function enqueueJobs(
       ? "surface_assets"
       : "manual";
 
+  const normalizedPipelineTargets: PipelineTarget[] = [];
+  for (const rawTarget of [...manualTargets, ...surfaceTargets]) {
+    try {
+      normalizedPipelineTargets.push(normalizePipelineTarget(rawTarget));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      warnings.push(`target_skipped:${String(rawTarget).slice(0, 120)}:${message || "invalid_target"}`);
+    }
+  }
   const pipelineTargets = Array.from(new Map(
-    [...manualTargets, ...surfaceTargets]
-      .map((target) => normalizePipelineTarget(target))
-      .map((target) => [target.normalizedTargetUrl, target] as const),
+    normalizedPipelineTargets.map((target) => [target.normalizedTargetUrl, target] as const),
   ).values()).slice(0, 50);
   if (pipelineTargets.length === 0) throw new Error("At least one target or SurfaceScan360 asset is required");
   const normalizedTargets = pipelineTargets.map((target) => target.normalizedTargetUrl);
@@ -2183,23 +2201,31 @@ async function startLabScan(
   const enqueueResult = await enqueueJobs(adminClient, body, authUserId, email);
   const organizationId = String(body.organization_id || "").trim();
   const warnings = Array.isArray(enqueueResult.warnings) ? [...enqueueResult.warnings] : [];
-  let kickstart: Record<string, unknown> = {
-    processed: [],
-    processed_count: 0,
-    remaining_hint: 0,
-  };
+  let backgroundStarted = false;
 
   if ((enqueueResult.queued_count || 0) > 0) {
-    try {
-      kickstart = await processQueue(adminClient, {
-        ...body,
-        action: "process_queue",
+    const backgroundProcess = processQueue(adminClient, {
+      ...body,
+      action: "process_queue",
+      organization_id: organizationId,
+      limit: 1,
+    }).catch((error) => {
+      console.error(JSON.stringify({
+        event: "nuclei_scan360_background_kickstart",
+        status: "error",
         organization_id: organizationId,
-        limit: clampInt(body.limit, 1, 1, 2),
-      }) as Record<string, unknown>;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      warnings.push(`kickstart:${message || "process_queue_failed"}`);
+        message: error instanceof Error ? error.message : String(error || "process_queue_failed"),
+      }));
+    });
+    const edgeRuntime = (globalThis as unknown as {
+      EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void };
+    }).EdgeRuntime;
+    if (typeof edgeRuntime?.waitUntil === "function") {
+      edgeRuntime.waitUntil(backgroundProcess);
+      backgroundStarted = true;
+    } else {
+      void backgroundProcess;
+      warnings.push("background_kickstart_wait_until_unavailable");
     }
   }
 
@@ -2212,9 +2238,15 @@ async function startLabScan(
   return {
     ...enqueueResult,
     warnings,
-    kickstart,
-    processed: Array.isArray(kickstart.processed) ? kickstart.processed : [],
-    processed_count: Number(kickstart.processed_count || 0),
+    kickstart: {
+      mode: "background_wait_until",
+      processed: [],
+      processed_count: 0,
+      started: backgroundStarted,
+      reason: "start_lab_scan_returns_immediately_to_avoid_http_502_on_long_scans",
+    },
+    processed: [],
+    processed_count: 0,
     jobs: jobsPayload.jobs || [],
     lab_pipeline: {
       engines: ["nmap", "httpx_tech_detect", "nikto", "nuclei", "nvd_cve_enrichment"],
