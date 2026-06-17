@@ -12,6 +12,7 @@ import { Loader2, Link2, Unlink, Plug, Shield, Mail, Monitor, Smartphone, Activi
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { tenantServicesApi } from '@/lib/api';
+import { FALLBACK_SERVICE_CATALOG } from '@/data/serviceCatalog';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import type { TenantServiceResource } from '@/types/api';
 import { getErrorDetail } from "@/lib/api-client";
@@ -311,7 +312,16 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   const { data: services = [] } = useQuery({
     queryKey: ['tenant-services-catalog'],
     queryFn: async () => {
-      const catalog = await tenantServicesApi.catalog();
+      // /api/config/tenant-services is not yet on the Laravel backend.
+      // Fall back to the static service catalog shipped with the frontend.
+      let catalog: Record<string, { label?: string }>;
+      try {
+        catalog = await tenantServicesApi.catalog();
+      } catch {
+        catalog = Object.fromEntries(
+          FALLBACK_SERVICE_CATALOG.map((s) => [s.code, { label: s.name, description: s.description, icon: s.icon }])
+        );
+      }
       return Object.entries(catalog).map(([code, entry]) => ({
         id: code,
         code,
