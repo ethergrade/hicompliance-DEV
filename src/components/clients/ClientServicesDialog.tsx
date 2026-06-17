@@ -138,7 +138,29 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
       const ts = [...tenantServices];
       const darkRiskTier = (patch.dark_risk_tier as string) || 'standard';
 
-      // Handle deletions BEFORE updates so we don't try to update a deleted service
+      // Settings updates (only reachable if services still exist after creates)
+      // HiCompliance license toggle
+      if ('hicompliance_license' in patch) {
+        const hc = ts.find(s => s.service_type === 'hicompliance');
+        if (hc) {
+          await tenantServicesApi.update(hc.id, { settings: { ...(hc.settings as any || {}), license: patch.hicompliance_license } }, groupId);
+        }
+      }
+      // IRP extended toggle
+      if ('irp_extended' in patch) {
+        const hc = ts.find(s => s.service_type === 'hicompliance');
+        if (hc) {
+          await tenantServicesApi.update(hc.id, { settings: { ...(hc.settings as any || {}), extended_range: patch.irp_extended } }, groupId);
+        }
+      }
+      // SurfaceScan extended toggle (skip if service was just toggled OFF)
+      if ('surface_scan_extended' in patch && patch.surface_scan360_enabled !== false) {
+        const ht = ts.find(s => s.service_type === 'surfacescan');
+        if (ht) {
+          await tenantServicesApi.update(ht.id, { settings: { ...(ht.settings as any || {}), extended_range: patch.surface_scan_extended } }, groupId);
+        }
+      }
+      // Handle deletions AFTER settings updates, so the settings PUT lands on a still-existing record
       // HiCompliance toggle OFF
       if (patch.hicompliance_enabled === false) {
         const hc = ts.find(s => s.service_type === 'hicompliance');
@@ -231,28 +253,6 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
         }
       }
 
-      // Settings updates (only reachable if services still exist after creates)
-      // HiCompliance license toggle
-      if ('hicompliance_license' in patch) {
-        const hc = ts.find(s => s.service_type === 'hicompliance');
-        if (hc) {
-          await tenantServicesApi.update(hc.id, { settings: { ...(hc.settings as any || {}), license: patch.hicompliance_license } }, groupId);
-        }
-      }
-      // IRP extended toggle
-      if ('irp_extended' in patch) {
-        const hc = ts.find(s => s.service_type === 'hicompliance');
-        if (hc) {
-          await tenantServicesApi.update(hc.id, { settings: { ...(hc.settings as any || {}), extended_range: patch.irp_extended } }, groupId);
-        }
-      }
-      // SurfaceScan extended toggle (skip if service was just toggled OFF)
-      if ('surface_scan_extended' in patch && patch.surface_scan360_enabled !== false) {
-        const ht = ts.find(s => s.service_type === 'surfacescan');
-        if (ht) {
-          await tenantServicesApi.update(ht.id, { settings: { ...(ht.settings as any || {}), extended_range: patch.surface_scan_extended } }, groupId);
-        }
-      }
     },
     onSuccess: () => {
       refetchServices();
