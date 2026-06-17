@@ -279,7 +279,7 @@ type ScannableTarget = {
   target_url: string;
   value: string;
   host: string;
-  kind: "domain" | "subdomain" | "url";
+  kind: "domain" | "subdomain" | "url" | "ipv4" | "ipv4_cidr";
   source: string;
   label: string;
   confidence: "high" | "medium" | "low";
@@ -346,9 +346,17 @@ const WEB_PORT_PROTOCOLS: Record<number, "http" | "https"> = {
   9443: "https",
 };
 const ALLOWED_NMAP_PROFILES = new Set<NmapProfile>(["web_top", "tcp_top_100", "service_light", "custom_tcp"]);
+const INTERNAL_ALLOWED_ACTIONS = new Set<NucleiAction>([
+  "process_queue",
+  "smoke_test",
+  "retrieve_targets",
+  "list",
+  "get",
+]);
 const nucleiCorsHeaders = {
   ...corsHeaders,
   "Access-Control-Allow-Headers": `${corsHeaders["Access-Control-Allow-Headers"]}, x-nuclei-scan360-request-id`,
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 const SURFACE_TARGET_ASSET_TYPES = [
   "domain",
@@ -408,6 +416,23 @@ const sanitizeRequestId = (value: unknown) => {
 
 const countRequestedTargets = (body: RequestBody) =>
   Number(Boolean(body.target_url)) + (Array.isArray(body.targets) ? body.targets.filter(Boolean).length : 0);
+
+function parseQueryRequestBody(req: Request): RequestBody {
+  const url = new URL(req.url);
+  const body: Record<string, unknown> = {};
+  for (const [key, value] of url.searchParams.entries()) {
+    if (["include_discovered_targets", "authorized_scan", "include_surface_assets"].includes(key)) {
+      body[key] = /^(1|true|yes)$/i.test(value);
+    } else if (["surface_asset_limit", "target_limit", "timeout_seconds", "rate_limit", "max_findings", "limit"].includes(key)) {
+      body[key] = Number(value);
+    } else if (key === "targets") {
+      body[key] = value.split(/[\n,;]+/).map((target) => target.trim()).filter(Boolean);
+    } else {
+      body[key] = value;
+    }
+  }
+  return body as RequestBody;
+}
 
 function traceLog(ctx: TraceContext, status: string, extra: Record<string, unknown> = {}) {
   console.log(JSON.stringify({
@@ -620,6 +645,17 @@ function classifyTargetKind(value: string, explicitType?: unknown): "domain" | "
   return host.split(".").length > 2 ? "subdomain" : "domain";
 }
 
+function classifyScannableTargetKind(
+  value: string,
+  host: string,
+  explicitType?: unknown,
+): ScannableTarget["kind"] {
+  const type = String(explicitType || "").toLowerCase();
+  if (type.includes("cidr") || IPV4_CIDR_REGEX.test(value)) return "ipv4_cidr";
+  if (type === "ip" || type === "ipv4" || normalizeIpv4(host)) return "ipv4";
+  return classifyTargetKind(value, explicitType);
+}
+
 function toScannableTarget(
   value: unknown,
   source: string,
@@ -629,15 +665,48 @@ function toScannableTarget(
 ): ScannableTarget | null {
   const raw = String(value || "").trim();
   if (!raw) return null;
+
+  const cidr = raw.toLowerCase().match(IPV4_CIDR_REGEX);
+  if (cidr) {
+    const ip = normalizeIpv4(cidr[1]);
+    const prefix = Number(cidr[2]);
+    if (!ip || isPrivateIpv4(ip) || prefix < 24 || prefix > 32) return null;
+    const target = `${ip}/${prefix}`;
+    return {
+      target_url: target,
+      value: raw,
+      host: target,
+      kind: "ipv4_cidr",
+      source,
+      label,
+      confidence,
+    };
+  }
+
+  const ip = normalizeIpv4(raw);
+  if (ip) {
+    if (isPrivateIpv4(ip)) return null;
+    return {
+      target_url: ip,
+      value: raw,
+      host: ip,
+      kind: "ipv4",
+      source,
+      label,
+      confidence,
+    };
+  }
+
   const normalizedTargetUrl = normalizeTargetUrl(raw);
   const host = getTargetHost(normalizedTargetUrl);
-  const domain = normalizeDomainCandidate(host);
+  const hostIp = normalizeIpv4(host);
+  const domain = hostIp ? hostIp : normalizeDomainCandidate(host);
   if (!domain) return null;
   return {
     target_url: normalizedTargetUrl,
     value: raw,
     host,
-    kind: classifyTargetKind(raw, explicitType),
+    kind: classifyScannableTargetKind(raw, host, explicitType),
     source,
     label,
     confidence,
@@ -1924,6 +1993,7 @@ async function collectScannableTargets(adminClient: SupabaseClient, organization
   const organization = await loadOrganization(adminClient, organizationId);
   const targets = new Map<string, ScannableTarget>();
   const warnings: string[] = [];
+  const targetQuerySignal = () => AbortSignal.timeout(2500);
 
   const safeSelect = async <T>(
     label: string,
@@ -1947,11 +2017,12 @@ async function collectScannableTargets(adminClient: SupabaseClient, organization
 
   const users = await safeSelect<{ email?: string }>(
     "users",
-    adminClient
-      .from("users")
-      .select("email")
-      .eq("organization_id", organizationId)
-      .limit(100),
+      adminClient
+        .from("users")
+        .select("email")
+        .eq("organization_id", organizationId)
+        .abortSignal(targetQuerySignal())
+        .limit(100),
   );
   for (const user of users) {
     const domain = String(user.email || "").split("@").pop();
@@ -1966,6 +2037,7 @@ async function collectScannableTargets(adminClient: SupabaseClient, organization
       .or(`organization_id.eq.${organizationId},customer_id.eq.${organizationId}`)
       .in("asset_type", SURFACE_TARGET_ASSET_TYPES)
       .order("last_seen", { ascending: false, nullsFirst: false })
+      .abortSignal(targetQuerySignal())
       .limit(limit),
   );
   for (const asset of surfaceAssets) {
@@ -1982,6 +2054,7 @@ async function collectScannableTargets(adminClient: SupabaseClient, organization
       .or(`organization_id.eq.${organizationId},customer_id.eq.${organizationId}`)
       .in("target_type", SURFACE_TARGET_ASSET_TYPES)
       .order("created_at", { ascending: false })
+      .abortSignal(targetQuerySignal())
       .limit(limit),
   );
   for (const target of surfaceTargets) {
@@ -1998,6 +2071,7 @@ async function collectScannableTargets(adminClient: SupabaseClient, organization
       .eq("enabled", true)
       .in("target_type", MANUAL_TARGET_TYPES)
       .order("created_at", { ascending: false })
+      .abortSignal(targetQuerySignal())
       .limit(limit),
   );
   for (const target of manualDarkriskTargets) {
@@ -2012,6 +2086,7 @@ async function collectScannableTargets(adminClient: SupabaseClient, organization
       .eq("organization_id", organizationId)
       .in("asset_type", DARKRISK_TARGET_ASSET_TYPES)
       .order("last_seen_at", { ascending: false, nullsFirst: false })
+      .abortSignal(targetQuerySignal())
       .limit(limit),
   );
   for (const asset of darkriskAssets) {
@@ -2026,6 +2101,7 @@ async function collectScannableTargets(adminClient: SupabaseClient, organization
       .eq("organization_id", organizationId)
       .in("selector_type", DARKRISK_SELECTOR_TARGET_TYPES)
       .order("created_at", { ascending: false })
+      .abortSignal(targetQuerySignal())
       .limit(limit),
   );
   for (const selector of darkriskSelectors) {
@@ -2039,6 +2115,7 @@ async function collectScannableTargets(adminClient: SupabaseClient, organization
       .select("query_kind, query_term, selector_value, target_url")
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false })
+      .abortSignal(targetQuerySignal())
       .limit(limit),
   );
   for (const run of darkriskSourceRuns) {
@@ -2056,6 +2133,7 @@ async function collectScannableTargets(adminClient: SupabaseClient, organization
       .select("query_kind, query_term, source_url")
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false })
+      .abortSignal(targetQuerySignal())
       .limit(limit),
   );
   for (const record of darkriskRecords) {
@@ -2736,10 +2814,14 @@ serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: nucleiCorsHeaders });
   const startedAt = Date.now();
   let body = {} as RequestBody;
-  try {
-    body = (await req.json()) as RequestBody;
-  } catch {
-    body = {} as RequestBody;
+  if (req.method === "GET") {
+    body = parseQueryRequestBody(req);
+  } else if (req.method === "POST") {
+    try {
+      body = (await req.json()) as RequestBody;
+    } catch {
+      body = {} as RequestBody;
+    }
   }
   const action = (body.action || "direct_scan") as NucleiAction;
   const organizationId = String(body.organization_id || "").trim();
@@ -2752,9 +2834,14 @@ serve(async (req: Request) => {
     targetCount: countRequestedTargets(body),
   };
 
-  if (req.method !== "POST") {
+  if (!["GET", "POST"].includes(req.method)) {
     traceLog(ctx, "method_not_allowed", { phase: "method", http_status: 405 });
     return tracedJsonResponse(ctx, { ok: false, error: "Method not allowed", phase: "method" }, 405);
+  }
+
+  if (req.method === "GET" && !["retrieve_targets", "list", "get", "smoke_test"].includes(action)) {
+    traceLog(ctx, "get_action_not_allowed", { phase: "method", http_status: 405 });
+    return tracedJsonResponse(ctx, { ok: false, error: "GET is only allowed for read actions", phase: "method" }, 405);
   }
 
   try {
@@ -2764,9 +2851,9 @@ serve(async (req: Request) => {
     let callerEmail = "scan360-internal";
 
     if (internalRequest) {
-      if (!["process_queue", "smoke_test"].includes(action)) {
+      if (!INTERNAL_ALLOWED_ACTIONS.has(action)) {
         traceLog(ctx, "internal_action_forbidden", { phase: "auth", http_status: 403 });
-        return tracedJsonResponse(ctx, { ok: false, error: "Internal calls can only process the queue or run smoke tests", phase: "auth" }, 403);
+        return tracedJsonResponse(ctx, { ok: false, error: "Internal calls can only process queue, run smoke tests, or read LAB data", phase: "auth" }, 403);
       }
     } else {
       const { data: authData, error: authError } = await userClient.auth.getUser();

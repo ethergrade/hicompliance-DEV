@@ -205,7 +205,7 @@ type ScannableTarget = {
   target_url: string;
   value: string;
   host: string;
-  kind: 'domain' | 'subdomain' | 'url';
+  kind: 'domain' | 'subdomain' | 'url' | 'ipv4' | 'ipv4_cidr';
   source: string;
   label: string;
   confidence: 'high' | 'medium' | 'low';
@@ -595,8 +595,9 @@ const createNucleiFunctionError = (diagnostic: NucleiInvokeDiagnostic): NucleiFu
 
 const isTransientFunctionError = (error: unknown) => {
   const message = error instanceof Error ? error.message : String(error || '');
-  const status = getResponseStatus(error);
-  return status >= 500 || /failed to send|fetch|network|non-2xx|timeout/i.test(message);
+  const diagnostic = (error as NucleiFunctionError)?.diagnostic;
+  const status = diagnostic?.status ?? getResponseStatus(error);
+  return status >= 500 || /failed to send|fetch|network|non-2xx|timeout|malformed_json|gateway_upstream_non_json/i.test(message);
 };
 
 async function directFetchNucleiScan360<T>(body: NucleiFunctionBody, endpoint = NUCLEI_SCAN360_PRIMARY_ENDPOINT): Promise<T> {
@@ -618,6 +619,77 @@ async function directFetchNucleiScan360<T>(body: NucleiFunctionBody, endpoint = 
         [requestIdHeader]: requestId,
       },
       body: JSON.stringify(tracedBody),
+    });
+  } catch (error) {
+    throw createNucleiFunctionError({
+      phase: 'network',
+      endpoint,
+      request_id: requestId,
+      action: body.action,
+      status: null,
+      retry_count: 0,
+      message: error instanceof Error ? error.message : String(error || 'fetch_failed'),
+    });
+  }
+
+  const text = await response.text();
+  let payload: unknown = {};
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    throw createNucleiFunctionError({
+      phase: 'malformed_json',
+      endpoint,
+      request_id: requestId,
+      action: body.action,
+      status: response.status,
+      retry_count: 0,
+      message: text.trim() || `NucleiScan360 HTTP ${response.status}`,
+      payload: text.slice(0, 500),
+    });
+  }
+  if (!response.ok) {
+    const errorPayload = payload as { error?: string; message?: string; phase?: string; request_id?: string };
+    throw createNucleiFunctionError({
+      phase: errorPayload.phase || body.action,
+      endpoint,
+      request_id: String(errorPayload.request_id || requestId),
+      action: body.action,
+      status: response.status,
+      retry_count: 0,
+      message: errorPayload.error || errorPayload.message || `NucleiScan360 HTTP ${response.status}`,
+      payload,
+    });
+  }
+  return payload as T;
+}
+
+async function directGetNucleiScan360<T>(body: NucleiFunctionBody, endpoint = NUCLEI_SCAN360_GATEWAY_ENDPOINT): Promise<T> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token || SUPABASE_PUBLISHABLE_KEY;
+  const requestId = body.request_id || createNucleiRequestId(body.action);
+  const requestUrl = new URL(endpoint);
+  Object.entries({ ...body, request_id: requestId }).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    if (Array.isArray(value)) {
+      requestUrl.searchParams.set(key, value.join(','));
+    } else {
+      requestUrl.searchParams.set(key, String(value));
+    }
+  });
+  const requestIdHeader = endpoint === NUCLEI_SCAN360_GATEWAY_ENDPOINT
+    ? 'x-scan360-request-id'
+    : 'x-nuclei-scan360-request-id';
+
+  let response: Response;
+  try {
+    response = await fetch(requestUrl.toString(), {
+      method: 'GET',
+      headers: {
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        Authorization: `Bearer ${token}`,
+        [requestIdHeader]: requestId,
+      },
     });
   } catch (error) {
     throw createNucleiFunctionError({
@@ -912,7 +984,7 @@ const NucleiScan360: React.FC = () => {
     if (!organizationId || !isSuperAdmin) return;
     setTargetsLoading(true);
     try {
-      const data = await invokeNucleiScan360<{
+      const data = await directGetNucleiScan360<{
         ok?: boolean;
         error?: string;
         targets?: ScannableTarget[];
@@ -1602,11 +1674,11 @@ const NucleiScan360: React.FC = () => {
                   {targetsLoading ? (
                     <div className="flex items-center gap-2 rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Recupero domini e sottodomini cliente…
+                      Recupero IP, domini e CIDR cliente...
                     </div>
                   ) : scannableTargets.length === 0 ? (
                     <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                      Nessun dominio scansionabile trovato. Inserisci un target manuale o verifica SurfaceScan360/DarkRisk.
+                      Nessun IP, dominio o CIDR scansionabile trovato. Inserisci un target manuale o verifica SurfaceScan360/DarkRisk.
                     </div>
                   ) : scannableTargets.map((target) => (
                     <label key={target.target_url} className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:bg-muted/40">
