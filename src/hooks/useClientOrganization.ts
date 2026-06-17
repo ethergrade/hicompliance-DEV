@@ -22,7 +22,10 @@
 
    // L'organization_id da usare nelle query
    // Prefer selectedOrganization for all users (auto-loaded for single-org clients).
-   const effectiveOrganizationId = selectedOrganization?.id || userOrganizationId;
+   // Non ripiegare su userOrganizationId (che è il groupId, non il companyId):
+  // durante il cambio gruppo selectedOrganization è null per un breve window
+  // e gli hook devono skippare le chiamate finché il companyId non è pronto.
+  const effectiveOrganizationId = selectedOrganization?.id ?? null;
 
 
    // Allow pass-through if localStorage has a stored org (even if selectedOrganization is null
