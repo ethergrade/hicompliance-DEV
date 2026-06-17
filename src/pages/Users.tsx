@@ -339,15 +339,15 @@ const Users = () => {
                 Nuovo Utente
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
+            <DialogContent className="max-w-md max-h-[90vh] flex flex-col p-0 gap-0">
+              <DialogHeader className="px-6 pt-6 pb-4 shrink-0">
                 <DialogTitle>{selectedUser ? "Modifica Utente" : "Nuovo Utente"}</DialogTitle>
                 <DialogDescription>
                   {selectedUser ? "Modifica i dettagli dell'utente e i suoi privilegi" : "Crea un nuovo utente e assegna i suoi privilegi"}
                 </DialogDescription>
               </DialogHeader>
               <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 px-6 pb-6 overflow-y-auto flex-1">
                   <FormField
                     control={form.control}
                     name="name"
