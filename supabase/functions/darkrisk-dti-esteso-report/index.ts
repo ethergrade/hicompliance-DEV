@@ -113,6 +113,42 @@ function fmtDateTime(v: unknown): string {
   return d.toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+// Normalizza un record DNS in righe { ttl, data }.
+// I dati reali arrivano in forma DNS-over-HTTPS: { type, query, answers:[{ ttl, data, name, type }] }.
+// Gestisce anche forme legacy (array di stringhe, oggetti { exchange, priority }, stringa singola).
+function dnsAnswers(entry: unknown): Array<{ ttl: number | null; data: string }> {
+  if (entry == null) return [];
+  const e = entry as any;
+  if (Array.isArray(e?.answers)) {
+    return e.answers
+      .map((a: any) => ({
+        ttl: Number.isFinite(Number(a?.ttl)) ? Number(a.ttl) : null,
+        data: String(a?.data ?? '').replace(/^"|"$/g, '').trim(),
+      }))
+      .filter((a: { data: string }) => a.data);
+  }
+  const arr = Array.isArray(e) ? e : [e];
+  return arr
+    .map((v: any) => {
+      if (v && typeof v === 'object') {
+        if (v.exchange) return { ttl: null, data: `${v.priority ?? ''} ${v.exchange}`.trim() };
+        if (v.data != null) return { ttl: Number.isFinite(Number(v.ttl)) ? Number(v.ttl) : null, data: String(v.data).trim() };
+        return { ttl: null, data: '' };
+      }
+      return { ttl: null, data: String(v ?? '').trim() };
+    })
+    .filter((a: { data: string }) => a.data);
+}
+
+// TTL numerico (secondi) → etichetta breve leggibile.
+function ttlLabel(ttl: number | null): string {
+  if (ttl == null || !Number.isFinite(ttl)) return '—';
+  if (ttl >= 86400) return `${Math.round(ttl / 86400)}g`;
+  if (ttl >= 3600) return `${Math.round(ttl / 3600)}h`;
+  if (ttl >= 60) return `${Math.round(ttl / 60)}m`;
+  return `${ttl}s`;
+}
+
 function sevBadge(sev: string): string {
   const map: Record<string, string> = {
     critical: '#dc2626', high: '#ea580c', medium: '#d97706', low: '#2563eb', info: '#6b7280',
@@ -212,6 +248,7 @@ async function buildDtiEstesoReport(
   adminClient: ReturnType<typeof createClient>,
   orgId: string,
   scanRunId: string | null,
+  clientLabel: string | null = null,
 ): Promise<{ html: string; json: Record<string, unknown> }> {
   const genAt = new Date().toISOString();
 
@@ -222,6 +259,8 @@ async function buildDtiEstesoReport(
     .eq('id', orgId)
     .maybeSingle();
   const orgName = String((orgRow as any)?.name || orgId.slice(0, 8));
+  // Etichetta mostrata come "Cliente" nel report: override esplicito se fornito, altrimenti nome org.
+  const displayName = (clientLabel && clientLabel.trim()) ? clientLabel.trim() : orgName;
 
   // ── 2. Scope: selectors + monitored IPs ───────────────────────────────────
   const [selectorsRes, monitoredRes] = await Promise.all([
@@ -487,32 +526,35 @@ async function buildDtiEstesoReport(
     const addDnsRow = (ttl: string, type: string, value: string) => dnsRows.push([ttl, type, value]);
 
     if (dns) {
-      const aRecs = Array.isArray(dnsRecs.A) ? dnsRecs.A : (dnsRecs.A ? [dnsRecs.A] : []);
-      aRecs.forEach((v: string) => addDnsRow('24h', 'A', v));
-      const mxRecs = Array.isArray(dnsRecs.MX) ? dnsRecs.MX : [];
-      mxRecs.forEach((m: any) => addDnsRow('1h', 'MX', `${m.exchange || m} (${m.priority ?? '?'})`));
-      const nsRecs = Array.isArray(dnsRecs.NS) ? dnsRecs.NS : [];
-      nsRecs.forEach((v: string) => addDnsRow('24h', 'NS', v));
-      const txtRecs = Array.isArray(dnsRecs.TXT) ? dnsRecs.TXT : [];
-      txtRecs.forEach((v: any) => addDnsRow('24h', 'TXT', String(v).slice(0, 120)));
-      const spf = addRecs.SPF || dnsRecs.SPF;
-      if (spf) addDnsRow('1h', 'SPF', String(spf).slice(0, 120));
-      const dmarc = addRecs.DMARC || dnsRecs.DMARC;
-      if (dmarc) addDnsRow('1h', 'DMARC', String(dmarc).slice(0, 120));
-      const dkim = addRecs.DKIM || dnsRecs.DKIM;
-      if (dkim) addDnsRow('1h', 'DKIM', dkim === null ? 'Non trovato' : String(dkim).slice(0, 100));
+      const pushRecs = (type: string, entry: unknown, max = 8, maxLen = 200) => {
+        dnsAnswers(entry).slice(0, max).forEach((a) => addDnsRow(ttlLabel(a.ttl), type, a.data.slice(0, maxLen)));
+      };
+      // Record standard (forma DNS-over-HTTPS): valore reale da answers[].data, TTL da answers[].ttl
+      pushRecs('A', dnsRecs.A);
+      pushRecs('AAAA', dnsRecs.AAAA);
+      pushRecs('MX', dnsRecs.MX);
+      pushRecs('NS', dnsRecs.NS);
+      pushRecs('CNAME', dnsRecs.CNAME);
+      pushRecs('TXT', dnsRecs.TXT, 12);
+      // SPF / DMARC derivati dalle sorgenti corrette (TXT del dominio e sottodominio _dmarc)
+      const spfRec = dnsAnswers(dnsRecs.TXT).map((a) => a.data).find((d) => /^v=spf1/i.test(d));
+      if (spfRec) addDnsRow('—', 'SPF', spfRec.slice(0, 200));
+      const dmarcRec = dnsAnswers((addRecs as any)['_dmarc.TXT']).map((a) => a.data).find((d) => /v=DMARC1/i.test(d));
+      if (dmarcRec) addDnsRow('—', 'DMARC', dmarcRec.slice(0, 200));
     }
 
     // Email security analysis
     const emailFindings = findings.filter((f) => f.category === 'email_security' || f.category === 'dmarc' || f.category === 'spf' || f.category === 'smtp');
     const dnsHealthFindings = findings.filter((f) => f.category === 'dns_health' || f.category === 'dnssec');
 
-    // SPF/DKIM/DMARC status from DNS records
-    const spfPresent = !!(addRecs.SPF || dnsRecs.SPF || (Array.isArray(dnsRecs.TXT) && dnsRecs.TXT.some((t: string) => /^v=spf1/i.test(t))));
-    const dmarcPresent = !!(addRecs.DMARC || dnsRecs.DMARC);
-    const dmarcValue = String(addRecs.DMARC || dnsRecs.DMARC || '');
-    const dmarcEnforced = /p=(quarantine|reject)/i.test(dmarcValue);
-    const dkimStatus = (addRecs.DKIM !== undefined && addRecs.DKIM !== null) ? 'Presente' : 'Non verificato';
+    // SPF/DKIM/DMARC status — derivati dalla forma DNS-over-HTTPS (TXT del dominio + sottodominio _dmarc)
+    const txtValues = dnsAnswers(dnsRecs.TXT).map((a) => a.data);
+    const spfValue = txtValues.find((t) => /^v=spf1/i.test(t)) || '';
+    const dmarcValue = dnsAnswers((addRecs as any)['_dmarc.TXT']).map((a) => a.data).find((d) => /v=DMARC1/i.test(d)) || '';
+    const spfPresent = !!spfValue;
+    const dmarcPresent = !!dmarcValue;
+    const dmarcEnforced = /p=\s*(quarantine|reject)/i.test(dmarcValue);
+    const dkimStatus: string = 'Non verificato'; // richiede un selector DKIM specifico, non presente nei record standard
     const emailProtectionPct = Math.round(
       (spfPresent ? 30 : 0) + (dmarcPresent ? (dmarcEnforced ? 40 : 20) : 0) + (dkimStatus === 'Presente' ? 30 : 0)
     );
@@ -614,7 +656,7 @@ async function buildDtiEstesoReport(
         ${table(
           ['Protocollo', 'Status', 'Implementazione'],
           [
-            ['SPF', spfPresent ? 'Presente' : 'Assente', String(addRecs.SPF || dnsRecs.SPF || (Array.isArray(dnsRecs.TXT) ? dnsRecs.TXT.find((t: string) => /^v=spf1/i.test(t)) || '—' : '—')).slice(0, 120)],
+            ['SPF', spfPresent ? 'Presente' : 'Assente', (spfValue || '—').slice(0, 120)],
             ['DKIM', dkimStatus, dkimStatus === 'Presente' ? 'Verificato' : 'Non verificato (richiede query selector)'],
             ['DMARC', dmarcPresent ? (dmarcEnforced ? 'Presente (enforcement)' : 'Presente (monitor)') : 'Assente', dmarcValue.slice(0, 100) || 'Nessun record DMARC trovato'],
             ['MTA-STS', 'Non rilevato', 'Verificare record _mta-sts e policy HTTPS'],
@@ -839,7 +881,7 @@ async function buildDtiEstesoReport(
     schema_version: '2.0',
     generated_at: genAt,
     organization_id: orgId,
-    organization_name: orgName,
+    organization_name: displayName,
     scan_run_id: scanRunId,
     scan_run: scanRun ? {
       started_at: scanRun.started_at || null,
@@ -902,7 +944,7 @@ async function buildDtiEstesoReport(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>DTI Esteso — ${escHtml(orgName)}</title>
+  <title>DTI Esteso — ${escHtml(displayName)}</title>
   <style>${CSS}</style>
 </head>
 <body>
@@ -922,7 +964,7 @@ async function buildDtiEstesoReport(
       <div style="font-size:32px;font-weight:800;color:#fff;margin-bottom:6px;line-height:1.1">Domain Threat Intelligence</div>
       <div style="font-size:14px;color:#93c5fd;margin-bottom:22px">Report DTI Esteso · Confidenziale</div>
       <div style="width:48px;height:3px;background:#3b82f6;margin-bottom:20px;border-radius:2px"></div>
-      <div style="font-size:20px;font-weight:700;color:#f8fafc;margin-bottom:6px">${escHtml(orgName)}</div>
+      <div style="font-size:20px;font-weight:700;color:#f8fafc;margin-bottom:6px">${escHtml(displayName)}</div>
       <div style="font-size:11px;color:#64748b">Generato il: ${fmtDateTime(genAt)}</div>
     </div>
     <div style="background:rgba(0,0,0,0.4);padding:10px 32px;display:flex;justify-content:space-between;font-size:10px;color:#475569">
@@ -939,7 +981,7 @@ async function buildDtiEstesoReport(
     <tr><td>Stato del documento</td><td>Generato automaticamente</td></tr>
     <tr><td>Data generazione</td><td>${fmtDateTime(genAt)}</td></tr>
     <tr><td>Proprietario del documento</td><td>HiSolution Srl</td></tr>
-    <tr><td>Cliente</td><td>${escHtml(orgName)}</td></tr>
+    <tr><td>Cliente</td><td>${escHtml(displayName)}</td></tr>
     <tr><td>Scan Run ID</td><td>${scanRunId || '—'}</td></tr>
     ${scanRun ? `<tr><td>Ultima run</td><td>${fmtDateTime(scanRun.started_at)} → ${fmtDateTime(scanRun.completed_at)} [${scanRun.status}]</td></tr>` : ''}
   </table>
@@ -1099,6 +1141,11 @@ serve(async (req: Request) => {
   const orgId = String(body?.customer_id || body?.organization_id || '').trim();
   const scanRunId = String(body?.scan_run_id || '').trim() || null;
   const dbTriggerId = String(body?.db_trigger_id || '').trim();
+  // Versioning DTI Esteso: etichetta Cliente override + numero versione (entrambi opzionali).
+  const clientLabel = String(body?.client_label || '').trim() || null;
+  const reportVersion = Number.isFinite(Number(body?.report_version)) && Number(body?.report_version) > 0
+    ? Math.floor(Number(body?.report_version))
+    : null;
 
   if (!isTrustedInternal) {
     const authHeader = req.headers.get('Authorization') || '';
@@ -1157,7 +1204,7 @@ serve(async (req: Request) => {
   const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
   try {
-    const { html, json } = await buildDtiEstesoReport(adminClient, orgId, scanRunId);
+    const { html, json } = await buildDtiEstesoReport(adminClient, orgId, scanRunId, clientLabel);
 
     // Store in Supabase Storage
     const bucketName = 'darkrisk-reports';
@@ -1195,7 +1242,12 @@ serve(async (req: Request) => {
         html_storage_path: htmlPath,
         json_storage_path: jsonPath,
         report_json: json,
-        model_metadata: { generator: 'darkrisk-dti-esteso-report', version: '1.1' },
+        model_metadata: {
+          generator: 'darkrisk-dti-esteso-report',
+          version: '1.2',
+          ...(reportVersion != null ? { report_version: reportVersion } : {}),
+          ...(clientLabel ? { client_label: clientLabel } : {}),
+        },
       })
       .select('id')
       .single();

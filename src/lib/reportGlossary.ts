@@ -229,4 +229,20 @@ export const REPORT_GLOSSARY: GlossaryTerm[] = [
     definition:
       'Prima fase di un attacco informatico: raccolta di informazioni sul bersaglio (IP, servizi esposti, tecnologie usate) senza ancora interagire con i sistemi in modo invasivo.',
   },
+  // ── Tipi di query DTI (colonna "Tipo query") ──────────────────────────────
+  {
+    term: 'Tipo query: at_domain_tld',
+    definition:
+      'Ricerca riferita all\'intero dominio (es. tutto ciò che riguarda @azienda.it): individua esposizioni e dati associati al dominio nel suo complesso.',
+  },
+  {
+    term: 'Tipo query: selector',
+    definition:
+      'Ricerca mirata su un singolo asset (sottodominio, URL o risorsa non-email) anziché sull\'intero dominio.',
+  },
+  {
+    term: 'Tipo query: email_selector',
+    definition:
+      'Ricerca mirata su un singolo indirizzo email: cerca credenziali e dati associati a quella specifica casella di posta.',
+  },
 ];

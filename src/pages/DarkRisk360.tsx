@@ -1051,10 +1051,24 @@ const DarkRisk360: React.FC = () => {
     const weeklyReports = reportSnapshots.filter((report) => getDarkRiskReportMode(report) === 'weekly');
     const extendedReports = reportSnapshots.filter((report) => getDarkRiskReportMode(report) === 'extended');
 
+    // Versioni "curate" del DTI Esteso: snapshot con model_metadata.report_version valorizzato (v1, v2, ...).
+    const getReportVersion = (r: Record<string, any>): number | null => {
+      const v = Number(r?.model_metadata?.report_version);
+      return Number.isFinite(v) && v > 0 ? v : null;
+    };
+    const taggedVersions = extendedReports
+      .filter((r) => getReportVersion(r) != null)
+      .sort((a, b) => (getReportVersion(a)! - getReportVersion(b)!));
+    // Fallback per clienti senza versioni taggate: mostra il più recente come in precedenza.
+    const extendedVersions = taggedVersions.length > 0
+      ? taggedVersions
+      : (extendedReports[0] ? [extendedReports[0]] : []);
+
     return {
       weekly: weeklyReports[0] || null,
       extended: extendedReports[0] || null,
-      hiddenDuplicates: Math.max(0, reportSnapshots.length - (weeklyReports[0] ? 1 : 0) - (extendedReports[0] ? 1 : 0)),
+      extendedVersions,
+      hiddenDuplicates: Math.max(0, reportSnapshots.length - (weeklyReports[0] ? 1 : 0) - extendedVersions.length),
     };
   }, [reportSnapshots]);
 
@@ -1404,6 +1418,9 @@ const DarkRisk360: React.FC = () => {
           <Badge variant={mode === 'extended' ? 'default' : 'secondary'}>
             {mode === 'extended' ? 'Esteso DTI finale' : 'Settimanale'}
           </Badge>
+          {mode === 'extended' && Number(report?.model_metadata?.report_version) > 0 && (
+            <Badge variant="outline">v{Number(report.model_metadata.report_version)}</Badge>
+          )}
         </div>
         <p className="text-xs text-muted-foreground truncate">
           {mode === 'weekly'
@@ -2405,8 +2422,8 @@ const DarkRisk360: React.FC = () => {
                                 {regenerateDtiMutation.isPending ? 'Generazione DTI...' : reportRepository.extended ? 'Rigenera esteso' : 'Genera esteso'}
                               </Button>
                             </div>
-                            {reportRepository.extended ? (
-                              renderReportSnapshot(reportRepository.extended, 'extended')
+                            {reportRepository.extendedVersions.length > 0 ? (
+                              reportRepository.extendedVersions.map((rep) => renderReportSnapshot(rep, 'extended'))
                             ) : (
                               <p className="text-sm text-muted-foreground">Nessun report esteso finale ancora disponibile.</p>
                             )}

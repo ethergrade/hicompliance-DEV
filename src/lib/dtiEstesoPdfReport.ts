@@ -71,6 +71,16 @@ const displaySource = (raw: unknown): string => {
   return s.replace(/DARKRISK_ESTESO\s*/gi, '').replace(/DarkRisk360\s*/gi, 'DarkRisk360 ').trim() || s;
 };
 
+// Significato sintetico dei tipi di query DTI (colonna "Significato" della tabella Rilevazioni).
+const QUERY_KIND_MEANING: Record<string, string> = {
+  at_domain_tld: 'Tutto il dominio (es. @dominio)',
+  selector: 'Asset specifico (sottodominio/URL)',
+  email_selector: 'Indirizzo email specifico',
+  leaks_log: 'Log malware infostealer',
+};
+const queryKindMeaning = (raw: unknown): string =>
+  QUERY_KIND_MEANING[String(raw || '').trim().toLowerCase()] || '-';
+
 const BRAND = { r: 59, g: 130, b: 246 };
 const DARK = { r: 17, g: 24, b: 39 };
 const MUTED = { r: 110, g: 118, b: 130 };
@@ -359,9 +369,9 @@ export function generateDtiEstesoPdf(report: DtiEstesoReportJson): void {
           { size: 9, bold: true, color: k.passwords > 0 ? [200, 50, 50] : [16, 133, 89] });
         const runs = (d.source_runs || []).filter((r) => String(r.status || '').toLowerCase() !== 'failed');
         if (runs.length > 0) {
-          drawTable(['Sorgente', 'Tipo query', 'Termine', 'Risultati'],
-            runs.slice(0, 20).map((r) => [displaySource(r.source), r.query_kind, r.query_term, String(r.result_count)]),
-            [150, 120, 165, 80]);
+          drawTable(['Sorgente', 'Tipo query', 'Significato', 'Termine', 'Risultati'],
+            runs.slice(0, 20).map((r) => [displaySource(r.source), r.query_kind, queryKindMeaning(r.query_kind), r.query_term, String(r.result_count)]),
+            [115, 95, 150, 95, 60]);
         }
       }
 
