@@ -7,8 +7,10 @@ import { Label } from '@/components/ui/label';
 import { Download, FileSpreadsheet, Save, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
-import { supabase } from '@/integrations/supabase/client';
 import { useClientContext } from '@/contexts/ClientContext';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { hilogReportsApi } from '@/lib/api/hilog-reports';
 import type { AdvancedFilter } from './filterEngine';
 
 interface CorrelatedEvent {
@@ -36,12 +38,19 @@ const TIME_RANGES = [
   { label: 'Ultimo anno', value: '365', days: 365 },
 ];
 
-export const CorrelationExport: React.FC<CorrelationExportProps> = ({ events, filter, eventsCount }) => {
+export const CorrelationExport: React.FC<CorrelationExportProps> = ({
+  events,
+  filter,
+  eventsCount,
+}) => {
   const [open, setOpen] = useState(false);
   const [timeRange, setTimeRange] = useState('30');
   const [title, setTitle] = useState('');
   const [saving, setSaving] = useState(false);
+
   const { selectedOrganization } = useClientContext();
+  const { groupId } = useClientOrganization();
+  const { user } = useAuth();
   const selectedClientId = selectedOrganization?.id;
 
   const selectedRange = TIME_RANGES.find(r => r.value === timeRange) || TIME_RANGES[2];
@@ -83,28 +92,27 @@ export const CorrelationExport: React.FC<CorrelationExportProps> = ({ events, fi
   };
 
   const handleSaveReport = async () => {
+    if (!selectedClientId || !user) {
+      toast.error('Seleziona un cliente prima di salvare il report');
+      return;
+    }
+
     setSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Non autenticato');
-
       const reportTitle = title || `Correlazione HiLog - ${selectedRange.label}`;
 
-      const { error } = await supabase.from('hilog_correlation_reports' as any).insert({
+      await hilogReportsApi.create(selectedClientId, {
         organization_id: selectedClientId,
-        user_id: user.id,
         title: reportTitle,
         description: `Report di correlazione cross-source generato per ${selectedRange.label}. ${eventsCount} eventi analizzati.`,
         time_range_label: selectedRange.label,
         time_range_days: selectedRange.days,
-        filter_config: filter as any,
-        report_data: events.slice(0, 500) as any, // cap at 500 for DB storage
+        filter_config: filter as unknown as Record<string, unknown>,
+        report_data: events.slice(0, 500) as unknown as Record<string, unknown>[], // cap at 500 for DB storage
         events_count: eventsCount,
         format: 'XLSX',
         status: 'completed',
-      });
-
-      if (error) throw error;
+      }, groupId);
 
       // Also download the Excel
       const wb = generateExcel(events);
@@ -114,9 +122,10 @@ export const CorrelationExport: React.FC<CorrelationExportProps> = ({ events, fi
       toast.success('Report salvato e scaricato! Lo trovi anche nella sezione Report.');
       setOpen(false);
       setTitle('');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      toast.error('Errore nel salvataggio: ' + (err.message || 'Errore sconosciuto'));
+      const errorMessage = err instanceof Error ? err.message : 'Errore sconosciuto';
+      toast.error('Errore nel salvataggio: ' + errorMessage);
     } finally {
       setSaving(false);
     }
@@ -149,6 +158,7 @@ export const CorrelationExport: React.FC<CorrelationExportProps> = ({ events, fi
                 onChange={e => setTitle(e.target.value)}
               />
             </div>
+
             <div className="space-y-2">
               <Label>Periodo di analisi</Label>
               <Select value={timeRange} onValueChange={setTimeRange}>
@@ -162,15 +172,23 @@ export const CorrelationExport: React.FC<CorrelationExportProps> = ({ events, fi
                 </SelectContent>
               </Select>
             </div>
+
             <div className="bg-muted/50 rounded-lg p-3 text-sm space-y-1">
               <p><span className="text-muted-foreground">Eventi trovati:</span> <strong>{eventsCount}</strong></p>
               <p><span className="text-muted-foreground">Formato:</span> Excel (.xlsx)</p>
               <p><span className="text-muted-foreground">Salvato in:</span> Database + Sezione Report</p>
             </div>
+
             <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setOpen(false)}>Annulla</Button>
+              <Button variant="outline" onClick={() => setOpen(false)}>
+                Annulla
+              </Button>
               <Button onClick={handleSaveReport} disabled={saving} className="gap-1.5">
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                {saving ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
                 Salva e Scarica
               </Button>
             </div>

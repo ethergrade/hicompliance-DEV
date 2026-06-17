@@ -35,3 +35,5 @@ export { darkRiskApi } from "./darkrisk";
 export { surfaceScan360Api } from "./surface-scan360";
 export { nucleiScan360Api } from "./nuclei-scan360";
 export { lifecycleApi } from "./lifecycle";
+export { aiCisoApi } from "./ai-ciso";
+export { hilogReportsApi } from "./hilog-reports";
