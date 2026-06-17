@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { SidebarProvider } from '@/components/ui/sidebar';
+import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from './AppSidebar';
 import { ClientIndicator } from './ClientIndicator';
 import { AppFooter } from './AppFooter';
@@ -22,6 +22,12 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
         <AppSidebar />
 
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          {/* Mobile-only top bar with hamburger to open the sidebar sheet */}
+          <div className="md:hidden sticky top-0 z-20 flex items-center gap-2 border-b border-border bg-background/95 backdrop-blur px-3 py-2">
+            <SidebarTrigger aria-label="Apri menu" />
+            <span className="text-sm font-medium text-muted-foreground">Menu</span>
+          </div>
+
           {isSales && (
             <div className="px-4 py-1 text-[11px] leading-4 bg-amber-500/10 text-amber-300 border-b border-amber-500/25">
               Ambiente Demo, Funzionalità in corso di sviluppo.
