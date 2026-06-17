@@ -17,20 +17,23 @@ const _h = (companyId: string, groupId?: string | null) => ({
 
 export const assessmentV2Api = {
   /** Get all assessment categories with nested questions */
-  async categories(_companyId?: string): Promise<AssessmentCategory[]> {
-    const res = await apiClient.get<ApiResponse<AssessmentCategory[]>>("/assessments-v2/categories");
+  async categories(groupId?: string | null): Promise<AssessmentCategory[]> {
+    const opts = groupId ? { headers: { "X-Group-Id": groupId } } : undefined;
+    const res = await apiClient.get<ApiResponse<AssessmentCategory[]>>("/assessments-v2/categories", undefined, opts);
     return res.data;
   },
 
   /** Get all 132 questions */
-  async questions(_companyId?: string): Promise<AssessmentQuestion[]> {
-    const res = await apiClient.get<ApiResponse<AssessmentQuestion[]>>("/assessments-v2/questions");
+  async questions(groupId?: string | null): Promise<AssessmentQuestion[]> {
+    const opts = groupId ? { headers: { "X-Group-Id": groupId } } : undefined;
+    const res = await apiClient.get<ApiResponse<AssessmentQuestion[]>>("/assessments-v2/questions", undefined, opts);
     return res.data;
   },
 
   /** Get remediation template catalog */
-  async remediationTemplates(_companyId?: string): Promise<RemediationTemplate[]> {
-    const res = await apiClient.get<ApiResponse<RemediationTemplate[]>>("/assessments-v2/remediation-templates");
+  async remediationTemplates(groupId?: string | null): Promise<RemediationTemplate[]> {
+    const opts = groupId ? { headers: { "X-Group-Id": groupId } } : undefined;
+    const res = await apiClient.get<ApiResponse<RemediationTemplate[]>>("/assessments-v2/remediation-templates", undefined, opts);
     return res.data;
   },
 

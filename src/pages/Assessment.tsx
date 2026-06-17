@@ -215,7 +215,7 @@ const Assessment: React.FC = () => {
     if (categoriesLoaded.current && guidedOrgRef.current === orgId) return;
     categoriesLoaded.current = true;
     guidedOrgRef.current = orgId;
-    loadV2AssessmentData().then((data) => {
+    loadV2AssessmentData(selectedOrganization?.group_id).then((data) => {
       // Fallback ai dati statici se API v2 torna vuoto
       if (!data.categories || data.categories.length === 0) {
         console.log('API v2 empty, falling back to static assessment data');

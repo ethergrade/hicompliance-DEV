@@ -5,9 +5,9 @@ import type { AssessmentCategory, AssessmentQuestion } from '@/data/assessmentQu
  * Maps v2 API categories+questions to the UI format (numeric IDs, question field).
  * Returns the re-mapped categories and a uuid ↔ index lookup table.
  */
-export async function loadV2AssessmentData() {
-  const categories = await assessmentV2Api.categories();
-  const questions = await assessmentV2Api.questions();
+export async function loadV2AssessmentData(groupId?: string | null) {
+  const categories = await assessmentV2Api.categories(groupId);
+  const questions = await assessmentV2Api.questions(groupId);
 
   // Build a map: question UUID → sequential index (1-based, matching UI)
   const sortedQs = [...questions].sort((a, b) => a.order_index - b.order_index);
