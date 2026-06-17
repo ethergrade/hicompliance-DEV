@@ -13,7 +13,6 @@ import {
   type SurfaceMonitoredScopeRule,
 } from '@/lib/surfaceScopeGuard';
 
-// TODO: migrate scope rules to backend API when surface_scan_monitored_ips endpoint is available
 import { supabase } from '@/integrations/supabase/client';
 
 interface AssetRow {
@@ -138,7 +137,6 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
     staleTime: 15_000,
   });
 
-  // TODO: migrate to backend API when surface_scan_monitored_ips endpoint is available
   const [scopeRules, setScopeRules] = useState<SurfaceMonitoredScopeRule[]>([]);
   const fetchScopeRules = async () => {
     if (!organizationId) return;

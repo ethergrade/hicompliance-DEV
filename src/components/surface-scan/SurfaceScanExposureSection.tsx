@@ -9,7 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronRight, Loader2, Play, RefreshCw, RotateCw, ShieldAlert } from 'lucide-react';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
-// TODO: migrate remaining Supabase calls to backend API when endpoints available
+// Status: exposure-findings migrated to backend API. Remaining: module_results, observations (no backend endpoints)
 import { surfaceScan360Api } from '@/lib/api/surface-scan360';
 import {
   fetchExposureFindingsByJobIds,
