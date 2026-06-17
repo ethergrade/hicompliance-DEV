@@ -393,11 +393,12 @@ const Assessment: React.FC = () => {
     if (!dep) return true;
     const depIdx = parseInt(dep, 10);
     if (isNaN(depIdx) || depIdx < 1) return true;
-    
-    // Find parent question by order_index
+    // Self-reference guard: a question depending on itself is always visible
+    if (depIdx === q.id) return true;
+
     const parentQ = allCategories.flatMap(c => c.questions).find(pq => pq.id === depIdx);
     if (!parentQ) return true;
-    
+
     const parentStatus = allResponses[parentQ.id] || null;
     return parentStatus === 'pianificato_in_corso' || parentStatus === 'completato';
   }, []);
@@ -1387,16 +1388,7 @@ const Assessment: React.FC = () => {
                           </div>
                         </div>
                         <div className="divide-y divide-border">
-                          {(catData.questions.filter(q => {
-                            const dep = q.dependency;
-                            if (!dep) return true;
-                            const depIdx = parseInt(dep, 10);
-                            if (isNaN(depIdx) || depIdx < 1 || depIdx > catData.questions.length) return true;
-                            const parentQ = catData.questions[depIdx - 1];
-                            if (!parentQ) return true;
-                            const parentStatus = responses[parentQ.id] || null;
-                            return parentStatus === 'pianificato_in_corso' || parentStatus === 'completato';
-                          })).map((q, qi) => {
+                          {(catData.questions.filter(q => isQuestionVisible(q, responses, v2Categories))).map((q, qi) => {
                             const currentResponse = responses[q.id] || null;
                             return (
                               <div key={q.id} className="grid grid-cols-[2rem_1fr_420px] gap-3 items-center px-5 py-3 hover:bg-muted/30 transition-colors">
