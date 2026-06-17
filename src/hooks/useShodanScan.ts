@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { shodanApi } from '@/lib/api/shodan';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 export interface ShodanAsset {
   ip: string;
@@ -30,16 +31,15 @@ interface ShodanScanResponse {
  * Cache 10 min per evitare richieste duplicate (Shodan ha rate limit).
  */
 export const useShodanScan = (targets: string[], enabled = true) => {
+  const { organizationId, groupId } = useClientOrganization();
+
   return useQuery<ShodanScanResponse>({
-    queryKey: ['shodan-scan', [...targets].sort()],
-    enabled: enabled && targets.length > 0,
+    queryKey: ['shodan-scan', organizationId, groupId, ...[...targets].sort()],
+    enabled: enabled && targets.length > 0 && !!organizationId,
     staleTime: 10 * 60 * 1000,
     queryFn: async () => {
-      const { data, error } = await supabase.functions.invoke('shodan-scan', {
-        body: { targets },
-      });
-      if (error) throw error;
-      return data as ShodanScanResponse;
+      if (!organizationId) throw new Error('organizationId mancante');
+      return shodanApi.scan(organizationId, { targets }, groupId);
     },
   });
 };

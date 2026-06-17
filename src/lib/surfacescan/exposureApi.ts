@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { surfaceScan360Api } from '@/lib/api/surface-scan360';
 
 const IPV4_RX = /\b(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}\b/;
 const IPV6_RX = /\b(?:[a-f0-9]{1,4}:){2,}[a-f0-9:]{1,}\b/i;
@@ -213,12 +214,10 @@ export type ExposureFindingRow = {
   created_at: string;
 };
 
-export async function startExposureScan(input: ExposureStartRequest) {
-  const { data, error } = await supabase.functions.invoke('ptools-start-exposure-scan', {
-    body: input,
-  });
-  if (error) throw error;
-  if ((data as any)?.error) throw new Error((data as any).error);
+export async function startExposureScan(input: ExposureStartRequest, companyId: string, groupId?: string | null) {
+  if (!companyId) throw new Error('companyId mancante');
+  const data = await surfaceScan360Api.createJob(companyId, input as Record<string, unknown>, groupId);
+  if ((data as { error?: string })?.error) throw new Error((data as { error?: string }).error!);
   return data;
 }
 

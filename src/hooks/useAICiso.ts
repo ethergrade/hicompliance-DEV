@@ -111,17 +111,21 @@ export const useAICiso = () => {
     setIsLoading(true);
 
     try {
-      // NOTE: Chat function still uses Supabase Edge Function (no backend endpoint yet)
-      const { data, error } = await supabase.functions.invoke('ai-ciso-chat', {
-        body: {
-          userPrompt,
-          conversationHistory: messages,
-        },
+      // Ensure we have a conversation id before calling chat endpoint
+      let convId = activeConversationId;
+      if (!convId) {
+        const created = await aiCisoApi.create({
+          messages: [userMsg],
+          title: userPrompt.slice(0, 60),
+        });
+        convId = created.id;
+        setActiveConversationId(convId);
+      }
+      const data = await aiCisoApi.chat(convId, {
+        message: userPrompt,
+        conversationHistory: messages,
       });
-
-      if (error) throw error;
-
-      const aiMsg: Message = { role: 'assistant', content: data.response };
+      const aiMsg: Message = { role: \'assistant\', content: data.response };
       const finalMessages = [...updatedMessages, aiMsg];
       setMessages(finalMessages);
       await saveConversation(finalMessages);

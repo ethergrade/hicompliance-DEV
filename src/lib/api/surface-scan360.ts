@@ -213,6 +213,30 @@ export const surfaceScan360Api = {
     );
     return extractArray<any>(res.data);
   },
+  // Create a new surface scan job (replaces ptools-start-exposure-scan edge function)
+  async createJob(
+    companyId: string,
+    payload: {
+      tenant_id?: string;
+      customer_id?: string;
+      scan_name?: string;
+      root_domains?: string[];
+      subdomains?: string[];
+      public_ips?: string[];
+      scan_depth?: string;
+      protocol?: string;
+      check_alive?: boolean;
+      [k: string]: unknown;
+    },
+    groupId?: string | null,
+  ): Promise<any> {
+    const res = await complianceApiClient.post<ApiResponse<any>>(
+      `/companies/${companyId}/surface-scan360/jobs`,
+      payload,
+      groupId ? groupHeader(groupId) : undefined,
+    );
+    return res.data;
+  },
   async getAiReport(companyId: string, reportId: string, groupId?: string | null): Promise<any> {
     const res = await complianceApiClient.get<ApiResponse<any>>(
       `/companies/${companyId}/surface-scan360/ai-report/${reportId}`,

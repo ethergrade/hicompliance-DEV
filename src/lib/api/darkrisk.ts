@@ -210,6 +210,32 @@ export const darkRiskApi = {
     return res.data;
   },
 
+  // Generate a new DarkRisk360 report (replaces darkrisk360-generate-report edge function)
+  async createReportSnapshot(
+    companyId: string,
+    payload: { classification?: string; report_mode?: string; scope?: string; force?: boolean; [k: string]: unknown },
+    groupId?: string | null,
+  ): Promise<any> {
+    const res = await complianceApiClient.post<ApiResponse<any>>(
+      `/companies/${companyId}/darkrisk/report-snapshots`,
+      payload,
+      groupId ? groupHeader(groupId) : undefined,
+    );
+    return res.data;
+  },
+  // Trigger a DarkRisk360 sync with surface-scan (replaces darkrisk360-sync-surfacescan edge function)
+  async createScanRun(
+    companyId: string,
+    payload: { trigger_type?: string; include_dti_extended?: boolean; identity_emails?: string[]; [k: string]: unknown },
+    groupId?: string | null,
+  ): Promise<any> {
+    const res = await complianceApiClient.post<ApiResponse<any>>(
+      `/companies/${companyId}/darkrisk/scan-runs`,
+      payload,
+      groupId ? groupHeader(groupId) : undefined,
+    );
+    return res.data;
+  },
   // Evidence reveal
   async revealEvidence(
     companyId: string,

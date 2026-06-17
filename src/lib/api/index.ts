@@ -37,3 +37,6 @@ export { nucleiScan360Api } from "./nuclei-scan360";
 export { lifecycleApi } from "./lifecycle";
 export { aiCisoApi } from "./ai-ciso";
 export { hilogReportsApi } from "./hilog-reports";
+export { shodanApi } from "./shodan";
+export { subdomainDumpApi } from "./subdomain-dump";
+export { demoRequestApi } from "./demo-request";

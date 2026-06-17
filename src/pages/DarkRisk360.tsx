@@ -45,6 +45,7 @@ import { useDarkRiskOverview } from '@/hooks/useDarkRiskOverview';
 import { useDarkRiskQaStatus } from '@/hooks/useDarkRiskQaStatus';
 import { useDarkRiskRoadmapStatus } from '@/hooks/useDarkRiskRoadmapStatus';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { darkRiskApi } from '@/lib/api/darkrisk';
 import { useSurfaceScanMonitoredIps } from '@/hooks/useSurfaceScanMonitoredIps';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -256,7 +257,7 @@ const DarkRisk360: React.FC = () => {
   const queryClient = useQueryClient();
   const { alerts, createAlert, loading: alertsLoading } = useDarkRiskAlerts();
   const { data: overview, isLoading, isError, error, refetch, isFetching } = useDarkRiskOverview();
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
   const [syncingScan, setSyncingScan] = useState(false);
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
@@ -657,16 +658,11 @@ const DarkRisk360: React.FC = () => {
   const generateReportMutation = useMutation({
     mutationFn: async (mode: DarkRiskReportMode) => {
       if (!organizationId) throw new Error('Nessun cliente selezionato');
-      const { data, error: invokeError } = await supabase.functions.invoke('darkrisk360-generate-report', {
-        body: {
-          customer_id: organizationId,
-          classification: 'confidential',
-          report_mode: mode,
-        },
-      });
-      if (invokeError) throw invokeError;
-      if (data?.error) throw new Error(String(data.error));
-      return data;
+      const res = await darkRiskApi.createReportSnapshot(organizationId, {
+        classification: 'confidential',
+        report_mode: mode,
+      }, groupId);
+      return (res as { data?: unknown })?.data ?? res;
     },
     onSuccess: async (data) => {
       toast.success(data?.reused ? 'Report esistente riutilizzato' : 'Report DarkRisk360 generato');
@@ -863,16 +859,10 @@ const DarkRisk360: React.FC = () => {
 
     setSyncingScan(true);
     try {
-      const { data, error: invokeError } = await supabase.functions.invoke('darkrisk360-sync-surfacescan', {
-        body: {
-          customer_id: organizationId,
-          trigger_type: options?.triggerType || 'manual',
-          include_dti_extended: options?.includeDtiExtended ?? true,
-        },
-      });
-
-      if (invokeError) throw invokeError;
-      if (data?.error) throw new Error(String(data.error));
+      await darkRiskApi.createScanRun(organizationId, {
+        trigger_type: options?.triggerType || 'manual',
+        include_dti_extended: options?.includeDtiExtended ?? true,
+      }, groupId);
 
       toast.success(options?.successMessage || 'Sincronizzazione DarkRisk360 completata');
       void Promise.all([
@@ -923,15 +913,10 @@ const DarkRisk360: React.FC = () => {
         });
       if (selectorError) throw selectorError;
 
-      const { data, error: invokeError } = await supabase.functions.invoke('darkrisk360-sync-surfacescan', {
-        body: {
-          customer_id: organizationId,
-          trigger_type: 'identity_email_manual',
-          identity_emails: parsedEmails,
-        },
-      });
-      if (invokeError) throw invokeError;
-      if (data?.error) throw new Error(String(data.error));
+      await darkRiskApi.createScanRun(organizationId, {
+        trigger_type: 'identity_email_manual',
+        identity_emails: parsedEmails,
+      }, groupId);
 
       toast.success(`Analisi identity avviata su ${parsedEmails.length} email`);
       setIdentityEmailsInput('');
@@ -1011,17 +996,13 @@ const DarkRisk360: React.FC = () => {
       return;
     }
 
-    const { data, error: invokeError } = await supabase.functions.invoke('darkrisk360-report-access', {
-      body: {
-        customer_id: organizationId,
-        report_id: String(report?.id || ''),
-        format,
-        reason: 'manual_export_from_darkrisk_ui',
-      },
-    });
+    const res = await darkRiskApi.revealEvidence(organizationId, String(report?.id || ''), {
+      reason: `manual_export_from_darkrisk_ui_${format}`,
+    }, groupId);
+    const data = (res as { data?: { ok?: boolean; signed_url?: string } })?.data ?? res;
 
-    if (invokeError) {
-      toast.error(`Impossibile aprire export ${format.toUpperCase()}: ${String(invokeError.message || 'errore sconosciuto')}`);
+    if (!data?.ok || !data?.signed_url) {
+      toast.error(`Impossibile aprire export ${format.toUpperCase()}: ${String((data as { error?: string })?.error || 'errore sconosciuto')}`);
       return;
     }
 
@@ -1040,17 +1021,12 @@ const DarkRisk360: React.FC = () => {
       return report.report_json;
     }
 
-    const { data, error: invokeError } = await supabase.functions.invoke('darkrisk360-report-access', {
-      body: {
-        customer_id: organizationId,
-        report_id: String(report?.id || ''),
-        format: 'json',
-        reason: 'manual_export_surface_template',
-      },
-    });
-    if (invokeError) throw invokeError;
+    const res = await darkRiskApi.revealEvidence(organizationId, String(report?.id || ''), {
+      reason: 'manual_export_surface_template_json',
+    }, groupId);
+    const data = (res as { data?: { ok?: boolean; signed_url?: string } })?.data ?? res;
     if (!data?.ok || !data?.signed_url) {
-      throw new Error(String(data?.error || 'Export JSON non disponibile'));
+      throw new Error(String((data as { error?: string })?.error || 'Export JSON non disponibile'));
     }
 
     const response = await fetch(String(data.signed_url));

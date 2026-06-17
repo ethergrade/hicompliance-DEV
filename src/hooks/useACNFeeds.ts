@@ -102,27 +102,12 @@ export function useACNFeeds(): UseACNFeedsResult {
 		setError(null);
 
 		try {
-			const { data, error: fnError } = await supabase.functions.invoke(
-				"fetch-acn-feeds",
-				{
-					method: "POST",
-				},
-			);
-
-			if (fnError) {
-				throw new Error(fnError.message);
-			}
-
-			if (data?.success && data?.data) {
-				const feedsData: FeedsData = data.data;
-				setNis2Feed(feedsData.nis2 || []);
-				setThreatFeed(feedsData.threat || []);
-				setCveFeed(feedsData.cve || []);
-				setEpssFeed(feedsData.epss || []);
-				setCachedData(feedsData);
-			} else {
-				throw new Error("Invalid response format");
-			}
+			const feedsData = await feedsApi.list(groupId);
+			setNis2Feed(feedsData.nis2 || []);
+			setThreatFeed(feedsData.threat || []);
+			setCveFeed(feedsData.cve || []);
+			setEpssFeed(feedsData.epss || []);
+			setCachedData(feedsData);
 		} catch (err) {
 			console.error("Error fetching ACN feeds:", err);
 			setError(

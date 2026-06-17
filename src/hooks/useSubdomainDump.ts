@@ -1,50 +1,39 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { subdomainDumpApi, type SubdomainDump, type SubdomainResult } from '@/lib/api/subdomain-dump';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 
-export interface SubdomainResult {
-  subdomain: string;
-  ip: string | null;
-  asn: number | null;
-  asn_name: string | null;
-  cidr: string | null;
-  country: string | null;
-  source: string[];
-}
+export type { SubdomainDump, SubdomainResult };
 
-export interface SubdomainDump {
-  id: string;
-  organization_id: string;
-  root_domain: string;
-  depth_limit: number;
-  total_discovered: number;
-  total_returned: number;
-  truncated: boolean;
-  sources: string[];
-  results: SubdomainResult[];
-  triggered_by: string;
-  created_at: string;
+type OrgSettingsRow = {
+  subdomain_dump_depth?: number;
+  subdomain_dump_enabled?: boolean;
+};
+
+function getErrorMessage(e: unknown): string {
+  return e instanceof Error ? e.message : 'Errore dump';
 }
 
 export const useSubdomainDump = () => {
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
   const [history, setHistory] = useState<SubdomainDump[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [depthSetting, setDepthSetting] = useState<number>(10);
   const [enabledSetting, setEnabledSetting] = useState<boolean>(true);
 
+  // History → backend (POST /subdomain-dump + GET /subdomain-dump/history)
   const fetchHistory = useCallback(async () => {
     if (!organizationId) return;
-    const { data } = await supabase
-      .from('subdomain_dumps')
-      .select('*')
-      .eq('organization_id', organizationId)
-      .order('created_at', { ascending: false })
-      .limit(20);
-    setHistory((data ?? []) as unknown as SubdomainDump[]);
-  }, [organizationId]);
+    try {
+      const items = await subdomainDumpApi.history(organizationId, groupId);
+      setHistory(items);
+    } catch (e) {
+      console.warn('subdomain-dump history failed', e);
+    }
+  }, [organizationId, groupId]);
 
+  // Settings → ancora Supabase (mancano endpoint GET/PUT /subdomain-dumps/settings nel backend)
   const fetchSettings = useCallback(async () => {
     if (!organizationId) return;
     const { data } = await supabase
@@ -53,50 +42,63 @@ export const useSubdomainDump = () => {
       .eq('id', organizationId)
       .maybeSingle();
     if (data) {
-      setDepthSetting((data as any).subdomain_dump_depth ?? 10);
-      setEnabledSetting((data as any).subdomain_dump_enabled ?? true);
+      const settings = data as unknown as OrgSettingsRow;
+      setDepthSetting(settings.subdomain_dump_depth ?? 10);
+      setEnabledSetting(settings.subdomain_dump_enabled ?? true);
     }
   }, [organizationId]);
 
-  useEffect(() => { fetchHistory(); fetchSettings(); }, [fetchHistory, fetchSettings]);
+  useEffect(() => {
+    fetchHistory();
+    fetchSettings();
+  }, [fetchHistory, fetchSettings]);
 
-  const updateSettings = useCallback(async (depth: number, enabled: boolean) => {
-    if (!organizationId) return false;
-    const d = Math.max(1, Math.min(100, Math.round(depth)));
-    const { error: e } = await supabase
-      .from('organizations')
-      .update({ subdomain_dump_depth: d, subdomain_dump_enabled: enabled })
-      .eq('id', organizationId);
-    if (e) { setError(e.message); return false; }
-    setDepthSetting(d);
-    setEnabledSetting(enabled);
-    return true;
-  }, [organizationId]);
+  const updateSettings = useCallback(
+    async (depth: number, enabled: boolean) => {
+      if (!organizationId) return false;
+      const d = Math.max(1, Math.min(100, Math.round(depth)));
+      const { error: e } = await supabase
+        .from('organizations')
+        .update({ subdomain_dump_depth: d, subdomain_dump_enabled: enabled })
+        .eq('id', organizationId);
+      if (e) {
+        setError(e.message);
+        return false;
+      }
+      setDepthSetting(d);
+      setEnabledSetting(enabled);
+      return true;
+    },
+    [organizationId],
+  );
 
-  const runDump = useCallback(async (rootDomain: string, overrideDepth?: number) => {
-    if (!organizationId) return null;
-    setRunning(true);
-    setError(null);
-    try {
-      const { data, error: invErr } = await supabase.functions.invoke('subdomain-dump', {
-        body: {
-          organization_id: organizationId,
-          root_domain: rootDomain.trim().toLowerCase(),
-          depth_limit: overrideDepth,
-          triggered_by: 'manual',
-        },
-      });
-      if (invErr) throw invErr;
-      if ((data as any)?.error) throw new Error(typeof (data as any).error === 'string' ? (data as any).error : 'Errore dump');
-      await fetchHistory();
-      return data as any;
-    } catch (e: any) {
-      setError(e?.message ?? 'Errore dump');
-      return null;
-    } finally {
-      setRunning(false);
-    }
-  }, [organizationId, fetchHistory]);
+  const runDump = useCallback(
+    async (rootDomain: string, overrideDepth?: number) => {
+      if (!organizationId) return null;
+      setRunning(true);
+      setError(null);
+      try {
+        const data = await subdomainDumpApi.store(
+          organizationId,
+          {
+            root_domain: rootDomain.trim().toLowerCase(),
+            depth_limit: overrideDepth,
+            triggered_by: 'manual',
+          },
+          groupId,
+        );
+        if (!data) throw new Error('Errore dump');
+        await fetchHistory();
+        return data;
+      } catch (e) {
+        setError(getErrorMessage(e));
+        return null;
+      } finally {
+        setRunning(false);
+      }
+    },
+    [organizationId, groupId, fetchHistory],
+  );
 
   return {
     history,

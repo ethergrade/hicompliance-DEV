@@ -173,7 +173,8 @@ const ExposurePortsPage: React.FC = () => {
 
     setStartingScan(true);
     try {
-      const result = await startExposureScan(payload);
+      const { organizationId, groupId } = useClientOrganization();
+const result = await startExposureScan(payload, organizationId ?? '', groupId);
       toast.success('Scansione exposure avviata', {
         description: `Job ${result?.job_id || '-'} • Queue: ${result?.queue?.total || 0}`,
       });

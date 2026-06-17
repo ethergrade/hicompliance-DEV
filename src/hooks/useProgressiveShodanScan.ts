@@ -1,6 +1,7 @@
 import { useQueries } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { shodanApi } from '@/lib/api/shodan';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 import type { ShodanAsset } from './useShodanScan';
 
 export interface ScanRule {
@@ -25,17 +26,36 @@ interface RuleScanResult {
  * La UI si popola progressivamente man mano che ogni regola termina.
  */
 export const useProgressiveShodanScan = (rules: ScanRule[], enabled = true) => {
+  const { organizationId, groupId } = useClientOrganization();
+
   const queries = useQueries({
     queries: rules.map((rule) => ({
-      queryKey: ['shodan-scan-rule', rule.entry_type, rule.input_value, rule.ip_start, rule.ip_end],
-      enabled: enabled && !!rule.input_value,
+      queryKey: [
+        'shodan-scan-rule',
+        organizationId,
+        groupId,
+        rule.entry_type,
+        rule.input_value,
+        rule.ip_start,
+        rule.ip_end,
+      ],
+      enabled: enabled && !!rule.input_value && !!organizationId,
       staleTime: 10 * 60 * 1000,
       queryFn: async (): Promise<RuleScanResult> => {
-        const { data, error } = await supabase.functions.invoke('shodan-scan', {
-          body: { rule },
-        });
-        if (error) throw error;
-        return data as RuleScanResult;
+        if (!organizationId) throw new Error('organizationId mancante');
+        const res = await shodanApi.scan(
+          organizationId,
+          {
+            rule: {
+              entry_type: rule.entry_type,
+              input_value: rule.input_value,
+              ip_start: rule.ip_start,
+              ip_end: rule.ip_end,
+            },
+          },
+          groupId,
+        );
+        return { ...res, rule_id: rule.id };
       },
     })),
   });

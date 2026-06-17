@@ -66,17 +66,8 @@ export const useCveIntelBatch = (cveIds: string[]) => {
       for (const row of (data ?? []) as unknown as CveIntel[]) map[row.cve_id] = row;
 
       const missing = sorted.filter((id) => !map[id]);
-      if (missing.length > 0) {
-        if (organizationId) {
-          await supabase.rpc('enqueue_cve_enrichment', {
-            _cves: missing,
-            _org_id: organizationId,
-            _source: 'ui_findings_batch',
-          }).catch(() => {});
-        }
-        await supabase.functions.invoke('cve-enrichment', {
-          body: { max_per_run: 25 },
-        }).catch(() => {});
+      if (missing.length > 0 && organizationId) {
+        await hipatchApi.enrichCves(organizationId, groupId).catch(() => {});
       }
 
       return map;

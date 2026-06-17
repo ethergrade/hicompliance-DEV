@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { demoRequestApi } from '@/lib/api/demo-request';
 import { ArrowRight, Send } from 'lucide-react';
 
 interface DemoFormData {
@@ -74,18 +74,11 @@ const DemoRequestForm = () => {
         throw new Error('Inserire una Partita IVA valida (11 cifre)');
       }
 
-      // Call edge function
-      const { data, error } = await supabase.functions.invoke('send-demo-request', {
-        body: formData
-      });
-
-      if (error) {
-        throw error;
-      }
-
-      if (!data.success) {
-        throw new Error(data.error || 'Errore durante l\'invio della richiesta');
-      }
+ // Call backend API
+ const data = await demoRequestApi.submit(formData);
+ if (!data?.success) {
+ throw new Error(data?.message || data?.error || 'Errore durante l\'invio della richiesta');
+ }
 
       toast({
         title: "Richiesta Inviata!",

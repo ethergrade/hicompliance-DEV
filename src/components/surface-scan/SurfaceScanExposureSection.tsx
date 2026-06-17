@@ -326,7 +326,8 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
     async (payload: ExposureStartRequest, options?: { auto?: boolean }) => {
       setStartingScan(true);
       try {
-        const result = await startExposureScan(payload);
+        const { organizationId, groupId } = useClientOrganization();
+const result = await startExposureScan(payload, organizationId ?? '', groupId);
         setSelectedJobId(String(result?.job_id || ''));
         toast.success(options?.auto ? 'Scansione scope avviata automaticamente' : 'Scansione exposure avviata', {
           description: `Job ${result?.job_id || '-'} • Queue: ${result?.queue?.total || 0}`,

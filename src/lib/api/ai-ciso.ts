@@ -48,4 +48,15 @@ export const aiCisoApi = {
   async delete(conversationId: string): Promise<void> {
     await apiClient.delete(`/ai-ciso-conversations/${conversationId}`);
   },
+  /** Send a message to the AI CISO chat and get assistant reply (replaces ai-ciso-chat edge function) */
+  async chat(
+    conversationId: string,
+    payload: { message: string; conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>; [k: string]: unknown },
+  ): Promise<{ response: string; [k: string]: unknown }> {
+    const res = await apiClient.post<{ response: string }>(
+      `/ai-ciso-conversations/${conversationId}/chat`,
+      payload,
+    );
+    return res.data;
+  },
 };
