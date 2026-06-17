@@ -34,6 +34,9 @@ interface GanttChartProps {
   onToggleVisibility: (taskId: string) => void;
   onDeleteTask: (taskId: string) => void;
   onReorderTasks: (taskId: string, newIndex: number) => void;
+  onProgressChange?: (taskId: string, progress: number) => void;
+  canEdit?: boolean;
+  canUpdateProgress?: boolean;
 }
 
 const MONTHS_IT = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
@@ -57,6 +60,9 @@ export const GanttChart: React.FC<GanttChartProps> = ({
   onToggleVisibility: _onToggleVisibility,
   onDeleteTask,
   onReorderTasks: _onReorderTasks,
+  onProgressChange,
+  canEdit = true,
+  canUpdateProgress = false,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -259,14 +265,36 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                           </Tooltip>
                           <p className="text-[10px] text-muted-foreground truncate mt-1">{task.assignee}</p>
                         </div>
-                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button type="button" className="p-1 rounded hover:bg-muted" onClick={() => onEditTask(task)}>
-                            <Settings className="h-3 w-3 text-muted-foreground" />
-                          </button>
-                          <button type="button" className="p-1 rounded hover:bg-destructive/10" onClick={() => onDeleteTask(task.id)}>
-                            <Trash2 className="h-3 w-3 text-destructive/70" />
-                          </button>
-                        </div>
+                        {canEdit && (
+                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button type="button" className="p-1 rounded hover:bg-muted" onClick={() => onEditTask(task)}>
+                              <Settings className="h-3 w-3 text-muted-foreground" />
+                            </button>
+                            <button type="button" className="p-1 rounded hover:bg-destructive/10" onClick={() => onDeleteTask(task.id)}>
+                              <Trash2 className="h-3 w-3 text-destructive/70" />
+                            </button>
+                          </div>
+                        )}
+                        {canUpdateProgress && !canEdit && (
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              defaultValue={task.progress}
+                              className="w-12 h-6 text-xs rounded border border-border bg-background px-1 text-center"
+                              onBlur={(e) => {
+                                const val = Math.min(100, Math.max(0, Number(e.target.value)));
+                                if (val !== task.progress) onProgressChange?.(task.id, val);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            <span className="text-[10px] text-muted-foreground">%</span>
+                          </div>
+                        )}
                       </div>
 
                       <div className="relative" style={{ minWidth: `${timelineMinWidth}px` }}>
@@ -291,7 +319,10 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                             <TooltipTrigger asChild>
                               <div
                                 className={cn(
-                                  'absolute top-1/2 -translate-y-1/2 h-7 rounded-full cursor-grab active:cursor-grabbing touch-none z-20',
+                                  'absolute top-1/2 -translate-y-1/2 h-7 rounded-full touch-none z-20',
+                                  canEdit
+                                    ? 'cursor-grab active:cursor-grabbing'
+                                    : 'cursor-default',
                                   isDragging
                                     ? 'ring-2 ring-primary/50 shadow-lg'
                                     : 'hover:brightness-110 hover:shadow-md transition-shadow',
@@ -302,7 +333,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                                   backgroundColor: task.color || 'hsl(var(--primary))',
                                   minWidth: 28,
                                 }}
-                                onPointerDown={(e) => handleBarPointerDown(e, task, 'middle')}
+                                onPointerDown={canEdit ? (e) => handleBarPointerDown(e, task, 'middle') : undefined}
                               >
                                 {task.progress > 0 && (
                                   <div
@@ -313,17 +344,17 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 
                                 <div
                                   className="absolute left-0 top-0 bottom-0 w-3 cursor-ew-resize rounded-l-full hover:bg-white/30 active:bg-white/40"
-                                  onPointerDown={(e) => {
+                                  onPointerDown={canEdit ? (e) => {
                                     e.stopPropagation();
                                     handleBarPointerDown(e, task, 'left');
-                                  }}
+                                  } : undefined}
                                 />
                                 <div
                                   className="absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize rounded-r-full hover:bg-white/30 active:bg-white/40"
-                                  onPointerDown={(e) => {
+                                  onPointerDown={canEdit ? (e) => {
                                     e.stopPropagation();
                                     handleBarPointerDown(e, task, 'right');
-                                  }}
+                                  } : undefined}
                                 />
 
                                 <div className="absolute inset-0 flex items-center justify-between px-2 text-[10px] text-white font-semibold pointer-events-none select-none overflow-hidden">

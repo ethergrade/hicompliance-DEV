@@ -6,6 +6,7 @@ import type {
 	UpdateRemediationTaskRequest,
 } from "@/types/api";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -304,6 +305,9 @@ const GANTT_END = new Date("2026-12-31");
 /* ─── Component ─── */
 const Remediation: React.FC = () => {
 	const { organizationId: orgId, groupId } = useClientOrganization();
+	const { capabilities } = useAuth();
+	const canEdit = capabilities?.['hicompliance.remediation_tasks.edit'] ?? true;
+	const canUpdateProgress = capabilities?.['hicompliance.remediation_tasks.view'] ?? false;
 
 	const defaultPrefs = useMemo(
 		() => ({ selectedTimeframe: "90days", defaultView: "gantt" }),
@@ -605,6 +609,17 @@ const Remediation: React.FC = () => {
 		[activeTasks, orgId],
 	);
 
+	const handleProgressChange = useCallback(async (taskId: string, progress: number) => {
+		if (!orgId) return;
+		setTasks(prev => prev.map(t => t.id === taskId ? { ...t, progress } : t));
+		try {
+			await remediationTasksApi.updateProgress(orgId, taskId, progress, groupId);
+		} catch (err) {
+			await loadTasks();
+			toast({ title: 'Errore', description: getErrorDetail(err) || 'Impossibile aggiornare il progresso.', variant: 'destructive' });
+		}
+	}, [orgId, groupId, loadTasks]);
+
 	/* ─── Create new task ─── */
 	const calculateBudget = (days: number, complexity: string) => {
 		const rates: Record<string, number> = { low: 300, medium: 500, high: 800 };
@@ -846,12 +861,14 @@ const TEAM_KEY_TO_LABEL: Record<string, string> = {
 							open={isCreateModalOpen}
 							onOpenChange={setIsCreateModalOpen}
 						>
+							{canEdit && (
 							<DialogTrigger asChild>
 								<Button className="bg-green-600 hover:bg-green-700 text-white">
 									<Plus className="w-4 h-4 mr-2" />
 									Crea Remediation
 								</Button>
 							</DialogTrigger>
+							)}
 							<DialogContent className="max-w-2xl">
 								<DialogHeader>
 									<DialogTitle className="flex items-center">
@@ -1530,6 +1547,9 @@ const TEAM_KEY_TO_LABEL: Record<string, string> = {
 								onToggleVisibility={handleToggleVisibility}
 								onDeleteTask={handleDeleteTask}
 								onReorderTasks={handleReorderTasks}
+								onProgressChange={handleProgressChange}
+								canEdit={canEdit}
+								canUpdateProgress={canUpdateProgress}
 							/>
 						)}
 					</TabsContent>

@@ -55,6 +55,15 @@ export const remediationTasksApi = {
 		return res.data;
 	},
 
+	async updateProgress(companyId: string, id: string, progress: number, groupId?: string | null): Promise<RemediationTask> {
+		const res = await apiClient.patch<ApiResponse<RemediationTask>>(
+			`/companies/${companyId}/remediation-tasks/${id}/progress`,
+			{ progress },
+			_h(groupId),
+		);
+		return res.data;
+	},
+
 	async delete(companyId: string, id: string, groupId?: string | null): Promise<void> {
 		await apiClient.delete(
 			`/companies/${companyId}/remediation-tasks/${id}`,
