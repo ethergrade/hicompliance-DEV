@@ -68,10 +68,26 @@ const Dashboard: React.FC = () => {
     himail:       { name: "HiMail", icon: "shield" },
     hidetect:     { name: "HiDetect", icon: "shield" },
     hilog:        { name: "HiLog", icon: "shield" },
-    himobile:     { name: "HiMobile", icon: "shield" },
-  };
+    himobile: { name: "HiMobile", icon: "shield" },
+  hitrack: { name: "HiTrack", icon: "shield" },
+};
 
-  const normalizeCode = (code: string) =>
+// Ordine di visualizzazione richiesto dai servizi HiSolution nella dashboard.
+// Trello #74: 1) HiCompliance 2) Surface 3) dark 4) Firewall 5) endpoint
+// 6) mobile 7) log 8) patch 9) hitrack.
+const SERVICE_DISPLAY_ORDER: Record<string, number> = {
+  hicompliance: 1,
+  surfacescan: 2,
+  darkrisk: 3,
+  hifirewall: 4,
+  hiendpoint: 5,
+  himobile: 6,
+  hilog: 7,
+  hipatch: 8,
+  hitrack: 9,
+};
+
+const normalizeCode = (code: string) =>
     code.toLowerCase().replace(/[^a-z0-9]/g, "");
 
   // Mostra SOLO i servizi HiSolution attivi per questo tenant.
@@ -94,6 +110,15 @@ const Dashboard: React.FC = () => {
         };
       })
       .filter(Boolean) as typeof hiSolutionServices;
+
+    // Ordina per SERVICE_DISPLAY_ORDER; i servizi sconosciuti vanno in coda.
+    return hiSolutionServices.slice().sort((a, b) => {
+      const aKey = normalizeCode(a.services.code);
+      const bKey = normalizeCode(b.services.code);
+      const aOrder = SERVICE_DISPLAY_ORDER[aKey] ?? 999;
+      const bOrder = SERVICE_DISPLAY_ORDER[bKey] ?? 999;
+      return aOrder - bOrder;
+    });
   }, [integrations]);
 
   const totalIssues = integrations.filter((i) => !i.is_active).length;
