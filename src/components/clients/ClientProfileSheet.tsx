@@ -476,7 +476,7 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
     setForm(INITIAL);
 
     Promise.all([
-      tenantsApi.get(organizationId).catch(() => null),
+      tenantsApi.get(organizationId, groupId ?? undefined).catch(() => null),
       groupId
         ? tenantServicesApi
             .listByOrganization(organizationId, groupId)

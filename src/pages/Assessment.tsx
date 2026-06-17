@@ -336,7 +336,7 @@ const Assessment: React.FC = () => {
       try {
         // If using v1 fallback data, load responses from v1 API
         if (isUsingFallbackData && v1AssessmentId) {
-          const assessment = await assessmentApi.get(v1AssessmentId);
+          const assessment = await assessmentApi.get(v1AssessmentId, selectedOrganization?.group_id ?? null);
           if (assessment?.questions && typeof assessment.questions === 'object') {
             const mapped: Record<number, string | null> = {};
             Object.entries(assessment.questions as Record<string, string>).forEach(([key, val]) => {
@@ -379,7 +379,7 @@ const Assessment: React.FC = () => {
     };
 
     loadResponses();
-  }, [orgId, user, v2Categories.length, indexToUuid, isUsingFallbackData, v1AssessmentId]);
+  }, [orgId, user, v2Categories.length, indexToUuid, isUsingFallbackData, v1AssessmentId, selectedOrganization?.group_id]);
 
   // Auto-save: debounced save after each response change
   const snapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

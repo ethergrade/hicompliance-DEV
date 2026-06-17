@@ -28,8 +28,9 @@ export const assessmentApi = {
     return res.data;
   },
 
-  async get(id: AssessmentId): Promise<AssessmentData> {
-    const res = await apiClient.get<ApiResponse<AssessmentData>>(`/assessments/${id}`);
+  async get(id: AssessmentId, groupId?: string | null): Promise<AssessmentData> {
+    const opts = groupId ? { headers: { "X-Group-Id": groupId } } : undefined;
+    const res = await apiClient.get<ApiResponse<AssessmentData>>(`/assessments/${id}`, undefined, opts);
     return res.data;
   },
 

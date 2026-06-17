@@ -120,6 +120,7 @@ export function useOrganizationProfile() {
   const sourceIdRef = useRef<string>(`org-profile-${Math.random().toString(36).slice(2, 11)}`);
   const { organizationId: clientOrgId, isLoading: clientLoading, selectedOrganization } = useClientOrganization();
   const organizationId = clientOrgId ?? null;
+  const groupId = selectedOrganization?.group_id ?? null;
 
   // ─── Fetch profile ──────────────────────────────────────────────────────
 
@@ -137,7 +138,7 @@ export function useOrganizationProfile() {
 
     setLoading(true);
     try {
-      const tenant = await tenantsApi.get(organizationId);
+      const tenant = await tenantsApi.get(organizationId, groupId ?? undefined);
       const nextFormData = tenantToFormData(tenant);
       const prof = tenantToProfile(tenant);
 
