@@ -53,7 +53,7 @@ const Dashboard: React.FC = () => {
     activeGroupId,
   );
   const { radarCategories, vulnerabilities, deltaHosts, deltaCves } =
-    useAssessmentTrends(assessmentId);
+    useAssessmentTrends(assessmentId, activeGroupId);
 
   // Catalogo servizi — chiavi normalizzate (lowercase, no underscore/punteggiatura)
   // per confronto case-insensitive con i service_type del backend.

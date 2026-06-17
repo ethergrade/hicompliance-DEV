@@ -23,13 +23,14 @@ interface AssessmentTrends {
  * useDashboardMetrics.
  */
 export function useAssessmentTrends(
-  assessmentId: string | number | null
+  assessmentId: string | number | null,
+  groupId?: string | null
 ): AssessmentTrends {
   const { data: monthly, isLoading } = useQuery({
-    queryKey: ['assessment-trends', assessmentId],
+    queryKey: ['assessment-trends', assessmentId, groupId],
     queryFn: async () => {
       if (!assessmentId) return null;
-      return assessmentApi.reportMonthly(assessmentId);
+      return assessmentApi.reportMonthly(assessmentId, groupId);
     },
     enabled: !!assessmentId,
     staleTime: 120_000, // 2 min

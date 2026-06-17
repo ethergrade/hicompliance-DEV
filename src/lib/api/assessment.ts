@@ -48,13 +48,15 @@ export const assessmentApi = {
     return res.data;
   },
 
-  async report(id: AssessmentId): Promise<AssessmentReportData> {
-    const res = await apiClient.get<ApiResponse<AssessmentReportData>>(`/assessments/${id}/report`);
+  async report(id: AssessmentId, groupId?: string | null): Promise<AssessmentReportData> {
+    const opts = groupId ? { headers: { "X-Group-Id": groupId } } : undefined;
+    const res = await apiClient.get<ApiResponse<AssessmentReportData>>(`/assessments/${id}/report`, undefined, opts);
     return res.data;
   },
 
-  async reportMonthly(id: AssessmentId): Promise<AssessmentMonthlyReportData> {
-    const res = await apiClient.get<ApiResponse<AssessmentMonthlyReportData>>(`/assessments/${id}/report-monthly`);
+  async reportMonthly(id: AssessmentId, groupId?: string | null): Promise<AssessmentMonthlyReportData> {
+    const opts = groupId ? { headers: { "X-Group-Id": groupId } } : undefined;
+    const res = await apiClient.get<ApiResponse<AssessmentMonthlyReportData>>(`/assessments/${id}/report-monthly`, undefined, opts);
     return res.data;
   },
 

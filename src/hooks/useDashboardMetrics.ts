@@ -32,7 +32,7 @@ export function useDashboardMetrics(
       }
 
       // Fetch the report to get the summary scores
-      const report = await assessmentApi.report(match.id);
+      const report = await assessmentApi.report(match.id, groupId);
 
       return {
         completionScore: report.summary?.completion_score ?? 0,

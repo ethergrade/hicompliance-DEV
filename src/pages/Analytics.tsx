@@ -232,7 +232,7 @@ const Analytics: React.FC = () => {
   // React to organization switches — scopes all data to selected client
   const { organizationId, groupId, isLoading: clientLoading } = useClientOrganization();
   const { completionScore, riskScore, assessmentId } = useDashboardMetrics(organizationId, groupId);
-  const { radarCategories, isLoading: trendsLoading } = useAssessmentTrends(assessmentId);
+  const { radarCategories, isLoading: trendsLoading } = useAssessmentTrends(assessmentId, groupId);
 
   const currentData = KPI_DATA[timeRange];
   const riskTrendData = RISK_TREND_DATA[timeRange];
