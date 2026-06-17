@@ -784,7 +784,7 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
               <div>
                 <h4 className="text-sm font-semibold mb-3">Classificazione</h4>
                 <div className="grid grid-cols-1 gap-3">
-                  {renderField("business_sector", "Settore Merceologico")}
+                  {/* Trello #69: Settore Merceologico rimosso — usa il ChipSelect "Settore principale dove opera l'azienda" (industry) con options=INDUSTRY_OPTIONS, niente testo libero */}
 
                   <div className="space-y-1.5">
                     <Label
