@@ -185,10 +185,13 @@ import { useNavigate } from 'react-router-dom';
 const Assessment: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { selectedOrganization, userOrganizationId, canManageMultipleClients } = useClientContext();
+  const { selectedOrganization, canManageMultipleClients } = useClientContext();
   const { isSales, isSuperAdmin } = useUserRoles();
   const isAdmin = user?.is_super_admin || isSuperAdmin;
-  const orgId = selectedOrganization?.id || userOrganizationId;
+  const orgId = selectedOrganization?.id;
+  // NB: do NOT fall back to the group id (userOrganizationId) here — it would
+  // make /api/companies/{groupId}/... calls 404 for customers that have a
+  // group but no selected company. Skip API calls when orgId is null instead.
   const isReadOnlyView = canManageMultipleClients && isSales;
 
   // Question responses state: { [questionId]: response }
