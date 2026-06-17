@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { hipatchApi } from '@/lib/api/hipatch';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 export interface CveIntel {
@@ -27,7 +27,7 @@ export interface CveIntel {
 }
 
 export const useCveIntel = (cveId?: string | null) => {
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
 
   return useQuery<CveIntel | null>({
     queryKey: ['cve-intel', cveId],
@@ -42,13 +42,8 @@ export const useCveIntel = (cveId?: string | null) => {
       if (error) throw error;
       if (!data) {
         if (organizationId) {
-          await supabase.rpc('enqueue_cve_enrichment', {
-            _cves: [id],
-            _org_id: organizationId,
-            _source: 'ui_cve_modal',
-          }).catch(() => {});
+          await hipatchApi.enrichCves(organizationId, groupId).catch(() => {});
         }
-        await supabase.functions.invoke('cve-enrichment', { body: {} }).catch(() => {});
       }
       return (data ?? null) as unknown as CveIntel | null;
     },
@@ -56,7 +51,7 @@ export const useCveIntel = (cveId?: string | null) => {
 };
 
 export const useCveIntelBatch = (cveIds: string[]) => {
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
   const sorted = [...new Set(cveIds.map((c) => c.toUpperCase()))].sort();
   return useQuery<Record<string, CveIntel>>({
     queryKey: ['cve-intel-batch', sorted],

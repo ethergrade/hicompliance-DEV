@@ -283,6 +283,21 @@ export const hipatchApi = {
     return unwrap(res);
   },
 
+  async enrichCves(
+    organizationId: string,
+    groupId?: string | null,
+    date?: string
+  ): Promise<{ queued: number; message?: string } | null> {
+    const id = await getHipatchServiceId(organizationId, groupId);
+    if (!id) return null;
+    const body = date ? { date } : {};
+    const res = await apiClient.post<{ success: boolean; data: { queued: number; message?: string } }>(
+      `/tenant-services/${id}/hipatch/cves/enrich`,
+      body,
+      makeOpts(groupId)
+    );
+    return unwrapOne(res);
+  },
   async epssVulnerabilities(
     organizationId: string,
     groupId?: string | null,

@@ -187,6 +187,32 @@ export const surfaceScan360Api = {
     return res.data;
   },
 
+  // Observations (replaces Supabase surface_observations query)
+  async getObservations(
+    companyId: string,
+    params?: { job_ids?: string; module?: string; observation_type?: string; page?: number },
+    groupId?: string | null,
+  ): Promise<any[]> {
+    const res = await complianceApiClient.get<ApiResponse<any[]>>(
+      `/companies/${companyId}/surface-scan360/observations`,
+      params,
+      groupId ? groupHeader(groupId) : undefined,
+    );
+    return extractArray<any>(res.data);
+  },
+  // Module results (replaces Supabase surface_scan_module_results query)
+  async getModuleResults(
+    companyId: string,
+    params?: { job_ids?: string; status?: string; page?: number },
+    groupId?: string | null,
+  ): Promise<any[]> {
+    const res = await complianceApiClient.get<ApiResponse<any[]>>(
+      `/companies/${companyId}/surface-scan360/module-results`,
+      params,
+      groupId ? groupHeader(groupId) : undefined,
+    );
+    return extractArray<any>(res.data);
+  },
   async getAiReport(companyId: string, reportId: string, groupId?: string | null): Promise<any> {
     const res = await complianceApiClient.get<ApiResponse<any>>(
       `/companies/${companyId}/surface-scan360/ai-report/${reportId}`,
