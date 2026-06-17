@@ -1,45 +1,29 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
 import { useClientContext } from '@/contexts/ClientContext';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { hilogReportsApi, type CorrelationReport } from '@/lib/api/hilog-reports';
 
-export interface CorrelationReport {
-  id: string;
-  title: string;
-  description: string | null;
-  time_range_label: string;
-  time_range_days: number;
-  events_count: number;
-  format: string;
-  status: string;
-  report_data: any[];
-  filter_config: any;
-  created_at: string;
-  organization_id: string | null;
-  user_id: string;
-}
+export type { CorrelationReport };
 
 export const useCorrelationReports = () => {
   const { selectedOrganization } = useClientContext();
+  const { groupId } = useClientOrganization();
   const selectedClientId = selectedOrganization?.id;
   const queryClient = useQueryClient();
 
   const query = useQuery({
-    queryKey: ['correlation-reports', selectedClientId],
+    queryKey: ['correlation-reports', selectedClientId, groupId],
     queryFn: async () => {
-      let q = supabase.from('hilog_correlation_reports' as any).select('*').order('created_at', { ascending: false });
-      if (selectedClientId) {
-        q = q.eq('organization_id', selectedClientId);
-      }
-      const { data, error } = await q;
-      if (error) throw error;
-      return (data || []) as unknown as CorrelationReport[];
+      if (!selectedClientId) return [];
+      return hilogReportsApi.list(selectedClientId, undefined, groupId);
     },
+    enabled: !!selectedClientId,
   });
 
   const deleteReport = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('hilog_correlation_reports' as any).delete().eq('id', id);
-      if (error) throw error;
+      if (!selectedClientId) throw new Error('No client selected');
+      await hilogReportsApi.delete(selectedClientId, id, groupId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['correlation-reports'] });

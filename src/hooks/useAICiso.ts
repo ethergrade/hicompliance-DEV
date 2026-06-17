@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
+import { aiCisoApi } from '@/lib/api/ai-ciso';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -26,19 +27,18 @@ export const useAICiso = () => {
   // Load conversations
   const loadConversations = useCallback(async () => {
     if (!user) return;
-    const { data, error } = await supabase
-      .from('ai_ciso_conversations')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('updated_at', { ascending: false });
-
-    if (!error && data) {
-      setConversations(data.map((c: any) => ({
-        id: c.id,
-        title: c.title || 'Conversazione',
-        messages: (c.messages as any[]) || [],
-        created_at: c.created_at,
-      })));
+    try {
+      const conversations = await aiCisoApi.list();
+      setConversations(
+        conversations.map((c) => ({
+          id: c.id,
+          title: c.title || 'Conversazione',
+          messages: c.messages || [],
+          created_at: c.created_at,
+        }))
+      );
+    } catch (error) {
+      console.error('Failed to load conversations:', error);
     }
   }, [user]);
 
@@ -63,11 +63,15 @@ export const useAICiso = () => {
 
   // Delete conversation
   const deleteConversation = async (id: string) => {
-    await supabase.from('ai_ciso_conversations').delete().eq('id', id);
-    if (activeConversationId === id) {
-      newConversation();
+    try {
+      await aiCisoApi.delete(id);
+      if (activeConversationId === id) {
+        newConversation();
+      }
+      loadConversations();
+    } catch (error) {
+      console.error('Failed to delete conversation:', error);
     }
-    loadConversations();
   };
 
   // Save conversation
@@ -76,23 +80,23 @@ export const useAICiso = () => {
 
     const convTitle = title || (msgs[0]?.content?.slice(0, 60) + '...' || 'Nuova conversazione');
 
-    if (activeConversationId) {
-      await supabase
-        .from('ai_ciso_conversations')
-        .update({ messages: msgs as any, title: convTitle, updated_at: new Date().toISOString() })
-        .eq('id', activeConversationId);
-      return activeConversationId;
-    } else {
-      const { data, error } = await supabase
-        .from('ai_ciso_conversations')
-        .insert({ user_id: user.id, messages: msgs as any, title: convTitle })
-        .select('id')
-        .single();
-
-      if (data) {
-        setActiveConversationId(data.id);
-        return data.id;
+    try {
+      if (activeConversationId) {
+        await aiCisoApi.update(activeConversationId, {
+          messages: msgs,
+          title: convTitle,
+        });
+        return activeConversationId;
+      } else {
+        const conversation = await aiCisoApi.create({
+          messages: msgs,
+          title: convTitle,
+        });
+        setActiveConversationId(conversation.id);
+        return conversation.id;
       }
+    } catch (error) {
+      console.error('Failed to save conversation:', error);
       return null;
     }
   };
@@ -107,6 +111,7 @@ export const useAICiso = () => {
     setIsLoading(true);
 
     try {
+      // NOTE: Chat function still uses Supabase Edge Function (no backend endpoint yet)
       const { data, error } = await supabase.functions.invoke('ai-ciso-chat', {
         body: {
           userPrompt,
@@ -121,11 +126,12 @@ export const useAICiso = () => {
       setMessages(finalMessages);
       await saveConversation(finalMessages);
       loadConversations();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('AI CISO error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Errore nella comunicazione con l\'assistente AI';
       toast({
         title: 'Errore AI CISO',
-        description: error.message || 'Errore nella comunicazione con l\'assistente AI',
+        description: errorMessage,
         variant: 'destructive',
       });
       // Remove the user message on error

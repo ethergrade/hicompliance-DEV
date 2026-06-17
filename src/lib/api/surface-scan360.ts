@@ -135,6 +135,21 @@ export const surfaceScan360Api = {
     return res.data;
   },
 
+  // Exposure findings (open ports, services, exposure data per job)
+  async getExposureFindings(
+    companyId: string,
+    jobId: string,
+    params?: { severity?: string; status?: string; finding_type?: string; page?: number },
+    groupId?: string | null,
+  ): Promise<any[]> {
+    const res = await complianceApiClient.get<ApiResponse<any[]>>(
+      `/companies/${companyId}/surface-scan360/jobs/${jobId}/exposure-findings`,
+      params,
+      groupId ? groupHeader(groupId) : undefined,
+    );
+    return extractArray<any>(res.data);
+  },
+
   // Monitored IPs (replaces Supabase surface_scan_monitored_ips query)
   async listMonitoredIps(
     companyId: string,
