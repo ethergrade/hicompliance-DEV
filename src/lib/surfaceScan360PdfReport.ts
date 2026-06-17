@@ -806,7 +806,13 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   kv('Completata', s.completed_at ? new Date(s.completed_at).toLocaleString('it-IT') : 'n/d');
   if (s.overall_score != null) kv('Overall score', `${s.overall_score}/100`);
   if (s.risk_level) kv('Risk level', String(s.risk_level));
-  if (s.scope_mode) kv('Modalità report', s.scope_mode === 'single_job' ? 'Singola scansione' : 'Scope completo');
+  if (s.scope_mode) {
+    kv('Modalità report', s.scope_mode === 'single_job'
+      ? 'Singola scansione'
+      : s.scope_mode === 'run'
+        ? 'Run LAB'
+        : 'Scope completo');
+  }
   if (s.scope_targets_total != null) kv('Target inclusi', String(s.scope_targets_total));
   if (Array.isArray(s.scope_profiles) && s.scope_profiles.length > 0) {
     kv('Profili inclusi', s.scope_profiles.join(', '));
@@ -1240,16 +1246,6 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
       if (w.dnssec) wRows.push(['DNSSEC (RDAP)', String(w.dnssec)]);
       if (w.source) wRows.push(['Fonte dati', String(w.source)]);
       if (wRows.length > 0) drawTable(['Campo', 'Valore'], wRows, [200, 315]);
-    }
-
-    // Tecnologie (solo se presenti — niente n/d)
-    if (Array.isArray(a.technologies) && a.technologies.length > 0) {
-      text('Tecnologie rilevate', { size: 9, bold: true, color: [BRAND.r, BRAND.g, BRAND.b], indent: 8 });
-      drawTable(
-        ['Tecnologia', 'Versione', 'Categoria'],
-        a.technologies.slice(0, 10).map((t) => [t.name, t.version || '-', t.category || '-']),
-        [220, 120, 175]
-      );
     }
 
     // Threat Intelligence

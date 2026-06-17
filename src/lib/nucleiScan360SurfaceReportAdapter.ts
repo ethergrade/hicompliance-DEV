@@ -4,6 +4,7 @@ type ReportInput = {
   organizationId?: string | null;
   organizationName?: string | null;
   job: any;
+  runJobs?: any[];
   openPorts: any[];
   technologies: any[];
   niktoFindings: any[];
@@ -68,6 +69,11 @@ const inferAssetType = (value: string): 'domain' | 'subdomain' => {
   return host.split('.').length > 2 ? 'subdomain' : 'domain';
 };
 
+const reportTargets = (input: ReportInput): string[] => {
+  const jobs = Array.isArray(input.runJobs) && input.runJobs.length > 0 ? input.runJobs : [input.job];
+  return uniq(jobs.map((job) => targetHost(job)).filter(Boolean));
+};
+
 const countBySeverity = (findings: any[]): Record<string, number> =>
   findings.reduce((acc: Record<string, number>, finding: any) => {
     const severity = normalizeSeverity(finding?.severity);
@@ -111,7 +117,7 @@ const buildFindings = (input: ReportInput): any[] => {
     module: 'nmap',
     finding_type: 'open.port',
     title: `Porta ${asText(port?.protocol, 'tcp')}/${asText(port?.port)} aperta${port?.service ? ` (${port.service})` : ''}`,
-    description: `Nmap ha rilevato la porta aperta sul target. Prodotto/versione: ${[port?.product, port?.version].filter(Boolean).join(' ') || 'non disponibile'}.`,
+    description: 'La scansione ha rilevato una porta aperta sul target. Il report non espone tecnologie, prodotti o versioni rilevate.',
     severity: severityForPort(port?.port, port?.service),
     affected_asset: asText(port?.hostname || port?.host || target, target),
     affected_url: (port?.url_candidates || [])[0] || null,
@@ -124,9 +130,6 @@ const buildFindings = (input: ReportInput): any[] => {
     cvss: null,
     evidence: {
       service: port?.service || null,
-      product: port?.product || null,
-      version: port?.version || null,
-      cpe: port?.cpe || [],
     },
     attribution_confidence: 'high',
     created_at: input.job?.nmap_completed_at || input.job?.created_at || new Date().toISOString(),
@@ -183,7 +186,6 @@ const buildFindings = (input: ReportInput): any[] => {
       cvss: asNumber(match?.cvss_score),
       evidence: {
         source: match?.source || null,
-        cpe: match?.cpe || null,
         confidence: match?.confidence || null,
         nvd_status: match?.nvd_status || null,
       },
@@ -245,9 +247,9 @@ const buildRecommendations = (input: ReportInput, findings: any[]) => {
     },
     {
       priority: 2,
-      title: 'Verificare CVE potenziali da versioni e CPE',
-      rationale: `${potential.length} CVE potenziali sono state correlate tramite NVD/CPE o tecnologia versionata.`,
-      action: 'Validare versione reale, componente installato e configurazione prima di aprire remediation operative.',
+      title: 'Verificare CVE potenziali con validazione tecnica',
+      rationale: `${potential.length} CVE potenziali sono state correlate da fonti esterne e richiedono conferma tecnica.`,
+      action: 'Validare componente installato e configurazione prima di aprire remediation operative, senza riportare tecnologie o versioni nel report.',
       affected_assets: affectedAssets,
       severity: potential.length > 0 ? 'high' : 'low',
     },
@@ -279,25 +281,9 @@ const buildRecommendations = (input: ReportInput, findings: any[]) => {
 };
 
 const buildAssetModuleDetails = (input: ReportInput) => {
-  const target = targetHost(input.job);
-  const groupedTech = (input.technologies || []).reduce<Record<string, any[]>>((acc, tech) => {
-    const host = asText(tech?.asset_host || tech?.url || target, target).replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
-    (acc[host] ||= []).push(tech);
-    return acc;
-  }, {});
-
-  if (Object.keys(groupedTech).length === 0) {
-    groupedTech[target] = [];
-  }
-
-  return Object.entries(groupedTech).slice(0, 20).map(([asset, technologies]) => ({
+  return reportTargets(input).slice(0, 100).map((asset) => ({
     asset,
     asset_type: inferAssetType(asset),
-    technologies: technologies.slice(0, 20).map((technology) => ({
-      name: asText(technology?.name, 'Tecnologia'),
-      version: technology?.version || null,
-      category: technology?.category || technology?.source || null,
-    })),
   }));
 };
 
@@ -314,7 +300,7 @@ const buildObservations = (input: ReportInput): any[] => {
       module: 'pipeline',
       title: 'Pipeline LAB multi-engine',
       severity: 'info',
-      description: `Stage finale: ${asText(job?.stage || job?.status)}. Nmap/httpx, Nikto e Nuclei sono salvati in Supabase e correlati nel verdetto unico.`,
+      description: `Stage finale: ${asText(job?.stage || job?.status)}. Le evidenze tecniche sono salvate e correlate nel verdetto unico senza riportare tecnologie o versioni rilevate.`,
       raw: {
         nmap_status: job?.nmap_status || null,
         fingerprint_status: job?.fingerprint_status || null,
@@ -351,8 +337,9 @@ const levelLabel = (level: unknown): string => {
 
 export function adaptNucleiScan360JobToSurfaceReport(input: ReportInput): SurfaceScan360Report {
   const job = input.job || {};
-  const target = targetLabel(job);
-  const host = targetHost(job);
+  const targets = reportTargets(input);
+  const target = targets.length > 1 ? `Run LAB ${new Date(job?.created_at || Date.now()).toLocaleString('it-IT')} (${targets.length} target)` : targetLabel(job);
+  const host = targets[0] || targetHost(job);
   const verdict = job?.unified_verdict || {};
   const findings = buildFindings(input);
   const cveCatalog = buildCveCatalog(input.cveMatches || []);
@@ -384,31 +371,31 @@ export function adaptNucleiScan360JobToSurfaceReport(input: ReportInput): Surfac
       job_id: job?.id || null,
       target,
       normalized_target: job?.normalized_target_url || job?.resolved_target_url || target,
-      target_type: job?.target_kind || 'mixed_scope',
-      scan_profile: `NUCLEI-SCAN360 · Nmap ${job?.nmap_profile || 'service_light'} · Nuclei ${job?.profile || 'web_cve_recent'} · Nikto safe`,
+      target_type: targets.length > 1 ? 'run' : (job?.target_kind || 'target'),
+      scan_profile: 'LAB Scan360 autorizzato',
       hosting_context: 'lab_authorized_scope',
       status: job?.status || 'completed',
       started_at: job?.nmap_started_at || job?.started_at || job?.created_at || null,
       completed_at: job?.completed_at || job?.nikto_completed_at || job?.nmap_completed_at || null,
-      scope_mode: 'single_or_batch_target',
-      scope_jobs_total: 1,
-      scope_job_ids: job?.id ? [job.id] : [],
-      scope_targets_total: 1,
-      scope_targets: [target],
-      scope_target_types: [job?.target_kind || 'target'],
+      scope_mode: targets.length > 1 ? 'run' : 'single_job',
+      scope_jobs_total: Array.isArray(input.runJobs) && input.runJobs.length > 0 ? input.runJobs.length : 1,
+      scope_job_ids: (Array.isArray(input.runJobs) && input.runJobs.length > 0 ? input.runJobs : [job]).map((entry) => entry?.id).filter(Boolean),
+      scope_targets_total: targets.length,
+      scope_targets: targets,
+      scope_target_types: uniq((Array.isArray(input.runJobs) && input.runJobs.length > 0 ? input.runJobs : [job]).map((entry) => entry?.target_kind || 'target')),
       scope_profiles: [job?.profile || 'web_cve_recent'],
     },
-    assets_in_scope: [{
-      asset_type: job?.target_kind || 'target',
-      asset_value: host,
-      hostname: host,
+    assets_in_scope: targets.map((entry) => ({
+      asset_type: entry.includes('/') ? 'range' : (entry.match(/^\d+\.\d+\.\d+\.\d+$/) ? 'ipv4' : inferAssetType(entry)),
+      asset_value: entry,
+      hostname: entry,
       ip: null,
       source: 'nuclei_scan360_lab',
-    }],
+    })),
     findings,
     findings_by_severity: countBySeverity(findings),
     scope_guard_summary: {
-      in_scope: 1,
+      in_scope: targets.length,
       excluded_by_scope: 0,
       excluded_shared_noise: 0,
       excluded_reasons: {},
@@ -417,29 +404,29 @@ export function adaptNucleiScan360JobToSurfaceReport(input: ReportInput): Surfac
     intel: [],
     observations: buildObservations(input),
     asset_module_details: buildAssetModuleDetails(input),
-    monitored_scope: [{
-      entry_type: job?.target_kind || 'target',
-      input_value: target,
+    monitored_scope: targets.map((entry) => ({
+      entry_type: entry.includes('/') ? 'range' : (entry.match(/^\d+\.\d+\.\d+\.\d+$/) ? 'ipv4' : 'target'),
+      input_value: entry,
       discovered_via: 'nuclei_scan360_lab',
-    }],
+    })),
     subdomain_dumps: [],
     remediation_tasks: [],
     kev_generation: { created: 0, total_kev: cveCatalog.filter((entry) => entry.cisa_kev).length, existing: 0 },
     ai: {
       executive_summary:
-        `NUCLEI-SCAN360 ha eseguito Nmap/httpx, Nikto e Nuclei sul target autorizzato ${target}. ` +
-        `Risultato: ${input.openPorts.length} porte aperte, ${input.technologies.length} tecnologie rilevate, ` +
+        `NUCLEI-SCAN360 ha eseguito la pipeline LAB sul perimetro autorizzato ${target}. ` +
+        `Risultato: ${input.openPorts.length} porte aperte, ` +
         `${input.niktoFindings.length} finding Nikto, ${confirmedCount} CVE confermate e ${potentialCount} CVE potenziali. ` +
         `Il verdetto unico e ${levelLabel(verdict?.level)}; 0 CVE significa nessun match confermato/potenziale nella pipeline, non assenza assoluta di vulnerabilita.`,
       risk_score: verdictScore,
       risk_level: levelLabel(verdict?.level),
       top_recommendations: recommendations,
       correlations: [
-        'Nmap/httpx definisce superficie e tecnologie; Nikto evidenzia hardening e misconfiguration; Nuclei valida CVE tecniche.',
-        'Le CVE potenziali da NVD/CPE richiedono conferma di prodotto e versione prima di essere trattate come vulnerabilita provate.',
+        'La pipeline definisce la superficie esposta, identifica configurazioni da verificare e valida CVE tecniche quando disponibili.',
+        'Le CVE potenziali richiedono conferma tecnica prima di essere trattate come vulnerabilita provate.',
         ...(Array.isArray(verdict?.reasons) ? verdict.reasons.slice(0, 5) : []),
       ],
-      compliance_notes: 'Report LAB normalizzato sul template SurfaceScan360 per uso operativo multi-cliente. Nikto non conferma CVE: contribuisce al verdetto come evidenza di esposizione o configurazione.',
+      compliance_notes: 'Report LAB normalizzato sul template SurfaceScan360 per uso operativo multi-cliente. Il report non espone tecnologie, prodotti o versioni rilevate.',
     },
     ai_error: null,
   };

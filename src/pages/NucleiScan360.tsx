@@ -382,12 +382,66 @@ const formatDateTime = (value?: string | null) => {
     return new Intl.DateTimeFormat('it-IT', {
       day: '2-digit',
       month: '2-digit',
+      year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
     }).format(new Date(value));
   } catch {
     return '—';
   }
+};
+
+const runTimestampKey = (value?: string | null) => {
+  const ms = new Date(value || '').getTime();
+  if (!Number.isFinite(ms)) return 'unknown';
+  return new Date(Math.floor(ms / 1000) * 1000).toISOString();
+};
+
+type NucleiRunGroup = {
+  key: string;
+  created_at: string | null;
+  profile: string;
+  nmap_profile: string;
+  jobs: NucleiJob[];
+  completed: number;
+  active: number;
+  failed: number;
+  targetCount: number;
+};
+
+const groupJobsByRun = (rows: NucleiJob[]): NucleiRunGroup[] => {
+  const groups = new Map<string, NucleiRunGroup>();
+  rows.forEach((job) => {
+    const createdKey = runTimestampKey(job.created_at);
+    const key = `${createdKey}|${job.profile || 'profile'}|${job.nmap_profile || 'nmap'}`;
+    const group = groups.get(key) || {
+      key,
+      created_at: job.created_at || null,
+      profile: job.profile || 'web_cve_recent',
+      nmap_profile: job.nmap_profile || 'service_light',
+      jobs: [],
+      completed: 0,
+      active: 0,
+      failed: 0,
+      targetCount: 0,
+    };
+    group.jobs.push(job);
+    group.completed = group.jobs.filter((entry) => entry.status === 'completed').length;
+    group.active = group.jobs.filter((entry) => ['queued', 'running'].includes(String(entry.status || '').toLowerCase())).length;
+    group.failed = group.jobs.filter((entry) => ['failed', 'timeout', 'cancelled'].includes(String(entry.status || '').toLowerCase())).length;
+    group.targetCount = new Set(group.jobs.map((entry) => entry.normalized_target_url || entry.target_url || entry.target_input || entry.id)).size;
+    groups.set(key, group);
+  });
+  return Array.from(groups.values()).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+};
+
+const stripTechnologyFields = <T extends Record<string, unknown>>(value: T): Omit<T, 'raw_technology_result' | 'technology_count'> => {
+  const {
+    raw_technology_result: _rawTechnologyResult,
+    technology_count: _technologyCount,
+    ...rest
+  } = value;
+  return rest;
 };
 
 const formatScore = (value?: number | null) => {
@@ -951,7 +1005,7 @@ const NucleiScan360: React.FC = () => {
   const [result, setResult] = useState<NucleiResult | null>(null);
   const [rawResult, setRawResult] = useState('');
   const [lastDiagnostic, setLastDiagnostic] = useState<NucleiInvokeDiagnostic | null>(null);
-  const [reportExporting, setReportExporting] = useState<'pdf' | 'docx' | null>(null);
+  const [reportExporting, setReportExporting] = useState<string | null>(null);
 
   const analysis = useMemo(() => parseNucleiResult(result), [result]);
   const findings = analysis.findings;
@@ -961,6 +1015,7 @@ const NucleiScan360: React.FC = () => {
   );
 
   const selectedTargetSet = useMemo(() => new Set(selectedTargetUrls), [selectedTargetUrls]);
+  const runGroups = useMemo(() => groupJobsByRun(jobs), [jobs]);
   const confirmedCveMatches = useMemo(
     () => cveMatches.filter((match) => (match.match_status || 'confirmed') === 'confirmed'),
     [cveMatches],
@@ -1197,6 +1252,29 @@ const NucleiScan360: React.FC = () => {
     }
   };
 
+  const fetchJobDetail = async (job: NucleiJob) => {
+    const data = await invokeNucleiScan360<{
+      ok?: boolean;
+      error?: string;
+      job?: NucleiJob & { raw_result?: NucleiResult | null };
+      open_ports?: NmapOpenPort[];
+      cve_matches?: CveMatch[];
+      nikto_findings?: NiktoFinding[];
+    }>({
+      action: 'get',
+      job_id: job.id,
+    });
+    if (!data?.ok) throw new Error(data?.error || 'Impossibile aprire job NucleiScan360');
+    return {
+      job: (data.job || job) as NucleiJob & { raw_result?: NucleiResult | null },
+      open_ports: (data.open_ports || []) as NmapOpenPort[],
+      cve_matches: (data.cve_matches || []) as CveMatch[],
+      nikto_findings: (data.nikto_findings || []) as NiktoFinding[],
+      nuclei_findings: ((data.job?.raw_result?.findings || []) as NucleiFinding[]),
+      nuclei_result: (data.job?.raw_result || null) as NucleiResult | null,
+    };
+  };
+
   useEffect(() => {
     if (!selectedOrgId || !isSuperAdmin) return;
     const hasActiveJobs = jobs.some((job) => isJobActive(job)) || isJobActive(selectedJob);
@@ -1317,7 +1395,7 @@ const NucleiScan360: React.FC = () => {
       organizationName: selectedOrganizationName,
       job: selectedJob,
       openPorts,
-      technologies,
+      technologies: [],
       niktoFindings,
       cveMatches,
       nucleiFindings: findings,
@@ -1334,10 +1412,9 @@ const NucleiScan360: React.FC = () => {
         id: selectedOrgId || selectedJob.organization_id,
         name: selectedOrganizationName,
       },
-      job: selectedJob,
+      job: stripTechnologyFields(selectedJob as unknown as Record<string, unknown>),
       unified_verdict: selectedJob.unified_verdict || null,
       open_ports: openPorts,
-      technologies,
       nikto_findings: niktoFindings,
       cve_matches: cveMatches,
       nuclei_findings: findings,
@@ -1346,7 +1423,6 @@ const NucleiScan360: React.FC = () => {
         confirmed_cve_count: confirmedCveMatches.length,
         potential_cve_count: potentialCveMatches.length,
         nikto_finding_count: niktoFindings.length,
-        technology_count: technologies.length,
         open_port_count: openPorts.length,
         note: '0 CVE indica nessun match confermato/potenziale nella pipeline Nmap/httpx/NVD/Nuclei, non assenza assoluta di vulnerabilita.',
       },
@@ -1380,6 +1456,137 @@ const NucleiScan360: React.FC = () => {
       toast({
         title: 'Export PDF fallito',
         description: error instanceof Error ? error.message : 'Impossibile generare il report PDF.',
+        variant: 'destructive',
+      });
+    } finally {
+      setReportExporting(null);
+    }
+  };
+
+  const buildRunReportData = async (group: NucleiRunGroup) => {
+    const details = await Promise.all(group.jobs.map((job) => fetchJobDetail(job)));
+    const runJobs = details.map((detail) => {
+      return stripTechnologyFields(detail.job as unknown as Record<string, unknown>);
+    });
+    const representative = {
+      ...runJobs[0],
+      id: group.key,
+      target_input: `Run ${formatDateTime(group.created_at)} (${group.targetCount} target)`,
+      target_url: `run:${group.key}`,
+      normalized_target_url: `run:${group.key}`,
+      target_host: null,
+      target_kind: 'run',
+      status: group.failed > 0 ? 'completed' : group.active > 0 ? 'running' : 'completed',
+      stage: group.active > 0 ? 'running' : 'completed',
+      created_at: group.created_at || runJobs[0]?.created_at,
+      completed_at: runJobs.map((job) => job.completed_at).filter(Boolean).sort().at(-1) || null,
+      unified_verdict: runJobs.find((job) => job.unified_verdict)?.unified_verdict || null,
+    };
+
+    const openPortsAll = details.flatMap((detail) => detail.open_ports);
+    const niktoAll = details.flatMap((detail) => detail.nikto_findings);
+    const cveAll = details.flatMap((detail) => detail.cve_matches);
+    const nucleiFindingsAll = details.flatMap((detail) => detail.nuclei_findings);
+
+    return {
+      details,
+      runJobs,
+      report: adaptNucleiScan360JobToSurfaceReport({
+        organizationId: selectedOrgId || representative.organization_id,
+        organizationName: selectedOrganizationName,
+        job: representative,
+        runJobs,
+        openPorts: openPortsAll,
+        technologies: [],
+        niktoFindings: niktoAll,
+        cveMatches: cveAll,
+        nucleiFindings: nucleiFindingsAll,
+        nucleiResult: null,
+      }),
+      json: {
+        report_type: 'nuclei_scan360_lab_run',
+        generated_at: new Date().toISOString(),
+        organization: {
+          id: selectedOrgId || representative.organization_id,
+          name: selectedOrganizationName,
+        },
+        run: {
+          key: group.key,
+          created_at: group.created_at,
+          target_count: group.targetCount,
+          job_count: group.jobs.length,
+          completed: group.completed,
+          active: group.active,
+          failed: group.failed,
+        },
+        jobs: runJobs,
+        open_ports: openPortsAll,
+        nikto_findings: niktoAll,
+        cve_matches: cveAll,
+        nuclei_findings: nucleiFindingsAll,
+        interpretation: {
+          confirmed_cve_count: cveAll.filter((match) => (match.match_status || 'confirmed') === 'confirmed').length,
+          potential_cve_count: cveAll.filter((match) => match.match_status === 'potential').length,
+          nikto_finding_count: niktoAll.length,
+          open_port_count: openPortsAll.length,
+          note: 'Questo report run non espone tecnologie, prodotti o versioni rilevate.',
+        },
+      },
+    };
+  };
+
+  const downloadRunJsonReport = async (group: NucleiRunGroup) => {
+    setReportExporting(`json:${group.key}`);
+    try {
+      const data = await buildRunReportData(group);
+      const blob = new Blob([JSON.stringify(data.json, null, 2)], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `NUCLEI_SCAN360_RUN_${runTimestampKey(group.created_at).replace(/[:.]/g, '-')}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      toast({ title: 'Report run esportato', description: `${group.targetCount} target inclusi nel report JSON.` });
+    } catch (error) {
+      toast({
+        title: 'Export run JSON fallito',
+        description: error instanceof Error ? error.message : 'Impossibile generare il report run.',
+        variant: 'destructive',
+      });
+    } finally {
+      setReportExporting(null);
+    }
+  };
+
+  const downloadRunPdfReport = async (group: NucleiRunGroup) => {
+    setReportExporting(`pdf:${group.key}`);
+    try {
+      const data = await buildRunReportData(group);
+      generateSurfaceScan360Pdf(data.report);
+      toast({ title: 'Report run PDF generato', description: `${group.targetCount} target inclusi nel report run.` });
+    } catch (error) {
+      toast({
+        title: 'Export run PDF fallito',
+        description: error instanceof Error ? error.message : 'Impossibile generare il report run PDF.',
+        variant: 'destructive',
+      });
+    } finally {
+      setReportExporting(null);
+    }
+  };
+
+  const downloadRunDocxReport = async (group: NucleiRunGroup) => {
+    setReportExporting(`docx:${group.key}`);
+    try {
+      const data = await buildRunReportData(group);
+      await generateSurfaceScan360Docx(data.report);
+      toast({ title: 'Report run DOCX generato', description: `${group.targetCount} target inclusi nel report run.` });
+    } catch (error) {
+      toast({
+        title: 'Export run DOCX fallito',
+        description: error instanceof Error ? error.message : 'Impossibile generare il report run DOCX.',
         variant: 'destructive',
       });
     } finally {
@@ -1863,57 +2070,95 @@ const NucleiScan360: React.FC = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {jobs.length === 0 ? (
+                    {runGroups.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                           Nessun job LAB per questo cliente. Inserisci IP, dominio o CIDR e avvia LAB Scan360.
                         </TableCell>
                       </TableRow>
-                    ) : jobs.map((job) => (
-                      <TableRow key={job.id} className={cn(selectedJobId === job.id && 'bg-muted/40')}>
-                        <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <Badge className={stageClass(job.stage || job.status)}>{job.stage || job.status}</Badge>
-                            <Badge className={statusClass(job.status)}>{job.status}</Badge>
-                            {job.stage === 'waiting_nuclei' && <span className="text-xs text-muted-foreground">Nuclei tra {formatCountdown(job.next_run_at)}</span>}
-                            {job.source && <span className="text-xs text-muted-foreground">{job.source}</span>}
-                          </div>
-                        </TableCell>
-                        <TableCell className="max-w-[280px]">
-                          <div className="flex flex-col gap-1">
-                            <span className="truncate font-mono text-xs">{job.target_url}</span>
-                            {job.nmap_target && <span className="truncate text-xs text-muted-foreground">nmap: {job.nmap_target}</span>}
-                            {job.resolved_target_url && job.resolved_target_url !== job.target_url && (
-                              <span className="truncate text-xs text-muted-foreground">→ {job.resolved_target_url}</span>
-                            )}
-                            {job.last_error && <span className="line-clamp-2 text-xs text-destructive">{job.last_error}</span>}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <Badge variant="outline">{PROFILE_LABELS[job.profile] || job.profile}</Badge>
-                            <span className="text-xs text-muted-foreground">Nmap {NMAP_PROFILE_LABELS[job.nmap_profile || 'service_light']}</span>
-                            <span className="text-xs text-muted-foreground">rate {job.rate_limit || '—'} · timeout {job.timeout_seconds || '—'}s</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex flex-col items-end gap-1">
-	                            <span className="font-semibold">{job.findings_count ?? 0}</span>
-	                            <span className="text-xs text-muted-foreground">{job.open_port_count ?? 0} porte · {job.technology_count ?? 0} tech · {job.nikto_findings_count ?? 0} nikto · {job.templates_executed_count ?? 0} template</span>
-	                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-                            <span>creato {formatDateTime(job.created_at)}</span>
-                            <span>fine {formatDateTime(job.completed_at)}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="outline" size="sm" onClick={() => openJob(job)} disabled={queueLoading}>
-                            Apri
-                          </Button>
-                        </TableCell>
-                      </TableRow>
+                    ) : runGroups.map((group) => (
+                      <React.Fragment key={group.key}>
+                        <TableRow className="bg-muted/50 hover:bg-muted/50">
+                          <TableCell colSpan={6}>
+                            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                              <div className="flex flex-col gap-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge variant="secondary">Run {formatDateTime(group.created_at)}</Badge>
+                                  <Badge variant="outline">{group.targetCount} target</Badge>
+                                  <Badge className={group.active > 0 ? 'bg-amber-500 text-white' : group.failed > 0 ? 'bg-destructive text-destructive-foreground' : 'bg-emerald-600 text-white'}>
+                                    {group.completed}/{group.jobs.length} completati
+                                  </Badge>
+                                  {group.active > 0 && <Badge variant="outline">{group.active} in coda/esecuzione</Badge>}
+                                  {group.failed > 0 && <Badge variant="destructive">{group.failed} errori</Badge>}
+                                </div>
+                                <span className="text-xs text-muted-foreground">
+                                  {PROFILE_LABELS[group.profile as NucleiProfile] || group.profile} · Nmap {NMAP_PROFILE_LABELS[group.nmap_profile as NmapProfile] || group.nmap_profile}
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <Button variant="default" size="sm" onClick={() => downloadRunPdfReport(group)} disabled={reportExporting !== null || group.active > 0}>
+                                  {reportExporting === `pdf:${group.key}` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                                  Report run PDF
+                                </Button>
+                                <Button variant="secondary" size="sm" onClick={() => downloadRunDocxReport(group)} disabled={reportExporting !== null || group.active > 0}>
+                                  {reportExporting === `docx:${group.key}` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                                  DOCX
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={() => downloadRunJsonReport(group)} disabled={reportExporting !== null}>
+                                  {reportExporting === `json:${group.key}` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                                  JSON
+                                </Button>
+                              </div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                        {group.jobs.map((job) => (
+                          <TableRow key={job.id} className={cn(selectedJobId === job.id && 'bg-muted/40')}>
+                            <TableCell>
+                              <div className="flex flex-col gap-1">
+                                <Badge className={stageClass(job.stage || job.status)}>{job.stage || job.status}</Badge>
+                                <Badge className={statusClass(job.status)}>{job.status}</Badge>
+                                {job.stage === 'waiting_nuclei' && <span className="text-xs text-muted-foreground">Nuclei tra {formatCountdown(job.next_run_at)}</span>}
+                                {job.source && <span className="text-xs text-muted-foreground">{job.source}</span>}
+                              </div>
+                            </TableCell>
+                            <TableCell className="max-w-[280px]">
+                              <div className="flex flex-col gap-1">
+                                <span className="truncate font-mono text-xs">{job.target_url}</span>
+                                {job.nmap_target && <span className="truncate text-xs text-muted-foreground">nmap: {job.nmap_target}</span>}
+                                {job.resolved_target_url && job.resolved_target_url !== job.target_url && (
+                                  <span className="truncate text-xs text-muted-foreground">→ {job.resolved_target_url}</span>
+                                )}
+                                {job.last_error && <span className="line-clamp-2 text-xs text-destructive">{job.last_error}</span>}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col gap-1">
+                                <Badge variant="outline">{PROFILE_LABELS[job.profile] || job.profile}</Badge>
+                                <span className="text-xs text-muted-foreground">Nmap {NMAP_PROFILE_LABELS[job.nmap_profile || 'service_light']}</span>
+                                <span className="text-xs text-muted-foreground">rate {job.rate_limit || '—'} · timeout {job.timeout_seconds || '—'}s</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex flex-col items-end gap-1">
+                                <span className="font-semibold">{job.findings_count ?? 0}</span>
+                                <span className="text-xs text-muted-foreground">{job.open_port_count ?? 0} porte · {job.nikto_findings_count ?? 0} nikto · {job.templates_executed_count ?? 0} template</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+                                <span>creato {formatDateTime(job.created_at)}</span>
+                                <span>fine {formatDateTime(job.completed_at)}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button variant="outline" size="sm" onClick={() => openJob(job)} disabled={queueLoading}>
+                                Apri
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </React.Fragment>
                     ))}
                   </TableBody>
                 </Table>
@@ -1934,11 +2179,11 @@ const NucleiScan360: React.FC = () => {
                     <div className="flex flex-wrap gap-2">
                       <Button variant="default" size="sm" onClick={downloadSelectedJobPdfReport} disabled={reportExporting !== null}>
                         {reportExporting === 'pdf' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-                        Report PDF
+                        Report target PDF
                       </Button>
                       <Button variant="secondary" size="sm" onClick={downloadSelectedJobDocxReport} disabled={reportExporting !== null}>
                         {reportExporting === 'docx' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-                        Report DOCX
+                        Target DOCX
                       </Button>
                       <Button variant="outline" size="sm" onClick={downloadSelectedJobJsonReport} disabled={reportExporting !== null}>
                         <Download className="mr-2 h-4 w-4" />
