@@ -35,7 +35,7 @@ const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { selectedOrganization } = useClientContext();
-  const activeOrgId = selectedOrganization?.id || user?.organization_id;
+  const activeOrgId = selectedOrganization?.id;
   const activeOrgName =
     selectedOrganization?.name ||
     user?.groups?.[0]?.name ||
