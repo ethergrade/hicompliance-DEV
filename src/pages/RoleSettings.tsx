@@ -162,9 +162,6 @@ export default function RoleSettings() {
         <Card>
           <CardHeader>
             <CardTitle>Ruoli assegnabili</CardTitle>
-            <CardDescription>
-              Lista restituita da `GET /config/roles`.
-            </CardDescription>
           </CardHeader>
           <CardContent>
             {rolesLoading ? (
