@@ -135,7 +135,7 @@ const AdminElevatedUsers: React.FC = () => {
   const updateUserMutation = useMutation({
     mutationFn: async (data: EditFormData) => {
       if (!selectedUser) throw new Error("Nessun utente selezionato");
-      if (!selectedGroupId) throw new Error("Seleziona un gruppo specifico per modificare un utente");
+      if (!isSuperAdmin && !selectedGroupId) throw new Error("Seleziona un gruppo specifico per modificare un utente");
       const payload: UpdateUserRequest = {
         name: data.name,
         email: data.email,
@@ -158,7 +158,7 @@ const AdminElevatedUsers: React.FC = () => {
   const changePasswordMutation = useMutation({
     mutationFn: async (data: PasswordFormData) => {
       if (!passwordUser) throw new Error("Nessun utente selezionato");
-      if (!selectedGroupId) throw new Error("Seleziona un gruppo specifico per modificare la password");
+      if (!isSuperAdmin && !selectedGroupId) throw new Error("Seleziona un gruppo specifico per modificare la password");
       if (data.password !== data.password_confirmation) {
         throw new Error("Le password non coincidono");
       }
@@ -179,7 +179,7 @@ const AdminElevatedUsers: React.FC = () => {
   const deleteUserMutation = useMutation({
     mutationFn: async () => {
       if (!userToDelete) throw new Error("Nessun utente selezionato");
-      if (!selectedGroupId) throw new Error("Seleziona un gruppo specifico per eliminare un utente");
+      if (!isSuperAdmin && !selectedGroupId) throw new Error("Seleziona un gruppo specifico per eliminare un utente");
       return usersApi.delete(userToDelete.id, selectedGroupId);
     },
     onSuccess: () => {
