@@ -444,7 +444,11 @@ const Users = () => {
             </div>
                       <ScrollArea className="h-[160px] rounded-md border">
                         <div className="p-3 space-y-2">
-                          {companies.map((company: TenantResource) => {
+                          {companies
+                  .filter((c: TenantResource) =>
+                    c.name.toLowerCase().includes(tenantSearchQuery.toLowerCase())
+                  )
+                  .map((company: TenantResource) => {
                             const checked = createTenantIds.includes(company.id);
                             return (
                               <label
@@ -616,7 +620,11 @@ const Users = () => {
             </DialogHeader>
             <ScrollArea className="max-h-[420px] pr-4">
               <div className="space-y-3">
-                {companies.map((company: TenantResource) => {
+                {companies
+                  .filter((c: TenantResource) =>
+                    c.name.toLowerCase().includes(tenantSearchQuery.toLowerCase())
+                  )
+                  .map((company: TenantResource) => {
                   const checked = selectedTenantIds.includes(company.id);
                   return (
                     <label
