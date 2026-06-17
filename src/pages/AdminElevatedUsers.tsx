@@ -18,7 +18,6 @@ import { useUserRoles } from "@/hooks/useUserRoles";
 import { User, Edit, Trash2, KeyRound, Shield, Search, X } from "lucide-react";
 import type { UserResource, UpdateUserRequest, Group } from "@/types/api";
 
-const elevatedRoles = ["super-admin", "super_admin", "superadmin", "master", "admin", "sales"];
 
 const getRoleLabel = (role: string | null): string => {
   if (!role) return "N/A";
@@ -116,20 +115,12 @@ const AdminElevatedUsers: React.FC = () => {
     enabled: isSuperAdmin,
   });
 
-  // Fetch users (filtered by group if selected)
-  const { data: allUsers = [], isLoading } = useQuery({
+  // Fetch elevated users from backend
+  const { data: elevatedUsers = [], isLoading } = useQuery({
     queryKey: ["elevated-users", selectedGroupId],
-    queryFn: () => usersApi.list(selectedGroupId),
+    queryFn: () => usersApi.list(selectedGroupId, { elevated: true }),
     enabled: isSuperAdmin,
   });
-
-  // Client-side filter: only elevated roles
-  const elevatedUsers = useMemo(() => {
-    return allUsers.filter((u: UserResource) => {
-      const role = getPrimaryRole(u, selectedGroupId);
-      return role && elevatedRoles.includes(role);
-    });
-  }, [allUsers, selectedGroupId]);
 
   // Search filter
   const searchedUsers = useMemo(() => {

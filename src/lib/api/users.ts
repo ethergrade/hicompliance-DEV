@@ -15,9 +15,10 @@ const groupHeader = (groupId: string) => ({
  * Users are scoped to a group, not a tenant.
  */
 export const usersApi = {
-  async list(groupId?: string | null): Promise<UserResource[]> {
+  async list(groupId?: string | null, params?: { elevated?: boolean }): Promise<UserResource[]> {
     const opts = groupId ? groupHeader(groupId) : undefined;
-    const res = await apiClient.get<ApiResponse<UserResource[]>>("/users", undefined, opts);
+    const query = params?.elevated ? { elevated: '1' } : undefined;
+    const res = await apiClient.get<ApiResponse<UserResource[]>>("/users", query, opts);
     return res.data;
   },
 
