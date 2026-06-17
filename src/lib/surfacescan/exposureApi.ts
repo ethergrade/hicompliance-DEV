@@ -244,17 +244,15 @@ export async function fetchExposureSummary(params: {
   customerId: string;
   jobId?: string;
   scopeMode?: 'single_job' | 'scope_latest_per_target';
+  groupId?: string | null;
 }): Promise<ExposureSummary> {
-  const { data, error } = await supabase.functions.invoke('surface-exposure-summary', {
-    body: {
-      customer_id: params.customerId,
-      job_id: params.jobId || undefined,
-      scope_mode: params.scopeMode || (params.jobId ? 'single_job' : 'scope_latest_per_target'),
-    },
-  });
-  if (error) throw error;
-  if ((data as any)?.error) throw new Error((data as any).error);
-  return data as ExposureSummary;
+  const scopeMode = params.scopeMode || (params.jobId ? 'single_job' : 'scope_latest_per_target');
+  const data = await surfaceScan360Api.getExposureSummary(
+    params.customerId,
+    { job_id: params.jobId, scope_mode: scopeMode },
+    params.groupId,
+  );
+  return (data?.data || data) as ExposureSummary;
 }
 
 export async function fetchExposureJobs(customerId: string, limit = 20): Promise<any[]> {
