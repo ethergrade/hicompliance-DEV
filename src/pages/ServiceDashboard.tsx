@@ -1,5 +1,5 @@
 import React from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, Navigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { HiPatchDashboard } from '@/components/service-dashboards/HiPatchDashboard';
 import { HiFirewallDashboard } from '@/components/service-dashboards/HiFirewallDashboard';
@@ -52,13 +52,7 @@ const ServiceDashboard: React.FC = () => {
       case 'himobile':
         return <HiMobileDashboard />;
       default:
-        return (
-          <div className="text-center py-12">
-            <h2 className="text-xl font-semibold text-muted-foreground">
-              Dashboard per {serviceName} in costruzione
-            </h2>
-          </div>
-        );
+        return <Navigate to="/assessment" replace />;
     }
   };
 
