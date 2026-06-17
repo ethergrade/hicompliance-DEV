@@ -551,6 +551,16 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
       scheduleSave(next);
       return next;
     });
+    // Trello #59: drop the per-field error as soon as the user types a
+    // non-empty value, so the red "Compila i campi obbligatori" banner
+    // does not keep showing after the field has been fixed.
+    if (field === "vat_number" && value.trim()) {
+      setFieldErrors((prev) => {
+        if (!prev.vat_number) return prev;
+        const { vat_number: _omit, ...rest } = prev;
+        return rest;
+      });
+    }
   };
 
   const updateListField = (
@@ -571,6 +581,14 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
       scheduleSave(next);
       return next;
     });
+    // Trello #59: also clear NIS2 error as soon as the chip is picked
+    if (field === "nis2_classification" && value) {
+      setFieldErrors((prev) => {
+        if (!prev.nis2_classification) return prev;
+        const { nis2_classification: _omit, ...rest } = prev;
+        return rest;
+      });
+    }
   };
 
   const handleAddScopeEntries = () => {
