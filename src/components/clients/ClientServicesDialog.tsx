@@ -84,17 +84,39 @@ const ContractDateInput: React.FC<{
   // Sincronizza quando il parent fa refetch
   React.useEffect(() => { setLocal(value); }, [value]);
 
+  // Trello #67: shortcut per impostare rapidamente la data di oggi.
+  const handleToday = () => {
+    const today = new Date().toISOString().slice(0, 10);
+    setLocal(today);
+    if (today !== value) onSave(today);
+  };
+
   return (
-    <Input
-      type="date"
-      className="h-7 text-xs"
-      value={local}
-      onChange={(e) => setLocal(e.target.value)}
-      onBlur={() => {
-        if (local !== value) onSave(local);
-      }}
-      disabled={disabled}
-    />
+    <div className="flex items-center gap-1">
+      <Input
+        type="date"
+        // Trello #67: forza il Calendar Picker bianco anche in dark mode
+        // (l'icona nativa del date-picker eredita color-scheme dal browser).
+        className="h-7 text-xs bg-white text-gray-900 [color-scheme:light]"
+        value={local}
+        onChange={(e) => setLocal(e.target.value)}
+        onBlur={() => {
+          if (local !== value) onSave(local);
+        }}
+        disabled={disabled}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={handleToday}
+        disabled={disabled}
+        className="h-7 px-2 text-[10px] shrink-0"
+        title="Imposta la data di inizio a oggi"
+      >
+        Oggi
+      </Button>
+    </div>
   );
 };
 
