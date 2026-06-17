@@ -26,7 +26,8 @@ import {
   XCircle,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-// TODO: migrate surface_scan_jobs, surface_scan_monitored_ips, surface_scan_module_results, surface_observations, surface_open_ports to backend API when endpoints available
+// Status: surface_scan_jobs, surface_scan_monitored_ips, surface_open_ports migrated to backend API
+// Remaining on Supabase: surface_scan_module_results, surface_observations (no backend endpoints yet)
 import { surfaceScan360Api, type SurfaceScanJob } from '@/lib/api/surface-scan360';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useSurfaceScanDiscoveredAssets } from '@/hooks/useSurfaceScanDiscoveredAssets';
@@ -499,7 +500,6 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
       setLoading(true);
       try {
         // Fetch monitored IPs (scope rules) from supabase — no backend API endpoint yet
-        // TODO: migrate surface_scan_monitored_ips to backend API when endpoint available
         const scopeRes = await supabase
           .from('surface_scan_monitored_ips' as any)
           .select('entry_type, input_value, ip_start, ip_end')
@@ -653,7 +653,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
         }
 
         // Module results, observations, open ports — still supabase (no backend API endpoints)
-        // TODO: migrate to backend API when endpoints available
+        // Supabase remaining: surface_scan_module_results, surface_observations (no backend endpoints yet)
         const [moduleRows, observationRows, exposureRows] = await Promise.all([
           fetchRowsByJobIds<ModuleResultRow>(
             'surface_scan_module_results',

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-// TODO: migrate to backend API when endpoints for monitored_ips and exposure_scope tables are available
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
@@ -113,7 +112,6 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
     }
   }, [toast, groupId]);
 
-  // TODO: migrate to backend API when monitored_ips endpoint is available
   const fetchRules = useCallback(async () => {
     if (isClientLoading || !organizationId) return;
 
@@ -196,7 +194,6 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
         discovered_from: opts.discovered_from ?? null,
       };
 
-      // TODO: migrate to backend API when monitored_ips endpoint is available
       const { error } = await supabase
         .from('surface_scan_monitored_ips' as any)
         .insert(payload);
@@ -222,7 +219,6 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
         });
       }
 
-      // TODO: migrate to backend API when organizations table is available
       const { data: orgFlagsData, error: orgFlagsError } = await supabase
         .from('organizations' as any)
         .select('surface_scan360_enabled, dark_risk360_enabled')
@@ -273,7 +269,6 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
     }
   };
 
-  // TODO: migrate to backend API when monitored_ips endpoint is available
   const removeRule = async (id: string): Promise<boolean> => {
     if (!isAdmin) {
       toast({
