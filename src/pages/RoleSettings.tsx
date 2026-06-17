@@ -141,9 +141,6 @@ export default function RoleSettings() {
         <Card>
           <CardHeader>
             <CardTitle>Ruoli utente corrente</CardTitle>
-            <CardDescription>
-              Ruoli ricevuti da `GET /auth/me` o dal login.
-            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
