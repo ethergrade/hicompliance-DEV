@@ -17,6 +17,7 @@
      canManageMultipleClients,
      userOrganizationId,
      isLoadingClients,
+    hasFetchedOrganizations,
    } = useClientContext();
 
    // L'organization_id da usare nelle query
@@ -39,5 +40,6 @@
      canManageMultipleClients,
      needsClientSelection,
      isLoading: isLoadingClients,
+    hasFetchedOrganizations,
    };
  };

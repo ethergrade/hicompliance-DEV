@@ -17,6 +17,7 @@
    organizations: TenantResource[];
    fetchOrganizations: () => Promise<void>;
    userOrganizationId: string | null;
+  hasFetchedOrganizations: boolean;
  }
  
  const ClientContext = createContext<ClientContextType | undefined>(undefined);
@@ -37,6 +38,7 @@
    const [groups, setGroups] = useState<Group[]>([]);
    const [selectedGroup, setSelectedGroupState] = useState<Group | null>(null);
    const [isLoadingClients, setIsLoadingClients] = useState(true);
+  const [hasFetchedOrganizations, setHasFetchedOrganizations] = useState(false);
   const [userOrganizationId, setUserOrganizationId] = useState<string | null>(null);
    const { user, loading: authLoading, refreshCapabilities } = useAuth();
  const { isSuperAdmin, isSales, loading: rolesLoading } = useUserRoles();
@@ -98,6 +100,7 @@
        console.error('Error fetching organizations:', error);
      } finally {
        setIsLoadingClients(false);
+    setHasFetchedOrganizations(true);
      }
    }, [user, canManageMultipleClients, rolesLoading]);
  
@@ -125,6 +128,7 @@
        setSelectedOrganizationState(null);
        setUserOrganizationId(null);
        localStorage.removeItem(STORAGE_KEY);
+    setHasFetchedOrganizations(false);
      }
    }, [user, rolesLoading, fetchOrganizations, authLoading]);
  
@@ -168,6 +172,7 @@
          organizations,
          fetchOrganizations,
          userOrganizationId,
+    hasFetchedOrganizations,
        }}
      >
        {children}
