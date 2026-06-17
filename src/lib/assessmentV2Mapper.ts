@@ -16,6 +16,12 @@ export async function loadV2AssessmentData(groupId?: string | null) {
     uuidToIndex[q.id] = i + 1;
   });
 
+  // Build a map: order_index → sequential UI index (to resolve dependency references)
+  const orderIndexToUiIndex: Record<number, number> = {};
+  sortedQs.forEach((q, i) => {
+    orderIndexToUiIndex[q.order_index] = i + 1;
+  });
+
   // Map categories to UI format
   const uiCategories: AssessmentCategory[] = categories
     .sort((a, b) => a.order_index - b.order_index)
@@ -23,12 +29,18 @@ export async function loadV2AssessmentData(groupId?: string | null) {
       name: cat.name,
       questions: cat.questions
         .sort((a, b) => a.order_index - b.order_index)
-        .map((q) => ({
-          id: uuidToIndex[q.id] ?? 0,
-          question: q.question_text,
-          priority: "MEDIA" as const,
-          dependency: q.dependency || undefined,
-        })),
+        .map((q) => {
+          const depOrderIndex = q.dependency ? parseInt(q.dependency, 10) : NaN;
+          const depUiIndex = !isNaN(depOrderIndex) && depOrderIndex > 0
+            ? orderIndexToUiIndex[depOrderIndex]
+            : undefined;
+          return {
+            id: uuidToIndex[q.id] ?? 0,
+            question: q.question_text,
+            priority: "MEDIA" as const,
+            dependency: depUiIndex ? String(depUiIndex) : undefined,
+          };
+        }),
     }));
 
   // Build reverse map: index → UUID
