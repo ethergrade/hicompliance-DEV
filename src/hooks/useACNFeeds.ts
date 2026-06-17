@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { feedsApi } from '@/lib/api/feeds';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 export interface FeedItem {
   title: string;
@@ -51,7 +52,6 @@ function getCachedData(): FeedsData | null {
   try {
     const cached = localStorage.getItem(CACHE_KEY);
     if (!cached) return null;
-    
     const parsed: CachedData = JSON.parse(cached);
     if (Date.now() - parsed.timestamp < CACHE_DURATION) {
       return parsed.data;
@@ -75,6 +75,7 @@ function setCachedData(data: FeedsData): void {
 }
 
 export function useACNFeeds(): UseACNFeedsResult {
+  const { groupId } = useClientOrganization();
   const [nis2Feed, setNis2Feed] = useState<FeedItem[]>([]);
   const [threatFeed, setThreatFeed] = useState<FeedItem[]>([]);
   const [cveFeed, setCveFeed] = useState<FeedItem[]>([]);
@@ -100,28 +101,19 @@ export function useACNFeeds(): UseACNFeedsResult {
     setError(null);
 
     try {
-      const { data, error: fnError } = await supabase.functions.invoke('fetch-acn-feeds', {
-        method: 'POST',
-      });
+      const response = await feedsApi.list(groupId);
 
-      if (fnError) {
-        throw new Error(fnError.message);
-      }
-
-      if (data?.success && data?.data) {
-        const feedsData: FeedsData = data.data;
-        setNis2Feed(feedsData.nis2 || []);
-        setThreatFeed(feedsData.threat || []);
-        setCveFeed(feedsData.cve || []);
-        setEpssFeed(feedsData.epss || []);
-        setCachedData(feedsData);
-      } else {
-        throw new Error('Invalid response format');
-      }
+      // Backend returns { success, message, data } where data contains nis2/threat/cve/epss
+      const feedsData = (response as unknown as FeedsData);
+      setNis2Feed(feedsData.nis2 || []);
+      setThreatFeed(feedsData.threat || []);
+      setCveFeed(feedsData.cve || []);
+      setEpssFeed(feedsData.epss || []);
+      setCachedData(feedsData);
     } catch (err) {
       console.error('Error fetching ACN feeds:', err);
       setError(err instanceof Error ? err.message : 'Errore nel caricamento dei feed');
-      
+
       // Try to use cached data as fallback
       const cached = getCachedData();
       if (cached) {
@@ -133,16 +125,14 @@ export function useACNFeeds(): UseACNFeedsResult {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [groupId]);
 
   useEffect(() => {
     fetchFeeds();
-
     // Auto-refresh every 5 minutes
     const interval = setInterval(() => {
       fetchFeeds(true);
     }, CACHE_DURATION);
-
     return () => clearInterval(interval);
   }, [fetchFeeds]);
 

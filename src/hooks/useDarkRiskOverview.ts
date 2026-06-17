@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { darkRiskApi } from '@/lib/api/darkrisk';
-import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 export type DarkRiskSeverity = 'info' | 'low' | 'medium' | 'high' | 'critical';
@@ -176,39 +175,17 @@ const emptyData: DarkRiskOverviewResponse = {
   coverage_controls: [],
   threat_groups: [],
   recent_alerts: [],
-  alert_config: {
-    total: 0,
-    active: 0,
-  },
+  alert_config: { total: 0, active: 0 },
   dti: {
     privileged_sensitive_view: false,
-    source_runs: {
-      completed: 0,
-      partial: 0,
-      failed: 0,
-      skipped: 0,
-      total: 0,
-    },
-    query_coverage: {
-      at_domain_tld: 0,
-      selector: 0,
-      email_selector: 0,
-    },
+    source_runs: { completed: 0, partial: 0, failed: 0, skipped: 0, total: 0 },
+    query_coverage: { at_domain_tld: 0, selector: 0, email_selector: 0 },
     sensitive_totals: {
-      domains: 0,
-      passwords: 0,
-      addresses: 0,
-      credit_cards: 0,
-      phone_numbers: 0,
-      total: 0,
+      domains: 0, passwords: 0, addresses: 0, credit_cards: 0, phone_numbers: 0, total: 0,
     },
     sensitive_by_asset: [],
     sensitive_samples: [],
-    intelx_stats: {
-      email_queries_run: 0,
-      strict_password_hits: 0,
-      metadata_only_hits: 0,
-    },
+    intelx_stats: { email_queries_run: 0, strict_password_hits: 0, metadata_only_hits: 0 },
     latest_scan_run_id: null,
   },
 };
@@ -223,38 +200,16 @@ export const useDarkRiskOverview = () => {
       if (!organizationId) {
         return emptyData;
       }
-      try {
-        const data = await darkRiskApi.getOverview(organizationId, groupId);
-        return {
-          ...emptyData,
-          ...(data || {}),
-          // Deep-merge kpis: if API returns partial kpis (e.g. missing controls_coverage),
-          // emptyData defaults fill in the gaps instead of leaving undefined
-          kpis: { ...emptyData.kpis, ...((data as any)?.kpis || {}) },
-        } as DarkRiskOverviewResponse;
-      } catch (apiError: any) {
-        // Fallback to Supabase Edge Function if backend endpoint not deployed yet
-        if (apiError?.status === 404 || apiError?.message?.includes('not found')) {
-          const { data, error } = await supabase.functions.invoke('darkrisk360-overview', {
-            body: { customer_id: organizationId },
-          });
-          if (error) throw error;
-          if (data?.error) throw new Error(String(data.error));
-          return {
-            ...emptyData,
-            ...(data || {}),
-            kpis: { ...emptyData.kpis, ...((data as any)?.kpis || {}) },
-          } as DarkRiskOverviewResponse;
-        }
-        throw apiError;
-      }
+      const data = await darkRiskApi.getOverview(organizationId, groupId);
+      return {
+        ...emptyData,
+        ...(data || {}),
+        kpis: { ...emptyData.kpis, ...((data as Record<string, unknown>)?.kpis as Record<string, unknown> || {}) },
+      } as DarkRiskOverviewResponse;
     },
     staleTime: 60_000,
     refetchInterval: 90_000,
   });
 
-  return {
-    ...query,
-    data: query.data || emptyData,
-  };
+  return { ...query, data: query.data || emptyData };
 };
