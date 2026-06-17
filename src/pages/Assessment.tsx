@@ -480,14 +480,23 @@ const Assessment: React.FC = () => {
   const setResponse = useCallback((questionId: number, value: AssessmentResponse) => {
     if (isReadOnlyView) return;
 
-    setResponses(prev => ({ ...prev, [questionId]: value }));
+    const shouldHideChildren = value !== 'pianificato_in_corso' && value !== 'completato';
+
+    setResponses(prev => {
+      const next = { ...prev, [questionId]: value };
+      if (shouldHideChildren) {
+        const descendants = getDescendants(questionId, v2Categories);
+        descendants.forEach(id => { next[id] = null; });
+      }
+      return next;
+    });
 
     // Persist to API with debounce
     if (!orgId || !user) return;
     setSaveStatus('saving');
 
     triggerAutoSave();
-  }, [isReadOnlyView, orgId, user, triggerAutoSave]);
+  }, [isReadOnlyView, orgId, user, triggerAutoSave, getDescendants, v2Categories]);
 
   // Flush pending saves before unload/page navigation
   useEffect(() => {
