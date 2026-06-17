@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
@@ -115,7 +115,7 @@ export const AppSidebar: React.FC = () => {
   const location = useLocation();
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
-  const { userProfile } = useAuth();
+  const { userProfile, refreshCapabilities } = useAuth();
   const { isSuperAdmin, isSales } = useUserRoles();
   const { isModuleEnabled } = useRolePermissions();
   const { selectedOrganization, canManageMultipleClients } = useClientContext();
@@ -126,8 +126,13 @@ export const AppSidebar: React.FC = () => {
   const isLockedSalesUser = isSales && String(userProfile?.email || '').trim().toLowerCase() === 'sales@sales.com';
   const platformName = isConsoleUser ? 'HiSolution Console' : 'HiCompliance';
 
-  // Fetch HiCompliance service status from API to gate sidebar modules
+  // Reload capabilities from /auth/me whenever the active group changes
   const groupId = selectedOrganization?.group_id ?? null;
+  useEffect(() => {
+    if (groupId) refreshCapabilities(groupId);
+  }, [groupId, refreshCapabilities]);
+
+  // Fetch HiCompliance service status from API to gate sidebar modules
   const { data: orgFlags } = useQuery({
     queryKey: ['sidebar-org-flags', selectedOrganization?.id, groupId],
     queryFn: async () => {
