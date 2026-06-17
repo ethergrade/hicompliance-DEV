@@ -404,25 +404,25 @@ const Assessment: React.FC = () => {
   }, []);
 
   // Helper: get all descendant question IDs (recursive)
-  const getDescendants = useCallback((questionId: number, allCategories: any[]): number[] => {
+  const getDescendants = useCallback((questionId: number, allCategories: any[], visited = new Set<number>()): number[] => {
+    if (visited.has(questionId)) return [];
+    visited.add(questionId);
+
     const allQuestions = allCategories.flatMap(c => c.questions);
-    const question = allQuestions.find(q => q.id === questionId);
-    if (!question) return [];
-    
-    const orderIndex = question.id; // order_index matches id
     const directChildren = allQuestions.filter(q => {
+      if (q.id === questionId) return false; // skip self-reference
       const dep = q.dependency;
       if (!dep) return false;
       const depIdx = parseInt(dep, 10);
-      return depIdx === orderIndex;
+      return depIdx === questionId;
     });
-    
+
     const descendants: number[] = [];
     directChildren.forEach(child => {
       descendants.push(child.id);
-      descendants.push(...getDescendants(child.id, allCategories));
+      descendants.push(...getDescendants(child.id, allCategories, visited));
     });
-    
+
     return descendants;
   }, []);
 
