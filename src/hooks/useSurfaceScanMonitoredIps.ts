@@ -51,10 +51,10 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
 
   const { toast } = useToast();
   const { organizationId, isLoading: isClientLoading, groupId } = useClientOrganization();
-  const { user, userProfile } = useAuth();
+  const { user } = useAuth();
   const { isSuperAdmin } = useUserRoles();
 
-  const isAdmin = userProfile?.user_type === 'admin' || isSuperAdmin;
+  const isAdmin = user?.user_type === 'admin' || isSuperAdmin;
 
   const queueScopeRuleScan = useCallback(async (args: {
     organizationId: string;

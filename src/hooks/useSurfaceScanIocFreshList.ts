@@ -107,10 +107,10 @@ export const useSurfaceScanIocFreshList = (): UseSurfaceScanIocFreshListReturn =
 
   const { toast } = useToast();
   const { organizationId, isLoading: isClientLoading } = useClientOrganization();
-  const { user, userProfile } = useAuth();
+  const { user } = useAuth();
   const { isSuperAdmin } = useUserRoles();
 
-  const isAdmin = userProfile?.user_type === 'admin' || isSuperAdmin;
+  const isAdmin = user?.user_type === 'admin' || isSuperAdmin;
 
   const fetchData = useCallback(async () => {
     if (isClientLoading || !organizationId) return;

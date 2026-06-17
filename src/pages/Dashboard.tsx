@@ -33,12 +33,13 @@ const getServiceIcon = (code: string) => {
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { userProfile } = useAuth();
+  const { user } = useAuth();
   const { selectedOrganization } = useClientContext();
-  const activeOrgId = selectedOrganization?.id || userProfile?.organization_id;
+  const activeOrgId = selectedOrganization?.id || user?.organization_id;
   const activeOrgName =
     selectedOrganization?.name ||
-    userProfile?.organizations?.name ||
+    user?.groups?.[0]?.name ||
+    user?.organizations?.name ||
     "Organizzazione";
   const activeGroupId = selectedOrganization?.group_id ?? null;
   const { integrations, isServiceConnected, hasAnyIntegrationsConfigured } =

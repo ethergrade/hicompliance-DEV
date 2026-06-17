@@ -115,15 +115,15 @@ export const AppSidebar: React.FC = () => {
   const location = useLocation();
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
-  const { userProfile, refreshCapabilities } = useAuth();
+  const { user, refreshCapabilities } = useAuth();
   const { isSuperAdmin, isSales } = useUserRoles();
   const { isModuleEnabled } = useRolePermissions();
   const { selectedOrganization, canManageMultipleClients } = useClientContext();
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
 
-  const isAdmin = userProfile?.user_type === 'admin';
+  const isAdmin = user?.user_type === 'admin';
   const isConsoleUser = isSuperAdmin || isSales;
-  const isLockedSalesUser = isSales && String(userProfile?.email || '').trim().toLowerCase() === 'sales@sales.com';
+  const isLockedSalesUser = isSales && String(user?.email || '').trim().toLowerCase() === 'sales@sales.com';
   const platformName = isConsoleUser ? 'HiSolution Console' : 'HiCompliance';
 
   // Reload capabilities from /auth/me whenever the active group changes
@@ -393,10 +393,12 @@ export const AppSidebar: React.FC = () => {
         {!collapsed && (
           <div className="space-y-3">
             <div className="text-sm">
-              <p className="text-sidebar-foreground font-medium">{userProfile?.full_name}</p>
+              <p className="text-sidebar-foreground font-medium">{user?.full_name}</p>
               <p className="text-sidebar-foreground/60 text-xs">
               {selectedOrganization?.name
-                || userProfile?.organizations?.name
+                || user?.groups?.[0]?.name
+                || user?.organizations?.name
+                || user?.name
                 || 'Organizzazione'}
               </p>
               <p className="text-xs text-cyan-400">

@@ -52,8 +52,8 @@ const confidenceLabel: Record<string, { label: string; variant: 'default' | 'sec
 };
 
 export const ValidatedCveTab: React.FC = () => {
-  const { userProfile } = useAuth();
-  const isAdmin = userProfile?.user_type === 'admin';
+  const { user } = useAuth();
+  const isAdmin = user?.user_type === 'admin';
   const { data: jobs = [], isLoading: jobsLoading } = useExternalScanJobs();
   const [filterJobId, setFilterJobId] = useState<string | undefined>();
   const [severityFilter, setSeverityFilter] = useState<string>('all');

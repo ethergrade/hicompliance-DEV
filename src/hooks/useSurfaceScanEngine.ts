@@ -60,11 +60,11 @@ const mapScanProfile = (profile?: SurfaceScanProfile): 'standard' | 'full' => {
 export const useSurfaceScanEngine = () => {
   const { toast } = useToast();
   const { organizationId, isLoading: clientLoading, groupId } = useClientOrganization();
-  const { userProfile } = useAuth();
+  const { user } = useAuth();
   const { isSuperAdmin } = useUserRoles();
   const qc = useQueryClient();
 
-  const isAdmin = userProfile?.user_type === 'admin' || isSuperAdmin;
+  const isAdmin = user?.user_type === 'admin' || isSuperAdmin;
 
   const listQuery = useQuery({
     queryKey: ['surface-scan-engine-jobs', organizationId, groupId],
