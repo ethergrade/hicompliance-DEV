@@ -1,58 +1,58 @@
-import React, { useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import React, { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Switch } from '@/components/ui/switch';
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Loader2, ShieldAlert, ShieldCheck } from 'lucide-react';
-import { configApi, roleModulePermissionsApi } from '@/lib/api';
-import { useUserRoles } from '@/hooks/useUserRoles';
-import { useClientOrganization } from '@/hooks/useClientOrganization';
-import { useToast } from '@/hooks/use-toast';
-import type { RoleModulePermission } from '@/types/api';
+} from "@/components/ui/select";
+import { Loader2, ShieldAlert, ShieldCheck } from "lucide-react";
+import { configApi, roleModulePermissionsApi } from "@/lib/api";
+import { useUserRoles } from "@/hooks/useUserRoles";
+import { useClientOrganization } from "@/hooks/useClientOrganization";
+import { useToast } from "@/hooks/use-toast";
+import type { RoleModulePermission } from "@/types/api";
 
 const roleDescriptions: Record<string, string> = {
-  'super-admin': 'Accesso di piattaforma completo.',
-  master: 'Ruolo globale di piattaforma restituito dalla configurazione API.',
-  admin: 'Gestione completa delle risorse del tenant.',
-  manager: 'Accesso operativo esteso sul tenant.',
-  sales: 'Gestione commerciale e selezione tenant.',
-  customer: 'Utente cliente associato al tenant.',
-  viewer: 'Sola lettura.',
-  editor: 'Modifica operativa limitata.',
+  "super-admin": "Accesso di piattaforma completo.",
+  master: "Ruolo globale di piattaforma restituito dalla configurazione API.",
+  admin: "Gestione completa delle risorse del tenant.",
+  manager: "Accesso operativo esteso sul tenant.",
+  sales: "Gestione commerciale e selezione tenant.",
+  customer: "Utente cliente associato al tenant.",
+  viewer: "Sola lettura.",
+  editor: "Modifica operativa limitata.",
 };
 
 const formatRole = (role: string) => {
   const labels: Record<string, string> = {
-    'super-admin': 'Super Admin',
-    master: 'Master',
-    admin: 'Admin',
-    manager: 'Manager',
-    sales: 'Sales',
-    customer: 'Customer',
-    viewer: 'Viewer',
-    editor: 'Editor',
+    "super-admin": "Super Admin",
+    master: "Master",
+    admin: "Admin",
+    manager: "Manager",
+    sales: "Sales",
+    customer: "Customer",
+    viewer: "Viewer",
+    editor: "Editor",
   };
 
   return labels[role] ?? role;
 };
 
 export default function RoleSettings() {
-  const [selectedRole, setSelectedRole] = useState<string>('all');
+  const [selectedRole, setSelectedRole] = useState<string>("all");
   const { roles: currentUserRoles, isSuperAdmin } = useUserRoles();
   const { selectedOrganization } = useClientOrganization();
   const groupId = selectedOrganization?.group_id ?? null;
@@ -64,7 +64,7 @@ export default function RoleSettings() {
     isLoading: rolesLoading,
     error: rolesError,
   } = useQuery({
-    queryKey: ['config', 'roles'],
+    queryKey: ["config", "roles"],
     queryFn: configApi.roles,
   });
 
@@ -73,8 +73,12 @@ export default function RoleSettings() {
     isLoading: permissionsLoading,
     error: permissionsError,
   } = useQuery({
-    queryKey: ['role-module-permissions', selectedRole, groupId],
-    queryFn: () => roleModulePermissionsApi.list(selectedRole === 'all' ? undefined : selectedRole, groupId),
+    queryKey: ["role-module-permissions", selectedRole, groupId],
+    queryFn: () =>
+      roleModulePermissionsApi.list(
+        selectedRole === "all" ? undefined : selectedRole,
+        groupId,
+      ),
     enabled: !!groupId,
   });
 
@@ -82,28 +86,34 @@ export default function RoleSettings() {
     mutationFn: ({ id, isEnabled }: { id: string; isEnabled: boolean }) =>
       roleModulePermissionsApi.update(id, isEnabled, groupId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['role-module-permissions'] });
+      queryClient.invalidateQueries({ queryKey: ["role-module-permissions"] });
       toast({
-        title: 'Permesso aggiornato',
-        description: 'La modifica è stata salvata correttamente.',
+        title: "Permesso aggiornato",
+        description: "La modifica è stata salvata correttamente.",
       });
     },
     onError: (error) => {
       toast({
-        title: 'Errore',
-        description: error instanceof Error ? error.message : 'Impossibile aggiornare il permesso',
-        variant: 'destructive',
+        title: "Errore",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Impossibile aggiornare il permesso",
+        variant: "destructive",
       });
     },
   });
 
   const groupedPermissions = useMemo(() => {
-    return permissions.reduce<Record<string, RoleModulePermission[]>>((acc, permission) => {
-      const key = permission.role;
-      acc[key] ??= [];
-      acc[key].push(permission);
-      return acc;
-    }, {});
+    return permissions.reduce<Record<string, RoleModulePermission[]>>(
+      (acc, permission) => {
+        const key = permission.role;
+        acc[key] ??= [];
+        acc[key].push(permission);
+        return acc;
+      },
+      {},
+    );
   }, [permissions]);
 
   return (
@@ -112,7 +122,8 @@ export default function RoleSettings() {
         <div>
           <h1 className="text-3xl font-bold">Ruoli & Permessi</h1>
           <p className="mt-2 text-muted-foreground">
-            Gestione runtime dei permessi modulo via endpoint backend `role-module-permissions`.
+            Gestione runtime dei permessi modulo via endpoint backend
+            `role-module-permissions`.
           </p>
         </div>
 
@@ -121,7 +132,8 @@ export default function RoleSettings() {
             <ShieldAlert className="h-4 w-4" />
             <AlertTitle>Modalità sola lettura</AlertTitle>
             <AlertDescription>
-              Solo i Super Admin possono modificare i permessi. Gli altri ruoli possono visualizzare il catalogo attivo.
+              Solo i Super Admin possono modificare i permessi. Gli altri ruoli
+              possono visualizzare il catalogo attivo.
             </AlertDescription>
           </Alert>
         )}
@@ -176,7 +188,8 @@ export default function RoleSettings() {
                       <span className="font-medium">{formatRole(role)}</span>
                     </div>
                     <p className="mt-2 text-sm text-muted-foreground">
-                      {roleDescriptions[role] ?? 'Ruolo disponibile esposto dal backend.'}
+                      {roleDescriptions[role] ??
+                        "Ruolo disponibile esposto dal backend."}
                     </p>
                   </div>
                 ))}
@@ -190,9 +203,6 @@ export default function RoleSettings() {
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <CardTitle>Permessi per modulo</CardTitle>
-                <CardDescription>
-                  Catalogo runtime da `GET /role-module-permissions` con toggle `PUT /role-module-permissions/{'{id}'}`.
-                </CardDescription>
               </div>
               <div className="w-full md:w-64">
                 <Select value={selectedRole} onValueChange={setSelectedRole}>
@@ -231,26 +241,43 @@ export default function RoleSettings() {
                   <div key={role} className="space-y-3">
                     <div className="flex items-center gap-2">
                       <Badge variant="outline">{formatRole(role)}</Badge>
-                      <span className="text-sm text-muted-foreground">{items.length} permessi</span>
+                      <span className="text-sm text-muted-foreground">
+                        {items.length} permessi
+                      </span>
                     </div>
                     <div className="rounded-lg border divide-y">
                       {items.map((permission) => (
-                        <div key={permission.id} className="flex items-center justify-between gap-4 p-4">
+                        <div
+                          key={permission.id}
+                          className="flex items-center justify-between gap-4 p-4"
+                        >
                           <div className="min-w-0">
-                            <div className="font-medium">{permission.module_name}</div>
+                            <div className="font-medium">
+                              {permission.module_name}
+                            </div>
                             <div className="text-xs text-muted-foreground font-mono break-all">
                               {permission.module_path}
                             </div>
                           </div>
                           <div className="flex items-center gap-3 shrink-0">
-                            <Badge variant={permission.is_enabled ? 'default' : 'secondary'}>
-                              {permission.is_enabled ? 'Attivo' : 'Disattivo'}
+                            <Badge
+                              variant={
+                                permission.is_enabled ? "default" : "secondary"
+                              }
+                            >
+                              {permission.is_enabled ? "Attivo" : "Disattivo"}
                             </Badge>
                             <Switch
                               checked={permission.is_enabled}
-                              disabled={!isSuperAdmin || togglePermissionMutation.isPending}
+                              disabled={
+                                !isSuperAdmin ||
+                                togglePermissionMutation.isPending
+                              }
                               onCheckedChange={(checked) =>
-                                togglePermissionMutation.mutate({ id: permission.id, isEnabled: checked })
+                                togglePermissionMutation.mutate({
+                                  id: permission.id,
+                                  isEnabled: checked,
+                                })
                               }
                             />
                           </div>
