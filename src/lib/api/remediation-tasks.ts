@@ -6,17 +6,24 @@ import type {
 	UpdateRemediationTaskRequest,
 } from "@/types/api";
 
+const _h = (groupId?: string | null) =>
+	groupId ? { headers: { "X-Group-Id": groupId } } : undefined;
+
 export const remediationTasksApi = {
-	async list(companyId: string): Promise<RemediationTask[]> {
+	async list(companyId: string, groupId?: string | null): Promise<RemediationTask[]> {
 		const res = await apiClient.get<ApiResponse<RemediationTask[]>>(
 			`/companies/${companyId}/remediation-tasks`,
+			undefined,
+			_h(groupId),
 		);
 		return res.data;
 	},
 
-	async get(companyId: string, id: string): Promise<RemediationTask> {
+	async get(companyId: string, id: string, groupId?: string | null): Promise<RemediationTask> {
 		const res = await apiClient.get<ApiResponse<RemediationTask>>(
 			`/companies/${companyId}/remediation-tasks/${id}`,
+			undefined,
+			_h(groupId),
 		);
 		return res.data;
 	},
@@ -24,10 +31,12 @@ export const remediationTasksApi = {
 	async create(
 		companyId: string,
 		payload: StoreRemediationTaskRequest,
+		groupId?: string | null,
 	): Promise<RemediationTask> {
 		const res = await apiClient.post<ApiResponse<RemediationTask>>(
 			`/companies/${companyId}/remediation-tasks`,
 			payload,
+			_h(groupId),
 		);
 		return res.data;
 	},
@@ -36,15 +45,20 @@ export const remediationTasksApi = {
 		companyId: string,
 		id: string,
 		payload: UpdateRemediationTaskRequest,
+		groupId?: string | null,
 	): Promise<RemediationTask> {
 		const res = await apiClient.put<ApiResponse<RemediationTask>>(
 			`/companies/${companyId}/remediation-tasks/${id}`,
 			payload,
+			_h(groupId),
 		);
 		return res.data;
 	},
 
-	async delete(companyId: string, id: string): Promise<void> {
-		await apiClient.delete(`/companies/${companyId}/remediation-tasks/${id}`);
+	async delete(companyId: string, id: string, groupId?: string | null): Promise<void> {
+		await apiClient.delete(
+			`/companies/${companyId}/remediation-tasks/${id}`,
+			_h(groupId),
+		);
 	},
 };

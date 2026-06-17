@@ -449,6 +449,7 @@ const Remediation: React.FC = () => {
 					orgId,
 					taskId,
 					updates as UpdateRemediationTaskRequest,
+					groupId,
 				);
 				// Merge server-canonical fields (id, timestamps, color, source) back in
 				setTasks((prev) =>
@@ -691,7 +692,7 @@ const TEAM_KEY_TO_LABEL: Record<string, string> = {
 		};
 
 		try {
-			const created = await remediationTasksApi.create(orgId, payload);
+			const created = await remediationTasksApi.create(orgId, payload, groupId);
 			const mapped = apiTaskToDbTask(created, orgId);
 			setTasks((prev) => [...prev, mapped]);
 			toast({
