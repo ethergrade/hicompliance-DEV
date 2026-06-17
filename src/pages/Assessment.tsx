@@ -501,6 +501,35 @@ const Assessment: React.FC = () => {
     triggerAutoSave();
   }, [isReadOnlyView, orgId, user, triggerAutoSave, getDescendants, v2Categories]);
 
+  // Trello #63: bulk-set status of all visible questions in a category.
+  // Used by the "Tutte Completato" / "Tutte N/A" / "Tutte Pianificato" / "Reset"
+  // shortcut buttons rendered under each category's question list.
+  const bulkSetResponse = useCallback(
+    (questionIds: number[], value: AssessmentResponse) => {
+      if (isReadOnlyView) return;
+      if (questionIds.length === 0) return;
+
+      setResponses(prev => {
+        const next = { ...prev };
+        questionIds.forEach(qid => {
+          next[qid] = value;
+          // Hide descendant questions when parent is set to a non-active status,
+          // matching the single-question setResponse behavior.
+          if (value !== 'pianificato_in_corso' && value !== 'completato') {
+            const descendants = getDescendants(qid, v2Categories);
+            descendants.forEach(did => { next[did] = null; });
+          }
+        });
+        return next;
+      });
+
+      if (!orgId || !user) return;
+      setSaveStatus('saving');
+      triggerAutoSave();
+    },
+    [isReadOnlyView, orgId, user, triggerAutoSave, getDescendants, v2Categories]
+  );
+
   // Flush pending saves before unload/page navigation
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -1438,6 +1467,74 @@ const Assessment: React.FC = () => {
                             );
                           })}
                         </div>
+                        {!isReadOnlyView && (
+                          <div className="flex items-center justify-center gap-2 flex-wrap border-t border-border bg-muted/30 px-5 py-2.5">
+                            <span className="text-[11px] uppercase tracking-wider text-muted-foreground mr-1">
+                              Cambia stato:
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2 text-[11px] bg-green-500/10 text-green-700 border-green-500/30 hover:bg-green-500/20"
+                              onClick={() => bulkSetResponse(
+                                (catData.questions.filter(q => isQuestionVisible(q, responses, v2Categories))).map(q => q.id),
+                                'completato'
+                              )}
+                            >
+                              Tutte Completato
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2 text-[11px] bg-yellow-500/10 text-yellow-700 border-yellow-500/30 hover:bg-yellow-500/20"
+                              onClick={() => bulkSetResponse(
+                                (catData.questions.filter(q => isQuestionVisible(q, responses, v2Categories))).map(q => q.id),
+                                'pianificato_in_corso'
+                              )}
+                            >
+                              Tutte Pianificato
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2 text-[11px] bg-red-500/10 text-red-700 border-red-500/30 hover:bg-red-500/20"
+                              onClick={() => bulkSetResponse(
+                                (catData.questions.filter(q => isQuestionVisible(q, responses, v2Categories))).map(q => q.id),
+                                'non_iniziato'
+                              )}
+                            >
+                              Tutte Non Iniziato
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2 text-[11px] bg-muted text-muted-foreground border-border hover:bg-muted/70"
+                              onClick={() => bulkSetResponse(
+                                (catData.questions.filter(q => isQuestionVisible(q, responses, v2Categories))).map(q => q.id),
+                                'non_applicabile'
+                              )}
+                            >
+                              Tutte N/A
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-[11px] text-muted-foreground"
+                              onClick={() => bulkSetResponse(
+                                (catData.questions.filter(q => isQuestionVisible(q, responses, v2Categories))).map(q => q.id),
+                                null as unknown as AssessmentResponse
+                              )}
+                              title="Cancella tutte le risposte di questa categoria"
+                            >
+                              Reset
+                            </Button>
+                          </div>
+                        )}
                         <div className="flex items-center justify-between gap-3 border-t border-border bg-card px-5 py-3">
                           <p className="text-xs text-muted-foreground">
                             {isReadOnlyView

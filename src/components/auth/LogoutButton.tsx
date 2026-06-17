@@ -22,7 +22,7 @@ export const LogoutButton: React.FC<LogoutButtonProps> = ({
 
   const handleLogout = async () => {
     await signOut();
-    navigate('/');
+    navigate('/auth', { replace: true });
   };
 
   return (

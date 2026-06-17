@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { authApi } from '@/lib/api/auth';
 import { getToken, clearToken, handleUnauthorized, ApiError, isTokenExpired } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
+import { useQueryClient } from '@tanstack/react-query';
 import type { LoginUser } from '@/types/api';
 
 export type MfaState =
@@ -44,6 +46,9 @@ export const useAuth = () => {
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<LoginUser | null>(null);
   const [capabilities, setCapabilities] = useState<Record<string, boolean> | undefined>(undefined);
   const [loading, setLoading] = useState(true);
@@ -209,6 +214,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     clearToken();
     setUser(null);
     setMfaState({ step: 'none' });
+    // Drop every cached query/mutation so no in-flight POST keeps retrying
+    // against an unauthenticated session (fixes the black screen + repeated
+    // 422s after logout that came from React Query holding pending mutations).
+    queryClient.clear();
     toast({ title: "Disconnesso", description: "Sei stato disconnesso con successo" });
   }, [toast]);
 
@@ -225,10 +234,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
 
+  // Force a redirect to /auth whenever the session is gone and we are
+  // sitting on a protected route. This kills the "black screen" that
+  // happened because AuthProvider used to drop children without
+  // changing the URL, leaving the user stranded on the previous page
+  // while React Query kept firing requests.
+  useEffect(() => {
+    if (loading) return;
+    if (user) return;
+    const pathname = location.pathname;
+    if (!pathname.startsWith('/auth') && !pathname.startsWith('/hiconsole')) {
+      navigate('/auth', { replace: true });
+    }
+  }, [loading, user, location.pathname, navigate]);
+
   // Prevent rendering children when session expired (avoids black screen / context errors)
   if (!loading && !user) {
     const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
-    if (!pathname.startsWith('/auth')) {
+    if (!pathname.startsWith('/auth') && !pathname.startsWith('/hiconsole')) {
       return <AuthContext.Provider value={value} />;
     }
   }
