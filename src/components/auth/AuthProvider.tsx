@@ -77,7 +77,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!token || isTokenExpired()) {
       clearToken();
       setLoading(false);
-      if (window.location.pathname !== '/auth' && !window.location.pathname.startsWith('/hiconsole')) {
+      if (window.location.pathname !== '/' && window.location.pathname !== '/auth' && !window.location.pathname.startsWith('/hiconsole')) {
         window.location.href = '/auth';
       }
       return;
@@ -119,7 +119,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         description: "Effettua nuovamente l'accesso",
         variant: "destructive",
       });
-      if (window.location.pathname !== '/auth' && !window.location.pathname.startsWith('/hiconsole')) {
+      if (window.location.pathname !== '/' && window.location.pathname !== '/auth' && !window.location.pathname.startsWith('/hiconsole')) {
         window.location.href = '/auth';
       }
     };
@@ -245,7 +245,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (loading) return;
     if (user) return;
     const pathname = location.pathname;
-    if (!pathname.startsWith('/auth') && !pathname.startsWith('/hiconsole')) {
+    if (pathname !== '/' && !pathname.startsWith('/auth') && !pathname.startsWith('/hiconsole')) {
       navigate('/auth', { replace: true });
     }
   }, [loading, user, location.pathname, navigate]);
@@ -253,7 +253,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Prevent rendering children when session expired (avoids black screen / context errors)
   if (!loading && !user) {
     const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
-    if (!pathname.startsWith('/auth') && !pathname.startsWith('/hiconsole')) {
+    if (pathname !== '/' && !pathname.startsWith('/auth') && !pathname.startsWith('/hiconsole')) {
       return <AuthContext.Provider value={value} />;
     }
   }
