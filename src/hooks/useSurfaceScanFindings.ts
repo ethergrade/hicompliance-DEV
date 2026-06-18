@@ -12,8 +12,6 @@ import {
   type SurfaceMonitoredScopeRule,
 } from '@/lib/surfaceScopeGuard';
 
-import { supabase } from '@/integrations/supabase/client';
-
 export interface SurfaceFindingRow {
   id: string;
   provider: string | null;
@@ -356,13 +354,8 @@ export const useSurfaceScanFindings = () => {
   const fetchScopeRules = async () => {
     if (!organizationId) return;
     try {
-      const { data: scopeRows, error: scopeErr } = await supabase
-        .from('surface_scan_monitored_ips' as any)
-        .select('entry_type, input_value, ip_start, ip_end')
-        .eq('organization_id', organizationId);
-      if (!scopeErr) {
-        setScopeRules((scopeRows || []) as SurfaceMonitoredScopeRule[]);
-      }
+      const scopeRows = await surfaceScan360Api.listMonitoredIps(organizationId, groupId);
+      setScopeRules((scopeRows || []) as SurfaceMonitoredScopeRule[]);
     } catch {
       // silent
     }
@@ -370,7 +363,7 @@ export const useSurfaceScanFindings = () => {
 
   useEffect(() => {
     if (organizationId) fetchScopeRules();
-  }, [organizationId]);
+  }, [organizationId, groupId]);
 
   // Step 4: Merge API findings with synthetic CVE rows from AI reports
   const findings = useMemo(() => {

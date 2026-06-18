@@ -117,15 +117,9 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
 
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('surface_scan_monitored_ips' as any)
-        .select('*')
-        .eq('organization_id', organizationId)
-        .order('created_at', { ascending: false });
+      const data = await surfaceScan360Api.listMonitoredIps(organizationId, groupId);
 
-      if (error) throw error;
-
-      setRules((data || []) as unknown as SurfaceScanMonitoredIpRule[]);
+      setRules((data || []) as SurfaceScanMonitoredIpRule[]);
     } catch (error) {
       console.error('Error fetching monitored IP rules:', error);
       toast({
@@ -136,7 +130,7 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
     } finally {
       setLoading(false);
     }
-  }, [isClientLoading, organizationId, toast]);
+  }, [isClientLoading, organizationId, groupId, toast]);
 
   useEffect(() => {
     if (!isClientLoading && organizationId) {
@@ -194,12 +188,11 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
         discovered_from: opts.discovered_from ?? null,
       };
 
-      const { error } = await supabase
-        .from('surface_scan_monitored_ips' as any)
-        .insert(payload);
-
-      if (error) {
-        if (error.code === '23505') {
+      try {
+        await surfaceScan360Api.createMonitoredIp(organizationId, payload, groupId);
+      } catch (error: any) {
+        const isDuplicate = error?.status === 409 || String(error?.message || '').toLowerCase().includes('duplicate');
+        if (isDuplicate) {
           if (!opts.silent) {
             toast({
               title: 'Regola duplicata',
@@ -281,12 +274,7 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
 
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('surface_scan_monitored_ips' as any)
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      await surfaceScan360Api.deleteMonitoredIp(organizationId, id, groupId);
 
       toast({
         title: 'Regola rimossa',

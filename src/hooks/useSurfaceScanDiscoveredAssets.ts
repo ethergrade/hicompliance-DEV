@@ -13,8 +13,6 @@ import {
   type SurfaceMonitoredScopeRule,
 } from '@/lib/surfaceScopeGuard';
 
-import { supabase } from '@/integrations/supabase/client';
-
 interface AssetRow {
   asset_type: string;
   asset_value: string;
@@ -66,7 +64,7 @@ const deriveAssetsFromJobs = (jobs: SurfaceScanJob[]): AssetRow[] => {
     const targetType = job.target_type || 'domain';
 
     if (targetType === 'domain' || targetType === 'url') {
-      let hostname = target.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+      const hostname = target.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
       rows.push({
         asset_type: 'domain',
         asset_value: hostname.toLowerCase(),
@@ -141,13 +139,8 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
   const fetchScopeRules = async () => {
     if (!organizationId) return;
     try {
-      const { data: scopeRows, error: scopeErr } = await supabase
-        .from('surface_scan_monitored_ips' as any)
-        .select('entry_type, input_value, ip_start, ip_end')
-        .eq('organization_id', organizationId);
-      if (!scopeErr) {
-        setScopeRules((scopeRows || []) as SurfaceMonitoredScopeRule[]);
-      }
+      const scopeRows = await surfaceScan360Api.listMonitoredIps(organizationId, groupId);
+      setScopeRules((scopeRows || []) as SurfaceMonitoredScopeRule[]);
     } catch {
       // silent — scope rules are optional
     }
@@ -155,7 +148,7 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
 
   useEffect(() => {
     if (organizationId) fetchScopeRules();
-  }, [organizationId]);
+  }, [organizationId, groupId]);
 
   const jobs = jobsQuery.data ?? [];
   const loading = jobsQuery.isLoading;

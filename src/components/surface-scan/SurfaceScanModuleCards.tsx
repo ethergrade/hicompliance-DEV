@@ -499,18 +499,11 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
     const fetchData = async () => {
       setLoading(true);
       try {
-        // Fetch monitored IPs (scope rules) from supabase — no backend API endpoint yet
-        const scopeRes = await supabase
-          .from('surface_scan_monitored_ips' as any)
-          .select('entry_type, input_value, ip_start, ip_end')
-          .eq('organization_id', organizationId);
+        // Fetch monitored IPs (scope rules) from backend API
+        const scopeRules = (await surfaceScan360Api.listMonitoredIps(organizationId, groupId)) as SurfaceMonitoredScopeRule[];
 
         // Fetch jobs from backend API
         const apiJobs = await surfaceScan360Api.listJobs(organizationId, { status: 'all' }, groupId);
-
-        if (scopeRes.error) throw scopeRes.error;
-
-        const scopeRules = (scopeRes.data || []) as SurfaceMonitoredScopeRule[];
         const { scopeDomains, ipScopeRules } = splitMonitoredScopeRules(scopeRules);
 
         // Convert API jobs to LatestScanRow format
