@@ -249,6 +249,7 @@ async function buildDtiEstesoReport(
   orgId: string,
   scanRunId: string | null,
   clientLabel: string | null = null,
+  recommendationsOverride: { immediate: string[]; d30: string[]; d90: string[] } | null = null,
 ): Promise<{ html: string; json: Record<string, unknown> }> {
   const genAt = new Date().toISOString();
 
@@ -876,6 +877,14 @@ async function buildDtiEstesoReport(
     else _dedupPush(recs90d, line);
   }
 
+  // Override redazionale esplicito delle Raccomandazioni Operative (testo curato per una specifica
+  // versione di report). Se fornito, sostituisce interamente i bullet derivati da dati/AI, sia in HTML sia in JSON.
+  if (recommendationsOverride) {
+    recsImmediate.length = 0; recsImmediate.push(...(recommendationsOverride.immediate || []));
+    recs30d.length = 0;       recs30d.push(...(recommendationsOverride.d30 || []));
+    recs90d.length = 0;       recs90d.push(...(recommendationsOverride.d90 || []));
+  }
+
   const riskLevel = (n: number, hi: number, mid: number) => (n > hi ? 'ALTO' : n > mid ? 'MEDIO' : 'BASSO');
   const json = {
     schema_version: '2.0',
@@ -1146,6 +1155,13 @@ serve(async (req: Request) => {
   const reportVersion = Number.isFinite(Number(body?.report_version)) && Number(body?.report_version) > 0
     ? Math.floor(Number(body?.report_version))
     : null;
+  // Override redazionale opzionale della sezione "Raccomandazioni Operative" (immediate/d30/d90).
+  const _ro: any = (body && typeof body.recommendations_override === 'object' && body.recommendations_override) || null;
+  const recommendationsOverride = _ro ? {
+    immediate: Array.isArray(_ro.immediate) ? _ro.immediate.map((x: unknown) => String(x)) : [],
+    d30: Array.isArray(_ro.d30) ? _ro.d30.map((x: unknown) => String(x)) : [],
+    d90: Array.isArray(_ro.d90) ? _ro.d90.map((x: unknown) => String(x)) : [],
+  } : null;
 
   if (!isTrustedInternal) {
     const authHeader = req.headers.get('Authorization') || '';
@@ -1204,7 +1220,7 @@ serve(async (req: Request) => {
   const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
   try {
-    const { html, json } = await buildDtiEstesoReport(adminClient, orgId, scanRunId, clientLabel);
+    const { html, json } = await buildDtiEstesoReport(adminClient, orgId, scanRunId, clientLabel, recommendationsOverride);
 
     // Store in Supabase Storage
     const bucketName = 'darkrisk-reports';
@@ -1244,9 +1260,10 @@ serve(async (req: Request) => {
         report_json: json,
         model_metadata: {
           generator: 'darkrisk-dti-esteso-report',
-          version: '1.2',
+          version: '1.3',
           ...(reportVersion != null ? { report_version: reportVersion } : {}),
           ...(clientLabel ? { client_label: clientLabel } : {}),
+          ...(recommendationsOverride ? { recommendations_overridden: true } : {}),
         },
       })
       .select('id')
