@@ -305,7 +305,7 @@ const SurfaceScan360: React.FC = () => {
 
     const dumpedSubdomains = (subdomainDump.history || []).flatMap(
       (dump: any) =>
-        dump.results
+        (dump.results || [])
           .map((entry) =>
             String(entry.subdomain || "")
               .trim()
@@ -367,7 +367,7 @@ const SurfaceScan360: React.FC = () => {
       { ip: string | null; note: string; sources: string[] }
     > = {};
     for (const dump of subdomainDump.history) {
-      for (const entry of dump.results) {
+      for (const entry of dump.results || []) {
         const key = String(entry.subdomain || "")
           .trim()
           .toLowerCase();
@@ -378,7 +378,7 @@ const SurfaceScan360: React.FC = () => {
           .join(" · ");
         map[key] = {
           ip: entry.ip || null,
-          note: note || `Fonte: ${dump.sources.join(", ")}`,
+          note: note || `Fonte: ${(dump.sources || []).join(", ")}`,
           sources: dump.sources || [],
         };
       }
