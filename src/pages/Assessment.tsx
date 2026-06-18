@@ -646,7 +646,10 @@ const Assessment: React.FC = () => {
     return (v2Categories.length > 0 ? v2Categories : []).map(cat => {
       const counts = getCategoryCounts(cat.name);
       const answered = counts.completato + counts.pianificato_in_corso + counts.non_iniziato + counts.non_applicabile;
-      const total = cat.questions.length;
+      // Trello #71: count only VISIBLE questions. Hidden dependency-children
+      // must not inflate 'total' or the category can never reach 'completed'.
+      const visibleQuestions = cat.questions.filter(q => isQuestionVisible(q, responses, v2Categories.length > 0 ? v2Categories : ASSESSMENT_CATEGORIES));
+      const total = visibleQuestions.length;
       const status = answered === 0 ? 'not_started' : answered === total ? 'completed' : 'in_progress';
       const score = calculateCategoryScore(cat.questions, responses);
       const risk = getRiskFromScore(score);
