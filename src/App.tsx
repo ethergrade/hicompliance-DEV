@@ -52,10 +52,10 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <AuthProvider>
-        <ClientProvider>
-        <BrowserRouter>
-          <ScrollToTop />
+      <BrowserRouter>
+        <ScrollToTop />
+        <AuthProvider>
+          <ClientProvider>
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/hiconsole" element={<HiConsoleLanding />} />
@@ -97,9 +97,9 @@ const App = () => (
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
-        </BrowserRouter>
         </ClientProvider>
       </AuthProvider>
+        </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );
