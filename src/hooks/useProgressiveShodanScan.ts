@@ -55,7 +55,13 @@ export const useProgressiveShodanScan = (rules: ScanRule[], enabled = true) => {
 					},
 					groupId,
 				);
-				return { ...res, rule_id: rule.id };
+				return {
+					assets: res.assets,
+					errors: res.errors,
+					scanned_at: res.scanned_at,
+					truncated: res.truncated,
+					rule_id: rule.id,
+				};
 			},
 		})),
 	});

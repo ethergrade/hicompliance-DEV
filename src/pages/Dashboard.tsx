@@ -39,11 +39,9 @@ const Dashboard: React.FC = () => {
   const activeOrgName =
     selectedOrganization?.name ||
     user?.groups?.[0]?.name ||
-    user?.organizations?.name ||
     "Organizzazione";
   const activeGroupId = selectedOrganization?.group_id ?? null;
-  const { integrations, isServiceConnected, hasAnyIntegrationsConfigured } =
-    useServiceIntegrations();
+  const { integrations } = useServiceIntegrations();
   const { isSuperAdmin, isSales } = useUserRoles();
   const canManageIntegrationSettings = isSuperAdmin || isSales;
   const [modulesDialogOpen, setModulesDialogOpen] = useState(false);
@@ -127,8 +125,6 @@ const normalizeCode = (code: string) =>
   const isModuleEnabledForDashboard = (_serviceCode: string) => true;
 
   const connectedServicesCount = hiSolutionServices.length;
-  const alertServicesCount = 0;
-  const operativeServicesCount = connectedServicesCount;
 
   const handleServiceClick = (service: { code: string; name: string }) => {
     // HiCompliance è il container dei servizi hisolution, non ha una pagina

@@ -33,7 +33,7 @@ export const useSubdomainDump = () => {
 			const items = await subdomainDumpApi.history(organizationId, groupId);
 			setHistory(items);
 		} catch (e) {
-			console.warn("subdomain-dump history failed", e);
+			setError(getErrorMessage(e));
 		}
 	}, [organizationId, groupId]);
 

@@ -2,6 +2,16 @@
  
  const STORAGE_KEY = 'hicompliance_selected_org';
 
+type ClientOrganizationContext = {
+  organizationId: string | null;
+  groupId: string | null;
+  selectedOrganization: ReturnType<typeof useClientContext>["selectedOrganization"];
+  canManageMultipleClients: boolean;
+  needsClientSelection: boolean;
+  isLoading: boolean;
+  hasFetchedOrganizations: boolean;
+};
+
  /**
   * Hook helper che restituisce l'organization_id corretto da usare nelle query.
   * Per utenti sales/admin usa l'organizzazione selezionata dal context.
@@ -11,7 +21,7 @@
   * but a stored org exists, we skip the redirect to /admin/clients so the
   * ClientProvider has time to restore the full object on mount.
   */
- export const useClientOrganization = () => {
+ export const useClientOrganization = (): ClientOrganizationContext => {
    const {
      selectedOrganization,
      canManageMultipleClients,

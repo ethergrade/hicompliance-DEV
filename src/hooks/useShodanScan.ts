@@ -47,7 +47,7 @@ export const useShodanScan = (targets: string[], enabled = true) => {
 		queryKey: ["shodan-scan", organizationId, groupId, ...[...targets].sort()],
 		enabled: enabled && targets.length > 0 && !!organizationId,
 		staleTime: 10 * 60 * 1000,
-		queryFn: async () => {
+		queryFn: () => {
 			if (!organizationId) throw new Error("organizationId mancante");
 			return shodanApi.scan(organizationId, { targets }, groupId);
 		},
