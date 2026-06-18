@@ -710,9 +710,17 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
     (s) =>
       s.service_type === "hicompliance" && (s.status === "active" || !s.status),
   );
+  const surfacescanService = tenantServices.find(
+    (s) => s.service_type === "surfacescan" && (s.status === "active" || !s.status),
+  );
+  const darkriskService = tenantServices.find(
+    (s) => s.service_type === "darkrisk" && (s.status === "active" || !s.status),
+  );
   const showNetworkFields = !!hicomplianceService;
   const isExtendedLicense =
-    hicomplianceService?.settings?.license === "extended";
+    hicomplianceService?.settings?.license === "extended" ||
+    !!(surfacescanService?.settings as any)?.extended_range ||
+    (darkriskService?.settings as any)?.tier === "extended";
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
