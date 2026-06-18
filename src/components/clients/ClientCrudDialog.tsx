@@ -16,11 +16,13 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   organization?: { id: string; name: string; code: string } | null;
   onSaved: () => void;
+  // Trello #65: invoked with the new resource right after create
+  onCreated?: (created: { id: string; name: string; code: string }) => void;
   /** Se fornito, usa questo groupId invece di prenderlo da useClientOrganization */
   groupId?: string | null;
 }
 
-const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, onSaved, groupId: explicitGroupId }) => {
+const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, onSaved, onCreated, groupId: explicitGroupId }) => {
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
   const { selectedOrganization } = useClientOrganization();
@@ -50,8 +52,16 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
         await companiesApi.update(organization!.id, { name: name.trim() }, groupId);
         toast.success('Cliente aggiornato');
       } else {
-        await companiesApi.create({ name: name.trim() }, groupId);
+        const created = await companiesApi.create({ name: name.trim() }, groupId);
         toast.success('Cliente creato — attiva i servizi dal pannello Servizi');
+        // Trello #65: hand the new resource back so the caller can promote it
+        if (onCreated && created) {
+          onCreated({
+            id: String((created as any).id),
+            name: (created as any).name || name.trim(),
+            code: (created as any).ms_tenant_id || (created as any).code || String((created as any).id),
+          });
+        }
       }
       onSaved();
       onOpenChange(false);

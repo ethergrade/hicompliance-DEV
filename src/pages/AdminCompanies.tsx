@@ -27,7 +27,7 @@ const STATUS_COLORS: Record<number, string> = { 0: 'secondary', 1: 'default', 2:
 
 const AdminCompanies: React.FC = () => {
   const { user } = useAuth();
-  const { selectedOrganization } = useClientContext();
+  const { selectedOrganization, setSelectedOrganization } = useClientContext();
 
   /* ─── Gruppi ─── */
   const [groups, setGroups] = useState<Group[]>([]);
@@ -136,6 +136,15 @@ const AdminCompanies: React.FC = () => {
   /* ─── Company CRUD ─── */
   const handleSaved = () => {
     if (selectedGroup) loadTenants(selectedGroup.id);
+  };
+
+  // Trello #65: after creating a new client, switch selectedOrganization
+  // to it (and persist in localStorage) so the next navigation does not
+  // bounce the user back to the previously selected tenant.
+  const handleCreated = (created: TenantResource) => {
+    if (created?.id) {
+      setSelectedOrganization(created);
+    }
   };
 
   const handleEdit = (t: TenantResource) => {
@@ -400,6 +409,7 @@ const AdminCompanies: React.FC = () => {
         onOpenChange={setCrudOpen}
         organization={editingOrg}
         onSaved={handleSaved}
+            onCreated={handleCreated}
         groupId={selectedGroup?.id ?? null}
       />
       <DeleteClientDialog
