@@ -8,7 +8,7 @@ import { AuthProvider } from "@/components/auth/AuthProvider";
  import { ClientSelectionGuard } from "@/components/guards/ClientSelectionGuard";
 import { LoginPage } from "@/components/auth/LoginPage";
 import { ScrollToTop } from "@/components/ScrollToTop";
-import Index from "./pages/Index";
+
 import Dashboard from "./pages/Dashboard";
 import ServiceDashboard from "./pages/ServiceDashboard";
 import SurfaceScan360 from "./pages/SurfaceScan360";
@@ -57,7 +57,7 @@ const App = () => (
         <AuthProvider>
           <ClientProvider>
           <Routes>
-            <Route path="/" element={<Index />} />
+            <Route path="/" element={<HiConsoleLanding />} />
             <Route path="/hiconsole" element={<HiConsoleLanding />} />
             <Route path="/auth" element={<LoginPage />} />
             <Route path="/auth/mfa-setup" element={<MfaSetup />} />
