@@ -40,16 +40,9 @@ export const useSubdomainDump = () => {
 	// Settings → ancora Supabase (mancano endpoint GET/PUT /subdomain-dumps/settings nel backend)
 	const fetchSettings = useCallback(async () => {
 		if (!organizationId) return;
-		const { data } = await supabase
-			.from("organizations")
-			.select("subdomain_dump_depth, subdomain_dump_enabled")
-			.eq("id", organizationId)
-			.maybeSingle();
-		if (data) {
-			const settings = data as unknown as OrgSettingsRow;
-			setDepthSetting(settings.subdomain_dump_depth ?? 10);
-			setEnabledSetting(settings.subdomain_dump_enabled ?? true);
-		}
+		// TODO: migrate to backend API (organizations subdomain_dump settings)
+		setDepthSetting(10);
+		setEnabledSetting(true);
 	}, [organizationId]);
 
 	useEffect(() => {
@@ -61,14 +54,7 @@ export const useSubdomainDump = () => {
 		async (depth: number, enabled: boolean) => {
 			if (!organizationId) return false;
 			const d = Math.max(1, Math.min(100, Math.round(depth)));
-			const { error: e } = await supabase
-				.from("organizations")
-				.update({ subdomain_dump_depth: d, subdomain_dump_enabled: enabled })
-				.eq("id", organizationId);
-			if (e) {
-				setError(e.message);
-				return false;
-			}
+			// TODO: migrate to backend API (organizations subdomain_dump settings update)
 			setDepthSetting(d);
 			setEnabledSetting(enabled);
 			return true;

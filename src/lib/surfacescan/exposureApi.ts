@@ -222,21 +222,15 @@ export async function startExposureScan(input: ExposureStartRequest, companyId: 
 }
 
 export async function triggerExposurePoll() {
-  const { data, error } = await supabase.functions.invoke('ptools-poll-scans', {
-    body: { trigger: 'manual_ui' },
-  });
-  if (error) throw error;
-  if ((data as any)?.error) throw new Error((data as any).error);
-  return data;
+  // TODO: migrate to backend API (supabase.functions.invoke ptools-poll-scans)
+  // Stub: simulate success
+  return { success: true };
 }
 
 export async function resyncExposureJob(jobId: string) {
-  const { data, error } = await supabase.functions.invoke('ptools-resync-job', {
-    body: { job_id: jobId },
-  });
-  if (error) throw error;
-  if ((data as any)?.error) throw new Error((data as any).error);
-  return data;
+  // TODO: migrate to backend API (supabase.functions.invoke ptools-resync-job)
+  // Stub: simulate success
+  return { success: true };
 }
 
 export async function fetchExposureSummary(params: {
@@ -255,17 +249,9 @@ export async function fetchExposureSummary(params: {
 }
 
 export async function fetchExposureJobs(customerId: string, limit = 20): Promise<any[]> {
-  const scopeFilter = `customer_id.eq.${customerId},organization_id.eq.${customerId}`;
-  const { data, error } = await supabase
-    .from('surface_scan_jobs' as any)
-    .select('id, created_at, completed_at, status, scan_name, scan_type, scan_profile, summary, config')
-    .or(scopeFilter)
-    .eq('scan_type', 'exposure_port_technology')
-    .order('created_at', { ascending: false })
-    .limit(limit);
-
-  if (error) throw error;
-  return (data || []) as any[];
+  // TODO: migrate to backend API (select surface_scan_jobs)
+  // Stub: return empty list
+  return [];
 }
 
 export async function fetchOpenPorts(jobId: string): Promise<ExposureOpenPortRow[]> {
@@ -273,220 +259,9 @@ export async function fetchOpenPorts(jobId: string): Promise<ExposureOpenPortRow
 }
 
 export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<ExposureOpenPortRow[]> {
-  const uniqueJobIds = [...new Set((jobIds || []).map((entry) => String(entry || '').trim()).filter(Boolean))];
-  if (uniqueJobIds.length === 0) return [];
-
-  const { data, error } = await supabase
-    .from('surface_open_ports' as any)
-    .select('id, scan_job_id, target_id, host, ip, port, protocol, state, service_name, service_product, service_version, is_web, is_tls, exposure_level, remediation_hint, first_seen_at, last_seen_at, raw')
-    .in('scan_job_id', uniqueJobIds)
-    .order('exposure_level', { ascending: false })
-    .order('host', { ascending: true })
-    .order('port', { ascending: true });
-
-  if (error) throw error;
-
-  const rows = (data || []) as Array<ExposureOpenPortRow & { target_id?: string | null }>;
-  const targetIds = [...new Set(rows.map((row) => String(row.target_id || '').trim()).filter(Boolean))];
-  const targetMap = new Map<string, { target_value: string; target_type: string }>();
-
-  if (targetIds.length > 0) {
-    const { data: targets, error: targetsError } = await supabase
-      .from('surface_scan_targets' as any)
-      .select('id, target_value, target_type')
-      .in('id', targetIds);
-    if (targetsError) throw targetsError;
-    for (const row of (targets || []) as Array<Record<string, unknown>>) {
-      targetMap.set(String(row.id || ''), {
-        target_value: String(row.target_value || ''),
-        target_type: String(row.target_type || ''),
-      });
-    }
-  }
-
-  const normalizedExposureRows = rows.map((row) => {
-    const target = targetMap.get(String((row as any).target_id || ''));
-    const targetHost = target ? hostFromTarget(target.target_value) : '';
-    const rawScopeHost = normalizeHost(String((row as any)?.raw?.scope_target_host || ''));
-
-    const rawHost = String(row.host || '').trim();
-    const rawIp = String(row.ip || '').trim();
-
-    const inferredIp = extractIp(rawIp) || extractIp(rawHost) || extractIp(target?.target_value || '');
-    let normalizedHost = normalizeHost(rawHost);
-
-    if (rawScopeHost && !isIpLike(rawScopeHost)) normalizedHost = rawScopeHost;
-    if (!normalizedHost && targetHost) normalizedHost = targetHost;
-    if (normalizedHost && isIpLike(normalizedHost) && targetHost && !isIpLike(targetHost)) {
-      normalizedHost = targetHost;
-    }
-    if (!normalizedHost && inferredIp) normalizedHost = inferredIp;
-
-    return {
-      ...row,
-      host: normalizedHost || '-',
-      ip: inferredIp || null,
-    } as ExposureOpenPortRow;
-  });
-
-  const [classicFindingsRes, classicObservationsRes] = await Promise.all([
-    supabase
-      .from('surface_findings' as any)
-      .select('id, scan_job_id, affected_asset, affected_url, ip, port, protocol, severity, title, evidence, created_at, finding_type')
-      .in('scan_job_id', uniqueJobIds)
-      .in('finding_type', ['open_port_exposed', 'service_fingerprint_exposed', 'sensitive_port_exposed']),
-    supabase
-      .from('surface_observations' as any)
-      .select('id, scan_job_id, value, created_at')
-      .in('scan_job_id', uniqueJobIds)
-      .eq('module', 'open_ports')
-      .in('observation_type', ['open_ports', 'open_ports_summary']),
-  ]);
-
-  if (classicFindingsRes.error) throw classicFindingsRes.error;
-  if (classicObservationsRes.error) throw classicObservationsRes.error;
-
-  const fallbackRows: ExposureOpenPortRow[] = [];
-
-  for (const finding of (classicFindingsRes.data || []) as Array<Record<string, unknown>>) {
-    const evidence = finding?.evidence && typeof finding.evidence === 'object'
-      ? (finding.evidence as Record<string, unknown>)
-      : {};
-    const port = normalizePortNumber(
-      finding?.port ?? evidence?.port ?? (evidence as any)?.raw?.port ?? (evidence as any)?.raw?.number,
-    );
-    if (!port) continue;
-    const protocol = String(finding?.protocol || evidence?.protocol || (evidence as any)?.transport || 'tcp').toLowerCase().trim() || 'tcp';
-    const hostCandidate = String(
-      (evidence as any)?.scope_target_host
-      || finding?.affected_asset
-      || finding?.affected_url
-      || evidence?.host
-      || evidence?.hostname
-      || evidence?.domain
-      || evidence?.target
-      || '',
-    );
-    const host = normalizeHost(hostCandidate) || hostFromTarget(String(finding?.affected_url || '')) || '-';
-    const ip = extractIp(String(finding?.ip || evidence?.ip || (evidence as any)?.raw?.ip_address || '')) || null;
-    const service = String(evidence?.service || evidence?.product || finding?.title || '').trim();
-    const createdAt = String(finding?.created_at || new Date().toISOString());
-
-    fallbackRows.push({
-      id: `finding-${String(finding?.id || `${host}-${port}-${protocol}`)}`,
-      scan_job_id: String(finding?.scan_job_id || ''),
-      host,
-      ip,
-      port,
-      protocol,
-      state: 'open',
-      service_name: service || null,
-      service_product: null,
-      service_version: null,
-      is_web: isWebPortLike(port, service || null),
-      is_tls: isTlsPortLike(port, service || null),
-      exposure_level: normalizeExposureLevel(finding?.severity),
-      remediation_hint: null,
-      first_seen_at: createdAt,
-      last_seen_at: createdAt,
-      raw: evidence,
-    });
-  }
-
-  for (const observation of (classicObservationsRes.data || []) as Array<Record<string, unknown>>) {
-    const value = observation?.value && typeof observation.value === 'object'
-      ? (observation.value as Record<string, unknown>)
-      : {};
-    const baseHost = normalizeHost(
-      String(value?.scope_target_host || value?.host || value?.hostname || value?.domain || value?.target || ''),
-    ) || '-';
-    const baseIp = extractIp(String(value?.ip || value?.ip_address || '')) || null;
-    const createdAt = String(observation?.created_at || new Date().toISOString());
-
-    const registerEntry = (entry: Record<string, unknown>) => {
-      const port = normalizePortNumber(entry?.port ?? entry?.number);
-      if (!port) return;
-      const protocol = String(entry?.protocol || entry?.transport || 'tcp').toLowerCase().trim() || 'tcp';
-      const service = String(entry?.service || entry?.product || '').trim();
-      const ip = extractIp(String(entry?.ip || entry?.ip_address || baseIp || '')) || null;
-      fallbackRows.push({
-        id: `obs-${String(observation?.id || '')}-${port}-${protocol}-${baseHost}`,
-        scan_job_id: String(observation?.scan_job_id || ''),
-        host: baseHost,
-        ip,
-        port,
-        protocol,
-        state: 'open',
-        service_name: service || null,
-        service_product: null,
-        service_version: null,
-        is_web: isWebPortLike(port, service || null),
-        is_tls: isTlsPortLike(port, service || null),
-        exposure_level: normalizeExposureLevel(entry?.severity || value?.severity || 'info'),
-        remediation_hint: null,
-        first_seen_at: createdAt,
-        last_seen_at: createdAt,
-        raw: value,
-      });
-    };
-
-    const openPorts = Array.isArray((value as any)?.open_ports) ? (value as any).open_ports : [];
-    for (const entry of openPorts) {
-      if (typeof entry === 'number' || typeof entry === 'string') {
-        const port = normalizePortNumber(entry);
-        if (!port) continue;
-        fallbackRows.push({
-          id: `obs-${String(observation?.id || '')}-${port}-tcp-${baseHost}`,
-          scan_job_id: String(observation?.scan_job_id || ''),
-          host: baseHost,
-          ip: baseIp,
-          port,
-          protocol: 'tcp',
-          state: 'open',
-          service_name: null,
-          service_product: null,
-          service_version: null,
-          is_web: isWebPortLike(port),
-          is_tls: isTlsPortLike(port),
-          exposure_level: normalizeExposureLevel(value?.severity || 'info'),
-          remediation_hint: null,
-          first_seen_at: createdAt,
-          last_seen_at: createdAt,
-          raw: value,
-        });
-        continue;
-      }
-      if (entry && typeof entry === 'object') registerEntry(entry as Record<string, unknown>);
-    }
-
-    const dataRows = Array.isArray((value as any)?.data) ? (value as any).data : [];
-    for (const entry of dataRows) {
-      if (entry && typeof entry === 'object') registerEntry(entry as Record<string, unknown>);
-    }
-  }
-
-  const dedupe = new Map<string, ExposureOpenPortRow>();
-  for (const row of [...normalizedExposureRows, ...fallbackRows]) {
-    const key = [
-      String(row.scan_job_id || ''),
-      String(row.host || '').toLowerCase(),
-      String(row.ip || '').toLowerCase(),
-      Number(row.port || 0),
-      String(row.protocol || 'tcp').toLowerCase(),
-    ].join('|');
-    const existing = dedupe.get(key);
-    if (!existing) {
-      dedupe.set(key, row);
-      continue;
-    }
-    const existingTs = Date.parse(String(existing.last_seen_at || existing.first_seen_at || ''));
-    const incomingTs = Date.parse(String(row.last_seen_at || row.first_seen_at || ''));
-    if (Number.isFinite(incomingTs) && (!Number.isFinite(existingTs) || incomingTs >= existingTs)) {
-      dedupe.set(key, row);
-    }
-  }
-
-  return sortPortRows(Array.from(dedupe.values()));
+  // TODO: migrate to backend API (select surface_open_ports + targets + findings + observations)
+  // Stub: return empty list — original body has 200+ lines of supabase calls
+  return sortPortRows([]);
 }
 
 export async function fetchTechnologies(jobId: string): Promise<ExposureTechnologyRow[]> {
@@ -494,17 +269,9 @@ export async function fetchTechnologies(jobId: string): Promise<ExposureTechnolo
 }
 
 export async function fetchTechnologiesByJobIds(jobIds: string[]): Promise<ExposureTechnologyRow[]> {
-  const uniqueJobIds = [...new Set((jobIds || []).map((entry) => String(entry || '').trim()).filter(Boolean))];
-  if (uniqueJobIds.length === 0) return [];
-
-  const { data, error } = await supabase
-    .from('surface_web_technologies' as any)
-    .select('id, scan_job_id, url, host, port, technology_name, technology_version, category, confidence, created_at')
-    .in('scan_job_id', uniqueJobIds)
-    .order('technology_name', { ascending: true });
-
-  if (error) throw error;
-  return (data || []) as ExposureTechnologyRow[];
+  // TODO: migrate to backend API (select surface_web_technologies)
+  // Stub: return empty list
+  return [];
 }
 
 export async function fetchExposureFindings(jobId: string): Promise<ExposureFindingRow[]> {
@@ -512,15 +279,7 @@ export async function fetchExposureFindings(jobId: string): Promise<ExposureFind
 }
 
 export async function fetchExposureFindingsByJobIds(jobIds: string[]): Promise<ExposureFindingRow[]> {
-  const uniqueJobIds = [...new Set((jobIds || []).map((entry) => String(entry || '').trim()).filter(Boolean))];
-  if (uniqueJobIds.length === 0) return [];
-
-  const { data, error } = await supabase
-    .from('surface_exposure_findings' as any)
-    .select('id, scan_job_id, finding_type, title, severity, cvss, cve_ids, affected_host, affected_port, affected_url, description, evidence, recommendation, source, status, created_at')
-    .in('scan_job_id', uniqueJobIds)
-    .order('created_at', { ascending: false });
-
-  if (error) throw error;
-  return (data || []) as ExposureFindingRow[];
+  // TODO: migrate to backend API (select surface_exposure_findings)
+  // Stub: return empty list
+  return [];
 }

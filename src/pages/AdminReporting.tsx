@@ -87,33 +87,12 @@ const AdminReporting: React.FC = () => {
       const tenants = await tenantsApi.listAll();
       const orgs = tenants.map(t => ({ id: String(t.id), name: t.name, code: t.ms_tenant_id || String(t.id) }));
 
-      // Fetch users count per organization
-      const { data: users, error: usersError } = await supabase
-        .from('users')
-        .select('organization_id');
-
-      if (usersError) throw usersError;
-
-      // Fetch organization services
-      const { data: services, error: servicesError } = await supabase
-        .from('organization_services')
-        .select('organization_id, status');
-
-      if (servicesError) throw servicesError;
-
-      // Fetch remediation tasks
-      const { data: tasks, error: tasksError } = await supabase
-        .from('remediation_tasks')
-        .select('organization_id, progress, is_deleted');
-
-      if (tasksError) throw tasksError;
-
-      // Fetch assessment responses
-      const { data: responses, error: responsesError } = await supabase
-        .from('assessment_responses')
-        .select('organization_id, status');
-
-      if (responsesError) throw responsesError;
+      // TODO: migrate to backend API (4 supabase counts)
+      // Stub: all 4 arrays empty — admin reporting will show zero counts
+      const users: any[] = [];
+      const services: any[] = [];
+      const tasks: any[] = [];
+      const responses: any[] = [];
 
       // Process data for each organization
       const orgStats: OrganizationStats[] = (orgs || []).map(org => {

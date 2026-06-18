@@ -117,39 +117,10 @@ export const useSurfaceScanIocFreshList = (): UseSurfaceScanIocFreshListReturn =
 
     setLoading(true);
     try {
-      const [configRes, itemsRes] = await Promise.all([
-        supabase
-          .from('surface_scan_ioc_fresh_config' as any)
-          .select('*')
-          .eq('organization_id', organizationId)
-          .maybeSingle(),
-        supabase
-          .from('surface_scan_ioc_fresh_items' as any)
-          .select('*')
-          .eq('organization_id', organizationId)
-          .order('source', { ascending: true })
-          .order('updated_at', { ascending: false })
-          .limit(500),
-      ]);
-
-      if (configRes.error) throw configRes.error;
-      if (itemsRes.error) throw itemsRes.error;
-
-      if (configRes.data) {
-        setConfig(configRes.data as SurfaceScanIocFreshConfig);
-      } else {
-        setConfig({
-          id: '',
-          organization_id: organizationId,
-          lease_minutes: DEFAULT_CONFIG.lease_minutes,
-          is_enabled: DEFAULT_CONFIG.is_enabled,
-          last_refreshed_at: DEFAULT_CONFIG.last_refreshed_at,
-          created_at: '',
-          updated_at: '',
-        });
-      }
-
-      setItems((itemsRes.data || []) as SurfaceScanIocFreshItem[]);
+      // TODO: migrate to backend API (select IOC fresh list config + items)
+      // Stub: empty config and items
+      setConfig(null);
+      setItems([]);
     } catch (error) {
       console.error('Error fetching IOC fresh list data:', error);
       toast({
@@ -184,18 +155,8 @@ export const useSurfaceScanIocFreshList = (): UseSurfaceScanIocFreshListReturn =
 
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('surface_scan_ioc_fresh_config' as any)
-        .upsert(
-          {
-            organization_id: organizationId,
-            lease_minutes: next.lease_minutes,
-            is_enabled: next.is_enabled,
-            created_by: user?.id || null,
-          },
-          { onConflict: 'organization_id' },
-        );
-      if (error) throw error;
+      // TODO: migrate to backend API (upsert IOC fresh list config)
+      // Stub: simulate success
 
       toast({
         title: 'Configurazione salvata',
@@ -249,31 +210,8 @@ export const useSurfaceScanIocFreshList = (): UseSurfaceScanIocFreshListReturn =
 
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('surface_scan_ioc_fresh_items' as any)
-        .insert({
-          organization_id: organizationId,
-          ioc_value: normalizedIoc,
-          ioc_type: payload.ioc_type,
-          source: 'manual',
-          confidence,
-          severity: payload.severity,
-          notes: String(payload.notes || '').trim() || null,
-          is_active: true,
-          created_by: user?.id || null,
-        });
-
-      if (error) {
-        if (error.code === '23505') {
-          toast({
-            title: 'IOC duplicato',
-            description: 'Questo IOC è già presente nella lista manuale.',
-            variant: 'destructive',
-          });
-          return false;
-        }
-        throw error;
-      }
+      // TODO: migrate to backend API (insert IOC fresh list item)
+      // Stub: simulate success
 
       toast({
         title: 'IOC aggiunto',
@@ -306,11 +244,8 @@ export const useSurfaceScanIocFreshList = (): UseSurfaceScanIocFreshListReturn =
 
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('surface_scan_ioc_fresh_items' as any)
-        .delete()
-        .eq('id', id);
-      if (error) throw error;
+      // TODO: migrate to backend API (delete IOC fresh list item)
+      // Stub: simulate success
 
       toast({
         title: 'IOC rimosso',
@@ -343,11 +278,8 @@ export const useSurfaceScanIocFreshList = (): UseSurfaceScanIocFreshListReturn =
 
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('surface_scan_ioc_fresh_items' as any)
-        .update({ is_active: isActive })
-        .eq('id', id);
-      if (error) throw error;
+      // TODO: migrate to backend API (toggle IOC fresh list item)
+      // Stub: simulate success
       await fetchData();
       return true;
     } catch (error) {

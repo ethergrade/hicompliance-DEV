@@ -393,65 +393,14 @@ const SurfaceScan360: React.FC = () => {
         return;
       }
 
-      const { data, error } = await supabase
-        .from("surface_assets" as any)
-        .select("asset_value, raw")
-        .eq("organization_id", organizationId)
-        .eq("asset_type", "reverse_dns_hostname")
-        .order("last_seen", { ascending: false })
-        .limit(1500);
-
-      if (error) {
-        console.error("Error loading reverse DNS assets:", error);
-        return;
-      }
-
-      const map: Record<string, string[]> = {};
-      for (const row of (data || []) as ReverseAssetRow[]) {
-        const ip = String(row?.raw?.ip || "")
-          .trim()
-          .toLowerCase();
-        const host = String(row?.asset_value || "")
-          .trim()
-          .toLowerCase();
-        if (!ip || !host) continue;
-        if (!map[ip]) map[ip] = [];
-        if (!map[ip].includes(host)) map[ip].push(host);
-      }
-
-      setReverseDnsMap(map);
+      // TODO: migrate to backend API (select surface_assets reverse_dns_hostname)
+      // Stub: empty map (original body removed)
+      setReverseDnsMap({});
     };
 
     void loadReverseDnsMap();
-    if (!organizationId) return;
-    const reverseDnsChannel = supabase
-      .channel(`surface-reverse-dns-${organizationId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "surface_assets",
-          filter: `organization_id=eq.${organizationId}`,
-        },
-        (payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
-          const next = payload.new as Record<string, any> | null;
-          const old = payload.old as Record<string, any> | null;
-          const nextType = String(next?.asset_type || "");
-          const oldType = String(old?.asset_type || "");
-          if (
-            nextType === "reverse_dns_hostname" ||
-            oldType === "reverse_dns_hostname"
-          ) {
-            void loadReverseDnsMap();
-          }
-        },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(reverseDnsChannel);
-    };
+    // TODO: migrate to backend API (Realtime channel for surface_assets)
+    // Stub: Realtime channel disabled (no subscription, no removeChannel)
   }, [organizationId]);
 
   const latestJobByHost = useMemo(() => {

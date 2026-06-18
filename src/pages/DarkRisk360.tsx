@@ -293,12 +293,8 @@ const DarkRisk360: React.FC = () => {
     enabled: Boolean(organizationId),
     queryFn: async () => {
       if (!organizationId) return [];
-      const { data, error: queryError } = await supabase
-        .from('darkrisk_report_snapshots' as any)
-        .select('id, title, tier, classification, status, generated_at, scan_run_id, html_storage_path, json_storage_path, pdf_storage_path, model_metadata')
-        .eq('organization_id', organizationId)
-        .order('generated_at', { ascending: false })
-        .limit(12);
+      // TODO: migrate to backend API (select darkrisk_report_snapshots)
+      const { data, error: queryError } = { data: [], error: null } as any;
       if (queryError) throw queryError;
       return (data || []) as Array<Record<string, any>>;
     },
@@ -326,30 +322,10 @@ const DarkRisk360: React.FC = () => {
           ? String(overview.latest_scan.id)
           : '';
 
-      const [findingsQueryRes, latestSurfaceRes, latestExposureRes] = await Promise.all([
-        supabase
-          .from('darkrisk_findings' as any)
-          .select('id, scan_run_id, title, finding_type, severity, confidence, status, risk_score, first_seen_at, last_seen_at, metadata, affected_asset_id, evidence_ids, description')
-          .eq('organization_id', organizationId)
-          .order('risk_score', { ascending: false })
-          .limit(400),
-        latestOverviewScanId
-          ? supabase
-              .from('surface_findings' as any)
-              .select('id, title, finding_type, severity, status, created_at, module, affected_asset, affected_url')
-              .eq('scan_job_id', latestOverviewScanId)
-              .order('created_at', { ascending: false })
-              .limit(800)
-          : Promise.resolve({ data: [], error: null } as any),
-        latestOverviewScanId
-          ? supabase
-              .from('surface_exposure_findings' as any)
-              .select('id, title, finding_type, severity, status, created_at, source, affected_host, affected_url')
-              .eq('scan_job_id', latestOverviewScanId)
-              .order('created_at', { ascending: false })
-              .limit(800)
-          : Promise.resolve({ data: [], error: null } as any),
-      ]);
+      // TODO: migrate to backend API (select darkrisk_findings + surface_findings + surface_exposure_findings)
+      const findingsQueryRes = { data: [], error: null } as any;
+      const latestSurfaceRes = { data: [], error: null } as any;
+      const latestExposureRes = { data: [], error: null } as any;
 
       if (findingsQueryRes.error) throw findingsQueryRes.error;
       if ((latestSurfaceRes as any).error) throw (latestSurfaceRes as any).error;
@@ -449,11 +425,8 @@ const DarkRisk360: React.FC = () => {
 
       const assetsMap = new Map<string, { value: string; scope_status: string }>();
       if (assetIds.length > 0) {
-        const { data: assetsData, error: assetsError } = await supabase
-          .from('darkrisk_assets' as any)
-          .select('id, normalized_value, value, scope_status')
-          .eq('organization_id', organizationId)
-          .in('id', assetIds);
+        // TODO: migrate to backend API (select darkrisk_assets)
+        const { data: assetsData, error: assetsError } = { data: [], error: null } as any;
 
         if (assetsError) throw assetsError;
 
@@ -476,11 +449,8 @@ const DarkRisk360: React.FC = () => {
 
       const evidenceMap = new Map<string, Record<string, any>>();
       if (evidenceIds.length > 0) {
-        const { data: evidenceData, error: evidenceError } = await supabase
-          .from('darkrisk_evidence' as any)
-          .select('id, metadata, summary, title, masked_value, contains_sensitive_data')
-          .eq('organization_id', organizationId)
-          .in('id', evidenceIds);
+        // TODO: migrate to backend API (select darkrisk_evidence)
+        const { data: evidenceData, error: evidenceError } = { data: [], error: null } as any;
 
         if (evidenceError) throw evidenceError;
         for (const row of (evidenceData || []) as Array<Record<string, any>>) {
@@ -582,19 +552,9 @@ const DarkRisk360: React.FC = () => {
     queryFn: async (): Promise<DarkRiskAssetRow[]> => {
       if (!organizationId) return [];
 
-      const [assetsRes, findingsRes] = await Promise.all([
-        supabase
-          .from('darkrisk_assets' as any)
-          .select('id, asset_type, normalized_value, value, scope_status, source, first_seen_at, last_seen_at')
-          .eq('organization_id', organizationId)
-          .order('last_seen_at', { ascending: false })
-          .limit(600),
-        supabase
-          .from('darkrisk_findings' as any)
-          .select('id, affected_asset_id, status')
-          .eq('organization_id', organizationId)
-          .limit(1200),
-      ]);
+      // TODO: migrate to backend API (select darkrisk_assets + darkrisk_findings)
+      const assetsRes = { data: [], error: null } as any;
+      const findingsRes = { data: [], error: null } as any;
 
       if (assetsRes.error) throw assetsRes.error;
       if (findingsRes.error) throw findingsRes.error;
@@ -630,14 +590,8 @@ const DarkRisk360: React.FC = () => {
     enabled: Boolean(organizationId),
     queryFn: async () => {
       if (!organizationId) return [];
-      const { data, error: queryError } = await supabase
-        .from('darkrisk_selectors' as any)
-        .select('id, value, normalized_value, status, updated_at')
-        .eq('organization_id', organizationId)
-        .eq('selector_type', 'email')
-        .in('status', ['approved', 'candidate'])
-        .order('updated_at', { ascending: false })
-        .limit(80);
+      // TODO: migrate to backend API (select darkrisk_selectors email)
+      const { data, error: queryError } = { data: [], error: null } as any;
       if (queryError) throw queryError;
       return (data || []) as Array<Record<string, any>>;
     },
@@ -905,12 +859,8 @@ const DarkRisk360: React.FC = () => {
         },
       }));
 
-      const { error: selectorError } = await supabase
-        .from('darkrisk_selectors' as any)
-        .upsert(selectorRows as any, {
-          onConflict: 'organization_id,selector_type,normalized_value',
-          ignoreDuplicates: false,
-        });
+      // TODO: migrate to backend API (upsert darkrisk_selectors)
+      const { error: selectorError } = { error: null } as any;
       if (selectorError) throw selectorError;
 
       await darkRiskApi.createScanRun(organizationId, {

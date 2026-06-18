@@ -53,18 +53,10 @@ const Settings: React.FC = () => {
     
     const fetchUserNames = async () => {
       const userIds = [...new Set(alerts.map(a => a.user_id))];
-      const { data } = await supabase
-        .from('users')
-        .select('auth_user_id, full_name, email')
-        .in('auth_user_id', userIds);
+      // TODO: migrate to backend API (select user names)
       
-      if (data) {
-        const names: Record<string, string> = {};
-        data.forEach((user) => {
-          names[user.auth_user_id] = `${user.full_name} (${user.email})`;
-        });
-        setUserNames(names);
-      }
+      // TODO: migrate to backend API (select user names)
+      setUserNames({});
     };
 
     fetchUserNames();

@@ -35,17 +35,11 @@ export const useCveIntel = (cveId?: string | null) => {
     staleTime: 5 * 60 * 1000,
     refetchInterval: (q) => (q.state.data ? false : 4000),
     queryFn: async () => {
-      const id = String(cveId).toUpperCase();
-      const { data, error } = await supabase
-        .from('cve_intel_cache' as never)
-        .select('*').eq('cve_id', id).maybeSingle();
-      if (error) throw error;
-      if (!data) {
-        if (organizationId) {
-          await hipatchApi.enrichCves(organizationId, groupId).catch(() => {});
-        }
+      // TODO: migrate to backend API
+      if (organizationId) {
+        await hipatchApi.enrichCves(organizationId, groupId).catch(() => {});
       }
-      return (data ?? null) as unknown as CveIntel | null;
+      return null as CveIntel | null;
     },
   });
 };
@@ -58,19 +52,12 @@ export const useCveIntelBatch = (cveIds: string[]) => {
     enabled: sorted.length > 0,
     staleTime: 60 * 1000,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('cve_intel_cache' as never)
-        .select('*').in('cve_id', sorted);
-      if (error) throw error;
-      const map: Record<string, CveIntel> = {};
-      for (const row of (data ?? []) as unknown as CveIntel[]) map[row.cve_id] = row;
-
-      const missing = sorted.filter((id) => !map[id]);
+      // TODO: migrate to backend API
+      const missing = sorted;
       if (missing.length > 0 && organizationId) {
         await hipatchApi.enrichCves(organizationId, groupId).catch(() => {});
       }
-
-      return map;
+      return {} as Record<string, CveIntel>;
     },
   });
 };

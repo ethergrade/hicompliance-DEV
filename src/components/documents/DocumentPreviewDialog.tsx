@@ -45,18 +45,9 @@ const DocumentPreviewDialog: React.FC<DocumentPreviewDialogProps> = ({
       setSignedUrl(null);
       setTextContent(null);
       try {
-        const { data, error: sErr } = await supabase.storage
-          .from('incident-documents')
-          .createSignedUrl(filePath, 3600);
-        if (sErr || !data) throw sErr || new Error('Signed URL non disponibile');
+        // TODO: migrate to backend API (signed URL from Supabase Storage)
         if (cancelled) return;
-        setSignedUrl(data.signedUrl);
-
-        if (isText(ext, fileType)) {
-          const res = await fetch(data.signedUrl);
-          const txt = await res.text();
-          if (!cancelled) setTextContent(txt);
-        }
+        throw new Error('Anteprima non disponibile: storage backend non migrato');
       } catch (e: any) {
         console.error(e);
         if (!cancelled) setError(e?.message || 'Errore caricamento anteprima');

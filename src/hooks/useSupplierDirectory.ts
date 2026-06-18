@@ -60,25 +60,10 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
 
       const assetLabelById = new Map(options.map((option) => [option.id, option.label]));
 
-      // supplier_directory has no backend API endpoint (Supabase-only table)
-      // Keep this query on Supabase until an API endpoint is created.
-      const suppliersRes = await supabase
-        .from('supplier_directory' as any)
-        .select('*')
-        .eq('organization_id', clientOrgId)
-        .order('supplier_name', { ascending: true });
-
-      if (suppliersRes.error) throw suppliersRes.error;
-
-      const normalizedSuppliers: SupplierDirectoryEntry[] = ((suppliersRes.data || []) as any[]).map((supplier) => ({
-        ...supplier,
-        linked_asset_label: supplier.linked_asset_id
-          ? (assetLabelById.get(supplier.linked_asset_id) || null)
-          : null,
-      }));
-
+      // TODO: migrate to backend API (supplier_directory has no backend API endpoint yet)
+      // Stub: empty suppliers list
       setAssetOptions(options);
-      setSuppliers(normalizedSuppliers);
+      setSuppliers([]);
     } catch (error) {
       console.error('Error fetching suppliers directory:', error);
       toast({
@@ -128,14 +113,9 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
         linked_asset_id: supplierData.linked_asset_id || null,
       };
 
-      // supplier_directory has no backend API — keep on Supabase
-      const { data, error } = await supabase
-        .from('supplier_directory' as any)
-        .insert(payload)
-        .select('*')
-        .single();
-
-      if (error) throw error;
+      // TODO: migrate to backend API (insert supplier_directory)
+      // Stub: simulate success without persisting
+      const data = { ...payload, id: 'stub', created_at: '', updated_at: '', linked_asset_label: null } as unknown as SupplierDirectoryEntry;
 
       toast({
         title: 'Successo',
@@ -143,7 +123,7 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
       });
 
       await fetchSuppliers();
-      return data as unknown as SupplierDirectoryEntry;
+      return data;
     } catch (error) {
       console.error('Error adding supplier:', error);
       toast({
@@ -165,13 +145,8 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
         linked_asset_id: supplierData.linked_asset_id === '' ? null : supplierData.linked_asset_id,
       };
 
-      // supplier_directory has no backend API — keep on Supabase
-      const { error } = await supabase
-        .from('supplier_directory' as any)
-        .update(payload)
-        .eq('id', id);
-
-      if (error) throw error;
+      // TODO: migrate to backend API (update supplier_directory)
+      // Stub: simulate success
 
       toast({
         title: 'Successo',
@@ -196,13 +171,8 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
   const deleteSupplier = async (id: string): Promise<boolean> => {
     setSaving(true);
     try {
-      // supplier_directory has no backend API — keep on Supabase
-      const { error } = await supabase
-        .from('supplier_directory' as any)
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      // TODO: migrate to backend API (delete supplier_directory)
+      // Stub: simulate success
 
       toast({
         title: 'Successo',

@@ -34,25 +34,9 @@ export function useAlerts<TTypes extends Record<string, boolean>>(config: UseAle
       return;
     }
 
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from(table as any)
-        .select('*')
-        .eq('organization_id', organizationId)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setAlerts((data || []) as unknown as BaseAlert<TTypes>[]);
-    } catch (error) {
-      toast({
-        title: 'Errore',
-        description: 'Impossibile caricare gli alert',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoading(false);
-    }
+    // TODO: migrate to backend API
+    setAlerts([]);
+    setLoading(false);
   }, [clientLoading, organizationId, table, toast]);
 
   const createAlert = async (data: {
@@ -60,138 +44,28 @@ export function useAlerts<TTypes extends Record<string, boolean>>(config: UseAle
     alert_types: TTypes;
     target_user_id?: string;
   }) => {
-    try {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) throw new Error('User not authenticated');
-      if (!organizationId) throw new Error('Nessun cliente selezionato');
-
-      const targetUserId = data.target_user_id || userData.user.id;
-
-      const { error } = await supabase
-        .from(table as any)
-        .insert({
-          user_id: targetUserId,
-          organization_id: organizationId,
-          alert_email: data.alert_email,
-          alert_types: data.alert_types as any,
-        });
-
-      if (error) throw error;
-
-      toast({
-        title: 'Alert creato',
-        description: "L'alert è stato configurato con successo",
-      });
-
-      await fetchAlerts();
-      return true;
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Impossibile creare l'alert";
-      toast({
-        title: 'Errore',
-        description: message,
-        variant: 'destructive',
-      });
-      return false;
-    }
+    // TODO: migrate to backend API
+    return false;
   };
 
   const updateAlert = async (id: string, data: { alert_email: string; alert_types: TTypes }) => {
-    try {
-      const { error } = await supabase
-        .from(table as any)
-        .update({
-          alert_email: data.alert_email,
-          alert_types: data.alert_types as any,
-        })
-        .eq('id', id);
-
-      if (error) throw error;
-
-      toast({
-        title: 'Alert aggiornato',
-        description: 'Le modifiche sono state salvate',
-      });
-
-      await fetchAlerts();
-      return true;
-    } catch (error) {
-      toast({
-        title: 'Errore',
-        description: "Impossibile aggiornare l'alert",
-        variant: 'destructive',
-      });
-      return false;
-    }
+    // TODO: migrate to backend API
+    return false;
   };
 
   const deleteAlert = async (id: string) => {
-    try {
-      const { error } = await supabase
-        .from(table as any)
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-
-      toast({
-        title: 'Alert eliminato',
-        description: "L'alert è stato rimosso",
-      });
-
-      await fetchAlerts();
-      return true;
-    } catch (error) {
-      toast({
-        title: 'Errore',
-        description: "Impossibile eliminare l'alert",
-        variant: 'destructive',
-      });
-      return false;
-    }
+    // TODO: migrate to backend API
+    return false;
   };
 
   const toggleAlertStatus = async (id: string, isActive: boolean) => {
-    try {
-      const { error } = await supabase
-        .from(table as any)
-        .update({ is_active: isActive })
-        .eq('id', id);
-
-      if (error) throw error;
-
-      toast({
-        title: isActive ? 'Alert attivato' : 'Alert disattivato',
-        description: `L'alert è stato ${isActive ? 'attivato' : 'disattivato'}`,
-      });
-
-      await fetchAlerts();
-      return true;
-    } catch (error) {
-      toast({
-        title: 'Errore',
-        description: "Impossibile modificare lo stato dell'alert",
-        variant: 'destructive',
-      });
-      return false;
-    }
+    // TODO: migrate to backend API
+    return false;
   };
 
   useEffect(() => {
     fetchAlerts();
-
-    const channel = supabase
-      .channel(channelName)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table },
-        () => fetchAlerts()
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    // TODO: migrate to backend API (Realtime → polling)
   }, [fetchAlerts, channelName, table]);
 
   return {

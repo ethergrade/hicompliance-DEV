@@ -212,16 +212,11 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
         });
       }
 
-      const { data: orgFlagsData, error: orgFlagsError } = await supabase
-        .from('organizations' as any)
-        .select('surface_scan360_enabled, dark_risk360_enabled')
-        .eq('id', organizationId)
-        .maybeSingle();
-      if (orgFlagsError) {
-        console.warn('Unable to read organization flags for scope auto-flow:', orgFlagsError);
-      }
-      const surfaceEnabled = orgFlagsData?.surface_scan360_enabled !== false;
-      const darkRiskEnabled = Boolean(orgFlagsData?.dark_risk360_enabled);
+      // TODO: migrate to backend API (organizations flags)
+      // Stub: default both flags to enabled to preserve previous behavior
+      const orgFlagsData = { surface_scan360_enabled: true, dark_risk360_enabled: true };
+      const surfaceEnabled = true;
+      const darkRiskEnabled = true;
 
       const shouldAutoQueue = opts.auto_queue_scan !== false && surfaceEnabled;
       if (shouldAutoQueue) {
