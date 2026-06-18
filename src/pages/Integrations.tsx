@@ -381,6 +381,7 @@ const Integrations = () => {
                       </FormItem>
                     )}
                   />
+                  {(watchedServiceId || selectedIntegration) && (<>
                   <FormField
                     control={form.control}
                     name="api_url"
@@ -510,6 +511,7 @@ const Integrations = () => {
                       </FormItem>
                     )}
                   />
+                  </>)}
                   <DialogFooter>
                     <Button type="submit" disabled={createOrUpdateMutation.isPending}>
                       {createOrUpdateMutation.isPending ? 'Salvando...' : 'Salva'}
