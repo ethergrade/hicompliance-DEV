@@ -77,7 +77,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!token || isTokenExpired()) {
       clearToken();
       setLoading(false);
-      if (window.location.pathname !== '/auth') {
+      if (window.location.pathname !== '/auth' && !window.location.pathname.startsWith('/hiconsole')) {
         window.location.href = '/auth';
       }
       return;
@@ -119,7 +119,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         description: "Effettua nuovamente l'accesso",
         variant: "destructive",
       });
-      window.location.href = '/auth';
+      if (window.location.pathname !== '/auth' && !window.location.pathname.startsWith('/hiconsole')) {
+        window.location.href = '/auth';
+      }
     };
 
     window.addEventListener('auth:unauthorized', handleAuthUnauthorized);
