@@ -109,10 +109,10 @@ export const SecurityFeedCard: React.FC<SecurityFeedCardProps> = ({ item }) => {
           </span>
           
           {/* Show EPSS score for CVE items */}
-          {item.type === 'cve' && item.epssScore !== undefined && (
+          {item.type === 'cve' && item.epssScore != null && (
             <div className={`flex items-center gap-1 text-xs font-medium ${getEpssColor(item.epssScore)}`}>
               <TrendingUp className="w-3 h-3" />
-              <span>EPSS {item.epssScore.toFixed(2)}%</span>
+              <span>EPSS {Number(item.epssScore).toFixed(2)}%</span>
             </div>
           )}
         </div>
