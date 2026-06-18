@@ -49,7 +49,7 @@ export const useSupplierDirectory = (): UseSupplierDirectoryReturn => {
       // Fetch critical infrastructure assets via API for linked-asset labels
       const assets = await criticalInfrastructureApi.list(clientOrgId, groupId);
 
-      const options: SupplierAssetOption[] = assets.map((asset) => ({
+      const options: SupplierAssetOption[] = (assets || []).map((asset) => ({
         id: asset.id,
         asset_id: asset.asset_id,
         component_name: asset.component_name || '',

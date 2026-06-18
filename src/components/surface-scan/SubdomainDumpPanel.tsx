@@ -14,7 +14,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  Collapsible, CollapsibleContent, CollapsibleTrigger,
+  Collapsible, CollapsibleContent,
 } from '@/components/ui/collapsible';
 
 interface Props {
@@ -56,7 +56,7 @@ export const SubdomainDumpPanel: React.FC<Props> = ({ isAdmin }) => {
         description: `${res.total_returned}/${res.total_discovered} sottodomini${res.truncated ? ' (troncato al limite)' : ''}`,
       });
       // Auto-aggiunge i sottodomini scoperti alla lista monitorata (silenzioso, dedup via unique key)
-      const subs: SubdomainResult[] = (res.results ?? []) as any;
+      const subs = res.results ?? [];
       if (subs.length > 0) {
         let added = 0;
         for (const s of subs) {
@@ -189,7 +189,7 @@ export const SubdomainDumpPanel: React.FC<Props> = ({ isAdmin }) => {
                 </Badge>
               )}
               <span className="text-xs text-muted-foreground">
-                Fonti: {latest.sources.join(', ') || '—'}
+                Fonti: {(latest.sources || []).join(', ') || '—'}
               </span>
               <span className="text-xs text-muted-foreground ml-auto">
                 {new Date(latest.created_at).toLocaleString('it-IT')}
@@ -210,7 +210,7 @@ export const SubdomainDumpPanel: React.FC<Props> = ({ isAdmin }) => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {latest.results.map((r) => (
+                  {(latest.results || []).map((r) => (
                     <TableRow key={r.subdomain}>
                       <TableCell className="font-mono text-xs">{r.subdomain}</TableCell>
                       <TableCell className="font-mono text-xs">{r.ip ?? '—'}</TableCell>
@@ -219,7 +219,7 @@ export const SubdomainDumpPanel: React.FC<Props> = ({ isAdmin }) => {
                       <TableCell className="text-xs">{r.country ?? '—'}</TableCell>
                       <TableCell className="text-xs">
                         <div className="flex flex-wrap gap-1">
-                          {r.source.map(s => (
+                          {(r.source || []).map(s => (
                             <Badge key={s} variant="secondary" className="text-[10px] px-1.5 py-0">{s}</Badge>
                           ))}
                         </div>
@@ -232,7 +232,7 @@ export const SubdomainDumpPanel: React.FC<Props> = ({ isAdmin }) => {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {latest.results.length === 0 && (
+                  {(latest.results || []).length === 0 && (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-6">
                         Nessun sottodominio trovato.
