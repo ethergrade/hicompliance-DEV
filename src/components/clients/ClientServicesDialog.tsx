@@ -718,54 +718,6 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
             </div>
 
 
-            <Separator className="my-3" />
-            <p className="text-xs font-medium text-muted-foreground mb-2 px-1">Servizi HiSolution (API)</p>
-
-            {isLoading ? (
-              <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
-            ) : (
-              <div className="space-y-1">
-
-                {services.filter(svc => !['hifirewall', 'hiendpoint', 'himail', 'hidetect', 'hilog', 'himobile', 'hipatch'].includes(svc.code?.toLowerCase())).map((svc, idx) => {
-                  const integration = getIntegration(svc.id);
-                  const connected = !!integration;
-                  return (
-                    <React.Fragment key={svc.id}>
-                      {idx > 0 && <Separator />}
-                      <div className="flex items-center justify-between py-2.5 px-1">
-                        <div className="flex items-center gap-3">
-                          <div className={`p-1.5 rounded-md ${connected ? 'bg-green-500/10 text-green-500' : 'bg-muted text-muted-foreground'}`}>
-                            {SERVICE_ICONS[svc.code?.toLowerCase()] || <Plug className="w-4 h-4" />}
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium">{svc.name}</p>
-                            {connected && <p className="text-xs text-muted-foreground truncate max-w-[180px]">{integration.api_url}</p>}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {connected ? (
-                            <>
-                              <Badge variant="outline" className="text-xs border-green-500/30 text-green-500">Attivo</Badge>
-                              <Button
-                                variant="ghost" size="sm"
-                                onClick={() => disconnectMutation.mutate(integration.id)}
-                                disabled={disconnectMutation.isPending}
-                              >
-                                {disconnectMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Unlink className="w-3.5 h-3.5" />}
-                              </Button>
-                            </>
-                          ) : (
-                            <Button variant="outline" size="sm" className="text-xs" onClick={() => setConnectingService({ id: svc.id, name: svc.name })}>
-                              <Link2 className="w-3.5 h-3.5 mr-1" /> Collega
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </React.Fragment>
-                  );
-                })}
-              </div>
-            )}
           </ScrollArea>
         )}
       </DialogContent>
