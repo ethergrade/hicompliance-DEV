@@ -53,6 +53,7 @@ import { presentDarkRiskFindingType, presentDarkRiskSource } from '@/lib/darkris
 import { detectSensitiveIndicators, type SensitiveIndicators } from '@/lib/darkrisk/sensitiveDetection';
 import { generateSurfaceScan360Pdf } from '@/lib/surfaceScan360PdfReport';
 import { generateSurfaceScan360Docx } from '@/lib/surfaceScan360DocxReport';
+import { generateDtiEstesoPdf } from '@/lib/dtiEstesoPdfReport';
 import { adaptDarkRiskReportToSurfaceScanTemplate } from '@/lib/darkrisk/darkriskReportExportAdapter';
 import { parseMonitoredScopeMixedEntries } from '@/lib/ipRange';
 
@@ -776,10 +777,23 @@ const DarkRisk360: React.FC = () => {
     const weeklyReports = reportSnapshots.filter((report) => getDarkRiskReportMode(report) === 'weekly');
     const extendedReports = reportSnapshots.filter((report) => getDarkRiskReportMode(report) === 'extended');
 
+    // Versioni "curate" del DTI Esteso: snapshot con model_metadata.report_version valorizzato (v1, v2, ...).
+    const getReportVersion = (r: Record<string, any>): number | null => {
+      const v = Number(r?.model_metadata?.report_version);
+      return Number.isFinite(v) && v > 0 ? v : null;
+    };
+    const taggedVersions = extendedReports
+      .filter((r) => getReportVersion(r) != null)
+      .sort((a, b) => (getReportVersion(a)! - getReportVersion(b)!));
+    const extendedVersions = taggedVersions.length > 0
+      ? taggedVersions
+      : (extendedReports[0] ? [extendedReports[0]] : []);
+
     return {
       weekly: weeklyReports[0] || null,
       extended: extendedReports[0] || null,
-      hiddenDuplicates: Math.max(0, reportSnapshots.length - (weeklyReports[0] ? 1 : 0) - (extendedReports[0] ? 1 : 0)),
+      extendedVersions,
+      hiddenDuplicates: Math.max(0, reportSnapshots.length - (weeklyReports[0] ? 1 : 0) - extendedVersions.length),
     };
   }, [reportSnapshots]);
 
@@ -1004,6 +1018,25 @@ const DarkRisk360: React.FC = () => {
     }
   };
 
+  // Export PDF dedicato per il report DTI Esteso (client-side, dal report_json ricco v2.0)
+  const exportDtiEstesoPdf = async (report: Record<string, any>) => {
+    try {
+      setExportingReportId(String(report?.id || ''));
+      const reportJson = await loadReportJsonSnapshot(report);
+      if (!reportJson || (!Array.isArray((reportJson as any).per_domain) && String((reportJson as any).schema_version || '') !== '2.0')) {
+        toast.warning('Questo snapshot non ha il formato dettagliato. Rigenera il report esteso, poi riprova.');
+        await openReportAsset(report, 'html');
+        return;
+      }
+      generateDtiEstesoPdf(reportJson as any);
+      toast.success('PDF DTI Esteso generato');
+    } catch (exportError: any) {
+      toast.error(`Export PDF non riuscito: ${String(exportError?.message || 'errore sconosciuto')}`);
+    } finally {
+      setExportingReportId(null);
+    }
+  };
+
   const openCategoryDetail = (category: string) => {
     setActiveTab('findings');
     setFindingFilter({
@@ -1077,6 +1110,9 @@ const DarkRisk360: React.FC = () => {
           <Badge variant={mode === 'extended' ? 'default' : 'secondary'}>
             {mode === 'extended' ? 'Esteso DTI finale' : 'Settimanale'}
           </Badge>
+          {mode === 'extended' && Number(report?.model_metadata?.report_version) > 0 && (
+            <Badge variant="outline">v{Number(report.model_metadata.report_version)}</Badge>
+          )}
         </div>
         <p className="text-xs text-muted-foreground truncate">
           {mode === 'weekly'
@@ -1086,24 +1122,38 @@ const DarkRisk360: React.FC = () => {
         </p>
       </div>
       <Badge variant="outline">{String(report.status || 'completed')}</Badge>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={exportingReportId === String(report.id)}
-        onClick={() => void exportDarkRiskWithSurfaceTemplate(report, 'pdf')}
-      >
-        <Download className="w-4 h-4 mr-2" />
-        PDF
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={exportingReportId === String(report.id)}
-        onClick={() => void exportDarkRiskWithSurfaceTemplate(report, 'docx')}
-      >
-        <Download className="w-4 h-4 mr-2" />
-        DOCX
-      </Button>
+      {mode === 'extended' ? (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={exportingReportId === String(report.id)}
+          onClick={() => void exportDtiEstesoPdf(report)}
+        >
+          <Download className="w-4 h-4 mr-2" />
+          PDF
+        </Button>
+      ) : (
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={exportingReportId === String(report.id)}
+            onClick={() => void exportDarkRiskWithSurfaceTemplate(report, 'pdf')}
+          >
+            <Download className="w-4 h-4 mr-2" />
+            PDF
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={exportingReportId === String(report.id)}
+            onClick={() => void exportDarkRiskWithSurfaceTemplate(report, 'docx')}
+          >
+            <Download className="w-4 h-4 mr-2" />
+            DOCX
+          </Button>
+        </>
+      )}
       <Button variant="outline" size="sm" onClick={() => void openReportAsset(report, 'json')}>
         <Download className="w-4 h-4 mr-2" />
         JSON
@@ -1728,8 +1778,8 @@ const DarkRisk360: React.FC = () => {
                                 {reportRepository.extended ? 'Esteso già generato' : 'Genera esteso'}
                               </Button>
                             </div>
-                            {reportRepository.extended ? (
-                              renderReportSnapshot(reportRepository.extended, 'extended')
+                            {reportRepository.extendedVersions.length > 0 ? (
+                              reportRepository.extendedVersions.map((rep) => renderReportSnapshot(rep, 'extended'))
                             ) : (
                               <p className="text-sm text-muted-foreground">Nessun report esteso finale ancora disponibile.</p>
                             )}
