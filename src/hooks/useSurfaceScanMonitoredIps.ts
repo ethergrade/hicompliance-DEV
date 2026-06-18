@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { surfaceScan360Api } from '@/lib/api/surface-scan360';
 import { darkRiskApi } from '@/lib/api/darkrisk';
-import { tenantServicesApi } from '@/lib/api';
 import {
   MonitoredIpEntryType,
   parseMonitoredIpInput,
@@ -117,8 +117,15 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
 
     setLoading(true);
     try {
-      const data = await surfaceScan360Api.listMonitoredIps(organizationId, groupId);
-      setRules((data || []) as SurfaceScanMonitoredIpRule[]);
+      const { data, error } = await supabase
+        .from('surface_scan_monitored_ips' as any)
+        .select('*')
+        .eq('organization_id', organizationId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setRules((data || []) as unknown as SurfaceScanMonitoredIpRule[]);
     } catch (error) {
       console.error('Error fetching monitored IP rules:', error);
       toast({
@@ -129,7 +136,7 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
     } finally {
       setLoading(false);
     }
-  }, [isClientLoading, organizationId, groupId, toast]);
+  }, [isClientLoading, organizationId, toast]);
 
   useEffect(() => {
     if (!isClientLoading && organizationId) {
@@ -176,18 +183,34 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
 
     setSaving(true);
     try {
-      await surfaceScan360Api.createMonitoredIp(
-        organizationId,
-        {
-          input_value: parsed.inputValue,
-          entry_type: parsed.entryType,
-          ip_start: parsed.ipStart,
-          ip_end: parsed.ipEnd,
-          discovered_via: opts.discovered_via ?? 'manual',
-          discovered_from: opts.discovered_from ?? null,
-        },
-        groupId,
-      );
+      const payload: any = {
+        organization_id: organizationId,
+        input_value: parsed.inputValue,
+        entry_type: parsed.entryType,
+        ip_start: parsed.ipStart,
+        ip_end: parsed.ipEnd,
+        created_by: user?.id || null,
+        discovered_via: opts.discovered_via ?? 'manual',
+        discovered_from: opts.discovered_from ?? null,
+      };
+
+      const { error } = await supabase
+        .from('surface_scan_monitored_ips' as any)
+        .insert(payload);
+
+      if (error) {
+        if (error.code === '23505') {
+          if (!opts.silent) {
+            toast({
+              title: 'Regola duplicata',
+              description: 'Questa regola di monitoraggio è già presente',
+              variant: 'destructive',
+            });
+          }
+          return false;
+        }
+        throw error;
+      }
 
       if (!opts.silent) {
         toast({
@@ -196,16 +219,16 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
         });
       }
 
-      // Read service flags from tenant-services to gate auto-queue and auto-sync
-      let surfaceEnabled = true;
-      let darkRiskEnabled = false;
-      try {
-        const services = await tenantServicesApi.listByOrganization(organizationId, groupId);
-        surfaceEnabled = services.some(s => s.service_type === 'surfacescan' && (s.status === 'active' || !s.status));
-        darkRiskEnabled = services.some(s => s.service_type === 'darkrisk' && (s.status === 'active' || !s.status));
-      } catch {
-        // fallback: assume surface active, darkrisk inactive
+      const { data: orgFlagsData, error: orgFlagsError } = await supabase
+        .from('organizations' as any)
+        .select('surface_scan360_enabled, dark_risk360_enabled')
+        .eq('id', organizationId)
+        .maybeSingle();
+      if (orgFlagsError) {
+        console.warn('Unable to read organization flags for scope auto-flow:', orgFlagsError);
       }
+      const surfaceEnabled = orgFlagsData?.surface_scan360_enabled !== false;
+      const darkRiskEnabled = Boolean(orgFlagsData?.dark_risk360_enabled);
 
       const shouldAutoQueue = opts.auto_queue_scan !== false && surfaceEnabled;
       if (shouldAutoQueue) {
@@ -231,15 +254,12 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
 
       await fetchRules();
       return true;
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error adding monitored IP rule:', error);
-      const isDuplicate = error?.status === 409 || String(error?.message || '').includes('duplicate');
       if (!opts.silent) {
         toast({
-          title: isDuplicate ? 'Regola duplicata' : 'Errore',
-          description: isDuplicate
-            ? 'Questa regola di monitoraggio è già presente'
-            : 'Impossibile aggiungere la regola IP',
+          title: 'Errore',
+          description: 'Impossibile aggiungere la regola IP',
           variant: 'destructive',
         });
       }
@@ -259,11 +279,14 @@ export const useSurfaceScanMonitoredIps = (): UseSurfaceScanMonitoredIpsReturn =
       return false;
     }
 
-    if (!organizationId) return false;
-
     setSaving(true);
     try {
-      await surfaceScan360Api.deleteMonitoredIp(organizationId, id, groupId);
+      const { error } = await supabase
+        .from('surface_scan_monitored_ips' as any)
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
 
       toast({
         title: 'Regola rimossa',
