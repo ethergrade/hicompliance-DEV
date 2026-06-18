@@ -411,7 +411,7 @@ export const AppSidebar: React.FC = () => {
 						<SidebarGroupContent>
 							<SidebarMenu>
 								{isModuleEnabled("/settings/users") &&
-									isUserAllowed("/settings/users") && (
+									isUserAllowed("/settings/users") && (isAdmin || isSuperAdmin || isSales) && (
 										<SidebarMenuItem>
 											<SidebarMenuButton
 												asChild
