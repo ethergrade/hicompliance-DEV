@@ -6,13 +6,14 @@ import type {
   UpdateAssetInventoryRequest,
 } from "@/types/api";
 
-const groupHeader = (groupId?: string) => (groupId ? { "X-Group-Id": groupId } : {});
+const groupHeader = (groupId?: string) => ({ headers: groupId ? { "X-Group-Id": groupId } : {} });
 
 export const assetInventoryApi = {
   /** Get asset inventory for a specific organization */
   async getByOrganization(organizationId: string, groupId?: string): Promise<AssetInventoryResource | null> {
     const res = await apiClient.get<ApiResponse<AssetInventoryResource | null>>(
       `/companies/${organizationId}/asset-inventory`,
+ undefined,
       groupHeader(groupId)
     );
     return res.data;
