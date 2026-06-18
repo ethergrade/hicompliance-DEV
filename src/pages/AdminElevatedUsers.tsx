@@ -81,7 +81,7 @@ interface PasswordFormData {
 const roleOptions = ["super-admin", "admin", "sales", "manager", "viewer", "customer", "editor"];
 
 const AdminElevatedUsers: React.FC = () => {
-  const { isSuperAdmin } = useUserRoles();
+  const { isSuperAdmin, loading: rolesLoading } = useUserRoles();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -118,10 +118,10 @@ const AdminElevatedUsers: React.FC = () => {
 
   // Redirect if not super admin
   useEffect(() => {
-    if (!isSuperAdmin) {
+    if (!rolesLoading && !isSuperAdmin) {
       navigate("/dashboard", { replace: true });
     }
-  }, [isSuperAdmin, navigate]);
+  }, [rolesLoading, isSuperAdmin, navigate]);
 
   // Fetch groups for filter
   const { data: groups = [] } = useQuery({
@@ -419,7 +419,7 @@ const AdminElevatedUsers: React.FC = () => {
 
       {/* Create User Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={(open) => { setCreateDialogOpen(open); if (!open) createForm.reset({ name: "", email: "", password: "", password_confirmation: "", role: "super-admin" }); }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Nuovo utente superadmin</DialogTitle>
             <DialogDescription>Crea un nuovo utente con ruolo elevato. L'utente riceverà le credenziali per accedere.</DialogDescription>
@@ -457,37 +457,39 @@ const AdminElevatedUsers: React.FC = () => {
                   </FormItem>
                 )}
               />
-              <FormField
-                control={createForm.control}
-                name="password"
-                rules={{ required: "Password è richiesta", minLength: { value: 8, message: "La password deve essere di almeno 8 caratteri" } }}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <FormControl>
-                      <Input {...field} type="password" placeholder="••••••••" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={createForm.control}
-                name="password_confirmation"
-                rules={{
-                  required: "Conferma password è richiesta",
-                  validate: (value: string) => value === createForm.watch("password") || "Le password non coincidono",
-                }}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Conferma Password</FormLabel>
-                    <FormControl>
-                      <Input {...field} type="password" placeholder="••••••••" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <FormField
+                  control={createForm.control}
+                  name="password"
+                  rules={{ required: "Password è richiesta", minLength: { value: 8, message: "La password deve essere di almeno 8 caratteri" } }}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Password</FormLabel>
+                      <FormControl>
+                        <Input {...field} type="password" placeholder="••••••••" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={createForm.control}
+                  name="password_confirmation"
+                  rules={{
+                    required: "Conferma password è richiesta",
+                    validate: (value: string) => value === createForm.watch("password") || "Le password non coincidono",
+                  }}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Conferma Password</FormLabel>
+                      <FormControl>
+                        <Input {...field} type="password" placeholder="••••••••" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
               <FormField
                 control={createForm.control}
                 name="role"
@@ -524,7 +526,7 @@ const AdminElevatedUsers: React.FC = () => {
 
       {/* Edit User Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={(open) => { setEditDialogOpen(open); if (!open) setSelectedUser(null); }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Modifica Utente</DialogTitle>
             <DialogDescription>Modifica i dati dell'utente</DialogDescription>
@@ -598,7 +600,7 @@ const AdminElevatedUsers: React.FC = () => {
 
       {/* Change Password Dialog */}
       <Dialog open={passwordDialogOpen} onOpenChange={(open) => { setPasswordDialogOpen(open); if (!open) { setPasswordUser(null); passwordForm.reset({ password: "", password_confirmation: "" }); }}}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Cambia Password</DialogTitle>
             <DialogDescription>
