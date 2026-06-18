@@ -726,7 +726,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
             ) : (
               <div className="space-y-1">
 
-                {services.map((svc, idx) => {
+                {services.filter(svc => !['hifirewall', 'hiendpoint', 'himail', 'hidetect', 'hilog', 'himobile'].includes(svc.code?.toLowerCase())).map((svc, idx) => {
                   const integration = getIntegration(svc.id);
                   const connected = !!integration;
                   return (
