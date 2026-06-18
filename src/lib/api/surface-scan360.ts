@@ -163,6 +163,26 @@ export const surfaceScan360Api = {
     return extractArray<any>(res.data || []);
   },
 
+  async createMonitoredIp(
+    companyId: string,
+    payload: {
+      input_value: string;
+      entry_type: string;
+      ip_start: string;
+      ip_end: string;
+      discovered_via?: string;
+      discovered_from?: string | null;
+    },
+    groupId?: string | null,
+  ): Promise<any> {
+    const res = await complianceApiClient.post<ApiResponse<any>>(
+      `/companies/${companyId}/surface-scan360/monitored-ips`,
+      payload,
+      groupId ? groupHeader(groupId) : undefined,
+    );
+    return res.data;
+  },
+
   async deleteMonitoredIp(
     companyId: string,
     monitoredIpId: string,
