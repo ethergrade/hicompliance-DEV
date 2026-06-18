@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { companiesApi, configApi, usersApi } from "@/lib/api";
 import { ApiError } from "@/lib/api-client";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
+import { useUserRoles } from "@/hooks/useUserRoles";
 import type { TenantResource, UserResource } from "@/types/api";
 import { User, Plus, Edit, Trash2, UserCheck, UserX, Building2, Search, X } from "lucide-react";
 
@@ -79,6 +80,19 @@ const getErrorMessage = (error: unknown) => {
 };
 
 const Users = () => {
+  const { isSuperAdmin, isSales, isAdmin } = useUserRoles();
+
+  // Route guard: only admin/superadmin/sales can access user management
+  if (!isSuperAdmin && !isSales && !isAdmin) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-[60vh]">
+          <p className="text-muted-foreground text-lg">Accesso negato. Solo gli amministratori possono gestire gli utenti.</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   const [selectedUser, setSelectedUser] = useState<UserResource | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
