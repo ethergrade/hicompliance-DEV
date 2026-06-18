@@ -15,7 +15,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useToast } from "@/hooks/use-toast";
 import { usersApi, authApi } from "@/lib/api";
 import { useUserRoles } from "@/hooks/useUserRoles";
-import { User, Edit, Trash2, KeyRound, Shield, Search, X } from "lucide-react";
+import { User, UserPlus, Edit, Trash2, KeyRound, Shield, Search, X } from "lucide-react";
 import type { UserResource, UpdateUserRequest, Group } from "@/types/api";
 
 
@@ -65,6 +65,14 @@ interface EditFormData {
   role: string;
 }
 
+interface CreateFormData {
+  name: string;
+  email: string;
+  password: string;
+  password_confirmation: string;
+  role: string;
+}
+
 interface PasswordFormData {
   password: string;
   password_confirmation: string;
@@ -81,6 +89,9 @@ const AdminElevatedUsers: React.FC = () => {
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Create dialog state
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+
   // Edit dialog state
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserResource | null>(null);
@@ -95,6 +106,10 @@ const AdminElevatedUsers: React.FC = () => {
 
   const editForm = useForm<EditFormData>({
     defaultValues: { name: "", email: "", role: "viewer" },
+  });
+
+  const createForm = useForm<CreateFormData>({
+    defaultValues: { name: "", email: "", password: "", password_confirmation: "", role: "super-admin" },
   });
 
   const passwordForm = useForm<PasswordFormData>({
@@ -130,6 +145,28 @@ const AdminElevatedUsers: React.FC = () => {
       u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
     );
   }, [elevatedUsers, searchQuery]);
+
+  // Create user mutation
+  const createUserMutation = useMutation({
+    mutationFn: async (data: CreateFormData) => {
+      if (data.password !== data.password_confirmation) {
+        throw new Error("Le password non coincidono");
+      }
+      return usersApi.create(
+        { name: data.name, email: data.email, password: data.password, role: data.role },
+        selectedGroupId,
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["elevated-users"] });
+      toast({ title: "Utente creato", description: "L'utente è stato creato con successo." });
+      setCreateDialogOpen(false);
+      createForm.reset({ name: "", email: "", password: "", password_confirmation: "", role: "super-admin" });
+    },
+    onError: (error) => {
+      toast({ title: "Errore", description: error instanceof Error ? error.message : "Errore durante la creazione", variant: "destructive" });
+    },
+  });
 
   // Update user mutation
   const updateUserMutation = useMutation({
@@ -218,6 +255,10 @@ const AdminElevatedUsers: React.FC = () => {
     updateUserMutation.mutate(data);
   };
 
+  const onSubmitCreate = (data: CreateFormData) => {
+    createUserMutation.mutate(data);
+  };
+
   const onSubmitPassword = (data: PasswordFormData) => {
     if (data.password.length < 8) {
       toast({ title: "Errore", description: "La password deve essere di almeno 8 caratteri", variant: "destructive" });
@@ -239,16 +280,27 @@ const AdminElevatedUsers: React.FC = () => {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <div>
+        <div className="flex justify-between items-center gap-3 flex-wrap">
+          <div className="min-w-0">
             <h1 className="text-3xl font-bold tracking-tight">Utenti Elevated</h1>
             <p className="text-muted-foreground">
               Gestione utenti con ruoli Super Admin, Admin e Sales
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Shield className="w-5 h-5 text-destructive" />
-            <span className="text-sm text-muted-foreground">Solo Super Admin</span>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Shield className="w-5 h-5 text-destructive" />
+              <span className="text-sm text-muted-foreground">Solo Super Admin</span>
+            </div>
+            <Button
+              onClick={() => {
+                createForm.reset({ name: "", email: "", password: "", password_confirmation: "", role: "super-admin" });
+                setCreateDialogOpen(true);
+              }}
+            >
+              <UserPlus className="w-4 h-4 mr-2" />
+              Nuovo utente superadmin
+            </Button>
           </div>
         </div>
 
@@ -364,6 +416,111 @@ const AdminElevatedUsers: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Create User Dialog */}
+      <Dialog open={createDialogOpen} onOpenChange={(open) => { setCreateDialogOpen(open); if (!open) createForm.reset({ name: "", email: "", password: "", password_confirmation: "", role: "super-admin" }); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nuovo utente superadmin</DialogTitle>
+            <DialogDescription>Crea un nuovo utente con ruolo elevato. L'utente riceverà le credenziali per accedere.</DialogDescription>
+          </DialogHeader>
+          <Form {...createForm}>
+            <form onSubmit={createForm.handleSubmit(onSubmitCreate)} className="space-y-4">
+              <FormField
+                control={createForm.control}
+                name="name"
+                rules={{ required: "Nome completo è richiesto" }}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Nome Completo</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="Mario Rossi" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={createForm.control}
+                name="email"
+                rules={{
+                  required: "Email è richiesta",
+                  pattern: { value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i, message: "Email non valida" },
+                }}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="email" placeholder="mario.rossi@email.com" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={createForm.control}
+                name="password"
+                rules={{ required: "Password è richiesta", minLength: { value: 8, message: "La password deve essere di almeno 8 caratteri" } }}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="password" placeholder="••••••••" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={createForm.control}
+                name="password_confirmation"
+                rules={{
+                  required: "Conferma password è richiesta",
+                  validate: (value: string) => value === createForm.watch("password") || "Le password non coincidono",
+                }}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Conferma Password</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="password" placeholder="••••••••" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={createForm.control}
+                name="role"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Ruolo</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleziona un ruolo" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {roleOptions.map((role) => (
+                          <SelectItem key={role} value={role}>
+                            {getRoleLabel(role)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <DialogFooter>
+                <Button type="submit" disabled={createUserMutation.isPending}>
+                  {createUserMutation.isPending ? "Creando..." : "Crea utente"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit User Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={(open) => { setEditDialogOpen(open); if (!open) setSelectedUser(null); }}>
