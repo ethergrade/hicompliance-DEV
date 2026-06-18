@@ -1119,8 +1119,8 @@ const DarkRisk360: React.FC = () => {
     <DashboardLayout>
       <div className="space-y-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
+          <div className="min-w-0 max-w-md">
+            <div className="flex items-center gap-3">
               <h1 className="text-3xl font-bold text-foreground">DarkRisk360</h1>
               <Badge variant="outline">{overview.tier === 'extended' ? 'Estesa' : 'Standard'}</Badge>
               {!overview.enabled && <Badge variant="destructive">Servizio non abilitato</Badge>}
@@ -1129,7 +1129,7 @@ const DarkRisk360: React.FC = () => {
               Monitoraggio minacce, esposizione digitale e Domain Threat Intelligence
             </p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-3 lg:flex-shrink-0">
             <AlertBellButton alertCount={activeAlertsCount} onClick={() => setAlertDialogOpen(true)} />
             <Button variant="outline" onClick={() => void refetch()} disabled={isLoading || isFetching}>
               <RefreshCw className={`w-4 h-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
