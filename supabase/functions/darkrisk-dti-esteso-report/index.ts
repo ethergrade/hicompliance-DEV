@@ -299,9 +299,16 @@ async function buildDtiEstesoReport(
     identityFindingsRaw = (ifData as any[]) || [];
   }
   const identityFindings = emailSelectorObjs.map((sel: any) => {
-    const selFindings = identityFindingsRaw.filter(
-      (f: any) => String(f.affected_selector_id) === String(sel.id),
-    );
+    const _seenTitle = new Set<string>();
+    const selFindings = identityFindingsRaw
+      .filter((f: any) => String(f.affected_selector_id) === String(sel.id))
+      // Dedup per titolo normalizzato: i record sono già ordinati per risk_score desc → tiene il punteggio più alto.
+      .filter((f: any) => {
+        const k = String(f.title || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        if (!k || _seenTitle.has(k)) return false;
+        _seenTitle.add(k);
+        return true;
+      });
     return {
       email: String(sel.normalized_value || ''),
       status: String(sel.status || 'approved'),
@@ -364,7 +371,10 @@ async function buildDtiEstesoReport(
   for (const f of dnsFindings) {
     const d = String(f.domain || '').toLowerCase();
     if (!dnsFindingsPerDomain.has(d)) dnsFindingsPerDomain.set(d, []);
-    dnsFindingsPerDomain.get(d)!.push(f);
+    const arr = dnsFindingsPerDomain.get(d)!;
+    // Dedup: i findings arrivano da tutti gli scan del dominio; tieni una riga per finding_key (fallback category|title).
+    const k = String(f.finding_key || `${f.category}|${f.title}`);
+    if (!arr.some((x: any) => String(x.finding_key || `${x.category}|${x.title}`) === k)) arr.push(f);
   }
 
   // ── 5. Port data (from Shodan) ─────────────────────────────────────────────
@@ -413,7 +423,14 @@ async function buildDtiEstesoReport(
     .eq('organization_id', orgId)
     .order('completed_at', { ascending: false })
     .limit(500);
-  const sourceRuns = (sourceRunsRaw || []) as any[];
+  // Dedup: una riga per (source, query_kind, query_term) — già ordinati per completed_at desc → tiene il più recente.
+  const _seenRun = new Set<string>();
+  const sourceRuns = ((sourceRunsRaw || []) as any[]).filter((r: any) => {
+    const k = `${r.source_label || r.source || ''}|${r.query_kind || ''}|${r.query_term || ''}`;
+    if (_seenRun.has(k)) return false;
+    _seenRun.add(k);
+    return true;
+  });
 
   // Aggregate by source_kind
   const sourceKindCounts = new Map<string, number>();
@@ -536,7 +553,9 @@ async function buildDtiEstesoReport(
       pushRecs('MX', dnsRecs.MX);
       pushRecs('NS', dnsRecs.NS);
       pushRecs('CNAME', dnsRecs.CNAME);
-      pushRecs('TXT', dnsRecs.TXT, 12);
+      // TXT escludendo la voce v=spf1 (mostrata una sola volta sotto come riga SPF dedicata, niente duplicato)
+      dnsAnswers(dnsRecs.TXT).filter((a) => !/^v=spf1/i.test(a.data)).slice(0, 12)
+        .forEach((a) => addDnsRow(ttlLabel(a.ttl), 'TXT', a.data.slice(0, 200)));
       // SPF / DMARC derivati dalle sorgenti corrette (TXT del dominio e sottodominio _dmarc)
       const spfRec = dnsAnswers(dnsRecs.TXT).map((a) => a.data).find((d) => /^v=spf1/i.test(d));
       if (spfRec) addDnsRow('—', 'SPF', spfRec.slice(0, 200));
@@ -767,8 +786,12 @@ async function buildDtiEstesoReport(
 
   // Password REALI in chiaro aggregate (per la sezione credenziali HTML e il JSON)
   const allPasswordsForHtml: Array<{ asset: string; username: string; value: string; source: string; date: string | null }> = [];
+  const _seenPw = new Set<string>();
   for (const d of perDomainData) {
     for (const p of ((d as any).passwords || [])) {
+      const _pwk = `${d.domain}|${String(p.username || '')}|${String(p.value || '')}|${String(p.collection_title || '')}`;
+      if (_seenPw.has(_pwk)) continue;
+      _seenPw.add(_pwk);
       allPasswordsForHtml.push({
         asset: d.domain,
         username: String(p.username || ''),
