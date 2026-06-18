@@ -141,7 +141,8 @@ const AdminElevatedUsers: React.FC = () => {
         email: data.email,
         role: data.role,
       };
-      return usersApi.update(selectedUser.id, payload, selectedGroupId);
+      const groupId = selectedGroupId ?? selectedUser.groups?.[0]?.id ?? null;
+      return usersApi.update(selectedUser.id, payload, groupId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["elevated-users"] });
@@ -162,7 +163,8 @@ const AdminElevatedUsers: React.FC = () => {
       if (data.password !== data.password_confirmation) {
         throw new Error("Le password non coincidono");
       }
-      return usersApi.update(passwordUser.id, { password: data.password }, selectedGroupId);
+      const groupId = selectedGroupId ?? passwordUser.groups?.[0]?.id ?? null;
+      return usersApi.update(passwordUser.id, { password: data.password }, groupId);
     },
     onSuccess: () => {
       toast({ title: "Password modificata", description: "La password dell'utente è stata aggiornata con successo." });
@@ -180,7 +182,8 @@ const AdminElevatedUsers: React.FC = () => {
     mutationFn: async () => {
       if (!userToDelete) throw new Error("Nessun utente selezionato");
       if (!isSuperAdmin && !selectedGroupId) throw new Error("Seleziona un gruppo specifico per eliminare un utente");
-      return usersApi.delete(userToDelete.id, selectedGroupId);
+      const groupId = selectedGroupId ?? userToDelete.groups?.[0]?.id ?? null;
+      return usersApi.delete(userToDelete.id, groupId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["elevated-users"] });
