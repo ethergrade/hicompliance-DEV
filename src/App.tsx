@@ -45,6 +45,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import NucleiScan360 from "./pages/NucleiScan360";
 import SamlCallback from "./pages/SamlCallback";
+import EntraRedirect from "./pages/EntraRedirect";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -71,6 +72,7 @@ const App = () => (
 							<Route path="/reset-password" element={<ResetPassword />} />
 							<Route path="/saml-callback" element={<SamlCallback />} />
 							<Route path="/login" element={<SamlCallback />} />
+							<Route path="/entra" element={<EntraRedirect />} />
 							<Route path="/admin/nuclei-scan360" element={<NucleiScan360 />} />
 							<Route path="/admin/clients" element={<ClientSelection />} />
 							<Route
