@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ShieldCheck, ArrowLeft, CheckCircle } from 'lucide-react';
+import { ShieldCheck, ArrowLeft, CheckCircle, Eye, EyeOff } from 'lucide-react';
 
 const ResetPassword: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -21,10 +21,26 @@ const ResetPassword: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const passwordRules = [
+    { label: 'Minimo 10 caratteri', test: (pw: string) => pw.length >= 10 },
+    { label: 'Una lettera maiuscola', test: (pw: string) => /[A-Z]/.test(pw) },
+    { label: 'Una lettera minuscola', test: (pw: string) => /[a-z]/.test(pw) },
+    { label: 'Un numero', test: (pw: string) => /\d/.test(pw) },
+    { label: 'Un simbolo', test: (pw: string) => /[^A-Za-z0-9]/.test(pw) },
+  ];
+
+  const isPasswordValid = (pw: string) => passwordRules.every(r => r.test(pw));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (!isPasswordValid(password)) {
+      setError('La password deve soddisfare tutti i requisiti minimi.');
+      return;
+    }
 
     if (password !== passwordConfirmation) {
       setError('Le password non corrispondono.');
@@ -113,26 +129,60 @@ const ResetPassword: React.FC = () => {
                 )}
                 <div className="space-y-2">
                   <Label htmlFor="password">Nuova password</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="Nuova password"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    autoFocus
-                    required
-                  />
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="Nuova password"
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      autoFocus
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {password && (
+                    <ul className="space-y-1 mt-2">
+                      {passwordRules.map(rule => {
+                        const ok = rule.test(password);
+                        return (
+                          <li key={rule.label} className={`text-xs flex items-center gap-1.5 ${ok ? 'text-green-600' : 'text-muted-foreground'}`}>
+                            {ok ? <CheckCircle className="w-3 h-3" /> : <span className="w-3 h-3 rounded-full border border-muted-foreground/40" />}
+                            {rule.label}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="password-confirm">Conferma password</Label>
-                  <Input
-                    id="password-confirm"
-                    type="password"
-                    placeholder="Ripeti la password"
-                    value={passwordConfirmation}
-                    onChange={e => setPasswordConfirmation(e.target.value)}
-                    required
-                  />
+                  <div className="relative">
+                    <Input
+                      id="password-confirm"
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="Ripeti la password"
+                      value={passwordConfirmation}
+                      onChange={e => setPasswordConfirmation(e.target.value)}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {password && passwordConfirmation && password !== passwordConfirmation && (
+                    <p className="text-xs text-destructive">Le password non corrispondono</p>
+                  )}
                 </div>
                 {error && (
                   <p className="text-sm text-destructive">{error}</p>
@@ -140,7 +190,7 @@ const ResetPassword: React.FC = () => {
                 <Button
                   type="submit"
                   className="w-full bg-gradient-cyber hover:opacity-90"
-                  disabled={isLoading || !password || !passwordConfirmation}
+                  disabled={isLoading || !password || !passwordConfirmation || !isPasswordValid(password)}
                 >
                   {isLoading ? 'Aggiornamento...' : 'Reimposta password'}
                 </Button>
