@@ -4,14 +4,26 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Navigate, Link } from 'react-router-dom';
+import { Navigate, Link, useSearchParams } from 'react-router-dom';
 import { ShieldCheck, KeyRound } from 'lucide-react';
+
+const SAML_ERRORS: Record<string, string> = {
+  saml_failed:       'Autenticazione Microsoft fallita. Riprova.',
+  no_email:          'Microsoft non ha fornito un indirizzo email.',
+  user_not_found:    "Account non abilitato. Contatta l'amministratore.",
+  mfa_not_satisfied: "È richiesta l'autenticazione a più fattori su Microsoft.",
+};
 
 // ─── Schermata login ──────────────────────────────────────────────────────────
 
 const LoginForm: React.FC = () => {
   const { signIn } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
+  const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) ?? '';
+
+  const handleMicrosoftLogin = () => {
+    window.location.href = `${API_BASE_URL}/auth/saml/redirect`;
+  };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -44,6 +56,25 @@ const LoginForm: React.FC = () => {
             <Link to="/auth/forgot-password" className="text-xs text-muted-foreground hover:text-foreground underline">
               Password dimenticata?
             </Link>
+          </div>
+          <div className="hidden">
+            <div className="relative my-2">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">oppure</span>
+              </div>
+            </div>
+            <Button type="button" variant="outline" className="w-full" onClick={handleMicrosoftLogin}>
+              <svg className="mr-2 h-4 w-4" viewBox="0 0 21 21" fill="none">
+                <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
+                <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
+                <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
+                <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
+              </svg>
+              Accedi con Microsoft
+            </Button>
           </div>
         </form>
       </CardContent>
@@ -113,6 +144,8 @@ const MfaVerifyForm: React.FC<{ challengeToken: string }> = ({ challengeToken })
 
 export const LoginPage: React.FC = () => {
   const { user, mfaState } = useAuth();
+  const [searchParams] = useSearchParams();
+  const samlError = searchParams.get('error');
 
   if (user) {
     return <Navigate to="/dashboard" replace />;
@@ -127,6 +160,12 @@ export const LoginPage: React.FC = () => {
           </h1>
           <p className="text-muted-foreground mt-2">Piattaforma di gestione cyber risk</p>
         </div>
+
+        {samlError && (
+          <div className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+            {SAML_ERRORS[samlError] ?? 'Errore di accesso. Riprova.'}
+          </div>
+        )}
 
         {mfaState.step === 'verify' ? (
           <MfaVerifyForm challengeToken={mfaState.challengeToken} />
