@@ -7,9 +7,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bot, CheckCircle, Clock, Loader2, XCircle, Pencil, Save, X, RefreshCw } from 'lucide-react';
+import { Bot, CheckCircle, Clock, Loader2, XCircle, Pencil, Save, X, RefreshCw, Send, RotateCw } from 'lucide-react';
 import { toast } from 'sonner';
-import type { AssessmentSnapshotStatus, SnapshotJobStatus, OpenAiTextBlock } from '@/types/api';
+import { useUserRoles } from '@/hooks/useUserRoles';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { AssessmentSnapshotStatus, SnapshotJobStatus, OpenAiTextBlock, ReprocessTarget } from '@/types/api';
 
 interface Props {
   companyId: string;
@@ -160,6 +162,10 @@ const MarkdownEditor: React.FC<{
 export const AssessmentAiPanel: React.FC<Props> = ({ companyId, snapshotId, groupId, openaiData }) => {
   const currentAiText = extractText(openaiData);
   const [status, setStatus] = useState<AssessmentSnapshotStatus | null>(null);
+  const { isSuperAdmin, hasRole } = useUserRoles();
+  const [sending, setSending] = useState(false);
+  const [reprocessing, setReprocessing] = useState(false);
+  const [reprocessTarget, setReprocessTarget] = useState<ReprocessTarget>('all');
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [editing, setEditing] = useState(false);
   const [draftText, setDraftText] = useState('');
@@ -207,6 +213,40 @@ export const AssessmentAiPanel: React.FC<Props> = ({ companyId, snapshotId, grou
     }
   };
 
+  // ─── Snapshot status / reprocess logic ───────────────────────────────────
+
+  const snapshotStatus = status?.status;
+  const canSeeSendButton = hasRole('customer') || isSuperAdmin || hasRole('admin');
+  const canSendBeEnabled = snapshotStatus === 0 || snapshotStatus === 2;
+  const canSeeReprocessButton = isSuperAdmin || hasRole('admin');
+  const canReprocessBeEnabled = snapshotStatus !== undefined && snapshotStatus !== 0;
+
+  const handleSendForProcessing = async () => {
+    setSending(true);
+    try {
+      await assessmentV2Api.updateSnapshotStatus(companyId, snapshotId, { status: 3 }, groupId);
+      toast.success('Snapshot inviato per elaborazione');
+      await fetchStatus();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Errore nell\'invio per elaborazione');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleReprocess = async () => {
+    setReprocessing(true);
+    try {
+      await assessmentV2Api.reprocessSnapshot(companyId, { target: reprocessTarget }, groupId);
+      toast.success(`Rielaborazione avviata (${reprocessTarget})`);
+      await fetchStatus();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Errore nella rielaborazione');
+    } finally {
+      setReprocessing(false);
+    }
+  };
+
   const canEdit = status?.openai === 'done';
 
   return (
@@ -247,6 +287,57 @@ export const AssessmentAiPanel: React.FC<Props> = ({ companyId, snapshotId, grou
             <p className="text-xs text-muted-foreground">
               Ultimo aggiornamento: {new Date(status.updated_at).toLocaleString('it-IT')}
             </p>
+
+            {/* Azioni snapshot: Invia per elaborazione / Rielabora campo */}
+            {(canSeeSendButton || canSeeReprocessButton) && (
+              <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-border">
+                {canSeeSendButton && (
+                  <Button
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={handleSendForProcessing}
+                    disabled={!canSendBeEnabled || sending}
+                  >
+                    {sending
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <Send className="w-3.5 h-3.5" />}
+                    Invia per elaborazione
+                  </Button>
+                )}
+
+                {canSeeReprocessButton && (
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={reprocessTarget}
+                      onValueChange={(v) => setReprocessTarget(v as ReprocessTarget)}
+                      disabled={!canReprocessBeEnabled || reprocessing}
+                    >
+                      <SelectTrigger className="w-[160px] h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Tutti</SelectItem>
+                        <SelectItem value="shodan">SurfaceScan360</SelectItem>
+                        <SelectItem value="intelx">DarkRisk360</SelectItem>
+                        <SelectItem value="openai">Analisi assessment</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={handleReprocess}
+                      disabled={!canReprocessBeEnabled || reprocessing}
+                    >
+                      {reprocessing
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <RotateCw className="w-3.5 h-3.5" />}
+                      Rielabora campo
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Editor / preview testo AI */}
             {canEdit && (

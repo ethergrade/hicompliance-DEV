@@ -677,6 +677,8 @@ export type SnapshotJobStatus = 'pending' | 'running' | 'done' | 'failed';
 export interface AssessmentSnapshotStatus {
   snapshot_id: string;
   snapshot_year: number;
+  /** Snapshot-level status: 0 = IN_PROGRESS, 2 = HELP_NEEDED, 3 = SCANNING */
+  status?: number;
   shodan: SnapshotJobStatus;
   intelx: SnapshotJobStatus;
   openai: SnapshotJobStatus;
@@ -690,6 +692,18 @@ export interface OpenAiTextBlock {
 
 export interface UpdateSnapshotAiTextRequest {
   openai_data: OpenAiTextBlock[];
+}
+
+// ─── Snapshot status / reprocess ───────────────────────────────────────────
+
+export interface UpdateSnapshotStatusRequest {
+  status: number;
+}
+
+export type ReprocessTarget = 'shodan' | 'intelx' | 'openai' | 'all';
+
+export interface ReprocessSnapshotRequest {
+  target: ReprocessTarget;
 }
 
 export interface RemediationTemplate {

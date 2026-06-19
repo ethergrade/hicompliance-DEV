@@ -7,6 +7,8 @@ import type {
   AssessmentSnapshot,
   AssessmentSnapshotStatus,
   UpdateSnapshotAiTextRequest,
+  UpdateSnapshotStatusRequest,
+  ReprocessSnapshotRequest,
   BatchAssessmentResponseRequest,
   RemediationTemplate,
 } from "@/types/api";
@@ -109,6 +111,26 @@ export const assessmentV2Api = {
   async updateSnapshotAiText(companyId: string, snapshotId: string, payload: UpdateSnapshotAiTextRequest, _g?: string | null): Promise<AssessmentSnapshot> {
     const res = await apiClient.patch<ApiResponse<AssessmentSnapshot>>(
       `/companies/${companyId}/assessment-snapshots/${snapshotId}/ai-text`,
+      payload,
+      _h(companyId, _g)
+    );
+    return res.data;
+  },
+
+  /** Transition snapshot status (e.g. status=3 → SCANNING). Available to all roles including customer. */
+  async updateSnapshotStatus(companyId: string, snapshotId: string, payload: UpdateSnapshotStatusRequest, _g?: string | null): Promise<AssessmentSnapshotStatus> {
+    const res = await apiClient.patch<ApiResponse<AssessmentSnapshotStatus>>(
+      `/companies/${companyId}/assessment-snapshots/${snapshotId}/status`,
+      payload,
+      _h(companyId, _g)
+    );
+    return res.data;
+  },
+
+  /** Reprocess a specific field (admin/superadmin only). Resets field and sets status=SCANNING. */
+  async reprocessSnapshot(companyId: string, payload: ReprocessSnapshotRequest, _g?: string | null): Promise<AssessmentSnapshot> {
+    const res = await apiClient.post<ApiResponse<AssessmentSnapshot>>(
+      `/companies/${companyId}/assessment-snapshots/reprocess`,
       payload,
       _h(companyId, _g)
     );
