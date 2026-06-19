@@ -70,6 +70,7 @@ const App = () => (
 							<Route path="/auth/reset-password" element={<ResetPassword />} />
 							<Route path="/reset-password" element={<ResetPassword />} />
 							<Route path="/saml-callback" element={<SamlCallback />} />
+							<Route path="/login" element={<SamlCallback />} />
 							<Route path="/admin/nuclei-scan360" element={<NucleiScan360 />} />
 							<Route path="/admin/clients" element={<ClientSelection />} />
 							<Route
