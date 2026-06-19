@@ -208,20 +208,21 @@ export interface SmokeTestResult {
 
 export const nucleiScan360Api = {
   async listJobs(
+    companyId: string,
     params?: { status?: string; stage?: string; page?: number },
     groupId?: string | null,
   ): Promise<{ data: NucleiJob[]; current_page: number; total: number }> {
     const res = await apiClient.get<ApiResponse<{ data: NucleiJob[]; current_page: number; total: number }>>(
-      `/nuclei-scan360/jobs`,
+      `/companies/${companyId}/nuclei-scan360/jobs`,
       params,
       gh(groupId),
     );
     return res.data;
   },
 
-  async getJobDetail(jobId: string, groupId?: string | null): Promise<NucleiJobDetail> {
+  async getJobDetail(companyId: string, jobId: string, groupId?: string | null): Promise<NucleiJobDetail> {
     const res = await apiClient.get<ApiResponse<NucleiJobDetail>>(
-      `/nuclei-scan360/jobs/${jobId}`,
+      `/companies/${companyId}/nuclei-scan360/jobs/${jobId}`,
       undefined,
       gh(groupId),
     );
@@ -229,12 +230,13 @@ export const nucleiScan360Api = {
   },
 
   async getJobFindings(
+    companyId: string,
     jobId: string,
     params?: { severity?: string; page?: number },
     groupId?: string | null,
   ): Promise<NucleiFinding[]> {
     const res = await apiClient.get<ApiResponse<NucleiFinding[]>>(
-      `/nuclei-scan360/jobs/${jobId}/findings`,
+      `/companies/${companyId}/nuclei-scan360/jobs/${jobId}/findings`,
       params,
       gh(groupId),
     );
@@ -242,11 +244,12 @@ export const nucleiScan360Api = {
   },
 
   async getTargets(
+    companyId: string,
     params?: { limit?: number },
     groupId?: string | null,
   ): Promise<{ targets: ScannableTarget[]; counts: { total: number }; warnings: string[] }> {
     const res = await apiClient.get<ApiResponse<{ targets: ScannableTarget[]; counts: { total: number }; warnings: string[] }>>(
-      `/nuclei-scan360/targets`,
+      `/companies/${companyId}/nuclei-scan360/targets`,
       params,
       gh(groupId),
     );
@@ -254,6 +257,7 @@ export const nucleiScan360Api = {
   },
 
   async createJob(
+    companyId: string,
     payload: {
       target_url: string;
       profile: NucleiProfile;
@@ -266,7 +270,7 @@ export const nucleiScan360Api = {
     groupId?: string | null,
   ): Promise<NucleiJob> {
     const res = await apiClient.post<ApiResponse<NucleiJob>>(
-      `/nuclei-scan360/jobs`,
+      `/companies/${companyId}/nuclei-scan360/jobs`,
       payload,
       gh(groupId),
     );
@@ -274,11 +278,12 @@ export const nucleiScan360Api = {
   },
 
   async batchCreateJobs(
+    companyId: string,
     payload: BatchJobPayload,
     groupId?: string | null,
   ): Promise<BatchJobResult> {
     const res = await apiClient.post<ApiResponse<BatchJobResult>>(
-      `/nuclei-scan360/jobs/batch`,
+      `/companies/${companyId}/nuclei-scan360/jobs/batch`,
       payload,
       gh(groupId),
     );
@@ -286,11 +291,12 @@ export const nucleiScan360Api = {
   },
 
   async processQueue(
+    companyId: string,
     payload: { limit?: number },
     groupId?: string | null,
   ): Promise<ProcessQueueResult> {
     const res = await apiClient.post<ApiResponse<ProcessQueueResult>>(
-      `/nuclei-scan360/process-queue`,
+      `/companies/${companyId}/nuclei-scan360/process-queue`,
       payload,
       gh(groupId),
     );
@@ -298,11 +304,12 @@ export const nucleiScan360Api = {
   },
 
   async smokeTest(
+    companyId: string,
     params?: { include_discovered_targets?: boolean },
     groupId?: string | null,
   ): Promise<SmokeTestResult> {
     const res = await apiClient.get<ApiResponse<SmokeTestResult>>(
-      `/nuclei-scan360/smoke-test`,
+      `/companies/${companyId}/nuclei-scan360/smoke-test`,
       params,
       gh(groupId),
     );

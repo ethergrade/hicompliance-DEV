@@ -504,11 +504,11 @@ const NucleiScan360: React.FC = () => {
     else if (!selectedOrgId && organizations[0]?.id) setSelectedOrgId(organizations[0].id);
   }, [organizations, selectedOrgId, selectedOrganization?.id]);
 
-  const refreshJobs = useCallback(async () => {
-    if (!isSuperAdmin) return;
+  const refreshJobs = useCallback(async (companyId = selectedOrgId) => {
+    if (!isSuperAdmin || !companyId) return;
     setQueueLoading(true);
     try {
-      const res = await nucleiScan360Api.listJobs(undefined, groupId);
+      const res = await nucleiScan360Api.listJobs(companyId, undefined, groupId);
       setJobs(res.data || []);
       setLastError(null);
     } catch (error) {
@@ -518,13 +518,13 @@ const NucleiScan360: React.FC = () => {
     } finally {
       setQueueLoading(false);
     }
-  }, [isSuperAdmin, groupId, toast]);
+  }, [isSuperAdmin, selectedOrgId, groupId, toast]);
 
-  const fetchScannableTargets = useCallback(async () => {
-    if (!isSuperAdmin) return;
+  const fetchScannableTargets = useCallback(async (companyId = selectedOrgId) => {
+    if (!isSuperAdmin || !companyId) return;
     setTargetsLoading(true);
     try {
-      const res = await nucleiScan360Api.getTargets({ limit: 80 }, groupId);
+      const res = await nucleiScan360Api.getTargets(companyId, { limit: 80 }, groupId);
       const targets = res.targets || [];
       setScannableTargets(targets);
       if (includeSurfaceAssets) setSelectedTargetUrls(targets.slice(0, 25).map((t) => t.target_url));
@@ -537,14 +537,14 @@ const NucleiScan360: React.FC = () => {
     } finally {
       setTargetsLoading(false);
     }
-  }, [isSuperAdmin, groupId, includeSurfaceAssets, toast]);
+  }, [isSuperAdmin, selectedOrgId, groupId, includeSurfaceAssets, toast]);
 
   useEffect(() => {
-    if (isSuperAdmin) {
-      refreshJobs();
-      fetchScannableTargets();
+    if (isSuperAdmin && selectedOrgId) {
+      refreshJobs(selectedOrgId);
+      fetchScannableTargets(selectedOrgId);
     }
-  }, [isSuperAdmin, fetchScannableTargets, refreshJobs]);
+  }, [isSuperAdmin, selectedOrgId, fetchScannableTargets, refreshJobs]);
 
   const targetList = useMemo(
     () => Array.from(new Set([
@@ -564,6 +564,8 @@ const NucleiScan360: React.FC = () => {
   };
 
   const openJob = useCallback(async (job: NucleiJob) => {
+    const companyId = job.organization_id || selectedOrgId;
+    if (!companyId) return;
     setSelectedJobId(job.id);
     setSelectedJob(job);
     setOpenPorts([]);
@@ -573,7 +575,7 @@ const NucleiScan360: React.FC = () => {
     setNucleiFindings([]);
     setQueueLoading(true);
     try {
-      const detail = await nucleiScan360Api.getJobDetail(job.id, groupId);
+      const detail = await nucleiScan360Api.getJobDetail(companyId, job.id, groupId);
       setSelectedJob(detail.job);
       setOpenPorts(detail.open_ports || []);
       setTechnologies(detail.technologies || []);
@@ -589,10 +591,12 @@ const NucleiScan360: React.FC = () => {
     } finally {
       setQueueLoading(false);
     }
-  }, [groupId, toast]);
+  }, [selectedOrgId, groupId, toast]);
 
   const fetchJobDetail = async (job: NucleiJob) => {
-    const detail = await nucleiScan360Api.getJobDetail(job.id, groupId);
+    const companyId = job.organization_id || selectedOrgId;
+    if (!companyId) throw new Error('companyId non disponibile per il job');
+    const detail = await nucleiScan360Api.getJobDetail(companyId, job.id, groupId);
     return {
       job: detail.job,
       open_ports: detail.open_ports || [],
@@ -603,20 +607,24 @@ const NucleiScan360: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!isSuperAdmin) return;
+    if (!isSuperAdmin || !selectedOrgId) return;
     const hasActive = jobs.some((j) => isJobActive(j)) || isJobActive(selectedJob);
     if (!hasActive) return;
     const timer = window.setInterval(async () => {
-      await refreshJobs();
+      await refreshJobs(selectedOrgId);
       if (selectedJobId) {
         const latest = jobs.find((j) => j.id === selectedJobId);
         if (latest) await openJob(latest);
       }
     }, 15000);
     return () => window.clearInterval(timer);
-  }, [isSuperAdmin, jobs, refreshJobs, selectedJob, selectedJobId, openJob]);
+  }, [isSuperAdmin, selectedOrgId, jobs, refreshJobs, selectedJob, selectedJobId, openJob]);
 
   const startLabScan = async () => {
+    if (!selectedOrgId) {
+      toast({ title: 'Seleziona un cliente', description: 'Scegli un cliente prima di avviare la scansione.', variant: 'destructive' });
+      return;
+    }
     const safeTimeout = clampNumber(timeoutSeconds, profile === 'baseline_headers' ? 45 : isCveProfile(profile) ? 150 : 120, 15, 180);
     const safeRate = clampNumber(rateLimit, profile === 'web_vuln_authorized' ? 2 : isCveProfile(profile) ? 3 : 5, 1, profile === 'web_vuln_authorized' ? 2 : 10);
     const safeMax = clampNumber(maxFindings, isCveProfile(profile) ? 50 : 25, 1, 200);
@@ -626,7 +634,7 @@ const NucleiScan360: React.FC = () => {
 
     setLoading(true);
     try {
-      const data = await nucleiScan360Api.batchCreateJobs({
+      const data = await nucleiScan360Api.batchCreateJobs(selectedOrgId, {
         targets: targetList.length > 0 ? targetList : undefined,
         include_surface_assets: includeSurfaceAssets && selectedTargetUrls.length === 0,
         include_discovered_targets: includeSurfaceAssets,
@@ -649,7 +657,7 @@ const NucleiScan360: React.FC = () => {
         const firstJob = data.jobs.find((j) => isJobActive(j)) || data.jobs[0];
         if (firstJob) await openJob(firstJob);
       }
-      await refreshJobs();
+      await refreshJobs(selectedOrgId);
       setLastError(null);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'LAB Scan360 start errore';
@@ -661,15 +669,16 @@ const NucleiScan360: React.FC = () => {
   };
 
   const processNextJob = async () => {
+    if (!selectedOrgId) return;
     setProcessingQueue(true);
     try {
-      const data = await nucleiScan360Api.processQueue({ limit: 1 }, groupId);
+      const data = await nucleiScan360Api.processQueue(selectedOrgId, { limit: 1 }, groupId);
       const processed = data.processed?.[0];
       toast({
         title: processed ? `Job ${processed.stage || processed.status}` : 'Nessun job in coda',
         description: data.remaining_hint > 0 ? `${data.remaining_hint} job rimanenti in coda.` : 'La coda è vuota.',
       });
-      await refreshJobs();
+      await refreshJobs(selectedOrgId);
       if (selectedJobId) {
         const latest = jobs.find((j) => j.id === selectedJobId);
         if (latest) await openJob(latest);
@@ -685,9 +694,10 @@ const NucleiScan360: React.FC = () => {
   };
 
   const runSmokeTest = async () => {
+    if (!selectedOrgId) return;
     setSmokeLoading(true);
     try {
-      const data = await nucleiScan360Api.smokeTest({ include_discovered_targets: true }, groupId);
+      const data = await nucleiScan360Api.smokeTest(selectedOrgId, { include_discovered_targets: true }, groupId);
       setRawResult(JSON.stringify(data, null, 2));
       toast({
         title: data.ok ? 'Smoke test OK' : 'Smoke test con warning',
