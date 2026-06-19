@@ -43,6 +43,7 @@ import HiConsoleLanding from "./pages/HiConsoleLanding";
 import MfaSetup from "./pages/MfaSetup";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
+import NucleiScan360 from "./pages/NucleiScan360";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -67,6 +68,7 @@ const App = () => (
 							/>
 							<Route path="/auth/reset-password" element={<ResetPassword />} />
 							<Route path="/reset-password" element={<ResetPassword />} />
+							<Route path="/admin/nuclei-scan360" element={<NucleiScan360 />} />
 							<Route path="/admin/clients" element={<ClientSelection />} />
 							<Route
 								path="/dashboard"

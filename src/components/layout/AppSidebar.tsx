@@ -30,6 +30,7 @@ import {
 	Bot,
 	KeyRound,
 	Download,
+	Radar,
 } from "lucide-react";
 import { SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import {
@@ -117,6 +118,12 @@ const adminNavigation = [
 		title: "Gestione Ruoli",
 		href: "/admin/role-settings",
 		icon: Settings,
+	},
+	{
+		title: "NUCLEI-SCAN360",
+		href: "/admin/nuclei-scan360",
+		icon: Radar,
+		superAdminOnly: true,
 	},
 ];
 

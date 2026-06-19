@@ -38,3 +38,6 @@ graphify-out/
 
 # Local Pi runtime state
 .atl/
+.claude/settings.local.json
+
+/hicompliance-DEV-main
