@@ -152,9 +152,12 @@ const AdminElevatedUsers: React.FC = () => {
       if (data.password !== data.password_confirmation) {
         throw new Error("Le password non coincidono");
       }
+      // super-admin ha accesso globale → niente X-Group-Id
+      // tutti gli altri ruoli vanno associati al tenant selezionato
+      const groupIdForCreate = data.role === 'super-admin' ? undefined : selectedGroupId;
       return usersApi.create(
         { name: data.name, email: data.email, password: data.password, role: data.role },
-        selectedGroupId,
+        groupIdForCreate,
       );
     },
     onSuccess: () => {
