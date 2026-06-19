@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Navigate, Link, useSearchParams } from 'react-router-dom';
+import { API_BASE_URL } from '@/lib/api-client';
 import { ShieldCheck, KeyRound } from 'lucide-react';
 
 const SAML_ERRORS: Record<string, string> = {
@@ -19,8 +20,6 @@ const SAML_ERRORS: Record<string, string> = {
 const LoginForm: React.FC = () => {
   const { signIn } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
-  const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) ?? '';
-
   const handleMicrosoftLogin = () => {
     window.location.href = `${API_BASE_URL}/auth/saml/redirect`;
   };

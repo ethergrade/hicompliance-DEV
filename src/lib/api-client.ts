@@ -7,7 +7,7 @@ const configuredComplianceBaseUrl = (import.meta.env.VITE_COMPLIANCE_API_BASE_UR
 const isWebsoupCloud = typeof window !== "undefined" && window.location.hostname.includes("websoupcloud");
 const websoupCloudBaseUrl = "https://hiapi.websoupcloud.it";
 
-const API_BASE_URL = import.meta.env.DEV
+export const API_BASE_URL = import.meta.env.DEV
   ? "/api"
   : isWebsoupCloud
     ? websoupCloudBaseUrl
