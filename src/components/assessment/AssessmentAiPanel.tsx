@@ -10,7 +10,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Bot, CheckCircle, Clock, Loader2, XCircle, Pencil, Save, X, RefreshCw, Send, RotateCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useUserRoles } from '@/hooks/useUserRoles';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { AssessmentSnapshotStatus, SnapshotJobStatus, OpenAiTextBlock, ReprocessTarget } from '@/types/api';
 
 interface Props {
@@ -164,8 +163,7 @@ export const AssessmentAiPanel: React.FC<Props> = ({ companyId, snapshotId, grou
   const [status, setStatus] = useState<AssessmentSnapshotStatus | null>(null);
   const { isSuperAdmin, hasRole } = useUserRoles();
   const [sending, setSending] = useState(false);
-  const [reprocessing, setReprocessing] = useState(false);
-  const [reprocessTarget, setReprocessTarget] = useState<ReprocessTarget>('all');
+  const [reprocessingTarget, setReprocessingTarget] = useState<ReprocessTarget | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [editing, setEditing] = useState(false);
   const [draftText, setDraftText] = useState('');
@@ -234,16 +232,16 @@ export const AssessmentAiPanel: React.FC<Props> = ({ companyId, snapshotId, grou
     }
   };
 
-  const handleReprocess = async () => {
-    setReprocessing(true);
+  const handleReprocess = async (target: ReprocessTarget) => {
+    setReprocessingTarget(target);
     try {
-      await assessmentV2Api.reprocessSnapshot(companyId, { target: reprocessTarget }, groupId);
-      toast.success(`Rielaborazione avviata (${reprocessTarget})`);
+      await assessmentV2Api.reprocessSnapshot(companyId, { target }, groupId);
+      toast.success(`Rielaborazione avviata (${target})`);
       await fetchStatus();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Errore nella rielaborazione');
     } finally {
-      setReprocessing(false);
+      setReprocessingTarget(null);
     }
   };
 
@@ -306,34 +304,31 @@ export const AssessmentAiPanel: React.FC<Props> = ({ companyId, snapshotId, grou
                 )}
 
                 {canSeeReprocessButton && (
-                  <div className="flex items-center gap-2">
-                    <Select
-                      value={reprocessTarget}
-                      onValueChange={(v) => setReprocessTarget(v as ReprocessTarget)}
-                      disabled={!canReprocessBeEnabled || reprocessing}
-                    >
-                      <SelectTrigger className="w-[160px] h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Tutti</SelectItem>
-                        <SelectItem value="shodan">SurfaceScan360</SelectItem>
-                        <SelectItem value="intelx">DarkRisk360</SelectItem>
-                        <SelectItem value="openai">Analisi assessment</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5"
-                      onClick={handleReprocess}
-                      disabled={!canReprocessBeEnabled || reprocessing}
-                    >
-                      {reprocessing
-                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        : <RotateCw className="w-3.5 h-3.5" />}
-                      Rielabora campo
-                    </Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-muted-foreground mr-1">Rielabora:</span>
+                    {([
+                      { target: 'shodan', label: 'Shodan' },
+                      { target: 'intelx', label: 'IntelX' },
+                      { target: 'openai', label: 'OpenAI' },
+                      { target: 'all', label: 'Tutti' },
+                    ] as const).map((item) => {
+                      const isBusy = reprocessingTarget === item.target;
+                      return (
+                        <Button
+                          key={item.target}
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          onClick={() => handleReprocess(item.target)}
+                          disabled={!canReprocessBeEnabled || reprocessingTarget !== null}
+                        >
+                          {isBusy
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <RotateCw className="w-3.5 h-3.5" />}
+                          {item.label}
+                        </Button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
