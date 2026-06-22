@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useClientContext } from '@/contexts/ClientContext';
@@ -28,11 +28,9 @@ const ClientSelection: React.FC = () => {
   const location = useLocation();
   const { organizations, setSelectedOrganization, isLoadingClients, selectedOrganization, fetchOrganizations } = useClientContext();
   const { isSuperAdmin } = useUserRoles();
-  const [searchQuery, setSearchQuery] = useState(() => selectedOrganization?.name ?? '');
+  // Search starts empty on client selection page — selectedOrganization does not pre-filter the list
+  const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    setSearchQuery(selectedOrganization?.name ?? '');
-  }, [selectedOrganization?.id]);
   const [editingOrgId, setEditingOrgId] = useState<string | null>(null);
   const [editingOrgName, setEditingOrgName] = useState<string>('');
   const [profileOpen, setProfileOpen] = useState(false);
