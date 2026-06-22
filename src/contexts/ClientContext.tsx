@@ -76,25 +76,19 @@
 
          // Restore from localStorage (already handled in useState init, but
          // refresh with fresh API data here to ensure name/code are current)
-         const stored = getStoredOrganization();
-         if (stored && !selectedOrganization) {
-           const fresh = tenants.find(t => t.id === stored.id);
-           if (fresh) setSelectedOrganizationState(fresh);
-         } else if (!stored && tenants.length > 0 && !selectedOrganization) {
-           // Nessuna org in localStorage: seleziona automaticamente la prima
-           setSelectedOrganizationState(tenants[0]);
-           localStorage.setItem(STORAGE_KEY, JSON.stringify(tenants[0]));
-         }
+        const stored = getStoredOrganization();
+        if (stored && !selectedOrganization) {
+          const fresh = tenants.find(t => t.id === stored.id);
+          if (fresh) setSelectedOrganizationState(fresh);
+        }
+        // No auto-selection: user must explicitly pick a client from /admin/clients
        } else if (resolveGroupId) {
-         // Normal client: fetch their company by group
-         try {
-           const tenants = await tenantsApi.listAll(resolveGroupId);
-           setOrganizations(tenants);
-           if (tenants.length > 0) {
-             setSelectedOrganizationState(tenants[0]);
-             localStorage.setItem(STORAGE_KEY, JSON.stringify(tenants[0]));
-           }
-         } catch { /* ignore */ }
+        // Normal client with single org: fetch their company by group
+        // No auto-selection — user sees ClientSelectionGuard which redirects to /admin/clients
+        try {
+          const tenants = await tenantsApi.listAll(resolveGroupId);
+          setOrganizations(tenants);
+        } catch { /* ignore */ }
        }
      } catch (error) {
        console.error('Error fetching organizations:', error);
