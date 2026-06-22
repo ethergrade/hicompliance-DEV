@@ -18,6 +18,48 @@ function getErrorMessage(e: unknown): string {
 	return e instanceof Error ? e.message : "Errore dump";
 }
 
+function normalizeResults(
+	results: SubdomainDump["results"] | unknown,
+): SubdomainDump["results"] {
+	return Array.isArray(results) ? results : [];
+}
+
+function normalizeDump(dump: SubdomainDump): SubdomainDump {
+	return {
+		...dump,
+		results: normalizeResults(dump.results),
+		sources: Array.isArray(dump.sources) ? dump.sources : [],
+	};
+}
+
+function dumpKey(dump: SubdomainDump): string {
+	return dump.id || `${dump.root_domain}|${dump.created_at}`;
+}
+
+function mergeHistory(
+	primary: SubdomainDump[],
+	fallback: SubdomainDump[],
+): SubdomainDump[] {
+	const merged = new Map<string, SubdomainDump>();
+	for (const dump of [...primary, ...fallback]) {
+		const normalized = normalizeDump(dump);
+		const existing = merged.get(dumpKey(normalized));
+		if (!existing) {
+			merged.set(dumpKey(normalized), normalized);
+			continue;
+		}
+		merged.set(dumpKey(normalized), {
+			...existing,
+			...normalized,
+			results:
+				normalized.results.length > 0 ? normalized.results : existing.results,
+		});
+	}
+	return Array.from(merged.values()).sort(
+		(a, b) => Date.parse(b.created_at || "") - Date.parse(a.created_at || ""),
+	);
+}
+
 export const useSubdomainDump = () => {
 	const { organizationId, groupId } = useClientOrganization();
 	const [history, setHistory] = useState<SubdomainDump[]>([]);
@@ -28,12 +70,16 @@ export const useSubdomainDump = () => {
 
 	// History → backend (POST /subdomain-dump + GET /subdomain-dump/history)
 	const fetchHistory = useCallback(async () => {
-		if (!organizationId) return;
+		if (!organizationId) return [];
 		try {
-			const items = await subdomainDumpApi.history(organizationId, groupId);
-			setHistory(items);
+			const items = (
+				await subdomainDumpApi.history(organizationId, groupId)
+			).map(normalizeDump);
+			setHistory((current) => mergeHistory(items, current));
+			return items;
 		} catch (e) {
 			setError(getErrorMessage(e));
+			return [];
 		}
 	}, [organizationId, groupId]);
 
@@ -78,8 +124,11 @@ export const useSubdomainDump = () => {
 					groupId,
 				);
 				if (!data) throw new Error("Errore dump");
+				const normalized = normalizeDump(data);
+				setHistory((current) => mergeHistory([normalized], current));
 				await fetchHistory();
-				return data;
+				setHistory((current) => mergeHistory([normalized], current));
+				return normalized;
 			} catch (e) {
 				setError(getErrorMessage(e));
 				return null;
