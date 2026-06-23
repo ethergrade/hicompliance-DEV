@@ -12,9 +12,9 @@ const extractArray = <T>(data: unknown): T[] => {
 		data &&
 		typeof data === "object" &&
 		"data" in data &&
-		Array.isArray((data as any).data)
+		Array.isArray((data as { data?: T[] }).data)
 	)
-		return (data as any).data;
+		return (data as { data: T[] }).data;
 	return [];
 };
 
@@ -95,8 +95,8 @@ export const surfaceScan360Api = {
 			[k: string]: unknown;
 		},
 		groupId?: string | null,
-	): Promise<any> {
-		const res = await complianceApiClient.post<ApiResponse<any>>(
+	): Promise<unknown> {
+		const res = await complianceApiClient.post<ApiResponse<unknown>>(
 			`/companies/${companyId}/surface-scan360/jobs`,
 			payload,
 			groupId ? groupHeader(groupId) : undefined,
@@ -122,13 +122,13 @@ export const surfaceScan360Api = {
 		jobId: string,
 		params?: { severity?: string; module?: string; page?: number },
 		groupId?: string | null,
-	): Promise<any[]> {
-		const res = await complianceApiClient.get<ApiResponse<any[]>>(
+	): Promise<unknown[]> {
+		const res = await complianceApiClient.get<ApiResponse<unknown[]>>(
 			`/companies/${companyId}/surface-scan360/jobs/${jobId}/findings`,
 			params,
 			groupId ? groupHeader(groupId) : undefined,
 		);
-		return extractArray<any>(res.data);
+		return extractArray<unknown>(res.data);
 	},
 
 	// AI Report
@@ -137,7 +137,7 @@ export const surfaceScan360Api = {
 		params?: { page?: number },
 		groupId?: string | null,
 	): Promise<SurfaceScanAiReport[]> {
-		const res = await complianceApiClient.get<ApiResponse<any>>(
+		const res = await complianceApiClient.get<ApiResponse<unknown>>(
 			`/companies/${companyId}/surface-scan360/ai-report`,
 			params,
 			groupId ? groupHeader(groupId) : undefined,
@@ -177,26 +177,26 @@ export const surfaceScan360Api = {
 			page?: number;
 		},
 		groupId?: string | null,
-	): Promise<any[]> {
-		const res = await complianceApiClient.get<ApiResponse<any[]>>(
+	): Promise<unknown[]> {
+		const res = await complianceApiClient.get<ApiResponse<unknown[]>>(
 			`/companies/${companyId}/surface-scan360/jobs/${jobId}/exposure-findings`,
 			params,
 			groupId ? groupHeader(groupId) : undefined,
 		);
-		return extractArray<any>(res.data);
+		return extractArray<unknown>(res.data);
 	},
 
 	// Monitored IPs (replaces Supabase surface_scan_monitored_ips query)
 	async listMonitoredIps(
 		companyId: string,
 		groupId?: string | null,
-	): Promise<any[]> {
-		const res = await complianceApiClient.get<ApiResponse<any[]>>(
+	): Promise<unknown[]> {
+		const res = await complianceApiClient.get<ApiResponse<unknown[]>>(
 			`/companies/${companyId}/surface-scan360/monitored-ips`,
 			undefined,
 			groupId ? groupHeader(groupId) : undefined,
 		);
-		return extractArray<any>(res.data || []);
+		return extractArray<unknown>(res.data || []);
 	},
 
 	async createMonitoredIp(
@@ -210,8 +210,8 @@ export const surfaceScan360Api = {
 			discovered_from?: string | null;
 		},
 		groupId?: string | null,
-	): Promise<any> {
-		const res = await complianceApiClient.post<ApiResponse<any>>(
+	): Promise<unknown> {
+		const res = await complianceApiClient.post<ApiResponse<unknown>>(
 			`/companies/${companyId}/surface-scan360/monitored-ips`,
 			payload,
 			groupId ? groupHeader(groupId) : undefined,
@@ -234,8 +234,8 @@ export const surfaceScan360Api = {
 		companyId: string,
 		params?: { job_id?: string; scope_mode?: string },
 		groupId?: string | null,
-	): Promise<any> {
-		const res = await complianceApiClient.get<ApiResponse<any>>(
+	): Promise<unknown> {
+		const res = await complianceApiClient.get<ApiResponse<unknown>>(
 			`/companies/${companyId}/surface-scan360/exposure-summary`,
 			params as Record<string, string>,
 			groupId ? groupHeader(groupId) : undefined,
@@ -253,26 +253,26 @@ export const surfaceScan360Api = {
 			page?: number;
 		},
 		groupId?: string | null,
-	): Promise<any[]> {
-		const res = await complianceApiClient.get<ApiResponse<any[]>>(
+	): Promise<unknown[]> {
+		const res = await complianceApiClient.get<ApiResponse<unknown[]>>(
 			`/companies/${companyId}/surface-scan360/observations`,
 			params,
 			groupId ? groupHeader(groupId) : undefined,
 		);
-		return extractArray<any>(res.data);
+		return extractArray<unknown>(res.data);
 	},
 	// Module results (replaces Supabase surface_scan_module_results query)
 	async getModuleResults(
 		companyId: string,
 		params?: { job_ids?: string; status?: string; page?: number },
 		groupId?: string | null,
-	): Promise<any[]> {
-		const res = await complianceApiClient.get<ApiResponse<any[]>>(
+	): Promise<unknown[]> {
+		const res = await complianceApiClient.get<ApiResponse<unknown[]>>(
 			`/companies/${companyId}/surface-scan360/module-results`,
 			params,
 			groupId ? groupHeader(groupId) : undefined,
 		);
-		return extractArray<any>(res.data);
+		return extractArray<unknown>(res.data);
 	},
 
 	// Web technologies (replaces Supabase surface_web_technologies query)
@@ -280,13 +280,13 @@ export const surfaceScan360Api = {
 		companyId: string,
 		params?: { job_ids?: string; page?: number },
 		groupId?: string | null,
-	): Promise<any[]> {
-		const res = await complianceApiClient.get<ApiResponse<any[]>>(
+	): Promise<unknown[]> {
+		const res = await complianceApiClient.get<ApiResponse<unknown[]>>(
 			`/companies/${companyId}/surface-scan360/technologies`,
 			params,
 			groupId ? groupHeader(groupId) : undefined,
 		);
-		return extractArray<any>(res.data);
+		return extractArray<unknown>(res.data);
 	},
 
 	// Open ports (replaces Supabase surface_open_ports query)
@@ -294,20 +294,20 @@ export const surfaceScan360Api = {
 		companyId: string,
 		params?: { job_ids?: string; exposure_level?: string; page?: number },
 		groupId?: string | null,
-	): Promise<any[]> {
-		const res = await complianceApiClient.get<ApiResponse<any[]>>(
+	): Promise<unknown[]> {
+		const res = await complianceApiClient.get<ApiResponse<unknown[]>>(
 			`/companies/${companyId}/surface-scan360/open-ports`,
 			params,
 			groupId ? groupHeader(groupId) : undefined,
 		);
-		return extractArray<any>(res.data);
+		return extractArray<unknown>(res.data);
 	},
 	async getAiReport(
 		companyId: string,
 		reportId: string,
 		groupId?: string | null,
-	): Promise<any> {
-		const res = await complianceApiClient.get<ApiResponse<any>>(
+	): Promise<unknown> {
+		const res = await complianceApiClient.get<ApiResponse<unknown>>(
 			`/companies/${companyId}/surface-scan360/ai-report/${reportId}`,
 			undefined,
 			groupId ? groupHeader(groupId) : undefined,

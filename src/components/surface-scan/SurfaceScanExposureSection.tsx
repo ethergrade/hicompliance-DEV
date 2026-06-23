@@ -427,7 +427,7 @@ export const SurfaceScanExposureSection: React.FC<
 		} finally {
 			setLoading(false);
 		}
-	}, [organizationId]);
+	}, [organizationId, groupId]);
 
 	useEffect(() => {
 		void refreshData();

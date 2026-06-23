@@ -231,7 +231,8 @@ export const AppSidebar: React.FC = () => {
 	const isUserAllowed = (href: string) => canViewRoute(href);
 
 	const filteredNavigation = navigation.filter((item) => {
-		if ((item as any).superAdminOnly && !isSuperAdmin) return false;
+		if ((item as { superAdminOnly?: boolean }).superAdminOnly && !isSuperAdmin)
+			return false;
 		return isModuleEnabled(item.href) && isUserAllowed(item.href);
 	});
 
@@ -310,7 +311,8 @@ export const AppSidebar: React.FC = () => {
 				<>
 					<SheetTitle className="sr-only">Menu di navigazione</SheetTitle>
 					<SheetDescription className="sr-only">
-						Voci di menu principali e accesso rapido alle sezioni dell'applicazione.
+						Voci di menu principali e accesso rapido alle sezioni
+						dell'applicazione.
 					</SheetDescription>
 				</>
 			)}
@@ -418,7 +420,8 @@ export const AppSidebar: React.FC = () => {
 						<SidebarGroupContent>
 							<SidebarMenu>
 								{isModuleEnabled("/settings/users") &&
-									isUserAllowed("/settings/users") && (isAdmin || isSuperAdmin || isSales) && (
+									isUserAllowed("/settings/users") &&
+									(isAdmin || isSuperAdmin || isSales) && (
 										<SidebarMenuItem>
 											<SidebarMenuButton
 												asChild

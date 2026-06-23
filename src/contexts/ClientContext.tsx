@@ -119,7 +119,13 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({
 			setIsLoadingClients(false);
 			setHasFetchedOrganizations(true);
 		}
-	}, [user, canManageMultipleClients, rolesLoading]);
+	}, [
+		user,
+		canManageMultipleClients,
+		rolesLoading,
+		selectedGroup,
+		selectedOrganization,
+	]);
 
 	// Set selected organization with persistence
 	const setSelectedOrganization = useCallback((org: TenantResource) => {
@@ -199,7 +205,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({
 		</ClientContext.Provider>
 	);
 };
-
+// eslint-disable-next-line react-refresh/only-export-components -- hook consumed via context alongside the provider
 export const useClientContext = () => {
 	const context = useContext(ClientContext);
 	if (context === undefined) {

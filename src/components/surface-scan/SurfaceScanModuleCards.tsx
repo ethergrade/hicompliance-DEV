@@ -61,7 +61,7 @@ interface LatestScanRow {
 	status: string;
 	created_at: string;
 	completed_at: string | null;
-	summary: Record<string, any> | null;
+	summary: Record<string, unknown> | null;
 }
 
 interface ModuleResultRow {
@@ -73,8 +73,8 @@ interface ModuleResultRow {
 	duration_ms: number | null;
 	completed_at: string | null;
 	error_message?: string | null;
-	normalized?: Record<string, any> | null;
-	raw?: Record<string, any> | null;
+	normalized?: Record<string, unknown> | null;
+	raw?: Record<string, unknown> | null;
 	source?: string | null;
 }
 
@@ -82,7 +82,7 @@ interface ObservationRow {
 	scan_job_id: string;
 	module: string;
 	observation_type: string;
-	value: Record<string, any>;
+	value: Record<string, unknown>;
 	created_at: string;
 }
 
@@ -96,7 +96,7 @@ interface FindingRow {
 	affected_asset?: string | null;
 	affected_url?: string | null;
 	ip?: string | null;
-	evidence?: Record<string, any> | null;
+	evidence?: Record<string, unknown> | null;
 	status?: string | null;
 	created_at: string;
 }
@@ -113,6 +113,14 @@ interface ExposureOpenPortRow {
 	exposure_level: string;
 	is_web: boolean;
 	is_tls: boolean;
+}
+interface OpenPortRow {
+	ip: string;
+	port: number;
+	protocol: string;
+	service: string | null;
+	product: string | null;
+	source: string;
 }
 
 interface ConfiguredScopeTarget {
@@ -291,13 +299,13 @@ const extractFindingTargets = (finding: FindingRow): string[] => {
 
 	const evidence = finding.evidence;
 	if (evidence && typeof evidence === "object") {
-		add((evidence as any).ip);
-		add((evidence as any).target);
-		add((evidence as any).host);
-		add((evidence as any).asset);
-		add((evidence as any).domain);
+		add(evidence.ip);
+		add(evidence.target);
+		add(evidence.host);
+		add(evidence.asset);
+		add(evidence.domain);
 
-		const ips = (evidence as any).ips;
+		const ips = evidence.ips;
 		if (Array.isArray(ips)) {
 			ips.forEach((entry) => add(entry));
 		}
@@ -556,7 +564,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
 					splitMonitoredScopeRules(scopeRules);
 
 				// Convert API jobs to LatestScanRow format
-				const jobs: LatestScanRow[] = apiJobs.map((job: any) => ({
+				const jobs: LatestScanRow[] = apiJobs.map((job: SurfaceScanJob) => ({
 					id: job.id,
 					raw_target: job.raw_target || job.normalized_target || "",
 					normalized_target: job.normalized_target || job.raw_target || "",
@@ -704,11 +712,11 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
 					);
 					apiFindingRows = findingsResults
 						.filter(
-							(r): r is PromiseFulfilledResult<any[]> =>
+							(r): r is PromiseFulfilledResult<FindingRow[]> =>
 								r.status === "fulfilled",
 						)
 						.flatMap((r) =>
-							(r.value || []).map((f: any) => ({
+							(r.value || []).map((f: FindingRow) => ({
 								scan_job_id: f.scan_job_id || "",
 								module: f.module || null,
 								finding_type: f.finding_type || null,
@@ -803,7 +811,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
 		};
 
 		void fetchData();
-	}, [organizationId]);
+	}, [organizationId, groupId]);
 
 	const scopeTargetRows = useMemo<ScopeTargetRow[]>(() => {
 		const scannedRows = latestScopeJobs.map((job) => {
@@ -1055,8 +1063,8 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
 		[selectedObservations],
 	);
 
-	const openPortRows = useMemo(() => {
-		const merged = new Map<string, any>();
+	const openPortRows = useMemo<OpenPortRow[]>(() => {
+		const merged = new Map<string, OpenPortRow>();
 
 		const observedRows = selectedObservations
 			.filter(
@@ -1375,14 +1383,14 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
 
 	const passesValue = (observationByModule.passes?.value || {}) as Record<
 		string,
-		any
+		unknown
 	>;
 	const passItems = Array.isArray(passesValue?.passes)
 		? passesValue.passes
 		: [];
 
 	const httpSecurity = (observationByModule.http_security?.value ||
-		{}) as Record<string, any>;
+		{}) as Record<string, unknown>;
 	const httpChecks = (httpSecurity.checks || {}) as Record<string, boolean>;
 	const httpSecurityOutcome = moduleOutcomes.http_security || "success_no_data";
 	const httpSecurityDiagnostic = moduleDiagnostics.http_security;
@@ -1391,15 +1399,15 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
 		httpSecurityOutcome === "success_no_data";
 	const dnssec = (observationByModule.dnssec?.value || {}) as Record<
 		string,
-		any
+		unknown
 	>;
 	const threats = (observationByModule.threats?.value || {}) as Record<
 		string,
-		any
+		unknown
 	>;
 	const iocFreshList = (threats?.ioc_fresh_list ||
 		threats?.intelguard ||
-		{}) as Record<string, any>;
+		{}) as Record<string, unknown>;
 	const iocLeaseMinutes = Number(iocFreshList?.lease_minutes || 0);
 	const iocLastRefreshedAt = String(
 		iocFreshList?.last_refreshed_at || "",
@@ -1438,25 +1446,25 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
 	}, [iocLastRefreshedAt]);
 
 	const blocklists = (observationByModule.dns_blocklists?.value ||
-		{}) as Record<string, any>;
+		{}) as Record<string, unknown>;
 	const ssl = (observationByModule.ssl_certificate?.value || {}) as Record<
 		string,
-		any
+		unknown
 	>;
 	const tls = (observationByModule.tls_summary?.value || {}) as Record<
 		string,
-		any
+		unknown
 	>;
 	const serverInfo = (observationByModule.server_info?.value || {}) as Record<
 		string,
-		any
+		unknown
 	>;
 	const redirects = (observationByModule.redirects?.value ||
 		observationByModule.redirect_chain?.value ||
-		{}) as Record<string, any>;
+		{}) as Record<string, unknown>;
 	const mailConfig = (observationByModule.mail_config?.value || {}) as Record<
 		string,
-		any
+		unknown
 	>;
 
 	const allSubdomains = useMemo(() => {
@@ -1821,7 +1829,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
 								</Badge>
 							</div>
 							<div className="space-y-1.5 max-h-40 overflow-auto pr-1">
-								{passItems.map((item: any) => {
+								{passItems.map((item) => {
 									const passed = Boolean(item?.passed);
 									const label = String(item?.label || item?.key || "check");
 									const source = String(item?.sourceModule || "module");
@@ -2021,7 +2029,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
 								Porte aperte: {openPortRows.length}
 							</p>
 							<div className="space-y-1.5 max-h-40 overflow-auto pr-1">
-								{openPortRows.slice(0, 8).map((entry: any, idx: number) => (
+								{openPortRows.slice(0, 8).map((entry, idx: number) => (
 									<div
 										key={`${entry?.ip || "ip"}-${entry?.port || idx}`}
 										className="rounded border border-border/70 p-2 text-xs space-y-1"

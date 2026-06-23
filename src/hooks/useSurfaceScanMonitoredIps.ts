@@ -80,7 +80,7 @@ export const useSurfaceScanMonitoredIps =
 							description: `${args.target}`,
 						});
 					}
-				} catch (error: any) {
+				} catch (error: unknown) {
 					const message = String(error?.message || "").toLowerCase();
 					const expectedFailure =
 						message.includes("cooldown") ||
@@ -174,7 +174,7 @@ export const useSurfaceScanMonitoredIps =
 			let parsed;
 			try {
 				parsed = parseMonitoredIpInput(input);
-			} catch (error: any) {
+			} catch (error: unknown) {
 				if (!opts.silent) {
 					toast({
 						title: "Formato non valido",
@@ -187,7 +187,9 @@ export const useSurfaceScanMonitoredIps =
 
 			setSaving(true);
 			try {
-				const payload: any = {
+				const payload: Parameters<
+					typeof surfaceScan360Api.createMonitoredIp
+				>[1] = {
 					organization_id: organizationId,
 					input_value: parsed.inputValue,
 					entry_type: parsed.entryType,
@@ -204,7 +206,7 @@ export const useSurfaceScanMonitoredIps =
 						payload,
 						groupId,
 					);
-				} catch (error: any) {
+				} catch (error: unknown) {
 					const isDuplicate =
 						error?.status === 409 ||
 						String(error?.message || "")
