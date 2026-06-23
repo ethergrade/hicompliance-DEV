@@ -42,6 +42,7 @@ import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
 import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceScanAlertConfigDialog';
 import { useSurfaceScanAlerts, SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
 import { useSurfaceScanMonitoredIps } from '@/hooks/useSurfaceScanMonitoredIps';
+import { useUserRoles } from '@/hooks/useUserRoles';
 import { useSurfaceScanEngine, type SurfaceScanProfile } from '@/hooks/useSurfaceScanEngine';
 import { useSurfaceScanDiscoveredAssets } from '@/hooks/useSurfaceScanDiscoveredAssets';
 import { useSurfaceScanFindings } from '@/hooks/useSurfaceScanFindings';
@@ -232,6 +233,11 @@ const SurfaceScan360: React.FC = () => {
     addRule: addMonitoredIpRule,
     removeRule: removeMonitoredIpRule,
   } = useSurfaceScanMonitoredIps();
+
+  const { isSales } = useUserRoles();
+  // Default-deny: clients (and any non-operator) get a restricted read-only UI.
+  // Operators (admin/super_admin via isAdminUser, or sales) keep seeing everything.
+  const clientReadOnly = !isAdminUser && !isSales;
 
   const { ipScopeRules } = useMemo(
     () => splitMonitoredScopeRules(monitoredIpRules as any),
@@ -837,8 +843,9 @@ const SurfaceScan360: React.FC = () => {
           </Card>
         </div>
 
-        <SurfaceScanTrendline />
+        <SurfaceScanTrendline isAdmin={isAdminUser} />
 
+        {!clientReadOnly && (
         <Card className="border-border">
           <CardHeader>
             <div className="flex items-start justify-between gap-3">
@@ -1212,22 +1219,28 @@ const SurfaceScan360: React.FC = () => {
             </CardContent>
           )}
         </Card>
+        )}
 
-        <SurfaceScanModuleCards
-          isAdminView={isAdminUser}
-          subdomains={scanDiscovery.discoveredSubdomains}
-          onAddSubdomainToScope={handleAddSubdomainToScope}
-          onScanSubdomain={handleScanSingleSubdomain}
-        />
+        {!clientReadOnly && (
+          <SurfaceScanModuleCards
+            isAdminView={isAdminUser}
+            subdomains={scanDiscovery.discoveredSubdomains}
+            onAddSubdomainToScope={handleAddSubdomainToScope}
+            onScanSubdomain={handleScanSingleSubdomain}
+          />
+        )}
 
-        <div ref={exposureSectionRef}>
-          <SurfaceScanExposureSection isAdmin={isAdmin} />
-        </div>
+        {!clientReadOnly && (
+          <div ref={exposureSectionRef}>
+            <SurfaceScanExposureSection isAdmin={isAdmin} />
+          </div>
+        )}
 
         <SecurityFindings />
 
         <SurfaceScanReportRepository scanJobs={scanJobs} />
 
+        {!clientReadOnly && (
         <Card className="border-border">
           <CardHeader>
             <CardTitle>Asset IP Pubblici Monitorati ({monitoredLiveIps.length} trovati)</CardTitle>
@@ -1328,7 +1341,9 @@ const SurfaceScan360: React.FC = () => {
             )}
           </CardContent>
         </Card>
+        )}
 
+        {!clientReadOnly && (
         <Card className="border-border">
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
@@ -1404,6 +1419,7 @@ const SurfaceScan360: React.FC = () => {
             </CardContent>
           )}
         </Card>
+        )}
       </div>
 
       <SurfaceScanAlertConfigDialog

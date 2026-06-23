@@ -352,7 +352,7 @@ const DarkRisk360: React.FC = () => {
   const queryClient = useQueryClient();
   const { alerts, createAlert, loading: alertsLoading } = useDarkRiskAlerts();
   const { data: overview, isLoading, isError, error, refetch, isFetching } = useDarkRiskOverview();
-  const { isSuperAdmin } = useUserRoles();
+  const { isSuperAdmin, isSales, isClient } = useUserRoles();
   const { organizationId } = useClientOrganization();
   const { snapshot } = useDarkRiskSnapshot();
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
@@ -381,6 +381,10 @@ const DarkRisk360: React.FC = () => {
     addRule: addScopeRule,
     removeRule: removeScopeRule,
   } = useSurfaceScanMonitoredIps();
+
+  // Default-deny: clients (and any non-operator) get a restricted read-only UI.
+  // Operators (org-admin via isScopeAdmin, or sales) keep seeing everything.
+  const clientReadOnly = !isScopeAdmin && !isSales;
 
   const {
     data: reportSnapshots = [],
@@ -1504,18 +1508,22 @@ const DarkRisk360: React.FC = () => {
               <RefreshCw className={`w-4 h-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
               Aggiorna
             </Button>
-            <Button className="bg-primary text-primary-foreground" disabled={syncingScan || isFetching} onClick={() => void handleSyncSurfaceScan()}>
-              <Eye className="w-4 h-4 mr-2" />
-              {syncingScan ? 'Scansione in corso...' : 'Nuova scansione'}
-            </Button>
-            <Button
-              variant="outline"
-              disabled={!organizationId || generateReportMutation.isPending}
-              onClick={() => generateReportMutation.mutate(overview.tier === 'extended' ? 'extended' : 'weekly')}
-            >
-              <FileText className="w-4 h-4 mr-2" />
-              {generateReportMutation.isPending ? 'Generazione...' : 'Genera report'}
-            </Button>
+            {!clientReadOnly && (
+              <Button className="bg-primary text-primary-foreground" disabled={syncingScan || isFetching} onClick={() => void handleSyncSurfaceScan()}>
+                <Eye className="w-4 h-4 mr-2" />
+                {syncingScan ? 'Scansione in corso...' : 'Nuova scansione'}
+              </Button>
+            )}
+            {!clientReadOnly && (
+              <Button
+                variant="outline"
+                disabled={!organizationId || generateReportMutation.isPending}
+                onClick={() => generateReportMutation.mutate(overview.tier === 'extended' ? 'extended' : 'weekly')}
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                {generateReportMutation.isPending ? 'Generazione...' : 'Genera report'}
+              </Button>
+            )}
             <Button variant="outline" onClick={() => navigate('/admin/clients')}>
               <Building2 className="w-4 h-4 mr-2" />
               Cambia cliente
@@ -1558,21 +1566,31 @@ const DarkRisk360: React.FC = () => {
             <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as DashboardTab)} className="space-y-4">
               <TabsList className="w-full justify-start overflow-x-auto">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
-                <TabsTrigger value="roadmap">Roadmap</TabsTrigger>
+                {!clientReadOnly && (
+                  <TabsTrigger value="roadmap">Roadmap</TabsTrigger>
+                )}
                 <TabsTrigger value="findings">Findings</TabsTrigger>
                 <TabsTrigger value="assets">Assets</TabsTrigger>
-                <TabsTrigger value="surface">Surface</TabsTrigger>
-                <TabsTrigger value="identity">Identity</TabsTrigger>
-                <TabsTrigger value="ai">
-                  AI
-                  {aiRecommendations.length > 0 && (
-                    <span className="ml-1.5 rounded-full bg-primary/20 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                      {aiRecommendations.length}
-                    </span>
-                  )}
-                </TabsTrigger>
+                {!clientReadOnly && (
+                  <TabsTrigger value="surface">Surface</TabsTrigger>
+                )}
+                {!clientReadOnly && (
+                  <TabsTrigger value="identity">Identity</TabsTrigger>
+                )}
+                {!clientReadOnly && (
+                  <TabsTrigger value="ai">
+                    AI
+                    {aiRecommendations.length > 0 && (
+                      <span className="ml-1.5 rounded-full bg-primary/20 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                        {aiRecommendations.length}
+                      </span>
+                    )}
+                  </TabsTrigger>
+                )}
                 <TabsTrigger value="reports">Reports</TabsTrigger>
-                <TabsTrigger value="settings">Impostazioni</TabsTrigger>
+                {!clientReadOnly && (
+                  <TabsTrigger value="settings">Impostazioni</TabsTrigger>
+                )}
               </TabsList>
 
               <TabsContent value="overview" className="space-y-4">
@@ -1591,13 +1609,15 @@ const DarkRisk360: React.FC = () => {
                       className="min-h-[84px]"
                     />
                     <div className="flex items-center gap-2 flex-wrap">
-                      <Button
-                        onClick={() => void handleIdentityLeakScan()}
-                        disabled={identityScanning || !organizationId}
-                        className="bg-primary text-primary-foreground"
-                      >
-                        {identityScanning ? 'Analisi in corso...' : 'Avvia controllo identity'}
-                      </Button>
+                      {!clientReadOnly && (
+                        <Button
+                          onClick={() => void handleIdentityLeakScan()}
+                          disabled={identityScanning || !organizationId}
+                          className="bg-primary text-primary-foreground"
+                        >
+                          {identityScanning ? 'Analisi in corso...' : 'Avvia controllo identity'}
+                        </Button>
+                      )}
                       <Button variant="outline" size="sm" onClick={() => setActiveTab('identity')}>
                         Vai a Identity
                       </Button>
@@ -2358,15 +2378,17 @@ const DarkRisk360: React.FC = () => {
                           Export unificato con template SurfaceScan360: PDF e DOCX disponibili per ogni snapshot.
                         </p>
                       </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={!organizationId || generateReportMutation.isPending}
-                        onClick={() => generateReportMutation.mutate('weekly')}
-                      >
-                        <FileText className="w-4 h-4 mr-2" />
-                        {generateReportMutation.isPending ? 'Generazione...' : 'Genera settimanale'}
-                      </Button>
+                      {!clientReadOnly && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={!organizationId || generateReportMutation.isPending}
+                          onClick={() => generateReportMutation.mutate('weekly')}
+                        >
+                          <FileText className="w-4 h-4 mr-2" />
+                          {generateReportMutation.isPending ? 'Generazione...' : 'Genera settimanale'}
+                        </Button>
+                      )}
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -2386,15 +2408,17 @@ const DarkRisk360: React.FC = () => {
                                 Un solo report per settimana con la quantità di leak/evidenze trovate nel ciclo DarkRisk360 standard.
                               </p>
                             </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={!organizationId || generateReportMutation.isPending}
-                              onClick={() => generateReportMutation.mutate('weekly')}
-                            >
-                              <FileText className="w-4 h-4 mr-2" />
-                              Genera settimanale
-                            </Button>
+                            {!clientReadOnly && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={!organizationId || generateReportMutation.isPending}
+                                onClick={() => generateReportMutation.mutate('weekly')}
+                              >
+                                <FileText className="w-4 h-4 mr-2" />
+                                Genera settimanale
+                              </Button>
+                            )}
                           </div>
                           {reportRepository.weekly ? (
                             renderReportSnapshot(reportRepository.weekly, 'weekly')
@@ -2412,15 +2436,17 @@ const DarkRisk360: React.FC = () => {
                                   Report DTI Esteso: rigenerabile in qualsiasi momento con i dati più recenti.
                                 </p>
                               </div>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={!organizationId || regenerateDtiMutation.isPending}
-                                onClick={() => regenerateDtiMutation.mutate()}
-                              >
-                                <FileText className="w-4 h-4 mr-2" />
-                                {regenerateDtiMutation.isPending ? 'Generazione DTI...' : reportRepository.extended ? 'Rigenera esteso' : 'Genera esteso'}
-                              </Button>
+                              {!clientReadOnly && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={!organizationId || regenerateDtiMutation.isPending}
+                                  onClick={() => regenerateDtiMutation.mutate()}
+                                >
+                                  <FileText className="w-4 h-4 mr-2" />
+                                  {regenerateDtiMutation.isPending ? 'Generazione DTI...' : reportRepository.extended ? 'Rigenera esteso' : 'Genera esteso'}
+                                </Button>
+                              )}
                             </div>
                             {reportRepository.extendedVersions.length > 0 ? (
                               reportRepository.extendedVersions.map((rep) => renderReportSnapshot(rep, 'extended'))

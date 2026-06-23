@@ -9,7 +9,7 @@ import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 
-export const SurfaceScanTrendline: React.FC = () => {
+export const SurfaceScanTrendline: React.FC<{ isAdmin?: boolean }> = ({ isAdmin = false }) => {
   const { data: history, isLoading } = useSurfaceScanHistory(12);
   const { organizationId } = useClientOrganization();
   const qc = useQueryClient();
@@ -61,10 +61,12 @@ export const SurfaceScanTrendline: React.FC = () => {
               Ultima: {new Date(lastSnap.scanned_at).toLocaleString('it-IT')}
             </Badge>
           )}
-          <Button size="sm" variant="outline" onClick={handleManualScan} disabled={running || !organizationId}>
-            {running ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <PlayCircle className="w-4 h-4 mr-2" />}
-            Esegui ora
-          </Button>
+          {isAdmin && (
+            <Button size="sm" variant="outline" onClick={handleManualScan} disabled={running || !organizationId}>
+              {running ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <PlayCircle className="w-4 h-4 mr-2" />}
+              Esegui ora
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent>
