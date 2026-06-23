@@ -118,7 +118,7 @@ const mockTrackData: TrackDashboardData = {
 
 export function useTrackDashboard(tenantId?: string) {
   return useApiWithFallback<TrackDashboardData>(
-    () => trackApi.dashboard(tenantId) as Promise<TrackDashboardData>,
+    () => trackApi.dashboard(tenantId) as unknown as Promise<TrackDashboardData>,
     mockTrackData,
     [tenantId],
   );

@@ -3,14 +3,14 @@ import type { SurfaceScan360Report } from './surfaceScan360PdfReport';
 type ReportInput = {
   organizationId?: string | null;
   organizationName?: string | null;
-  job: any;
-  runJobs?: any[];
-  openPorts: any[];
-  technologies: any[];
-  niktoFindings: any[];
-  cveMatches: any[];
-  nucleiFindings: any[];
-  nucleiResult: any;
+  job: unknown;
+  runJobs?: unknown[];
+  openPorts: unknown[];
+  technologies: unknown[];
+  niktoFindings: unknown[];
+  cveMatches: unknown[];
+  nucleiFindings: unknown[];
+  nucleiResult: unknown;
 };
 
 const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info'];
@@ -52,10 +52,10 @@ const severityForPort = (port: unknown, service: unknown): string => {
   return 'info';
 };
 
-const targetLabel = (job: any): string =>
+const targetLabel = (job: unknown): string =>
   asText(job?.target_input || job?.target_host || job?.nmap_target || job?.target_url || job?.resolved_target_url, 'Target LAB');
 
-const targetHost = (job: any): string => {
+const targetHost = (job: unknown): string => {
   const raw = targetLabel(job);
   try {
     return new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).hostname || raw;
@@ -74,15 +74,15 @@ const reportTargets = (input: ReportInput): string[] => {
   return uniq(jobs.map((job) => targetHost(job)).filter(Boolean));
 };
 
-const countBySeverity = (findings: any[]): Record<string, number> =>
-  findings.reduce((acc: Record<string, number>, finding: any) => {
+const countBySeverity = (findings: unknown[]): Record<string, number> =>
+  findings.reduce((acc: Record<string, number>, finding: unknown) => {
     const severity = normalizeSeverity(finding?.severity);
     acc[severity] = (acc[severity] || 0) + 1;
     return acc;
   }, {});
 
-const buildCveCatalog = (matches: any[]) => {
-  const byCve = new Map<string, any>();
+const buildCveCatalog = (matches: unknown[]) => {
+  const byCve = new Map<string, unknown>();
   for (const match of matches || []) {
     const cveId = String(match?.cve_id || '').trim().toUpperCase();
     if (!cveId) continue;
@@ -110,7 +110,7 @@ const buildCveCatalog = (matches: any[]) => {
   return Array.from(byCve.values());
 };
 
-const buildFindings = (input: ReportInput): any[] => {
+const buildFindings = (input: ReportInput): unknown[] => {
   const target = targetHost(input.job);
   const portFindings = (input.openPorts || []).map((port) => ({
     provider: 'nuclei_scan360',
@@ -225,7 +225,7 @@ const buildFindings = (input: ReportInput): any[] => {
   return [...cveReportFindings, ...nucleiReportFindings, ...niktoReportFindings, ...portFindings];
 };
 
-const buildRecommendations = (input: ReportInput, findings: any[]) => {
+const buildRecommendations = (input: ReportInput, findings: unknown[]) => {
   const confirmed = (input.cveMatches || []).filter((match) => (match?.match_status || 'confirmed') === 'confirmed');
   const potential = (input.cveMatches || []).filter((match) => match?.match_status === 'potential');
   const highNikto = (input.niktoFindings || []).filter((finding) => ['critical', 'high', 'medium'].includes(normalizeSeverity(finding?.severity)));
@@ -287,7 +287,7 @@ const buildAssetModuleDetails = (input: ReportInput) => {
   }));
 };
 
-const buildObservations = (input: ReportInput): any[] => {
+const buildObservations = (input: ReportInput): unknown[] => {
   const job = input.job || {};
   const rawWarnings = [
     ...(Array.isArray(job?.nmap_warnings) ? job.nmap_warnings : []),

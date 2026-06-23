@@ -214,7 +214,7 @@ async function request<T>(
     // This prevents a single expired API call from destroying the entire session.
 
     // 403 with mfa_setup_required → redirect to MFA setup page
-    if (response.status === 403 && (body as any)?.mfa_setup_required === true) {
+    if (response.status === 403 && (body as unknown)?.mfa_setup_required === true) {
       if (typeof window !== 'undefined' && window.location.pathname !== '/auth/mfa-setup') {
         window.location.href = '/auth/mfa-setup';
       }
@@ -228,7 +228,7 @@ async function request<T>(
   if (!isJson) {
     const text = await response.text();
     console.warn(`[api-client] Non-JSON 200 response from ${path}: ${text.substring(0, 200)}`);
-    throw new ApiError(response.status, { success: false, message: `Invalid response format (${contentType || "unknown"})` });
+    throw new ApiError(response.status, { success: false, message: `Invalid response format (${contentType || "unknown"})`, errors: null });
   }
 
   const json = await response.json();

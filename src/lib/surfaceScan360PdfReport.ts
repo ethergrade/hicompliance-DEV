@@ -15,10 +15,10 @@ interface RemediationTask {
 
 export interface SurfaceScan360Report {
   generated_at: string;
-  organization: any;
-  scan: any;
-  assets_in_scope: any[];
-  findings: any[];
+  organization: Record<string, unknown>;
+  scan: Record<string, unknown>;
+  assets_in_scope: unknown[];
+  findings: unknown[];
   findings_by_severity: Record<string, number>;
   scope_guard_summary?: {
     in_scope?: number;
@@ -43,10 +43,11 @@ export interface SurfaceScan360Report {
     last_modified_at?: string | null;
     refreshed_at?: string | null;
   }>;
-  intel: any[];
-  observations?: any[];
-  monitored_scope?: any[];
-  subdomain_dumps?: any[];
+  intel: unknown[];
+  observations?: unknown[];
+  asset_module_details?: unknown[];
+  monitored_scope?: unknown[];
+  subdomain_dumps?: unknown[];
   remediation_tasks?: RemediationTask[];
   kev_generation?: { created: number; total_kev: number; existing: number };
   ai: {
@@ -115,7 +116,7 @@ const hasHiComplianceBrand = (report: SurfaceScan360Report): boolean => {
 
 const getSurfaceScanBrandTitle = (report: SurfaceScan360Report): string =>
 {
-  const raw = String((report?.organization as any)?.report_brand_title || '').trim();
+  const raw = String((report?.organization as unknown)?.report_brand_title || '').trim();
   if (raw === SURFACESCAN_BRAND_TITLE_HICOMPLIANCE || raw === SURFACESCAN_BRAND_TITLE_HICONSOLE) return raw;
   return hasHiComplianceBrand(report) ? SURFACESCAN_BRAND_TITLE_HICOMPLIANCE : SURFACESCAN_BRAND_TITLE_HICONSOLE;
 };
@@ -217,7 +218,7 @@ const depthFromRoot = (host: string, rootDomain: string): number => {
   return h.slice(0, -(root.length + 1)).split('.').filter(Boolean).length;
 };
 
-const isJunkSummary = (s: any): boolean => {
+const isJunkSummary = (s: unknown): boolean => {
   if (!s) return true;
   if (typeof s === 'string') {
     const text = redactReportWords(s).trim().toLowerCase();
@@ -247,13 +248,13 @@ const isGenericEvidenceText = (value: string): boolean => {
     || text.includes('dati tecnici disponibili:');
 };
 
-const summarizeIntel = (provider: string, target: string, summary: any): string => {
+const summarizeIntel = (provider: string, target: string, summary: unknown): string => {
   if (summary == null) return 'Nessun dato';
   if (typeof summary === 'string') return redactReportWords(summary);
   if (typeof summary !== 'object') return redactReportWords(String(summary));
 
   const read = (key: string) => String(summary?.[key] ?? '').trim();
-  const boolText = (value: any) => (value ? 'sì' : 'no');
+  const boolText = (value: unknown) => (value ? 'sì' : 'no');
 
   if (provider === 'urlscan' && Array.isArray(summary.recent)) {
     if (summary.recent.length === 0) return `Nessuna scansione pubblica nota per ${target}`;
@@ -327,7 +328,7 @@ const summarizeIntel = (provider: string, target: string, summary: any): string 
 
   if (Array.isArray(summary?.data) && summary.data.length > 0) {
     const serviceRows = summary.data
-      .map((entry: any) => {
+      .map((entry: unknown) => {
         const port = String(entry?.port ?? '').trim();
         const proto = String(entry?.transport ?? entry?.protocol ?? '').trim().toLowerCase();
         const service = String(entry?.service ?? entry?.product ?? '').trim();
@@ -341,8 +342,8 @@ const summarizeIntel = (provider: string, target: string, summary: any): string 
   }
 
   const keys = summary ? Object.keys(summary) : [];
-  if (Array.isArray((summary as any)?.detected)) {
-    return `Pattern applicativi rilevati: ${(summary as any).detected.length}`;
+  if (Array.isArray((summary as unknown)?.detected)) {
+    return `Pattern applicativi rilevati: ${(summary as unknown).detected.length}`;
   }
   if (parts.length > 0) {
     return redactReportWords(parts.join(' · '));
@@ -351,7 +352,7 @@ const summarizeIntel = (provider: string, target: string, summary: any): string 
     const scalarPairs = keys
       .slice(0, 12)
       .map((key) => {
-        const raw = (summary as any)?.[key];
+        const raw = (summary as unknown)?.[key];
         if (raw == null) return null;
         if (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean') {
           const value = String(raw).trim();
@@ -388,7 +389,7 @@ const buildFallbackAi = (report: SurfaceScan360Report) => {
   const risk = computeFallbackRisk(report);
   const totalFindings = (report.findings || []).length;
   const totalScope = (report.monitored_scope || []).length;
-  const totalSub = (report.subdomain_dumps || []).reduce((sum, dump: any) => {
+  const totalSub = (report.subdomain_dumps || []).reduce((sum, dump: unknown) => {
     return sum + Number(dump?.total_returned || (Array.isArray(dump?.results) ? dump.results.length : 0) || 0);
   }, 0);
   return {
@@ -636,7 +637,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
 
   // ===== 1 ANAGRAFICA =====
   sectionTitle(1, 'Anagrafica cliente');
-  const anagRows: Array<[string, any]> = [
+  const anagRows: Array<[string, unknown]> = [
     ['Ragione sociale', o.legal_name || o.name],
     ['P.IVA', o.vat_number],
     ['Codice fiscale', o.fiscal_code],
@@ -673,7 +674,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   if (monitored.length > 0) {
     text(`Asset oggetto della scansione (${monitored.length})`, { bold: true, size: 10, color: [BRAND.r, BRAND.g, BRAND.b] });
     y += 2;
-    const scopeRows = monitored.map((m: any) => {
+    const scopeRows = monitored.map((m: unknown) => {
       const value = m.entry_type === 'range'
         ? `${m.ip_start} - ${m.ip_end}`
         : m.input_value;
@@ -719,8 +720,8 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   sectionTitle(3, 'Sottodomini rilevati');
   const allHostnames = new Set<string>();
   const dumpSubdomains: Array<{ host: string; ip?: string | null; root: string; depth: number; evidence: string }> = [];
-  (report.subdomain_dumps || []).forEach((dump: any) => {
-    ((dump.results || []) as any[]).forEach((r: any) => {
+  (report.subdomain_dumps || []).forEach((dump: unknown) => {
+    ((dump.results || []) as unknown[]).forEach((r: unknown) => {
       const host = normalizeHost(r.subdomain);
       if (!host) return;
       allHostnames.add(host);
@@ -733,15 +734,15 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
       });
     });
   });
-  (report.assets_in_scope || []).forEach((a: any) => {
+  (report.assets_in_scope || []).forEach((a: unknown) => {
     if (a.hostname) allHostnames.add(a.hostname.toLowerCase());
     if (a.asset_type === 'domain' || a.asset_type === 'subdomain') allHostnames.add(String(a.asset_value).toLowerCase());
   });
-  monitored.forEach((m: any) => {
+  monitored.forEach((m: unknown) => {
     if (m.entry_type === 'domain') allHostnames.add(String(m.input_value).toLowerCase());
   });
   // anche da intel target
-  (report.intel || []).forEach((i: any) => {
+  (report.intel || []).forEach((i: unknown) => {
     if (i.target && /[a-z]/i.test(i.target) && !/^\d+\.\d+\.\d+\.\d+$/.test(i.target)) {
       allHostnames.add(String(i.target).toLowerCase());
     }
@@ -865,11 +866,11 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     }
   };
 
-  (report.findings || []).forEach((finding: any) => {
+  (report.findings || []).forEach((finding: unknown) => {
     const findingType = String(finding?.finding_type || '').toLowerCase();
     if (findingType !== 'open_port_exposed' && findingType !== 'service_fingerprint_exposed') return;
     const evidence = finding?.evidence && typeof finding.evidence === 'object'
-      ? (finding.evidence as Record<string, any>)
+      ? (finding.evidence as Record<string, unknown>)
       : {};
     const serviceName = [evidence?.service, evidence?.version].filter(Boolean).join(' ').trim()
       || finding?.title
@@ -885,7 +886,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     });
   });
 
-  (report.observations || []).forEach((obs: any) => {
+  (report.observations || []).forEach((obs: unknown) => {
     const value = obs?.value || {};
     const host = value?.host || value?.hostname || value?.domain || value?.target || obs?.title;
     const ip = value?.ip || value?.ip_address || value?.host_ip;
@@ -900,7 +901,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
       });
     }
     if (Array.isArray(value?.data)) {
-      value.data.forEach((entry: any) => {
+      value.data.forEach((entry: unknown) => {
         addPortEvidence({
           host,
           ip,
@@ -913,7 +914,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     }
   });
 
-  (report.intel || []).forEach((entry: any) => {
+  (report.intel || []).forEach((entry: unknown) => {
     const summary = entry?.summary || {};
     const host = entry?.target || summary?.host || summary?.hostname || s.target;
     const ip = summary?.ip || summary?.ip_address || summary?.host_ip;
@@ -928,7 +929,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
       });
     }
     if (Array.isArray(summary?.data)) {
-      summary.data.forEach((dataEntry: any) => {
+      summary.data.forEach((dataEntry: unknown) => {
         addPortEvidence({
           host,
           ip,
@@ -989,7 +990,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   // ===== 5 EVIDENZE ESTERNE =====
   sectionTitle(5, 'Evidenze esterne');
   const intel = (report.intel || [])
-    .map((i: any) => {
+    .map((i: unknown) => {
       const resolvedTarget = resolveReportTarget(
         i?.target,
         i?.summary?.domain,
@@ -1012,13 +1013,13 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
         summaryText: summarizeIntel(String(i?.provider || ''), resolvedTarget, i?.summary),
       };
     })
-    .filter((i: any) => i.summaryText && !isJunkSummary(i.summaryText));
+    .filter((i: unknown) => i.summaryText && !isJunkSummary(i.summaryText));
   const observations = report.observations || [];
 
   // Aggiungi osservazioni chiave per arricchire il report
   const obsAsIntel = observations
-    .filter((ob: any) => ['dnssec','tech_stack','mail_security','security_headers','ct_log'].includes(ob.module))
-    .map((ob: any) => ({
+    .filter((ob: unknown) => ['dnssec','tech_stack','mail_security','security_headers','ct_log'].includes(ob.module))
+    .map((ob: unknown) => ({
       group: providerLabel(ob.module),
       target: resolveReportTarget(
         ob.value?.domain,
@@ -1042,16 +1043,16 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
       ),
     }));
   const allIntel = [...intel, ...obsAsIntel]
-    .filter((i: any) => !isJunkSummary(i?.summaryText))
-    .filter((i: any) => !isScopeAggregateTarget(i?.target));
+    .filter((i: unknown) => !isJunkSummary(i?.summaryText))
+    .filter((i: unknown) => !isScopeAggregateTarget(i?.target));
 
   if (allIntel.length === 0) {
     text('Nessun dato di enrichment disponibile.', { color: [MUTED.r, MUTED.g, MUTED.b], size: 9 });
   } else {
-    const byProvider: Record<string, any[]> = {};
-    allIntel.forEach((i: any) => { (byProvider[i.group || 'Evidenze esterne'] ||= []).push(i); });
+    const byProvider: Record<string, unknown[]> = {};
+    allIntel.forEach((i: unknown) => { (byProvider[i.group || 'Evidenze esterne'] ||= []).push(i); });
     Object.entries(byProvider).forEach(([prov, list]) => {
-      const rows = list.slice(0, 20).map((i: any) => [
+      const rows = list.slice(0, 20).map((i: unknown) => [
         String(i.target || 'n/d'),
         String(i.summaryText || 'Nessuna evidenza disponibile.'),
       ]);
@@ -1112,8 +1113,8 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   }
 
   // Raggruppa per asset
-  const byAsset: Record<string, any[]> = {};
-  allFindings.forEach((f: any) => {
+  const byAsset: Record<string, unknown[]> = {};
+  allFindings.forEach((f: unknown) => {
     const k = pickReportAsset(f.affected_asset, f.affected_url, f.ip, s.target);
     (byAsset[k] ||= []).push(f);
   });
@@ -1148,7 +1149,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
       list.sort((a, b) => {
         const r = { critical: 5, high: 4, medium: 3, low: 2, info: 1 } as Record<string, number>;
         return (r[b.severity] || 0) - (r[a.severity] || 0);
-      }).forEach((f: any) => {
+      }).forEach((f: unknown) => {
         ensure(28);
         const badgeW = severityBadge(f.severity);
         doc.setFont('helvetica', 'bold');
@@ -1158,7 +1159,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
         doc.text(titleLines[0], margin + badgeW + 6, y);
         y += 12;
         for (let i = 1; i < titleLines.length; i++) { ensure(12); doc.text(titleLines[i], margin + badgeW + 6, y); y += 12; }
-        const cweValues = Array.isArray(f.cwe) ? f.cwe.map((entry: any) => String(entry || '').trim()).filter(Boolean) : [];
+        const cweValues = Array.isArray(f.cwe) ? f.cwe.map((entry: unknown) => String(entry || '').trim()).filter(Boolean) : [];
         const owaspLabel = [f.owasp, f.owasp_label].filter(Boolean).join(' · ');
         if (Array.isArray(f.cve) && f.cve.length) text(`CVE: ${f.cve.join(', ')}${f.cvss ? '  ·  CVSS ' + f.cvss : ''}`, { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] });
         if (owaspLabel || cweValues.length > 0) {
@@ -1189,7 +1190,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     if (aiData.top_recommendations?.length) {
       y += 6;
       sectionTitle(8, 'Priorità operative AI (Top 10)');
-      aiData.top_recommendations.forEach((r: any) => {
+      aiData.top_recommendations.forEach((r: unknown) => {
         ensure(40);
         const badgeW = severityBadge(r.severity || 'info');
         doc.setFont('helvetica', 'bold');
@@ -1206,7 +1207,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
 
     if (aiData.correlations?.length) {
       sectionTitle(9, 'Correlazioni');
-      aiData.correlations.forEach((c: any) => text(`• ${redactReportWords(String(c || ''))}`, { size: 9 }));
+      aiData.correlations.forEach((c: unknown) => text(`• ${redactReportWords(String(c || ''))}`, { size: 9 }));
     }
 
     if (aiData.compliance_notes) {

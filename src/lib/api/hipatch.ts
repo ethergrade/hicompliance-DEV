@@ -140,10 +140,10 @@ function makeOpts(groupId?: string | null) {
   return groupId ? { headers: { "X-Group-Id": groupId } } : undefined;
 }
 
-function unwrap<T>(res: { success?: boolean; data?: T } | T[]): T[] {
+function unwrap<T>(res: { success?: boolean; data?: T[] } | T[]): T[] {
   if (Array.isArray(res)) return res;
-  const r = res as { success?: boolean; data?: T };
-  if (r && typeof r === "object" && "data" in r) return (r.data as unknown as T[]) ?? [];
+  const r = res as { success?: boolean; data?: T[] };
+  if (r && typeof r === "object" && "data" in r) return r.data ?? [];
   return [];
 }
 

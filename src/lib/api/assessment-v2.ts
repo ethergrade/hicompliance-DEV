@@ -65,7 +65,8 @@ export const assessmentV2Api = {
   async updateResponse(
     companyId: string,
     questionId: string,
-    payload: { status: string; notes?: string | null }
+    payload: { status: string; notes?: string | null },
+    _g?: string | null
   ): Promise<AssessmentResponseItem> {
     const res = await apiClient.put<ApiResponse<AssessmentResponseItem>>(
       `/companies/${companyId}/assessment-responses/${questionId}`,

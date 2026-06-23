@@ -77,7 +77,7 @@ export const useServiceIntegrations = () => {
         await tenantServicesApi.create({
           service_type: serviceId,
           status: 'active',
-          settings: apiUrl ? [apiUrl] : null,
+          settings: apiUrl ? { url: apiUrl } : null,
         });
       }
     },

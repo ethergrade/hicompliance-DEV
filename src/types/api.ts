@@ -3,341 +3,358 @@
 // ─── Generic API envelope ─────────────────────────────────────────────────
 
 export interface ApiResponse<T> {
-  success: boolean;
-  message: string;
-  data: T;
+	success: boolean;
+	message: string;
+	data: T;
 }
 
 export interface ApiErrorResponse {
-  success?: boolean;
-  message: string;
-  errors: Record<string, string[]> | null;
+	success?: boolean;
+	message: string;
+	errors: Record<string, string[]> | null;
 }
 
 // ─── Pagination ─────────────────────────────────────────────────────────────
 
 export interface PaginationLink {
-  url: string | null;
-  label: string;
-  active: boolean;
+	url: string | null;
+	label: string;
+	active: boolean;
 }
 
 export interface PaginationMeta {
-  current_page: number;
-  from: number | null;
-  last_page: number;
-  links: PaginationLink[];
-  path: string | null;
-  per_page: number;
-  to: number | null;
-  total: number;
+	current_page: number;
+	from: number | null;
+	last_page: number;
+	links: PaginationLink[];
+	path: string | null;
+	per_page: number;
+	to: number | null;
+	total: number;
 }
 
 export interface PaginatedResponse<T> {
-  data: T[];
-  links: {
-    first: string | null;
-    last: string | null;
-    prev: string | null;
-    next: string | null;
-  };
-  meta: PaginationMeta;
+	data: T[];
+	links: {
+		first: string | null;
+		last: string | null;
+		prev: string | null;
+		next: string | null;
+	};
+	meta: PaginationMeta;
 }
 
 // ─── Auth ───────────────────────────────────────────────────────────────────
 
 export interface LoginRequest {
-  /** Username or email — backend accepts either */
-  login: string;
-  password: string;
+	/** Username or email — backend accepts either */
+	login: string;
+	password: string;
 }
 
 export interface Group {
-  id: string;
-  name: string;
-  slug?: string;
-  description?: string;
-  is_active: boolean;
-  /** Dotted capabilities for this group from GET /auth/groups */
-  capabilities?: Record<string, boolean>;
+	id: string;
+	name: string;
+	slug?: string;
+	description?: string;
+	is_active: boolean;
+	/** Dotted capabilities for this group from GET /auth/groups */
+	capabilities?: Record<string, boolean>;
 }
 
 export interface LoginUser {
-  id: string | number;
-  name: string;
-  email: string;
-  is_super_admin: boolean;
-  groups: Group[];
-  /** Dotted capabilities map from /auth/me (e.g. `users.manage`, `hicompliance.assessment.view`). */
-  capabilities?: Record<string, boolean>;
-  /** MFA already configured by this user */
-  mfa_configured?: boolean;
-  /** MFA not mandatory but user hasn't set it up yet */
-  mfa_recommended?: boolean;
+	id: string | number;
+	name: string;
+	email: string;
+	is_super_admin: boolean;
+	groups: Group[];
+	/** Dotted capabilities map from /auth/me (e.g. `users.manage`, `hicompliance.assessment.view`). */
+	capabilities?: Record<string, boolean>;
+	/** MFA already configured by this user */
+	mfa_configured?: boolean;
+	/** MFA not mandatory but user hasn't set it up yet */
+	mfa_recommended?: boolean;
+	/** Role string from backend (e.g. 'admin', 'sales', 'client') */
+	user_type?: string;
 }
 
 export interface LoginData {
-  token?: string;
-  mfa_required: boolean;
-  mfa_configured: boolean;
-  /** Present only when mfa_configured=true — no token yet */
-  mfa_challenge_token?: string;
-  user?: LoginUser;
+	token?: string;
+	mfa_required: boolean;
+	mfa_configured: boolean;
+	/** Present only when mfa_configured=true — no token yet */
+	mfa_challenge_token?: string;
+	user?: LoginUser;
 }
 
 export interface MfaVerifyRequest {
-  mfa_challenge_token: string;
-  code: string;
+	mfa_challenge_token: string;
+	code: string;
 }
 
 export interface MfaVerifyData {
-  token: string;
-  user: LoginUser;
+	token: string;
+	user: LoginUser;
 }
 
 export interface MfaSetupData {
-  secret: string;
-  qr_code: string;
-  qr_mime: string;
+	secret: string;
+	qr_code: string;
+	qr_mime: string;
 }
 
 export interface MfaEnableData {
-  recovery_codes: string[];
+	recovery_codes: string[];
 }
 
 export interface MfaRecoveryCodesData {
-  recovery_codes: string[];
+	recovery_codes: string[];
 }
 
 export interface ChangePasswordRequest {
-  current_password: string;
-  password: string;
-  password_confirmation: string;
+	current_password: string;
+	password: string;
+	password_confirmation: string;
 }
 
 // ─── User ─────────────────────────────────────────────────────────────────
 
 export interface UserResource {
-  id: string;
-  name: string;
-  email: string;
-  /** Spatie role names */
-  roles: string[];
-  /** Group memberships (loaded via pivot) */
-  groups?: Array<{ id: string; name: string; role: string }>;
-  created_at: string;
+	id: string;
+	name: string;
+	email: string;
+	/** Spatie role names */
+	roles: string[];
+	/** Group memberships (loaded via pivot) */
+	groups?: Array<{ id: string; name: string; role: string }>;
+	created_at: string;
 }
 
-export export interface StoreUserRequest {
-  name: string;
-  email: string;
-  password: string;
-  role?: string;
+export interface StoreUserRequest {
+	name: string;
+	email: string;
+	password: string;
+	role?: string;
 }
 
 export interface UpdateUserRequest {
-  name?: string;
-  email?: string;
-  role?: string;
-  tenant_id?: string | null;
-  password?: string;
+	name?: string;
+	email?: string;
+	role?: string;
+	tenant_id?: string | null;
+	password?: string;
 }
 
 // ─── Tenant ─────────────────────────────────────────────────────────────────
 
 export interface TenantResource {
-  id: string;
-  group_id: string | null;
-  customer_code: string | null;
-  name: string;
-  ms_tenant_id: string | null;
-  contact_first_name: string | null;
-  contact_last_name: string | null;
-  phone: string | null;
-  vat_number: string | null;
-  primary_domain: string | null;
-  primary_subnet: string | null;
-  secondary_domain: string | null;
-  secondary_subnet: string | null;
-  revenue: string | null;
-  employees_count: string | null;
-  industry: string | null;
-  customer_sectors: string[] | null;
-  implemented_technologies: string[] | null;
-  status: number;
-  firewalls_count: number | null;
-  endpoints_count: number | null;
-  servers_count: number | null;
-  vms_count: number | null;
-  contract_start?: string | null;
-  contract_duration?: number | null;
-  last_scan_at?: string | null;
-  ips_list?: IpRange[] | null;
-  domains_list?: DomainEntry[] | null;
-  is_multiple?: boolean;
-  extra?: TenantDashboardExtra | null;
-  created_at?: string | null;
-  // Anagrafica / Organization Profile fields
-  legal_name?: string | null;
-  fiscal_code?: string | null;
-  legal_address?: string | null;
-  operational_address?: string | null;
-  pec?: string | null;
-  email?: string | null;
-  nis2_classification?: 'soggetto_essenziale' | 'soggetto_importante' | 'nessuna' | null;
-  ciso_substitute?: string | null;
+	id: string;
+	group_id: string | null;
+	customer_code: string | null;
+	name: string;
+	ms_tenant_id: string | null;
+	contact_first_name: string | null;
+	contact_last_name: string | null;
+	phone: string | null;
+	vat_number: string | null;
+	primary_domain: string | null;
+	primary_subnet: string | null;
+	secondary_domain: string | null;
+	secondary_subnet: string | null;
+	revenue: string | null;
+	employees_count: string | null;
+	industry: string | null;
+	customer_sectors: string[] | null;
+	implemented_technologies: string[] | null;
+	status: number;
+	firewalls_count: number | null;
+	endpoints_count: number | null;
+	servers_count: number | null;
+	vms_count: number | null;
+	contract_start?: string | null;
+	contract_duration?: number | null;
+	last_scan_at?: string | null;
+	ips_list?: IpRange[] | null;
+	domains_list?: DomainEntry[] | null;
+	is_multiple?: boolean;
+	extra?: TenantDashboardExtra | null;
+	created_at?: string | null;
+	// Anagrafica / Organization Profile fields
+	legal_name?: string | null;
+	fiscal_code?: string | null;
+	legal_address?: string | null;
+	operational_address?: string | null;
+	pec?: string | null;
+	email?: string | null;
+	nis2_classification?:
+		| "soggetto_essenziale"
+		| "soggetto_importante"
+		| "nessuna"
+		| null;
+	ciso_substitute?: string | null;
 }
 
 export interface IpRange {
-  start_ip: string;
-  end_ip: string;
+	start_ip: string;
+	end_ip: string;
 }
 
 export interface DomainEntry {
-  domain: string;
+	domain: string;
 }
 
 // ─── Tenant Dashboard Extra ──────────────────────────────────────────────────
 
 export interface TenantDashboardExtra {
-  note?: string;
-  server?: number;
-  utenti?: number;
-  endpoint?: number;
-  firewall?: number;
-  ip_totali?: number;
-  subnet_21?: number;
-  subnet_22?: number;
-  subnet_23?: number;
-  subnet_24?: number;
-  subnet_25?: number;
-  hypervisor?: number;
-  ip_puntuali?: number;
-  switch_core?: number;
-  access_point?: number;
-  sedi_cliente?: number;
-  switch_access?: number;
-  virtual_machine?: number;
-  dispositivi_rete_varie?: number;
-  dispositivi_rete_totali?: number;
-  // HiCompliance extended scope
-  hicompliance_scope_domains?: string[];
-  hicompliance_scope_ips?: { start_ip: string; end_ip: string }[];
+	note?: string;
+	server?: number;
+	utenti?: number;
+	endpoint?: number;
+	firewall?: number;
+	ip_totali?: number;
+	subnet_21?: number;
+	subnet_22?: number;
+	subnet_23?: number;
+	subnet_24?: number;
+	subnet_25?: number;
+	hypervisor?: number;
+	ip_puntuali?: number;
+	switch_core?: number;
+	access_point?: number;
+	sedi_cliente?: number;
+	switch_access?: number;
+	virtual_machine?: number;
+	dispositivi_rete_varie?: number;
+	dispositivi_rete_totali?: number;
+	// HiCompliance extended scope
+	hicompliance_scope_domains?: string[];
+	hicompliance_scope_ips?: { start_ip: string; end_ip: string }[];
 }
 
 export interface StoreTenantRequest {
-  name: string;
-  ms_tenant_id?: string | null;
-  contract_start?: string | null;
-  contract_duration?: number | null;
-  is_multiple?: boolean | null;
-  nis2_classification?: 'soggetto_essenziale' | 'soggetto_importante' | 'nessuna' | null;
+	name: string;
+	ms_tenant_id?: string | null;
+	contract_start?: string | null;
+	contract_duration?: number | null;
+	is_multiple?: boolean | null;
+	nis2_classification?:
+		| "soggetto_essenziale"
+		| "soggetto_importante"
+		| "nessuna"
+		| null;
 }
 
 export interface UpdateTenantRequest {
-  name?: string;
-  ms_tenant_id?: string | null;
-  contact_first_name?: string | null;
-  contact_last_name?: string | null;
-  phone?: string | null;
-  vat_number?: string | null;
-  primary_domain?: string | null;
-  primary_subnet?: string | null;
-  secondary_domain?: string | null;
-  secondary_subnet?: string | null;
-  revenue?: string | null;
-  employees_count?: string | null;
-  industry?: string | null;
-  customer_sectors?: string[] | null;
-  implemented_technologies?: string[] | null;
-  status?: number;
-  firewalls_count?: number;
-  endpoints_count?: number;
-  servers_count?: number;
-  vms_count?: number;
-  contract_start?: string | null;
-  contract_duration?: number;
-  last_scan_at?: string | null;
-  is_multiple?: boolean;
-  extra?: TenantDashboardExtra | null;
-  ips_list?: IpRange[] | null;
-  domains_list?: DomainEntry[] | null;
-  // Anagrafica / Organization Profile fields
-  legal_name?: string | null;
-  fiscal_code?: string | null;
-  legal_address?: string | null;
-  operational_address?: string | null;
-  pec?: string | null;
-  email?: string | null;
-  nis2_classification?: 'soggetto_essenziale' | 'soggetto_importante' | 'nessuna' | null;
-  ciso_substitute?: string | null;
+	name?: string;
+	ms_tenant_id?: string | null;
+	contact_first_name?: string | null;
+	contact_last_name?: string | null;
+	phone?: string | null;
+	vat_number?: string | null;
+	primary_domain?: string | null;
+	primary_subnet?: string | null;
+	secondary_domain?: string | null;
+	secondary_subnet?: string | null;
+	revenue?: string | null;
+	employees_count?: string | null;
+	industry?: string | null;
+	customer_sectors?: string[] | null;
+	implemented_technologies?: string[] | null;
+	status?: number;
+	firewalls_count?: number;
+	endpoints_count?: number;
+	servers_count?: number;
+	vms_count?: number;
+	contract_start?: string | null;
+	contract_duration?: number;
+	last_scan_at?: string | null;
+	is_multiple?: boolean;
+	extra?: TenantDashboardExtra | null;
+	ips_list?: IpRange[] | null;
+	domains_list?: DomainEntry[] | null;
+	// Anagrafica / Organization Profile fields
+	legal_name?: string | null;
+	fiscal_code?: string | null;
+	legal_address?: string | null;
+	operational_address?: string | null;
+	pec?: string | null;
+	email?: string | null;
+	nis2_classification?:
+		| "soggetto_essenziale"
+		| "soggetto_importante"
+		| "nessuna"
+		| null;
+	ciso_substitute?: string | null;
 }
 
 // ─── Assessment ─────────────────────────────────────────────────────────────
 
 export type AssessmentQuestionValue = string | number | null;
-export type AssessmentQuestions =
-  | Record<string, AssessmentQuestionValue>
-  | null;
+export type AssessmentQuestions = Record<
+	string,
+	AssessmentQuestionValue
+> | null;
 export type AssessmentId = string | number;
 
 export interface UpdateAssessmentRequest {
-  status?: number;
-  follow_up?: string | null;
-  followup_reminder?: string | null;
-  presentation_date?: string | null;
-  hide_gantt?: boolean;
-  custom_gantt?: GanttItem[] | null;
-  questions?: Record<string, AssessmentQuestionValue> | AssessmentQuestionValue[];
+	status?: number;
+	follow_up?: string | null;
+	followup_reminder?: string | null;
+	presentation_date?: string | null;
+	hide_gantt?: boolean;
+	custom_gantt?: GanttItem[] | null;
+	questions?:
+		| Record<string, AssessmentQuestionValue>
+		| AssessmentQuestionValue[];
 }
 
 export interface UpdateGanttRequest {
-  custom_gantt?: GanttItem[] | null;
-  hide_gantt?: boolean;
+	custom_gantt?: GanttItem[] | null;
+	hide_gantt?: boolean;
 }
 
 export interface AssessmentData {
-  id: AssessmentId;
-  tenant_id?: string | null;
-  status: number;
-  questions: AssessmentQuestions;
-  follow_up: string | null;
-  followup_reminder?: string | null;
-  presentation_date: string | null;
-  hide_gantt: boolean;
-  custom_gantt: GanttItem[] | Record<string, unknown>[] | null;
-  generated_at: string | null;
-  updated_by?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
+	id: AssessmentId;
+	tenant_id?: string | null;
+	status: number;
+	questions: AssessmentQuestions;
+	follow_up: string | null;
+	followup_reminder?: string | null;
+	presentation_date: string | null;
+	hide_gantt: boolean;
+	custom_gantt: GanttItem[] | Record<string, unknown>[] | null;
+	generated_at: string | null;
+	updated_by?: string | null;
+	created_at?: string | null;
+	updated_at?: string | null;
 }
 
 export interface AssessmentSummary {
-  completion_score: number;
-  risk_score: number;
-  completion_color: string;
-  risk_color: string;
-  risk_label: string;
-  totals_by_answer: [number, number, number, number];
-  answer_labels: [string, string, string, string];
+	completion_score: number;
+	risk_score: number;
+	completion_color: string;
+	risk_color: string;
+	risk_label: string;
+	totals_by_answer: [number, number, number, number];
+	answer_labels: [string, string, string, string];
 }
 
 export interface RadarCategory {
-  name: string;
-  completion_percent: number;
+	name: string;
+	completion_percent: number;
 }
 
 export interface GanttItem {
-  id?: string | number;
-  name?: string;
-  task?: string;
-  start: string;
-  end: string;
-  duration?: string | number;
-  progress?: boolean;
-  hidden?: boolean;
-  withprev?: string | number | boolean;
-  [key: string]: unknown;
+	id?: string | number;
+	name?: string;
+	task?: string;
+	start: string;
+	end: string;
+	duration?: string | number;
+	progress?: boolean;
+	hidden?: boolean;
+	withprev?: string | number | boolean;
+	[key: string]: unknown;
 }
 
 /**
@@ -348,758 +365,762 @@ export interface GanttItem {
  * Filter `is_deleted = false` client-side.
  */
 export interface RemediationTask {
-  id: string;
-  tenant_id: string;
-  task: string;
-  category: string;
-  priority: 'low' | 'medium' | 'high' | 'critical' | string;
-  color: string;
-  start_date: string;
-  end_date: string;
-  progress: number;
-  assignee: string | null;
-  budget: number | null;
-  dependencies: string[] | null;
-  display_order: number | null;
-  is_deleted: boolean;
-  is_hidden: boolean;
-  source: 'assessment_v2' | string | null;
-  source_ref: string | null;
-  created_at: string;
-  updated_at: string;
+	id: string;
+	tenant_id: string;
+	task: string;
+	category: string;
+	priority: "low" | "medium" | "high" | "critical" | string;
+	color: string;
+	start_date: string;
+	end_date: string;
+	progress: number;
+	assignee: string | null;
+	budget: number | null;
+	dependencies: string[] | null;
+	display_order: number | null;
+	is_deleted: boolean;
+	is_hidden: boolean;
+	source: "assessment_v2" | string | null;
+	source_ref: string | null;
+	created_at: string;
+	updated_at: string;
 }
 
 export interface StoreRemediationTaskRequest {
-  task: string;
-  category: string;
-  start_date: string;
-  end_date: string;
-  priority?: 'low' | 'medium' | 'high' | 'critical';
-  color?: string;
-  progress?: number;
-  assignee?: string | null;
-  budget?: number | null;
-  display_order?: number | null;
-  is_deleted?: boolean;
-  is_hidden?: boolean;
-  source?: string | null;
-  source_ref?: string | null;
-  dependencies?: string[] | null;
+	task: string;
+	category: string;
+	start_date: string;
+	end_date: string;
+	priority?: "low" | "medium" | "high" | "critical";
+	color?: string;
+	progress?: number;
+	assignee?: string | null;
+	budget?: number | null;
+	display_order?: number | null;
+	is_deleted?: boolean;
+	is_hidden?: boolean;
+	source?: string | null;
+	source_ref?: string | null;
+	dependencies?: string[] | null;
 }
 
 export type UpdateRemediationTaskRequest = Partial<StoreRemediationTaskRequest>;
 
 export interface OpenAIAnalysis {
-  intro: string[];
-  analysis: string[];
-  categories: string[];
-  outro: string[];
+	intro: string[];
+	analysis: string[];
+	categories: string[];
+	outro: string[];
 }
 
 export interface IntelXData {
-  raw: unknown[] | null;
-  buckets: string;
-  mediahs: string;
+	raw: unknown[] | null;
+	buckets: string;
+	mediahs: string;
 }
 
 export interface ShodanScanAggregated {
-  total_hosts: number;
-  hosts: unknown[];
-  top_ports: unknown[];
-  cve_counts: unknown[];
-  countries: string;
+	total_hosts: number;
+	hosts: unknown[];
+	top_ports: unknown[];
+	cve_counts: unknown[];
+	countries: string;
 }
 
 export interface ShodanScan {
-  date: string;
-  aggregated: ShodanScanAggregated;
+	date: string;
+	aggregated: ShodanScanAggregated;
 }
 
 export interface Vulnerability {
-  cve: string;
-  count: string;
-  affected_ips: string[];
-  epss_score: number | null;
-  severity: string;
+	cve: string;
+	count: string;
+	affected_ips: string[];
+	epss_score: number | null;
+	severity: string;
 }
 
 export interface AssessmentReportAssessment {
-  id: number;
-  status: number;
-  follow_up: string;
-  followup_reminder: string;
-  presentation_date: string;
-  hide_gantt: boolean;
-  generated_at: string | null;
-  updated_at: string;
+	id: number;
+	status: number;
+	follow_up: string;
+	followup_reminder: string;
+	presentation_date: string;
+	hide_gantt: boolean;
+	generated_at: string | null;
+	updated_at: string;
 }
 
 export interface AssessmentReportData {
-  assessment: AssessmentReportAssessment;
-  tenant: TenantResource;
-  summary: AssessmentSummary;
-  categories: string;
-  gantt: GanttItem[] | null;
-  openai: OpenAIAnalysis | string[];
-  shodan: unknown[] | null;
-  intelx: IntelXData | string[];
+	assessment: AssessmentReportAssessment;
+	tenant: TenantResource;
+	summary: AssessmentSummary;
+	categories: string;
+	gantt: GanttItem[] | null;
+	openai: OpenAIAnalysis | string[];
+	shodan: unknown[] | null;
+	intelx: IntelXData | string[];
 }
 
 export interface MonthlyReportDelta {
-  hosts: string | null;
-  cves: string | null;
+	hosts: string | null;
+	cves: string | null;
 }
 
 export interface AssessmentMonthlyReportData {
-  tenant: TenantResource;
-  assessment: AssessmentReportAssessment;
-  scans: ShodanScan[];
-  vulnerabilities: Vulnerability[];
-  radar_categories: RadarCategory[];
-  trend: unknown[];
-  delta: MonthlyReportDelta;
+	tenant: TenantResource;
+	assessment: AssessmentReportAssessment;
+	scans: ShodanScan[];
+	vulnerabilities: Vulnerability[];
+	radar_categories: RadarCategory[];
+	trend: unknown[];
+	delta: MonthlyReportDelta;
 }
 // ─── Tenant Service ──────────────────────────────────────────────────────────
 
 export interface TenantServiceResource {
-  id: string;
-  tenant_id: string;
-  site_id: string | null;
-  service_type: string;
-  status: string;
-  settings: Record<string, unknown> | null;
-  api_methods: Record<string, unknown> | null;
-  updated_by: string | null;
-  created_at: string;
-  updated_at: string;
+	id: string;
+	tenant_id: string;
+	site_id: string | null;
+	service_type: string;
+	status: string;
+	settings: Record<string, unknown> | null;
+	api_methods: Record<string, unknown> | null;
+	updated_by: string | null;
+	created_at: string;
+	updated_at: string;
 }
 
 export interface StoreTenantServiceRequest {
-  tenant_id?: string | null;
-  site_id?: string | null;
-  service_type: string;
-  status?: "active" | "inactive" | null;
-  settings?: Record<string, unknown> | null;
+	tenant_id?: string | null;
+	site_id?: string | null;
+	service_type: string;
+	status?: "active" | "inactive" | null;
+	settings?: Record<string, unknown> | null;
 }
 
 export interface UpdateTenantServiceRequest {
-  tenant_id?: string | null;
-  site_id?: string | null;
-  service_type?: string;
-  status?: "active" | "inactive";
-  settings?: Record<string, unknown> | null;
+	tenant_id?: string | null;
+	site_id?: string | null;
+	service_type?: string;
+	status?: "active" | "inactive";
+	settings?: Record<string, unknown> | null;
 }
 // ─── Asset Inventory ────────────────────────────────────────────────────────
 
 export interface AssetInventoryResource {
-  id: string;
-  organization_id: string;
-  users_count: number;
-  locations_count: number;
-  endpoints_count: number;
-  servers_count: number;
-  hypervisors_count: number;
-  virtual_machines_count: number;
-  firewalls_count: number;
-  core_switches_count: number;
-  access_switches_count: number;
-  access_points_count: number;
-  miscellaneous_network_devices_count: number;
-  total_network_devices_count: number;
-  va_ip_punctual_count: number;
-  va_subnet_25_count: number;
-  va_subnet_24_count: number;
-  va_subnet_23_count: number;
-  va_subnet_22_count: number;
-  va_subnet_21_count: number;
-  va_total_ips_count: number;
-  notes: string;
-  hilog_syslog_count: number;
-  hilog_iis_count: number;
-  hilog_apache_count: number;
-  hilog_sql_count: number;
-  hilog_custom_path_count: number;
-  hilog_endpoint_count: number;
-  hilog_server_count: number;
-  hilog_dlp_linux_count: number;
-  hilog_dlp_windows_count: number;
-  hilog_sharepoint_dlp_enabled: boolean;
-  hilog_sharepoint_dlp_count: number;
-  hilog_entra_id_enabled: boolean;
-  created_at?: string;
-  updated_at?: string;
+	id: string;
+	organization_id: string;
+	users_count: number;
+	locations_count: number;
+	endpoints_count: number;
+	servers_count: number;
+	hypervisors_count: number;
+	virtual_machines_count: number;
+	firewalls_count: number;
+	core_switches_count: number;
+	access_switches_count: number;
+	access_points_count: number;
+	miscellaneous_network_devices_count: number;
+	total_network_devices_count: number;
+	va_ip_punctual_count: number;
+	va_subnet_25_count: number;
+	va_subnet_24_count: number;
+	va_subnet_23_count: number;
+	va_subnet_22_count: number;
+	va_subnet_21_count: number;
+	va_total_ips_count: number;
+	notes: string;
+	hilog_syslog_count: number;
+	hilog_iis_count: number;
+	hilog_apache_count: number;
+	hilog_sql_count: number;
+	hilog_custom_path_count: number;
+	hilog_endpoint_count: number;
+	hilog_server_count: number;
+	hilog_dlp_linux_count: number;
+	hilog_dlp_windows_count: number;
+	hilog_sharepoint_dlp_enabled: boolean;
+	hilog_sharepoint_dlp_count: number;
+	hilog_entra_id_enabled: boolean;
+	created_at?: string;
+	updated_at?: string;
 }
 
 export interface StoreAssetInventoryRequest {
-  organization_id: string;
-  users_count?: number;
-  locations_count?: number;
-  endpoints_count?: number;
-  servers_count?: number;
-  hypervisors_count?: number;
-  virtual_machines_count?: number;
-  firewalls_count?: number;
-  core_switches_count?: number;
-  access_switches_count?: number;
-  access_points_count?: number;
-  miscellaneous_network_devices_count?: number;
-  total_network_devices_count?: number;
-  va_ip_punctual_count?: number;
-  va_subnet_25_count?: number;
-  va_subnet_24_count?: number;
-  va_subnet_23_count?: number;
-  va_subnet_22_count?: number;
-  va_subnet_21_count?: number;
-  va_total_ips_count?: number;
-  notes?: string;
-  hilog_syslog_count?: number;
-  hilog_iis_count?: number;
-  hilog_apache_count?: number;
-  hilog_sql_count?: number;
-  hilog_custom_path_count?: number;
-  hilog_endpoint_count?: number;
-  hilog_server_count?: number;
-  hilog_dlp_linux_count?: number;
-  hilog_dlp_windows_count?: number;
-  hilog_sharepoint_dlp_enabled?: boolean;
-  hilog_sharepoint_dlp_count?: number;
-  hilog_entra_id_enabled?: boolean;
+	organization_id: string;
+	users_count?: number;
+	locations_count?: number;
+	endpoints_count?: number;
+	servers_count?: number;
+	hypervisors_count?: number;
+	virtual_machines_count?: number;
+	firewalls_count?: number;
+	core_switches_count?: number;
+	access_switches_count?: number;
+	access_points_count?: number;
+	miscellaneous_network_devices_count?: number;
+	total_network_devices_count?: number;
+	va_ip_punctual_count?: number;
+	va_subnet_25_count?: number;
+	va_subnet_24_count?: number;
+	va_subnet_23_count?: number;
+	va_subnet_22_count?: number;
+	va_subnet_21_count?: number;
+	va_total_ips_count?: number;
+	notes?: string;
+	hilog_syslog_count?: number;
+	hilog_iis_count?: number;
+	hilog_apache_count?: number;
+	hilog_sql_count?: number;
+	hilog_custom_path_count?: number;
+	hilog_endpoint_count?: number;
+	hilog_server_count?: number;
+	hilog_dlp_linux_count?: number;
+	hilog_dlp_windows_count?: number;
+	hilog_sharepoint_dlp_enabled?: boolean;
+	hilog_sharepoint_dlp_count?: number;
+	hilog_entra_id_enabled?: boolean;
 }
 
-export interface UpdateAssetInventoryRequest extends Partial<StoreAssetInventoryRequest> {}
+export type UpdateAssetInventoryRequest = Partial<StoreAssetInventoryRequest>;
 
 // ─── Integrations ───────────────────────────────────────────────────────────
 
 export interface IntegrationResource {
-  id: string;
-  organization_id: string;
-  service_id: string;
-  service_code: string;
-  service_name: string;
-  api_url: string;
-  is_active: boolean;
-  api_methods?: Record<string, unknown>;
-  created_at?: string;
-  updated_at?: string;
+	id: string;
+	organization_id: string;
+	service_id: string;
+	service_code: string;
+	service_name: string;
+	api_url: string;
+	is_active: boolean;
+	api_methods?: Record<string, unknown>;
+	created_at?: string;
+	updated_at?: string;
 }
 
 export interface ServiceCatalogItem {
-  id: string;
-  code: string;
-  name: string;
-  description?: string;
-  icon?: string;
-  is_active?: boolean;
+	id: string;
+	code: string;
+	name: string;
+	description?: string;
+	icon?: string;
+	is_active?: boolean;
 }
 
 export interface RoleModulePermission {
-  id: string;
-  role: string;
-  module_path: string;
-  module_name: string;
-  is_enabled: boolean;
+	id: string;
+	role: string;
+	module_path: string;
+	module_name: string;
+	is_enabled: boolean;
 }
 
 export interface StoreIntegrationRequest {
-  organization_id: string;
-  service_id: string;
-  api_url: string;
-  api_key?: string;
-  api_methods?: Record<string, unknown>;
+	organization_id: string;
+	service_id: string;
+	api_url: string;
+	api_key?: string;
+	api_methods?: Record<string, unknown>;
 }
 
 export interface UpdateIntegrationRequest {
-  api_url?: string;
-  api_key?: string;
-  is_active?: boolean;
-  api_methods?: Record<string, unknown>;
+	api_url?: string;
+	api_key?: string;
+	is_active?: boolean;
+	api_methods?: Record<string, unknown>;
 }
 
 // ─── Assessment v2 ───────────────────────────────────────────────────────────
 
 export interface AssessmentCategory {
-  id: string;
-  name: string;
-  code: string;
-  description: string | null;
-  order_index: number;
-  questions: AssessmentQuestion[];
+	id: string;
+	name: string;
+	code: string;
+	description: string | null;
+	order_index: number;
+	questions: AssessmentQuestion[];
 }
 
 export interface AssessmentQuestion {
-  id: string;
-  category_id: string;
-  question_text: string;
-  order_index: number;
-  dependency?: string | null;
+	id: string;
+	category_id: string;
+	question_text: string;
+	order_index: number;
+	dependency?: string | null;
 }
 
 export interface AssessmentResponseItem {
-  id: string;
-  question_id: string;
-  status: 'not_applicable' | 'planned_in_progress' | 'completed';
-  notes: string | null;
-  score: number;
-  updated_at: string;
-  question?: AssessmentQuestion;
+	id: string;
+	question_id: string;
+	status: "not_applicable" | "planned_in_progress" | "completed";
+	notes: string | null;
+	score: number;
+	updated_at: string;
+	question?: AssessmentQuestion;
 }
 
 export interface BatchAssessmentResponseRequest {
-  responses: {
-    question_id: string;
-    status: 'not_applicable' | 'planned_in_progress' | 'completed';
-    notes?: string | null;
-  }[];
+	responses: {
+		question_id: string;
+		status: "not_applicable" | "planned_in_progress" | "completed";
+		notes?: string | null;
+	}[];
 }
 
 export interface CategoryScore {
-  name: string;
-  score: number;
-  answered: number;
-  total: number;
+	name: string;
+	score: number;
+	answered: number;
+	total: number;
 }
 
 export interface AssessmentSnapshot {
-  id: string;
-  snapshot_year: number;
-  overall_score: number;
-  total_answered: number;
-  total_questions: number;
-  category_scores: Record<string, CategoryScore>;
-  openai_data?: unknown | null;
-  shodan_data?: unknown | null;
-  intelx_data?: unknown | null;
-  created_at: string;
+	id: string;
+	snapshot_year: number;
+	overall_score: number;
+	total_answered: number;
+	total_questions: number;
+	category_scores: Record<string, CategoryScore>;
+	openai_data?: unknown | null;
+	shodan_data?: unknown | null;
+	intelx_data?: unknown | null;
+	created_at: string;
 }
 
-export type SnapshotJobStatus = 'pending' | 'running' | 'done' | 'failed';
+export type SnapshotJobStatus = "pending" | "running" | "done" | "failed";
 
 export interface AssessmentSnapshotStatus {
-  snapshot_id: string;
-  snapshot_year: number;
-  /** Snapshot-level status: 0 = IN_PROGRESS, 2 = HELP_NEEDED, 3 = SCANNING */
-  status?: number;
-  shodan: SnapshotJobStatus;
-  intelx: SnapshotJobStatus;
-  openai: SnapshotJobStatus;
-  updated_at: string;
+	snapshot_id: string;
+	snapshot_year: number;
+	/** Snapshot-level status: 0 = IN_PROGRESS, 2 = HELP_NEEDED, 3 = SCANNING */
+	status?: number;
+	shodan: SnapshotJobStatus;
+	intelx: SnapshotJobStatus;
+	openai: SnapshotJobStatus;
+	updated_at: string;
 }
 
 export interface OpenAiTextBlock {
-  type: 'text';
-  text: { value: string; annotations: unknown[] };
+	type: "text";
+	text: { value: string; annotations: unknown[] };
 }
 
 export interface UpdateSnapshotAiTextRequest {
-  openai_data: OpenAiTextBlock[];
+	openai_data: OpenAiTextBlock[];
 }
 
 // ─── Snapshot status / reprocess ───────────────────────────────────────────
 
 export interface UpdateSnapshotStatusRequest {
-  status: number;
+	status: number;
 }
 
-export type ReprocessTarget = 'shodan' | 'intelx' | 'openai' | 'all';
+export type ReprocessTarget = "shodan" | "intelx" | "openai" | "all";
 
 export interface ReprocessSnapshotRequest {
-  target: ReprocessTarget;
+	target: ReprocessTarget;
 }
 
 export interface RemediationTemplate {
-  id: string;
-  title: string;
-  description?: string;
-  category?: string;
-  priority?: string;
+	id: string;
+	title: string;
+	description?: string;
+	category?: string;
+	priority?: string;
 }
 
 // ─── Asset Inventory v2 (company-scoped) ────────────────────────────────────
 
 export interface AssetInventoryV2Payload {
-  workstations?: number;
-  servers_physical?: number;
-  servers_virtual?: number;
-  nas_san?: number;
-  routers?: number;
-  switches?: number;
-  firewalls?: number;
-  wap?: number;
-  printers?: number;
-  voip_phones?: number;
-  iot_devices?: number;
-  mobile_devices?: number;
-  cloud_services?: number;
-  saas_apps?: number;
-  databases?: number;
-  web_apps?: number;
-  email_accounts?: number;
-  domain_accounts?: number;
-  local_accounts?: number;
-  service_accounts?: number;
-  privileged_accounts?: number;
-  external_contractors?: number;
-  backup_solutions_count?: number;
-  dr_sites?: number;
-  data_centers_owned?: number;
-  data_centers_cloud?: number;
-  internet_connections?: number;
-  vpn_tunnels?: number;
-  critical_servers?: number;
-  public_ips?: number;
-  domains_owned?: number;
-  ssl_certificates?: number;
-  security_cameras?: number;
-  access_control_systems?: number;
-  hilog_sharepoint_dlp_enabled?: boolean;
-  hilog_entra_id_enabled?: boolean;
-  notes?: string;
+	workstations?: number;
+	servers_physical?: number;
+	servers_virtual?: number;
+	nas_san?: number;
+	routers?: number;
+	switches?: number;
+	firewalls?: number;
+	wap?: number;
+	printers?: number;
+	voip_phones?: number;
+	iot_devices?: number;
+	mobile_devices?: number;
+	cloud_services?: number;
+	saas_apps?: number;
+	databases?: number;
+	web_apps?: number;
+	email_accounts?: number;
+	domain_accounts?: number;
+	local_accounts?: number;
+	service_accounts?: number;
+	privileged_accounts?: number;
+	external_contractors?: number;
+	backup_solutions_count?: number;
+	dr_sites?: number;
+	data_centers_owned?: number;
+	data_centers_cloud?: number;
+	internet_connections?: number;
+	vpn_tunnels?: number;
+	critical_servers?: number;
+	public_ips?: number;
+	domains_owned?: number;
+	ssl_certificates?: number;
+	security_cameras?: number;
+	access_control_systems?: number;
+	hilog_sharepoint_dlp_enabled?: boolean;
+	hilog_entra_id_enabled?: boolean;
+	notes?: string;
 }
 
 export interface AssetInventoryV2Resource extends AssetInventoryV2Payload {
-  id?: string;
-  company_id?: string;
-  created_at?: string;
-  updated_at?: string;
+	id?: string;
+	company_id?: string;
+	created_at?: string;
+	updated_at?: string;
 }
 
 // ─── Remediation Tasks ──────────────────────────────────────────────────────
 
 export interface RemediationTask {
-  id: string;
-  task: string;
-  category?: string | null;
-  priority?: 'low' | 'medium' | 'high' | 'critical' | null;
-  color?: string | null;
-  start_date?: string | null;
-  end_date?: string | null;
-  progress?: number;
-  assignee?: string | null;
-  budget?: string | null;
-  dependencies?: string[];
-  display_order?: number;
-  is_deleted?: boolean;
-  is_hidden?: boolean;
-  created_at?: string;
-  updated_at?: string;
+	id: string;
+	task: string;
+	category?: string | null;
+	priority?: "low" | "medium" | "high" | "critical" | null;
+	color?: string | null;
+	start_date?: string | null;
+	end_date?: string | null;
+	progress?: number;
+	assignee?: string | null;
+	budget?: string | null;
+	dependencies?: string[];
+	display_order?: number;
+	is_deleted?: boolean;
+	is_hidden?: boolean;
+	created_at?: string;
+	updated_at?: string;
 }
 
 export interface StoreRemediationTaskRequest {
-  task: string;
-  category?: string | null;
-  priority?: 'low' | 'medium' | 'high' | 'critical' | null;
-  color?: string | null;
-  start_date?: string | null;
-  end_date?: string | null;
-  progress?: number;
-  assignee?: string | null;
-  budget?: string | null;
-  dependencies?: string[];
-  display_order?: number;
+	task: string;
+	category?: string | null;
+	priority?: "low" | "medium" | "high" | "critical" | null;
+	color?: string | null;
+	start_date?: string | null;
+	end_date?: string | null;
+	progress?: number;
+	assignee?: string | null;
+	budget?: string | null;
+	dependencies?: string[];
+	display_order?: number;
 }
 
-export interface UpdateRemediationTaskRequest extends Partial<StoreRemediationTaskRequest> {
-  is_deleted?: boolean;
-  is_hidden?: boolean;
+export interface UpdateRemediationTaskRequest
+	extends Partial<StoreRemediationTaskRequest> {
+	is_deleted?: boolean;
+	is_hidden?: boolean;
 }
 
 // ─── Risk Analysis ──────────────────────────────────────────────────────────
 
 export interface RiskAnalysisItem {
-  id: string;
-  asset_name: string;
-  threat_source?: 'non_umana' | 'umana_esterna' | 'umana_interna' | null;
-  control_scores?: Record<string, unknown> | null;
-  risk_score?: number;
-  notes?: string | null;
-  created_at?: string;
-  updated_at?: string;
+	id: string;
+	asset_name: string;
+	threat_source?: "non_umana" | "umana_esterna" | "umana_interna" | null;
+	control_scores?: Record<string, unknown> | null;
+	risk_score?: number;
+	notes?: string | null;
+	created_at?: string;
+	updated_at?: string;
 }
 
 export interface StoreRiskAnalysisRequest {
-  asset_name: string;
-  threat_source?: 'non_umana' | 'umana_esterna' | 'umana_interna' | null;
-  control_scores?: Record<string, unknown> | null;
-  risk_score?: number;
-  notes?: string | null;
+	asset_name: string;
+	threat_source?: "non_umana" | "umana_esterna" | "umana_interna" | null;
+	control_scores?: Record<string, unknown> | null;
+	risk_score?: number;
+	notes?: string | null;
 }
 
-export interface UpdateRiskAnalysisRequest extends Partial<StoreRiskAnalysisRequest> {}
+export type UpdateRiskAnalysisRequest = Partial<StoreRiskAnalysisRequest>;
 
 // ─── Playbook Completions ───────────────────────────────────────────────────
 
 export interface PlaybookCompletion {
-  id: string;
-  playbook_id: string;
-  playbook_title?: string | null;
-  playbook_category?: string | null;
-  playbook_severity?: string | null;
-  progress_percentage?: number;
-  data?: Record<string, unknown> | null;
-  started_at?: string | null;
-  completed_at?: string | null;
-  created_at?: string;
-  updated_at?: string;
+	id: string;
+	playbook_id: string;
+	playbook_title?: string | null;
+	playbook_category?: string | null;
+	playbook_severity?: string | null;
+	progress_percentage?: number;
+	data?: Record<string, unknown> | null;
+	started_at?: string | null;
+	completed_at?: string | null;
+	created_at?: string;
+	updated_at?: string;
 }
 
 export interface StorePlaybookCompletionRequest {
-  playbook_id: string;
-  playbook_title?: string | null;
-  playbook_category?: string | null;
-  playbook_severity?: string | null;
-  progress_percentage?: number;
-  data?: Record<string, unknown> | null;
-  started_at?: string | null;
-  completed_at?: string | null;
+	playbook_id: string;
+	playbook_title?: string | null;
+	playbook_category?: string | null;
+	playbook_severity?: string | null;
+	progress_percentage?: number;
+	data?: Record<string, unknown> | null;
+	started_at?: string | null;
+	completed_at?: string | null;
 }
 
-export interface UpdatePlaybookCompletionRequest extends Partial<StorePlaybookCompletionRequest> {
-  progress_percentage?: number;
-  completed_at?: string | null;
+export interface UpdatePlaybookCompletionRequest
+	extends Partial<StorePlaybookCompletionRequest> {
+	progress_percentage?: number;
+	completed_at?: string | null;
 }
 
 // ─── Dark Risk Alerts ───────────────────────────────────────────────────────
 
 export interface DarkRiskAlert {
-  id: string;
-  company_id?: string | null;
-  alert_email: string;
-  alert_types?: string[];
-  is_active?: boolean;
-  created_at?: string;
-  updated_at?: string;
+	id: string;
+	company_id?: string | null;
+	alert_email: string;
+	alert_types?: string[];
+	is_active?: boolean;
+	created_at?: string;
+	updated_at?: string;
 }
 
 export interface StoreDarkRiskAlertRequest {
-  alert_email: string;
-  alert_types?: string[];
-  is_active?: boolean;
-  company_id?: string | null;
+	alert_email: string;
+	alert_types?: string[];
+	is_active?: boolean;
+	company_id?: string | null;
 }
 
 export interface UpdateDarkRiskAlertRequest {
-  alert_email?: string;
-  alert_types?: string[];
-  is_active?: boolean;
+	alert_email?: string;
+	alert_types?: string[];
+	is_active?: boolean;
 }
 
 // ─── Documents ──────────────────────────────────────────────────────────────
 
 export interface DocumentResource {
-  id: string;
-  tenant_id: string;
-  group_id: string;
-  name: string;
-  file_size: number | null;
-  file_type: string | null;
-  category: string;
-  document_code: string | null;
-  revision: number;
-  revision_date: string | null;
-  status: string;
-  description: string | null;
-  tags: string[] | null;
-  confidentiality: string;
-  uploaded_by: string | null;
-  created_at: string;
-  updated_at: string;
+	id: string;
+	tenant_id: string;
+	group_id: string;
+	name: string;
+	file_size: number | null;
+	file_type: string | null;
+	category: string;
+	document_code: string | null;
+	revision: number;
+	revision_date: string | null;
+	status: string;
+	description: string | null;
+	tags: string[] | null;
+	confidentiality: string;
+	uploaded_by: string | null;
+	created_at: string;
+	updated_at: string;
 }
 
 export interface StoreDocumentRequest {
-  name: string;
-  category?: string;
-  document_code?: string | null;
-  status?: string;
-  confidentiality?: string;
-  description?: string | null;
-  tags?: string[] | null;
+	name: string;
+	category?: string;
+	document_code?: string | null;
+	status?: string;
+	confidentiality?: string;
+	description?: string | null;
+	tags?: string[] | null;
 }
 
 export interface UpdateDocumentRequest {
-  name?: string;
-  category?: string;
-  document_code?: string | null;
-  revision?: number;
-  status?: string;
-  confidentiality?: string;
-  description?: string | null;
-  tags?: string[] | null;
+	name?: string;
+	category?: string;
+	document_code?: string | null;
+	revision?: number;
+	status?: string;
+	confidentiality?: string;
+	description?: string | null;
+	tags?: string[] | null;
 }
 
 // ─── IRP Contacts ───────────────────────────────────────────────────────────
 
 export interface IrpContactResource {
-  id: string;
-  tenant_id: string;
-  group_id: string;
-  first_name: string;
-  last_name: string;
-  role?: string;
-  job_title?: string | null;
-  irp_role?: string | null;
-  phone: string;
-  email: string;
-  category: string;
-  responsibilities?: string | null;
-  notes?: string | null;
-  directory_contact_id?: string | null;
-  /** Present when backend returns ContactDirectory rows (real platform fields) */
-  user_id?: string | null;
-  is_platform_user?: boolean;
-  account_disabled?: boolean;
-  module_permissions?: unknown[] | null;
-  created_at: string;
-  updated_at: string;
+	id: string;
+	tenant_id: string;
+	group_id: string;
+	first_name: string;
+	last_name: string;
+	role?: string;
+	job_title?: string | null;
+	irp_role?: string | null;
+	phone: string;
+	email: string;
+	category: string;
+	responsibilities?: string | null;
+	notes?: string | null;
+	directory_contact_id?: string | null;
+	/** Present when backend returns ContactDirectory rows (real platform fields) */
+	user_id?: string | null;
+	is_platform_user?: boolean;
+	account_disabled?: boolean;
+	module_permissions?: unknown[] | null;
+	created_at: string;
+	updated_at: string;
 }
 
 export interface StoreIrpContactRequest {
-  first_name: string;
-  last_name: string;
-  role?: string;
-  job_title?: string | null;
-  irp_role?: string | null;
-  phone: string;
-  email: string;
-  category?: string;
-  responsibilities?: string | null;
-  notes?: string | null;
-  directory_contact_id?: string | null;
-  is_platform_user?: boolean;
-  account_disabled?: boolean;
+	first_name: string;
+	last_name: string;
+	role?: string;
+	job_title?: string | null;
+	irp_role?: string | null;
+	phone: string;
+	email: string;
+	category?: string;
+	responsibilities?: string | null;
+	notes?: string | null;
+	directory_contact_id?: string | null;
+	is_platform_user?: boolean;
+	account_disabled?: boolean;
 }
 
 // ─── IRP Emergency Contacts ─────────────────────────────────────────────────
 
 export interface IrpEmergencyContactResource {
-  id: string;
-  tenant_id: string;
-  group_id: string;
-  name: string;
-  role?: string | null;
-  job_title?: string | null;
-  irp_role?: string | null;
-  phone: string;
-  email: string;
-  category?: string;
-  responsibilities?: string | null;
-  directory_contact_id?: string | null;
-  created_at: string;
-  updated_at: string;
+	id: string;
+	tenant_id: string;
+	group_id: string;
+	name: string;
+	role?: string | null;
+	job_title?: string | null;
+	irp_role?: string | null;
+	phone: string;
+	email: string;
+	category?: string;
+	responsibilities?: string | null;
+	directory_contact_id?: string | null;
+	created_at: string;
+	updated_at: string;
 }
 
 export interface StoreIrpEmergencyContactRequest {
-  name: string;
-  role?: string | null;
-  job_title?: string | null;
-  irp_role?: string | null;
-  phone: string;
-  email: string;
-  category?: string;
-  responsibilities?: string | null;
-  directory_contact_id?: string | null;
+	name: string;
+	role?: string | null;
+	job_title?: string | null;
+	irp_role?: string | null;
+	phone: string;
+	email: string;
+	category?: string;
+	responsibilities?: string | null;
+	directory_contact_id?: string | null;
 }
 
 // ─── Consistenze ───────────────────────────────────────────────────────────
 
 export interface ConsistenzeItem {
-  id: string;
-  tenant_id: string;
-  group_id: string;
-  area: string;
-  categoria: string;
-  tecnologia: string;
-  fornitore: string;
-  quantita: number;
-  scadenza?: string | null;
-  metriche_json: Record<string, unknown>;
-  created_at?: string | null;
-  updated_at?: string | null;
+	id: string;
+	tenant_id: string;
+	group_id: string;
+	area: string;
+	categoria: string;
+	tecnologia: string;
+	fornitore: string;
+	quantita: number;
+	scadenza?: string | null;
+	metriche_json: Record<string, unknown>;
+	created_at?: string | null;
+	updated_at?: string | null;
 }
 
 export interface ConsistenzeSummary {
-  id: string;
-  tenant_id: string;
-  group_id: string;
-  nr_sedi: number;
-  nr_interni_telefonici: number;
-  descrizione_telefoni: string;
-  nr_canali_fonia: number;
-  note_generali: string;
-  created_at?: string | null;
-  updated_at?: string | null;
+	id: string;
+	tenant_id: string;
+	group_id: string;
+	nr_sedi: number;
+	nr_interni_telefonici: number;
+	descrizione_telefoni: string;
+	nr_canali_fonia: number;
+	note_generali: string;
+	created_at?: string | null;
+	updated_at?: string | null;
 }
 
 // ─── Critical Infrastructure ────────────────────────────────────────────────
 
 export interface CriticalInfrastructureAsset {
-  id: string;
-  tenant_id: string;
-  group_id: string;
-  asset_id: string;
-  component_name: string;
-  criticality: 'H' | 'M' | 'L' | null;
-  owner_team: string;
-  management_type: 'internal' | 'external' | null;
-  location: string;
-  sensitive_data: 'S' | 'N' | 'N/A' | null;
-  dependencies: string;
-  main_controls: string;
-  has_backup: 'S' | 'N' | null;
-  backup_frequency: string;
-  last_test_date: string | null;
-  rpo_hours: number | null;
-  rto_hours: number | null;
-  runbook_link: string;
-  ir_notes: string;
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
+	id: string;
+	tenant_id: string;
+	group_id: string;
+	asset_id: string;
+	component_name: string;
+	criticality: "H" | "M" | "L" | null;
+	owner_team: string;
+	management_type: "internal" | "external" | null;
+	location: string;
+	sensitive_data: "S" | "N" | "N/A" | null;
+	dependencies: string;
+	main_controls: string;
+	has_backup: "S" | "N" | null;
+	backup_frequency: string;
+	last_test_date: string | null;
+	rpo_hours: number | null;
+	rto_hours: number | null;
+	runbook_link: string;
+	ir_notes: string;
+	created_by: string | null;
+	created_at: string;
+	updated_at: string;
 }
 
-export type CriticalInfrastructureUpdate = Partial<Omit<CriticalInfrastructureAsset, 'id' | 'group_id' | 'created_at'>>;
+export type CriticalInfrastructureUpdate = Partial<
+	Omit<CriticalInfrastructureAsset, "id" | "group_id" | "created_at">
+>;
 
 // ─── Asset IRP ─────────────────────────────────────────────────────────────
 
 export interface AssetIrpItem {
-  id: string;
-  tenant_id: string;
-  group_id: string;
-  consistenza_item_id: string | null;
-  area: string | null;
-  categoria: string | null;
-  tecnologia: string | null;
-  fornitore: string | null;
-  quantita: number | null;
-  esposizione_score: number | null;
-  criticita_score: number | null;
-  superficie_score: number | null;
-  rischio_intrinseco: string | null;
-  rischio_residuo: string | null;
-  last_sync_from_consistenze: string | null;
-  created_at: string;
-  updated_at: string;
+	id: string;
+	tenant_id: string;
+	group_id: string;
+	consistenza_item_id: string | null;
+	area: string | null;
+	categoria: string | null;
+	tecnologia: string | null;
+	fornitore: string | null;
+	quantita: number | null;
+	esposizione_score: number | null;
+	criticita_score: number | null;
+	superficie_score: number | null;
+	rischio_intrinseco: string | null;
+	rischio_residuo: string | null;
+	last_sync_from_consistenze: string | null;
+	created_at: string;
+	updated_at: string;
 }
 
 // ─── User Preferences ──────────────────────────────────────────────────────
 
 export interface UserPreferenceValue {
-  key: string;
-  value: unknown;
+	key: string;
+	value: unknown;
 }
 
 // ─── Service Catalog (Tenant Services v2) ──────────────────────────────────
 
 export interface ServiceCatalogField {
-  label: string;
-  type: 'select' | 'checkbox' | 'text';
-  options?: string[];
-  required?: boolean;
-  is_secret?: boolean;
+	label: string;
+	type: "select" | "checkbox" | "text";
+	options?: string[];
+	required?: boolean;
+	is_secret?: boolean;
 }
 
 export interface ServiceCatalogEntry {
-  label: string;
-  fields: Record<string, ServiceCatalogField>;
+	label: string;
+	fields: Record<string, ServiceCatalogField>;
 }
 
 export type ServiceCatalog = Record<string, ServiceCatalogEntry>;

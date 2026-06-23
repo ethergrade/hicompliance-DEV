@@ -31,7 +31,7 @@ const hasHiComplianceBrand = (report: SurfaceScan360Report): boolean => {
 };
 
 const getBrandTitle = (report: SurfaceScan360Report): string => {
-  const explicit = String((report?.organization as any)?.report_brand_title || '').trim();
+  const explicit = String((report?.organization as unknown)?.report_brand_title || '').trim();
   if (explicit) return explicit;
   return hasHiComplianceBrand(report) ? SURFACESCAN_BRAND_TITLE_HICOMPLIANCE : SURFACESCAN_BRAND_TITLE_HICONSOLE;
 };
@@ -66,9 +66,9 @@ const collectScopeValues = (report: SurfaceScan360Report): string[] => {
   const scanTargets = Array.isArray(scan.scope_targets) ? scan.scope_targets : [];
 
   const values = [
-    ...assets.map((asset: any) => asset?.asset_value || asset?.hostname || asset?.ip || asset?.affected_asset),
-    ...monitored.map((entry: any) => entry?.input_value || entry?.asset_value || entry?.hostname || entry?.ip),
-    ...scanTargets.map((entry: any) => (typeof entry === 'string' ? entry : entry?.target || entry?.value || entry?.asset_value)),
+    ...assets.map((asset: unknown) => asset?.asset_value || asset?.hostname || asset?.ip || asset?.affected_asset),
+    ...monitored.map((entry: unknown) => entry?.input_value || entry?.asset_value || entry?.hostname || entry?.ip),
+    ...scanTargets.map((entry: unknown) => (typeof entry === 'string' ? entry : entry?.target || entry?.value || entry?.asset_value)),
   ];
 
   const target = String(scan.target || '').trim();
@@ -76,7 +76,7 @@ const collectScopeValues = (report: SurfaceScan360Report): string[] => {
   return uniq(values.map((value) => String(value || '').replace(/^https?:\/\//i, '').replace(/\/$/, '')));
 };
 
-const heading = (label: string, level: HeadingLevel = HeadingLevel.HEADING_2) =>
+const heading = (label: string, level: (typeof HeadingLevel)[keyof typeof HeadingLevel] = HeadingLevel.HEADING_2) =>
   new Paragraph({
     heading: level,
     spacing: { before: 260, after: 120 },
@@ -224,14 +224,14 @@ export async function generateSurfaceScan360Docx(report: SurfaceScan360Report): 
     ['Completata', asText(scan.completed_at ? new Date(scan.completed_at).toLocaleString('it-IT') : '-')],
   ];
 
-  const findingsRows = findings.slice(0, 120).map((finding: any) => [
+  const findingsRows = findings.slice(0, 120).map((finding: unknown) => [
     asText(String(finding.severity || '').toUpperCase(), 'INFO'),
     asText(finding.title),
     asText(finding.affected_asset || finding.affected_url || finding.ip),
     asText(finding.remediation),
   ]);
 
-  const cveRows = cveCatalog.slice(0, 120).map((entry: any) => [
+  const cveRows = cveCatalog.slice(0, 120).map((entry: unknown) => [
     asText(entry.cve_id),
     asText(entry.cvss ?? '-'),
     entry.cisa_kev ? 'SI' : 'NO',
@@ -239,7 +239,7 @@ export async function generateSurfaceScan360Docx(report: SurfaceScan360Report): 
     asText(entry.description, 'Descrizione non disponibile'),
   ]);
 
-  const recommendationRows = recommendations.slice(0, 30).map((entry: any) => [
+  const recommendationRows = recommendations.slice(0, 30).map((entry: unknown) => [
     `#${asText(entry.priority)}`,
     asText(entry.title),
     asText(entry.severity, 'medium'),
