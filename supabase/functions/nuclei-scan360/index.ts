@@ -2856,6 +2856,13 @@ serve(async (req: Request) => {
         traceLog(ctx, "internal_action_forbidden", { phase: "auth", http_status: 403 });
         return tracedJsonResponse(ctx, { ok: false, error: "Internal calls can only process queue, run smoke tests, or read LAB data", phase: "auth" }, 403);
       }
+      // Internal/service-role callers may carry an explicit created_by (e.g. start_lab_scan enqueues
+      // rows whose created_by must satisfy the FK to a real user). Honour it when it is a valid UUID.
+      const internalCreatedBy = String((body as { created_by?: string }).created_by || "").trim();
+      if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(internalCreatedBy)) {
+        authUserId = internalCreatedBy;
+        callerEmail = String((body as { created_by_email?: string }).created_by_email || "scan360-internal");
+      }
     } else {
       const { data: authData, error: authError } = await userClient.auth.getUser();
       if (authError || !authData.user) {
