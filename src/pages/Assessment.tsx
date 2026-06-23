@@ -36,6 +36,8 @@ import { useServiceIntegrations } from '@/hooks/useServiceIntegrations';
 import { NIS2_LABELS } from '@/types/organization';
 import { useUserPreferences } from '@/hooks/useUserPreferences';
 import { assessmentV2Api, assessmentApi } from '@/lib/api';
+import { useDashboardMetrics } from '@/hooks/useDashboardMetrics';
+import { useAssessmentTrends } from '@/hooks/useAssessmentTrends';
 import { loadV2AssessmentData, mapToV2Status, mapToUiStatus } from '@/lib/assessmentV2Mapper';
 import { calculateCategoryScore, getRiskFromScore, CATEGORY_DESCRIPTIONS, ASSESSMENT_CATEGORIES } from '@/data/assessmentQuestions';
 import type { AssessmentCategory as UICategory } from '@/data/assessmentQuestions';
@@ -211,6 +213,11 @@ const Assessment: React.FC = () => {
   const [latestSnapshot, setLatestSnapshot] = useState<AssessmentSnapshot | null>(null);
   const categoriesLoaded = useRef(false);
   const guidedOrgRef = useRef<string | null>(null);
+
+  // Resolve assessmentId for backend radar data (report-monthly), matching Dashboard
+  const tenantGroupId = selectedOrganization?.group_id ?? null;
+  const { assessmentId: dashboardAssessmentId } = useDashboardMetrics(orgId, tenantGroupId);
+  const { radarCategories: backendRadarCategories } = useAssessmentTrends(dashboardAssessmentId, tenantGroupId);
 
   // Load v2 categories + questions from API
   useEffect(() => {
@@ -666,6 +673,17 @@ const Assessment: React.FC = () => {
   }, [getCategoryCounts, responses]);
 
   const radarData = useMemo(() => {
+    // Prefer backend-calculated radar data (report-monthly) for consistency with Dashboard.
+    // Falls back to client-computed weighted scores when backend data is unavailable
+    // (e.g. no v1 assessment yet, or API still loading).
+    if (backendRadarCategories && backendRadarCategories.length > 0) {
+      return backendRadarCategories.map((rc) => ({
+        category: rc.name.length > 14 ? `${rc.name.substring(0, 12)}…` : rc.name,
+        fullName: rc.name,
+        compliance: rc.completion_percent,
+        target: 90,
+      }));
+    }
     return assessmentCategories.map((cat) => {
       const compliance = Number.isFinite(cat.score) ? cat.score : 0;
       const target = 90;
@@ -677,11 +695,11 @@ const Assessment: React.FC = () => {
         target,
       };
     });
-  }, [assessmentCategories]);
+  }, [backendRadarCategories, assessmentCategories]);
 
   const hasRadarResponses = useMemo(
-    () => assessmentCategories.some((cat) => cat.completed > 0),
-    [assessmentCategories]
+    () => assessmentCategories.some((cat) => cat.completed > 0) || (backendRadarCategories && backendRadarCategories.length > 0),
+    [assessmentCategories, backendRadarCategories]
   );
 
 
