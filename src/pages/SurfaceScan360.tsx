@@ -1238,7 +1238,7 @@ const SurfaceScan360: React.FC = () => {
 
         <SecurityFindings />
 
-        <SurfaceScanReportRepository scanJobs={scanJobs} />
+        <SurfaceScanReportRepository scanJobs={scanJobs} canManage={!clientReadOnly} />
 
         {!clientReadOnly && (
         <Card className="border-border">

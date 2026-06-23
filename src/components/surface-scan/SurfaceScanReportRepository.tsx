@@ -19,6 +19,7 @@ import { generateSurfaceScan360Docx } from '@/lib/surfaceScan360DocxReport';
 
 interface SurfaceScanReportRepositoryProps {
   scanJobs: SurfaceScanJob[];
+  canManage?: boolean;
 }
 
 const riskBadgeClass = (riskLevel?: string) => {
@@ -30,7 +31,7 @@ const riskBadgeClass = (riskLevel?: string) => {
   return 'bg-muted text-foreground';
 };
 
-export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryProps> = ({ scanJobs }) => {
+export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryProps> = ({ scanJobs, canManage = true }) => {
   const {
     reports,
     loading,
@@ -92,14 +93,18 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => refetch()} disabled={loading}>
-              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-              Aggiorna
-            </Button>
-            <Button onClick={() => generateReport()} disabled={generating}>
-              {generating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
-              Rigenera report canonico
-            </Button>
+            {canManage && (
+              <>
+                <Button variant="outline" onClick={() => refetch()} disabled={loading}>
+                  <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                  Aggiorna
+                </Button>
+                <Button onClick={() => generateReport()} disabled={generating}>
+                  {generating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
+                  Rigenera report canonico
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </CardHeader>
@@ -205,7 +210,7 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
                             <Download className="w-4 h-4 mr-2" />
                             DOCX
                           </Button>
-                          {row.scan_job_id && (
+                          {canManage && row.scan_job_id && (
                             <Button
                               size="sm"
                               variant="ghost"
@@ -220,6 +225,7 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
                               Rigenera
                             </Button>
                           )}
+                          {canManage && (
                           <Button
                             size="sm"
                             variant="ghost"
@@ -234,6 +240,7 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
                             )}
                             Elimina
                           </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
