@@ -462,30 +462,36 @@ const DarkRisk360: React.FC = () => {
 				undefined,
 				groupId,
 			);
-			// Wired: surface_findings via existing job-level endpoint
-			const latestSurfaceRes = latestOverviewScanId
-				? {
-						data: await surfaceScan360Api.getJobFindings(
-							organizationId,
-							latestOverviewScanId,
-							undefined,
-							groupId,
-						),
-						error: null as unknown,
-					}
-				: { data: [], error: null };
-			// Wired: surface_exposure_findings via existing job-level endpoint
-			const latestExposureRes = latestOverviewScanId
-				? {
-						data: await surfaceScan360Api.getExposureFindings(
-							organizationId,
-							latestOverviewScanId,
-							undefined,
-							groupId,
-						),
-						error: null as unknown,
-					}
-				: { data: [], error: null };
+			// Wired: surface_findings via existing job-level endpoint (best-effort)
+			let latestSurfaceData: unknown[] = [];
+			if (latestOverviewScanId) {
+				try {
+					latestSurfaceData = await surfaceScan360Api.getJobFindings(
+						organizationId,
+						latestOverviewScanId,
+						undefined,
+						groupId,
+					);
+				} catch {
+					latestSurfaceData = [];
+				}
+			}
+			const latestSurfaceRes = { data: latestSurfaceData, error: null as unknown };
+			// Wired: surface_exposure_findings via existing job-level endpoint (best-effort)
+			let latestExposureData: unknown[] = [];
+			if (latestOverviewScanId) {
+				try {
+					latestExposureData = await surfaceScan360Api.getExposureFindings(
+						organizationId,
+						latestOverviewScanId,
+						undefined,
+						groupId,
+					);
+				} catch {
+					latestExposureData = [];
+				}
+			}
+			const latestExposureRes = { data: latestExposureData, error: null as unknown };
 
 			const findings = (findingsData || []) as Array<Record<string, unknown>>;
 
