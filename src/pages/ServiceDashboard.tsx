@@ -20,6 +20,7 @@ import {
 
 const serviceNameMap: Record<string, string> = {
   'hipatch':     'HiPatch',
+  'hi_patch':    'HiPatch',
   'hifirewall':  'HiFirewall',
   'hiendpoint':  'HiEndpoint',
   'himail':      'HiMail',
@@ -36,6 +37,7 @@ const ServiceDashboard: React.FC = () => {
   const renderServiceContent = () => {
     switch (serviceCode) {
       case 'hipatch':
+      case 'hi_patch':
         return <HiPatchDashboard />;
       case 'hifirewall':
         return <HiFirewallDashboard />;
