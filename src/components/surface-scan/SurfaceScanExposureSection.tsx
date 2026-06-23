@@ -540,6 +540,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {isAdmin && (
             <Button
               variant="outline"
               size="sm"
@@ -549,6 +550,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
               <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Aggiorna
             </Button>
+            )}
             <Button
               variant="outline"
               size="sm"

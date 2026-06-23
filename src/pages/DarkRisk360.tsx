@@ -1504,10 +1504,12 @@ const DarkRisk360: React.FC = () => {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <AlertBellButton alertCount={activeAlertsCount} onClick={() => setAlertDialogOpen(true)} />
+            {!clientReadOnly && (
             <Button variant="outline" onClick={() => void refetch()} disabled={isLoading || isFetching}>
               <RefreshCw className={`w-4 h-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
               Aggiorna
             </Button>
+            )}
             {!clientReadOnly && (
               <Button className="bg-primary text-primary-foreground" disabled={syncingScan || isFetching} onClick={() => void handleSyncSurfaceScan()}>
                 <Eye className="w-4 h-4 mr-2" />
