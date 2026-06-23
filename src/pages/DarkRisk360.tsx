@@ -294,9 +294,7 @@ const DarkRisk360: React.FC = () => {
     enabled: Boolean(organizationId),
     queryFn: async () => {
       if (!organizationId) return [];
-      // TODO: migrate to backend API (select darkrisk_report_snapshots)
-      const { data, error: queryError } = { data: [], error: null } as any;
-      if (queryError) throw queryError;
+      const data = await darkRiskApi.listReportSnapshots(organizationId, undefined, groupId);
       return (data || []) as Array<Record<string, any>>;
     },
     staleTime: 60_000,
@@ -323,16 +321,14 @@ const DarkRisk360: React.FC = () => {
           ? String(overview.latest_scan.id)
           : '';
 
-      // TODO: migrate to backend API (select darkrisk_findings + surface_findings + surface_exposure_findings)
-      const findingsQueryRes = { data: [], error: null } as any;
+      // Wired: darkrisk_findings via dedicated backend endpoint
+      const findingsData = await darkRiskApi.listFindings(organizationId, undefined, groupId);
+      // Backend missing: surface_findings cross-module aggregation endpoint
       const latestSurfaceRes = { data: [], error: null } as any;
+      // Backend missing: surface_exposure_findings cross-module aggregation endpoint
       const latestExposureRes = { data: [], error: null } as any;
 
-      if (findingsQueryRes.error) throw findingsQueryRes.error;
-      if ((latestSurfaceRes as any).error) throw (latestSurfaceRes as any).error;
-      if ((latestExposureRes as any).error) throw (latestExposureRes as any).error;
-
-      const findings = (findingsQueryRes.data || []) as Array<Record<string, any>>;
+      const findings = (findingsData || []) as Array<Record<string, any>>;
 
       const latestSurfaceRows = ((latestSurfaceRes as any).data || [])
         .filter((row: Record<string, any>) => isActiveDarkRiskStatus(row.status))
@@ -426,12 +422,10 @@ const DarkRisk360: React.FC = () => {
 
       const assetsMap = new Map<string, { value: string; scope_status: string }>();
       if (assetIds.length > 0) {
-        // TODO: migrate to backend API (select darkrisk_assets)
-        const { data: assetsData, error: assetsError } = { data: [], error: null } as any;
+        // Wired: darkrisk_assets via dedicated backend endpoint
+        const assetsMapData = await darkRiskApi.listAssets(organizationId, undefined, groupId);
 
-        if (assetsError) throw assetsError;
-
-        for (const asset of (assetsData || []) as Array<Record<string, any>>) {
+        for (const asset of (assetsMapData || []) as Array<Record<string, any>>) {
           assetsMap.set(String(asset.id), {
             value: String(asset.normalized_value || asset.value || '-'),
             scope_status: String(asset.scope_status || 'approved'),
@@ -450,7 +444,7 @@ const DarkRisk360: React.FC = () => {
 
       const evidenceMap = new Map<string, Record<string, any>>();
       if (evidenceIds.length > 0) {
-        // TODO: migrate to backend API (select darkrisk_evidence)
+        // Backend missing: no dedicated evidence listing endpoint (evidence fetched per-finding via revealEvidence only)
         const { data: evidenceData, error: evidenceError } = { data: [], error: null } as any;
 
         if (evidenceError) throw evidenceError;
@@ -553,22 +547,19 @@ const DarkRisk360: React.FC = () => {
     queryFn: async (): Promise<DarkRiskAssetRow[]> => {
       if (!organizationId) return [];
 
-      // TODO: migrate to backend API (select darkrisk_assets + darkrisk_findings)
-      const assetsRes = { data: [], error: null } as any;
-      const findingsRes = { data: [], error: null } as any;
-
-      if (assetsRes.error) throw assetsRes.error;
-      if (findingsRes.error) throw findingsRes.error;
+      // Wired: darkrisk_assets + darkrisk_findings via dedicated backend endpoints
+      const assetsResData = await darkRiskApi.listAssets(organizationId, undefined, groupId);
+      const findingsResData = await darkRiskApi.listFindings(organizationId, undefined, groupId);
 
       const findingCountByAsset = new Map<string, number>();
-      for (const finding of ((findingsRes.data || []) as Array<Record<string, any>>)) {
+      for (const finding of ((findingsResData || []) as Array<Record<string, any>>)) {
         if (!isActiveDarkRiskStatus(finding.status)) continue;
         const assetId = String(finding.affected_asset_id || '').trim();
         if (!assetId) continue;
         findingCountByAsset.set(assetId, (findingCountByAsset.get(assetId) || 0) + 1);
       }
 
-      return ((assetsRes.data || []) as Array<Record<string, any>>).map((asset) => ({
+      return ((assetsResData || []) as Array<Record<string, any>>).map((asset) => ({
         id: String(asset.id),
         asset_type: String(asset.asset_type || 'unknown'),
         value: String(asset.normalized_value || asset.value || '-'),
@@ -591,9 +582,8 @@ const DarkRisk360: React.FC = () => {
     enabled: Boolean(organizationId),
     queryFn: async () => {
       if (!organizationId) return [];
-      // TODO: migrate to backend API (select darkrisk_selectors email)
-      const { data, error: queryError } = { data: [], error: null } as any;
-      if (queryError) throw queryError;
+      // Wired: darkrisk_selectors via dedicated backend endpoint (filtered by selector_type=email)
+      const data = await darkRiskApi.listSelectors(organizationId, { selector_type: 'email' }, groupId);
       return (data || []) as Array<Record<string, any>>;
     },
     staleTime: 60_000,
@@ -873,7 +863,8 @@ const DarkRisk360: React.FC = () => {
         },
       }));
 
-      // TODO: migrate to backend API (upsert darkrisk_selectors)
+      // Backend missing: no selector upsert endpoint (selectors are created server-side during scan)
+      // Selector rows are constructed client-side and passed via identity_emails in the scan-run payload
       const { error: selectorError } = { error: null } as any;
       if (selectorError) throw selectorError;
 
@@ -967,11 +958,6 @@ const DarkRisk360: React.FC = () => {
 
     if (!data?.ok || !data?.signed_url) {
       toast.error(`Impossibile aprire export ${format.toUpperCase()}: ${String((data as { error?: string })?.error || 'errore sconosciuto')}`);
-      return;
-    }
-
-    if (!data?.ok || !data?.signed_url) {
-      toast.error(String(data?.error || `Export ${format.toUpperCase()} non disponibile`));
       return;
     }
 

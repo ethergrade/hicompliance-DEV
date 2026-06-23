@@ -65,37 +65,38 @@ const emptyData: DarkRiskRoadmapStatus = {
   generated_at: '',
 };
 
-/** Derive roadmap status from the DarkRisk overview response. */
-const deriveRoadmapFromOverview = (overview: any, organizationId: string): DarkRiskRoadmapStatus => {
-  const raw = overview?.roadmap ?? overview?.metadata?.roadmap ?? overview;
+/** Map the dedicated roadmap-status endpoint response to DarkRiskRoadmapStatus. */
+const mapRoadmapStatusResponse = (data: any, organizationId: string): DarkRiskRoadmapStatus => {
+  if (!data) return emptyData;
+
   return {
     ...emptyData,
-    customer_id: String(raw?.customer_id || organizationId || '').trim(),
-    enabled: Boolean(raw?.enabled ?? true),
-    tier: (raw?.tier === 'extended' ? 'extended' : 'standard') as 'standard' | 'extended',
+    customer_id: String(data?.customer_id || organizationId || '').trim(),
+    enabled: Boolean(data?.enabled ?? true),
+    tier: (data?.tier === 'extended' ? 'extended' : 'standard') as 'standard' | 'extended',
     counters: {
       ...emptyData.counters,
-      ...(raw?.counters || {}),
-      scan_runs_total: Number(raw?.counters?.scan_runs_total) || 0,
-      completed_runs: Number(raw?.counters?.completed_runs) || 0,
-      assets: Number(raw?.counters?.assets) || 0,
-      selectors: Number(raw?.counters?.selectors) || 0,
-      source_records: Number(raw?.counters?.source_records) || 0,
-      findings: Number(raw?.counters?.findings) || 0,
-      recommendations: Number(raw?.counters?.recommendations) || 0,
-      alerts: Number(raw?.counters?.alerts) || 0,
-      reports: Number(raw?.counters?.reports) || 0,
-      audits: Number(raw?.counters?.audits) || 0,
+      ...(data?.counters || {}),
+      scan_runs_total: Number(data?.counters?.scan_runs_total) || 0,
+      completed_runs: Number(data?.counters?.completed_runs) || 0,
+      assets: Number(data?.counters?.assets) || 0,
+      selectors: Number(data?.counters?.selectors) || 0,
+      source_records: Number(data?.counters?.source_records) || 0,
+      findings: Number(data?.counters?.findings) || 0,
+      recommendations: Number(data?.counters?.recommendations) || 0,
+      alerts: Number(data?.counters?.alerts) || 0,
+      reports: Number(data?.counters?.reports) || 0,
+      audits: Number(data?.counters?.audits) || 0,
     },
     summary: {
-      progress_percent: Number(raw?.summary?.progress_percent) || 0,
-      completed: Number(raw?.summary?.completed) || 0,
-      in_progress: Number(raw?.summary?.in_progress) || 0,
-      planned: Number(raw?.summary?.planned) || 0,
-      blocked: Number(raw?.summary?.blocked) || 0,
+      progress_percent: Number(data?.summary?.progress_percent) || 0,
+      completed: Number(data?.summary?.completed) || 0,
+      in_progress: Number(data?.summary?.in_progress) || 0,
+      planned: Number(data?.summary?.planned) || 0,
+      blocked: Number(data?.summary?.blocked) || 0,
     },
-    phases: Array.isArray(raw?.phases) ? raw.phases : [],
-    generated_at: String(raw?.generated_at || ''),
+    phases: Array.isArray(data?.phases) ? data.phases : [],
+    generated_at: String(data?.generated_at || ''),
   };
 };
 
@@ -108,11 +109,11 @@ export const useDarkRiskRoadmapStatus = () => {
     queryFn: async (): Promise<DarkRiskRoadmapStatus> => {
       if (!organizationId) return emptyData;
 
-      const overview = await darkRiskApi.getOverview(organizationId, groupId);
+      const data = await darkRiskApi.getRoadmapStatus(organizationId, groupId);
 
-      if (!overview) return emptyData;
+      if (!data) return emptyData;
 
-      return deriveRoadmapFromOverview(overview, organizationId);
+      return mapRoadmapStatusResponse(data, organizationId);
     },
     staleTime: 90_000,
     refetchInterval: 120_000,

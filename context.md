@@ -1,185 +1,172 @@
-# Code Context: Customers (Clients) & Services Frontend
+# Baseline
 
-## Files Retrieved
+- Commit: `E0dade6` (fix: align assessment radar with backend monthly report)
+- Prior artifacts used: none (scout from scratch)
+- Graphify status: OK at current HEAD (5310 nodes, 10466 edges)
 
-### Route Definitions
-1. `src/App.tsx` (lines 1-80) - All route definitions
-   - `/admin/clients` → `ClientSelection` page (client/tenant management)
-   - `/dashboard/service/:serviceCode` → `ServiceDashboard` (per-service dashboards)
+## Delta (since baseline)
 
-### Pages
-2. `src/pages/ClientSelection.tsx` - "Gestione Clienti" page (customer/tenant list, CRUD, service linking)
-3. `src/pages/ServiceDashboard.tsx` - Routes to specific service dashboards by `serviceCode` param
+- No uncommitted changes. Read-only investigation.
 
-### Client/Customer Components
-4. `src/components/clients/ClientCrudDialog.tsx` - Create/Edit tenant dialog (uses **REST API**)
-5. `src/components/clients/ClientServicesDialog.tsx` - Link/unlink services to clients (uses **Supabase**)
-6. `src/components/clients/ClientAssetSheet.tsx` - Asset inventory sheet (uses **Supabase**)
-7. `src/components/clients/DeleteClientDialog.tsx` - Delete tenant confirmation (uses **REST API**)
+## State snapshot
 
-### Service Dashboard Components
-8. `src/components/service-dashboards/HiPatchDashboard.tsx`
-9. `src/components/service-dashboards/HiFirewallDashboard.tsx`
-10. `src/components/service-dashboards/HiEndpointDashboard.tsx`
-11. `src/components/service-dashboards/HiMailDashboard.tsx`
-12. `src/components/service-dashboards/HiLogDashboard.tsx` (+ `hilog/` subdirectory)
-13. `src/components/service-dashboards/HiTrackDashboard.tsx`
-14. `src/components/service-dashboards/HiDetectDashboard.tsx`
-15. `src/components/service-dashboards/HiMobileDashboard.tsx`
+### SurfaceScan360
 
-### Context & State
-16. `src/contexts/ClientContext.tsx` - Client/organization selection context (uses **REST API**)
-17. `src/hooks/useTenantServices.ts` - React Query hook for tenant services (uses **REST API**)
+| UI Section | Data Source | Endpoint | Controller |
+|---|---|---|---|
+| Jobs list (top panel) | `useSurfaceScanEngine` → `surfaceScan360Api.listJobs()` | `GET /companies/{id}/surface-scan360/jobs` | `SurfaceScanJobController::index` |
+| Module detail cards | `SurfaceScanModuleCards.fetchData()` — own useEffect | Multiple: `listJobs`, `listMonitoredIps`, `getJobFindings`, `getModuleResults`, `getObservations`, `getOpenPorts` | `SurfaceScanJobController`, `SurfaceScanMonitoredIpController`, `SurfaceScanModuleResultController`, `SurfaceObservationController`, `SurfaceOpenPortController` |
+| Exposure section | `SurfaceScanExposureSection` → `exposureApi` | `GET /companies/{id}/surface-scan360/jobs/{job}/exposure-findings`, etc. | `SurfaceExposureFindingController` |
+| Scope summary cards | Same fetchData as module cards, computes `latestScopeJobs` + `scoreSummary` | — | — |
+| Findings grid | `SecurityFindings` component | — | — |
 
-### API Client Setup
-18. `src/lib/api-client.ts` - Core HTTP client (custom fetch wrapper, Bearer auth)
-19. `src/lib/api/index.ts` - API module exports
-20. `src/lib/api/tenants.ts` - Tenant CRUD endpoints
-21. `src/lib/api/tenant-services.ts` - Service endpoints
-22. `src/lib/api/config.ts` - Config endpoints (roles, statuses)
-23. `src/lib/api/auth.ts` - Auth endpoints
-24. `src/lib/api/assessment.ts` - Assessment endpoints
+**Key file paths:**
 
-### Types
-25. `src/types/api.ts` - All API type definitions (TenantResource, TenantServiceResource, etc.)
+- `src/pages/SurfaceScan360.tsx:195` — main page component, orchestrates all sub-sections
+- `src/components/surface-scan/SurfaceScanJobsPanel.tsx:29` — jobs list panel (top)
+- `src/components/surface-scan/SurfaceScanModuleCards.tsx:516` — module detail cards with `fetchData` at line 548
+- `src/hooks/useSurfaceScanEngine.ts:60` — jobs list hook (refetchInterval: 15s)
+- `src/hooks/useSurfaceScan360.ts:5` — jobs CRUD hook
+- `src/lib/api/surface-scan360.ts:60` — API client
 
-### Supabase (still referenced)
-26. `src/integrations/supabase/client.ts` - Supabase JS client with hardcoded URL + anon key
+### DarkRisk360
 
----
+| UI Section | Data Source | Endpoint | Controller |
+|---|---|---|---|
+| KPI cards (grid) | `useDarkRiskOverview` → `darkRiskApi.getOverview()` | `GET /companies/{id}/darkrisk/overview` | `DarkriskOverviewController::show` |
+| Coverage matrix | `overview.coverage_controls` from same endpoint | same | same |
+| Threat groups | `overview.threat_groups` | same | same |
+| Recent alerts | `overview.recent_alerts` | same | same |
+| Findings tab | `useQuery` with `['darkrisk360-findings', ...]` — currently stubbed with `{ data: [], error: null }` | **TODO — not migrated to backend API** | N/A |
+| Assets tab | Same pattern — stubbed | **TODO — not migrated** | N/A |
+| Scan Runs panel | `useDarkRiskScanRuns` → `darkRiskApi.listScanRuns()` | `GET /companies/{id}/darkrisk/scan-runs` | `DarkriskScanRunController::index` |
+| Reports tab | `useQuery` with stubbed data | **TODO — not migrated** | N/A |
 
-## Key Code
+**Key file paths:**
 
-### API Base URL Configuration (`src/lib/api-client.ts`)
-```ts
-const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
-const API_BASE_URL = import.meta.env.DEV ? "/api" : configuredBaseUrl || "https://hiapi.websoupcloud.it";
-```
-- **Dev**: uses `/api` proxy
-- **Prod**: uses `VITE_API_BASE_URL` env var or defaults to `https://hiapi.websoupcloud.it`
-- **Auth**: Bearer token stored in localStorage under `VITE_AUTH_TOKEN_KEY`
-- **CSRF**: `/sanctum/csrf-cookie` endpoint for Laravel Sanctum
+- `src/pages/DarkRisk360.tsx:256` — main page component
+- `src/hooks/useDarkRiskOverview.ts:215` — overview hook (refetchInterval: 90s)
+- `src/hooks/useDarkRiskScanRuns.ts:5` — scan runs hook
+- `src/lib/api/darkrisk.ts:27` — API client
+- `hiconsole/app/Http/Controllers/Api/DarkriskOverviewController.php:28` — backend overview aggregator
 
-### API Module Structure (`src/lib/api/index.ts`)
-```ts
-export { authApi } from "./auth";
-export { tenantsApi } from "./tenants";
-export { usersApi } from "./users";
-export { assessmentApi } from "./assessment";
-export { configApi } from "./config";
-export { tenantServicesApi } from "./tenant-services";
-```
+## Context (layered on state)
 
-### Tenant Endpoints (`src/lib/api/tenants.ts`)
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| GET | `/tenants` (paginated) | List all tenants |
-| GET | `/tenants/{id}` | Get single tenant |
-| POST | `/tenants` | Create tenant |
-| PATCH | `/tenants/{id}` | Update tenant |
-| DELETE | `/tenants/{id}` | Delete tenant |
-| GET | `/tenant` | Get own tenant (auth user) |
-| PATCH | `/tenant` | Update own tenant |
+### 1. SurfaceScan360 — "completato (nessun dato)" / N.D. values
 
-### Tenant Service Endpoints (`src/lib/api/tenant-services.ts`)
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| GET | `/tenant-services` | List services (optional `status` param) |
-| GET | `/tenant-services/{id}` | Get single service |
-| POST | `/tenant-services` | Create service |
-| PUT | `/tenant-services/{id}` | Update service |
-| DELETE | `/tenant-services/{id}` | Delete service |
-| GET | `/config/tenant-services` | Service catalog |
+**How module outcomes are computed** (`SurfaceScanModuleCards.tsx:1124-1245`):
 
-### ClientSelection Page Data Flow (`src/contexts/ClientContext.tsx`)
-- Already uses **REST API** via `tenantsApi.listAll()`, `tenantsApi.getOwn()`, `tenantsApi.update()`, etc.
-- SuperAdmin/Sales see all tenants; regular users see only their own
-- Persists selection in localStorage (`hicompliance_selected_org`)
+The `moduleOutcomes` useMemo processes module results and observations filtered to the currently selected scope target job. For each module (passes, http_security, headers, open_ports, ssl_certificate, tls_summary, whois, etc.):
 
----
+1. If any module result row has status `error` or `timeout` → `"error"`
+2. If any has status `running` → `"running"`
+3. If any has status `queued` → `"queued"`
+4. Otherwise, checks `hasSuccess` and `hasData`:
+   - `hasSuccess && hasData` → `"success_with_data"` → label "Completato"
+   - `hasSuccess && !hasData` → `"success_no_data"` → label "Completato (nessun dato)"
 
-## Architecture
+**Root cause analysis:**
+
+The "completato (nessun dato)" labels in the screenshot are **expected behavior** when:
+
+- **(Case A)** The selected scope target job that feeds module cards is still `queued`/`running`. The `fetchData` function (line 548) picks the latest completed job per target, falling back to the latest live job if none completed. When no job has completed, the live (possibly queued) job is used. Module results are only fetched for completed/partial jobs (line 694-700), so a queued job produces zero module results → all modules show "completato (nessun dato)."
+
+- **(Case B)** A completed job genuinely had no findings for a specific module (e.g., `ssl_certificate` module ran but the target has no TLS, or `open_ports` ran but all ports are filtered). This is a legitimate scan outcome, not a bug.
+
+- **(Case C)** There's a scope mismatch: the job's target doesn't match any configured scope rule, so it gets excluded from `scopeJobs` (line 619-641). The detail blocks would then show no data because no scope-matched jobs exist.
+
+**Likely scenario for the screenshot:** Jobs are in `queued` state (the top panel shows pending jobs). Module results haven't been produced yet because the backend scan engine hasn't processed them. The detail blocks show "completato (nessun dato)" because the frontend falls back to showing a live/queued job with no module results.
+
+### 2. DarkRisk360 — "poco popolato" (0/7 coverage, 0 threats, 0 leaks)
+
+**How overview KPIs are derived** (backend: `DarkriskOverviewController.php:46-274`):
+
+Every KPI depends on having a completed/partial SurfaceScan job:
 
 ```
-App.tsx (routes)
-  ├── /admin/clients → ClientSelection.tsx
-  │     ├── uses ClientContext (REST API via tenantsApi) ✓
-  │     ├── ClientCrudDialog → REST API ✓
-  │     ├── DeleteClientDialog → REST API ✓
-  │     ├── ClientServicesDialog → ⚠️ SUPABASE (needs migration)
-  │     └── ClientAssetSheet → ⚠️ SUPABASE (needs migration)
-  │
-  ├── /dashboard/service/:serviceCode → ServiceDashboard.tsx
-  │     ├── HiPatchDashboard, HiFirewallDashboard, HiEndpointDashboard...
-  │     └── Service code map: hi_patch, hi_firewall, hi_endpoint, hi_mail,
-  │         hi_log, hi_track, hi_detect, hi_mobile
-  │
-  └── useTenantServices hook → REST API ✓ (tenantServicesApi)
-
-API Layer:
-  api-client.ts (fetch wrapper, Bearer auth)
-    └── api/
-         ├── tenants.ts       → /tenants, /tenant
-         ├── tenant-services.ts → /tenant-services, /config/tenant-services
-         ├── users.ts
-         ├── auth.ts
-         ├── config.ts
-         └── assessment.ts
-
-Types:
-  src/types/api.ts → TenantResource, TenantServiceResource, Store/Update requests
+$dataJob = $latestSnapshotJob ?? $latestLiveJob;
 ```
 
----
+- `$latestSnapshotJob` = the latest SurfaceScanJob with status in `['completed', 'partial', 'completed_with_warnings']`
+- `$latestLiveJob` = the latest SurfaceScanJob regardless of status
 
-## Supabase References (Migration Targets for Clients/Services)
+If `$dataJob` is null (no completed/partial job exists), then:
 
-**CRITICAL** — These client/service files still use Supabase directly:
+- `$latestFindings` = empty → `active_threats` = 0, `credential_leaks` = 0, `critical_findings` = 0, `new_alerts` = 0
+- `$moduleRows` = empty → `coverage_controls` = all 7 controls show `not_run` → `controls_coverage.completed` = 0/7
+- `$openPorts` = empty → `exposed_services` = 0
+- `$risk_score` = 100 (no findings = max score), level "Basso"
+- `$monitoredDomains` = count of domain-type entries in `surface_scan_monitored_ips` (this can be >0 even without jobs)
+- `$latestDarkriskRun` = null → all DTI/IntelX stats are zero
 
-### `src/components/clients/ClientServicesDialog.tsx`
-- `supabase.from('hisolution_services').select('*')` — fetch service catalog
-- `supabase.from('organization_integrations')` — fetch/create/update/delete service integrations
-- Needs: API endpoints for service catalog and organization integrations
+**The screenshot's "1 monitored domain"** comes from a domain-type monitored IP rule existing in the DB. The "0/7 coverage" means no SurfaceScan job has completed yet. The "Nessuna scansione" (or similar) last-scan label means no data job exists.
 
-### `src/components/clients/ClientAssetSheet.tsx`
-- `supabase.from('asset_inventory').select('*').eq('organization_id', ...)` — fetch asset data
-- `supabase.from('asset_inventory').insert(...)` / `.update(...)` — save asset data
-- Needs: API endpoints for asset_inventory CRUD
+**Critical finding: `$dataJob` fallback logic** (line 88):
 
-### Total Supabase lines across project: ~190 lines in ~30+ files
-Full list of files with supabase imports:
-- `src/components/clients/ClientAssetSheet.tsx` (3 usages)
-- `src/components/clients/ClientServicesDialog.tsx` (5 usages)
-- `src/components/service-dashboards/hilog/CorrelationExport.tsx` (2 usages)
-- `src/components/forms/DemoRequestForm.tsx` (1 usage)
-- `src/components/irp/GovernanceContactsTable.tsx` (8 usages)
-- `src/components/irp/IRPContactForm.tsx` (4 usages)
-- `src/components/emergency/EmergencyContactForm.tsx` (3 usages)
-- `src/components/integrations/IntegrationAuditLog.tsx` (2 usages)
-- `src/components/documents/DocumentPreviewDialog.tsx` (1 usage)
-- `src/hooks/useAICiso.ts` + many other hooks (dozens of usages)
+```php
+$dataJob = $latestSnapshotJob ?? $latestLiveJob;
+```
 
----
+This means the overview endpoint CAN return data even for a non-completed job — but the findings/module results will be empty because the job hasn't produced them yet. The KPIs will show zeros.
+
+**Additional finding — findings/asset tabs are stubbed** (DarkRisk360.tsx:326-330):
+
+```typescript
+// TODO: migrate to backend API (select darkrisk_findings + surface_findings + surface_exposure_findings)
+const findingsQueryRes = { data: [], error: null } as any;
+```
+
+The findings and assets tabs in the DarkRisk360 page use hardcoded `{ data: [], error: null }` stubs. These tabs will always be empty regardless of backend state.
+
+### 3. Job triggering behavior
+
+**Neither module triggers jobs automatically on page load.**
+
+| Module | Trigger Mechanism | Auto on page load? |
+|---|---|---|
+| SurfaceScan360 | "Nuova scansione" button → `useSurfaceScanEngine.startScan()` → `POST /companies/{id}/surface-scan360/jobs` | **No** |
+| SurfaceScan360 | Adding scope rule with `auto_queue_scan: true` | **Only when user adds a scope rule** |
+| DarkRisk360 | "Nuova scansione" button → `handleSyncSurfaceScan()` → `POST /companies/{id}/darkrisk/scan-runs` | **No** |
+| DarkRisk360 | "Avvia controllo identity" button → `handleIdentityLeakScan()` | **No** |
+| DarkRisk360 | Adding scope rule with `auto_sync_darkrisk: true` | **Only when user adds a scope rule** |
+
+Both modules use polling (`refetchInterval`) to refresh job/overview status, but polling never triggers new jobs — it only updates display state.
+
+The backend `SurfaceScanJobController::store` (line 65) creates a job and dispatches it through `SurfaceScanQueueDispatcher`. The actual scan execution is server-side, asynchronous, and decoupled from the frontend polling.
+
+### 4. Verdict per module
+
+#### SurfaceScan360: **Expected empty state (not a bug)**
+
+The "completato (nessun dato)" / N.D. values are the correct display when:
+
+- Jobs are pending/queued (no module results produced yet)
+- OR a completed job genuinely had no data for specific modules
+
+The frontend wiring is correct — it fetches the right endpoints and filters correctly. The `fetchData` function's job-selection logic (preferring completed with score, then completed any, then live) is defensive and appropriate.
+
+**Recommended next debugging step:** Check the backend job queue. If jobs are stuck in `queued` state for an extended period, the issue is a backend queue worker not processing SurfaceScan360 jobs. Check:
+
+```bash
+# In hiconsole backend
+php artisan queue:monitor
+# or check the jobs table
+SELECT status, count(*) FROM surface_scan_jobs WHERE tenant_id = <id> GROUP BY status;
+```
+
+#### DarkRisk360: **Partial integration — expected empty state for KPIs, plus known data gaps**
+
+The 0/7 coverage, 0 threats, 0 leaks display is **expected** when no SurfaceScan job has completed for the tenant. The monitoring domain count (1) is independently derived from monitored IP rules and is correct.
+
+**However**, the findings tab and assets tab have known TODO stubs (`DarkRisk360.tsx:326-330`) that will never return real data until the backend migration is completed. This means even if a scan runs successfully, the findings and assets tabs remain empty.
+
+**Recommended next debugging step:**
+
+1. Verify a SurfaceScan job has completed for this tenant: check `surface_scan_jobs` table for status = `completed`/`partial`.
+2. If no completed job exists, start one via the "Nuova scansione" button.
+3. After job completion, refresh DarkRisk360 → overview KPIs should populate.
+4. The findings and assets tabs will remain empty until the `TODO: migrate to backend API` items are addressed.
 
 ## Start Here
 
-1. **`src/lib/api-client.ts`** — Core API client; understand the HTTP layer before anything else
-2. **`src/lib/api/tenants.ts`** + **`src/lib/api/tenant-services.ts`** — Existing REST endpoints for tenants/services
-3. **`src/types/api.ts`** — All type definitions (TenantResource, TenantServiceResource, request/response types)
-4. **`src/components/clients/ClientServicesDialog.tsx`** — PRIMARY migration target (Supabase → REST)
-5. **`src/components/clients/ClientAssetSheet.tsx`** — SECONDARY migration target (Supabase → REST)
-
----
-
-## Open Questions / Constraints
-
-1. **Missing API endpoints**: The backend may not yet have REST equivalents for:
-   - `hisolution_services` (service catalog) — partially exists at `/config/tenant-services` but returns a string
-   - `organization_integrations` (linking services to tenants)
-   - `asset_inventory` (client asset data)
-
-2. **ClientServicesDialog** currently queries `hisolution_services` table directly. The `tenantServicesApi.catalog()` endpoint returns a `string`, not a structured service list — this may need backend changes.
-
-3. **ClientSelection.tsx** references functions (`openProfile`, `openAsset`, `openServices`) that appear to be defined in the component but the actual dialog components (sheets) need proper wiring — `ClientProfileSheet` is imported but not shown in the read.
-
-4. **Auth model**: The project uses Laravel Sanctum Bearer tokens. Supabase auth (`supabase.auth.getUser()`) is still used in several components — these need to be replaced with the token-based auth from `api-client.ts`.
+Open `src/pages/DarkRisk360.tsx:326` — the stubbed findings query is the most actionable gap. The TODO comments at lines 326, 430, 454, and 877 mark multiple `{ data: [], error: null }` stubs that need backend API migration.
