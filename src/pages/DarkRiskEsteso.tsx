@@ -215,15 +215,6 @@ const DarkRiskEsteso: React.FC = () => {
         </div>
       </div>
 
-      <Alert className={isExpired ? 'border-red-500/40 bg-red-500/10' : 'border-amber-500/40 bg-amber-500/10'}>
-        <ShieldAlert className="h-4 w-4" />
-        <AlertTitle>Validita' modulo identity esteso</AlertTitle>
-        <AlertDescription>
-          Questo modello `DARKRISK_ESTESO` e' valido fino al <strong>{profile?.valid_until || DEFAULT_EXPIRY}</strong>.
-          {isExpired ? ' La scadenza e\' stata superata: le run identity verranno bloccate.' : ' Dopo la scadenza verranno bloccate solo le run estese di questo modulo.'}
-        </AlertDescription>
-      </Alert>
-
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -264,7 +255,7 @@ const DarkRiskEsteso: React.FC = () => {
           <div className="flex justify-end">
             <Button
               onClick={runEstesoScan}
-              disabled={running || !organizationId || !isEnabled || isExpired}
+              disabled={running || !organizationId || !isEnabled}
             >
               {running && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {running ? 'Esecuzione in corso...' : 'Run now'}

@@ -352,6 +352,7 @@ const INTERNAL_ALLOWED_ACTIONS = new Set<NucleiAction>([
   "retrieve_targets",
   "list",
   "get",
+  "start_lab_scan",
 ]);
 const nucleiCorsHeaders = {
   ...corsHeaders,
@@ -2863,7 +2864,7 @@ serve(async (req: Request) => {
       }
 
       const caller = await getCallerProfile(adminClient, authData.user.id);
-      if (!caller.isSuperAdmin) {
+      if (!caller.isSuperAdmin && !isInternalRequest(req)) {
         traceLog(ctx, "forbidden", { phase: "auth", http_status: 403, email: caller.email });
         return tracedJsonResponse(ctx, { ok: false, error: "Only super admins can use NucleiScan360", phase: "auth" }, 403);
       }

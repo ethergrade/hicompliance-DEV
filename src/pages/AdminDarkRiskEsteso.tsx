@@ -438,19 +438,6 @@ const AdminDarkRiskEsteso: React.FC = () => {
           </div>
         </div>
 
-        {/* ── Alert expiry ───────────────────────────────────────────────── */}
-        <Alert className={new Date().toISOString().slice(0, 10) > IDENTITY_EXPIRY
-          ? 'border-red-500/40 bg-red-500/10'
-          : 'border-amber-500/40 bg-amber-500/10'}>
-          <ShieldAlert className="h-4 w-4" />
-          <AlertTitle>Modello Identity IntelX.io</AlertTitle>
-          <AlertDescription>
-            Accesso ai Leaks API (<code>3.intelx.io</code>) è concesso fino al{' '}
-            <strong>{IDENTITY_EXPIRY}</strong>. La Search API (<code>2.intelx.io</code>) rimane attiva.
-            Le run cron dopo la scadenza verranno bloccate automaticamente.
-          </AlertDescription>
-        </Alert>
-
         {/* ── KPI row ────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card>
@@ -617,7 +604,7 @@ const AdminDarkRiskEsteso: React.FC = () => {
                                   )}
                                   <Button
                                     size="sm"
-                                    disabled={isRunning || !profileEnabled || expired}
+                                    disabled={isRunning || !profileEnabled}
                                     onClick={() => runScanForClient(client.id)}
                                   >
                                     {isRunning
@@ -777,7 +764,7 @@ const AdminDarkRiskEsteso: React.FC = () => {
                             <td className="text-center py-3 px-4">
                               <Switch
                                 checked={cronEnabled}
-                                disabled={!profileEnabled || expired || toggleCronMutation.isPending}
+                                disabled={!profileEnabled || toggleCronMutation.isPending}
                                 onCheckedChange={(v) => toggleCronMutation.mutate({ orgId: client.id, cronEnabled: v })}
                               />
                             </td>
@@ -851,7 +838,7 @@ const AdminDarkRiskEsteso: React.FC = () => {
                 </div>
                 <Switch
                   checked={Boolean(configClient?.profile?.cron_enabled)}
-                  disabled={!configClient?.profile?.enabled || isExpired(configClient?.profile?.identity_model_valid_until)}
+                  disabled={!configClient?.profile?.enabled}
                   onCheckedChange={(v) => configOrgId && toggleCronMutation.mutate({ orgId: configOrgId, cronEnabled: v })}
                 />
               </div>
@@ -861,9 +848,6 @@ const AdminDarkRiskEsteso: React.FC = () => {
                 <p className="text-sm text-muted-foreground">
                   {configClient?.profile?.identity_model_valid_until || IDENTITY_EXPIRY}
                 </p>
-                {isExpired(configClient?.profile?.identity_model_valid_until) && (
-                  <p className="text-xs text-red-400">Scaduto — le run Leaks API sono bloccate.</p>
-                )}
               </div>
 
               <div className="rounded-md border border-border/60 px-3 py-2.5 space-y-1">
@@ -883,7 +867,6 @@ const AdminDarkRiskEsteso: React.FC = () => {
                     !configOrgId
                     || runningIds.has(configOrgId)
                     || !configClient?.profile?.enabled
-                    || isExpired(configClient?.profile?.identity_model_valid_until)
                   }
                 >
                   {runningIds.has(configOrgId || '') && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}

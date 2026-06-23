@@ -17,9 +17,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 const SUPABASE_URL = String(Deno.env.get('SUPABASE_URL') || '').trim();
 const SERVICE_ROLE = String(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '').trim();
 const DARKRISK_INTERNAL_SECRET = String(Deno.env.get('DARKRISK360_INTERNAL_SECRET') || '').trim();
-const ESTESO_IDENTITY_VALID_UNTIL = String(
-  Deno.env.get('DARKRISK_ESTESO_IDENTITY_VALID_UNTIL') || '2026-06-10',
-).trim().slice(0, 10);
 
 // Configurabili via env per tuning in produzione
 const FIRE_TIMEOUT_MS = 20_000;
@@ -97,10 +94,6 @@ serve(async (req: Request) => {
 
   const estosoOrgIds = new Set<string>(
     ((estosoProfiles || []) as Array<Record<string, unknown>>)
-      .filter((p) => {
-        const validUntil = String(p.identity_model_valid_until || ESTESO_IDENTITY_VALID_UNTIL).slice(0, 10);
-        return today <= validUntil;
-      })
       .map((p) => String(p.organization_id || ''))
       .filter(Boolean),
   );

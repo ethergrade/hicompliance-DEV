@@ -1305,10 +1305,14 @@ serve(async (req: Request) => {
       && cronSecretHeader === DARKRISK_INTERNAL_SECRET,
     );
 
+    const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const isServiceRole = Boolean(SERVICE_ROLE && bearerToken === SERVICE_ROLE);
+    const isTrustedSystem = isCronMode || isServiceRole;
+
     let actorUserId: string;
 
-    if (isCronMode) {
-      actorUserId = 'system:darkrisk-esteso-cron';
+    if (isCronMode || isServiceRole) {
+      actorUserId = isCronMode ? 'system:darkrisk-esteso-cron' : 'system:service-role';
     } else {
       const { data: authData, error: authError } = await userClient.auth.getUser();
       if (authError || !authData.user) return jsonResponse({ ok: false, error: 'Unauthorized' }, 401);
@@ -1327,12 +1331,12 @@ serve(async (req: Request) => {
       return jsonResponse({ ok: false, error: 'customer_id is required' }, 400);
     }
 
-    // In cron mode: permetti al body di specificare 'manual' per chiamate interne privilegiate
-    const triggerType = isCronMode
+    // In cron/service-role mode: permetti al body di specificare 'manual' per chiamate interne privilegiate
+    const triggerType = isTrustedSystem
       ? (normalizeText(String(body?.trigger_type || '')) === 'manual' ? 'manual' : 'cron')
       : normalizeText(String(body?.trigger_type || 'manual'));
 
-    if (!isCronMode && triggerType !== 'manual') {
+    if (!isTrustedSystem && triggerType !== 'manual') {
       return jsonResponse({
         ok: false,
         code: 'darkrisk_esteso_manual_only',
@@ -1435,29 +1439,6 @@ serve(async (req: Request) => {
         code: 'darkrisk_esteso_manual_only',
         error: 'Profilo DARKRISK_ESTESO impostato in modalità manual_only.',
       }, 400);
-    }
-
-    const validUntil = normalizeText(String(profile?.identity_model_valid_until || ESTESO_IDENTITY_VALID_UNTIL)).slice(0, 10);
-    const today = new Date().toISOString().slice(0, 10);
-    if (validUntil && today > validUntil) {
-      await writeAudit(
-        adminClient,
-        requestedCustomerId,
-        actorUserId,
-        'darkrisk_esteso_blocked_expiry',
-        null,
-        'identity_model_expired',
-        {
-          today,
-          valid_until: validUntil,
-        },
-      );
-
-      return jsonResponse({
-        ok: false,
-        code: 'darkrisk_esteso_identity_model_expired',
-        error: `Modello identity DARKRISK_ESTESO scaduto il ${validUntil}.`,
-      }, 403);
     }
 
     lockOrganizationId = requestedCustomerId;
@@ -2111,7 +2092,7 @@ serve(async (req: Request) => {
     const runStats = {
       mode: 'darkrisk_esteso_mvp',
       include_surface_sync: includeSurfaceSync,
-      identity_model_valid_until: validUntil,
+      identity_model_valid_until: normalizeText(String(profile?.identity_model_valid_until || ESTESO_IDENTITY_VALID_UNTIL)).slice(0, 10),
       selectors_considered: upsertCtx.selectorDefs.length,
       query_terms_considered: queryTerms.length,
       identity_email_selectors_used: new Set(
