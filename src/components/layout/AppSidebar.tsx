@@ -212,7 +212,7 @@ export const AppSidebar: React.FC = () => {
 		if (href === "/surface-scan" || href === "/surface-scan/exposure")
 			return surfaceScanOn;
 		if (href === "/dark-risk") return darkRiskOn;
-		if (href === "/dashboard/service/hi_patch") return hipatchOn;
+		if (href === "/dashboard/service/hipatch") return hipatchOn;
 		// HiCompliance core modules
 		if (
 			[
@@ -350,10 +350,10 @@ export const AppSidebar: React.FC = () => {
 							{filteredNavigation.map((item) => renderNavItem(item))}
 							{servicesStandalone.map((item) => renderNavItem(item))}
 							{hipatchOn &&
-								isUserAllowed("/dashboard/service/hi_patch") &&
+								isUserAllowed("/dashboard/service/hipatch") &&
 								renderNavItem({
 									title: "HiPatch",
-									href: "/dashboard/service/hi_patch",
+									href: "/dashboard/service/hipatch",
 									icon: Download,
 								})}
 							{/* HIDDEN: Threat Management page removed per client request (2026-06-05) */}
