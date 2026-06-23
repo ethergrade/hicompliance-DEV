@@ -53,8 +53,9 @@ const App = () => (
         <BrowserRouter>
           <ScrollToTop />
           <Routes>
-            <Route path="/" element={<Index />} />
+            <Route path="/" element={<Navigate to="/hiconsole" replace />} />
             <Route path="/hiconsole" element={<HiConsoleLanding />} />
+            <Route path="/hicompliance" element={<Index />} />
             <Route path="/auth" element={<LoginPage />} />
             <Route path="/admin/clients" element={<ClientSelection />} />
             <Route path="/dashboard" element={<ClientSelectionGuard><Dashboard /></ClientSelectionGuard>} />
