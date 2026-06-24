@@ -51,6 +51,8 @@ import { useDarkRiskOverview } from "@/hooks/useDarkRiskOverview";
 import { useDarkRiskQaStatus } from "@/hooks/useDarkRiskQaStatus";
 import { useDarkRiskRoadmapStatus } from "@/hooks/useDarkRiskRoadmapStatus";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
+import { useClientContext } from "@/contexts/ClientContext";
+import { useUserRoles } from "@/hooks/useUserRoles";
 import { darkRiskApi } from "@/lib/api/darkrisk";
 import { useSurfaceScanMonitoredIps } from "@/hooks/useSurfaceScanMonitoredIps";
 import { surfaceScan360Api } from "@/lib/api/surface-scan360";
@@ -389,6 +391,9 @@ const DarkRisk360: React.FC = () => {
 		isFetching,
 	} = useDarkRiskOverview();
 	const { organizationId, groupId } = useClientOrganization();
+	const { canManageMultipleClients } = useClientContext();
+	const { isSuperAdmin } = useUserRoles();
+	const isReadOnlyClient = !isSuperAdmin && !canManageMultipleClients;
 	const [alertDialogOpen, setAlertDialogOpen] = useState(false);
 	const [syncingScan, setSyncingScan] = useState(false);
 	const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
@@ -476,7 +481,10 @@ const DarkRisk360: React.FC = () => {
 					latestSurfaceData = [];
 				}
 			}
-			const latestSurfaceRes = { data: latestSurfaceData, error: null as unknown };
+			const latestSurfaceRes = {
+				data: latestSurfaceData,
+				error: null as unknown,
+			};
 			// Wired: surface_exposure_findings via existing job-level endpoint (best-effort)
 			let latestExposureData: unknown[] = [];
 			if (latestOverviewScanId) {
@@ -491,7 +499,10 @@ const DarkRisk360: React.FC = () => {
 					latestExposureData = [];
 				}
 			}
-			const latestExposureRes = { data: latestExposureData, error: null as unknown };
+			const latestExposureRes = {
+				data: latestExposureData,
+				error: null as unknown,
+			};
 
 			const findings = (findingsData || []) as Array<Record<string, unknown>>;
 
@@ -1737,175 +1748,192 @@ const DarkRisk360: React.FC = () => {
 						>
 							<TabsList className="w-full justify-start overflow-x-auto">
 								<TabsTrigger value="overview">Overview</TabsTrigger>
-								<TabsTrigger value="roadmap">Roadmap</TabsTrigger>
+								{!isReadOnlyClient && (
+									<TabsTrigger value="roadmap">Roadmap</TabsTrigger>
+								)}
 								<TabsTrigger value="findings">Findings</TabsTrigger>
 								<TabsTrigger value="assets">Assets</TabsTrigger>
-								<TabsTrigger value="surface">Surface</TabsTrigger>
-								<TabsTrigger value="identity">Identity</TabsTrigger>
+								{!isReadOnlyClient && (
+									<TabsTrigger value="surface">Surface</TabsTrigger>
+								)}
+								{!isReadOnlyClient && (
+									<TabsTrigger value="identity">Identity</TabsTrigger>
+								)}
 								<TabsTrigger value="reports">Reports</TabsTrigger>
-								<TabsTrigger value="scan-runs">Scan Runs</TabsTrigger>
+								{!isReadOnlyClient && (
+									<TabsTrigger value="scan-runs">Scan Runs</TabsTrigger>
+								)}
 							</TabsList>
 
 							<TabsContent value="overview" className="space-y-4">
-								<Card className="border-border">
-									<CardHeader className="pb-3">
-										<CardTitle>Identity Leak Check (Email)</CardTitle>
-									</CardHeader>
-									<CardContent className="space-y-3">
-										<p className="text-sm text-muted-foreground">
-											Inserisci email aziendali da monitorare per leak e
-											compromissioni identity. Le email vengono incluse
-											automaticamente nei cicli DarkRisk360 successivi.
-										</p>
-										<Textarea
-											value={identityEmailsInput}
-											onChange={(event) =>
-												setIdentityEmailsInput(event.target.value)
-											}
-											placeholder="es. soc@azienda.it, admin@azienda.it"
-											className="min-h-[84px]"
-										/>
-										<div className="flex items-center gap-2 flex-wrap">
-											<Button
-												onClick={() => void handleIdentityLeakScan()}
-												disabled={identityScanning || !organizationId}
-												className="bg-primary text-primary-foreground"
-											>
-												{identityScanning
-													? "Analisi in corso..."
-													: "Avvia controllo identity"}
-											</Button>
-											<Button
-												variant="outline"
-												size="sm"
-												onClick={() => setActiveTab("identity")}
-											>
-												Vai a Identity
-											</Button>
-											<Badge variant="outline">
-												Email monitorate: {identityEmailSelectors.length}
-											</Badge>
-										</div>
-									</CardContent>
-								</Card>
-
-								<Card className="border-border">
-									<CardHeader className="pb-3">
-										<CardTitle>Scope DarkRisk360</CardTitle>
-									</CardHeader>
-									<CardContent className="space-y-3">
-										<p className="text-sm text-muted-foreground">
-											Inserisci domini/IP direttamente da DarkRisk360: il
-											sistema propaga lo scope, mette in coda i controlli
-											predefiniti e sincronizza automaticamente i moduli attivi
-											del cliente.
-										</p>
-										<div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground space-y-1">
-											<div className="font-medium text-foreground">
-												Legenda input scope (misto supportato)
-											</div>
-											<div>Separatore lista: `,` `;` `|` oppure a capo.</div>
-											<div>
-												Esempio: `terenziboutique.com, cereriaterenzi.com,
-												203.0.113.10, 203.0.113.10-203.0.113.20, 203.0.113.0/24`
-											</div>
-											<div>
-												Tipi supportati: dominio, IP singolo, range IP, CIDR.
-											</div>
-										</div>
-										<div className="flex flex-col gap-2 md:flex-row">
-											<Input
-												value={scopeInput}
-												onChange={(event) => setScopeInput(event.target.value)}
-												placeholder="es. terenziboutique.com, cereriaterenzi.com, 203.0.113.10, 203.0.113.10-203.0.113.20, 203.0.113.0/24"
-												disabled={
-													!organizationId ||
-													!isScopeAdmin ||
-													scopeSaving ||
-													addingScope
-												}
-											/>
-											<Button
-												onClick={() => void handleAddScopeRule()}
-												disabled={
-													!organizationId ||
-													!isScopeAdmin ||
-													scopeSaving ||
-													addingScope ||
-													!scopeInput.trim()
-												}
-												className="bg-primary text-primary-foreground"
-											>
-												<Plus className="w-4 h-4 mr-2" />
-												{addingScope || scopeSaving
-													? "Aggiunta..."
-													: "Aggiungi scope"}
-											</Button>
-											<Button
-												variant="outline"
-												onClick={() => void handleSyncSurfaceScan()}
-												disabled={!organizationId || syncingScan}
-											>
-												<RefreshCw
-													className={`w-4 h-4 mr-2 ${syncingScan ? "animate-spin" : ""}`}
-												/>
-												{syncingScan
-													? "Riesecuzione..."
-													: "Riesegui controlli default"}
-											</Button>
-										</div>
-										{!isScopeAdmin && (
-											<p className="text-xs text-amber-300">
-												Solo admin possono modificare lo scope.
-											</p>
-										)}
-										<div className="flex flex-wrap items-center gap-2">
-											<Badge variant="outline">
-												Regole scope: {scopeRules.length}
-											</Badge>
-											<Badge variant="secondary">Queue automatica attiva</Badge>
-											{scopeLoading && (
-												<Badge variant="outline">Caricamento scope...</Badge>
-											)}
-										</div>
-										{scopeRules.length > 0 ? (
-											<div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-												{scopeRules.slice(0, 12).map((rule) => (
-													<div
-														key={rule.id}
-														className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 flex items-center justify-between gap-3"
-													>
-														<div className="min-w-0">
-															<p className="text-sm font-medium truncate">
-																{rule.input_value}
-															</p>
-															<p className="text-xs text-muted-foreground">
-																{presentScopeEntryType(rule.entry_type)}
-															</p>
-														</div>
-														{isScopeAdmin && (
-															<Button
-																size="icon"
-																variant="ghost"
-																className="h-8 w-8 text-muted-foreground hover:text-red-300"
-																onClick={() =>
-																	void handleRemoveScopeRule(rule.id)
-																}
-																disabled={scopeSaving}
-															>
-																<Trash2 className="w-4 h-4" />
-															</Button>
-														)}
-													</div>
-												))}
-											</div>
-										) : (
+								{!isReadOnlyClient && (
+									<Card className="border-border">
+										<CardHeader className="pb-3">
+											<CardTitle>Identity Leak Check (Email)</CardTitle>
+										</CardHeader>
+										<CardContent className="space-y-3">
 											<p className="text-sm text-muted-foreground">
-												Nessuna regola scope configurata su questo cliente.
+												Inserisci email aziendali da monitorare per leak e
+												compromissioni identity. Le email vengono incluse
+												automaticamente nei cicli DarkRisk360 successivi.
 											</p>
-										)}
-									</CardContent>
-								</Card>
+											<Textarea
+												value={identityEmailsInput}
+												onChange={(event) =>
+													setIdentityEmailsInput(event.target.value)
+												}
+												placeholder="es. soc@azienda.it, admin@azienda.it"
+												className="min-h-[84px]"
+											/>
+											<div className="flex items-center gap-2 flex-wrap">
+												<Button
+													onClick={() => void handleIdentityLeakScan()}
+													disabled={identityScanning || !organizationId}
+													className="bg-primary text-primary-foreground"
+												>
+													{identityScanning
+														? "Analisi in corso..."
+														: "Avvia controllo identity"}
+												</Button>
+												<Button
+													variant="outline"
+													size="sm"
+													onClick={() => setActiveTab("identity")}
+												>
+													Vai a Identity
+												</Button>
+												<Badge variant="outline">
+													Email monitorate: {identityEmailSelectors.length}
+												</Badge>
+											</div>
+										</CardContent>
+									</Card>
+								)}
+
+								{!isReadOnlyClient && (
+									<Card className="border-border">
+										<CardHeader className="pb-3">
+											<CardTitle>Scope DarkRisk360</CardTitle>
+										</CardHeader>
+										<CardContent className="space-y-3">
+											<p className="text-sm text-muted-foreground">
+												Inserisci domini/IP direttamente da DarkRisk360: il
+												sistema propaga lo scope, mette in coda i controlli
+												predefiniti e sincronizza automaticamente i moduli
+												attivi del cliente.
+											</p>
+											<div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground space-y-1">
+												<div className="font-medium text-foreground">
+													Legenda input scope (misto supportato)
+												</div>
+												<div>Separatore lista: `,` `;` `|` oppure a capo.</div>
+												<div>
+													Esempio: `terenziboutique.com, cereriaterenzi.com,
+													203.0.113.10, 203.0.113.10-203.0.113.20,
+													203.0.113.0/24`
+												</div>
+												<div>
+													Tipi supportati: dominio, IP singolo, range IP, CIDR.
+												</div>
+											</div>
+											<div className="flex flex-col gap-2 md:flex-row">
+												<Input
+													value={scopeInput}
+													onChange={(event) =>
+														setScopeInput(event.target.value)
+													}
+													placeholder="es. terenziboutique.com, cereriaterenzi.com, 203.0.113.10, 203.0.113.10-203.0.113.20, 203.0.113.0/24"
+													disabled={
+														!organizationId ||
+														!isScopeAdmin ||
+														scopeSaving ||
+														addingScope
+													}
+												/>
+												<Button
+													onClick={() => void handleAddScopeRule()}
+													disabled={
+														!organizationId ||
+														!isScopeAdmin ||
+														scopeSaving ||
+														addingScope ||
+														!scopeInput.trim()
+													}
+													className="bg-primary text-primary-foreground"
+												>
+													<Plus className="w-4 h-4 mr-2" />
+													{addingScope || scopeSaving
+														? "Aggiunta..."
+														: "Aggiungi scope"}
+												</Button>
+												<Button
+													variant="outline"
+													onClick={() => void handleSyncSurfaceScan()}
+													disabled={!organizationId || syncingScan}
+												>
+													<RefreshCw
+														className={`w-4 h-4 mr-2 ${syncingScan ? "animate-spin" : ""}`}
+													/>
+													{syncingScan
+														? "Riesecuzione..."
+														: "Riesegui controlli default"}
+												</Button>
+											</div>
+											{!isScopeAdmin && (
+												<p className="text-xs text-amber-300">
+													Solo admin possono modificare lo scope.
+												</p>
+											)}
+											<div className="flex flex-wrap items-center gap-2">
+												<Badge variant="outline">
+													Regole scope: {scopeRules.length}
+												</Badge>
+												<Badge variant="secondary">
+													Queue automatica attiva
+												</Badge>
+												{scopeLoading && (
+													<Badge variant="outline">Caricamento scope...</Badge>
+												)}
+											</div>
+											{scopeRules.length > 0 ? (
+												<div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+													{scopeRules.slice(0, 12).map((rule) => (
+														<div
+															key={rule.id}
+															className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 flex items-center justify-between gap-3"
+														>
+															<div className="min-w-0">
+																<p className="text-sm font-medium truncate">
+																	{rule.input_value}
+																</p>
+																<p className="text-xs text-muted-foreground">
+																	{presentScopeEntryType(rule.entry_type)}
+																</p>
+															</div>
+															{isScopeAdmin && (
+																<Button
+																	size="icon"
+																	variant="ghost"
+																	className="h-8 w-8 text-muted-foreground hover:text-red-300"
+																	onClick={() =>
+																		void handleRemoveScopeRule(rule.id)
+																	}
+																	disabled={scopeSaving}
+																>
+																	<Trash2 className="w-4 h-4" />
+																</Button>
+															)}
+														</div>
+													))}
+												</div>
+											) : (
+												<p className="text-sm text-muted-foreground">
+													Nessuna regola scope configurata su questo cliente.
+												</p>
+											)}
+										</CardContent>
+									</Card>
+								)}
 
 								<DarkRiskWeeklyTrend />
 								<DarkRiskCoverageMatrix controls={overview.coverage_controls} />
@@ -1925,143 +1953,147 @@ const DarkRisk360: React.FC = () => {
 								/>
 							</TabsContent>
 
-							<TabsContent value="roadmap" className="space-y-4">
-								<Card className="border-border">
-									<CardHeader className="pb-3">
-										<CardTitle>Roadmap Implementazione (MD09)</CardTitle>
-									</CardHeader>
-									<CardContent className="space-y-4">
-										{roadmapLoading ? (
-											<p className="text-sm text-muted-foreground">
-												Calcolo stato roadmap in corso...
-											</p>
-										) : roadmapError ? (
-											<p className="text-sm text-red-300">
-												Impossibile calcolare lo stato roadmap.
-											</p>
-										) : (
-											<>
-												<div className="space-y-2">
-													<div className="flex items-center justify-between text-sm">
-														<span className="text-muted-foreground">
-															Avanzamento complessivo
-														</span>
-														<span className="font-semibold">
-															{roadmap.summary.progress_percent}%
-														</span>
+							{!isReadOnlyClient && (
+								<TabsContent value="roadmap" className="space-y-4">
+									<Card className="border-border">
+										<CardHeader className="pb-3">
+											<CardTitle>Roadmap Implementazione (MD09)</CardTitle>
+										</CardHeader>
+										<CardContent className="space-y-4">
+											{roadmapLoading ? (
+												<p className="text-sm text-muted-foreground">
+													Calcolo stato roadmap in corso...
+												</p>
+											) : roadmapError ? (
+												<p className="text-sm text-red-300">
+													Impossibile calcolare lo stato roadmap.
+												</p>
+											) : (
+												<>
+													<div className="space-y-2">
+														<div className="flex items-center justify-between text-sm">
+															<span className="text-muted-foreground">
+																Avanzamento complessivo
+															</span>
+															<span className="font-semibold">
+																{roadmap.summary.progress_percent}%
+															</span>
+														</div>
+														<div className="h-2 rounded-full bg-muted">
+															<div
+																className="h-2 rounded-full bg-primary transition-all"
+																style={{
+																	width: `${Math.max(0, Math.min(100, roadmap.summary.progress_percent))}%`,
+																}}
+															/>
+														</div>
 													</div>
-													<div className="h-2 rounded-full bg-muted">
-														<div
-															className="h-2 rounded-full bg-primary transition-all"
-															style={{
-																width: `${Math.max(0, Math.min(100, roadmap.summary.progress_percent))}%`,
-															}}
-														/>
+
+													<div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+														<Badge variant="default">
+															Completate: {roadmap.summary.completed}
+														</Badge>
+														<Badge variant="secondary">
+															In corso: {roadmap.summary.in_progress}
+														</Badge>
+														<Badge variant="outline">
+															Pianificate: {roadmap.summary.planned}
+														</Badge>
+														<Badge variant="destructive">
+															Bloccate: {roadmap.summary.blocked}
+														</Badge>
+														<Badge variant="outline">
+															Tier: {roadmap.tier}
+														</Badge>
 													</div>
-												</div>
 
-												<div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
-													<Badge variant="default">
-														Completate: {roadmap.summary.completed}
-													</Badge>
-													<Badge variant="secondary">
-														In corso: {roadmap.summary.in_progress}
-													</Badge>
-													<Badge variant="outline">
-														Pianificate: {roadmap.summary.planned}
-													</Badge>
-													<Badge variant="destructive">
-														Bloccate: {roadmap.summary.blocked}
-													</Badge>
-													<Badge variant="outline">Tier: {roadmap.tier}</Badge>
-												</div>
-
-												<div className="space-y-2">
-													{roadmap.phases.map((phase) => (
-														<div
-															key={phase.key}
-															className="rounded-lg border border-border/70 bg-muted/20 p-3"
-														>
-															<div className="flex items-center justify-between gap-3">
-																<p className="text-sm font-medium">
-																	{phase.title}
+													<div className="space-y-2">
+														{roadmap.phases.map((phase) => (
+															<div
+																key={phase.key}
+																className="rounded-lg border border-border/70 bg-muted/20 p-3"
+															>
+																<div className="flex items-center justify-between gap-3">
+																	<p className="text-sm font-medium">
+																		{phase.title}
+																	</p>
+																	<Badge
+																		variant={roadmapBadgeVariant(phase.status)}
+																	>
+																		{roadmapStatusLabel[phase.status] ||
+																			phase.status}
+																	</Badge>
+																</div>
+																<p className="mt-1 text-xs text-muted-foreground">
+																	{phase.evidence}
 																</p>
+															</div>
+														))}
+													</div>
+												</>
+											)}
+										</CardContent>
+									</Card>
+
+									<Card className="border-border">
+										<CardHeader className="pb-3">
+											<CardTitle>QA Security Snapshot (MD10)</CardTitle>
+										</CardHeader>
+										<CardContent className="space-y-3">
+											{qaLoading ? (
+												<p className="text-sm text-muted-foreground">
+													Verifica automatica QA in corso...
+												</p>
+											) : qaError ? (
+												<p className="text-sm text-red-300">
+													Impossibile leggere lo snapshot QA.
+												</p>
+											) : (
+												<>
+													<div className="flex flex-wrap items-center gap-2 text-xs">
+														<Badge
+															variant={
+																qaStatus.score >= 80
+																	? "default"
+																	: qaStatus.score >= 50
+																		? "secondary"
+																		: "destructive"
+															}
+														>
+															Score {qaStatus.score}/100
+														</Badge>
+														<Badge variant="outline">
+															Checklist: {qaStatus.passed}/{qaStatus.total}
+														</Badge>
+													</div>
+													<div className="space-y-1">
+														{qaStatus.checklist.map((item) => (
+															<div
+																key={item.id}
+																className="flex items-center justify-between rounded border border-border/60 bg-muted/20 px-3 py-2 text-xs"
+															>
+																<span className="font-mono">{item.id}</span>
 																<Badge
-																	variant={roadmapBadgeVariant(phase.status)}
+																	variant={
+																		item.passed ? "default" : "destructive"
+																	}
 																>
-																	{roadmapStatusLabel[phase.status] ||
-																		phase.status}
+																	{item.passed ? "PASS" : "FAIL"}
 																</Badge>
 															</div>
-															<p className="mt-1 text-xs text-muted-foreground">
-																{phase.evidence}
-															</p>
-														</div>
-													))}
-												</div>
-											</>
-										)}
-									</CardContent>
-								</Card>
-
-								<Card className="border-border">
-									<CardHeader className="pb-3">
-										<CardTitle>QA Security Snapshot (MD10)</CardTitle>
-									</CardHeader>
-									<CardContent className="space-y-3">
-										{qaLoading ? (
-											<p className="text-sm text-muted-foreground">
-												Verifica automatica QA in corso...
-											</p>
-										) : qaError ? (
-											<p className="text-sm text-red-300">
-												Impossibile leggere lo snapshot QA.
-											</p>
-										) : (
-											<>
-												<div className="flex flex-wrap items-center gap-2 text-xs">
-													<Badge
-														variant={
-															qaStatus.score >= 80
-																? "default"
-																: qaStatus.score >= 50
-																	? "secondary"
-																	: "destructive"
-														}
-													>
-														Score {qaStatus.score}/100
-													</Badge>
-													<Badge variant="outline">
-														Checklist: {qaStatus.passed}/{qaStatus.total}
-													</Badge>
-												</div>
-												<div className="space-y-1">
-													{qaStatus.checklist.map((item) => (
-														<div
-															key={item.id}
-															className="flex items-center justify-between rounded border border-border/60 bg-muted/20 px-3 py-2 text-xs"
-														>
-															<span className="font-mono">{item.id}</span>
-															<Badge
-																variant={
-																	item.passed ? "default" : "destructive"
-																}
-															>
-																{item.passed ? "PASS" : "FAIL"}
-															</Badge>
-														</div>
-													))}
-												</div>
-												{qaStatus.notes.length > 0 ? (
-													<p className="text-xs text-muted-foreground">
-														{qaStatus.notes[0]}
-													</p>
-												) : null}
-											</>
-										)}
-									</CardContent>
-								</Card>
-							</TabsContent>
+														))}
+													</div>
+													{qaStatus.notes.length > 0 ? (
+														<p className="text-xs text-muted-foreground">
+															{qaStatus.notes[0]}
+														</p>
+													) : null}
+												</>
+											)}
+										</CardContent>
+									</Card>
+								</TabsContent>
+							)}
 
 							<TabsContent value="findings" className="space-y-4">
 								<Card className="border-border">
@@ -2360,111 +2392,113 @@ const DarkRisk360: React.FC = () => {
 								</Card>
 							</TabsContent>
 
-							<TabsContent value="identity">
-								<div className="space-y-4">
-									<Card className="border-border">
-										<CardHeader className="pb-3">
-											<CardTitle>Identity Exposure</CardTitle>
-										</CardHeader>
-										<CardContent className="space-y-4">
-											<p className="text-sm text-muted-foreground">
-												Identità impattate:{" "}
-												<span className="font-semibold text-foreground">
-													{overview.kpis.impacted_identities.value}
-												</span>
-											</p>
-											{overview.tier === "extended" ? (
+							{!isReadOnlyClient && (
+								<TabsContent value="identity">
+									<div className="space-y-4">
+										<Card className="border-border">
+											<CardHeader className="pb-3">
+												<CardTitle>Identity Exposure</CardTitle>
+											</CardHeader>
+											<CardContent className="space-y-4">
 												<p className="text-sm text-muted-foreground">
-													Modalità Estesa attiva: workflow analyst e
-													correlazione identity sempre inclusi.
+													Identità impattate:{" "}
+													<span className="font-semibold text-foreground">
+														{overview.kpis.impacted_identities.value}
+													</span>
 												</p>
-											) : (
-												<p className="text-sm text-muted-foreground">
-													Modalità Standard: viste sintetiche, remediation e
-													raccomandazioni operative.
-												</p>
-											)}
-
-											<div className="rounded-lg border border-border/70 bg-muted/20 p-3 space-y-3">
-												<div className="flex items-center justify-between gap-3 flex-wrap">
-													<p className="text-sm font-medium">
-														Controllo mirato leak email
+												{overview.tier === "extended" ? (
+													<p className="text-sm text-muted-foreground">
+														Modalità Estesa attiva: workflow analyst e
+														correlazione identity sempre inclusi.
 													</p>
-													<Badge variant="outline">
-														Analisi identity continua
-													</Badge>
-												</div>
-												<Textarea
-													value={identityEmailsInput}
-													onChange={(event) =>
-														setIdentityEmailsInput(event.target.value)
-													}
-													placeholder="Inserisci email (una per riga o CSV), es. ceo@azienda.it, it@azienda.it"
-													className="min-h-[92px]"
-												/>
-												<div className="flex items-center gap-2 flex-wrap">
-													<Button
-														onClick={() => void handleIdentityLeakScan()}
-														disabled={identityScanning || !organizationId}
-														className="bg-primary text-primary-foreground"
-													>
-														{identityScanning
-															? "Analisi in corso..."
-															: "Avvia controllo leak identity"}
-													</Button>
-													<p className="text-xs text-muted-foreground">
-														I selector email approvati entrano automaticamente
-														nei cicli successivi.
+												) : (
+													<p className="text-sm text-muted-foreground">
+														Modalità Standard: viste sintetiche, remediation e
+														raccomandazioni operative.
 													</p>
-												</div>
-											</div>
-										</CardContent>
-									</Card>
+												)}
 
-									<Card className="border-border">
-										<CardHeader className="pb-3">
-											<CardTitle>Email monitorate per Identity</CardTitle>
-										</CardHeader>
-										<CardContent>
-											{identitySelectorsLoading ? (
-												<p className="text-sm text-muted-foreground">
-													Caricamento selector email...
-												</p>
-											) : identityEmailSelectors.length === 0 ? (
-												<p className="text-sm text-muted-foreground">
-													Nessuna email monitorata. Inserisci un set iniziale
-													per avviare controlli mirati.
-												</p>
-											) : (
-												<div className="space-y-2">
-													{identityEmailSelectors.map((selector) => (
-														<div
-															key={String(selector.id)}
-															className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-muted/20 px-3 py-2"
+												<div className="rounded-lg border border-border/70 bg-muted/20 p-3 space-y-3">
+													<div className="flex items-center justify-between gap-3 flex-wrap">
+														<p className="text-sm font-medium">
+															Controllo mirato leak email
+														</p>
+														<Badge variant="outline">
+															Analisi identity continua
+														</Badge>
+													</div>
+													<Textarea
+														value={identityEmailsInput}
+														onChange={(event) =>
+															setIdentityEmailsInput(event.target.value)
+														}
+														placeholder="Inserisci email (una per riga o CSV), es. ceo@azienda.it, it@azienda.it"
+														className="min-h-[92px]"
+													/>
+													<div className="flex items-center gap-2 flex-wrap">
+														<Button
+															onClick={() => void handleIdentityLeakScan()}
+															disabled={identityScanning || !organizationId}
+															className="bg-primary text-primary-foreground"
 														>
-															<span className="text-sm font-medium">
-																{String(
-																	selector.normalized_value ||
-																		selector.value ||
-																		"-",
-																)}
-															</span>
-															<div className="flex items-center gap-2">
-																<Badge variant="outline">
-																	{String(selector.status || "approved")}
-																</Badge>
-																<span className="text-xs text-muted-foreground">
-																	{formatDateTime(selector.updated_at)}
-																</span>
-															</div>
-														</div>
-													))}
+															{identityScanning
+																? "Analisi in corso..."
+																: "Avvia controllo leak identity"}
+														</Button>
+														<p className="text-xs text-muted-foreground">
+															I selector email approvati entrano automaticamente
+															nei cicli successivi.
+														</p>
+													</div>
 												</div>
-											)}
-										</CardContent>
-									</Card>
-								</div>
-							</TabsContent>
+											</CardContent>
+										</Card>
+
+										<Card className="border-border">
+											<CardHeader className="pb-3">
+												<CardTitle>Email monitorate per Identity</CardTitle>
+											</CardHeader>
+											<CardContent>
+												{identitySelectorsLoading ? (
+													<p className="text-sm text-muted-foreground">
+														Caricamento selector email...
+													</p>
+												) : identityEmailSelectors.length === 0 ? (
+													<p className="text-sm text-muted-foreground">
+														Nessuna email monitorata. Inserisci un set iniziale
+														per avviare controlli mirati.
+													</p>
+												) : (
+													<div className="space-y-2">
+														{identityEmailSelectors.map((selector) => (
+															<div
+																key={String(selector.id)}
+																className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-muted/20 px-3 py-2"
+															>
+																<span className="text-sm font-medium">
+																	{String(
+																		selector.normalized_value ||
+																			selector.value ||
+																			"-",
+																	)}
+																</span>
+																<div className="flex items-center gap-2">
+																	<Badge variant="outline">
+																		{String(selector.status || "approved")}
+																	</Badge>
+																	<span className="text-xs text-muted-foreground">
+																		{formatDateTime(selector.updated_at)}
+																	</span>
+																</div>
+															</div>
+														))}
+													</div>
+												)}
+											</CardContent>
+										</Card>
+									</div>
+								</TabsContent>
+							)}
 
 							<TabsContent value="reports" className="space-y-4">
 								<Card className="border-border">
@@ -2477,19 +2511,23 @@ const DarkRisk360: React.FC = () => {
 													DOCX disponibili per ogni snapshot.
 												</p>
 											</div>
-											<Button
-												variant="outline"
-												size="sm"
-												disabled={
-													!organizationId || generateReportMutation.isPending
-												}
-												onClick={() => generateReportMutation.mutate("weekly")}
-											>
-												<FileText className="w-4 h-4 mr-2" />
-												{generateReportMutation.isPending
-													? "Generazione..."
-													: "Genera settimanale"}
-											</Button>
+											{!isReadOnlyClient && (
+												<Button
+													variant="outline"
+													size="sm"
+													disabled={
+														!organizationId || generateReportMutation.isPending
+													}
+													onClick={() =>
+														generateReportMutation.mutate("weekly")
+													}
+												>
+													<FileText className="w-4 h-4 mr-2" />
+													{generateReportMutation.isPending
+														? "Generazione..."
+														: "Genera settimanale"}
+												</Button>
+											)}
 										</div>
 									</CardHeader>
 									<CardContent className="space-y-4">
@@ -2559,23 +2597,25 @@ const DarkRisk360: React.FC = () => {
 																	ogni scansione.
 																</p>
 															</div>
-															<Button
-																variant="outline"
-																size="sm"
-																disabled={
-																	!organizationId ||
-																	generateReportMutation.isPending ||
-																	Boolean(reportRepository.extended)
-																}
-																onClick={() =>
-																	generateReportMutation.mutate("extended")
-																}
-															>
-																<FileText className="w-4 h-4 mr-2" />
-																{reportRepository.extended
-																	? "Esteso già generato"
-																	: "Genera esteso"}
-															</Button>
+															{!isReadOnlyClient && (
+																<Button
+																	variant="outline"
+																	size="sm"
+																	disabled={
+																		!organizationId ||
+																		generateReportMutation.isPending ||
+																		Boolean(reportRepository.extended)
+																	}
+																	onClick={() =>
+																		generateReportMutation.mutate("extended")
+																	}
+																>
+																	<FileText className="w-4 h-4 mr-2" />
+																	{reportRepository.extended
+																		? "Esteso già generato"
+																		: "Genera esteso"}
+																</Button>
+															)}
 														</div>
 														{reportRepository.extendedVersions.length > 0 ? (
 															reportRepository.extendedVersions.map((rep) =>
@@ -2602,9 +2642,11 @@ const DarkRisk360: React.FC = () => {
 								</Card>
 							</TabsContent>
 
-							<TabsContent value="scan-runs" className="space-y-4">
-								<DarkRiskScanRunsPanel />
-							</TabsContent>
+							{!isReadOnlyClient && (
+								<TabsContent value="scan-runs" className="space-y-4">
+									<DarkRiskScanRunsPanel />
+								</TabsContent>
+							)}
 						</Tabs>
 					</>
 				)}
