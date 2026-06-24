@@ -26,8 +26,8 @@ const STATUS_LABELS: Record<number, string> = { 0: 'Inattivo', 1: 'Attivo', 2: '
 const STATUS_COLORS: Record<number, string> = { 0: 'secondary', 1: 'default', 2: 'outline' } as const;
 
 const AdminCompanies: React.FC = () => {
-  const { user } = useAuth();
-  const { selectedOrganization, setSelectedOrganization } = useClientContext();
+  const { user: _user } = useAuth();
+  const { selectedOrganization } = useClientContext();
 
   /* ─── Gruppi ─── */
   const [groups, setGroups] = useState<Group[]>([]);
@@ -56,7 +56,7 @@ const AdminCompanies: React.FC = () => {
     try {
       const list = await groupsApi.list();
       setGroups(list);
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error(getErrorDetail(err));
     } finally {
       setGroupsLoading(false);
@@ -71,7 +71,7 @@ const AdminCompanies: React.FC = () => {
     try {
       const all = await tenantsApi.listAll(groupId);
       setTenants(all);
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error(getErrorDetail(err));
     } finally {
       setLoading(false);
@@ -111,7 +111,7 @@ const AdminCompanies: React.FC = () => {
       setNewGroupName('');
       setNewGroupDesc('');
       setNewGroupOpen(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error(getErrorDetail(err));
     } finally {
       setCreatingGroup(false);
@@ -128,7 +128,7 @@ const AdminCompanies: React.FC = () => {
         setTenants([]);
       }
       toast.success(`Gruppo "${group.name}" eliminato`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error(getErrorDetail(err) || 'Errore nell’eliminazione del gruppo');
     }
   };
@@ -141,10 +141,8 @@ const AdminCompanies: React.FC = () => {
   // Trello #65: after creating a new client, switch selectedOrganization
   // to it (and persist in localStorage) so the next navigation does not
   // bounce the user back to the previously selected tenant.
-  const handleCreated = (created: TenantResource) => {
-    if (created?.id) {
-      setSelectedOrganization(created);
-    }
+  const handleCreated = (created: { id: string; name: string; code: string }) => {
+    if (created?.id && selectedGroup) loadTenants(selectedGroup.id);
   };
 
   const handleEdit = (t: TenantResource) => {
@@ -333,7 +331,7 @@ const AdminCompanies: React.FC = () => {
                             <td className="py-3 px-3 text-muted-foreground">{t.vat_number || '—'}</td>
                             <td className="py-3 px-3 text-muted-foreground">{t.primary_domain || '—'}</td>
                             <td className="py-3 px-3">
-                              <Badge variant={STATUS_COLORS[t.status] as any}>
+                              <Badge variant={STATUS_COLORS[t.status] as 'default' | 'secondary' | 'outline' | 'destructive'}>
                                 {STATUS_LABELS[t.status] ?? `Stato ${t.status}`}
                               </Badge>
                             </td>
@@ -372,11 +370,11 @@ const AdminCompanies: React.FC = () => {
       <Dialog open={newGroupOpen} onOpenChange={setNewGroupOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Nuovo Gruppo</DialogTitle>
+            <DialogTitle>Nuova Azienda</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label>Nome gruppo</Label>
+              <Label>Nome azienda</Label>
               <Input
                 value={newGroupName}
                 onChange={e => setNewGroupName(e.target.value)}
@@ -397,7 +395,7 @@ const AdminCompanies: React.FC = () => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setNewGroupOpen(false)}>Annulla</Button>
             <Button onClick={handleCreateGroup} disabled={creatingGroup || !newGroupName.trim()}>
-              {creatingGroup ? 'Creazione...' : 'Crea Gruppo'}
+              {creatingGroup ? 'Creazione...' : 'Crea Azienda'}
             </Button>
           </DialogFooter>
         </DialogContent>
