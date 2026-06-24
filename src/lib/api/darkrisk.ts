@@ -5,6 +5,19 @@ const groupHeader = (groupId: string) => ({
 	headers: { "X-Group-Id": groupId },
 });
 
+/** Extract array from API response — handles both plain arrays and Laravel paginated {data:[], ...} */
+const extractArray = <T>(data: unknown): T[] => {
+	if (Array.isArray(data)) return data;
+	if (
+		data &&
+		typeof data === "object" &&
+		"data" in data &&
+		Array.isArray((data as { data?: T[] }).data)
+	)
+		return (data as { data: T[] }).data;
+	return [];
+};
+
 export interface DarkRiskTarget {
 	id: string;
 	tenant_id: string;
@@ -133,8 +146,11 @@ export const darkRiskApi = {
 	},
 
 	// Overview
-	async getOverview(companyId: string, groupId?: string | null): Promise<any> {
-		const res = await complianceApiClient.get<ApiResponse<any>>(
+	async getOverview(
+		companyId: string,
+		groupId?: string | null,
+	): Promise<unknown> {
+		const res = await complianceApiClient.get<ApiResponse<unknown>>(
 			`/companies/${companyId}/darkrisk/overview`,
 			undefined,
 			groupId ? groupHeader(groupId) : undefined,
@@ -147,13 +163,13 @@ export const darkRiskApi = {
 		companyId: string,
 		params?: { page?: number; per_page?: number },
 		groupId?: string | null,
-	): Promise<any[]> {
-		const res = await complianceApiClient.get<ApiResponse<any[]>>(
+	): Promise<unknown[]> {
+		const res = await complianceApiClient.get<ApiResponse<unknown>>(
 			`/companies/${companyId}/darkrisk/scan-runs`,
 			params,
 			groupId ? groupHeader(groupId) : undefined,
 		);
-		return res.data;
+		return extractArray(res.data);
 	},
 
 	async createScanRun(
@@ -166,8 +182,8 @@ export const darkRiskApi = {
 			[k: string]: unknown;
 		},
 		groupId?: string | null,
-	): Promise<any> {
-		const res = await complianceApiClient.post<ApiResponse<any>>(
+	): Promise<unknown> {
+		const res = await complianceApiClient.post<ApiResponse<unknown>>(
 			`/companies/${companyId}/darkrisk/scan-runs`,
 			payload || {},
 			groupId ? groupHeader(groupId) : undefined,
@@ -179,8 +195,8 @@ export const darkRiskApi = {
 		companyId: string,
 		scanRunId: string,
 		groupId?: string | null,
-	): Promise<any> {
-		const res = await complianceApiClient.get<ApiResponse<any>>(
+	): Promise<unknown> {
+		const res = await complianceApiClient.get<ApiResponse<unknown>>(
 			`/companies/${companyId}/darkrisk/scan-runs/${scanRunId}`,
 			undefined,
 			groupId ? groupHeader(groupId) : undefined,
@@ -193,13 +209,13 @@ export const darkRiskApi = {
 		scanRunId: string,
 		params?: { severity?: string; page?: number },
 		groupId?: string | null,
-	): Promise<any[]> {
-		const res = await complianceApiClient.get<ApiResponse<any[]>>(
+	): Promise<unknown[]> {
+		const res = await complianceApiClient.get<ApiResponse<unknown>>(
 			`/companies/${companyId}/darkrisk/scan-runs/${scanRunId}/findings`,
 			params,
 			groupId ? groupHeader(groupId) : undefined,
 		);
-		return res.data;
+		return extractArray(res.data);
 	},
 
 	// Report snapshots
@@ -207,13 +223,13 @@ export const darkRiskApi = {
 		companyId: string,
 		params?: { page?: number; per_page?: number },
 		groupId?: string | null,
-	): Promise<any[]> {
-		const res = await complianceApiClient.get<ApiResponse<any[]>>(
+	): Promise<unknown[]> {
+		const res = await complianceApiClient.get<ApiResponse<unknown>>(
 			`/companies/${companyId}/darkrisk/report-snapshots`,
 			params,
 			groupId ? groupHeader(groupId) : undefined,
 		);
-		return res.data;
+		return extractArray(res.data);
 	},
 
 	async createReportSnapshot(
@@ -227,8 +243,8 @@ export const darkRiskApi = {
 			[k: string]: unknown;
 		},
 		groupId?: string | null,
-	): Promise<any> {
-		const res = await complianceApiClient.post<ApiResponse<any>>(
+	): Promise<unknown> {
+		const res = await complianceApiClient.post<ApiResponse<unknown>>(
 			`/companies/${companyId}/darkrisk/report-snapshots`,
 			payload,
 			groupId ? groupHeader(groupId) : undefined,
@@ -240,8 +256,8 @@ export const darkRiskApi = {
 		companyId: string,
 		snapshotId: string,
 		groupId?: string | null,
-	): Promise<any> {
-		const res = await complianceApiClient.get<ApiResponse<any>>(
+	): Promise<unknown> {
+		const res = await complianceApiClient.get<ApiResponse<unknown>>(
 			`/companies/${companyId}/darkrisk/report-snapshots/${snapshotId}`,
 			undefined,
 			groupId ? groupHeader(groupId) : undefined,
@@ -254,13 +270,13 @@ export const darkRiskApi = {
 		companyId: string,
 		params?: Record<string, string | number | boolean | undefined>,
 		groupId?: string | null,
-	): Promise<any[]> {
-		const res = await complianceApiClient.get<ApiResponse<any[]>>(
+	): Promise<unknown[]> {
+		const res = await complianceApiClient.get<ApiResponse<unknown>>(
 			`/companies/${companyId}/darkrisk/findings`,
 			params,
 			groupId ? groupHeader(groupId) : undefined,
 		);
-		return res.data;
+		return extractArray(res.data);
 	},
 
 	// Assets
@@ -268,13 +284,13 @@ export const darkRiskApi = {
 		companyId: string,
 		params?: Record<string, string | number | boolean | undefined>,
 		groupId?: string | null,
-	): Promise<any[]> {
-		const res = await complianceApiClient.get<ApiResponse<any[]>>(
+	): Promise<unknown[]> {
+		const res = await complianceApiClient.get<ApiResponse<unknown>>(
 			`/companies/${companyId}/darkrisk/assets`,
 			params,
 			groupId ? groupHeader(groupId) : undefined,
 		);
-		return res.data;
+		return extractArray(res.data);
 	},
 
 	// Selectors
@@ -282,21 +298,21 @@ export const darkRiskApi = {
 		companyId: string,
 		params?: Record<string, string | number | boolean | undefined>,
 		groupId?: string | null,
-	): Promise<any[]> {
-		const res = await complianceApiClient.get<ApiResponse<any[]>>(
+	): Promise<unknown[]> {
+		const res = await complianceApiClient.get<ApiResponse<unknown>>(
 			`/companies/${companyId}/darkrisk/selectors`,
 			params,
 			groupId ? groupHeader(groupId) : undefined,
 		);
-		return res.data;
+		return extractArray(res.data);
 	},
 
 	// Roadmap status (dedicated endpoint)
 	async getRoadmapStatus(
 		companyId: string,
 		groupId?: string | null,
-	): Promise<any> {
-		const res = await complianceApiClient.get<ApiResponse<any>>(
+	): Promise<unknown> {
+		const res = await complianceApiClient.get<ApiResponse<unknown>>(
 			`/companies/${companyId}/darkrisk/roadmap-status`,
 			undefined,
 			groupId ? groupHeader(groupId) : undefined,
@@ -310,8 +326,8 @@ export const darkRiskApi = {
 		evidenceId: string,
 		payload: { reason: string; expires_in?: number },
 		groupId?: string | null,
-	): Promise<any> {
-		const res = await complianceApiClient.post<ApiResponse<any>>(
+	): Promise<unknown> {
+		const res = await complianceApiClient.post<ApiResponse<unknown>>(
 			`/companies/${companyId}/darkrisk/evidence/${evidenceId}/reveal`,
 			payload,
 			groupId ? groupHeader(groupId) : undefined,
