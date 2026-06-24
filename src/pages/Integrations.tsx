@@ -29,7 +29,8 @@ interface IntegrationFormData {
   is_active: boolean;
 }
 
-const iconMap: Record<string, any> = {
+type IconComponent = React.FC<React.SVGProps<SVGSVGElement>>;
+const iconMap: Record<string, IconComponent> = {
   shield: Shield,
   smartphone: Smartphone,
   'shield-ban': ShieldBan,
@@ -105,7 +106,7 @@ const Integrations = () => {
     queryFn: async () => {
       if (!organizationId) return [];
       const all = await tenantServicesApi.listByOrganization(organizationId, groupId);
-      return all.filter((s: any) => s.service_type === 'hipatch' && s.tenant_id === organizationId);
+      return all.filter((s) => s.service_type === 'hipatch' && s.tenant_id === organizationId);
     },
   });
 
@@ -150,10 +151,8 @@ const Integrations = () => {
         }
       }
 
-      let api_methods: Record<string, unknown>;
-      let api_url: string;
-      api_methods = JSON.parse(data.api_methods || '[]');
-      api_url = data.api_url;
+      const api_methods: Record<string, unknown> = JSON.parse(data.api_methods || '[]');
+      const api_url = data.api_url;
 
       const payload = {
         service_id: data.service_id,
@@ -237,13 +236,14 @@ const Integrations = () => {
       // Populate HiPatch fields from tenant-service settings (not integrations api_methods)
       if (integration.service_code === 'hipatch' || existingHipatch) {
         const settings = existingHipatch?.settings ?? {};
+        const s = settings as Record<string, unknown>;
         setHipatchFields({
-          connectsecure_company_id: String((settings as any).connectsecure_company_id ?? ''),
-          connectsecure_client_auth_token: String((settings as any).connectsecure_client_auth_token ?? ''),
-          connectsecure_pod: String((settings as any).connectsecure_pod ?? ''),
-          ninjaone_organization_id: String((settings as any).ninjaone_organization_id ?? ''),
-          ninjaone_organization_id_client: String((settings as any).ninjaone_organization_id_client ?? ''),
-          ninjaone_organization_secret: String((settings as any).ninjaone_organization_secret ?? ''),
+          connectsecure_company_id: String(s.connectsecure_company_id ?? ''),
+          connectsecure_client_auth_token: String(s.connectsecure_client_auth_token ?? ''),
+          connectsecure_pod: String(s.connectsecure_pod ?? ''),
+          ninjaone_organization_id: String(s.ninjaone_organization_id ?? ''),
+          ninjaone_organization_id_client: String(s.ninjaone_organization_id_client ?? ''),
+          ninjaone_organization_secret: String(s.ninjaone_organization_secret ?? ''),
         });
       } else {
         setHipatchFields({
@@ -346,8 +346,8 @@ const Integrations = () => {
                 Nuova Integrazione
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
+            <DialogContent className="max-w-2xl flex flex-col max-h-[90vh]">
+              <DialogHeader className="flex-shrink-0">
                 <DialogTitle>
                   {selectedIntegration ? 'Modifica Integrazione' : 'Nuova Integrazione'}
                 </DialogTitle>
@@ -356,7 +356,7 @@ const Integrations = () => {
                 </DialogDescription>
               </DialogHeader>
               <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 overflow-y-auto flex-1 pr-1">
                   <FormField
                     control={form.control}
                     name="service_id"
@@ -512,7 +512,7 @@ const Integrations = () => {
                     )}
                   />
                   </>)}
-                  <DialogFooter>
+                  <DialogFooter className="flex-shrink-0 pt-2">
                     <Button type="submit" disabled={createOrUpdateMutation.isPending}>
                       {createOrUpdateMutation.isPending ? 'Salvando...' : 'Salva'}
                     </Button>
@@ -527,7 +527,7 @@ const Integrations = () => {
           {/* HiPatch integrations live in tenant_services (not organization_integrations).
               Render them here so users see + can edit/delete their saved hipatch config. */}
           {hipatchServices.map((hp) => {
-            const hpSettings = (hp as any).settings || {};
+            const hpSettings = ((hp.settings ?? {}) as Record<string, unknown>);
             const tokenSet = !!hpSettings.connectsecure_client_auth_token;
             const podSet = !!hpSettings.connectsecure_pod;
             return (
