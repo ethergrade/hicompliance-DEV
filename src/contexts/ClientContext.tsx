@@ -119,7 +119,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({
 			setIsLoadingClients(false);
 			setHasFetchedOrganizations(true);
 		}
-	// eslint-disable-next-line react-hooks/exhaustive-deps
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [user, canManageMultipleClients, rolesLoading]);
 
 	// Set selected organization with persistence
@@ -155,6 +155,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({
 		async (group: Group) => {
 			setSelectedGroupState(group);
 			setSelectedOrganizationState(null); // Clear org when group changes
+			localStorage.removeItem(STORAGE_KEY);
 
 			// Ricarica capabilities per il nuovo gruppo prima di caricare le organizzazioni
 			await refreshCapabilities(group.id);
@@ -164,11 +165,8 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({
 			try {
 				const tenants = await tenantsApi.listAll(group.id);
 				setOrganizations(tenants);
-				// Seleziona automaticamente il primo cliente del nuovo gruppo
-				if (tenants.length > 0) {
-					setSelectedOrganizationState(tenants[0]);
-					localStorage.setItem(STORAGE_KEY, JSON.stringify(tenants[0]));
-				}
+				// No auto-selection: user must pick a client explicitly
+				localStorage.removeItem(STORAGE_KEY);
 			} catch (error) {
 				console.error("Error loading organizations for group:", error);
 				setOrganizations([]);
