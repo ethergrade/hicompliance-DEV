@@ -427,7 +427,7 @@ export const HiLogPdfExport: React.FC<HiLogPdfExportProps> = ({ dataSets }) => {
                     mode="single"
                     selected={dateFrom}
                     onSelect={setDateFrom}
-                    initialFocus
+                   
                     className={cn('p-3 pointer-events-auto')}
                   />
                 </PopoverContent>
@@ -449,7 +449,7 @@ export const HiLogPdfExport: React.FC<HiLogPdfExportProps> = ({ dataSets }) => {
                     mode="single"
                     selected={dateTo}
                     onSelect={setDateTo}
-                    initialFocus
+                   
                     className={cn('p-3 pointer-events-auto')}
                   />
                 </PopoverContent>

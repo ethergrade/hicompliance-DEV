@@ -306,8 +306,9 @@ const GANTT_END = new Date("2026-12-31");
 const Remediation: React.FC = () => {
 	const { organizationId: orgId, groupId } = useClientOrganization();
 	const { capabilities } = useAuth();
-	const canEdit = capabilities?.['hicompliance.remediation_tasks.edit'] ?? true;
-	const canUpdateProgress = capabilities?.['hicompliance.remediation_tasks.view'] ?? false;
+	const canEdit = capabilities?.["hicompliance.remediation_tasks.edit"] ?? true;
+	const canUpdateProgress =
+		capabilities?.["hicompliance.remediation_tasks.view"] ?? false;
 
 	const defaultPrefs = useMemo(
 		() => ({ selectedTimeframe: "90days", defaultView: "gantt" }),
@@ -324,7 +325,7 @@ const Remediation: React.FC = () => {
 	const [tasks, setTasks] = useState<DbTask[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [editingTask, setEditingTask] = useState<string | null>(null);
-	const [editTaskData, setEditTaskData] = useState<any>(null);
+	const [editTaskData, setEditTaskData] = useState<DbTask | null>(null);
 	const [newRemediation, setNewRemediation] = useState({
 		category: "",
 		priority: "",
@@ -401,6 +402,7 @@ const Remediation: React.FC = () => {
 		}
 	}, [orgId, groupId, apiTaskToDbTask]);
 
+ 
 	useEffect(() => {
 		loadTasks();
 	}, [loadTasks]);
@@ -441,7 +443,7 @@ const Remediation: React.FC = () => {
 	/* ─── DB mutation helpers ─── */
 	// Optimistic update + per-task PUT against v2 API
 	const updateTask = useCallback(
-		async (taskId: string, updates: Record<string, any>) => {
+		async (taskId: string, updates: Record<string, unknown>) => {
 			if (!orgId) return;
 			let snapshot: DbTask[] = [];
 			setTasks((prev) => {
@@ -461,7 +463,7 @@ const Remediation: React.FC = () => {
 						t.id === taskId ? apiTaskToDbTask(updated, orgId) : t,
 					),
 				);
-			} catch (err: any) {
+			} catch (err: unknown) {
 				// Rollback optimistic update
 				setTasks(snapshot);
 				console.error("[Remediation] Error updating task:", err);
@@ -609,16 +611,31 @@ const Remediation: React.FC = () => {
 		[activeTasks, orgId],
 	);
 
-	const handleProgressChange = useCallback(async (taskId: string, progress: number) => {
-		if (!orgId) return;
-		setTasks(prev => prev.map(t => t.id === taskId ? { ...t, progress } : t));
-		try {
-			await remediationTasksApi.updateProgress(orgId, taskId, progress, groupId);
-		} catch (err) {
-			await loadTasks();
-			toast({ title: 'Errore', description: getErrorDetail(err) || 'Impossibile aggiornare il progresso.', variant: 'destructive' });
-		}
-	}, [orgId, groupId, loadTasks]);
+	const handleProgressChange = useCallback(
+		async (taskId: string, progress: number) => {
+			if (!orgId) return;
+			setTasks((prev) =>
+				prev.map((t) => (t.id === taskId ? { ...t, progress } : t)),
+			);
+			try {
+				await remediationTasksApi.updateProgress(
+					orgId,
+					taskId,
+					progress,
+					groupId,
+				);
+			} catch (err) {
+				await loadTasks();
+				toast({
+					title: "Errore",
+					description:
+						getErrorDetail(err) || "Impossibile aggiornare il progresso.",
+					variant: "destructive",
+				});
+			}
+		},
+		[orgId, groupId, loadTasks],
+	);
 
 	/* ─── Create new task ─── */
 	const calculateBudget = (days: number, complexity: string) => {
@@ -634,29 +651,29 @@ const Remediation: React.FC = () => {
 			governance: { low: 8, medium: 15, high: 25 },
 		};
 		return estimates[categoryType]?.[complexity] || 20;
-};
-// Map internal category key (used in calculateDays) to the display name
-// that the v2 backend expects and that the Gantt already shows.
-const CATEGORY_KEY_TO_LABEL: Record<string, string> = {
-  identity_management: "Gestione delle identità",
-  software_development: "Sviluppo software",
-  supplier_management: "Gestione fornitori",
-  maintenance: "Manutenzione continua",
-  governance: "Governance",
-  encryption: "Crittografia",
-  incident_management: "Gestione incidenti",
-  risk_management: "Gestione del rischio",
-};
-// Map team short key to full display name the backend uses.
-const TEAM_KEY_TO_LABEL: Record<string, string> = {
-  "IT Security": "IT Security Team",
-  Development: "Development Team",
-  DevSecOps: "DevSecOps Team",
-  Procurement: "Procurement Team",
-  Operations: "Operations Team",
-  Compliance: "Compliance Team",
-  HR: "HR & Training",
-};
+	};
+	// Map internal category key (used in calculateDays) to the display name
+	// that the v2 backend expects and that the Gantt already shows.
+	const CATEGORY_KEY_TO_LABEL: Record<string, string> = {
+		identity_management: "Gestione delle identità",
+		software_development: "Sviluppo software",
+		supplier_management: "Gestione fornitori",
+		maintenance: "Manutenzione continua",
+		governance: "Governance",
+		encryption: "Crittografia",
+		incident_management: "Gestione incidenti",
+		risk_management: "Gestione del rischio",
+	};
+	// Map team short key to full display name the backend uses.
+	const TEAM_KEY_TO_LABEL: Record<string, string> = {
+		"IT Security": "IT Security Team",
+		Development: "Development Team",
+		DevSecOps: "DevSecOps Team",
+		Procurement: "Procurement Team",
+		Operations: "Operations Team",
+		Compliance: "Compliance Team",
+		HR: "HR & Training",
+	};
 
 	const handleCreateRemediation = async () => {
 		if (!orgId) {
@@ -690,14 +707,18 @@ const TEAM_KEY_TO_LABEL: Record<string, string> = {
 
 		const payload: StoreRemediationTaskRequest = {
 			task: newRemediation.description,
-			category: CATEGORY_KEY_TO_LABEL[newRemediation.category] || newRemediation.category,
+			category:
+				CATEGORY_KEY_TO_LABEL[newRemediation.category] ||
+				newRemediation.category,
 			start_date: startDate,
 			end_date: endDate,
 			priority: (PRIORITY_IT_TO_DB[newRemediation.priority] ||
 				"medium") as StoreRemediationTaskRequest["priority"],
 			color: priorityColors[newRemediation.priority] || "#3b82f6",
 			progress: 0,
-			assignee: TEAM_KEY_TO_LABEL[newRemediation.assignedTeam] || newRemediation.assignedTeam,
+			assignee:
+				TEAM_KEY_TO_LABEL[newRemediation.assignedTeam] ||
+				newRemediation.assignedTeam,
 			budget: estimatedBudget,
 			display_order: activeTasks.length,
 			is_deleted: false,
@@ -862,12 +883,12 @@ const TEAM_KEY_TO_LABEL: Record<string, string> = {
 							onOpenChange={setIsCreateModalOpen}
 						>
 							{canEdit && (
-							<DialogTrigger asChild>
-								<Button className="bg-green-600 hover:bg-green-700 text-white">
-									<Plus className="w-4 h-4 mr-2" />
-									Crea Remediation
-								</Button>
-							</DialogTrigger>
+								<DialogTrigger asChild>
+									<Button className="bg-green-600 hover:bg-green-700 text-white">
+										<Plus className="w-4 h-4 mr-2" />
+										Crea Remediation
+									</Button>
+								</DialogTrigger>
 							)}
 							<DialogContent className="max-w-2xl">
 								<DialogHeader>
@@ -1065,7 +1086,6 @@ const TEAM_KEY_TO_LABEL: Record<string, string> = {
 															startDate: date ? format(date, "yyyy-MM-dd") : "",
 														}))
 													}
-													initialFocus
 												/>
 											</PopoverContent>
 										</Popover>
@@ -1163,7 +1183,7 @@ const TEAM_KEY_TO_LABEL: Record<string, string> = {
 											<Textarea
 												value={editTaskData.task}
 												onChange={(e) =>
-													setEditTaskData((p: any) => ({
+													setEditTaskData((p) => ({
 														...p,
 														task: e.target.value,
 													}))
@@ -1177,7 +1197,7 @@ const TEAM_KEY_TO_LABEL: Record<string, string> = {
 												<Select
 													value={editTaskData.category}
 													onValueChange={(v) =>
-														setEditTaskData((p: any) => ({ ...p, category: v }))
+														setEditTaskData((p) => ({ ...p, category: v }))
 													}
 												>
 													<SelectTrigger>
@@ -1225,7 +1245,7 @@ const TEAM_KEY_TO_LABEL: Record<string, string> = {
 												<Select
 													value={editTaskData.priority}
 													onValueChange={(v) =>
-														setEditTaskData((p: any) => ({ ...p, priority: v }))
+														setEditTaskData((p) => ({ ...p, priority: v }))
 													}
 												>
 													<SelectTrigger>
@@ -1246,7 +1266,7 @@ const TEAM_KEY_TO_LABEL: Record<string, string> = {
 												<Select
 													value={editTaskData.assignee}
 													onValueChange={(v) =>
-														setEditTaskData((p: any) => ({ ...p, assignee: v }))
+														setEditTaskData((p) => ({ ...p, assignee: v }))
 													}
 												>
 													<SelectTrigger>
@@ -1288,7 +1308,7 @@ const TEAM_KEY_TO_LABEL: Record<string, string> = {
 													max="100"
 													value={editTaskData.progress}
 													onChange={(e) =>
-														setEditTaskData((p: any) => ({
+														setEditTaskData((p) => ({
 															...p,
 															progress: Number(e.target.value),
 														}))
@@ -1304,7 +1324,7 @@ const TEAM_KEY_TO_LABEL: Record<string, string> = {
 												step="100"
 												value={editTaskData.budget || 0}
 												onChange={(e) =>
-													setEditTaskData((p: any) => ({
+													setEditTaskData((p) => ({
 														...p,
 														budget: Number(e.target.value),
 													}))
@@ -1342,14 +1362,13 @@ const TEAM_KEY_TO_LABEL: Record<string, string> = {
 																	: undefined
 															}
 															onSelect={(date) =>
-																setEditTaskData((p: any) => ({
+																setEditTaskData((p) => ({
 																	...p,
 																	startDate: date
 																		? format(date, "yyyy-MM-dd")
 																		: "",
 																}))
 															}
-															initialFocus
 														/>
 													</PopoverContent>
 												</Popover>
@@ -1381,14 +1400,13 @@ const TEAM_KEY_TO_LABEL: Record<string, string> = {
 																	: undefined
 															}
 															onSelect={(date) =>
-																setEditTaskData((p: any) => ({
+																setEditTaskData((p) => ({
 																	...p,
 																	endDate: date
 																		? format(date, "yyyy-MM-dd")
 																		: "",
 																}))
 															}
-															initialFocus
 														/>
 													</PopoverContent>
 												</Popover>

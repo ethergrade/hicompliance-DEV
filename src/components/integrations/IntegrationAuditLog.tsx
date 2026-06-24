@@ -258,7 +258,7 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="start">
-                <Calendar mode="single" selected={dateFrom} onSelect={handleDateFromChange} initialFocus />
+                <Calendar mode="single" selected={dateFrom} onSelect={handleDateFromChange} />
               </PopoverContent>
             </Popover>
 
@@ -270,7 +270,7 @@ export const IntegrationAuditLog: React.FC<IntegrationAuditLogProps> = ({ organi
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="start">
-                <Calendar mode="single" selected={dateTo} onSelect={handleDateToChange} initialFocus />
+                <Calendar mode="single" selected={dateTo} onSelect={handleDateToChange} />
               </PopoverContent>
             </Popover>
 

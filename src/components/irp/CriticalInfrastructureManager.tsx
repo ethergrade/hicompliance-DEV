@@ -370,7 +370,7 @@ export const CriticalInfrastructureManager = () => {
                                   date ? format(date, 'yyyy-MM-dd') : null
                                 )}
                                 locale={it}
-                                initialFocus
+                               
                               />
                             </PopoverContent>
                           </Popover>

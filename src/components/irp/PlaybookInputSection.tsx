@@ -98,7 +98,7 @@ export const PlaybookInputSection: React.FC<PlaybookInputSectionProps> = ({
                       mode="single"
                       selected={parseDate(input.value)}
                       onSelect={(date) => handleDateSelect(input.id, date)}
-                      initialFocus
+                     
                       locale={it}
                       className="pointer-events-auto"
                     />

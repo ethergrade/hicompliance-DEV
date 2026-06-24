@@ -87,7 +87,11 @@ export const useOrganizationStore = create<OrganizationState>()(
 
 			clearSelection: () => {
 				localStorage.removeItem(STORAGE_KEY);
-				set({ selectedOrganization: null, tenantServices: [], orgFlags: deriveOrganizationFlags([]) });
+				set({
+					selectedOrganization: null,
+					tenantServices: [],
+					orgFlags: deriveOrganizationFlags([]),
+				});
 			},
 
 			setOrganizations: (orgs) => set({ organizations: orgs }),

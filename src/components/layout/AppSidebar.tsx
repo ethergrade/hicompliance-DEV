@@ -152,10 +152,7 @@ export const AppSidebar: React.FC = () => {
 	}, [groupId, refreshCapabilities]);
 
 	// Fetch HiCompliance service status via Zustand-backed hydration hook
-	useHydrateOrganizationServices(
-		selectedOrganization?.id,
-		groupId ?? null,
-	);
+	useHydrateOrganizationServices(selectedOrganization?.id, groupId ?? null);
 	const orgFlags = useOrganizationStore((s) => s.orgFlags);
 
 	const forceDemoAccessForSalesCliente1 =

@@ -21,16 +21,14 @@ export function useHydrateOrganizationServices(
 	organizationId: string | null | undefined,
 	groupId: string | null | undefined,
 ) {
-	const setTenantServices = useOrganizationStore(
-		(s) => s.setTenantServices,
-	);
+	const setTenantServices = useOrganizationStore((s) => s.setTenantServices);
 
-	const { data: services, isLoading, error } = useQuery({
-		queryKey: [
-			"org-services-hydrate",
-			organizationId,
-			groupId,
-		],
+	const {
+		data: services,
+		isLoading,
+		error,
+	} = useQuery({
+		queryKey: ["org-services-hydrate", organizationId, groupId],
 		queryFn: async () => {
 			if (!organizationId) return [];
 			const raw = await tenantServicesApi.listByOrganization(
