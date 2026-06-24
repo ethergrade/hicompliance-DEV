@@ -119,13 +119,8 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({
 			setIsLoadingClients(false);
 			setHasFetchedOrganizations(true);
 		}
-	}, [
-		user,
-		canManageMultipleClients,
-		rolesLoading,
-		selectedGroup,
-		selectedOrganization,
-	]);
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [user, canManageMultipleClients, rolesLoading]);
 
 	// Set selected organization with persistence
 	const setSelectedOrganization = useCallback((org: TenantResource) => {
