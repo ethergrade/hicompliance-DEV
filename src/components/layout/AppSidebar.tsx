@@ -58,8 +58,8 @@ import { useUserRoles } from "@/hooks/useUserRoles";
 import { useRolePermissions } from "@/hooks/useRolePermissions";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useClientContext } from "@/contexts/ClientContext";
-import { useQuery } from "@tanstack/react-query";
-import { tenantServicesApi } from "@/lib/api";
+import { useHydrateOrganizationServices } from "@/hooks/useHydrateOrganizationServices";
+import { useOrganizationStore } from "@/stores/organizationStore";
 
 const navigation = [
 	{ title: "Home", href: "/", icon: Home },
@@ -151,47 +151,12 @@ export const AppSidebar: React.FC = () => {
 		if (groupId) refreshCapabilities(groupId);
 	}, [groupId, refreshCapabilities]);
 
-	// Fetch HiCompliance service status from API to gate sidebar modules
-	const { data: orgFlags } = useQuery({
-		queryKey: ["sidebar-org-flags", selectedOrganization?.id, groupId],
-		queryFn: async () => {
-			if (!selectedOrganization?.id) return { hicompliance_enabled: false };
-			try {
-				const services = await tenantServicesApi.listByOrganization(
-					selectedOrganization.id,
-					groupId,
-				);
-				const orgServices = services.filter(
-					(s) => s.tenant_id === selectedOrganization.id,
-				);
-				const hicomplianceActive = orgServices.some(
-					(s) => s.service_type === "hicompliance" && s.status === "active",
-				);
-				const surfaceScanActive = orgServices.some(
-					(s) => s.service_type === "surfacescan" && s.status === "active",
-				);
-				const darkRiskActive = orgServices.some(
-					(s) => s.service_type === "darkrisk" && s.status === "active",
-				);
-				const hipatchActive = orgServices.some(
-					(s) => s.service_type === "hipatch" && s.status === "active",
-				);
-				return {
-					hicompliance_enabled: hicomplianceActive,
-					surface_scan360_enabled: surfaceScanActive,
-					dark_risk360_enabled: darkRiskActive,
-					hipatch_enabled: hipatchActive,
-				};
-			} catch {
-				return {
-					hicompliance_enabled: false,
-					surface_scan360_enabled: false,
-					dark_risk360_enabled: false,
-				};
-			}
-		},
-		enabled: !!selectedOrganization?.id,
-	});
+	// Fetch HiCompliance service status via Zustand-backed hydration hook
+	useHydrateOrganizationServices(
+		selectedOrganization?.id,
+		groupId ?? null,
+	);
+	const orgFlags = useOrganizationStore((s) => s.orgFlags);
 
 	const forceDemoAccessForSalesCliente1 =
 		isLockedSalesUser &&
