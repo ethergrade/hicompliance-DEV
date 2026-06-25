@@ -158,6 +158,7 @@ const severityBadgeClass: Record<string, string> = {
 
 const moduleOrder = [
   'passes',
+  'connectsecure',
   'http_security',
   'headers',
   'redirects',
@@ -927,6 +928,27 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
     });
   }, [selectedObservations, selectedExposureOpenPorts]);
 
+  const connectsecureSummary = useMemo(() => {
+    const bfsObs = selectedObservations
+      .filter(r => r.module === 'connectsecure' && r.observation_type === 'bfs_scan_summary')
+      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+    const emailObs = selectedObservations
+      .filter(r => r.module === 'connectsecure' && r.observation_type === 'discovered_emails')
+      .flatMap(r => [...(r.value?.emails || []), ...(r.value?.guessed || [])]);
+    const employeeObs = selectedObservations
+      .filter(r => r.module === 'connectsecure' && r.observation_type === 'osint_employees')
+      .flatMap(r => r.value?.employees || []);
+    const bfs = bfsObs[0]?.value || {};
+    return {
+      domainsScanned:  Number(bfs.domains_scanned || 0),
+      maxDepth:        Number(bfs.max_depth_reached || 0),
+      totalVisited:    Number(bfs.total_visited || 0),
+      emailsFound:     emailObs.length,
+      employeesFound:  employeeObs.length,
+      hasBfs:          bfsObs.length > 0,
+    };
+  }, [selectedObservations]);
+
   const moduleOutcomes = useMemo(() => {
     const outcomes: Record<string, ModuleOutcomeStatus> = {};
     const moduleObs = new Map<string, ObservationRow[]>();
@@ -1463,6 +1485,48 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                 })}
                 {passItems.length === 0 && <p className="text-xs text-muted-foreground">Nessun controllo disponibile.</p>}
               </div>
+            </div>
+
+            <div className="rounded-lg border border-border p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="font-medium flex items-center gap-2"><Globe2 className="w-4 h-4 text-blue-400" />Attack Surface</div>
+                <Badge className={statusBadgeClass[moduleOutcomes.connectsecure || 'success_no_data']}>
+                  {statusLabel(moduleOutcomes.connectsecure || 'success_no_data')}
+                </Badge>
+              </div>
+              {connectsecureSummary.hasBfs ? (
+                <div className="space-y-2 text-xs">
+                  <div className="flex flex-wrap gap-2">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge variant="outline" className="text-[11px]">
+                          <Network className="w-3 h-3 mr-1" />{connectsecureSummary.domainsScanned} domini
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent className="text-xs">Domini scansionati via BFS</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge variant="outline" className="text-[11px]">
+                          Depth {connectsecureSummary.maxDepth}
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent className="text-xs">Profondità BFS raggiunta (max 10)</TooltipContent>
+                    </Tooltip>
+                    {connectsecureSummary.emailsFound > 0 && (
+                      <Badge variant="outline" className="text-[11px]">{connectsecureSummary.emailsFound} email</Badge>
+                    )}
+                    {connectsecureSummary.employeesFound > 0 && (
+                      <Badge variant="outline" className="text-[11px]">{connectsecureSummary.employeesFound} dipendenti</Badge>
+                    )}
+                  </div>
+                  <p className="text-muted-foreground">
+                    {connectsecureSummary.totalVisited} domini visitati · profondità max {connectsecureSummary.maxDepth}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">Attack Surface Mapper non configurato o non ancora eseguito.</p>
+              )}
             </div>
 
             <div className="rounded-lg border border-border p-3 space-y-3">
