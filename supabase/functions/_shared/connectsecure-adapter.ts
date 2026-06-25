@@ -69,15 +69,24 @@ export interface CsResult {
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 export async function csAuthorize(cfg: CsConfig): Promise<CsSession> {
-  const url = `https://${cfg.pod_host}/w/authorize`;
+  // Normalize: strip https:// prefix if accidentally included in pod_host, trim whitespace
+  const podHost = cfg.pod_host.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  const token   = cfg.client_auth_token.trim();
+  const url = `https://${podHost}/w/authorize`;
+  console.log(`[cs-auth] POST ${url} token=${token.substring(0, 12)}...`);
   const r = await fetch(url, {
     method:  'POST',
     headers: {
       accept:              'application/json',
-      'Client-Auth-Token': cfg.client_auth_token,
+      'Content-Type':      'application/json',
+      'Client-Auth-Token': token,
     },
   });
-  if (!r.ok) throw new Error(`[ConnectSecure] authorize failed: ${r.status} ${await r.text().catch(() => '')}`);
+  if (!r.ok) {
+    const errBody = await r.text().catch(() => '');
+    console.error(`[cs-auth] 403 body: ${errBody}`);
+    throw new Error(`[ConnectSecure] authorize failed: ${r.status}${errBody ? ' — ' + errBody : ''}`);
+  }
   const body = await r.json();
   if (!body?.data?.access_token) throw new Error('[ConnectSecure] no access_token in authorize response');
   return { token: body.data.access_token, userId: String(body.data.user_id) };
