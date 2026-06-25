@@ -146,7 +146,7 @@ Deno.serve(async (req: Request) => {
 
 type AdminClient = any;
 type CsOrgConfig = CsConfig & { organization_id: string };
-type TriggeredDomain = { domain: string; id: number };
+type TriggeredDomain = { domain: string; id: number; jobId: string | null };
 
 async function listWeeklyConfigs(
   adminClient: AdminClient,
@@ -203,7 +203,8 @@ async function triggerAttackSurfaceForOrg(
   const domainObjs: TriggeredDomain[] = [];
   for (const domain of domains) {
     const id = await csGetOrCreateDomain(cfg, session, domain, adminClient, orgId);
-    domainObjs.push({ domain, id });
+    const jobId = await createConnectSecureJob(adminClient, orgId, domain, id);
+    domainObjs.push({ domain, id, jobId });
   }
 
   await csScanNow(
@@ -213,6 +214,74 @@ async function triggerAttackSurfaceForOrg(
   );
 
   return { triggered: domainObjs.length, domains: domainObjs };
+}
+
+async function createConnectSecureJob(
+  adminClient: AdminClient,
+  orgId: string,
+  domain: string,
+  domainId: number,
+): Promise<string | null> {
+  const now = new Date().toISOString();
+  const { data, error } = await adminClient
+    .from('surface_scan_jobs')
+    .insert({
+      organization_id: orgId,
+      tenant_id: orgId,
+      customer_id: orgId,
+      requested_by: null,
+      raw_target: domain,
+      normalized_target: domain,
+      target_type: 'domain',
+      hostname: domain,
+      root_domain: domain,
+      resolved_ips: [],
+      scan_profile: 'domain_exposure',
+      scan_name: `ConnectSecure ASM - ${domain}`,
+      scan_type: 'connectsecure_asm',
+      status: 'running',
+      authorization_confirmed: true,
+      started_at: now,
+      config: {
+        connectsecure: {
+          attack_surface_domain_id: domainId,
+          background: true,
+        },
+      },
+      summary: {
+        provider: 'connectsecure',
+        status: 'running',
+        attack_surface_domain_id: domainId,
+      },
+    })
+    .select('id')
+    .single();
+
+  if (error || !data?.id) {
+    console.warn('[connectsecure-scan] unable to create surface_scan_jobs row:', error?.message || error);
+    return null;
+  }
+
+  await logQueryError('unable to create running module result', adminClient.from('surface_scan_module_results').upsert({
+    organization_id: orgId,
+    tenant_id: orgId,
+    customer_id: orgId,
+    scan_job_id: data.id,
+    module_key: 'connectsecure',
+    module_label: 'Attack Surface Mapper',
+    status: 'running',
+    severity: 'info',
+    source: 'connectsecure',
+    started_at: now,
+    normalized: {
+      domain,
+      attack_surface_domain_id: domainId,
+      status: 'running',
+    },
+    raw: {},
+  }, { onConflict: 'scan_job_id,module_key' }));
+
+  return String(data.id);
 }
 
 async function resolveScopeDomains(
@@ -265,8 +334,9 @@ async function ingestAttackSurfaceResults(
   for (const d of domains) {
     try {
       const result = await csWaitForResults(cfg, session, d.id, d.domain, 420_000);
-      await saveResult(adminClient, cfg.organization_id, d.domain, result);
+      await saveResult(adminClient, cfg.organization_id, d.domain, result, d.jobId);
     } catch (err) {
+      if (d.jobId) await markConnectSecureJobFailed(adminClient, d.jobId, cfg.organization_id, d.domain, d.id, err);
       console.warn('[connectsecure-scan] result ingest failed:', d.domain, err);
     }
   }
@@ -277,15 +347,17 @@ async function saveResult(
   orgId: string,
   domain: string,
   result: CsResult,
+  scanJobId: string | null,
 ): Promise<void> {
   const { assets: mappedAssets, findings, ports: mappedPorts, observations, sensitiveData } = csMapToFindings(result, domain, 0);
   const now = new Date().toISOString();
 
   for (const a of mappedAssets) {
-    await adminClient.from('surface_assets').upsert({
+    await logQueryError('unable to upsert surface asset', adminClient.from('surface_assets').upsert({
         organization_id: orgId,
         customer_id:     orgId,
         tenant_id:       orgId,
+        scan_job_id:     scanJobId,
         asset_type:      a.asset_type,
         asset_value:     a.asset_value,
         hostname:        a.hostname  || null,
@@ -296,14 +368,15 @@ async function saveResult(
         raw:             a.raw || {},
         first_seen:      now,
         last_seen:       now,
-      }, { onConflict: 'organization_id,asset_type,asset_value' }).catch(console.warn);
+      }, { onConflict: 'organization_id,asset_type,asset_value' }));
   }
 
   for (const f of findings) {
-    await adminClient.from('surface_findings').insert({
+    await logQueryError('unable to insert surface finding', adminClient.from('surface_findings').insert({
         organization_id: orgId,
         customer_id:     orgId,
         tenant_id:       orgId,
+        scan_job_id:     scanJobId,
         provider:        f.provider,
         module:          f.module,
         finding_type:    f.finding_type,
@@ -322,15 +395,15 @@ async function saveResult(
         status:          'open',
         first_seen_at:   now,
         last_seen_at:    now,
-      }).catch(console.warn);
+      }));
   }
 
   for (const p of mappedPorts) {
-    await adminClient.from('surface_open_ports').upsert({
+    await logQueryError('unable to upsert open port', adminClient.from('surface_open_ports').upsert({
         organization_id: orgId,
         customer_id:     orgId,
         tenant_id:       orgId,
-        scan_job_id:     null,
+        scan_job_id:     scanJobId,
         host:            p.host,
         ip:              p.ip,
         port:            p.port,
@@ -346,38 +419,136 @@ async function saveResult(
         first_seen_at:   now,
         last_seen_at:    now,
         raw:             { source: 'connectsecure', attack_surface_domain_id: result.attack_surface_domain_id },
-      }, { onConflict: 'customer_id,host,port,protocol' }).catch(console.warn);
+      }, { onConflict: 'customer_id,host,port,protocol' }));
   }
 
   for (const obs of observations) {
-    await adminClient.from('surface_observations').insert({
+    await logQueryError('unable to insert surface observation', adminClient.from('surface_observations').insert({
       organization_id: orgId,
       customer_id:     orgId,
       tenant_id:       orgId,
-      scan_job_id:     null,
+      scan_job_id:     scanJobId,
       module:          'connectsecure',
       observation_type: obs.type,
       title:           obs.title,
       value:           obs.value,
       severity:        obs.severity,
       confidence:      'high',
-    }).catch(console.warn);
+    }));
   }
 
   if ((sensitiveData.creds?.length || 0) + (sensitiveData.hashes?.length || 0) > 0) {
-    await adminClient.from('connectsecure_sensitive_data').insert({
+    await logQueryError('unable to insert sensitive-data summary', adminClient.from('connectsecure_sensitive_data').insert({
       organization_id: orgId,
-      scan_job_id:     null,
+      scan_job_id:     scanJobId,
       domain:          sensitiveData.domain,
       creds_count:     sensitiveData.creds?.length || 0,
       hashes_count:    sensitiveData.hashes?.length || 0,
       creds:           sensitiveData.creds || null,
       hashes:          sensitiveData.hashes || null,
-    }).catch(console.warn);
+    }));
+  }
+
+  if (scanJobId) {
+    const severityCounts = findings.reduce((acc: Record<string, number>, finding) => {
+      const severity = String(finding.severity || 'info');
+      acc[severity] = (acc[severity] || 0) + 1;
+      return acc;
+    }, {});
+    await logQueryError('unable to complete module result', adminClient.from('surface_scan_module_results').upsert({
+      organization_id: orgId,
+      tenant_id: orgId,
+      customer_id: orgId,
+      scan_job_id: scanJobId,
+      module_key: 'connectsecure',
+      module_label: 'Attack Surface Mapper',
+      status: 'success',
+      severity: findings.some(f => f.severity === 'critical') ? 'critical' : findings.some(f => f.severity === 'high') ? 'high' : 'info',
+      source: 'connectsecure',
+      completed_at: now,
+      normalized: {
+        domain,
+        attack_surface_domain_id: result.attack_surface_domain_id,
+        assets: mappedAssets.length,
+        findings: findings.length,
+        ports: mappedPorts.length,
+        observations: observations.length,
+        severity_counts: severityCounts,
+      },
+      raw: {
+        status: result.status,
+        updated: result.updated,
+      },
+    }, { onConflict: 'scan_job_id,module_key' }));
+
+    await logQueryError('unable to complete scan job', adminClient.from('surface_scan_jobs').update({
+      status: 'completed',
+      completed_at: now,
+      error_message: null,
+      summary: {
+        provider: 'connectsecure',
+        status: 'completed',
+        attack_surface_domain_id: result.attack_surface_domain_id,
+        assets: mappedAssets.length,
+        findings: findings.length,
+        ports: mappedPorts.length,
+        observations: observations.length,
+        severity_counts: severityCounts,
+        updated: result.updated || now,
+      },
+    }).eq('id', scanJobId));
   }
 }
 
+async function markConnectSecureJobFailed(
+  adminClient: AdminClient,
+  scanJobId: string,
+  orgId: string,
+  domain: string,
+  domainId: number,
+  err: unknown,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const message = err instanceof Error ? err.message : String(err);
+  await logQueryError('unable to fail module result', adminClient.from('surface_scan_module_results').upsert({
+    organization_id: orgId,
+    tenant_id: orgId,
+    customer_id: orgId,
+    scan_job_id: scanJobId,
+    module_key: 'connectsecure',
+    module_label: 'Attack Surface Mapper',
+    status: 'error',
+    severity: 'medium',
+    source: 'connectsecure',
+    completed_at: now,
+    error_message: message,
+    normalized: {
+      domain,
+      attack_surface_domain_id: domainId,
+      status: 'error',
+    },
+    raw: {},
+  }, { onConflict: 'scan_job_id,module_key' }));
+
+  await logQueryError('unable to fail scan job', adminClient.from('surface_scan_jobs').update({
+    status: 'failed',
+    completed_at: now,
+    error_message: message,
+    summary: {
+      provider: 'connectsecure',
+      status: 'failed',
+      attack_surface_domain_id: domainId,
+      error: message,
+    },
+  }).eq('id', scanJobId));
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+async function logQueryError(context: string, query: PromiseLike<{ error?: { message?: string } | null }>): Promise<void> {
+  const { error } = await query;
+  if (error) console.warn(`[connectsecure-scan] ${context}:`, error.message || error);
+}
 
 function unauthorized() {
   return new Response(JSON.stringify({ error: 'unauthorized' }), {

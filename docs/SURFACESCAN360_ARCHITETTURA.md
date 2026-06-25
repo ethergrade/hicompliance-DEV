@@ -150,7 +150,7 @@ Integrazione con CyberCNS/ConnectSecure per ricognizione esterna certificata.
 6. Quando Completed:
    ← target_ips, subdomains, DNS/mail posture, OSINT, buckets, creds/hashes
 
-7. csMapToFindings() → surface_assets + surface_findings + surface_open_ports + observations
+7. csMapToFindings() → surface_scan_jobs + surface_scan_module_results + surface_assets + surface_findings + surface_open_ports + observations
 ```
 
 **Grade CS → Severity finding:**
@@ -164,7 +164,7 @@ Integrazione con CyberCNS/ConnectSecure per ricognizione esterna certificata.
 
 **Provider tag:** `connectsecure`
 
-> Il scan è asincrono. Le chiamate UI/cron triggerano lo scan e l'ingest prosegue in background: il token viene rigenerato a ogni run e su eventuale 401. La vista `/r/company/jobs` resta solo diagnostica, perché ConnectSecure può restituire descrizioni generiche non correlate al dominio.
+> Il scan è asincrono. Le chiamate UI/cron triggerano lo scan e l'ingest prosegue in background: il token viene rigenerato a ogni run e su eventuale 401. Ogni run ConnectSecure standalone crea un `surface_scan_jobs` con modulo `connectsecure`, così la GUI SurfaceScan360 legge stato e risultati tramite `scan_job_id`. La vista `/r/company/jobs` resta solo diagnostica, perché ConnectSecure può restituire descrizioni generiche non correlate al dominio.
 
 ---
 
