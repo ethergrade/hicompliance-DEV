@@ -1,22 +1,23 @@
 /**
- * connectsecure-scan — Edge Function standalone
+ * connectsecure-scan — Edge Function
  *
- * Chiamata:
- *  - POST { organization_id, domain, action? }
- *    action = 'test_auth'   → solo auth test, restituisce { ok: true, user_id }
- *    action = 'scan'        → BFS completo per domain
- *    action = 'weekly_all'  → sweep di tutte le org con config (dal cron)
+ * Azioni:
+ *  test_auth   → verifica connessione CS (restituisce user_id)
+ *  scan        → external scan per una org specifica
+ *  weekly_all  → sweep di tutte le org abilitate (dal cron)
  *
- * Auth: Bearer service-role oppure x-surface-internal-secret
+ * Auth: service-role key | x-surface-internal-secret | JWT utente Supabase valido
  */
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
   csAuthorize,
-  csGetOrCreateDomain,
-  csScanNow,
-  csWaitForJob,
-  csGetResults,
-  csMapToFindings,
+  csGetDiscoverySettings,
+  csCreateDiscoverySetting,
+  csExternalScan,
+  csGetExternalScanAssets,
+  csGetExternalPorts,
+  csGetExternalVulns,
+  csMapExternalToFindings,
   type CsConfig,
 } from '../_shared/connectsecure-adapter.ts';
 
@@ -28,47 +29,48 @@ const corsHeaders = {
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  const SUPABASE_URL      = Deno.env.get('SUPABASE_URL')!;
-  const SERVICE_ROLE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const INTERNAL_SECRET   = Deno.env.get('SURFACE_SCAN_CRON_INTERNAL_SECRET') || '';
+  const SUPABASE_URL     = Deno.env.get('SUPABASE_URL')!;
+  const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const INTERNAL_SECRET  = Deno.env.get('SURFACE_SCAN_CRON_INTERNAL_SECRET') || '';
 
-  // Auth check
   const authHeader    = req.headers.get('Authorization') || '';
   const internalToken = req.headers.get('x-surface-internal-secret') || '';
   const isServiceRole = authHeader === `Bearer ${SERVICE_ROLE_KEY}`;
   const isInternal    = INTERNAL_SECRET && internalToken === INTERNAL_SECRET;
 
-  if (!isServiceRole && !isInternal) {
-    return new Response(JSON.stringify({ error: 'unauthorized' }), {
-      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-
   const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
     auth: { persistSession: false },
   });
 
-  // Global secrets override per-org DB config
-  const GLOBAL_POD_HOST  = Deno.env.get('CS_POD_HOST');
-  const GLOBAL_TOKEN     = Deno.env.get('CS_CLIENT_AUTH_TOKEN');
-  const GLOBAL_COMPANY   = Deno.env.get('CS_COMPANY_ID');
-  const hasGlobalCfg     = !!(GLOBAL_POD_HOST && GLOBAL_TOKEN && GLOBAL_COMPANY);
+  // Accetta anche JWT utente Supabase valido
+  if (!isServiceRole && !isInternal) {
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+    if (!token) return unauthorized();
+    const { data: { user }, error } = await adminClient.auth.getUser(token);
+    if (error || !user) return unauthorized();
+  }
+
+  // Secrets globali CS (override per-org)
+  const GLOBAL_POD_HOST = Deno.env.get('CS_POD_HOST');
+  const GLOBAL_TOKEN    = Deno.env.get('CS_CLIENT_AUTH_TOKEN');
+  const GLOBAL_COMPANY  = Deno.env.get('CS_COMPANY_ID');
+  const hasGlobalCfg    = !!(GLOBAL_POD_HOST && GLOBAL_TOKEN && GLOBAL_COMPANY);
 
   function mergeWithGlobal(dbCfg: Partial<CsConfig> = {}): CsConfig {
     return {
-      pod_host:           GLOBAL_POD_HOST || dbCfg.pod_host || '',
-      client_auth_token:  GLOBAL_TOKEN    || dbCfg.client_auth_token || '',
-      company_id:         GLOBAL_COMPANY  ? parseInt(GLOBAL_COMPANY, 10) : (dbCfg.company_id ?? 0),
+      pod_host:          GLOBAL_POD_HOST || dbCfg.pod_host || '',
+      client_auth_token: GLOBAL_TOKEN    || dbCfg.client_auth_token || '',
+      company_id:        GLOBAL_COMPANY  ? parseInt(GLOBAL_COMPANY, 10) : (dbCfg.company_id ?? 0),
     };
   }
 
   try {
-    const body = await req.json().catch(() => ({}));
+    const body      = await req.json().catch(() => ({}));
     const action    = String(body.action || 'scan');
     const orgId     = body.organization_id as string | undefined;
     const inputDomain = body.domain as string | undefined;
 
-    // ── Test auth ─────────────────────────────────────────────────────────────
+    // ── Test auth ───────────────────────────────────────────────────────────
     if (action === 'test_auth') {
       let cfgBase: Partial<CsConfig> = {};
       if (orgId) {
@@ -80,33 +82,33 @@ Deno.serve(async (req: Request) => {
         cfgBase = data || {};
       }
       const cfg = mergeWithGlobal(cfgBase);
-      if (!cfg.pod_host || !cfg.client_auth_token) return jsonErr('no ConnectSecure config available', 404);
+      if (!cfg.pod_host || !cfg.client_auth_token) return jsonErr('nessuna configurazione ConnectSecure disponibile', 404);
       const session = await csAuthorize(cfg);
       return json({ ok: true, user_id: session.userId, pod_host: cfg.pod_host, global_cfg: hasGlobalCfg });
     }
 
-    // ── Weekly sweep (tutte le org con config) ────────────────────────────────
+    // ── Weekly sweep ────────────────────────────────────────────────────────
     if (action === 'weekly_all') {
       const { data: configs } = await adminClient
         .from('connectsecure_config')
         .select('organization_id, pod_host, client_auth_token, company_id')
         .eq('enabled', true);
 
-      const results: Array<{ org_id: string; domains_scanned: number; error?: string }> = [];
+      const results: Array<{ org_id: string; assets_scanned: number; triggered: number; error?: string }> = [];
       for (const cfg of (configs || [])) {
         try {
           const mergedCfg = mergeWithGlobal(cfg as Partial<CsConfig>);
-          const r = await runBfsForOrg(adminClient, { ...mergedCfg, organization_id: cfg.organization_id }, undefined);
-          results.push({ org_id: cfg.organization_id, domains_scanned: r.totalScanned });
+          const r = await runExternalScanForOrg(adminClient, { ...mergedCfg, organization_id: cfg.organization_id }, undefined);
+          results.push({ org_id: cfg.organization_id, ...r });
         } catch (err) {
-          results.push({ org_id: cfg.organization_id, domains_scanned: 0, error: String(err) });
+          results.push({ org_id: cfg.organization_id, assets_scanned: 0, triggered: 0, error: String(err) });
         }
       }
       return json({ ok: true, orgs_swept: results.length, results });
     }
 
-    // ── Single org scan ───────────────────────────────────────────────────────
-    if (!orgId) return jsonErr('organization_id required', 400);
+    // ── Single org scan ─────────────────────────────────────────────────────
+    if (!orgId) return jsonErr('organization_id obbligatorio', 400);
 
     const { data: dbCfg } = await adminClient
       .from('connectsecure_config')
@@ -115,230 +117,183 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
 
     const cfg = mergeWithGlobal(dbCfg || {});
-    if (!cfg.pod_host || !cfg.client_auth_token) return jsonErr('no ConnectSecure config for this org', 404);
+    if (!cfg.pod_host || !cfg.client_auth_token) return jsonErr('nessuna configurazione ConnectSecure per questa org', 404);
 
-    const r = await runBfsForOrg(
-      adminClient,
-      { ...cfg, organization_id: orgId },
-      inputDomain,
-    );
-
+    const r = await runExternalScanForOrg(adminClient, { ...cfg, organization_id: orgId }, inputDomain);
     return json({ ok: true, organization_id: orgId, ...r });
 
   } catch (err) {
-    console.error('[connectsecure-scan] unhandled error:', err);
+    console.error('[connectsecure-scan] errore:', err);
     return json({ ok: false, error: String(err) }, 500);
   }
 });
 
-// ── BFS engine ────────────────────────────────────────────────────────────────
+// ── External Scan Engine ──────────────────────────────────────────────────────
 
-async function runBfsForOrg(
+async function runExternalScanForOrg(
   adminClient: ReturnType<typeof createClient>,
   cfg: CsConfig & { organization_id: string },
   forceDomain?: string,
-): Promise<{ totalScanned: number; maxDepthReached: number; domainsVisited: number }> {
-  const MAX_DEPTH   = 10;
-  const MAX_DOMAINS = 500;
-  const orgId       = cfg.organization_id;
+): Promise<{ assets_scanned: number; triggered: number; findings_saved: number }> {
+  const orgId = cfg.organization_id;
 
-  // Recupera root domains dallo scope
-  let startDomains: string[] = [];
+  // 1. Recupera scope org
+  let scopeEntries: Array<{ input_value: string; entry_type: string }> = [];
   if (forceDomain) {
-    startDomains = [forceDomain.trim().toLowerCase()];
+    scopeEntries = [{ input_value: forceDomain.trim().toLowerCase(), entry_type: 'domain' }];
   } else {
-    const { data: scopeRules } = await adminClient
+    const { data } = await adminClient
       .from('surface_scan_monitored_ips')
       .select('entry_type, input_value')
       .eq('organization_id', orgId)
-      .in('entry_type', ['domain']);
-
-    startDomains = (scopeRules || [])
-      .map((r: any) => String(r.input_value || '').trim().toLowerCase())
-      .filter(Boolean);
+      .in('entry_type', ['domain', 'ip', 'ip_range']);
+    scopeEntries = (data || []).map((r: any) => ({
+      input_value: String(r.input_value || '').trim().toLowerCase(),
+      entry_type:  String(r.entry_type || 'domain'),
+    })).filter(r => r.input_value);
   }
 
-  if (startDomains.length === 0) return { totalScanned: 0, maxDepthReached: 0, domainsVisited: 0 };
+  if (scopeEntries.length === 0) return { assets_scanned: 0, triggered: 0, findings_saved: 0 };
 
-  const session     = { current: await csAuthorize(cfg) };
-  const visited     = new Set<string>(startDomains);
-  const queue: Array<{ domain: string; depth: number; parent?: string }> =
-    startDomains.map(d => ({ domain: d, depth: 0 }));
+  // 2. Auth CS
+  const session = { current: await csAuthorize(cfg) };
 
-  let totalScanned   = 0;
-  let maxDepthReached = 0;
+  // 3. Leggi discovery settings esistenti in CS per questa company
+  const existingSettings = await csGetDiscoverySettings(cfg, session);
+  const settingsByAddr   = new Map(existingSettings.map(s => [s.address.toLowerCase(), s.id]));
 
-  while (queue.length > 0 && totalScanned < MAX_DOMAINS) {
-    const currentDepth = queue[0].depth;
-    const batch = queue.splice(0, queue.filter(q => q.depth === currentDepth).length);
-
-    // Resolve domain IDs
-    const domainObjs: Array<{ name: string; domain: string; company_id: number; id: number; depth: number; parent?: string }> = [];
-    for (const b of batch) {
-      try {
-        const id = await csGetOrCreateDomain(cfg, session, b.domain, adminClient, orgId);
-        await adminClient.from('connectsecure_domain_registry').upsert({
-          organization_id: orgId,
-          domain:          b.domain,
-          cs_domain_id:    id,
-          depth:           b.depth,
-          parent_domain:   b.parent || null,
-          last_scanned_at: new Date().toISOString(),
-        }, { onConflict: 'organization_id,domain' });
-        domainObjs.push({ name: b.domain, domain: b.domain, company_id: cfg.company_id, id, depth: b.depth, parent: b.parent });
-      } catch (err) {
-        console.warn('[connectsecure-scan] getOrCreateDomain failed:', b.domain, err);
-      }
-    }
-
-    if (domainObjs.length === 0) continue;
-
-    try {
-      await csScanNow(cfg, session, domainObjs);
-    } catch (err) {
-      console.warn('[connectsecure-scan] scanNow failed:', err);
-      continue;
-    }
-
-    for (const d of domainObjs) {
-      let result;
-      try {
-        await csWaitForJob(cfg, session, d.domain, 360_000);
-        result = await csGetResults(cfg, session, d.id);
-      } catch (err) {
-        console.warn('[connectsecure-scan] poll failed:', d.domain, err);
-        continue;
-      }
-      if (!result) continue;
-
-      totalScanned++;
-      if (d.depth > maxDepthReached) maxDepthReached = d.depth;
-
-      const { assets, findings, ports, observations, sensitiveData } = csMapToFindings(result, d.domain, d.depth);
-
-      // Persist assets
-      for (const a of assets) {
-        await adminClient.from('surface_assets').upsert({
-          organization_id: orgId,
-          customer_id:     orgId,
-          tenant_id:       orgId,
-          asset_type:      a.asset_type,
-          asset_value:     a.asset_value,
-          hostname:        a.hostname || null,
-          root_domain:     a.root_domain || null,
-          ip:              a.ip || null,
-          source:          a.source,
-          confidence:      a.confidence,
-          raw:             a.raw || {},
-          first_seen:      new Date().toISOString(),
-          last_seen:       new Date().toISOString(),
-        }, { onConflict: 'organization_id,asset_type,asset_value' }).catch(console.warn);
-      }
-
-      // Persist findings
-      for (const f of findings) {
-        await adminClient.from('surface_findings').insert({
-          organization_id: orgId,
-          customer_id:     orgId,
-          tenant_id:       orgId,
-          provider:        f.provider,
-          module:          f.module,
-          finding_type:    f.finding_type,
-          severity:        f.severity,
-          title:           f.title,
-          description:     f.description,
-          affected_asset:  f.affected_asset,
-          ip:              f.ip || null,
-          port:            f.port || null,
-          protocol:        f.protocol || null,
-          cve:             f.cve || [],
-          cwe:             f.cwe || [],
-          cvss:            f.cvss || null,
-          evidence:        f.evidence || {},
-          remediation:     f.remediation || null,
-          status:          'open',
-          first_seen_at:   new Date().toISOString(),
-          last_seen_at:    new Date().toISOString(),
-        }).catch(console.warn);
-      }
-
-      // Persist open ports
-      for (const p of ports) {
-        await adminClient.from('surface_open_ports').upsert({
-          organization_id: orgId,
-          customer_id:     orgId,
-          tenant_id:       orgId,
-          host:            p.host,
-          ip:              p.ip,
-          port:            p.port,
-          protocol:        p.protocol,
-          state:           'open',
-          service_name:    p.serviceName || null,
-          service_version: p.serviceVersion || null,
-          banner:          p.banner || null,
-          is_web:          [80, 443, 8080, 8443, 8888, 9000, 3000].includes(p.port),
-          is_tls:          [443, 8443, 993, 995, 465].includes(p.port),
-          exposure_level:  'info',
-          first_seen_at:   new Date().toISOString(),
-          last_seen_at:    new Date().toISOString(),
-          raw:             { source: 'connectsecure' },
-        }, { onConflict: 'organization_id,host,port,protocol' }).catch(console.warn);
-      }
-
-      // Persist observations
-      for (const obs of observations) {
-        await adminClient.from('surface_observations').insert({
-          organization_id: orgId,
-          customer_id:     orgId,
-          tenant_id:       orgId,
-          module:          'connectsecure',
-          observation_type: obs.type,
-          title:           obs.title,
-          value:           obs.value,
-          severity:        obs.severity,
-        }).catch(console.warn);
-      }
-
-      // Persist sensitive data
-      if ((sensitiveData.creds?.length || 0) + (sensitiveData.hashes?.length || 0) > 0) {
-        await adminClient.from('connectsecure_sensitive_data').insert({
-          organization_id: orgId,
-          domain:          sensitiveData.domain,
-          creds_count:     sensitiveData.creds?.length || 0,
-          hashes_count:    sensitiveData.hashes?.length || 0,
-          creds:           sensitiveData.creds || null,
-          hashes:          sensitiveData.hashes || null,
-        }).catch(console.warn);
-      }
-
-      // Enqueue subdomains + seed scope
-      if (d.depth < MAX_DEPTH) {
-        for (const sub of result.subdomains || []) {
-          const sub_domain = String(sub.subdomain || '').trim().toLowerCase();
-          if (sub_domain && !visited.has(sub_domain)) {
-            visited.add(sub_domain);
-            queue.push({ domain: sub_domain, depth: d.depth + 1, parent: d.domain });
-            // Seed into monitored scope so future weekly cron picks it up
-            await adminClient.from('surface_scan_monitored_ips').upsert({
-              organization_id: orgId,
-              input_value:     sub_domain,
-              entry_type:      'domain',
-              ip_start:        '',
-              ip_end:          '',
-              discovered_via:  'connectsecure_bfs',
-              discovered_from: d.domain,
-              created_by:      null,
-            }, { onConflict: 'organization_id,input_value' }).catch(console.warn);
-          }
-        }
+  // 4. Per ogni entry in scope: usa l'ID esistente o crea il discovery setting
+  const dsIds: number[] = [];
+  for (const entry of scopeEntries) {
+    const addr = entry.input_value;
+    if (settingsByAddr.has(addr)) {
+      dsIds.push(settingsByAddr.get(addr)!);
+    } else {
+      const addrType = entry.entry_type === 'ip' || entry.entry_type === 'ip_range' ? 'ipaddress' : 'domain';
+      const newId = await csCreateDiscoverySetting(cfg, session, addr, addrType);
+      if (newId) {
+        dsIds.push(newId);
+        settingsByAddr.set(addr, newId);
+        console.log(`[cs-scan] creato discovery setting id=${newId} per ${addr}`);
       }
     }
   }
 
-  return { totalScanned, maxDepthReached, domainsVisited: visited.size };
+  if (dsIds.length === 0) return { assets_scanned: 0, triggered: 0, findings_saved: 0 };
+
+  // 5. Trigger external scan (asincrono su CS — i risultati arrivano dopo alcuni minuti)
+  const scanResp = await csExternalScan(cfg, session, dsIds);
+  console.log(`[cs-scan] external_scan triggerato: status=${scanResp.status} msg=${scanResp.message || ''}`);
+
+  // 6. Leggi i risultati disponibili (scan precedente o corrente se già completato)
+  const allAssets = await csGetExternalScanAssets(cfg, session);
+
+  // 7. Filtra gli asset per lo scope di questa org
+  const scopeAddrSet = new Set(scopeEntries.map(e => e.input_value));
+  const relevantAssets = allAssets.filter(a => {
+    const hn = (a.host_name || '').toLowerCase();
+    const nm = (a.name     || '').toLowerCase();
+    // Match diretto o sottodominio
+    return Array.from(scopeAddrSet).some(scope =>
+      hn === scope || hn.endsWith(`.${scope}`) ||
+      nm === scope || nm.endsWith(`.${scope}`)
+    );
+  });
+
+  // 8. Per ogni asset rilevante: porta + vuln + salva in DB
+  let findingsSaved = 0;
+  for (const asset of relevantAssets) {
+    const [ports, vulns] = await Promise.all([
+      csGetExternalPorts(cfg, session, asset.id),
+      csGetExternalVulns(cfg, session, asset.id),
+    ]);
+
+    const { assets: mappedAssets, findings, ports: mappedPorts } = csMapExternalToFindings(asset, ports, vulns);
+
+    const now = new Date().toISOString();
+
+    for (const a of mappedAssets) {
+      await adminClient.from('surface_assets').upsert({
+        organization_id: orgId,
+        customer_id:     orgId,
+        tenant_id:       orgId,
+        asset_type:      a.asset_type,
+        asset_value:     a.asset_value,
+        hostname:        a.hostname  || null,
+        root_domain:     a.root_domain || null,
+        ip:              a.ip        || null,
+        source:          a.source,
+        confidence:      a.confidence,
+        raw:             a.raw || {},
+        first_seen:      now,
+        last_seen:       now,
+      }, { onConflict: 'organization_id,asset_type,asset_value' }).catch(console.warn);
+    }
+
+    for (const f of findings) {
+      await adminClient.from('surface_findings').insert({
+        organization_id: orgId,
+        customer_id:     orgId,
+        tenant_id:       orgId,
+        provider:        f.provider,
+        module:          f.module,
+        finding_type:    f.finding_type,
+        severity:        f.severity,
+        title:           f.title,
+        description:     f.description,
+        affected_asset:  f.affected_asset,
+        ip:              f.ip        || null,
+        port:            f.port      || null,
+        protocol:        f.protocol  || null,
+        cve:             f.cve       || [],
+        cwe:             f.cwe       || [],
+        cvss:            f.cvss      || null,
+        evidence:        f.evidence  || {},
+        remediation:     f.remediation || null,
+        status:          'open',
+        first_seen_at:   now,
+        last_seen_at:    now,
+      }).catch(console.warn);
+      findingsSaved++;
+    }
+
+    for (const p of mappedPorts) {
+      await adminClient.from('surface_open_ports').upsert({
+        organization_id: orgId,
+        customer_id:     orgId,
+        tenant_id:       orgId,
+        host:            p.host,
+        ip:              p.ip,
+        port:            p.port,
+        protocol:        p.protocol,
+        state:           'open',
+        service_name:    p.serviceName    || null,
+        service_version: p.serviceVersion || null,
+        banner:          p.banner         || null,
+        is_web:          [80, 443, 8080, 8443, 8888, 9000, 3000].includes(p.port),
+        is_tls:          [443, 8443, 993, 995, 465].includes(p.port),
+        exposure_level:  'info',
+        first_seen_at:   now,
+        last_seen_at:    now,
+        raw:             { source: 'connectsecure', grade: asset.grade },
+      }, { onConflict: 'organization_id,host,port,protocol' }).catch(console.warn);
+    }
+  }
+
+  return {
+    assets_scanned: relevantAssets.length,
+    triggered:      dsIds.length,
+    findings_saved: findingsSaved,
+  };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+function unauthorized() {
+  return new Response(JSON.stringify({ error: 'unauthorized' }), {
+    status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
