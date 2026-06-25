@@ -56,8 +56,6 @@ const SurfaceScanImpostazioni: React.FC = () => {
   const [activeTab, setActiveTab] = useState('scanner');
 
   // ── ConnectSecure / Scanner ──────────────────────────────────────────────
-  const [connStatus, setConnStatus] = useState<{ ok: boolean; msg: string } | null>(null);
-  const [testingConn, setTestingConn] = useState(false);
   const [sweepingAll, setSweepingAll] = useState(false);
   const [sweepResult, setSweepResult] = useState<string | null>(null);
   const [scanningOrg, setScanningOrg] = useState(false);
@@ -134,28 +132,13 @@ const SurfaceScanImpostazioni: React.FC = () => {
 
   useEffect(() => { loadCveStats(); }, [loadCveStats]);
 
-  const handleTestConn = async () => {
-    setTestingConn(true);
-    setConnStatus(null);
-    try {
-      const json = await callEdge('connectsecure-scan', { action: 'test_auth', organization_id: organizationId });
-      setConnStatus(json.ok
-        ? { ok: true, msg: `Connessione OK — user_id: ${json.user_id}${json.global_cfg ? ' [secrets globali]' : ''}` }
-        : { ok: false, msg: json.error || 'Autenticazione fallita' });
-    } catch (err) {
-      setConnStatus({ ok: false, msg: String(err) });
-    } finally {
-      setTestingConn(false);
-    }
-  };
-
   const handleSweepAll = async () => {
     setSweepingAll(true);
     setSweepResult(null);
     try {
       const json = await callEdge('connectsecure-scan', { action: 'weekly_all' });
       if (json.ok) {
-        const msg = `External scan avviato — ${json.orgs_swept ?? 0} org processate`;
+        const msg = `Attack Surface Mapper avviato in background — ${json.orgs_swept ?? 0} org processate`;
         setSweepResult(msg);
         toast.success(msg);
       } else {
@@ -176,7 +159,7 @@ const SurfaceScanImpostazioni: React.FC = () => {
     try {
       const json = await callEdge('connectsecure-scan', { action: 'scan', organization_id: organizationId });
       setScanOrgResult(json.ok
-        ? { ok: true, msg: `Scan avviato — ${json.assets_scanned ?? 0} asset rilevati, ${json.findings_saved ?? 0} findings salvati` }
+        ? { ok: true, msg: `Attack Surface Mapper avviato in background — ${json.triggered ?? 0} domini accodati` }
         : { ok: false, msg: json.error || 'Scan fallito' });
     } catch (err) {
       setScanOrgResult({ ok: false, msg: String(err) });
@@ -239,33 +222,17 @@ const SurfaceScanImpostazioni: React.FC = () => {
 
           {/* ── Scanner tab ────────────────────────────────────────────── */}
           <TabsContent value="scanner" className="mt-6 space-y-6">
-            {/* Connection status */}
             <Card className="border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Globe className="w-5 h-5" />
-                  ConnectSecure — Stato Connessione
+                  ConnectSecure — Attack Surface Mapper
                 </CardTitle>
                 <CardDescription>
-                  Le credenziali (Pod Host, Company ID, Auth Token) sono configurate come secrets Supabase.
-                  Nessuna modifica richiesta in questa schermata.
+                  Le credenziali sono lette dai secrets Supabase; gli scan puntuali e schedulati rigenerano il token automaticamente.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <Button onClick={handleTestConn} disabled={testingConn} variant="outline">
-                    {testingConn ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-                    Testa connessione
-                  </Button>
-                </div>
-
-                {connStatus && (
-                  <div className={`flex items-center gap-2 text-sm rounded-md px-4 py-3 border ${connStatus.ok ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
-                    {connStatus.ok ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
-                    {connStatus.msg}
-                  </div>
-                )}
-
                 <div className="rounded-lg border border-border/50 p-3 bg-muted/30 text-xs text-muted-foreground space-y-1">
                   <p className="font-medium text-foreground/60">Secrets richiesti (via CLI):</p>
                   <code className="block">supabase secrets set CS_POD_HOST=pod401.myconnectsecure.com</code>

@@ -51,8 +51,8 @@ export const ConnectSecureConfigPanel: React.FC<ConnectSecureConfigPanelProps> =
       );
       const json = await res.json();
       if (json.ok) {
-        setScanResult({ ok: true, message: `Scan avviato — ${json.assets_scanned ?? 0} asset trovati, ${json.findings_saved ?? 0} findings salvati` });
-        toast.success('External scan completato');
+        setScanResult({ ok: true, message: `Attack Surface Mapper avviato in background — ${json.triggered ?? 0} domini accodati` });
+        toast.success('Attack Surface Mapper avviato in background');
       } else {
         setScanResult({ ok: false, message: json.error || 'Scan fallito' });
       }

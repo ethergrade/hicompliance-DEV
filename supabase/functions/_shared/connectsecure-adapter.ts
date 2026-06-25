@@ -19,6 +19,22 @@ export interface CsSession {
   userId: string;
 }
 
+function normalizePodHost(podHost: string): string {
+  return String(podHost || '').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+}
+
+function csUrl(cfg: CsConfig, path: string): string {
+  return `https://${normalizePodHost(cfg.pod_host)}${path}`;
+}
+
+function safeErrorBody(rawText: string): string {
+  if (!rawText) return '';
+  return rawText
+    .replace(/"access_token"\s*:\s*"[^"]+"/gi, '"access_token":"[redacted]"')
+    .replace(/"Client-Auth-Token"\s*:\s*"[^"]+"/gi, '"Client-Auth-Token":"[redacted]"')
+    .substring(0, 300);
+}
+
 export interface CsJob {
   id:          string | number;
   type:        string;
@@ -69,11 +85,8 @@ export interface CsResult {
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 export async function csAuthorize(cfg: CsConfig): Promise<CsSession> {
-  // Normalize: strip https:// prefix if accidentally included in pod_host, trim whitespace
-  const podHost = cfg.pod_host.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
-  const token   = cfg.client_auth_token.trim();
-  const url = `https://${podHost}/w/authorize`;
-  console.log(`[cs-auth] POST ${url} token=${token.substring(0, 12)}...`);
+  const token = cfg.client_auth_token.trim();
+  const url = csUrl(cfg, '/w/authorize');
   const r = await fetch(url, {
     method:  'POST',
     headers: {
@@ -83,13 +96,12 @@ export async function csAuthorize(cfg: CsConfig): Promise<CsSession> {
     body: '',
   });
   const rawText = await r.text().catch(() => '');
-  console.log(`[cs-auth] status=${r.status} body=${rawText.substring(0, 400)}`);
   if (!r.ok) {
-    throw new Error(`[ConnectSecure] authorize failed: ${r.status}${rawText ? ' — ' + rawText : ''}`);
+    throw new Error(`[ConnectSecure] authorize failed: ${r.status}${rawText ? ' - ' + safeErrorBody(rawText) : ''}`);
   }
   let body: any;
   try { body = JSON.parse(rawText); } catch {
-    throw new Error(`[ConnectSecure] non-JSON response: ${rawText.substring(0, 200)}`);
+    throw new Error(`[ConnectSecure] non-JSON response: ${safeErrorBody(rawText)}`);
   }
   // CS returns access_token both at root and inside data{}
   const accessToken = body?.data?.access_token ?? body?.access_token;
@@ -100,11 +112,11 @@ export async function csAuthorize(cfg: CsConfig): Promise<CsSession> {
   return { token: String(accessToken), userId: String(userId) };
 }
 
-function authHeaders(session: CsSession): Record<string, string> {
+function authHeaders(session: CsSession, mode: 'raw' | 'bearer' = 'raw'): Record<string, string> {
   return {
     accept:         'application/json',
     'Content-Type': 'application/json',
-    Authorization:  `Bearer ${session.token}`,
+    Authorization:  mode === 'bearer' ? `Bearer ${session.token}` : session.token,
     'X-USER-ID':    session.userId,
   };
 }
@@ -116,12 +128,16 @@ async function csFetch<T>(
   url:     string,
   options: RequestInit = {},
 ): Promise<T> {
-  let r = await fetch(url, { ...options, headers: { ...authHeaders(session.current), ...(options.headers as Record<string, string> || {}) } });
+  const extraHeaders = (options.headers as Record<string, string> || {});
+  let r = await fetch(url, { ...options, headers: { ...authHeaders(session.current, 'raw'), ...extraHeaders } });
   if (r.status === 401) {
     session.current = await csAuthorize(cfg);
-    r = await fetch(url, { ...options, headers: { ...authHeaders(session.current), ...(options.headers as Record<string, string> || {}) } });
+    r = await fetch(url, { ...options, headers: { ...authHeaders(session.current, 'raw'), ...extraHeaders } });
   }
-  if (!r.ok) throw new Error(`[ConnectSecure] ${url} → ${r.status} ${await r.text().catch(() => '')}`);
+  if (r.status === 401) {
+    r = await fetch(url, { ...options, headers: { ...authHeaders(session.current, 'bearer'), ...extraHeaders } });
+  }
+  if (!r.ok) throw new Error(`[ConnectSecure] ${url} -> ${r.status} ${safeErrorBody(await r.text().catch(() => ''))}`);
   return await r.json() as T;
 }
 
@@ -144,7 +160,7 @@ export async function csGetOrCreateDomain(
   if (existing?.cs_domain_id) return Number(existing.cs_domain_id);
 
   // 2. Crea il domain in ConnectSecure
-  const url = `https://${cfg.pod_host}/w/company/attack_surface_domain`;
+  const url = csUrl(cfg, '/w/company/attack_surface_domain');
   const body = await csFetch<{ id?: string | number; status: boolean }>(cfg, session, url, {
     method: 'POST',
     body:   JSON.stringify({ data: { name: domain, domain, scanlater: false, company_id: cfg.company_id } }),
@@ -170,7 +186,7 @@ export async function csScanNow(
   domains: Array<{ name: string; domain: string; company_id: number; id: number }>,
 ): Promise<void> {
   if (domains.length === 0) return;
-  const url = `https://${cfg.pod_host}/w/attack_surface/scan_now`;
+  const url = csUrl(cfg, '/w/attack_surface/scan_now');
   const body = await csFetch<{ status: boolean; message: string }>(cfg, session, url, {
     method: 'POST',
     body:   JSON.stringify({ scan_data: domains.map(d => ({ name: d.name, domain: d.domain, company_id: d.company_id, id: d.id })) }),
@@ -190,7 +206,7 @@ export async function csWaitForJob(
   const pollMs   = 20_000;
 
   while (Date.now() < deadline) {
-    const url = `https://${cfg.pod_host}/r/company/jobs?condition=company_id=${cfg.company_id}&order_by=created desc&limit=30`;
+    const url = csUrl(cfg, `/r/company/jobs?condition=company_id=${cfg.company_id}&order_by=created desc&limit=30`);
     const body = await csFetch<{ data?: CsJob[]; status: boolean }>(cfg, session, url);
     const jobs: CsJob[] = Array.isArray(body.data) ? body.data : [];
     const job = jobs.find(j =>
@@ -213,7 +229,7 @@ export async function csGetResults(
   session:  { current: CsSession },
   domainId: number,
 ): Promise<CsResult | null> {
-  const url = `https://${cfg.pod_host}/r/company/attack_surface_results?condition=attack_surface_domain_id=${domainId}&order_by=updated desc`;
+  const url = csUrl(cfg, `/r/company/attack_surface_results?condition=attack_surface_domain_id=${domainId}&order_by=updated desc`);
   const body = await csFetch<{ data?: CsResult[]; status: boolean }>(cfg, session, url);
   const results = Array.isArray(body.data) ? body.data : [];
   if (results.length === 0) return null;
@@ -470,7 +486,7 @@ export async function csGetDiscoverySettings(
   cfg:     CsConfig,
   session: { current: CsSession },
 ): Promise<CsDiscoverySetting[]> {
-  const url = `https://${cfg.pod_host}/r/company/discovery_settings?condition=company_id=${cfg.company_id}`;
+  const url = csUrl(cfg, `/r/company/discovery_settings?condition=company_id=${cfg.company_id}`);
   const body = await csFetch<{ data?: CsDiscoverySetting[]; status: boolean }>(cfg, session, url);
   return Array.isArray(body.data) ? body.data : [];
 }
@@ -481,7 +497,7 @@ export async function csCreateDiscoverySetting(
   address:     string,
   addressType: 'domain' | 'ipaddress' = 'domain',
 ): Promise<number | null> {
-  const url  = `https://${cfg.pod_host}/w/company/discovery_settings`;
+  const url  = csUrl(cfg, '/w/company/discovery_settings');
   const body = await csFetch<{ status: boolean; id?: string }>(cfg, session, url, {
     method: 'POST',
     body:   JSON.stringify({
@@ -506,7 +522,7 @@ export async function csExternalScan(
   session:           { current: CsSession },
   discoverySettings: number[],
 ): Promise<{ status: boolean; message?: string }> {
-  const url = `https://${cfg.pod_host}/w/company/external_scan`;
+  const url = csUrl(cfg, '/w/company/external_scan');
   return await csFetch<{ status: boolean; message?: string }>(cfg, session, url, {
     method: 'POST',
     body:   JSON.stringify({ company_id: cfg.company_id, discovery_settings: discoverySettings }),
@@ -535,7 +551,7 @@ export async function csGetExternalScanAssets(
   cfg:     CsConfig,
   session: { current: CsSession },
 ): Promise<CsExternalAsset[]> {
-  const url = `https://${cfg.pod_host}/r/report_queries/external_asset_externalscan?condition=company_id=${cfg.company_id}`;
+  const url = csUrl(cfg, `/r/report_queries/external_asset_externalscan?condition=company_id=${cfg.company_id}`);
   const body = await csFetch<{ data?: CsExternalAsset[]; status: boolean }>(cfg, session, url);
   return Array.isArray(body.data) ? body.data : [];
 }
@@ -555,7 +571,7 @@ export async function csGetExternalPorts(
   session: { current: CsSession },
   assetId: number,
 ): Promise<CsExternalPort[]> {
-  const url = `https://${cfg.pod_host}/r/report_queries/external_asset_ports_data?condition=asset_id=${assetId}`;
+  const url = csUrl(cfg, `/r/report_queries/external_asset_ports_data?condition=asset_id=${assetId}`);
   const body = await csFetch<{ data?: CsExternalPort[]; status: boolean }>(cfg, session, url);
   return Array.isArray(body.data) ? body.data : [];
 }
@@ -571,7 +587,7 @@ export async function csGetExternalVulns(
   session: { current: CsSession },
   assetId: number,
 ): Promise<CsExternalVuln[]> {
-  const url = `https://${cfg.pod_host}/r/report_queries/external_asset_vulnerabilities?condition=asset_id=${assetId}`;
+  const url = csUrl(cfg, `/r/report_queries/external_asset_vulnerabilities?condition=asset_id=${assetId}`);
   const body = await csFetch<{ data?: CsExternalVuln[]; status: boolean }>(cfg, session, url);
   return Array.isArray(body.data) ? body.data : [];
 }

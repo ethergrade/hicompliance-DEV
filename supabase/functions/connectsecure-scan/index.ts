@@ -2,8 +2,8 @@
  * connectsecure-scan — Edge Function
  *
  * Azioni:
- *  test_auth   → verifica connessione CS (restituisce user_id)
- *  scan        → external scan per una org specifica
+ *  test_auth   → verifica configurazione CS (solo diagnostica admin)
+ *  scan        → trigger Attack Surface Mapper per una org specifica + ingest async
  *  weekly_all  → sweep di tutte le org abilitate (dal cron)
  *
  * Auth: service-role key | x-surface-internal-secret | JWT utente Supabase valido
@@ -11,14 +11,13 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
   csAuthorize,
-  csGetDiscoverySettings,
-  csCreateDiscoverySetting,
-  csExternalScan,
-  csGetExternalScanAssets,
-  csGetExternalPorts,
-  csGetExternalVulns,
-  csMapExternalToFindings,
+  csGetOrCreateDomain,
+  csGetResults,
+  csMapToFindings,
+  csScanNow,
+  csWaitForJob,
   type CsConfig,
+  type CsResult,
 } from '../_shared/connectsecure-adapter.ts';
 
 const corsHeaders = {
@@ -89,19 +88,22 @@ Deno.serve(async (req: Request) => {
 
     // ── Weekly sweep ────────────────────────────────────────────────────────
     if (action === 'weekly_all') {
-      const { data: configs } = await adminClient
-        .from('connectsecure_config')
-        .select('organization_id, pod_host, client_auth_token, company_id')
-        .eq('enabled', true);
-
-      const results: Array<{ org_id: string; assets_scanned: number; triggered: number; error?: string }> = [];
-      for (const cfg of (configs || [])) {
+      const configs = await listWeeklyConfigs(adminClient, hasGlobalCfg, mergeWithGlobal);
+      const results: Array<{ org_id: string; triggered: number; domains: number; background: boolean; error?: string }> = [];
+      for (const cfg of configs) {
         try {
-          const mergedCfg = mergeWithGlobal(cfg as Partial<CsConfig>);
-          const r = await runExternalScanForOrg(adminClient, { ...mergedCfg, organization_id: cfg.organization_id }, undefined);
-          results.push({ org_id: cfg.organization_id, ...r });
+          const trigger = await triggerAttackSurfaceForOrg(adminClient, cfg, undefined);
+          const background = runInBackground(
+            ingestAttackSurfaceResults(adminClient, cfg, trigger.domains)
+          );
+          results.push({
+            org_id: cfg.organization_id,
+            triggered: trigger.triggered,
+            domains: trigger.domains.length,
+            background,
+          });
         } catch (err) {
-          results.push({ org_id: cfg.organization_id, assets_scanned: 0, triggered: 0, error: String(err) });
+          results.push({ org_id: cfg.organization_id, triggered: 0, domains: 0, background: false, error: String(err) });
         }
       }
       return json({ ok: true, orgs_swept: results.length, results });
@@ -112,15 +114,28 @@ Deno.serve(async (req: Request) => {
 
     const { data: dbCfg } = await adminClient
       .from('connectsecure_config')
-      .select('pod_host, client_auth_token, company_id')
+      .select('pod_host, client_auth_token, company_id, enabled')
       .eq('organization_id', orgId)
       .maybeSingle();
+
+    if (dbCfg?.enabled === false) return jsonErr('ConnectSecure disabilitato per questa org', 409);
 
     const cfg = mergeWithGlobal(dbCfg || {});
     if (!cfg.pod_host || !cfg.client_auth_token) return jsonErr('nessuna configurazione ConnectSecure per questa org', 404);
 
-    const r = await runExternalScanForOrg(adminClient, { ...cfg, organization_id: orgId }, inputDomain);
-    return json({ ok: true, organization_id: orgId, ...r });
+    const trigger = await triggerAttackSurfaceForOrg(adminClient, { ...cfg, organization_id: orgId }, inputDomain);
+    const background = runInBackground(
+      ingestAttackSurfaceResults(adminClient, { ...cfg, organization_id: orgId }, trigger.domains)
+    );
+    return json({
+      ok: true,
+      organization_id: orgId,
+      status: 'triggered',
+      message: 'Attack Surface Mapper avviato. Polling e salvataggio risultati continuano in background.',
+      triggered: trigger.triggered,
+      domains: trigger.domains.map(d => d.domain),
+      background,
+    });
 
   } catch (err) {
     console.error('[connectsecure-scan] errore:', err);
@@ -128,92 +143,148 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-// ── External Scan Engine ──────────────────────────────────────────────────────
+// ── Attack Surface Mapper Engine ──────────────────────────────────────────────
 
-async function runExternalScanForOrg(
-  adminClient: ReturnType<typeof createClient>,
+type AdminClient = any;
+type CsOrgConfig = CsConfig & { organization_id: string };
+type TriggeredDomain = { domain: string; id: number };
+
+async function listWeeklyConfigs(
+  adminClient: AdminClient,
+  hasGlobalCfg: boolean,
+  mergeWithGlobal: (dbCfg?: Partial<CsConfig>) => CsConfig,
+): Promise<CsOrgConfig[]> {
+  if (!hasGlobalCfg) {
+    const { data } = await adminClient
+      .from('connectsecure_config')
+      .select('organization_id, pod_host, client_auth_token, company_id')
+      .eq('enabled', true);
+    return (data || []).map((cfg: any) => ({
+      ...mergeWithGlobal(cfg as Partial<CsConfig>),
+      organization_id: String(cfg.organization_id),
+    })).filter((cfg: CsOrgConfig) => Boolean(cfg.organization_id && cfg.pod_host && cfg.client_auth_token && cfg.company_id));
+  }
+
+  const [{ data: orgs }, { data: overrides }] = await Promise.all([
+    adminClient
+      .from('organizations')
+      .select('id, surface_scan360_enabled, services_paused')
+      .eq('surface_scan360_enabled', true)
+      .neq('services_paused', true),
+    adminClient
+      .from('connectsecure_config')
+      .select('organization_id, pod_host, client_auth_token, company_id, enabled'),
+  ]);
+
+  const overrideByOrg = new Map<string, any>((overrides || []).map((row: any) => [String(row.organization_id), row]));
+  return (orgs || [])
+    .map((org: any) => {
+      const override = overrideByOrg.get(String(org.id));
+      if (override?.enabled === false) return null;
+      return {
+        ...mergeWithGlobal(override || {}),
+        organization_id: String(org.id),
+      };
+    })
+    .filter((cfg: CsOrgConfig | null): cfg is CsOrgConfig =>
+      Boolean(cfg?.organization_id && cfg.pod_host && cfg.client_auth_token && cfg.company_id)
+    );
+}
+
+async function triggerAttackSurfaceForOrg(
+  adminClient: AdminClient,
   cfg: CsConfig & { organization_id: string },
   forceDomain?: string,
-): Promise<{ assets_scanned: number; triggered: number; findings_saved: number }> {
+): Promise<{ triggered: number; domains: TriggeredDomain[] }> {
   const orgId = cfg.organization_id;
+  const domains = await resolveScopeDomains(adminClient, orgId, forceDomain);
+  if (domains.length === 0) return { triggered: 0, domains: [] };
 
-  // 1. Recupera scope org
-  let scopeEntries: Array<{ input_value: string; entry_type: string }> = [];
-  if (forceDomain) {
-    scopeEntries = [{ input_value: forceDomain.trim().toLowerCase(), entry_type: 'domain' }];
-  } else {
-    const { data } = await adminClient
-      .from('surface_scan_monitored_ips')
-      .select('entry_type, input_value')
-      .eq('organization_id', orgId)
-      .in('entry_type', ['domain', 'ip', 'ip_range']);
-    scopeEntries = (data || []).map((r: any) => ({
-      input_value: String(r.input_value || '').trim().toLowerCase(),
-      entry_type:  String(r.entry_type || 'domain'),
-    })).filter(r => r.input_value);
+  const session = { current: await csAuthorize(cfg) };
+  const domainObjs: TriggeredDomain[] = [];
+  for (const domain of domains) {
+    const id = await csGetOrCreateDomain(cfg, session, domain, adminClient, orgId);
+    domainObjs.push({ domain, id });
   }
 
-  if (scopeEntries.length === 0) return { assets_scanned: 0, triggered: 0, findings_saved: 0 };
+  await csScanNow(
+    cfg,
+    session,
+    domainObjs.map(d => ({ name: d.domain, domain: d.domain, company_id: cfg.company_id, id: d.id })),
+  );
 
-  // 2. Auth CS
+  return { triggered: domainObjs.length, domains: domainObjs };
+}
+
+async function resolveScopeDomains(
+  adminClient: AdminClient,
+  orgId: string,
+  forceDomain?: string,
+): Promise<string[]> {
+  if (forceDomain) {
+    const normalized = normalizeDomain(forceDomain);
+    return normalized ? [normalized] : [];
+  }
+
+  const { data } = await adminClient
+    .from('surface_scan_monitored_ips')
+    .select('entry_type, input_value')
+    .eq('organization_id', orgId)
+    .eq('entry_type', 'domain');
+
+  return Array.from(new Set((data || [])
+    .map((r: any) => normalizeDomain(String(r.input_value || '')))
+    .filter(Boolean)));
+}
+
+function normalizeDomain(value: string): string {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  const withoutScheme = raw.replace(/^https?:\/\//i, '');
+  const hostname = withoutScheme.split('/')[0].split(':')[0].replace(/\.$/, '');
+  if (!hostname || !hostname.includes('.') || hostname.includes('*')) return '';
+  return hostname;
+}
+
+function runInBackground(task: Promise<unknown>): boolean {
+  const edgeRuntime = (globalThis as any).EdgeRuntime;
+  if (edgeRuntime?.waitUntil) {
+    edgeRuntime.waitUntil(task.catch(err => console.error('[connectsecure-scan] background ingest failed:', err)));
+    return true;
+  }
+  task.catch(err => console.error('[connectsecure-scan] background ingest failed:', err));
+  return false;
+}
+
+async function ingestAttackSurfaceResults(
+  adminClient: AdminClient,
+  cfg: CsOrgConfig,
+  domains: TriggeredDomain[],
+): Promise<void> {
+  if (domains.length === 0) return;
   const session = { current: await csAuthorize(cfg) };
-
-  // 3. Leggi discovery settings esistenti in CS per questa company
-  const existingSettings = await csGetDiscoverySettings(cfg, session);
-  const settingsByAddr   = new Map(existingSettings.map(s => [s.address.toLowerCase(), s.id]));
-
-  // 4. Per ogni entry in scope: usa l'ID esistente o crea il discovery setting
-  const dsIds: number[] = [];
-  for (const entry of scopeEntries) {
-    const addr = entry.input_value;
-    if (settingsByAddr.has(addr)) {
-      dsIds.push(settingsByAddr.get(addr)!);
-    } else {
-      const addrType = entry.entry_type === 'ip' || entry.entry_type === 'ip_range' ? 'ipaddress' : 'domain';
-      const newId = await csCreateDiscoverySetting(cfg, session, addr, addrType);
-      if (newId) {
-        dsIds.push(newId);
-        settingsByAddr.set(addr, newId);
-        console.log(`[cs-scan] creato discovery setting id=${newId} per ${addr}`);
-      }
+  for (const d of domains) {
+    try {
+      await csWaitForJob(cfg, session, d.domain, 420_000);
+      const result = await csGetResults(cfg, session, d.id);
+      if (result) await saveResult(adminClient, cfg.organization_id, d.domain, result);
+    } catch (err) {
+      console.warn('[connectsecure-scan] result ingest failed:', d.domain, err);
     }
   }
+}
 
-  if (dsIds.length === 0) return { assets_scanned: 0, triggered: 0, findings_saved: 0 };
+async function saveResult(
+  adminClient: AdminClient,
+  orgId: string,
+  domain: string,
+  result: CsResult,
+): Promise<void> {
+  const { assets: mappedAssets, findings, ports: mappedPorts, observations, sensitiveData } = csMapToFindings(result, domain, 0);
+  const now = new Date().toISOString();
 
-  // 5. Trigger external scan (asincrono su CS — i risultati arrivano dopo alcuni minuti)
-  const scanResp = await csExternalScan(cfg, session, dsIds);
-  console.log(`[cs-scan] external_scan triggerato: status=${scanResp.status} msg=${scanResp.message || ''}`);
-
-  // 6. Leggi i risultati disponibili (scan precedente o corrente se già completato)
-  const allAssets = await csGetExternalScanAssets(cfg, session);
-
-  // 7. Filtra gli asset per lo scope di questa org
-  const scopeAddrSet = new Set(scopeEntries.map(e => e.input_value));
-  const relevantAssets = allAssets.filter(a => {
-    const hn = (a.host_name || '').toLowerCase();
-    const nm = (a.name     || '').toLowerCase();
-    // Match diretto o sottodominio
-    return Array.from(scopeAddrSet).some(scope =>
-      hn === scope || hn.endsWith(`.${scope}`) ||
-      nm === scope || nm.endsWith(`.${scope}`)
-    );
-  });
-
-  // 8. Per ogni asset rilevante: porta + vuln + salva in DB
-  let findingsSaved = 0;
-  for (const asset of relevantAssets) {
-    const [ports, vulns] = await Promise.all([
-      csGetExternalPorts(cfg, session, asset.id),
-      csGetExternalVulns(cfg, session, asset.id),
-    ]);
-
-    const { assets: mappedAssets, findings, ports: mappedPorts } = csMapExternalToFindings(asset, ports, vulns);
-
-    const now = new Date().toISOString();
-
-    for (const a of mappedAssets) {
-      await adminClient.from('surface_assets').upsert({
+  for (const a of mappedAssets) {
+    await adminClient.from('surface_assets').upsert({
         organization_id: orgId,
         customer_id:     orgId,
         tenant_id:       orgId,
@@ -228,10 +299,10 @@ async function runExternalScanForOrg(
         first_seen:      now,
         last_seen:       now,
       }, { onConflict: 'organization_id,asset_type,asset_value' }).catch(console.warn);
-    }
+  }
 
-    for (const f of findings) {
-      await adminClient.from('surface_findings').insert({
+  for (const f of findings) {
+    await adminClient.from('surface_findings').insert({
         organization_id: orgId,
         customer_id:     orgId,
         tenant_id:       orgId,
@@ -254,14 +325,14 @@ async function runExternalScanForOrg(
         first_seen_at:   now,
         last_seen_at:    now,
       }).catch(console.warn);
-      findingsSaved++;
-    }
+  }
 
-    for (const p of mappedPorts) {
-      await adminClient.from('surface_open_ports').upsert({
+  for (const p of mappedPorts) {
+    await adminClient.from('surface_open_ports').upsert({
         organization_id: orgId,
         customer_id:     orgId,
         tenant_id:       orgId,
+        scan_job_id:     null,
         host:            p.host,
         ip:              p.ip,
         port:            p.port,
@@ -273,18 +344,39 @@ async function runExternalScanForOrg(
         is_web:          [80, 443, 8080, 8443, 8888, 9000, 3000].includes(p.port),
         is_tls:          [443, 8443, 993, 995, 465].includes(p.port),
         exposure_level:  'info',
+        source:          'connectsecure',
         first_seen_at:   now,
         last_seen_at:    now,
-        raw:             { source: 'connectsecure', grade: asset.grade },
-      }, { onConflict: 'organization_id,host,port,protocol' }).catch(console.warn);
-    }
+        raw:             { source: 'connectsecure', attack_surface_domain_id: result.attack_surface_domain_id },
+      }, { onConflict: 'customer_id,host,port,protocol' }).catch(console.warn);
   }
 
-  return {
-    assets_scanned: relevantAssets.length,
-    triggered:      dsIds.length,
-    findings_saved: findingsSaved,
-  };
+  for (const obs of observations) {
+    await adminClient.from('surface_observations').insert({
+      organization_id: orgId,
+      customer_id:     orgId,
+      tenant_id:       orgId,
+      scan_job_id:     null,
+      module:          'connectsecure',
+      observation_type: obs.type,
+      title:           obs.title,
+      value:           obs.value,
+      severity:        obs.severity,
+      confidence:      'high',
+    }).catch(console.warn);
+  }
+
+  if ((sensitiveData.creds?.length || 0) + (sensitiveData.hashes?.length || 0) > 0) {
+    await adminClient.from('connectsecure_sensitive_data').insert({
+      organization_id: orgId,
+      scan_job_id:     null,
+      domain:          sensitiveData.domain,
+      creds_count:     sensitiveData.creds?.length || 0,
+      hashes_count:    sensitiveData.hashes?.length || 0,
+      creds:           sensitiveData.creds || null,
+      hashes:          sensitiveData.hashes || null,
+    }).catch(console.warn);
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -130,25 +130,26 @@ Integrazione con CyberCNS/ConnectSecure per ricognizione esterna certificata.
    Header: Client-Auth-Token: <base64 token>
    ← { access_token (JWT, TTL 3600s), user_id }
 
-2. GET /r/company/discovery_settings?condition=company_id=13805
-   ← Lista discovery settings configurati (type: External)
+2. Per ogni chiamata successiva:
+   Header: Authorization: <access_token>
+   Header: X-USER-ID: <user_id>
 
-3. Se indirizzo non presente:
-   POST /w/company/discovery_settings
-   Body: { name, address, address_type, company_id, discovery_settings_type='External' }
+3. Se il dominio non e' presente nel registry:
+   POST /w/company/attack_surface_domain
+   Body: { data: { name, domain, scanlater: false, company_id: 13805 } }
+   ← { status: true, id: <attack_surface_domain_id> }
 
-4. POST /w/company/external_scan
-   Body: { company_id: 13805, discovery_settings: [id1, id2, ...] }
-   ← { status: true } — asincrono
+4. POST /w/attack_surface/scan_now
+   Body: { scan_data: [{ name, domain, company_id: 13805, id }] }
+   ← { status: true, message: "Initiated Scan" } — asincrono
 
-5. GET /r/report_queries/external_asset_externalscan?condition=company_id=13805
-   ← Asset scansionati con grade (A/B/C/D/F) e conteggi CVE
+5. GET /r/company/jobs?condition=company_id=13805&order_by=created desc&limit=30
+   ← filtro client-side type="ATTACKSURFACESCAN"; poll fino a completed/failed
 
-6. Per ogni asset:
-   GET /r/report_queries/external_asset_ports_data?condition=asset_id=X
-   GET /r/report_queries/external_asset_vulnerabilities?condition=asset_id=X
+6. GET /r/company/attack_surface_results?condition=attack_surface_domain_id=X&order_by=updated desc
+   ← target_ips, subdomains, DNS/mail posture, OSINT, buckets, creds/hashes
 
-7. csMapExternalToFindings() → surface_assets + surface_findings + surface_open_ports
+7. csMapToFindings() → surface_assets + surface_findings + surface_open_ports + observations
 ```
 
 **Grade CS → Severity finding:**
@@ -162,7 +163,7 @@ Integrazione con CyberCNS/ConnectSecure per ricognizione esterna certificata.
 
 **Provider tag:** `connectsecure`
 
-> Il scan è asincrono. La prima chiamata crea i discovery settings e triggera lo scan; le chiamate successive leggono i risultati dell'ultima scansione completata.
+> Il scan è asincrono. Le chiamate UI/cron triggerano lo scan e l'ingest prosegue in background: il token viene rigenerato a ogni run e su eventuale 401.
 
 ---
 
@@ -293,7 +294,7 @@ POST-CRON (asincrono):
 |----------|---------|-------------------|
 | `surfacescan360-start-scan` | UI / API manuale | Normalizza target, verifica auth, inserisce job, dispatchQueue |
 | `surface-scan-cron` | pg_cron weekly (lun 02:00 Rome) | Subdomain discovery, scope scans, queue dispatch, Shodan, exposure sync |
-| `connectsecure-scan` | API manuale + cron async | `test_auth`, `scan` (org singola), `weekly_all` |
+| `connectsecure-scan` | API manuale + cron async | `scan` (org singola), `weekly_all`; `test_auth` solo diagnostica admin |
 | `cve-enrichment` | API manuale + post-cron | Drain coda CVE → NVD + EPSS + KEV |
 | `surfacescan360-monthly-report` | pg_cron monthly (1° mese 05:00 UTC) | Genera report PDF mensili per org |
 
@@ -304,10 +305,10 @@ POST-CRON (asincrono):
 // ← { ok: true, user_id: "...", pod_host: "pod401.myconnectsecure.com", global_cfg: true }
 
 { "action": "scan", "organization_id": "..." }
-// ← { ok: true, assets_scanned: N, triggered: N, findings_saved: N }
+// ← { ok: true, status: "triggered", triggered: N, domains: ["example.com"], background: true }
 
 { "action": "weekly_all" }
-// ← { ok: true, orgs_swept: N, results: [{org_id, assets_scanned, ...}] }
+// ← { ok: true, orgs_swept: N, results: [{org_id, triggered, domains, background}] }
 ```
 
 **Autenticazione:** service-role key | `x-surface-internal-secret` | JWT utente Supabase valido
@@ -394,7 +395,7 @@ POST-CRON (asincrono):
 
 | Servizio | URL base | Auth | Uso |
 |----------|----------|------|-----|
-| **ConnectSecure** | `https://pod401.myconnectsecure.com` | `Client-Auth-Token` header → Bearer JWT | External scan, discovery settings, risultati asset |
+| **ConnectSecure** | `https://pod401.myconnectsecure.com` | `Client-Auth-Token` → `Authorization` + `X-USER-ID` | Attack Surface Mapper, scan_now, risultati ASM |
 | **NVD 2.0** | `https://services.nvd.nist.gov/rest/json/cves/2.0` | `apiKey` query param (secret: `NVD_API_KEY`) | CVSS v3/v2, CWE, descrizioni CVE |
 | **EPSS (FIRST.org)** | `https://api.first.org/data/v1/epss` | nessuna | Exploit Prediction Score per CVE |
 | **CISA KEV** | `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json` | nessuna | Catalogo vulnerabilità sfruttate attivamente |
@@ -506,7 +507,7 @@ Punteggio 0–100, media ponderata di:
 | `SurfaceScanReportRepository` | tutti | Download report mensili PDF |
 | `SubdomainDumpPanel` | solo admin | Trigger subdomain discovery manuale, tree view risultati |
 | `SubdomainDepthTree` | solo admin | BFS tree visualizzazione depth max 10 |
-| `ConnectSecureConfigPanel` | solo admin | Stato connessione CS, "Testa connessione", "Avvia External Scan", sweep globale |
+| `ConnectSecureConfigPanel` | solo admin | Abilita/disabilita ConnectSecure, avvia Attack Surface Mapper in background, sweep globale |
 | `SurfaceScanJobsPanel` | solo admin | Tabella job live con status e progress |
 
 **`clientReadOnly`:** utenti cliente vedono findings, porte, score, report. Non vedono pannelli di configurazione, scope management o diagnostica.
