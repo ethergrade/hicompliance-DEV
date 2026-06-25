@@ -294,13 +294,24 @@ async function runBfsForOrg(
         }).catch(console.warn);
       }
 
-      // Enqueue subdomains
+      // Enqueue subdomains + seed scope
       if (d.depth < MAX_DEPTH) {
         for (const sub of result.subdomains || []) {
           const sub_domain = String(sub.subdomain || '').trim().toLowerCase();
           if (sub_domain && !visited.has(sub_domain)) {
             visited.add(sub_domain);
             queue.push({ domain: sub_domain, depth: d.depth + 1, parent: d.domain });
+            // Seed into monitored scope so future weekly cron picks it up
+            await adminClient.from('surface_scan_monitored_ips').upsert({
+              organization_id: orgId,
+              input_value:     sub_domain,
+              entry_type:      'domain',
+              ip_start:        '',
+              ip_end:          '',
+              discovered_via:  'connectsecure_bfs',
+              discovered_from: d.domain,
+              created_by:      null,
+            }, { onConflict: 'organization_id,input_value' }).catch(console.warn);
           }
         }
       }
