@@ -39,6 +39,7 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
   const [surfaceYears, setSurfaceYears] = useState('1');
   const [darkRiskStart, setDarkRiskStart] = useState(todayDate);
   const [darkRiskYears, setDarkRiskYears] = useState('1');
+  const [primaryDomain, setPrimaryDomain] = useState('');
   const [saving, setSaving] = useState(false);
   const isEdit = !!organization;
 
@@ -61,6 +62,7 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
       setSurfaceYears('1');
       setDarkRiskStart(todayDate);
       setDarkRiskYears('1');
+      setPrimaryDomain('');
     }
   }, [organization, open, todayDate]);
 
@@ -124,6 +126,25 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
             const missingRelation = String((tierError as { code?: string } | null)?.code || '') === '42P01';
             if (!missingRelation) throw tierError;
           }
+        }
+
+        if (surfaceScan && primaryDomain.trim() && createdOrganization?.id) {
+          await supabase
+            .from('surface_scan_monitored_ips' as never)
+            .insert({
+              organization_id: createdOrganization.id,
+              input_value: primaryDomain.trim().toLowerCase(),
+              entry_type: 'domain',
+              ip_start: '',
+              ip_end: '',
+              discovered_via: 'profiling',
+              created_by: null,
+            } as never)
+            .then(({ error: scopeErr }) => {
+              if (scopeErr && scopeErr.code !== '23505') {
+                console.warn('scope seed failed:', scopeErr);
+              }
+            });
         }
 
         if (darkRiskEsteso && createdOrganization?.id) {
@@ -231,14 +252,25 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
                   </div>
                 </div>
                 {surfaceScan && (
-                  <div className="grid grid-cols-2 gap-2 rounded-md border p-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Inizio contratto SurfaceScan360</Label>
-                      <Input type="date" value={surfaceStart} onChange={(e) => setSurfaceStart(e.target.value)} />
+                  <div className="space-y-2 rounded-md border p-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Inizio contratto SurfaceScan360</Label>
+                        <Input type="date" value={surfaceStart} onChange={(e) => setSurfaceStart(e.target.value)} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Anni contratto</Label>
+                        <Input type="number" min={1} max={10} value={surfaceYears} onChange={(e) => setSurfaceYears(e.target.value)} />
+                      </div>
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs">Anni contratto</Label>
-                      <Input type="number" min={1} max={10} value={surfaceYears} onChange={(e) => setSurfaceYears(e.target.value)} />
+                      <Label className="text-xs">Dominio principale (scope iniziale)</Label>
+                      <Input
+                        value={primaryDomain}
+                        onChange={(e) => setPrimaryDomain(e.target.value)}
+                        placeholder="es. azienda.it"
+                      />
+                      <p className="text-[10px] text-muted-foreground">Verrà aggiunto automaticamente allo scope di scansione</p>
                     </div>
                   </div>
                 )}

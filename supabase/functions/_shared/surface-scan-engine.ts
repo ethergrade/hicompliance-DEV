@@ -8394,13 +8394,25 @@ export async function runSurfaceScanEnrichment(
           });
         }
 
-        // Enqueue subdomains al prossimo livello
+        // Enqueue subdomains al prossimo livello + seed scope per cron futuro
         if (d.depth < MAX_DEPTH) {
           for (const sub of result.subdomains || []) {
             const subDomain = String(sub.subdomain || "").trim().toLowerCase();
             if (subDomain && !visited.has(subDomain)) {
               visited.add(subDomain);
               queue.push({ domain: subDomain, depth: d.depth + 1, parentDomain: d.domain });
+              await adminClient.from("surface_scan_monitored_ips" as any).upsert({
+                organization_id: organizationId,
+                input_value:     subDomain,
+                entry_type:      "domain",
+                ip_start:        "",
+                ip_end:          "",
+                discovered_via:  "connectsecure_bfs",
+                discovered_from: d.domain,
+                created_by:      null,
+              }, { onConflict: "organization_id,input_value" }).catch((e: unknown) => {
+                console.warn("[connectsecure] scope seed failed:", subDomain, e);
+              });
             }
           }
         }

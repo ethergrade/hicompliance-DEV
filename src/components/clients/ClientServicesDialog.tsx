@@ -96,6 +96,8 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   const [hicomplianceYears, setHicomplianceYears] = useState('1');
   const [surfaceStart, setSurfaceStart] = useState('');
   const [surfaceYears, setSurfaceYears] = useState('1');
+  const [scopeDomain, setScopeDomain] = useState('');
+  const [addingScopeDomain, setAddingScopeDomain] = useState(false);
   const [darkRiskStart, setDarkRiskStart] = useState('');
   const [darkRiskYears, setDarkRiskYears] = useState('1');
 
@@ -202,6 +204,32 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     const parsed = Number.parseInt(String(value || '1'), 10);
     if (Number.isNaN(parsed)) return 1;
     return Math.max(1, Math.min(10, parsed));
+  };
+
+  const handleAddScopeDomain = async () => {
+    const domain = scopeDomain.trim().toLowerCase();
+    if (!domain) return;
+    setAddingScopeDomain(true);
+    try {
+      const { error } = await supabase
+        .from('surface_scan_monitored_ips' as never)
+        .upsert({
+          organization_id: organizationId,
+          input_value:     domain,
+          entry_type:      'domain',
+          ip_start:        '',
+          ip_end:          '',
+          discovered_via:  'profiling',
+          created_by:      null,
+        } as never, { onConflict: 'organization_id,input_value' } as never);
+      if (error && error.code !== '23505') throw error;
+      toast.success(`${domain} aggiunto allo scope`);
+      setScopeDomain('');
+    } catch (err: unknown) {
+      toast.error('Errore scope: ' + String((err as { message?: string })?.message || err));
+    } finally {
+      setAddingScopeDomain(false);
+    }
   };
 
   const lifecycleMutation = useMutation({
@@ -572,6 +600,27 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                           surface_scan_contract_years: parseContractYears(surfaceYears),
                         })}
                       />
+                    </div>
+                  </div>
+
+                  <div className="rounded-md border p-2.5 space-y-1.5">
+                    <p className="text-xs text-muted-foreground">Aggiungi dominio allo scope</p>
+                    <div className="flex gap-2">
+                      <Input
+                        value={scopeDomain}
+                        onChange={(e) => setScopeDomain(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') void handleAddScopeDomain(); }}
+                        placeholder="es. azienda.it"
+                        className="h-8 text-sm"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handleAddScopeDomain()}
+                        disabled={addingScopeDomain || !scopeDomain.trim()}
+                      >
+                        {addingScopeDomain ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Aggiungi'}
+                      </Button>
                     </div>
                   </div>
 
