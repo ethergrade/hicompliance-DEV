@@ -237,6 +237,35 @@ export async function csGetResults(
   return /completed/i.test(r.status || '') ? r : null;
 }
 
+export async function csWaitForResults(
+  cfg:       CsConfig,
+  session:   { current: CsSession },
+  domainId:  number,
+  domain:    string,
+  timeoutMs: number = 420_000,
+): Promise<CsResult> {
+  const deadline = Date.now() + timeoutMs;
+  const pollMs   = 20_000;
+
+  while (Date.now() < deadline) {
+    const url = csUrl(cfg, `/r/company/attack_surface_results?condition=attack_surface_domain_id=${domainId}&order_by=updated desc`);
+    const body = await csFetch<{ data?: CsResult[]; status: boolean }>(cfg, session, url);
+    const results = Array.isArray(body.data) ? body.data : [];
+    const result = results[0];
+
+    if (result) {
+      if (/completed/i.test(result.status || '')) return result;
+      if (/failed|error/i.test(result.status || '')) {
+        throw new Error(`[ConnectSecure] scan failed for ${domain}: ${result.status}`);
+      }
+    }
+
+    await new Promise(res => setTimeout(res, pollMs));
+  }
+
+  throw new Error(`[ConnectSecure] result polling timed out after ${timeoutMs}ms for ${domain}`);
+}
+
 // ── Mapping ConnectSecure result → surface DB types ───────────────────────────
 
 export interface CsMappedAsset {
