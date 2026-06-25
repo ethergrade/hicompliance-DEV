@@ -12,11 +12,31 @@ interface OpenPortsTableProps {
 }
 
 const RISKY_PORTS = new Set([21, 23, 445, 3389, 5900, 6379, 9200, 9300, 11211, 27017, 3306, 5432, 1433, 1521]);
+const EXPOSED_LEVELS = new Set(['critical', 'high', 'medium']);
+
+function sourceLabel(raw?: Record<string, unknown> | null): string {
+  const src = String(raw?.source || raw?.provider || '').toLowerCase();
+  if (src.includes('deno_tcp') || src === 'tcp_probe') return 'TCP Probe';
+  if (src.includes('shodan')) return 'OSINT';
+  if (src.includes('connectsecure') || src === 'cs') return 'ConnectSecure';
+  if (src.includes('pentest') || src.includes('ptools')) return 'Pentest';
+  if (src) return src;
+  return 'Scan';
+}
+
+function sourceBadgeClass(raw?: Record<string, unknown> | null): string {
+  const src = String(raw?.source || raw?.provider || '').toLowerCase();
+  if (src.includes('shodan')) return 'bg-violet-500/20 text-violet-400 border-violet-500/30';
+  if (src.includes('connectsecure') || src === 'cs') return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+  if (src.includes('pentest') || src.includes('ptools')) return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
+  return 'bg-muted text-muted-foreground border-border';
+}
 
 export const OpenPortsTable: React.FC<OpenPortsTableProps> = ({ rows, loading = false }) => {
   const [search, setSearch] = useState('');
   const [onlyRisky, setOnlyRisky] = useState(false);
   const [onlyWeb, setOnlyWeb] = useState(false);
+  const [onlyExposed, setOnlyExposed] = useState(true);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -25,17 +45,18 @@ export const OpenPortsTable: React.FC<OpenPortsTableProps> = ({ rows, loading = 
       .filter((row) => {
         if (onlyRisky && !RISKY_PORTS.has(Number(row.port || 0))) return false;
         if (onlyWeb && !row.is_web && !row.is_tls) return false;
+        if (onlyExposed && !EXPOSED_LEVELS.has(String(row.exposure_level || '').toLowerCase())) return false;
         if (!query) return true;
 
         const blob = [
           row.host,
           row.ip || '',
           String(row.port),
-          row.protocol,
           row.service_name || '',
           row.service_product || '',
           row.service_version || '',
           row.exposure_level,
+          sourceLabel(row.raw),
         ]
           .join(' ')
           .toLowerCase();
@@ -61,6 +82,10 @@ export const OpenPortsTable: React.FC<OpenPortsTableProps> = ({ rows, loading = 
           className="md:max-w-xl"
         />
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Checkbox checked={onlyExposed} onCheckedChange={(checked) => setOnlyExposed(Boolean(checked))} />
+          Solo porte esposte (med/high/critical)
+        </label>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
           <Checkbox checked={onlyRisky} onCheckedChange={(checked) => setOnlyRisky(Boolean(checked))} />
           Solo porte rischiose
         </label>
@@ -77,7 +102,7 @@ export const OpenPortsTable: React.FC<OpenPortsTableProps> = ({ rows, loading = 
               <TableHead>Dominio/Subdominio</TableHead>
               <TableHead>IP correlato</TableHead>
               <TableHead>Porta</TableHead>
-              <TableHead>Protocollo</TableHead>
+              <TableHead>Sorgente</TableHead>
               <TableHead>Servizio</TableHead>
               <TableHead>Versione</TableHead>
               <TableHead>Web/TLS</TableHead>
@@ -110,7 +135,11 @@ export const OpenPortsTable: React.FC<OpenPortsTableProps> = ({ rows, loading = 
                   <TableCell className="font-medium">{row.host}</TableCell>
                   <TableCell>{row.ip || '-'}</TableCell>
                   <TableCell>{row.port}</TableCell>
-                  <TableCell>{row.protocol}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={`text-[10px] ${sourceBadgeClass(row.raw)}`}>
+                      {sourceLabel(row.raw)}
+                    </Badge>
+                  </TableCell>
                   <TableCell>{row.service_name || row.service_product || '-'}</TableCell>
                   <TableCell>{row.service_version || '-'}</TableCell>
                   <TableCell>

@@ -685,6 +685,16 @@ Deno.serve(async (req) => {
 
     }
 
+    // CVE enrichment drain — drena 50 CVE dalla coda dopo ogni run settimanale
+    fetch(`${supabaseUrl}/functions/v1/cve-enrichment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+      body: JSON.stringify({ action: 'drain', max_per_run: 50 }),
+    }).then(r => {
+      if (!r.ok) console.warn(`[cve-enrichment weekly] HTTP ${r.status}`);
+      else console.log(`[cve-enrichment weekly] drain triggered`);
+    }).catch(err => console.warn(`[cve-enrichment weekly] failed:`, err));
+
     return new Response(
       JSON.stringify({ scanned_at: new Date().toISOString(), organizations: results.length, results }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },

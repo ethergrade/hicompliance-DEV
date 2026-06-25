@@ -740,7 +740,17 @@ const SecurityFindings: React.FC = () => {
                                                     )}
                                                   </TableCell>
                                                   <TableCell>
-                                                    {inferredEpss != null ? `${(Number(inferredEpss) * 100).toFixed(2)}%` : '-'}
+                                                    {inferredEpss != null ? (
+                                                      <Badge className={`text-[10px] ${
+                                                        Number(inferredEpss) > 0.5
+                                                          ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                                                          : Number(inferredEpss) > 0.1
+                                                            ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
+                                                            : 'bg-muted text-muted-foreground border-border'
+                                                      }`}>
+                                                        {(Number(inferredEpss) * 100).toFixed(1)}%
+                                                      </Badge>
+                                                    ) : '-'}
                                                   </TableCell>
                                                   <TableCell>{inferredKev ? 'Yes' : 'No'}</TableCell>
                                                   <TableCell>
