@@ -27,8 +27,7 @@ import Users from "./pages/Users";
 import AdminElevatedUsers from "./pages/AdminElevatedUsers";
 import RoleSettings from "./pages/RoleSettings";
 import Settings from "./pages/Settings";
-// HIDDEN: supabase-only (PRODOTTO SurfaceScan alerts), no backend API
-// import SurfaceScanSettings from "./pages/SurfaceScanSettings";
+import SurfaceScanImpostazioni from "./pages/SurfaceScanImpostazioni";
 import ComplianceEvents from "./pages/ComplianceEvents";
 import ClientSelection from "./pages/ClientSelection";
 import CyberNews from "./pages/CyberNews";
@@ -64,10 +63,7 @@ const App = () => (
 							<Route path="/hiconsole" element={<HiConsoleLanding />} />
 							<Route path="/auth" element={<LoginPage />} />
 							<Route path="/auth/mfa-setup" element={<MfaSetup />} />
-							<Route
-								path="/auth/forgot-password"
-								element={<ForgotPassword />}
-							/>
+							<Route path="/auth/forgot-password" element={<ForgotPassword />} />
 							<Route path="/auth/reset-password" element={<ResetPassword />} />
 							<Route path="/reset-password" element={<ResetPassword />} />
 							<Route path="/saml-callback" element={<SamlCallback />} />
@@ -75,189 +71,31 @@ const App = () => (
 							<Route path="/entra" element={<EntraRedirect />} />
 							<Route path="/admin/nuclei-scan360" element={<NucleiScan360 />} />
 							<Route path="/admin/clients" element={<ClientSelection />} />
-							<Route
-								path="/dashboard"
-								element={
-									<ClientSelectionGuard>
-										<Dashboard />
-									</ClientSelectionGuard>
-								}
-							/>
-							<Route
-								path="/cyber-news"
-								element={
-									<ClientSelectionGuard>
-										<CyberNews />
-									</ClientSelectionGuard>
-								}
-							/>
-							<Route
-								path="/dashboard/service/:serviceCode"
-								element={
-									<ClientSelectionGuard>
-										<ServiceDashboard />
-									</ClientSelectionGuard>
-								}
-							/>
-							<Route
-								path="/surface-scan"
-								element={
-									<ClientSelectionGuard>
-										<SurfaceScan360 />
-									</ClientSelectionGuard>
-								}
-							/>
-							<Route
-								path="/surface-scan/exposure"
-								element={<Navigate to="/surface-scan" replace />}
-							/>
-							<Route
-								path="/dark-risk"
-								element={
-									<ClientSelectionGuard>
-										<DarkRisk360 />
-									</ClientSelectionGuard>
-								}
-							/>
-							<Route
-								path="/assessment"
-								element={
-									<ClientSelectionGuard>
-										<Assessment />
-									</ClientSelectionGuard>
-								}
-							/>
-							<Route
-								path="/remediation"
-								element={
-									<ClientSelectionGuard>
-										<Remediation />
-									</ClientSelectionGuard>
-								}
-							/>
-							<Route
-								path="/analytics"
-								element={
-									<ClientSelectionGuard>
-										<Analytics />
-									</ClientSelectionGuard>
-								}
-							/>
-							<Route
-								path="/threats"
-								element={
-									<ClientSelectionGuard>
-										<Threats />
-									</ClientSelectionGuard>
-								}
-							/>
-							<Route
-								path="/reports"
-								element={
-									<ClientSelectionGuard>
-										<Reports />
-									</ClientSelectionGuard>
-								}
-							/>
-							<Route
-								path="/documents"
-								element={
-									<ClientSelectionGuard>
-										<Documents />
-									</ClientSelectionGuard>
-								}
-							/>
-							<Route
-								path="/asset-inventory"
-								element={
-									<ClientSelectionGuard>
-										<AssetInventory />
-									</ClientSelectionGuard>
-								}
-							/>
-							<Route
-								path="/incident-response"
-								element={
-									<ClientSelectionGuard>
-										<IncidentResponse />
-									</ClientSelectionGuard>
-								}
-							/>
-							<Route
-								path="/compliance-events"
-								element={
-									<ClientSelectionGuard>
-										<ComplianceEvents />
-									</ClientSelectionGuard>
-								}
-							/>
-							<Route
-								path="/threat-management"
-								element={
-									<ClientSelectionGuard>
-										<ThreatManagement />
-									</ClientSelectionGuard>
-								}
-							/>
-							<Route
-								path="/settings/users"
-								element={
-									<ClientSelectionGuard>
-										<Users />
-									</ClientSelectionGuard>
-								}
-							/>
-							<Route
-								path="/settings/integrations"
-								element={
-									<ClientSelectionGuard>
-										<Integrations />
-									</ClientSelectionGuard>
-								}
-							/>
-							<Route
-								path="/settings/alerts"
-								element={
-									<ClientSelectionGuard>
-										<Settings />
-									</ClientSelectionGuard>
-								}
-							/>
-							{/* HIDDEN: supabase-only SurfaceScan alerts */}
-							{/* <Route path="/settings/surface-scan-alerts" element={<ClientSelectionGuard><SurfaceScanSettings /></ClientSelectionGuard>} /> */}
-							<Route
-								path="/admin/role-settings"
-								element={
-									<ClientSelectionGuard>
-										<RoleSettings />
-									</ClientSelectionGuard>
-								}
-							/>
+							<Route path="/dashboard" element={<ClientSelectionGuard><Dashboard /></ClientSelectionGuard>} />
+							<Route path="/cyber-news" element={<ClientSelectionGuard><CyberNews /></ClientSelectionGuard>} />
+							<Route path="/dashboard/service/:serviceCode" element={<ClientSelectionGuard><ServiceDashboard /></ClientSelectionGuard>} />
+							<Route path="/surface-scan" element={<ClientSelectionGuard><SurfaceScan360 /></ClientSelectionGuard>} />
+							<Route path="/surface-scan/exposure" element={<Navigate to="/surface-scan" replace />} />
+							<Route path="/dark-risk" element={<ClientSelectionGuard><DarkRisk360 /></ClientSelectionGuard>} />
+							<Route path="/assessment" element={<ClientSelectionGuard><Assessment /></ClientSelectionGuard>} />
+							<Route path="/remediation" element={<ClientSelectionGuard><Remediation /></ClientSelectionGuard>} />
+							<Route path="/analytics" element={<ClientSelectionGuard><Analytics /></ClientSelectionGuard>} />
+							<Route path="/threats" element={<ClientSelectionGuard><Threats /></ClientSelectionGuard>} />
+							<Route path="/reports" element={<ClientSelectionGuard><Reports /></ClientSelectionGuard>} />
+							<Route path="/documents" element={<ClientSelectionGuard><Documents /></ClientSelectionGuard>} />
+							<Route path="/asset-inventory" element={<ClientSelectionGuard><AssetInventory /></ClientSelectionGuard>} />
+							<Route path="/incident-response" element={<ClientSelectionGuard><IncidentResponse /></ClientSelectionGuard>} />
+							<Route path="/compliance-events" element={<ClientSelectionGuard><ComplianceEvents /></ClientSelectionGuard>} />
+							<Route path="/threat-management" element={<ClientSelectionGuard><ThreatManagement /></ClientSelectionGuard>} />
+							<Route path="/settings/users" element={<ClientSelectionGuard><Users /></ClientSelectionGuard>} />
+							<Route path="/settings/integrations" element={<ClientSelectionGuard><Integrations /></ClientSelectionGuard>} />
+							<Route path="/settings/alerts" element={<ClientSelectionGuard><Settings /></ClientSelectionGuard>} />
+							<Route path="/impostazioni/surface-scan" element={<ClientSelectionGuard><SurfaceScanImpostazioni /></ClientSelectionGuard>} />
+							<Route path="/admin/role-settings" element={<ClientSelectionGuard><RoleSettings /></ClientSelectionGuard>} />
 							<Route path="/admin/companies" element={<AdminCompanies />} />
-							<Route
-								path="/admin/elevated-users"
-								element={<AdminElevatedUsers />}
-							/>
-							<Route
-								path="/test/assessment-gantt"
-								element={
-									<ClientSelectionGuard>
-										<AssessmentGanttTest />
-									</ClientSelectionGuard>
-								}
-							/>
-							{/* HIDDEN: supabase-only */}
-							{/* <Route path="/admin/reporting" element={<AdminReporting />} /> */}
-							<Route
-								path="/consistenze"
-								element={
-									<ClientSelectionGuard>
-										<Consistenze />
-									</ClientSelectionGuard>
-								}
-							/>
-							{/* HIDDEN: supabase-only (ai_ciso_conversations) */}
-							{/* <Route path="/ai-ciso" element={<AICiso />} /> */}
+							<Route path="/admin/elevated-users" element={<AdminElevatedUsers />} />
+							<Route path="/test/assessment-gantt" element={<ClientSelectionGuard><AssessmentGanttTest /></ClientSelectionGuard>} />
+							<Route path="/consistenze" element={<ClientSelectionGuard><Consistenze /></ClientSelectionGuard>} />
 							{/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
 							<Route path="*" element={<NotFound />} />
 						</Routes>
