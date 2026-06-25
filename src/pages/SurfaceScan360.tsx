@@ -239,10 +239,10 @@ const SurfaceScan360: React.FC = () => {
     removeRule: removeMonitoredIpRule,
   } = useSurfaceScanMonitoredIps();
 
-  const { isSales } = useUserRoles();
+  const { isSales, isSuperAdmin } = useUserRoles();
   // Default-deny: clients (and any non-operator) get a restricted read-only UI.
   // Operators (admin/super_admin via isAdminUser, or sales) keep seeing everything.
-  const clientReadOnly = !isAdminUser && !isSales;
+  const clientReadOnly = !isAdminUser && !isSuperAdmin && !isSales;
 
   const { ipScopeRules } = useMemo(
     () => splitMonitoredScopeRules(monitoredIpRules as any),
@@ -677,7 +677,7 @@ const SurfaceScan360: React.FC = () => {
           </div>
         </div>
 
-        {isAdminUser && (
+        {(isAdminUser || isSuperAdmin) && (
           <Card className="border-primary/30 bg-primary/5">
             <CardHeader>
               <CardTitle>Gestione IP Monitorati (Solo Admin)</CardTitle>
@@ -749,7 +749,7 @@ const SurfaceScan360: React.FC = () => {
 
         <SubdomainDumpPanel isAdmin={isAdminUser} />
 
-        {isAdminUser && organizationId && (
+        {(isAdminUser || isSuperAdmin) && organizationId && (
           <Card className="border-border">
             <CardHeader>
               <CardTitle>Attack Surface — Albero Sottodomini</CardTitle>
@@ -763,7 +763,7 @@ const SurfaceScan360: React.FC = () => {
           </Card>
         )}
 
-        {isAdminUser && (
+        {(isAdminUser || isSuperAdmin) && (
           <Card className="border-border">
             <CardHeader>
               <CardTitle>Moduli opzionali</CardTitle>
@@ -983,7 +983,7 @@ const SurfaceScan360: React.FC = () => {
               </div>
             </div>
 
-            {isAdminUser && (
+            {(isAdminUser || isSuperAdmin) && (
               <div className="rounded-lg border border-border p-3 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
