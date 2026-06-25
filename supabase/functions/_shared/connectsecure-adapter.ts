@@ -82,16 +82,21 @@ export async function csAuthorize(cfg: CsConfig): Promise<CsSession> {
     },
     body: '',
   });
+  const rawText = await r.text().catch(() => '');
+  console.log(`[cs-auth] status=${r.status} body=${rawText.substring(0, 400)}`);
   if (!r.ok) {
-    const errBody = await r.text().catch(() => '');
-    console.error(`[cs-auth] ${r.status} body: ${errBody}`);
-    throw new Error(`[ConnectSecure] authorize failed: ${r.status}${errBody ? ' — ' + errBody : ''}`);
+    throw new Error(`[ConnectSecure] authorize failed: ${r.status}${rawText ? ' — ' + rawText : ''}`);
   }
-  const body = await r.json();
+  let body: any;
+  try { body = JSON.parse(rawText); } catch {
+    throw new Error(`[ConnectSecure] non-JSON response: ${rawText.substring(0, 200)}`);
+  }
   // CS returns access_token both at root and inside data{}
   const accessToken = body?.data?.access_token ?? body?.access_token;
   const userId      = body?.data?.user_id      ?? body?.user_id;
-  if (!accessToken) throw new Error('[ConnectSecure] no access_token in authorize response');
+  if (!accessToken) {
+    throw new Error(`[ConnectSecure] auth failed — ${JSON.stringify(body).substring(0, 300)}`);
+  }
   return { token: String(accessToken), userId: String(userId) };
 }
 
