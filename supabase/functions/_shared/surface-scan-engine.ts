@@ -3,8 +3,7 @@ import {
   csAuthorize,
   csGetOrCreateDomain,
   csScanNow,
-  csWaitForJob,
-  csGetResults,
+  csWaitForResults,
   csMapToFindings,
   type CsConfig,
 } from "./connectsecure-adapter.ts";
@@ -8316,13 +8315,11 @@ export async function runSurfaceScanEnrichment(
       for (const d of domainObjs) {
         let result;
         try {
-          await csWaitForJob(cfg, session, d.domain, 360_000);
-          result = await csGetResults(cfg, session, d.id);
+          result = await csWaitForResults(cfg, session, d.id, d.domain, 420_000);
         } catch (err) {
-          console.warn("[connectsecure] scan/poll failed:", d.domain, err);
+          console.warn("[connectsecure] result polling failed:", d.domain, err);
           continue;
         }
-        if (!result) continue;
 
         totalScanned++;
         if (d.depth > maxDepthReached) maxDepthReached = d.depth;

@@ -12,10 +12,9 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
   csAuthorize,
   csGetOrCreateDomain,
-  csGetResults,
   csMapToFindings,
   csScanNow,
-  csWaitForJob,
+  csWaitForResults,
   type CsConfig,
   type CsResult,
 } from '../_shared/connectsecure-adapter.ts';
@@ -265,9 +264,8 @@ async function ingestAttackSurfaceResults(
   const session = { current: await csAuthorize(cfg) };
   for (const d of domains) {
     try {
-      await csWaitForJob(cfg, session, d.domain, 420_000);
-      const result = await csGetResults(cfg, session, d.id);
-      if (result) await saveResult(adminClient, cfg.organization_id, d.domain, result);
+      const result = await csWaitForResults(cfg, session, d.id, d.domain, 420_000);
+      await saveResult(adminClient, cfg.organization_id, d.domain, result);
     } catch (err) {
       console.warn('[connectsecure-scan] result ingest failed:', d.domain, err);
     }

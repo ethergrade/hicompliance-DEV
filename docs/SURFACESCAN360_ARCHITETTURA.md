@@ -143,10 +143,11 @@ Integrazione con CyberCNS/ConnectSecure per ricognizione esterna certificata.
    Body: { scan_data: [{ name, domain, company_id: 13805, id }] }
    ← { status: true, message: "Initiated Scan" } — asincrono
 
-5. GET /r/company/jobs?condition=company_id=13805&order_by=created desc&limit=30
-   ← filtro client-side type="ATTACKSURFACESCAN"; poll fino a completed/failed
+5. Poll diretto risultati per attack_surface_domain_id:
+   GET /r/company/attack_surface_results?condition=attack_surface_domain_id=X&order_by=updated desc
+   ← attendi status="Completed"
 
-6. GET /r/company/attack_surface_results?condition=attack_surface_domain_id=X&order_by=updated desc
+6. Quando Completed:
    ← target_ips, subdomains, DNS/mail posture, OSINT, buckets, creds/hashes
 
 7. csMapToFindings() → surface_assets + surface_findings + surface_open_ports + observations
@@ -163,7 +164,7 @@ Integrazione con CyberCNS/ConnectSecure per ricognizione esterna certificata.
 
 **Provider tag:** `connectsecure`
 
-> Il scan è asincrono. Le chiamate UI/cron triggerano lo scan e l'ingest prosegue in background: il token viene rigenerato a ogni run e su eventuale 401.
+> Il scan è asincrono. Le chiamate UI/cron triggerano lo scan e l'ingest prosegue in background: il token viene rigenerato a ogni run e su eventuale 401. La vista `/r/company/jobs` resta solo diagnostica, perché ConnectSecure può restituire descrizioni generiche non correlate al dominio.
 
 ---
 
