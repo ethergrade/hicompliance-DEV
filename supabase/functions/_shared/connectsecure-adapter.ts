@@ -78,18 +78,21 @@ export async function csAuthorize(cfg: CsConfig): Promise<CsSession> {
     method:  'POST',
     headers: {
       accept:              'application/json',
-      'Content-Type':      'application/json',
       'Client-Auth-Token': token,
     },
+    body: '',
   });
   if (!r.ok) {
     const errBody = await r.text().catch(() => '');
-    console.error(`[cs-auth] 403 body: ${errBody}`);
+    console.error(`[cs-auth] ${r.status} body: ${errBody}`);
     throw new Error(`[ConnectSecure] authorize failed: ${r.status}${errBody ? ' — ' + errBody : ''}`);
   }
   const body = await r.json();
-  if (!body?.data?.access_token) throw new Error('[ConnectSecure] no access_token in authorize response');
-  return { token: body.data.access_token, userId: String(body.data.user_id) };
+  // CS returns access_token both at root and inside data{}
+  const accessToken = body?.data?.access_token ?? body?.access_token;
+  const userId      = body?.data?.user_id      ?? body?.user_id;
+  if (!accessToken) throw new Error('[ConnectSecure] no access_token in authorize response');
+  return { token: String(accessToken), userId: String(userId) };
 }
 
 function authHeaders(session: CsSession): Record<string, string> {
