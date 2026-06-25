@@ -155,7 +155,7 @@ const SurfaceScanImpostazioni: React.FC = () => {
     try {
       const json = await callEdge('connectsecure-scan', { action: 'weekly_all' });
       if (json.ok) {
-        const msg = `BFS globale completato — ${json.orgs_swept ?? 0} org processate`;
+        const msg = `External scan avviato — ${json.orgs_swept ?? 0} org processate`;
         setSweepResult(msg);
         toast.success(msg);
       } else {
@@ -176,7 +176,7 @@ const SurfaceScanImpostazioni: React.FC = () => {
     try {
       const json = await callEdge('connectsecure-scan', { action: 'scan', organization_id: organizationId });
       setScanOrgResult(json.ok
-        ? { ok: true, msg: `BFS completato — ${json.totalScanned ?? 0} domini scansionati` }
+        ? { ok: true, msg: `Scan avviato — ${json.assets_scanned ?? 0} asset rilevati, ${json.findings_saved ?? 0} findings salvati` }
         : { ok: false, msg: json.error || 'Scan fallito' });
     } catch (err) {
       setScanOrgResult({ ok: false, msg: String(err) });

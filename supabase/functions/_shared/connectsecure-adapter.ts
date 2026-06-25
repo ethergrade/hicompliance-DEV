@@ -87,7 +87,7 @@ function authHeaders(session: CsSession): Record<string, string> {
   return {
     accept:         'application/json',
     'Content-Type': 'application/json',
-    Authorization:  session.token,
+    Authorization:  `Bearer ${session.token}`,
     'X-USER-ID':    session.userId,
   };
 }
@@ -436,4 +436,236 @@ export function csMapToFindings(result: CsResult, rootDomain: string, depth: num
       domain: rootDomain,
     },
   };
+}
+
+// ── External Scan — Discovery Settings ───────────────────────────────────────
+
+export interface CsDiscoverySetting {
+  id:                       number;
+  name:                     string;
+  address:                  string;
+  address_type:             string;
+  company_id:               number;
+  discovery_settings_type?: string;
+}
+
+export async function csGetDiscoverySettings(
+  cfg:     CsConfig,
+  session: { current: CsSession },
+): Promise<CsDiscoverySetting[]> {
+  const url = `https://${cfg.pod_host}/r/company/discovery_settings?condition=company_id=${cfg.company_id}`;
+  const body = await csFetch<{ data?: CsDiscoverySetting[]; status: boolean }>(cfg, session, url);
+  return Array.isArray(body.data) ? body.data : [];
+}
+
+export async function csCreateDiscoverySetting(
+  cfg:         CsConfig,
+  session:     { current: CsSession },
+  address:     string,
+  addressType: 'domain' | 'ipaddress' = 'domain',
+): Promise<number | null> {
+  const url  = `https://${cfg.pod_host}/w/company/discovery_settings`;
+  const body = await csFetch<{ status: boolean; id?: string }>(cfg, session, url, {
+    method: 'POST',
+    body:   JSON.stringify({
+      data: {
+        name:                    address,
+        address_type:            addressType,
+        address,
+        company_id:              cfg.company_id,
+        discovery_settings_type: 'External',
+        scan_later:              false,
+        is_excluded:             false,
+      },
+    }),
+  });
+  return body.id ? Number(body.id) : null;
+}
+
+// ── External Scan — Trigger ───────────────────────────────────────────────────
+
+export async function csExternalScan(
+  cfg:               CsConfig,
+  session:           { current: CsSession },
+  discoverySettings: number[],
+): Promise<{ status: boolean; message?: string }> {
+  const url = `https://${cfg.pod_host}/w/company/external_scan`;
+  return await csFetch<{ status: boolean; message?: string }>(cfg, session, url, {
+    method: 'POST',
+    body:   JSON.stringify({ company_id: cfg.company_id, discovery_settings: discoverySettings }),
+  });
+}
+
+// ── External Scan — Results ───────────────────────────────────────────────────
+
+export interface CsExternalAsset {
+  id:          number;
+  name:        string;
+  config_name: string;
+  host_name:   string;
+  ip:          string;
+  grade:       string;
+  critical:    string | number;
+  high:        string | number;
+  medium:      string | number;
+  low:         string | number;
+  vul_count:   number;
+  created:     string;
+  updated:     string;
+}
+
+export async function csGetExternalScanAssets(
+  cfg:     CsConfig,
+  session: { current: CsSession },
+): Promise<CsExternalAsset[]> {
+  const url = `https://${cfg.pod_host}/r/report_queries/external_asset_externalscan?condition=company_id=${cfg.company_id}`;
+  const body = await csFetch<{ data?: CsExternalAsset[]; status: boolean }>(cfg, session, url);
+  return Array.isArray(body.data) ? body.data : [];
+}
+
+export interface CsExternalPort {
+  asset_id:  number;
+  port:      number;
+  protocol:  string;
+  service:   string;
+  product:   string;
+  extrainfo: string;
+  status:    string;
+}
+
+export async function csGetExternalPorts(
+  cfg:     CsConfig,
+  session: { current: CsSession },
+  assetId: number,
+): Promise<CsExternalPort[]> {
+  const url = `https://${cfg.pod_host}/r/report_queries/external_asset_ports_data?condition=asset_id=${assetId}`;
+  const body = await csFetch<{ data?: CsExternalPort[]; status: boolean }>(cfg, session, url);
+  return Array.isArray(body.data) ? body.data : [];
+}
+
+export interface CsExternalVuln {
+  asset_id: number;
+  key:      string;
+  value:    string;
+}
+
+export async function csGetExternalVulns(
+  cfg:     CsConfig,
+  session: { current: CsSession },
+  assetId: number,
+): Promise<CsExternalVuln[]> {
+  const url = `https://${cfg.pod_host}/r/report_queries/external_asset_vulnerabilities?condition=asset_id=${assetId}`;
+  const body = await csFetch<{ data?: CsExternalVuln[]; status: boolean }>(cfg, session, url);
+  return Array.isArray(body.data) ? body.data : [];
+}
+
+// ── Map external scan results → surface DB ────────────────────────────────────
+
+export interface CsExternalMapResult {
+  assets:   CsMappedAsset[];
+  findings: CsMappedFinding[];
+  ports:    CsMappedPort[];
+}
+
+export function csMapExternalToFindings(
+  asset: CsExternalAsset,
+  ports: CsExternalPort[],
+  vulns: CsExternalVuln[],
+): CsExternalMapResult {
+  const assets:      CsMappedAsset[]   = [];
+  const findings:    CsMappedFinding[] = [];
+  const mappedPorts: CsMappedPort[]    = [];
+
+  const hostname = asset.host_name || asset.name || '';
+  const ip       = asset.ip || '';
+
+  if (hostname) {
+    assets.push({
+      asset_type:  'subdomain',
+      asset_value: hostname,
+      hostname,
+      ip:          ip || undefined,
+      root_domain: hostname.split('.').slice(-2).join('.'),
+      source:      'connectsecure',
+      confidence:  'high',
+      raw:         { grade: asset.grade, cs_id: asset.id },
+    });
+  }
+  if (ip && ip !== hostname) {
+    assets.push({
+      asset_type:  'ipv4',
+      asset_value: ip,
+      ip,
+      hostname:    hostname || undefined,
+      source:      'connectsecure',
+      confidence:  'high',
+    });
+  }
+
+  for (const p of ports) {
+    const port     = Number(p.port);
+    const protocol = (p.protocol || 'tcp').toLowerCase();
+    if (!port || isNaN(port)) continue;
+
+    mappedPorts.push({
+      port,
+      host:           hostname || ip,
+      ip:             ip || hostname,
+      protocol,
+      serviceName:    p.service || p.product || undefined,
+      serviceVersion: p.extrainfo || undefined,
+    });
+
+    findings.push({
+      provider:      'connectsecure',
+      module:        'connectsecure',
+      finding_type:  'open_port_exposed',
+      severity:      portSeverity(port),
+      title:         `Porta ${port}/${protocol} esposta su ${hostname || ip}`,
+      description:   `${hostname || ip}: porta ${port}/${protocol} aperta${p.service ? ` — ${p.service}${p.product ? ' ' + p.product : ''}` : ''}.`,
+      affected_asset: hostname || ip,
+      ip:             ip || undefined,
+      port,
+      protocol,
+      evidence:      { source: 'connectsecure', service: p.service, product: p.product, grade: asset.grade },
+    });
+  }
+
+  const cveIds = vulns
+    .map(v => v.key)
+    .filter(k => /^CVE-\d{4}-\d+$/i.test(k))
+    .map(k => k.toUpperCase());
+
+  if (cveIds.length > 0) {
+    findings.push({
+      provider:      'connectsecure',
+      module:        'connectsecure',
+      finding_type:  'vulnerability_detected',
+      severity:      gradeToSeverity(asset.grade),
+      title:         `${cveIds.length} vulnerabilità rilevate su ${hostname || ip}`,
+      description:   `Asset ${hostname || ip} (grade: ${asset.grade || 'N/A'}). CVE: ${cveIds.slice(0, 5).join(', ')}${cveIds.length > 5 ? ` +${cveIds.length - 5}` : ''}.`,
+      affected_asset: hostname || ip,
+      ip:             ip || undefined,
+      cve:           cveIds,
+      evidence:      {
+        grade:     asset.grade,
+        critical:  asset.critical,
+        high:      asset.high,
+        medium:    asset.medium,
+        low:       asset.low,
+        vul_count: asset.vul_count,
+      },
+    });
+  }
+
+  return { assets, findings, ports: mappedPorts };
+}
+
+function gradeToSeverity(grade?: string): 'critical' | 'high' | 'medium' | 'low' | 'info' {
+  if (!grade) return 'info';
+  const g = grade.toUpperCase();
+  if (g === 'F' || g === 'D') return 'critical';
+  if (g === 'C')              return 'high';
+  if (g === 'B')              return 'medium';
+  return 'info';
 }

@@ -51,8 +51,8 @@ export const ConnectSecureConfigPanel: React.FC<ConnectSecureConfigPanelProps> =
       );
       const json = await res.json();
       if (json.ok) {
-        setScanResult({ ok: true, message: `BFS completato — ${json.totalScanned ?? 0} domini scansionati` });
-        toast.success('BFS completato');
+        setScanResult({ ok: true, message: `Scan avviato — ${json.assets_scanned ?? 0} asset trovati, ${json.findings_saved ?? 0} findings salvati` });
+        toast.success('External scan completato');
       } else {
         setScanResult({ ok: false, message: json.error || 'Scan fallito' });
       }
@@ -82,7 +82,7 @@ export const ConnectSecureConfigPanel: React.FC<ConnectSecureConfigPanelProps> =
       <div className="flex items-center gap-2 flex-wrap">
         <Button size="sm" variant="outline" onClick={handleScanOrg} disabled={scanning || !enabled}>
           {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Play className="w-3.5 h-3.5 mr-1.5" />}
-          Avvia BFS org
+          Avvia External Scan
         </Button>
         <Button size="sm" variant="ghost" onClick={() => navigate('/impostazioni/surface-scan')}>
           <Settings className="w-3.5 h-3.5 mr-1.5" />
