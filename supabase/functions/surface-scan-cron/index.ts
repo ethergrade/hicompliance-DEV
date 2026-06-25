@@ -1066,6 +1066,22 @@ Deno.serve(async (req) => {
         await triggerWeeklyDarkRiskStandardScan(supabase, supabaseUrl, serviceRoleKey, darkriskInternalSecret, orgId);
       }
 
+      // ConnectSecure Attack Surface Mapper — sweep settimanale async
+      if (surfaceGate.allowed) {
+        fetch(`${supabaseUrl}/functions/v1/connectsecure-scan`, {
+          method: 'POST',
+          headers: {
+            'Content-Type':              'application/json',
+            'Authorization':             `Bearer ${serviceRoleKey}`,
+            'x-surface-internal-secret': internalSecret ?? '',
+          },
+          body: JSON.stringify({ action: 'scan', organization_id: orgId }),
+        }).then(r => {
+          if (!r.ok) console.warn(`[connectsecure weekly] org=${orgId} HTTP ${r.status}`);
+          else console.log(`[connectsecure weekly] org=${orgId} triggered`);
+        }).catch(err => console.warn(`[connectsecure weekly] org=${orgId} failed:`, err));
+      }
+
     }
 
     return new Response(

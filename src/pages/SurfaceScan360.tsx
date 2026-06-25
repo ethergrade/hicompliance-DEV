@@ -37,6 +37,8 @@ import SecurityFindings from '@/components/surface-scan/SecurityFindings';
 import SurfaceScanModuleCards from '@/components/surface-scan/SurfaceScanModuleCards';
 import SurfaceScanReportRepository from '@/components/surface-scan/SurfaceScanReportRepository';
 import SurfaceScanExposureSection from '@/components/surface-scan/SurfaceScanExposureSection';
+import { ConnectSecureConfigPanel } from '@/components/surface-scan/ConnectSecureConfigPanel';
+import { SubdomainDepthTree } from '@/components/surface-scan/SubdomainDepthTree';
 import { SurfaceScanTrendline } from '@/components/surface-scan/SurfaceScanTrendline';
 import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
 import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceScanAlertConfigDialog';
@@ -744,6 +746,20 @@ const SurfaceScan360: React.FC = () => {
 
         <SubdomainDumpPanel isAdmin={isAdminUser} />
 
+        {isAdminUser && organizationId && (
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle>Attack Surface — Albero Sottodomini</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Visualizzazione ad albero dei sottodomini scoperti via BFS (profondità max 10).
+              </p>
+            </CardHeader>
+            <CardContent>
+              <SubdomainDepthTree organizationId={organizationId} />
+            </CardContent>
+          </Card>
+        )}
+
         {isAdminUser && (
           <Card className="border-border">
             <CardHeader>
@@ -752,7 +768,7 @@ const SurfaceScan360: React.FC = () => {
                 Questi moduli partono solo se abilitati anche lato backend tramite variabili ambiente.
               </p>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
                 <div>
                   <p className="text-sm font-medium">Amass active-light</p>
@@ -766,6 +782,11 @@ const SurfaceScan360: React.FC = () => {
                   aria-label="Abilita Amass active-light per le prossime scansioni"
                 />
               </div>
+              {organizationId && (
+                <div className="rounded-lg border border-border p-3">
+                  <ConnectSecureConfigPanel organizationId={organizationId} />
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -1238,7 +1259,7 @@ const SurfaceScan360: React.FC = () => {
 
         <SecurityFindings />
 
-        <SurfaceScanReportRepository scanJobs={scanJobs} canManage={!clientReadOnly} />
+        <SurfaceScanReportRepository scanJobs={scanJobs} organizationId={organizationId ?? undefined} canManage={!clientReadOnly} />
 
         {!clientReadOnly && (
         <Card className="border-border">

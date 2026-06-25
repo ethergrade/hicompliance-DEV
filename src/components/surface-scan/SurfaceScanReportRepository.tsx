@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table,
   TableBody,
@@ -10,16 +11,32 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Database, Download, FileText, Loader2, RefreshCw, Trash2 } from 'lucide-react';
+import { BarChart2, Database, Download, FileText, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { SurfaceScanJob } from '@/hooks/useSurfaceScanEngine';
 import { useSurfaceScanReportRepository } from '@/hooks/useSurfaceScanReportRepository';
 import { generateSurfaceScan360Pdf, type SurfaceScan360Report } from '@/lib/surfaceScan360PdfReport';
 import { generateSurfaceScan360Docx } from '@/lib/surfaceScan360DocxReport';
+import { supabase } from '@/integrations/supabase/client';
 
 interface SurfaceScanReportRepositoryProps {
   scanJobs: SurfaceScanJob[];
+  organizationId?: string;
   canManage?: boolean;
+}
+
+interface MonthlyReport {
+  id: string;
+  month_key: string;
+  month_start: string;
+  created_at: string;
+  payload: {
+    weekly_snapshots?: number;
+    trend?: { score_start?: number; score_end?: number; score_delta?: number };
+    findings_summary?: { total?: number; critical?: number; high?: number; resolved?: number };
+    breach_intel?: { creds_found?: number; hashes_found?: number };
+    ai?: { executive_summary?: string | null };
+  };
 }
 
 const riskBadgeClass = (riskLevel?: string) => {
@@ -31,7 +48,60 @@ const riskBadgeClass = (riskLevel?: string) => {
   return 'bg-muted text-foreground';
 };
 
-export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryProps> = ({ scanJobs, canManage = true }) => {
+export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryProps> = ({ scanJobs, organizationId, canManage = true }) => {
+  const [monthlyReports, setMonthlyReports] = useState<MonthlyReport[]>([]);
+  const [monthlyLoading, setMonthlyLoading] = useState(false);
+  const [generatingMonthly, setGeneratingMonthly] = useState(false);
+
+  useEffect(() => {
+    if (!organizationId) return;
+    setMonthlyLoading(true);
+    supabase
+      .from('surface_scan_monthly_reports')
+      .select('id, month_key, month_start, created_at, payload')
+      .eq('organization_id', organizationId)
+      .order('month_key', { ascending: false })
+      .then(({ data }) => {
+        setMonthlyReports((data as MonthlyReport[]) || []);
+        setMonthlyLoading(false);
+      });
+  }, [organizationId]);
+
+  const handleGenerateMonthly = async (monthKey?: string) => {
+    if (!organizationId) return;
+    setGeneratingMonthly(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/surfacescan360-monthly-report`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({ organization_id: organizationId, month_key: monthKey, triggered_by: 'manual' }),
+        },
+      );
+      const json = await res.json();
+      if (json.ok) {
+        toast.success(`Report mensile generato per ${json.month_key}`);
+        const { data } = await supabase
+          .from('surface_scan_monthly_reports')
+          .select('id, month_key, month_start, created_at, payload')
+          .eq('organization_id', organizationId)
+          .order('month_key', { ascending: false });
+        setMonthlyReports((data as MonthlyReport[]) || []);
+      } else {
+        toast.error('Generazione fallita: ' + (json.results?.[0]?.error || json.error || 'errore sconosciuto'));
+      }
+    } catch (err) {
+      toast.error('Errore: ' + String(err));
+    } finally {
+      setGeneratingMonthly(false);
+    }
+  };
+
   const {
     reports,
     loading,
@@ -82,33 +152,43 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
   return (
     <Card className="border-border">
       <CardHeader>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Database className="w-5 h-5 text-primary" />
-              Repository Report SurfaceScan360
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Report persistente canonico su scope organizzazione, aggiornato a completamento scansioni e disponibile per export PDF e DOCX.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {canManage && (
-              <>
-                <Button variant="outline" onClick={() => refetch()} disabled={loading}>
-                  <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                  Aggiorna
-                </Button>
-                <Button onClick={() => generateReport()} disabled={generating}>
-                  {generating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
-                  Rigenera report canonico
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
+        <CardTitle className="flex items-center gap-2">
+          <Database className="w-5 h-5 text-primary" />
+          Repository Report SurfaceScan360
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Report scan e report mensili aggregati dell&apos;organizzazione.
+        </p>
       </CardHeader>
       <CardContent className="space-y-4">
+        <Tabs defaultValue="scan">
+          <TabsList>
+            <TabsTrigger value="scan" className="flex items-center gap-1.5">
+              <FileText className="w-3.5 h-3.5" />Report Scan
+            </TabsTrigger>
+            <TabsTrigger value="monthly" className="flex items-center gap-1.5">
+              <BarChart2 className="w-3.5 h-3.5" />Report Mensili
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="scan" className="space-y-4 mt-4">
+            <div className="flex items-center justify-between gap-3">
+              <div />
+              <div className="flex items-center gap-2">
+                {canManage && (
+                  <>
+                    <Button variant="outline" onClick={() => refetch()} disabled={loading}>
+                      <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                      Aggiorna
+                    </Button>
+                    <Button onClick={() => generateReport()} disabled={generating}>
+                      {generating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
+                      Rigenera report canonico
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary">Report in repository: {reports.length}</Badge>
           <Badge variant={missingCompletedJobs.length > 0 ? 'destructive' : 'outline'}>
@@ -249,6 +329,87 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
             </TableBody>
           </Table>
         </div>
+          </TabsContent>
+
+          <TabsContent value="monthly" className="space-y-4 mt-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="secondary">Report mensili: {monthlyReports.length}</Badge>
+              </div>
+              {canManage && (
+                <Button onClick={() => handleGenerateMonthly()} disabled={generatingMonthly}>
+                  {generatingMonthly ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <BarChart2 className="w-4 h-4 mr-2" />}
+                  Genera mese corrente
+                </Button>
+              )}
+            </div>
+
+            <div className="rounded-lg border border-border overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Mese</TableHead>
+                    <TableHead>Snapshot</TableHead>
+                    <TableHead>Score (start→end)</TableHead>
+                    <TableHead>Findings</TableHead>
+                    <TableHead>Breach</TableHead>
+                    <TableHead>Generato</TableHead>
+                    {canManage && <TableHead>Azioni</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {monthlyLoading && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-muted-foreground py-6">
+                        Caricamento report mensili...
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {!monthlyLoading && monthlyReports.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-muted-foreground py-6">
+                        Nessun report mensile. Usa il pulsante &quot;Genera mese corrente&quot; per creare il primo.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {!monthlyLoading && monthlyReports.map(r => {
+                    const p = r.payload;
+                    const delta = p.trend?.score_delta ?? 0;
+                    const deltaStr = delta > 0 ? `+${delta}` : String(delta);
+                    const deltaClass = delta > 0 ? 'text-emerald-400' : delta < 0 ? 'text-red-400' : 'text-muted-foreground';
+                    return (
+                      <TableRow key={r.id}>
+                        <TableCell className="font-medium">{r.month_key}</TableCell>
+                        <TableCell className="text-sm">{p.weekly_snapshots ?? '-'}</TableCell>
+                        <TableCell className="text-sm">
+                          {p.trend?.score_start ?? '-'} → {p.trend?.score_end ?? '-'}
+                          <span className={`ml-1.5 text-xs ${deltaClass}`}>({deltaStr})</span>
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          <span className="text-red-400">{p.findings_summary?.critical ?? 0} crit</span>
+                          <span className="text-muted-foreground ml-1">/ {p.findings_summary?.total ?? 0} tot</span>
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {(p.breach_intel?.creds_found ?? 0) + (p.breach_intel?.hashes_found ?? 0) > 0
+                            ? <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-[10px]">{p.breach_intel?.creds_found ?? 0} creds</Badge>
+                            : <span className="text-muted-foreground">—</span>}
+                        </TableCell>
+                        <TableCell className="text-sm">{new Date(r.created_at).toLocaleString('it-IT')}</TableCell>
+                        {canManage && (
+                          <TableCell>
+                            <Button size="sm" variant="ghost" onClick={() => handleGenerateMonthly(r.month_key)} disabled={generatingMonthly}>
+                              Rigenera
+                            </Button>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </TabsContent>
+        </Tabs>
       </CardContent>
     </Card>
   );
