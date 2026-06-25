@@ -48,6 +48,20 @@ Deno.serve(async (req: Request) => {
     auth: { persistSession: false },
   });
 
+  // Global secrets override per-org DB config
+  const GLOBAL_POD_HOST  = Deno.env.get('CS_POD_HOST');
+  const GLOBAL_TOKEN     = Deno.env.get('CS_CLIENT_AUTH_TOKEN');
+  const GLOBAL_COMPANY   = Deno.env.get('CS_COMPANY_ID');
+  const hasGlobalCfg     = !!(GLOBAL_POD_HOST && GLOBAL_TOKEN && GLOBAL_COMPANY);
+
+  function mergeWithGlobal(dbCfg: Partial<CsConfig> = {}): CsConfig {
+    return {
+      pod_host:           GLOBAL_POD_HOST || dbCfg.pod_host || '',
+      client_auth_token:  GLOBAL_TOKEN    || dbCfg.client_auth_token || '',
+      company_id:         GLOBAL_COMPANY  ? parseInt(GLOBAL_COMPANY, 10) : (dbCfg.company_id ?? 0),
+    };
+  }
+
   try {
     const body = await req.json().catch(() => ({}));
     const action    = String(body.action || 'scan');
@@ -56,17 +70,19 @@ Deno.serve(async (req: Request) => {
 
     // ── Test auth ─────────────────────────────────────────────────────────────
     if (action === 'test_auth') {
-      if (!orgId) return jsonErr('organization_id required', 400);
-
-      const { data: cfg } = await adminClient
-        .from('connectsecure_config')
-        .select('pod_host, client_auth_token, company_id')
-        .eq('organization_id', orgId)
-        .maybeSingle();
-      if (!cfg) return jsonErr('no ConnectSecure config for this org', 404);
-
-      const session = await csAuthorize(cfg as CsConfig);
-      return json({ ok: true, user_id: session.userId, pod_host: cfg.pod_host });
+      let cfgBase: Partial<CsConfig> = {};
+      if (orgId) {
+        const { data } = await adminClient
+          .from('connectsecure_config')
+          .select('pod_host, client_auth_token, company_id')
+          .eq('organization_id', orgId)
+          .maybeSingle();
+        cfgBase = data || {};
+      }
+      const cfg = mergeWithGlobal(cfgBase);
+      if (!cfg.pod_host || !cfg.client_auth_token) return jsonErr('no ConnectSecure config available', 404);
+      const session = await csAuthorize(cfg);
+      return json({ ok: true, user_id: session.userId, pod_host: cfg.pod_host, global_cfg: hasGlobalCfg });
     }
 
     // ── Weekly sweep (tutte le org con config) ────────────────────────────────
@@ -79,7 +95,8 @@ Deno.serve(async (req: Request) => {
       const results: Array<{ org_id: string; domains_scanned: number; error?: string }> = [];
       for (const cfg of (configs || [])) {
         try {
-          const r = await runBfsForOrg(adminClient, cfg as CsConfig & { organization_id: string }, undefined);
+          const mergedCfg = mergeWithGlobal(cfg as Partial<CsConfig>);
+          const r = await runBfsForOrg(adminClient, { ...mergedCfg, organization_id: cfg.organization_id }, undefined);
           results.push({ org_id: cfg.organization_id, domains_scanned: r.totalScanned });
         } catch (err) {
           results.push({ org_id: cfg.organization_id, domains_scanned: 0, error: String(err) });
@@ -91,18 +108,18 @@ Deno.serve(async (req: Request) => {
     // ── Single org scan ───────────────────────────────────────────────────────
     if (!orgId) return jsonErr('organization_id required', 400);
 
-    const { data: cfg } = await adminClient
+    const { data: dbCfg } = await adminClient
       .from('connectsecure_config')
       .select('pod_host, client_auth_token, company_id')
       .eq('organization_id', orgId)
-      .eq('enabled', true)
       .maybeSingle();
 
-    if (!cfg) return jsonErr('no ConnectSecure config for this org', 404);
+    const cfg = mergeWithGlobal(dbCfg || {});
+    if (!cfg.pod_host || !cfg.client_auth_token) return jsonErr('no ConnectSecure config for this org', 404);
 
     const r = await runBfsForOrg(
       adminClient,
-      { ...(cfg as CsConfig), organization_id: orgId },
+      { ...cfg, organization_id: orgId },
       inputDomain,
     );
 

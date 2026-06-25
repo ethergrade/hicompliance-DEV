@@ -28,6 +28,7 @@ import Users from "./pages/Users";
 import RoleSettings from "./pages/RoleSettings";
 import Settings from "./pages/Settings";
 import SurfaceScanSettings from "./pages/SurfaceScanSettings";
+import SurfaceScanImpostazioni from "./pages/SurfaceScanImpostazioni";
 import ComplianceEvents from "./pages/ComplianceEvents";
   import ClientSelection from "./pages/ClientSelection";
 import CyberNews from "./pages/CyberNews";
@@ -80,6 +81,7 @@ const App = () => (
             <Route path="/settings/integrations" element={<ClientSelectionGuard><Integrations /></ClientSelectionGuard>} />
             <Route path="/settings/alerts" element={<ClientSelectionGuard><Settings /></ClientSelectionGuard>} />
             <Route path="/settings/surface-scan-alerts" element={<ClientSelectionGuard><SurfaceScanSettings /></ClientSelectionGuard>} />
+            <Route path="/impostazioni/surface-scan" element={<ClientSelectionGuard><SurfaceScanImpostazioni /></ClientSelectionGuard>} />
             <Route path="/admin/role-settings" element={<ClientSelectionGuard><RoleSettings /></ClientSelectionGuard>} />
             <Route path="/admin/reporting" element={<AdminReporting />} />
             <Route path="/admin/darkrisk-esteso" element={<AdminDarkRiskEsteso />} />
