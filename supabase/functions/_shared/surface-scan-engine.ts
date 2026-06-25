@@ -8269,7 +8269,8 @@ export async function runSurfaceScanEnrichment(
     const queue: Array<{ domain: string; depth: number; parentDomain?: string }> = [
       { domain: startDomain, depth: 0 },
     ];
-    const visited     = new Set<string>([startDomain]);
+    const visited     = new Set<string>();
+    const queued      = new Set<string>([startDomain]);
     let totalScanned  = 0;
     let maxDepthReached = 0;
 
@@ -8398,21 +8399,23 @@ export async function runSurfaceScanEnrichment(
         if (d.depth < MAX_DEPTH) {
           for (const sub of result.subdomains || []) {
             const subDomain = String(sub.subdomain || "").trim().toLowerCase();
-            if (subDomain && !visited.has(subDomain)) {
-              visited.add(subDomain);
+            if (subDomain && !visited.has(subDomain) && !queued.has(subDomain)) {
+              queued.add(subDomain);
               queue.push({ domain: subDomain, depth: d.depth + 1, parentDomain: d.domain });
-              await adminClient.from("surface_scan_monitored_ips" as any).upsert({
-                organization_id: organizationId,
-                input_value:     subDomain,
-                entry_type:      "domain",
-                ip_start:        "",
-                ip_end:          "",
-                discovered_via:  "connectsecure_bfs",
-                discovered_from: d.domain,
-                created_by:      null,
-              }, { onConflict: "organization_id,input_value" }).catch((e: unknown) => {
+              try {
+                await adminClient.from("surface_scan_monitored_ips" as any).upsert({
+                  organization_id: organizationId,
+                  input_value:     subDomain,
+                  entry_type:      "domain",
+                  ip_start:        "",
+                  ip_end:          "",
+                  discovered_via:  "connectsecure_bfs",
+                  discovered_from: d.domain,
+                  created_by:      null,
+                }, { onConflict: "organization_id,input_value" });
+              } catch (e) {
                 console.warn("[connectsecure] scope seed failed:", subDomain, e);
-              });
+              }
             }
           }
         }
