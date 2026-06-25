@@ -42,6 +42,7 @@ import {
 	SurfaceScanAlertTypes,
 } from "@/hooks/useSurfaceScanAlerts";
 import { useSurfaceScanMonitoredIps } from "@/hooks/useSurfaceScanMonitoredIps";
+import { useUserRoles } from "@/hooks/useUserRoles";
 import {
 	useSurfaceScanEngine,
 	type SurfaceScanProfile,
@@ -229,6 +230,9 @@ const SurfaceScan360: React.FC = () => {
 		isAdmin: isAdminUser,
 		addRule: addMonitoredIpRule,
 	} = useSurfaceScanMonitoredIps();
+
+	const { isSales, isSuperAdmin } = useUserRoles();
+	const clientReadOnly = !isAdminUser && !isSuperAdmin && !isSales;
 
 	const { ipScopeRules } = useMemo(
 		() =>
@@ -865,7 +869,7 @@ const SurfaceScan360: React.FC = () => {
 									</div>
 								</div>
 
-								{isAdminUser && (
+								{(isAdminUser || isSuperAdmin) && (
 									<div className="rounded-lg border border-border p-3 space-y-3">
 										<div className="flex items-center justify-between gap-3">
 											<div>
