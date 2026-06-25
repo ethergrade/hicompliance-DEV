@@ -40,6 +40,9 @@ import SurfaceScanExposureSection from '@/components/surface-scan/SurfaceScanExp
 import { ConnectSecureConfigPanel } from '@/components/surface-scan/ConnectSecureConfigPanel';
 import { SubdomainDepthTree } from '@/components/surface-scan/SubdomainDepthTree';
 import { SurfaceScanTrendline } from '@/components/surface-scan/SurfaceScanTrendline';
+import { SurfaceScanAlertBanner } from '@/components/surface-scan/SurfaceScanAlertBanner';
+import { SurfaceScanActionItems } from '@/components/surface-scan/SurfaceScanActionItems';
+import { SurfaceScanMailSecurity } from '@/components/surface-scan/SurfaceScanMailSecurity';
 import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
 import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceScanAlertConfigDialog';
 import { useSurfaceScanAlerts, SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
@@ -864,6 +867,28 @@ const SurfaceScan360: React.FC = () => {
           </Card>
         </div>
 
+        <SurfaceScanAlertBanner />
+
+        <SurfaceScanActionItems />
+
+        <SecurityFindings />
+
+        {!clientReadOnly && (
+          <div ref={exposureSectionRef}>
+            <SurfaceScanExposureSection isAdmin={isAdmin} />
+          </div>
+        )}
+
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle className="text-base">Sicurezza Email (SPF / DKIM / DMARC)</CardTitle>
+            <p className="text-sm text-muted-foreground">Stato configurazione anti-spoofing per ogni dominio in scope.</p>
+          </CardHeader>
+          <CardContent>
+            <SurfaceScanMailSecurity />
+          </CardContent>
+        </Card>
+
         <SurfaceScanTrendline isAdmin={isAdminUser} />
 
         {!clientReadOnly && (
@@ -1242,6 +1267,8 @@ const SurfaceScan360: React.FC = () => {
         </Card>
         )}
 
+        <SurfaceScanReportRepository scanJobs={scanJobs} organizationId={organizationId ?? undefined} canManage={!clientReadOnly} />
+
         {!clientReadOnly && (
           <SurfaceScanModuleCards
             isAdminView={isAdminUser}
@@ -1250,16 +1277,6 @@ const SurfaceScan360: React.FC = () => {
             onScanSubdomain={handleScanSingleSubdomain}
           />
         )}
-
-        {!clientReadOnly && (
-          <div ref={exposureSectionRef}>
-            <SurfaceScanExposureSection isAdmin={isAdmin} />
-          </div>
-        )}
-
-        <SecurityFindings />
-
-        <SurfaceScanReportRepository scanJobs={scanJobs} organizationId={organizationId ?? undefined} canManage={!clientReadOnly} />
 
         {!clientReadOnly && (
         <Card className="border-border">
