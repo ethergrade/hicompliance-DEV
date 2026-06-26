@@ -1,4 +1,7 @@
-import jsPDF from "jspdf";
+import jsPDF from 'jspdf';
+import { COVER_BG_JPEG_B64, HISOLUTION_LOGO_PNG_B64 } from './reportCoverAssets';
+import { REPORT_GLOSSARY } from './reportGlossary';
+import { publicSourceLabel, redactInternalSourceNames } from './surfaceSourceLabels';
 
 interface RemediationTask {
 	id: string;
@@ -111,7 +114,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 	mail_security: "Postura sicurezza email (SPF/DKIM/DMARC)",
 	security_headers: "Controlli HTTP di sicurezza",
 };
-const providerLabel = (p: string) => PROVIDER_LABELS[p] || "Evidenze esterne";
+const providerLabel = (p: string) => PROVIDER_LABELS[p] || publicSourceLabel(p, 'Evidenze esterne');
 
 const hasHiComplianceBrand = (report: SurfaceScan360Report): boolean => {
 	const org = report?.organization || {};
@@ -145,31 +148,7 @@ const drawHiSolutionLogo = (doc: jsPDF, x: number, y: number): void => {
 	doc.text("Hi", x + 5, y + 12.5);
 };
 
-const redactReportWords = (value: string) => {
-	const providerTokens = [
-		/\bshodan\b/gi,
-		/\bpentest-?tools?\b/gi,
-		/\bweb[\s-]?check\b/gi,
-		/\burlscan\b/gi,
-	];
-	const technologyTokens = [
-		/\bapache\b/gi,
-		/\bnginx\b/gi,
-		/\bwordpress\b/gi,
-		/\bphp\b/gi,
-		/\bopenssl\b/gi,
-		/\biis\b/gi,
-		/\btomcat\b/gi,
-		/\bdrupal\b/gi,
-		/\bjoomla\b/gi,
-	];
-	let out = String(value || "");
-	for (const token of providerTokens)
-		out = out.replace(token, "SurfaceScan360");
-	for (const token of technologyTokens)
-		out = out.replace(token, "componente tecnologica");
-	return out.replace(/\s{2,}/g, " ").trim();
-};
+const redactReportWords = (value: string) => redactInternalSourceNames(value, 'Motore exposure');
 
 const normalizeHost = (value: string): string =>
 	String(value || "")

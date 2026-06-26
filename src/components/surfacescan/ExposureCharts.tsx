@@ -48,7 +48,7 @@ export const ExposureCharts: React.FC<ExposureChartsProps> = ({
       { name: 'Medium', value: sev.medium },
       { name: 'Low', value: sev.low },
       { name: 'Info', value: sev.info },
-    ];
+    ].filter((entry) => Number(entry.value || 0) > 0);
   }, [summary]);
 
   const topTechData = useMemo(() => {
@@ -65,65 +65,74 @@ export const ExposureCharts: React.FC<ExposureChartsProps> = ({
       .slice(0, 10);
   }, [summary, technologies]);
 
+  const hasAnyChart = topPortsData.length > 0 || severityData.length > 0 || topTechData.length > 0;
+  if (!hasAnyChart) return null;
+
   return (
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-      <Card className="border-border">
-        <CardHeader>
-          <CardTitle className="text-base">Top 10 Porte Aperte</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={topPortsData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
-                <XAxis dataKey="port" stroke="hsl(var(--muted-foreground))" />
-                <YAxis stroke="hsl(var(--muted-foreground))" allowDecimals={false} />
-                <Tooltip />
-                <Bar dataKey="count" fill="#6366F1" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
+      {topPortsData.length > 0 && (
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle className="text-base">Top 10 Porte Aperte</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={topPortsData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+                  <XAxis dataKey="port" stroke="hsl(var(--muted-foreground))" />
+                  <YAxis stroke="hsl(var(--muted-foreground))" allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#6366F1" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-      <Card className="border-border">
-        <CardHeader>
-          <CardTitle className="text-base">Distribuzione Severity Exposure</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={severityData} dataKey="value" nameKey="name" outerRadius={90} innerRadius={45}>
-                  {severityData.map((_, index) => (
-                    <Cell key={`sev-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
+      {severityData.length > 0 && (
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle className="text-base">Distribuzione Severity Exposure</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={severityData} dataKey="value" nameKey="name" outerRadius={90} innerRadius={45}>
+                    {severityData.map((_, index) => (
+                      <Cell key={`sev-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-      <Card className="border-border">
-        <CardHeader>
-          <CardTitle className="text-base">Tecnologie Più Frequenti</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={topTechData} layout="vertical" margin={{ left: 16, right: 12 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
-                <XAxis type="number" stroke="hsl(var(--muted-foreground))" allowDecimals={false} />
-                <YAxis dataKey="name" type="category" stroke="hsl(var(--muted-foreground))" width={120} />
-                <Tooltip />
-                <Bar dataKey="count" fill="#14B8A6" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
+      {topTechData.length > 0 && (
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle className="text-base">Tecnologie Più Frequenti</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={topTechData} layout="vertical" margin={{ left: 16, right: 12 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+                  <XAxis type="number" stroke="hsl(var(--muted-foreground))" allowDecimals={false} />
+                  <YAxis dataKey="name" type="category" stroke="hsl(var(--muted-foreground))" width={120} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#14B8A6" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };

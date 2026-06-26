@@ -269,7 +269,7 @@ async function createConnectSecureJob(
       root_domain: domain,
       resolved_ips: [],
       scan_profile: 'domain_exposure',
-      scan_name: `ConnectSecure ASM - ${domain}`,
+      scan_name: `External ASM - ${domain}`,
       scan_type: 'connectsecure_asm',
       status: 'running',
       authorization_confirmed: true,
@@ -451,7 +451,12 @@ async function saveResult(
         source:          'connectsecure',
         first_seen_at:   now,
         last_seen_at:    now,
-        raw:             { source: 'connectsecure', attack_surface_domain_id: result.attack_surface_domain_id },
+        raw:             {
+          source: 'connectsecure',
+          scope_target_host: domain,
+          root_domain: domain,
+          attack_surface_domain_id: result.attack_surface_domain_id,
+        },
       }, { onConflict: 'customer_id,host,port,protocol' }));
   }
 
@@ -650,7 +655,7 @@ async function enqueueConnectSecureSubdomainJobs(
       resolved_ips: [],
       scan_profile: 'domain_exposure',
       scan_type: 'subdomain_enrichment',
-      scan_name: `ConnectSecure subdomain enrichment - ${subdomain}`,
+      scan_name: `Subdomain enrichment - ${subdomain}`,
       status: 'queued',
       authorization_confirmed: true,
       config: {
@@ -701,7 +706,7 @@ async function enqueueConnectSecureSubdomainJobs(
       scan_job_id: parentScanJobId,
       module: 'connectsecure',
       observation_type: 'connectsecure_subdomain_child_jobs',
-      title: 'ConnectSecure subdomains queued for SurfaceScan360 enrichment',
+      title: 'Scanner esterno: sottodomini accodati per arricchimento interno',
       value: {
         ...stats,
         root_domain: normalizedRoot,

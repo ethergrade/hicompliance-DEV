@@ -14,13 +14,15 @@ import {
 } from "docx";
 import { saveAs } from "file-saver";
 import type { SurfaceScan360Report } from "./surfaceScan360PdfReport";
+import { REPORT_GLOSSARY } from './reportGlossary';
+import { redactInternalSourceNames } from './surfaceSourceLabels';
 
 const SURFACESCAN_BRAND_TITLE_HICOMPLIANCE = "HICOMPLIANCE · SURFACESCAN360";
 const SURFACESCAN_BRAND_TITLE_HICONSOLE = "HiConsole - SURFACESCAN360";
 
-const asText = (value: unknown, fallback = "-"): string => {
-	const text = String(value ?? "").trim();
-	return text || fallback;
+const asText = (value: unknown, fallback = '-'): string => {
+  const text = redactInternalSourceNames(String(value ?? '').trim(), 'Motore exposure');
+  return text || fallback;
 };
 
 const hasHiComplianceBrand = (report: SurfaceScan360Report): boolean => {

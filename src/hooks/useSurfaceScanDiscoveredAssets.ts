@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { surfaceScan360Api, type SurfaceScanJob } from '@/lib/api/surface-scan360';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
-import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 import {
   classifySurfaceHostForScope,
   isIpWithinScopeRules,
@@ -16,6 +16,8 @@ import {
 interface AssetRow {
   asset_type: string;
   asset_value: string;
+  hostname?: string | null;
+  root_domain?: string | null;
   source?: string;
   ip?: string | null;
   raw?: { ip?: string; _scope_excluded?: boolean; _scope_exclusion_reason?: string } | null;
@@ -120,7 +122,6 @@ const deriveAssetsFromJobs = (jobs: SurfaceScanJob[]): AssetRow[] => {
 
 export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssetsResult => {
   const { organizationId, isLoading: clientLoading, groupId } = useClientOrganization();
-  const { toast } = useToast();
 
   // Fetch completed SurfaceScan jobs (the source of discovered assets)
   const jobsQuery = useQuery({
@@ -132,6 +133,26 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
     },
     enabled: !!organizationId && !clientLoading,
     refetchInterval: 30_000, // polling replaces Realtime
+    staleTime: 15_000,
+  });
+
+  const assetsQuery = useQuery({
+    queryKey: ['surface-scan-discovered-assets-table', organizationId, groupId],
+    queryFn: async () => {
+      if (!organizationId) return [] as AssetRow[];
+      const scopeFilter = `customer_id.eq.${organizationId},organization_id.eq.${organizationId}`;
+      const { data, error } = await supabase
+        .from('surface_assets' as any)
+        .select('asset_type, asset_value, hostname, root_domain, source, ip, raw')
+        .or(scopeFilter)
+        .in('asset_type', ['subdomain', 'reverse_dns_hostname', 'domain', 'ip'])
+        .order('last_seen', { ascending: false })
+        .limit(1500);
+      if (error) throw error;
+      return (data || []) as AssetRow[];
+    },
+    enabled: !!organizationId && !clientLoading,
+    refetchInterval: 30_000,
     staleTime: 15_000,
   });
 
@@ -151,9 +172,12 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
   }, [organizationId, groupId]);
 
   const jobs = jobsQuery.data ?? [];
-  const loading = jobsQuery.isLoading;
+  const loading = jobsQuery.isLoading || assetsQuery.isLoading;
 
-  const rows: AssetRow[] = useMemo(() => deriveAssetsFromJobs(jobs), [jobs]);
+  const rows: AssetRow[] = useMemo(
+    () => [...deriveAssetsFromJobs(jobs), ...(assetsQuery.data || [])],
+    [assetsQuery.data, jobs],
+  );
 
   const { subdomains, ips, hostMeta, scopeCounters, scopeDomains } = useMemo(() => {
     const { scopeDomains, ipScopeRules } = splitMonitoredScopeRules(scopeRules);
@@ -167,7 +191,7 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
     };
 
     for (const row of rows) {
-      const value = String(row.asset_value || '').trim().toLowerCase().replace(/\.$/, '');
+      const value = String(row.hostname || row.asset_value || '').trim().toLowerCase().replace(/\.$/, '');
       if (!value) continue;
 
       if (row.asset_type === 'ip') {
@@ -224,7 +248,11 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
         const ipCandidate = String(row.ip || row?.raw?.ip || '').trim();
         if (ipCandidate && !meta.ips.includes(ipCandidate)) meta.ips.push(ipCandidate);
         if (source.includes('reverse_dns')) meta.fromReverseDns = true;
-        if (source.includes('subdomain_dump') || source.includes('certificate_transparency')) meta.fromDump = true;
+        if (
+          source.includes('subdomain_dump')
+          || source.includes('certificate_transparency')
+          || source.includes('connectsecure')
+        ) meta.fromDump = true;
         if (classification.inScope) meta.fromScope = true;
 
         if (!isExcluded) {
@@ -245,9 +273,10 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
   const fetchAssets = useCallback(
     async (_options?: { background?: boolean }) => {
       await jobsQuery.refetch();
+      await assetsQuery.refetch();
       await fetchScopeRules();
     },
-    [jobsQuery],
+    [assetsQuery, jobsQuery],
   );
 
   return {

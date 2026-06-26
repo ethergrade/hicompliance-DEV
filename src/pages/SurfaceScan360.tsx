@@ -170,16 +170,16 @@ const formatExposureJobError = (errorMessage: string | null | undefined): string
 
   const normalized = raw.toLowerCase();
   if (normalized.includes('no pentest-tools tasks for this exposure job')) {
-    return 'Recovery automatica task Pentest in corso';
+    return 'Recovery automatica motore exposure in corso';
   }
   if (normalized.includes('all pentest-tools tasks failed')) {
-    return 'Provider exposure non ha completato i task: retry automatico pianificato';
+    return 'Motore exposure non ha completato i task: retry automatico pianificato';
   }
   if (normalized.includes('completed with partial optional-phase failures')) {
     return 'Completata con moduli opzionali non disponibili';
   }
   if (normalized.includes('optional phase skipped')) {
-    return 'Modulo opzionale saltato dal provider';
+    return 'Modulo opzionale saltato dal motore';
   }
   return raw;
 };
@@ -226,6 +226,7 @@ const SurfaceScan360: React.FC = () => {
   const [showScopeDiagnostics, setShowScopeDiagnostics] = useState(false);
   const [enableAmassDiscovery, setEnableAmassDiscovery] = useState(false);
   const [reverseDnsMap, setReverseDnsMap] = useState<Record<string, string[]>>({});
+  const [activeSection, setActiveSection] = useState('overview');
 
   const assetsPerPage = 15;
   const { organizationId } = useClientOrganization();
@@ -263,13 +264,37 @@ const SurfaceScan360: React.FC = () => {
     { key: 'overview', label: 'Overview', icon: Globe, ref: overviewSectionRef },
     { key: 'scope', label: 'Scope', icon: Settings, ref: scopeSectionRef, hidden: clientReadOnly },
     { key: 'exposure', label: 'Exposure', icon: Server, ref: exposureSectionRef, hidden: clientReadOnly },
-    { key: 'connectsecure', label: 'ConnectSecure', icon: Network, ref: connectSecureSectionRef, hidden: clientReadOnly },
+    { key: 'connectsecure', label: 'Servizi esposti', icon: Network, ref: connectSecureSectionRef, hidden: clientReadOnly },
     { key: 'subdomains', label: 'Subdomains', icon: Layers, ref: subdomainsSectionRef, hidden: clientReadOnly },
     { key: 'findings', label: 'Findings', icon: Shield, ref: findingsSectionRef },
     { key: 'email', label: 'Email/TLS', icon: Mail, ref: emailSectionRef },
     { key: 'reports', label: 'Reports', icon: FileText, ref: reportsSectionRef },
     { key: 'live', label: 'Live', icon: Activity, ref: liveSectionRef, hidden: clientReadOnly },
   ].filter((item) => !item.hidden), [clientReadOnly]);
+
+  React.useEffect(() => {
+    if (sectionNavItems.length === 0) return;
+    const visibleSections = new Map<Element, string>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        const nextKey = visible ? visibleSections.get(visible.target) : null;
+        if (nextKey) setActiveSection(nextKey);
+      },
+      { rootMargin: '-120px 0px -55% 0px', threshold: [0.1, 0.35, 0.65] },
+    );
+
+    for (const item of sectionNavItems) {
+      const node = item.ref.current;
+      if (!node) continue;
+      visibleSections.set(node, item.key);
+      observer.observe(node);
+    }
+
+    return () => observer.disconnect();
+  }, [sectionNavItems]);
 
   const { ipScopeRules } = useMemo(
     () => splitMonitoredScopeRules(monitoredIpRules as any),
@@ -295,7 +320,8 @@ const SurfaceScan360: React.FC = () => {
     exposureSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const scrollToSection = (ref: React.RefObject<HTMLDivElement>) => {
+  const scrollToSection = (ref: React.RefObject<HTMLDivElement>, key?: string) => {
+    if (key) setActiveSection(key);
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
@@ -703,17 +729,22 @@ const SurfaceScan360: React.FC = () => {
           </div>
         </div>
 
-        <div className="sticky top-0 z-20 -mx-6 border-b border-border bg-background/95 px-6 pb-3 pt-1 backdrop-blur">
-          <div className="grid grid-cols-2 gap-2 rounded-md bg-muted p-1 md:grid-cols-5 lg:grid-cols-9">
+        <div className="sticky top-0 z-30 -mx-6 border-b border-border bg-background/95 px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/85">
+          <div className="flex min-w-0 gap-1 overflow-x-auto rounded-md bg-muted p-1">
             {sectionNavItems.map((item) => {
               const Icon = item.icon;
+              const isActive = activeSection === item.key;
               return (
                 <Button
                   key={item.key}
                   variant="ghost"
                   size="sm"
-                  className="h-9 justify-center gap-1.5 px-2 text-xs font-medium"
-                  onClick={() => scrollToSection(item.ref)}
+                  className={`h-9 shrink-0 justify-center gap-1.5 px-3 text-xs font-semibold ${
+                    isActive
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'
+                  }`}
+                  onClick={() => scrollToSection(item.ref, item.key)}
                 >
                   <Icon className="h-4 w-4" />
                   <span className="truncate">{item.label}</span>

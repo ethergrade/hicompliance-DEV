@@ -341,10 +341,33 @@ export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<Exposure
     }
   }
 
+  const jobTargetMap = new Map<string, { raw_target: string; normalized_target: string; hostname: string }>();
+  const { data: jobs, error: jobsError } = await supabase
+    .from('surface_scan_jobs' as any)
+    .select('id, raw_target, normalized_target, hostname')
+    .in('id', uniqueJobIds);
+  if (jobsError) throw jobsError;
+  for (const row of (jobs || []) as Array<Record<string, unknown>>) {
+    jobTargetMap.set(String(row.id || ''), {
+      raw_target: String(row.raw_target || ''),
+      normalized_target: String(row.normalized_target || ''),
+      hostname: String(row.hostname || ''),
+    });
+  }
+
   const normalizedExposureRows = rows.map((row) => {
     const target = targetMap.get(String((row as any).target_id || ''));
-    const targetHost = target ? hostFromTarget(target.target_value) : '';
-    const rawScopeHost = normalizeHost(String((row as any)?.raw?.scope_target_host || ''));
+    const jobTarget = jobTargetMap.get(String(row.scan_job_id || ''));
+    const jobTargetHost = jobTarget
+      ? hostFromTarget(jobTarget.hostname || jobTarget.normalized_target || jobTarget.raw_target || '')
+      : '';
+    const targetHost = target ? hostFromTarget(target.target_value) : jobTargetHost;
+    const rawScopeHost = normalizeHost(String(
+      (row as any)?.raw?.scope_target_host
+      || (row as any)?.raw?.root_domain
+      || (row as any)?.raw?.target
+      || '',
+    ));
 
     const rawHost = String(row.host || '').trim();
     const rawIp = String(row.ip || '').trim();
@@ -386,6 +409,11 @@ export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<Exposure
   const fallbackRows: ExposureOpenPortRow[] = [];
 
   for (const finding of (classicFindingsRes.data || []) as Array<Record<string, unknown>>) {
+    const scanJobId = String(finding?.scan_job_id || '');
+    const jobTarget = jobTargetMap.get(scanJobId);
+    const jobTargetHost = jobTarget
+      ? hostFromTarget(jobTarget.hostname || jobTarget.normalized_target || jobTarget.raw_target || '')
+      : '';
     const evidence = finding?.evidence && typeof finding.evidence === 'object'
       ? (finding.evidence as Record<string, unknown>)
       : {};
@@ -404,14 +432,17 @@ export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<Exposure
       || evidence?.target
       || '',
     );
-    const host = normalizeHost(hostCandidate) || hostFromTarget(String(finding?.affected_url || '')) || '-';
+    let host = normalizeHost(hostCandidate) || hostFromTarget(String(finding?.affected_url || '')) || '';
+    if (host && isIpLike(host) && jobTargetHost && !isIpLike(jobTargetHost)) host = jobTargetHost;
+    if (!host && jobTargetHost) host = jobTargetHost;
+    if (!host) host = '-';
     const ip = extractIp(String(finding?.ip || evidence?.ip || (evidence as any)?.raw?.ip_address || '')) || null;
     const service = String(evidence?.service || evidence?.product || finding?.title || '').trim();
     const createdAt = String(finding?.created_at || new Date().toISOString());
 
     fallbackRows.push({
       id: `finding-${String(finding?.id || `${host}-${port}-${protocol}`)}`,
-      scan_job_id: String(finding?.scan_job_id || ''),
+      scan_job_id: scanJobId,
       host,
       ip,
       port,
@@ -432,12 +463,20 @@ export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<Exposure
   }
 
   for (const observation of (classicObservationsRes.data || []) as Array<Record<string, unknown>>) {
+    const scanJobId = String(observation?.scan_job_id || '');
+    const jobTarget = jobTargetMap.get(scanJobId);
+    const jobTargetHost = jobTarget
+      ? hostFromTarget(jobTarget.hostname || jobTarget.normalized_target || jobTarget.raw_target || '')
+      : '';
     const value = observation?.value && typeof observation.value === 'object'
       ? (observation.value as Record<string, unknown>)
       : {};
-    const baseHost = normalizeHost(
+    let baseHost = normalizeHost(
       String(value?.scope_target_host || value?.host || value?.hostname || value?.domain || value?.target || ''),
-    ) || '-';
+    );
+    if (baseHost && isIpLike(baseHost) && jobTargetHost && !isIpLike(jobTargetHost)) baseHost = jobTargetHost;
+    if (!baseHost && jobTargetHost) baseHost = jobTargetHost;
+    if (!baseHost) baseHost = '-';
     const baseIp = extractIp(String(value?.ip || value?.ip_address || '')) || null;
     const createdAt = String(observation?.created_at || new Date().toISOString());
 
@@ -449,7 +488,7 @@ export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<Exposure
       const ip = extractIp(String(entry?.ip || entry?.ip_address || baseIp || '')) || null;
       fallbackRows.push({
         id: `obs-${String(observation?.id || '')}-${port}-${protocol}-${baseHost}`,
-        scan_job_id: String(observation?.scan_job_id || ''),
+        scan_job_id: scanJobId,
         host: baseHost,
         ip,
         port,
@@ -476,7 +515,7 @@ export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<Exposure
         if (!port) continue;
         fallbackRows.push({
           id: `obs-${String(observation?.id || '')}-${port}-tcp-${baseHost}`,
-          scan_job_id: String(observation?.scan_job_id || ''),
+          scan_job_id: scanJobId,
           host: baseHost,
           ip: baseIp,
           port,

@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { ExposureOpenPortRow } from '@/lib/surfacescan/exposureApi';
 import { normalizeSeverity, severityBadgeClass, severityWeight } from '@/lib/surfacescan/exposureScoring';
+import { publicSourceLabel } from '@/lib/surfaceSourceLabels';
 
 interface OpenPortsTableProps {
   rows: ExposureOpenPortRow[];
@@ -17,12 +18,8 @@ const EXPOSED_LEVELS = new Set(['critical', 'high', 'medium']);
 function sourceLabel(row: ExposureOpenPortRow): string {
   const raw = row.raw || {};
   const src = String(row.source || raw?.source || raw?.provider || '').toLowerCase();
-  if (src.includes('deno_tcp') || src === 'tcp_probe') return 'TCP Probe';
-  if (src.includes('shodan')) return 'OSINT';
-  if (src.includes('connectsecure') || src === 'cs') return 'ConnectSecure';
-  if (src.includes('pentest') || src.includes('ptools')) return 'Pentest';
-  if (src) return src;
-  return 'Scan';
+  if (src.includes('deno_tcp') || src === 'tcp_probe') return 'Motore exposure';
+  return publicSourceLabel(src, 'Scan');
 }
 
 function sourceBadgeClass(row: ExposureOpenPortRow): string {
@@ -58,7 +55,6 @@ export const OpenPortsTable: React.FC<OpenPortsTableProps> = ({ rows, loading = 
           row.service_product || '',
           row.service_version || '',
           row.exposure_level,
-          row.source || '',
           sourceLabel(row),
         ]
           .join(' ')
@@ -105,7 +101,7 @@ export const OpenPortsTable: React.FC<OpenPortsTableProps> = ({ rows, loading = 
               <TableHead>Dominio/Subdominio</TableHead>
               <TableHead>IP correlato</TableHead>
               <TableHead>Porta</TableHead>
-              <TableHead>Sorgente</TableHead>
+              <TableHead>Origine</TableHead>
               <TableHead>Servizio</TableHead>
               <TableHead>Versione</TableHead>
               <TableHead>Web/TLS</TableHead>
