@@ -31,12 +31,13 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   const SUPABASE_URL     = Deno.env.get('SUPABASE_URL')!;
-  const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const SERVICE_ROLE_KEY = String(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '').trim();
   const INTERNAL_SECRET  = Deno.env.get('SURFACE_SCAN_CRON_INTERNAL_SECRET') || Deno.env.get('SURFACESCAN_CRON_INTERNAL_SECRET') || '';
 
   const authHeader    = req.headers.get('Authorization') || '';
+  const bearerToken   = authHeader.replace(/^Bearer\s+/i, '').trim();
   const internalToken = req.headers.get('x-surface-internal-secret') || '';
-  const isServiceRole = authHeader === `Bearer ${SERVICE_ROLE_KEY}`;
+  const isServiceRole = !!SERVICE_ROLE_KEY && bearerToken === SERVICE_ROLE_KEY;
   const isInternal    = INTERNAL_SECRET && internalToken === INTERNAL_SECRET;
 
   const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
@@ -472,7 +473,9 @@ async function saveResult(
       const severity = String(finding.severity || 'info');
       acc[severity] = (acc[severity] || 0) + 1;
       return acc;
-    }, {});
+    }, { critical: 0, high: 0, medium: 0, low: 0, info: 0 });
+    const moduleSeverity = (['critical', 'high', 'medium', 'low'] as const)
+      .find(severity => (severityCounts[severity] || 0) > 0) || 'info';
     await logQueryError('unable to complete module result', adminClient.from('surface_scan_module_results').upsert({
       organization_id: orgId,
       tenant_id: orgId,
@@ -481,7 +484,7 @@ async function saveResult(
       module_key: 'connectsecure',
       module_label: 'Attack Surface Mapper',
       status: 'success',
-      severity: findings.some(f => f.severity === 'critical') ? 'critical' : findings.some(f => f.severity === 'high') ? 'high' : 'info',
+      severity: moduleSeverity,
       source: 'connectsecure',
       completed_at: now,
       normalized: {
