@@ -1288,13 +1288,28 @@ async function enqueueConnectSecureSubdomainJobs(
     .eq('id', orgId)
     .maybeSingle();
   const surfaceScanExtended = Boolean(orgRuntime?.surface_scan_extended);
-  const configuredLimit = toPositiveInt(Deno.env.get('SURFACESCAN_SUBDOMAIN_CHILD_JOB_LIMIT'), surfaceScanExtended ? 75 : 10);
-  const limit = surfaceScanExtended ? configuredLimit : Math.min(configuredLimit, 10);
+  const configuredLimit = toPositiveInt(Deno.env.get('SURFACESCAN_SUBDOMAIN_CHILD_JOB_LIMIT'), 10);
+  const limit = Math.min(configuredLimit, 10);
   const cooldownHours = toPositiveInt(Deno.env.get('SURFACESCAN_SUBDOMAIN_CHILD_COOLDOWN_HOURS'), 24);
   const cooldownIso = new Date(Date.now() - cooldownHours * 60 * 60 * 1000).toISOString();
-  const selected = uniqueDiscovered.slice(0, limit);
+  const { data: recentChildRows } = await adminClient
+    .from('surface_scan_jobs')
+    .select('normalized_target')
+    .eq('organization_id', orgId)
+    .eq('scan_type', 'subdomain_enrichment')
+    .in('status', ['queued', 'pending', 'running', 'completed'])
+    .gte('created_at', cooldownIso)
+    .limit(500);
+  const recentChildTargets = new Set(
+    ((recentChildRows || []) as Array<{ normalized_target?: string | null }>)
+      .map((row) => normalizeDomain(String(row.normalized_target || '')))
+      .filter(Boolean),
+  );
+  const availableSlots = Math.max(0, limit - recentChildTargets.size);
+  const newCandidates = uniqueDiscovered.filter((candidate) => !recentChildTargets.has(candidate));
+  const selected = newCandidates.slice(0, availableSlots);
   let inserted = 0;
-  let skippedExisting = 0;
+  let skippedExisting = uniqueDiscovered.length - newCandidates.length;
 
   for (const subdomain of selected) {
     const { count: existingCount } = await adminClient
@@ -1361,7 +1376,7 @@ async function enqueueConnectSecureSubdomainJobs(
     eligible: uniqueDiscovered.length,
     inserted,
     skippedExisting,
-    skippedLimit: Math.max(0, uniqueDiscovered.length - selected.length),
+    skippedLimit: Math.max(0, newCandidates.length - selected.length),
     limit,
     surface_scan_extended: surfaceScanExtended,
   };

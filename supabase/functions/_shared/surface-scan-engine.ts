@@ -1297,9 +1297,9 @@ export async function runSurfaceScanEnrichment(
 
     const configuredLimit = toPositiveInt(
       (jobConfig as any).subdomain_child_job_limit ?? Deno.env.get("SURFACESCAN_SUBDOMAIN_CHILD_JOB_LIMIT"),
-      surfaceScanExtended ? 75 : 10,
+      10,
     );
-    const limit = surfaceScanExtended ? configuredLimit : Math.min(configuredLimit, 10);
+    const limit = Math.min(configuredLimit, 10);
     const cooldownHours = toPositiveInt(Deno.env.get("SURFACESCAN_SUBDOMAIN_CHILD_COOLDOWN_HOURS"), 24);
     const cooldownIso = new Date(Date.now() - cooldownHours * 60 * 60 * 1000).toISOString();
     const currentHost = String(hostname || "").trim().toLowerCase();
@@ -1314,10 +1314,25 @@ export async function runSurfaceScanEnrichment(
         .filter((entry) => shouldAcceptScannableHost(entry)),
     )].sort();
 
-    const selected = candidates.slice(0, limit);
+    const { data: recentChildRows } = await adminClient
+      .from("surface_scan_jobs" as any)
+      .select("normalized_target")
+      .eq("organization_id", organizationId)
+      .eq("scan_type", "subdomain_enrichment")
+      .in("status", ["queued", "pending", "running", "completed"])
+      .gte("created_at", cooldownIso)
+      .limit(500);
+    const recentChildTargets = new Set(
+      ((recentChildRows || []) as Array<{ normalized_target?: string | null }>)
+        .map((row) => String(row.normalized_target || "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const availableSlots = Math.max(0, limit - recentChildTargets.size);
+    const newCandidates = candidates.filter((candidate) => !recentChildTargets.has(candidate));
+    const selected = newCandidates.slice(0, availableSlots);
     let inserted = 0;
-    let skippedExisting = 0;
-    let skippedCurrent = candidates.length - selected.length;
+    let skippedExisting = candidates.length - newCandidates.length;
+    let skippedCurrent = 0;
 
     for (const subdomain of selected) {
       const normalizedChild = normalizeTargetInput(subdomain);
@@ -1391,7 +1406,7 @@ export async function runSurfaceScanEnrichment(
       inserted,
       skippedExisting,
       skippedCurrent: Math.max(0, skippedCurrent),
-      skippedLimit: Math.max(0, candidates.length - selected.length),
+      skippedLimit: Math.max(0, newCandidates.length - selected.length),
     };
 
     if (candidates.length > 0 || inserted > 0) {

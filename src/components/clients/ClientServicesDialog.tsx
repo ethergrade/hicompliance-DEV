@@ -610,7 +610,9 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                       <div>
                         <p className="text-sm font-medium">Livello SurfaceScan360</p>
                         <p className="text-xs text-muted-foreground">
-                          {orgFlags?.surface_scan_extended ? 'Estesa: scope avanzato (domini multipli e range IP)' : 'Standard: scope base operativo'}
+                          {orgFlags?.surface_scan_extended
+                            ? 'Estesa: scope principale definito dal cliente, fino a 10 sottodomini orchestrati'
+                            : 'Standard: massimo 4 domini/IP e fino a 10 sottodomini orchestrati'}
                         </p>
                       </div>
                     </div>

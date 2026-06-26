@@ -5,7 +5,10 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useUserRoles } from "@/hooks/useUserRoles";
 import { surfaceScan360Api } from "@/lib/api/surface-scan360";
 import { darkRiskApi } from "@/lib/api/darkrisk";
+import { tenantServicesApi } from "@/lib/api/tenant-services";
 import { MonitoredIpEntryType, parseMonitoredIpInput } from "@/lib/ipRange";
+
+export type SurfaceScanScopeTier = "standard" | "extended" | "unknown";
 
 export interface SurfaceScanMonitoredIpRule {
 	id: string;
@@ -35,6 +38,9 @@ interface UseSurfaceScanMonitoredIpsReturn {
 	saving: boolean;
 	isAdmin: boolean;
 	hasRules: boolean;
+	scopeTier: SurfaceScanScopeTier;
+	manualScopeCount: number;
+	manualScopeLimit: number | null;
 	addRule: (input: string, opts?: AddRuleOptions) => Promise<boolean>;
 	removeRule: (id: string) => Promise<boolean>;
 	refetch: () => Promise<void>;
@@ -45,6 +51,7 @@ export const useSurfaceScanMonitoredIps =
 		const [rules, setRules] = useState<SurfaceScanMonitoredIpRule[]>([]);
 		const [loading, setLoading] = useState(false);
 		const [saving, setSaving] = useState(false);
+		const [scopeTier, setScopeTier] = useState<SurfaceScanScopeTier>("unknown");
 
 		const { toast } = useToast();
 		const {
@@ -121,17 +128,34 @@ export const useSurfaceScanMonitoredIps =
 
 			setLoading(true);
 			try {
-				const data = await surfaceScan360Api.listMonitoredIps(
-					organizationId,
-					groupId,
-				);
+				const [rulesResult, servicesResult] = await Promise.allSettled([
+					surfaceScan360Api.listMonitoredIps(organizationId, groupId),
+					tenantServicesApi.listByOrganization(organizationId, groupId),
+				]);
 
-				setRules((data || []) as SurfaceScanMonitoredIpRule[]);
+				if (rulesResult.status === "rejected") throw rulesResult.reason;
+				setRules((rulesResult.value || []) as SurfaceScanMonitoredIpRule[]);
+
+				if (servicesResult.status === "fulfilled") {
+					const surfaceService = servicesResult.value.find(
+						(service) =>
+							service.tenant_id === organizationId &&
+							["surfacescan", "surfacescan360"].includes(service.service_type.toLowerCase()) &&
+							(service.status === "active" || !service.status),
+					);
+					setScopeTier(
+						(surfaceService?.settings as { extended_range?: boolean } | null)?.extended_range
+							? "extended"
+							: "standard",
+					);
+				} else {
+					setScopeTier("unknown");
+				}
 			} catch (error) {
 				console.error("Error fetching monitored IP rules:", error);
 				toast({
 					title: "Errore",
-					description: "Impossibile caricare gli IP monitorati",
+					description: "Impossibile caricare gli asset monitorati",
 					variant: "destructive",
 				});
 			} finally {
@@ -164,7 +188,7 @@ export const useSurfaceScanMonitoredIps =
 				if (!opts.silent) {
 					toast({
 						title: "Operazione non consentita",
-						description: "Solo gli admin possono gestire gli IP monitorati",
+						description: "Solo gli admin possono gestire lo scope monitorato",
 						variant: "destructive",
 					});
 				}
@@ -228,7 +252,7 @@ export const useSurfaceScanMonitoredIps =
 				if (!opts.silent) {
 					toast({
 						title: "Regola aggiunta",
-						description: "IP monitorato salvato con successo",
+						description: "Asset monitorato salvato con successo",
 					});
 				}
 
@@ -285,7 +309,7 @@ export const useSurfaceScanMonitoredIps =
 			if (!isAdmin) {
 				toast({
 					title: "Operazione non consentita",
-					description: "Solo gli admin possono gestire gli IP monitorati",
+					description: "Solo gli admin possono gestire lo scope monitorato",
 					variant: "destructive",
 				});
 				return false;
@@ -297,7 +321,7 @@ export const useSurfaceScanMonitoredIps =
 
 				toast({
 					title: "Regola rimossa",
-					description: "IP monitorato rimosso con successo",
+					description: "Asset monitorato rimosso con successo",
 				});
 
 				await fetchRules();
@@ -316,6 +340,11 @@ export const useSurfaceScanMonitoredIps =
 		};
 
 		const hasRules = useMemo(() => rules.length > 0, [rules.length]);
+		const manualScopeCount = useMemo(
+			() => rules.filter((rule) => String(rule.discovered_via || "manual").toLowerCase() === "manual").length,
+			[rules],
+		);
+		const manualScopeLimit = scopeTier === "standard" ? 4 : null;
 
 		return {
 			rules,
@@ -323,6 +352,9 @@ export const useSurfaceScanMonitoredIps =
 			saving,
 			isAdmin,
 			hasRules,
+			scopeTier,
+			manualScopeCount,
+			manualScopeLimit,
 			addRule,
 			removeRule,
 			refetch: fetchRules,
