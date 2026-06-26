@@ -837,9 +837,12 @@ async function pollPendingConnectSecureJobs(
     }
   }
 
-  const postProcessingScheduled = completedOrganizations.size > 0 && scheduleBackground(
-    runPostIngestionTasks(options, [...completedOrganizations])
-  );
+  const postProcessingScheduled = scheduleBackground((async () => {
+    if (completedOrganizations.size > 0) {
+      await runPostIngestionTasks(options, [...completedOrganizations]);
+    }
+    await processReportRefreshQueue(adminClient, options);
+  })());
   return {
     ...stats,
     organizations_completed: [...completedOrganizations],
@@ -870,26 +873,11 @@ async function runPostIngestionTasks(
     })
   ));
 
-  const reportQueue = [...organizationIds];
-  const reportWorkers = Array.from({ length: Math.min(2, reportQueue.length) }, async () => {
-    while (reportQueue.length > 0) {
-      const organizationId = reportQueue.shift();
-      if (!organizationId) return;
-      await postInternalJsonWithRetry(
-        `${options.supabaseUrl}/functions/v1/surfacescan360-ai-report`,
-        headers,
-        {
-          organization_id: organizationId,
-          scope_mode: 'organization_scope',
-          trigger_source: 'connectsecure_result_ingested',
-          force_regenerate: true,
-          created_by: null,
-        },
-        `SurfaceScan report ${organizationId}`,
-      );
-    }
-  });
-  await Promise.allSettled(reportWorkers);
+  await enqueueReportRefreshes(
+    createClient(options.supabaseUrl, options.serviceRoleKey),
+    organizationIds,
+    'connectsecure_result_ingested',
+  );
 
   await fetch(`${options.supabaseUrl}/functions/v1/cve-enrichment`, {
     method: 'POST',
@@ -902,13 +890,99 @@ async function runPostIngestionTasks(
   }).catch(() => undefined);
 }
 
+async function enqueueReportRefreshes(
+  adminClient: AdminClient,
+  organizationIds: string[],
+  triggerSource: string,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const rows = [...new Set(organizationIds.filter(Boolean))].map(organizationId => ({
+    organization_id: organizationId,
+    trigger_source: triggerSource,
+    requested_at: now,
+    not_before: now,
+    locked_at: null,
+    attempt_count: 0,
+    last_error: null,
+    updated_at: now,
+  }));
+  if (rows.length === 0) return;
+  await logQueryError(
+    'unable to enqueue SurfaceScan report refresh',
+    adminClient
+      .from('surface_scan_report_refresh_queue')
+      .upsert(rows, { onConflict: 'organization_id' }),
+  );
+}
+
+async function processReportRefreshQueue(
+  adminClient: AdminClient,
+  options: Pick<PollPendingOptions, 'supabaseUrl' | 'serviceRoleKey' | 'internalSecret'>,
+): Promise<void> {
+  const { data, error } = await adminClient.rpc('claim_surface_scan_report_refresh');
+  if (error) {
+    console.warn('[connectsecure-scan] unable to claim report refresh', safeConnectSecureError(error));
+    return;
+  }
+  const claimed = Array.isArray(data) ? data[0] : data;
+  const organizationId = String(claimed?.organization_id || '').trim();
+  if (!organizationId) return;
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${options.serviceRoleKey}`,
+  };
+  if (options.internalSecret) headers['x-surface-internal-secret'] = options.internalSecret;
+
+  const result = await postInternalJsonWithRetry(
+    `${options.supabaseUrl}/functions/v1/surfacescan360-ai-report`,
+    headers,
+    {
+      organization_id: organizationId,
+      scope_mode: 'organization_scope',
+      trigger_source: String(claimed?.trigger_source || 'connectsecure_result_ingested'),
+      force_regenerate: true,
+      created_by: null,
+    },
+    `SurfaceScan report ${organizationId}`,
+  );
+
+  if (result.ok) {
+    await logQueryError(
+      'unable to complete SurfaceScan report refresh',
+      adminClient
+        .from('surface_scan_report_refresh_queue')
+        .delete()
+        .eq('organization_id', organizationId),
+    );
+    return;
+  }
+
+  const attemptCount = Math.max(1, Number(claimed?.attempt_count || 1));
+  const retryDelayMinutes = Math.min(30, Math.max(1, 2 ** Math.min(attemptCount - 1, 5)));
+  await logQueryError(
+    'unable to reschedule SurfaceScan report refresh',
+    adminClient
+      .from('surface_scan_report_refresh_queue')
+      .update({
+        locked_at: null,
+        not_before: new Date(Date.now() + retryDelayMinutes * 60_000).toISOString(),
+        last_error: String(result.error || `HTTP ${result.status}`).substring(0, 500),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('organization_id', organizationId),
+  );
+}
+
 async function postInternalJsonWithRetry(
   url: string,
   headers: Record<string, string>,
   body: Record<string, unknown>,
   label: string,
-): Promise<void> {
+): Promise<{ ok: boolean; status: number; error: string | null }> {
   const retryable = new Set([409, 425, 429, 500, 502, 503, 504]);
+  let lastStatus = 0;
+  let lastError = '';
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
       const response = await fetch(url, {
@@ -916,24 +990,31 @@ async function postInternalJsonWithRetry(
         headers,
         body: JSON.stringify(body),
       });
-      if (response.ok) return;
+      if (response.ok) return { ok: true, status: response.status, error: null };
       const responseText = await response.text().catch(() => '');
+      lastStatus = response.status;
+      lastError = responseText;
+      if (response.status === 409 && responseText.includes('scope_incomplete_pending_targets')) {
+        return { ok: false, status: response.status, error: responseText };
+      }
       if (!retryable.has(response.status) || attempt === 3) {
         console.warn(`[connectsecure-scan] ${label} failed`, {
           status: response.status,
           response: responseText.substring(0, 240),
           attempt,
         });
-        return;
+        return { ok: false, status: response.status, error: responseText || `HTTP ${response.status}` };
       }
     } catch (err) {
+      lastError = safeConnectSecureError(err);
       if (attempt === 3) {
-        console.warn(`[connectsecure-scan] ${label} request failed`, safeConnectSecureError(err));
-        return;
+        console.warn(`[connectsecure-scan] ${label} request failed`, lastError);
+        return { ok: false, status: lastStatus, error: lastError };
       }
     }
     await new Promise(resolve => setTimeout(resolve, attempt * 2_000));
   }
+  return { ok: false, status: lastStatus, error: lastError || 'report_refresh_failed' };
 }
 
 async function saveResult(

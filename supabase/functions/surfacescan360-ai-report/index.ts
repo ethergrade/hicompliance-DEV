@@ -85,6 +85,44 @@ function parseHostname(value: string): string | null {
   return cleaned;
 }
 
+function dedupeReportOpenPorts(rows: any[]): any[] {
+  const map = new Map<string, any>();
+  for (const row of rows || []) {
+    const raw = row?.raw && typeof row.raw === 'object' ? row.raw : {};
+    const scopeHost = parseHostname(String(raw?.scope_target_host || raw?.root_domain || ''));
+    const rowHost = parseHostname(String(row?.host || ''));
+    const ip = String(row?.ip || (isIpv4(String(row?.host || '')) ? row.host : '') || '').trim().toLowerCase();
+    const host = String(scopeHost || rowHost || ip || row?.host || '').trim().toLowerCase();
+    const port = Number(row?.port || 0);
+    const protocol = String(row?.protocol || 'tcp').trim().toLowerCase() || 'tcp';
+    if (!host || !Number.isFinite(port) || port <= 0) continue;
+    const key = [host, ip, port, protocol].join('|');
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, { ...row, host: host || row.host, ip: ip || row.ip || null });
+      continue;
+    }
+    const rowCompleteness = [
+      row?.service_name,
+      row?.service_product,
+      row?.service_version,
+      row?.remediation_hint,
+    ].filter(Boolean).length;
+    const existingCompleteness = [
+      existing?.service_name,
+      existing?.service_product,
+      existing?.service_version,
+      existing?.remediation_hint,
+    ].filter(Boolean).length;
+    const rowSeen = Date.parse(String(row?.last_seen_at || '')) || 0;
+    const existingSeen = Date.parse(String(existing?.last_seen_at || '')) || 0;
+    if (rowCompleteness > existingCompleteness || (rowCompleteness === existingCompleteness && rowSeen >= existingSeen)) {
+      map.set(key, { ...row, host: host || row.host, ip: ip || row.ip || null });
+    }
+  }
+  return [...map.values()];
+}
+
 function surfaceScanBrandTitle(hicomplianceEnabled: boolean): string {
   return hicomplianceEnabled ? SURFACESCAN_BRAND_TITLE_HICOMPLIANCE : SURFACESCAN_BRAND_TITLE_HICONSOLE;
 }
@@ -1525,7 +1563,7 @@ Deno.serve(async (req) => {
       fetchRowsByJobIds(
         supabase,
         'surface_open_ports',
-        'host, ip, port, protocol, service_name, service_product, service_version, exposure_level, remediation_hint, is_web, is_tls, last_seen_at, scan_job_id',
+        'host, ip, port, protocol, service_name, service_product, service_version, exposure_level, remediation_hint, is_web, is_tls, source, raw, last_seen_at, scan_job_id',
         scopedJobIds,
         { orderBy: 'last_seen_at', ascending: false, pageSize: 1200, maxRows: 60000 },
       ),
@@ -1823,7 +1861,8 @@ Deno.serve(async (req) => {
       summary_text: entry.summary_text || '',
       confidence: entry.confidence || null,
     })).filter((entry: any) => !isPlaceholderSummary(entry.summary_text));
-    const syntheticOpenPortObservations = (rawOpenPortsAll || []).map((row: any) => ({
+    const reportOpenPorts = dedupeReportOpenPorts(rawOpenPortsAll || []);
+    const syntheticOpenPortObservations = reportOpenPorts.map((row: any) => ({
       module: 'port_scanner',
       observation_type: 'open_port',
       title: `${row.host || 'host'}:${row.port || ''}`,
