@@ -659,6 +659,10 @@ const Assessment: React.FC = () => {
       const total = visibleQuestions.length;
       const status = answered === 0 ? 'not_started' : answered === total ? 'completed' : 'in_progress';
       const score = calculateCategoryScore(cat.questions, responses);
+      const isNotApplicable = counts.non_applicabile > 0
+        && counts.completato === 0
+        && counts.pianificato_in_corso === 0
+        && counts.non_iniziato === 0;
       const risk = getRiskFromScore(score);
       return {
         name: cat.name,
@@ -667,6 +671,7 @@ const Assessment: React.FC = () => {
         status,
         score,
         risk,
+        isNotApplicable,
         counts,
       };
     });
@@ -684,7 +689,7 @@ const Assessment: React.FC = () => {
         target: 90,
       }));
     }
-    return assessmentCategories.map((cat) => {
+    return assessmentCategories.filter(cat => !cat.isNotApplicable).map((cat) => {
       const compliance = Number.isFinite(cat.score) ? cat.score : 0;
       const target = 90;
 
@@ -750,7 +755,7 @@ const Assessment: React.FC = () => {
   };
 
   const overallScore = useMemo(() => {
-    const catsWithAnswers = assessmentCategories.filter(c => c.completed > 0);
+    const catsWithAnswers = assessmentCategories.filter(c => c.completed > 0 && !c.isNotApplicable);
     if (catsWithAnswers.length === 0) return 0;
     return Math.round(catsWithAnswers.reduce((acc, cat) => acc + cat.score, 0) / catsWithAnswers.length);
   }, [assessmentCategories]);
@@ -1425,9 +1430,9 @@ const Assessment: React.FC = () => {
                       </div>
                       <div className="flex items-center space-x-4">
                         <div className="text-right">
-                          <div className="text-sm font-medium">Punteggio: {category.score}/100</div>
-                          <div className={`text-xs font-medium ${category.risk.color}`}>
-                            Rischio: {category.risk.label}
+                          <div className="text-sm font-medium">Punteggio: {category.isNotApplicable ? '—' : `${category.score}/100`}</div>
+                          <div className={`text-xs font-medium ${category.isNotApplicable ? 'text-muted-foreground' : category.risk.color}`}>
+                            Rischio: {category.isNotApplicable ? 'Non applicabile' : category.risk.label}
                           </div>
                           <div className="flex items-center space-x-1 mt-1">
                             {getStatusIcon(category.status)}
