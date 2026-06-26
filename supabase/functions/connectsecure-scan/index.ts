@@ -545,12 +545,9 @@ async function pollPendingConnectSecureJobs(
   };
 
   const queuedLimit = Math.min(options.maxJobs, Math.max(1, Math.ceil(options.maxJobs * 0.6)));
-  const activeLimit = Math.max(0, options.maxJobs - queuedLimit);
   const [queuedResult, activeResult] = await Promise.all([
     selectJobs(['queued'], queuedLimit),
-    activeLimit > 0
-      ? selectJobs(['pending', 'running', 'polling'], activeLimit)
-      : Promise.resolve({ data: [], error: null }),
+    selectJobs(['pending', 'running', 'polling'], options.maxJobs),
   ]);
   if (queuedResult.error) throw queuedResult.error;
   if (activeResult.error) throw activeResult.error;
@@ -558,7 +555,7 @@ async function pollPendingConnectSecureJobs(
   const jobs = [
     ...(queuedResult.data || []),
     ...(activeResult.data || []),
-  ] as PendingConnectSecureJob[];
+  ].slice(0, options.maxJobs) as PendingConnectSecureJob[];
   const maxAgeMinutes = toPositiveInt(Deno.env.get('CONNECTSECURE_POLL_MAX_AGE_MINUTES'), 24 * 60);
   const maxAgeMs = maxAgeMinutes * 60 * 1000;
   const leaseMs = Math.max(60_000, toPositiveInt(Deno.env.get('CONNECTSECURE_POLL_LEASE_SECONDS'), 300) * 1000);
