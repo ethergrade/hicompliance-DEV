@@ -451,11 +451,46 @@ export interface AssessmentReportAssessment {
 	updated_at: string;
 }
 
+export interface AssessmentReportCategoryByPriorityItem {
+	questions: number;
+	na: number;
+	completed: number;
+	planned: number;
+	not_started: number;
+	m: number;
+	l: number;
+}
+
+export interface AssessmentReportCategory {
+	name: string;
+	total_questions: number;
+	/** Maturità (0–1). null se tutte le domande sono N/A. */
+	maturity: number | null;
+	points: number;
+	/** Rischio residuo (0–1). null quando is_not_applicable è true. */
+	risk: number | null;
+	risk_label: string;
+	risk_color: string;
+	is_not_applicable: boolean;
+	total_m: number;
+	total_l: number;
+	by_priority: {
+		ALTA: AssessmentReportCategoryByPriorityItem;
+		MEDIA: AssessmentReportCategoryByPriorityItem;
+		BASSA: AssessmentReportCategoryByPriorityItem;
+	};
+	totals_by_answer: Record<string, number>;
+	totals_by_priority: Record<string, number>;
+	at_risk_by_priority: Record<string, number>;
+	gantt_priority: number;
+	questions: unknown[];
+}
+
 export interface AssessmentReportData {
 	assessment: AssessmentReportAssessment;
 	tenant: TenantResource;
 	summary: AssessmentSummary;
-	categories: string;
+	categories: AssessmentReportCategory[];
 	gantt: GanttItem[] | null;
 	openai: OpenAIAnalysis | string[];
 	shodan: unknown[] | null;
