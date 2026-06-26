@@ -187,23 +187,63 @@ export async function csGetOrCreateDomain(
     .maybeSingle();
   if (existing?.cs_domain_id) return Number(existing.cs_domain_id);
 
-  // 2. Crea il domain in ConnectSecure
+  const findRemoteDomain = async (): Promise<number | null> => {
+    const seenIds = new Set<string>();
+    let skip = 0;
+    for (let page = 0; page < 20; page += 1) {
+      const url = csUrl(cfg, `/r/company/attack_surface_domain?skip=${skip}&limit=100&order_by=updated desc`);
+      const body = await csFetch<{ data?: Array<{ id?: string | number; domain?: string; name?: string }>; status?: boolean }>(
+        cfg,
+        session,
+        url,
+      );
+      const rows = Array.isArray(body.data) ? body.data : [];
+      if (rows.length === 0) return null;
+
+      const remote = rows.find((row) => {
+        const candidate = String(row.domain || row.name || '').trim().toLowerCase().replace(/\.$/, '');
+        return candidate === domain.toLowerCase();
+      });
+      const remoteId = Number(remote?.id || 0);
+      if (remoteId > 0) return remoteId;
+
+      const newIds = rows
+        .map(row => String(row.id || '').trim())
+        .filter(id => id && !seenIds.has(id));
+      if (newIds.length === 0) return null;
+      newIds.forEach(id => seenIds.add(id));
+      skip += rows.length;
+    }
+    return null;
+  };
+
+  const saveRegistry = async (domainId: number): Promise<number> => {
+    await adminClient.from('connectsecure_domain_registry').upsert({
+      organization_id: orgId,
+      domain,
+      cs_domain_id: domainId,
+    }, { onConflict: 'organization_id,domain' });
+    return domainId;
+  };
+
+  // 2. Riusa una configurazione già presente nella console ConnectSecure.
+  const remoteDomainId = await findRemoteDomain();
+  if (remoteDomainId) return await saveRegistry(remoteDomainId);
+
+  // 3. Crea il domain in ConnectSecure
   const url = csUrl(cfg, '/w/company/attack_surface_domain');
   const body = await csFetch<{ id?: string | number; status: boolean }>(cfg, session, url, {
     method: 'POST',
     body:   JSON.stringify({ data: { name: domain, domain, scanlater: false, company_id: cfg.company_id } }),
   });
   const domainId = Number(body.id);
-  if (!domainId || !body.status) throw new Error(`[ConnectSecure] createDomain failed for ${domain}`);
+  if (domainId && body.status) return await saveRegistry(domainId);
 
-  // 3. Salva nel registry
-  await adminClient.from('connectsecure_domain_registry').upsert({
-    organization_id: orgId,
-    domain,
-    cs_domain_id:    domainId,
-  }, { onConflict: 'organization_id,domain' });
-
-  return domainId;
+  // Il provider può rispondere status=false se il dominio è stato creato da
+  // un'altra org/corsa concorrente: recupera l'id remoto prima di fallire.
+  const recoveredDomainId = await findRemoteDomain();
+  if (recoveredDomainId) return await saveRegistry(recoveredDomainId);
+  throw new Error(`[ConnectSecure] createDomain failed for ${domain}`);
 }
 
 // ── Scan trigger ──────────────────────────────────────────────────────────────
@@ -256,13 +296,22 @@ export async function csGetResults(
   cfg:      CsConfig,
   session:  { current: CsSession },
   domainId: number,
+  freshAfter?: string | number | Date,
 ): Promise<CsResult | null> {
   const url = csUrl(cfg, `/r/company/attack_surface_results?condition=attack_surface_domain_id=${domainId}&order_by=updated desc`);
   const body = await csFetch<{ data?: CsResult[]; status: boolean }>(cfg, session, url);
   const results = Array.isArray(body.data) ? body.data : [];
   if (results.length === 0) return null;
   const r = results[0];
-  return /completed/i.test(r.status || '') ? r : null;
+  if (/failed|error/i.test(r.status || '')) {
+    throw new Error(`[ConnectSecure] scan failed for domain ${domainId}: ${r.status}`);
+  }
+  if (!/completed/i.test(r.status || '')) return null;
+
+  const minFreshMs = freshAfterMs(freshAfter);
+  const resultMs = resultFreshnessMs(r);
+  if (minFreshMs && (!resultMs || resultMs < minFreshMs)) return null;
+  return r;
 }
 
 function parseConnectSecureTimestamp(value: unknown): number {
@@ -297,23 +346,10 @@ export async function csWaitForResults(
   pollMs: number = 20_000,
 ): Promise<CsResult> {
   const deadline = Date.now() + timeoutMs;
-  const minFreshMs = freshAfterMs(freshAfter);
 
   while (Date.now() < deadline) {
-    const url = csUrl(cfg, `/r/company/attack_surface_results?condition=attack_surface_domain_id=${domainId}&order_by=updated desc`);
-    const body = await csFetch<{ data?: CsResult[]; status: boolean }>(cfg, session, url);
-    const results = Array.isArray(body.data) ? body.data : [];
-    const result = results[0];
-
-    if (result) {
-      if (/completed/i.test(result.status || '')) {
-        const resultMs = resultFreshnessMs(result);
-        if (!minFreshMs || (resultMs && resultMs >= minFreshMs)) return result;
-      }
-      if (/failed|error/i.test(result.status || '')) {
-        throw new Error(`[ConnectSecure] scan failed for ${domain}: ${result.status}`);
-      }
-    }
+    const result = await csGetResults(cfg, session, domainId, freshAfter);
+    if (result) return result;
 
     await new Promise(res => setTimeout(res, pollMs));
   }

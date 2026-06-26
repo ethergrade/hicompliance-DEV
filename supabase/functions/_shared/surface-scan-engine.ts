@@ -1,15 +1,5 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.50.3";
 import {
-  csAuthorize,
-  csGetOrCreateDomain,
-  csScanNow,
-  csWaitForResults,
-  csMapToFindings,
-  csExtractSubdomains,
-  csNormalizeClientAuthToken,
-  type CsConfig,
-} from "./connectsecure-adapter.ts";
-import {
   classifyTargetScope,
   classifyHostForScope,
   evaluateOrganizationServiceGate,
@@ -737,6 +727,7 @@ export async function dispatchSurfaceScanQueue(
         error_message: `service_gate_blocked:${serviceGate.code}`,
       })
       .eq("organization_id", organizationId)
+      .neq("scan_type", "connectsecure_asm")
       .in("status", ["queued", "pending", "running"]);
 
     return [];
@@ -754,6 +745,7 @@ export async function dispatchSurfaceScanQueue(
       .from("surface_scan_jobs" as any)
       .select("id, recovery_attempt_count")
       .eq("organization_id", organizationId)
+      .neq("scan_type", "connectsecure_asm")
       .eq("status", "pending")
       .lt("created_at", stalePendingCutoff)
       .limit(50),
@@ -761,6 +753,7 @@ export async function dispatchSurfaceScanQueue(
       .from("surface_scan_jobs" as any)
       .select("id, recovery_attempt_count")
       .eq("organization_id", organizationId)
+      .neq("scan_type", "connectsecure_asm")
       .eq("status", "running")
       .lt("started_at", staleRunningCutoff)
       .limit(50),
@@ -878,6 +871,7 @@ export async function dispatchSurfaceScanQueue(
     .from("surface_scan_jobs" as any)
     .select("id", { count: "exact", head: true })
     .eq("organization_id", organizationId)
+    .neq("scan_type", "connectsecure_asm")
     .in("status", ["pending", "running"]);
 
   const runningCount = runningRes.count || 0;
@@ -892,6 +886,7 @@ export async function dispatchSurfaceScanQueue(
     .from("surface_scan_jobs" as any)
     .select("*")
     .eq("organization_id", organizationId)
+    .neq("scan_type", "connectsecure_asm")
     .eq("status", "queued")
     .order("created_at", { ascending: true })
     .limit(freeSlots);
@@ -7089,7 +7084,7 @@ export async function runSurfaceScanEnrichment(
     connectsecure: {
       key: "connectsecure",
       label: "Attack Surface Mapper",
-      timeoutMs: 660_000,
+      timeoutMs: 30_000,
       featureFlag: "CONNECTSECURE_ENABLED",
       defaultEnabled: true,
       retryOnError: false,
@@ -7107,26 +7102,12 @@ export async function runSurfaceScanEnrichment(
 
     const { data: csCfg } = await adminClient
       .from("connectsecure_config" as any)
-      .select("pod_host, client_auth_token, company_id, enabled")
+      .select("enabled")
       .eq("organization_id", organizationId)
       .maybeSingle();
 
     if (csCfg?.enabled === false) {
       await recordModuleSkipped(modules.connectsecure, "disabled", { organization_id: organizationId });
-      return;
-    }
-
-    const globalPodHost = String(Deno.env.get("CS_POD_HOST") || "").trim();
-    const globalToken = String(Deno.env.get("CS_CLIENT_AUTH_TOKEN") || "").trim();
-    const globalCompany = String(Deno.env.get("CS_COMPANY_ID") || "").trim();
-    const cfg: CsConfig = {
-      pod_host: (globalPodHost || String(csCfg?.pod_host || "")).trim().replace(/^https?:\/\//i, "").replace(/\/+$/, ""),
-      client_auth_token: csNormalizeClientAuthToken(globalToken || String(csCfg?.client_auth_token || "")),
-      company_id: globalCompany ? Number(globalCompany) : Number(csCfg?.company_id || 0),
-    };
-
-    if (!cfg.pod_host || !cfg.client_auth_token || !cfg.company_id) {
-      await recordModuleSkipped(modules.connectsecure, "no_config", { organization_id: organizationId });
       return;
     }
 
@@ -7136,104 +7117,47 @@ export async function runSurfaceScanEnrichment(
       return;
     }
 
-    const session = { current: await csAuthorize(cfg) };
-    const domainId = await csGetOrCreateDomain(cfg, session, startDomain, adminClient, organizationId);
-    const scanRequestedAt = new Date(Date.now() - 5_000).toISOString();
-    await adminClient.from("connectsecure_domain_registry" as any).upsert({
-      organization_id: organizationId,
-      domain: startDomain,
-      cs_domain_id: domainId,
-      depth: 0,
-      parent_domain: null,
-      last_scanned_at: scanRequestedAt,
-    }, { onConflict: "organization_id,domain" });
-
-    await csScanNow(cfg, session, [{ name: startDomain, domain: startDomain, company_id: cfg.company_id, id: domainId }]);
-    const result = await csWaitForResults(cfg, session, domainId, startDomain, 420_000, scanRequestedAt);
-    const { assets, findings, ports, observations, sensitiveData } = csMapToFindings(result, startDomain, 0);
-
-    for (const a of assets) {
-      await insertAsset({
-        asset_type:  a.asset_type,
-        asset_value: a.asset_value,
-        hostname:    a.hostname || undefined,
-        root_domain: a.root_domain || undefined,
-        ip:          a.ip || undefined,
-        source:      a.source,
-        confidence:  a.confidence,
-        raw:         a.raw || {},
-      });
+    const supabaseUrl = String(Deno.env.get("SUPABASE_URL") || "").trim();
+    const serviceRole = String(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+    if (!supabaseUrl || !serviceRole) {
+      await recordModuleSkipped(modules.connectsecure, "missing_supabase_runtime", {});
+      return;
     }
 
-    for (const f of findings) {
-      await insertFinding({
-        provider:       f.provider,
-        module:         f.module,
-        finding_type:   f.finding_type,
-        severity:       f.severity,
-        title:          f.title,
-        description:    f.description,
-        affected_asset: f.affected_asset,
-        ip:             f.ip || undefined,
-        port:           f.port || undefined,
-        protocol:       f.protocol || undefined,
-        cve:            f.cve || [],
-        cwe:            f.cwe || [],
-        cvss:           f.cvss || undefined,
-        evidence:       f.evidence || {},
-        remediation:    f.remediation || undefined,
-      });
-    }
+    const internalSecret =
+      String(Deno.env.get("SURFACE_SCAN_CRON_INTERNAL_SECRET") || "").trim() ||
+      String(Deno.env.get("SURFACESCAN_CRON_INTERNAL_SECRET") || "").trim();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${serviceRole}`,
+    };
+    if (internalSecret) headers["x-surface-internal-secret"] = internalSecret;
 
-    for (const p of ports) {
-      await insertOpenPort(
-        p.port, p.host, p.ip, p.protocol,
-        "connectsecure",
-        p.serviceName, p.serviceVersion, p.banner,
-      );
-    }
-
-    for (const obs of observations) {
-      const moduleKey = String(obs.module || "").trim() || "connectsecure";
-      await insertObservation({
-        module:           moduleKey,
-        observation_type: obs.type,
-        title:            obs.title,
-        value:            obs.value,
-        severity:         obs.severity as any,
-      });
-    }
-
-    if ((sensitiveData.creds?.length || 0) + (sensitiveData.hashes?.length || 0) > 0) {
-      await adminClient.from("connectsecure_sensitive_data" as any).insert({
+    const response = await fetch(`${supabaseUrl}/functions/v1/connectsecure-scan`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        action: "scan",
         organization_id: organizationId,
-        scan_job_id:     job.id,
-        domain:          sensitiveData.domain,
-        creds_count:     sensitiveData.creds?.length || 0,
-        hashes_count:    sensitiveData.hashes?.length || 0,
-        creds:           sensitiveData.creds || null,
-        hashes:          sensitiveData.hashes || null,
-      });
-    }
-
-    const handedToInternalQueue = csExtractSubdomains(result, rootDomain || startDomain)
-      .map((entry) => String(entry || "").trim().toLowerCase().replace(/\.$/, ""))
-      .filter((entry) => entry && entry !== startDomain && entry.endsWith(`.${rootDomain || startDomain}`));
-    for (const subDomain of handedToInternalQueue) {
-      discoveredHostnames.add(subDomain);
+        domain: startDomain,
+        trigger: "surface_scan_engine",
+        parent_scan_job_id: job.id,
+      }),
+    });
+    const responseBody = await response.json().catch(() => ({}));
+    if (!response.ok || responseBody?.ok === false) {
+      throw new Error(String(responseBody?.message || responseBody?.error || `HTTP_${response.status}`));
     }
 
     await insertObservation({
       module:           "connectsecure",
-      observation_type: "bfs_scan_summary",
-      title:            "Attack Surface Mapper — root scan completato",
+      observation_type: "external_surface_scan_queued",
+      title:            "Scansione superficie esterna accodata",
       value: {
-        domains_scanned: 1,
-        max_depth_reached: 0,
-        total_visited: 1,
-        max_depth_allowed: 10,
-        subdomains_handed_to_internal_queue: handedToInternalQueue.length,
-        internal_queue_limit_standard: 10,
+        domain: startDomain,
+        triggered: Number(responseBody?.triggered || 0),
+        skipped_active: Number(responseBody?.skipped_active || 0),
+        persistent_polling: Boolean(responseBody?.persistent_polling),
       },
       severity: "info",
     });
@@ -7242,8 +7166,11 @@ export async function runSurfaceScanEnrichment(
       "connectsecure",
       rootDomain || hostname || "",
       true,
-      { domains_scanned: 1, depth: 0, subdomains_handed_to_internal_queue: handedToInternalQueue.length },
-      { company_id: cfg.company_id, pod_host: cfg.pod_host },
+      {
+        queued: Number(responseBody?.triggered || 0),
+        skipped_active: Number(responseBody?.skipped_active || 0),
+      },
+      {},
       "high",
     );
   };

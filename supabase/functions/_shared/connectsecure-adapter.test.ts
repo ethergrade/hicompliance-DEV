@@ -1,6 +1,8 @@
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   csExtractSubdomains,
+  csGetOrCreateDomain,
+  csGetResults,
   csMapToFindings,
   csWaitForResults,
   type CsResult,
@@ -205,6 +207,96 @@ Deno.test("csWaitForResults ignores completed results older than the scan reques
 
     assertEquals(result.id, 2);
     assertEquals(calls, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("csGetResults performs a single freshness-aware poll", async () => {
+  const originalFetch = globalThis.fetch;
+  const stale = {
+    id: 1,
+    name: "example.com",
+    website: "example.com",
+    status: "Completed",
+    attack_surface_domain_id: 123,
+    company_id: 13805,
+    created: "2026-06-26T09:00:00",
+    updated: "2026-06-26T09:00:30",
+  } satisfies CsResult;
+
+  globalThis.fetch = (() => Promise.resolve(new Response(JSON.stringify({
+    status: true,
+    data: [stale],
+  }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  }))) as typeof fetch;
+
+  try {
+    const result = await csGetResults(
+      { pod_host: "pod.example", client_auth_token: "unused", company_id: 13805 },
+      { current: { token: "access-token", userId: "user-id" } },
+      123,
+      "2026-06-26T09:29:59Z",
+    );
+
+    assertEquals(result, null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("csGetOrCreateDomain reuses a domain already present in ConnectSecure", async () => {
+  const originalFetch = globalThis.fetch;
+  const registryWrites: Array<Record<string, unknown>> = [];
+  const registryQuery = {
+    select() { return this; },
+    eq() { return this; },
+    maybeSingle() { return Promise.resolve({ data: null }); },
+    upsert(row: Record<string, unknown>) {
+      registryWrites.push(row);
+      return Promise.resolve({ error: null });
+    },
+  };
+  const adminClient = {
+    from(table: string) {
+      assertEquals(table, "connectsecure_domain_registry");
+      return registryQuery;
+    },
+  };
+  let calls = 0;
+
+  globalThis.fetch = ((input: string | URL | Request) => {
+    calls += 1;
+    assert(String(input).includes("/r/company/attack_surface_domain?"));
+    return Promise.resolve(new Response(JSON.stringify({
+      status: true,
+      data: calls === 1
+        ? [{ id: 2000, domain: "another-example.com" }]
+        : [{ id: 2547, domain: "example.com" }],
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+  }) as typeof fetch;
+
+  try {
+    const domainId = await csGetOrCreateDomain(
+      { pod_host: "pod.example", client_auth_token: "unused", company_id: 13805 },
+      { current: { token: "access-token", userId: "user-id" } },
+      "example.com",
+      adminClient,
+      "org-id",
+    );
+
+    assertEquals(domainId, 2547);
+    assertEquals(calls, 2);
+    assertEquals(registryWrites, [{
+      organization_id: "org-id",
+      domain: "example.com",
+      cs_domain_id: 2547,
+    }]);
   } finally {
     globalThis.fetch = originalFetch;
   }

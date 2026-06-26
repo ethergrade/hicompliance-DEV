@@ -3,8 +3,9 @@
  *
  * Azioni:
  *  test_auth   → verifica configurazione CS (solo diagnostica admin)
- *  scan        → trigger Attack Surface Mapper per una org specifica + ingest async
+ *  scan        → trigger Attack Surface Mapper per una org specifica
  *  weekly_all  → sweep di tutte le org abilitate (dal cron)
+ *  poll_pending → singolo ciclo persistente di raccolta risultati
  *
  * Auth: service-role key | x-surface-internal-secret | JWT utente Supabase valido
  */
@@ -12,11 +13,11 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
   csAuthorize,
   csExtractSubdomains,
+  csGetResults,
   csGetOrCreateDomain,
   csMapToFindings,
   csNormalizeClientAuthToken,
   csScanNow,
-  csWaitForResults,
   type CsConfig,
   type CsResult,
 } from '../_shared/connectsecure-adapter.ts';
@@ -39,11 +40,19 @@ Deno.serve(async (req: Request) => {
   const bearerToken   = authHeader.replace(/^Bearer\s+/i, '').trim();
   const internalToken = req.headers.get('x-surface-internal-secret') || '';
   const isServiceRole = !!SERVICE_ROLE_KEY && bearerToken === SERVICE_ROLE_KEY;
-  const isInternal    = INTERNAL_SECRET && internalToken === INTERNAL_SECRET;
+  let isInternal      = Boolean(INTERNAL_SECRET && internalToken === INTERNAL_SECRET);
 
   const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
     auth: { persistSession: false },
   });
+
+  if (!isServiceRole && !isInternal && internalToken) {
+    const { data: validInternalToken } = await adminClient.rpc(
+      'surface_scan_validate_internal_secret',
+      { candidate: internalToken },
+    );
+    isInternal = validInternalToken === true;
+  }
 
   // Accetta anche JWT utente Supabase valido
   if (!isServiceRole && !isInternal) {
@@ -95,32 +104,50 @@ Deno.serve(async (req: Request) => {
       return json({ ok: true, user_id: diagnostic.user_id, pod_host: cfg.pod_host, global_cfg: hasGlobalCfg });
     }
 
+    // ── Persistent one-shot result poll ────────────────────────────────────
+    if (action === 'poll_pending') {
+      const maxJobs = Math.min(100, Math.max(1, toPositiveInt(body.max_jobs, 25)));
+      const result = await pollPendingConnectSecureJobs(adminClient, {
+        organizationId: orgId,
+        maxJobs,
+        resolveConfig,
+        supabaseUrl: SUPABASE_URL,
+        serviceRoleKey: SERVICE_ROLE_KEY,
+        internalSecret: INTERNAL_SECRET,
+      });
+      return json({ ok: true, ...result });
+    }
+
     // ── Weekly sweep ────────────────────────────────────────────────────────
     if (action === 'weekly_all') {
       const configs = await listWeeklyConfigs(adminClient, hasGlobalCfg, resolveConfig);
-      const results: Array<{ org_id: string; triggered: number; domains: number; background: boolean; error?: string }> = [];
-      for (const cfg of configs) {
+      const results = await Promise.all(configs.map(async (cfg) => {
         try {
-          const diagnostic = await diagnoseConnectSecureAuth(cfg, cfg.config_source);
-          if (!diagnostic.auth_ok) {
-            results.push({ org_id: cfg.organization_id, triggered: 0, domains: 0, background: false, error: 'auth_failed_config_diagnostic' });
-            continue;
-          }
-          const trigger = await triggerAttackSurfaceForOrg(adminClient, cfg, undefined);
-          const background = runInBackground(
-            ingestAttackSurfaceResults(adminClient, cfg, trigger.domains)
-          );
-          results.push({
+          const queued = await enqueueAttackSurfaceForOrg(adminClient, cfg.organization_id);
+          return {
             org_id: cfg.organization_id,
-            triggered: trigger.triggered,
-            domains: trigger.domains.length,
-            background,
-          });
+            queued: queued.queued,
+            domains: queued.domains,
+            skipped_active: queued.skippedActive,
+          };
         } catch (err) {
-          results.push({ org_id: cfg.organization_id, triggered: 0, domains: 0, background: false, error: safeConnectSecureError(err) });
+          return {
+            org_id: cfg.organization_id,
+            queued: 0,
+            domains: 0,
+            skipped_active: 0,
+            error: safeConnectSecureError(err),
+          };
         }
-      }
-      return json({ ok: true, orgs_swept: results.length, results });
+      }));
+      return json({
+        ok: true,
+        status: 'queued',
+        persistent_polling: true,
+        orgs_swept: results.length,
+        domains_queued: results.reduce((sum, row) => sum + row.queued, 0),
+        results,
+      });
     }
 
     // ── Single org scan ─────────────────────────────────────────────────────
@@ -140,17 +167,15 @@ Deno.serve(async (req: Request) => {
     if (!diagnostic.auth_ok) return jsonAuthFailed(diagnostic);
 
     const trigger = await triggerAttackSurfaceForOrg(adminClient, { ...cfg, organization_id: orgId }, inputDomain);
-    const background = runInBackground(
-      ingestAttackSurfaceResults(adminClient, { ...cfg, organization_id: orgId, config_source: source }, trigger.domains)
-    );
     return json({
       ok: true,
       organization_id: orgId,
       status: 'triggered',
-      message: 'Attack Surface Mapper avviato. Polling e salvataggio risultati continuano in background.',
+      message: 'Attack Surface Mapper avviato. Il poller persistente raccoglierà i risultati in background.',
       triggered: trigger.triggered,
       domains: trigger.domains.map(d => d.domain),
-      background,
+      skipped_active: trigger.skippedActive,
+      persistent_polling: true,
     });
 
   } catch (err) {
@@ -210,29 +235,154 @@ async function listWeeklyConfigs(
     );
 }
 
+async function enqueueAttackSurfaceForOrg(
+  adminClient: AdminClient,
+  orgId: string,
+): Promise<{ queued: number; domains: number; skippedActive: number }> {
+  const domains = await resolveScopeDomains(adminClient, orgId);
+  if (domains.length === 0) return { queued: 0, domains: 0, skippedActive: 0 };
+
+  const { data: activeJobs, error: activeError } = await adminClient
+    .from('surface_scan_jobs')
+    .select('normalized_target')
+    .eq('organization_id', orgId)
+    .eq('scan_type', 'connectsecure_asm')
+    .in('status', ['queued', 'pending', 'running', 'polling'])
+    .in('normalized_target', domains);
+  if (activeError) throw activeError;
+
+  const activeTargets = new Set(
+    (activeJobs || []).map((row: any) => normalizeDomain(String(row.normalized_target || ''))).filter(Boolean),
+  );
+  const queuedDomains = domains.filter(domain => !activeTargets.has(domain));
+  if (queuedDomains.length === 0) {
+    return { queued: 0, domains: domains.length, skippedActive: domains.length };
+  }
+
+  const now = new Date().toISOString();
+  const { data: insertedJobs, error: insertError } = await adminClient
+    .from('surface_scan_jobs')
+    .insert(queuedDomains.map(domain => ({
+      organization_id: orgId,
+      tenant_id: orgId,
+      customer_id: orgId,
+      requested_by: null,
+      raw_target: domain,
+      normalized_target: domain,
+      target_type: 'domain',
+      hostname: domain,
+      root_domain: domain,
+      resolved_ips: [],
+      scan_profile: 'domain_exposure',
+      scan_name: `External ASM - ${domain}`,
+      scan_type: 'connectsecure_asm',
+      status: 'queued',
+      authorization_confirmed: true,
+      started_at: null,
+      config: {
+        connectsecure: {
+          background: true,
+          trigger_pending: true,
+        },
+      },
+      summary: {
+        provider: 'connectsecure',
+        status: 'queued',
+      },
+    })))
+    .select('id, normalized_target');
+  if (insertError) throw insertError;
+
+  const inserted = insertedJobs || [];
+  if (inserted.length > 0) {
+    const { error: moduleError } = await adminClient
+      .from('surface_scan_module_results')
+      .insert(inserted.map((job: any) => ({
+        organization_id: orgId,
+        tenant_id: orgId,
+        customer_id: orgId,
+        scan_job_id: job.id,
+        module_key: 'connectsecure',
+        module_label: 'Attack Surface Mapper',
+        status: 'queued',
+        severity: 'info',
+        source: 'connectsecure',
+        started_at: null,
+        normalized: {
+          domain: job.normalized_target,
+          status: 'queued',
+        },
+        raw: {},
+      })));
+    if (moduleError) throw moduleError;
+  }
+
+  console.info('[connectsecure-scan] queued organization scope', {
+    organization_id: orgId,
+    domains: domains.length,
+    queued: inserted.length,
+    skipped_active: domains.length - inserted.length,
+    queued_at: now,
+  });
+  return {
+    queued: inserted.length,
+    domains: domains.length,
+    skippedActive: domains.length - inserted.length,
+  };
+}
+
 async function triggerAttackSurfaceForOrg(
   adminClient: AdminClient,
   cfg: CsConfig & { organization_id: string },
   forceDomain?: string,
-): Promise<{ triggered: number; domains: TriggeredDomain[] }> {
+): Promise<{ triggered: number; domains: TriggeredDomain[]; skippedActive: number }> {
   const orgId = cfg.organization_id;
   const domains = await resolveScopeDomains(adminClient, orgId, forceDomain);
-  if (domains.length === 0) return { triggered: 0, domains: [] };
+  if (domains.length === 0) return { triggered: 0, domains: [], skippedActive: 0 };
 
   const session = { current: await csAuthorize(cfg) };
   const scanRequestedAt = new Date(Date.now() - 5_000).toISOString();
   const domainObjs: TriggeredDomain[] = [];
+  let skippedActive = 0;
   for (const domain of domains) {
+    const { data: activeJob } = await adminClient
+      .from('surface_scan_jobs')
+      .select('id')
+      .eq('organization_id', orgId)
+      .eq('scan_type', 'connectsecure_asm')
+      .eq('normalized_target', domain)
+      .in('status', ['queued', 'pending', 'running', 'polling'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (activeJob?.id) {
+      skippedActive += 1;
+      continue;
+    }
+
     const id = await csGetOrCreateDomain(cfg, session, domain, adminClient, orgId);
     const jobId = await createConnectSecureJob(adminClient, orgId, domain, id);
+    if (!jobId) {
+      skippedActive += 1;
+      continue;
+    }
     domainObjs.push({ domain, id, jobId, requestedAt: scanRequestedAt });
   }
 
-  await csScanNow(
-    cfg,
-    session,
-    domainObjs.map(d => ({ name: d.domain, domain: d.domain, company_id: cfg.company_id, id: d.id })),
-  );
+  try {
+    await csScanNow(
+      cfg,
+      session,
+      domainObjs.map(d => ({ name: d.domain, domain: d.domain, company_id: cfg.company_id, id: d.id })),
+    );
+  } catch (err) {
+    await Promise.all(domainObjs.map(d =>
+      d.jobId
+        ? markConnectSecureJobFailed(adminClient, d.jobId, orgId, d.domain, d.id, err)
+        : Promise.resolve()
+    ));
+    throw err;
+  }
 
   for (const d of domainObjs) {
     await logQueryError('unable to update connectsecure registry scan timestamp', adminClient
@@ -245,7 +395,7 @@ async function triggerAttackSurfaceForOrg(
       }, { onConflict: 'organization_id,domain' }));
   }
 
-  return { triggered: domainObjs.length, domains: domainObjs };
+  return { triggered: domainObjs.length, domains: domainObjs, skippedActive };
 }
 
 async function createConnectSecureJob(
@@ -290,6 +440,7 @@ async function createConnectSecureJob(
     .single();
 
   if (error || !data?.id) {
+    if (String(error?.code || '') === '23505') return null;
     console.warn('[connectsecure-scan] unable to create surface_scan_jobs row:', error?.message || error);
     return null;
   }
@@ -346,31 +497,437 @@ function normalizeDomain(value: string): string {
   return hostname;
 }
 
-function runInBackground(task: Promise<unknown>): boolean {
+function scheduleBackground(task: Promise<unknown>): boolean {
   const edgeRuntime = (globalThis as any).EdgeRuntime;
   if (edgeRuntime?.waitUntil) {
-    edgeRuntime.waitUntil(task.catch(err => console.error('[connectsecure-scan] background ingest failed:', err)));
+    edgeRuntime.waitUntil(task.catch(err => console.error('[connectsecure-scan] background task failed:', safeConnectSecureError(err))));
     return true;
   }
-  task.catch(err => console.error('[connectsecure-scan] background ingest failed:', err));
+  task.catch(err => console.error('[connectsecure-scan] background task failed:', safeConnectSecureError(err)));
   return false;
 }
 
-async function ingestAttackSurfaceResults(
+type PendingConnectSecureJob = {
+  id: string;
+  organization_id: string;
+  normalized_target: string;
+  status: string;
+  started_at: string | null;
+  created_at: string;
+  updated_at: string;
+  config: Record<string, any> | null;
+  summary: Record<string, any> | null;
+};
+
+type PollPendingOptions = {
+  organizationId?: string;
+  maxJobs: number;
+  resolveConfig: (dbCfg?: Partial<CsConfig>) => { cfg: CsConfig; source: ConfigSource };
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  internalSecret: string;
+};
+
+async function pollPendingConnectSecureJobs(
   adminClient: AdminClient,
-  cfg: CsOrgConfig,
-  domains: TriggeredDomain[],
-): Promise<void> {
-  if (domains.length === 0) return;
-  const session = { current: await csAuthorize(cfg) };
-  for (const d of domains) {
-    try {
-      const result = await csWaitForResults(cfg, session, d.id, d.domain, 420_000, d.requestedAt);
-      await saveResult(adminClient, cfg.organization_id, d.domain, result, d.jobId);
-    } catch (err) {
-      if (d.jobId) await markConnectSecureJobFailed(adminClient, d.jobId, cfg.organization_id, d.domain, d.id, err);
-      console.warn('[connectsecure-scan] result ingest failed:', d.domain, err);
+  options: PollPendingOptions,
+) {
+  const selectJobs = (statuses: string[], limit: number) => {
+    let query = adminClient
+      .from('surface_scan_jobs')
+      .select('id, organization_id, normalized_target, status, started_at, created_at, updated_at, config, summary')
+      .eq('scan_type', 'connectsecure_asm')
+      .in('status', statuses)
+      .order('created_at', { ascending: true })
+      .limit(limit);
+    if (options.organizationId) query = query.eq('organization_id', options.organizationId);
+    return query;
+  };
+
+  const queuedLimit = Math.min(options.maxJobs, Math.max(1, Math.ceil(options.maxJobs * 0.6)));
+  const activeLimit = Math.max(0, options.maxJobs - queuedLimit);
+  const [queuedResult, activeResult] = await Promise.all([
+    selectJobs(['queued'], queuedLimit),
+    activeLimit > 0
+      ? selectJobs(['pending', 'running', 'polling'], activeLimit)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (queuedResult.error) throw queuedResult.error;
+  if (activeResult.error) throw activeResult.error;
+
+  const jobs = [
+    ...(queuedResult.data || []),
+    ...(activeResult.data || []),
+  ] as PendingConnectSecureJob[];
+  const maxAgeMinutes = toPositiveInt(Deno.env.get('CONNECTSECURE_POLL_MAX_AGE_MINUTES'), 24 * 60);
+  const maxAgeMs = maxAgeMinutes * 60 * 1000;
+  const leaseMs = Math.max(60_000, toPositiveInt(Deno.env.get('CONNECTSECURE_POLL_LEASE_SECONDS'), 300) * 1000);
+  const runtimeByOrg = new Map<string, Promise<{
+    cfg: CsConfig;
+    session: { current: Awaited<ReturnType<typeof csAuthorize>> };
+  }>>();
+  const completedOrganizations = new Set<string>();
+  const stats = {
+    examined: jobs.length,
+    claimed: 0,
+    triggered: 0,
+    completed: 0,
+    pending: 0,
+    failed: 0,
+    skipped_leased: 0,
+    skipped_claimed: 0,
+    errors: [] as Array<{ job_id: string; organization_id: string; target: string; error: string }>,
+  };
+
+  const getRuntime = (organizationId: string) => {
+    const existing = runtimeByOrg.get(organizationId);
+    if (existing) return existing;
+    const pending = (async () => {
+      const { data: dbCfg } = await adminClient
+        .from('connectsecure_config')
+        .select('pod_host, client_auth_token, company_id, enabled')
+        .eq('organization_id', organizationId)
+        .maybeSingle();
+      if (dbCfg?.enabled === false) throw new Error('connectsecure_disabled_for_organization');
+      const { cfg } = options.resolveConfig(dbCfg || {});
+      if (!cfg.pod_host || !cfg.client_auth_token || !cfg.company_id) {
+        throw new Error('missing_connectsecure_config');
+      }
+      return { cfg, session: { current: await csAuthorize(cfg) } };
+    })();
+    runtimeByOrg.set(organizationId, pending);
+    return pending;
+  };
+
+  for (const job of jobs) {
+    const updatedMs = Date.parse(job.updated_at || job.created_at);
+    if (job.status === 'polling' && Number.isFinite(updatedMs) && Date.now() - updatedMs < leaseMs) {
+      stats.skipped_leased += 1;
+      continue;
     }
+
+    const { data: claimed, error: claimError } = await adminClient
+      .from('surface_scan_jobs')
+      .update({ status: 'polling' })
+      .eq('id', job.id)
+      .eq('status', job.status)
+      .select('id')
+      .maybeSingle();
+    if (claimError) {
+      stats.errors.push({
+        job_id: job.id,
+        organization_id: job.organization_id,
+        target: job.normalized_target,
+        error: safeConnectSecureError(claimError),
+      });
+      continue;
+    }
+    if (!claimed?.id) {
+      stats.skipped_claimed += 1;
+      continue;
+    }
+    stats.claimed += 1;
+
+    const releaseForNextPoll = async () => {
+      await logQueryError('unable to release ConnectSecure poll lease', adminClient
+        .from('surface_scan_jobs')
+        .update({ status: job.status === 'queued' ? 'queued' : 'running' })
+        .eq('id', job.id)
+        .eq('status', 'polling'));
+    };
+
+    try {
+      const { cfg, session } = await getRuntime(job.organization_id);
+      const shouldTrigger = job.status === 'queued' && (
+        job.config?.connectsecure?.trigger_pending === true ||
+        !job.started_at
+      );
+      let domainId = Number(
+        job.config?.connectsecure?.attack_surface_domain_id ??
+        job.summary?.attack_surface_domain_id ??
+        0
+      );
+      if (!domainId) {
+        const { data: registry } = await adminClient
+          .from('connectsecure_domain_registry')
+          .select('cs_domain_id')
+          .eq('organization_id', job.organization_id)
+          .eq('domain', job.normalized_target)
+          .maybeSingle();
+        domainId = Number(registry?.cs_domain_id || 0);
+      }
+      if (shouldTrigger) {
+        if (!domainId) {
+          domainId = await csGetOrCreateDomain(
+            cfg,
+            session,
+            job.normalized_target,
+            adminClient,
+            job.organization_id,
+          );
+        }
+
+        const scanRequestedAt = new Date(Date.now() - 5_000).toISOString();
+        const triggeringConfig = {
+          ...(job.config || {}),
+          connectsecure: {
+            ...(job.config?.connectsecure || {}),
+            attack_surface_domain_id: domainId,
+            background: true,
+            trigger_pending: false,
+            trigger_started_at: scanRequestedAt,
+          },
+        };
+        const triggeringSummary = {
+          ...(job.summary || {}),
+          provider: 'connectsecure',
+          status: 'triggering',
+          attack_surface_domain_id: domainId,
+        };
+        const { error: prepareError } = await adminClient
+          .from('surface_scan_jobs')
+          .update({
+            started_at: scanRequestedAt,
+            config: triggeringConfig,
+            summary: triggeringSummary,
+          })
+          .eq('id', job.id)
+          .eq('status', 'polling');
+        if (prepareError) throw prepareError;
+
+        try {
+          await csScanNow(cfg, session, [{
+            name: job.normalized_target,
+            domain: job.normalized_target,
+            company_id: cfg.company_id,
+            id: domainId,
+          }]);
+        } catch (err) {
+          await logQueryError('unable to restore queued ConnectSecure trigger', adminClient
+            .from('surface_scan_jobs')
+            .update({
+              status: 'queued',
+              started_at: null,
+              config: {
+                ...triggeringConfig,
+                connectsecure: {
+                  ...triggeringConfig.connectsecure,
+                  trigger_pending: true,
+                },
+              },
+              summary: {
+                ...triggeringSummary,
+                status: 'queued',
+              },
+            })
+            .eq('id', job.id));
+          throw err;
+        }
+
+        await Promise.all([
+          logQueryError('unable to mark ConnectSecure trigger running', adminClient
+            .from('surface_scan_jobs')
+            .update({
+              status: 'running',
+              summary: {
+                ...triggeringSummary,
+                status: 'running',
+              },
+            })
+            .eq('id', job.id)
+            .eq('status', 'polling')),
+          logQueryError('unable to mark ConnectSecure module running', adminClient
+            .from('surface_scan_module_results')
+            .upsert({
+              organization_id: job.organization_id,
+              tenant_id: job.organization_id,
+              customer_id: job.organization_id,
+              scan_job_id: job.id,
+              module_key: 'connectsecure',
+              module_label: 'Attack Surface Mapper',
+              status: 'running',
+              severity: 'info',
+              source: 'connectsecure',
+              started_at: scanRequestedAt,
+              normalized: {
+                domain: job.normalized_target,
+                attack_surface_domain_id: domainId,
+                status: 'running',
+              },
+              raw: {},
+            }, { onConflict: 'scan_job_id,module_key' })),
+          logQueryError('unable to update connectsecure registry scan timestamp', adminClient
+            .from('connectsecure_domain_registry')
+            .upsert({
+              organization_id: job.organization_id,
+              domain: job.normalized_target,
+              cs_domain_id: domainId,
+              last_scanned_at: scanRequestedAt,
+            }, { onConflict: 'organization_id,domain' })),
+        ]);
+        stats.triggered += 1;
+        continue;
+      }
+      if (!domainId) throw new Error('missing_connectsecure_domain_id');
+
+      const requestedAtMs = Date.parse(job.started_at || job.created_at);
+      const freshAfter = Number.isFinite(requestedAtMs)
+        ? new Date(requestedAtMs - 10_000).toISOString()
+        : undefined;
+      const result = await csGetResults(cfg, session, domainId, freshAfter);
+
+      if (result) {
+        await saveResult(adminClient, job.organization_id, job.normalized_target, result, job.id);
+        stats.completed += 1;
+        completedOrganizations.add(job.organization_id);
+        continue;
+      }
+
+      const ageMs = Number.isFinite(requestedAtMs) ? Date.now() - requestedAtMs : 0;
+      if (ageMs > maxAgeMs) {
+        await markConnectSecureJobFailed(
+          adminClient,
+          job.id,
+          job.organization_id,
+          job.normalized_target,
+          domainId,
+          new Error(`ConnectSecure result not available after ${maxAgeMinutes} minutes`),
+        );
+        stats.failed += 1;
+        continue;
+      }
+
+      await releaseForNextPoll();
+      stats.pending += 1;
+    } catch (err) {
+      const message = safeConnectSecureError(err);
+      const requestedAtMs = Date.parse(job.started_at || job.created_at);
+      const ageMs = Number.isFinite(requestedAtMs) ? Date.now() - requestedAtMs : 0;
+      const terminal = /scan failed|missing_connectsecure_domain_id/i.test(message) || ageMs > maxAgeMs;
+      if (terminal) {
+        const domainId = Number(
+          job.config?.connectsecure?.attack_surface_domain_id ??
+          job.summary?.attack_surface_domain_id ??
+          0
+        );
+        await markConnectSecureJobFailed(
+          adminClient,
+          job.id,
+          job.organization_id,
+          job.normalized_target,
+          domainId,
+          err,
+        );
+        stats.failed += 1;
+      } else {
+        await releaseForNextPoll();
+        stats.pending += 1;
+      }
+      stats.errors.push({
+        job_id: job.id,
+        organization_id: job.organization_id,
+        target: job.normalized_target,
+        error: message,
+      });
+    }
+  }
+
+  const postProcessingScheduled = completedOrganizations.size > 0 && scheduleBackground(
+    runPostIngestionTasks(options, [...completedOrganizations])
+  );
+  return {
+    ...stats,
+    organizations_completed: [...completedOrganizations],
+    max_age_minutes: maxAgeMinutes,
+    post_processing_scheduled: postProcessingScheduled,
+  };
+}
+
+async function runPostIngestionTasks(
+  options: Pick<PollPendingOptions, 'supabaseUrl' | 'serviceRoleKey' | 'internalSecret'>,
+  organizationIds: string[],
+): Promise<void> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${options.serviceRoleKey}`,
+  };
+  if (options.internalSecret) headers['x-surface-internal-secret'] = options.internalSecret;
+
+  await Promise.allSettled(organizationIds.map(organizationId =>
+    fetch(`${options.supabaseUrl}/functions/v1/surface-scan-cron`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        organization_id: organizationId,
+        dispatch_only: true,
+        triggered_by: 'connectsecure_result_ingested',
+      }),
+    })
+  ));
+
+  const reportQueue = [...organizationIds];
+  const reportWorkers = Array.from({ length: Math.min(2, reportQueue.length) }, async () => {
+    while (reportQueue.length > 0) {
+      const organizationId = reportQueue.shift();
+      if (!organizationId) return;
+      await postInternalJsonWithRetry(
+        `${options.supabaseUrl}/functions/v1/surfacescan360-ai-report`,
+        headers,
+        {
+          organization_id: organizationId,
+          scope_mode: 'organization_scope',
+          trigger_source: 'connectsecure_result_ingested',
+          force_regenerate: true,
+          created_by: null,
+        },
+        `SurfaceScan report ${organizationId}`,
+      );
+    }
+  });
+  await Promise.allSettled(reportWorkers);
+
+  await fetch(`${options.supabaseUrl}/functions/v1/cve-enrichment`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      trigger: 'connectsecure_result_ingested',
+      max_per_run: Math.max(1, organizationIds.length),
+      drain_all: false,
+    }),
+  }).catch(() => undefined);
+}
+
+async function postInternalJsonWithRetry(
+  url: string,
+  headers: Record<string, string>,
+  body: Record<string, unknown>,
+  label: string,
+): Promise<void> {
+  const retryable = new Set([409, 425, 429, 500, 502, 503, 504]);
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+      if (response.ok) return;
+      const responseText = await response.text().catch(() => '');
+      if (!retryable.has(response.status) || attempt === 3) {
+        console.warn(`[connectsecure-scan] ${label} failed`, {
+          status: response.status,
+          response: responseText.substring(0, 240),
+          attempt,
+        });
+        return;
+      }
+    } catch (err) {
+      if (attempt === 3) {
+        console.warn(`[connectsecure-scan] ${label} request failed`, safeConnectSecureError(err));
+        return;
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, attempt * 2_000));
   }
 }
 
@@ -383,6 +940,30 @@ async function saveResult(
 ): Promise<void> {
   const { assets: mappedAssets, findings, ports: mappedPorts, observations, sensitiveData } = csMapToFindings(result, domain, 0);
   const now = new Date().toISOString();
+
+  if (scanJobId) {
+    await Promise.all([
+      logQueryError('unable to reset ConnectSecure findings before ingest', adminClient
+        .from('surface_findings')
+        .delete()
+        .eq('scan_job_id', scanJobId)
+        .eq('provider', 'connectsecure')),
+      logQueryError('unable to reset ConnectSecure observations before ingest', adminClient
+        .from('surface_observations')
+        .delete()
+        .eq('scan_job_id', scanJobId)),
+      logQueryError('unable to reset ConnectSecure open ports before ingest', adminClient
+        .from('surface_open_ports')
+        .delete()
+        .eq('scan_job_id', scanJobId)
+        .eq('source', 'connectsecure')),
+      logQueryError('unable to reset ConnectSecure sensitive data before ingest', adminClient
+        .from('connectsecure_sensitive_data')
+        .delete()
+        .eq('scan_job_id', scanJobId)),
+    ]);
+  }
+
   const subdomainQueueStats = await enqueueConnectSecureSubdomainJobs(adminClient, orgId, domain, result, scanJobId);
 
   for (const a of mappedAssets) {
@@ -457,7 +1038,7 @@ async function saveResult(
           root_domain: domain,
           attack_surface_domain_id: result.attack_surface_domain_id,
         },
-      }, { onConflict: 'customer_id,host,port,protocol' }));
+      }, { onConflict: 'scan_job_id,host,port,protocol' }));
   }
 
   for (const obs of observations) {
