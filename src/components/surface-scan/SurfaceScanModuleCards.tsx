@@ -36,6 +36,7 @@ import {
   splitMonitoredScopeRules,
   type SurfaceMonitoredScopeRule,
 } from '@/lib/surfaceScopeGuard';
+import { publicSourceLabel } from '@/lib/surfaceSourceLabels';
 
 interface SurfaceScanModuleCardsProps {
   isAdminView?: boolean;
@@ -373,7 +374,7 @@ const scanStatusLabel = (status: string): string => {
   const key = String(status || '').trim().toLowerCase();
   if (key === 'completed' || key === 'success' || key === 'partial') return 'Completato';
   if (key === 'running') return 'In esecuzione';
-  if (key === 'waiting') return 'In attesa provider';
+  if (key === 'waiting') return 'In attesa motore';
   if (key === 'retry') return 'Recovery retry';
   if (key === 'queued' || key === 'pending') return 'In coda';
   if (key === 'not_existing') return 'NON ESISTENTE';
@@ -421,7 +422,7 @@ const scopeLiveReasonLabel = (row: ScopeTargetRow): string => {
   const live = String(row.liveStatus || '').toLowerCase();
   if (live === 'not_scanned') return 'pending scan';
   if (live === 'queued' || live === 'pending') return 'pending scan';
-  if (live === 'running' || live === 'waiting') return 'waiting provider';
+  if (live === 'running' || live === 'waiting') return 'motore in attesa';
   if (live === 'retry') return 'recovered retry';
   if (FAILED_LIVE_STATUSES.has(live)) return row.snapshotSource === 'last_good' ? 'last good snapshot' : 'failed';
   if (row.snapshotSource === 'last_good') return 'last good snapshot';
@@ -440,7 +441,7 @@ const moduleReasonLabel = (reason: string): string => {
   if (key.includes('rdap')) return 'RDAP temporaneamente non disponibile per WHOIS.';
   if (key.includes('server_location_no_ip')) return 'Nessun IP in-scope geolocalizzabile disponibile.';
   if (key.includes('open_ports_no_data')) return 'Nessun dato porte disponibile da scan classica/exposure.';
-  return 'Dato non disponibile per prerequisito o provider.';
+  return 'Dato non disponibile per prerequisito o motore.';
 };
 
 const extractHostFromTarget = (rawTarget: string): string | null => {
@@ -865,10 +866,28 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
     [riskFindings, selectedScopeJobId],
   );
 
-  const selectedExposureOpenPorts = useMemo(
-    () => (selectedScopeJobId ? exposureOpenPorts.filter((row) => String(row.scan_job_id) === selectedScopeJobId) : []),
-    [exposureOpenPorts, selectedScopeJobId],
-  );
+  const selectedExposureOpenPorts = useMemo(() => {
+    const directRows = selectedScopeJobId
+      ? exposureOpenPorts.filter((row) => String(row.scan_job_id) === selectedScopeJobId)
+      : [];
+    if (directRows.length > 0) return directRows;
+
+    const selectedTargetKey = selectedScopeTargetRow?.targetKey || scopeTargetKeyFromTarget(selectedScopeTargetRow?.label || '');
+    if (!selectedTargetKey) return [];
+
+    return exposureOpenPorts.filter((row) => {
+      const raw = row.raw && typeof row.raw === 'object' ? row.raw as Record<string, unknown> : {};
+      const candidates = [
+        row.host,
+        (raw as any).scope_target_host,
+        (raw as any).root_domain,
+        (raw as any).target,
+      ]
+        .map((entry) => scopeTargetKeyFromTarget(String(entry || '')))
+        .filter(Boolean);
+      return candidates.includes(selectedTargetKey);
+    });
+  }, [exposureOpenPorts, selectedScopeJobId, selectedScopeTargetRow?.label, selectedScopeTargetRow?.targetKey]);
 
   const selectedSurfaceAssets = useMemo(
     () => (selectedScopeJobId ? surfaceAssets.filter((row) => String(row.scan_job_id) === selectedScopeJobId) : []),
@@ -1683,7 +1702,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                 {passItems.map((item: any) => {
                   const passed = Boolean(item?.passed);
                   const label = String(item?.label || item?.key || 'check');
-                  const source = String(item?.sourceModule || 'module');
+                  const source = publicSourceLabel(item?.sourceModule || 'module', 'Motore exposure');
                   return (
                     <div key={String(item?.key || label)} className="flex items-center justify-between gap-2 text-xs">
                       <div className="flex items-center gap-2 min-w-0">
@@ -1694,7 +1713,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                         <TooltipTrigger asChild>
                           <Badge variant="outline" className="text-[10px]">{source}</Badge>
                         </TooltipTrigger>
-                        <TooltipContent className="max-w-xs text-xs">Source module: {source}</TooltipContent>
+                        <TooltipContent className="max-w-xs text-xs">Origine: {source}</TooltipContent>
                       </Tooltip>
                     </div>
                   );
@@ -1705,7 +1724,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
 
             <div className="rounded-lg border border-border p-3 space-y-4 md:col-span-2 xl:col-span-3">
               <div className="flex items-center justify-between">
-                <div className="font-medium flex items-center gap-2"><Globe2 className="w-4 h-4 text-blue-400" />ConnectSecure ASM</div>
+                <div className="font-medium flex items-center gap-2"><Globe2 className="w-4 h-4 text-blue-400" />Servizi esposti esterni</div>
                 <Badge className={statusBadgeClass[moduleOutcomes.connectsecure || 'success_no_data']}>
                   {statusLabel(moduleOutcomes.connectsecure || 'success_no_data')}
                 </Badge>
@@ -1771,7 +1790,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                           );
                         })}
                         {connectsecureOverview.ports.length === 0 && (
-                          <span className="text-muted-foreground">Nessuna porta aperta ricevuta da ConnectSecure.</span>
+                          <span className="text-muted-foreground">Nessuna porta aperta ricevuta dallo scanner esterno.</span>
                         )}
                       </div>
                     </div>
@@ -1846,7 +1865,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                   </div>
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground">ConnectSecure ASM non configurato o non ancora eseguito per il target attivo.</p>
+                <p className="text-xs text-muted-foreground">Scanner esterno non configurato o non ancora eseguito per il target attivo.</p>
               )}
             </div>
 
@@ -2062,7 +2081,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                       </Badge>
                     </div>
                     <div className="text-muted-foreground">{openPortServiceLabel(entry)}</div>
-                    <div className="text-muted-foreground">Source: {entry?.source || '-'}</div>
+                    <div className="text-muted-foreground">Origine: {publicSourceLabel(entry?.source || entry?.raw?.source, 'Motore exposure')}</div>
                   </div>
                 ))}
                 {openPortRows.length === 0 && <p className="text-xs text-muted-foreground">Nessuna porta aperta disponibile.</p>}
@@ -2104,7 +2123,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                 <div className="flex justify-between"><span>Registrar</span><span>{latestWhois.registrar || '-'}</span></div>
                 <div className="flex justify-between"><span>Scadenza</span><span>{latestWhois.days_to_expiry != null ? `${latestWhois.days_to_expiry} giorni` : '-'}</span></div>
                 <div className="flex justify-between"><span>DNSSEC (RDAP)</span><span>{latestWhois.dnssec || '-'}</span></div>
-                <div className="flex justify-between"><span>Source</span><span>{latestWhois.source || '-'}</span></div>
+                <div className="flex justify-between"><span>Origine</span><span>{publicSourceLabel(latestWhois.source, 'Evidenza')}</span></div>
               </div>
               {whoisUnavailableCount > 0 && moduleOutcomes.whois !== 'skipped_prerequisite' && (
                 <p className="text-xs text-amber-300">RDAP temporaneamente non disponibile per WHOIS.</p>

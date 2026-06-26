@@ -33,6 +33,7 @@ import { useSurfaceScanDiscoveredAssets } from '@/hooks/useSurfaceScanDiscovered
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { CveDetailDialog } from '@/components/surface-scan/CveDetailDialog';
 import { CVE_REGEX, cweDescription, cweLink, findingSummary, getFindingTaxonomy, owaspDescription } from '@/lib/findingTaxonomy';
+import { publicSourceLabel, redactInternalSourceNames } from '@/lib/surfaceSourceLabels';
 
 const severityOrder: Record<string, number> = {
   critical: 5,
@@ -129,12 +130,12 @@ const findingCves = (row: SurfaceFindingRow): string[] => {
 const sourceFamily = (row: SurfaceFindingRow): string => {
   const provider = String(row.provider || '').toLowerCase();
   const module = String(row.module || '').toLowerCase();
-  if (provider.includes('surface_report') || module.includes('cve_catalog')) return 'CVE Catalog';
-  if (provider.includes('pentest')) return 'Exposure Intel';
-  if (provider.includes('shodan')) return 'OSINT Intel';
-  if (provider.includes('urlscan')) return 'OSINT Intel';
-  if (provider.includes('internal') || provider.includes('surface_scan') || module) return 'OSINT Intel';
-  return 'Internal';
+  const findingType = String(row.finding_type || '').toLowerCase();
+  if (provider.includes('surface_report') || module.includes('cve_catalog')) return 'CVE/NVD';
+  if (findingType.includes('open_port') || findingType.includes('service_fingerprint') || findingType.includes('sensitive_port')) {
+    return 'Servizi esposti';
+  }
+  return publicSourceLabel(provider || module, 'Evidenza');
 };
 
 const confidenceFactor = (row: SurfaceFindingRow): number | null => {
@@ -223,7 +224,7 @@ const cvssTooltipText = (
     return `CVSS ${displayCvss.toFixed(1)} stimato come baseline configurativa: non legato a un CVE specifico.`;
   }
   if (rowCves.length > 0) {
-    return `CVSS ${displayCvss.toFixed(1)} derivato da CVE associate o da intel provider.`;
+    return `CVSS ${displayCvss.toFixed(1)} derivato da CVE associate o da intel CVE.`;
   }
   return `CVSS ${displayCvss.toFixed(1)} derivato dal finding.`;
 };
@@ -413,7 +414,7 @@ const SecurityFindings: React.FC = () => {
             <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
             <Input
               className="pl-9"
-              placeholder="Cerca per titolo, CVE/CWE/OWASP, asset, modulo, provider..."
+              placeholder="Cerca per titolo, CVE/CWE/OWASP, asset, origine..."
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
             />
@@ -548,7 +549,7 @@ const SecurityFindings: React.FC = () => {
                                     <TableHead>EPSS</TableHead>
                                     <TableHead>CISA KEV</TableHead>
                                     <TableHead>Confidence</TableHead>
-                                    <TableHead>Source</TableHead>
+                                    <TableHead>Origine</TableHead>
                                     <TableHead>Remediation</TableHead>
                                   </TableRow>
                                 </TableHeader>
@@ -596,6 +597,15 @@ const SecurityFindings: React.FC = () => {
                                               const displayCvss = inferredCvss ?? taxonomy?.baseScore ?? null;
                                               const cvssIsBaseline = inferredCvss == null && taxonomy?.baseScore != null && rowCves.length === 0;
                                               const cvssHint = cvssTooltipText(rowCves, displayCvss, cvssIsBaseline);
+                                              const displayTitle = redactInternalSourceNames(row.title, 'Motore exposure');
+                                              const displayDescription = redactInternalSourceNames(
+                                                row.description || findingSummary(row.finding_type) || 'Nessuna sintesi disponibile',
+                                                'Motore exposure',
+                                              );
+                                              const displayRemediation = row.remediation
+                                                ? redactInternalSourceNames(row.remediation, 'Motore exposure')
+                                                : '-';
+                                              const displaySource = sourceFamily(row);
                                               return (
                                                 <>
                                                   <TableCell>
@@ -604,7 +614,7 @@ const SecurityFindings: React.FC = () => {
                                                     </Badge>
                                                   </TableCell>
                                                   <TableCell className="min-w-[40rem]">
-                                                    <div className="font-medium">{row.title}</div>
+                                                    <div className="font-medium">{displayTitle}</div>
                                                     <div className="flex flex-wrap gap-1 mt-1">
                                                       <Badge variant="outline" className="text-[10px] font-mono">
                                                         {row.finding_type || 'n/a'}
@@ -634,7 +644,7 @@ const SecurityFindings: React.FC = () => {
                                                         {(row.status || 'open').toUpperCase()}
                                                       </Badge>
                                                       <Badge variant="outline" className="text-[10px]">
-                                                        {sourceFamily(row)}
+                                                        {displaySource}
                                                       </Badge>
                                                       {(row.finding_type === 'ssl_wildcard_certificate' || row.evidence?.is_wildcard === true) && (
                                                         <Badge className="text-[10px] bg-amber-500/20 text-amber-400 border-amber-500/30">
@@ -653,7 +663,7 @@ const SecurityFindings: React.FC = () => {
                                                           Sintesi OWASP
                                                         </div>
                                                         <div className="text-xs text-muted-foreground leading-relaxed">
-                                                          {row.description || findingSummary(row.finding_type) || 'Nessuna sintesi disponibile'}
+                                                          {displayDescription}
                                                         </div>
                                                       </div>
                                                       <div className="rounded-md border border-border/60 bg-muted/20 p-2">
@@ -803,10 +813,10 @@ const SecurityFindings: React.FC = () => {
                                                     })()}
                                                   </TableCell>
                                                   <TableCell className="min-w-32">
-                                                    {(row.provider || 'surface_scan_engine')} / {(row.module || '-')}
+                                                    {displaySource}
                                                   </TableCell>
                                                   <TableCell className="min-w-72 text-xs text-muted-foreground">
-                                                    {row.remediation || '-'}
+                                                    {displayRemediation}
                                                   </TableCell>
                                                 </>
                                               );

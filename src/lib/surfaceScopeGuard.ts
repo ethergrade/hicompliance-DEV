@@ -1,3 +1,5 @@
+import { publicSourceLabel } from '@/lib/surfaceSourceLabels';
+
 export interface SurfaceScopeClassification {
   host: string;
   normalizedHost: string;
@@ -160,13 +162,5 @@ export const isIpWithinScopeRules = (
 };
 
 export const sourceLabel = (source: string): string => {
-  const key = String(source || '').toLowerCase();
-  if (key.includes('certificate_transparency')) return 'CT';
-  if (key.includes('subdomain_dump')) return 'Dump';
-  if (key.includes('reverse_dns')) return 'Reverse DNS';
-  if (key.includes('pentest_tools_subdomain')) return 'Pentest Subdomain';
-  if (key.includes('pentest_tools_domain')) return 'Pentest Domain';
-  if (key.includes('shodan')) return 'Shodan';
-  if (key.includes('manual')) return 'Scope';
-  return source || 'unknown';
+  return publicSourceLabel(source, 'Evidenza');
 };

@@ -18,6 +18,7 @@ import {
   type SurfaceFinding,
 } from '@/hooks/useSurfaceScanEngine';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { publicSourceLabel } from '@/lib/surfaceSourceLabels';
 
 const severityColor: Record<string, string> = {
   critical: 'bg-red-600 text-white',
@@ -267,7 +268,7 @@ export const OsintEnrichmentTab = () => {
                                         {filtered.slice(0, 8).map((sig: any, idx: number) => (
                                           <div key={idx} className="text-[11px] flex items-start gap-2">
                                             <Badge variant="outline" className="shrink-0 text-[10px]">+{sig.weight}</Badge>
-                                            <span className="text-muted-foreground shrink-0">{sig.source}:</span>
+                                            <span className="text-muted-foreground shrink-0">{publicSourceLabel(sig.source, 'Evidenza')}:</span>
                                             <span className="break-all">{sig.value}</span>
                                           </div>
                                         ))}
@@ -283,7 +284,7 @@ export const OsintEnrichmentTab = () => {
                           .map((i) => (
                             <div key={i.id} className="border rounded-md p-3">
                               <div className="flex items-center justify-between mb-2">
-                                <div className="font-medium text-sm capitalize">{i.provider.replace(/_/g, ' ')} — {i.target}</div>
+                                <div className="font-medium text-sm">{publicSourceLabel(i.provider, 'Evidenza esterna')} — {i.target}</div>
                                 <div className="flex gap-2">
                                   <Badge variant={i.found ? 'default' : 'secondary'}>{i.found ? 'found' : 'not found'}</Badge>
                                   <Badge variant="outline">conf. {i.confidence}</Badge>

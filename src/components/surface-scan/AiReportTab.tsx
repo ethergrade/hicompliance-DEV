@@ -8,6 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { generateSurfaceScan360Pdf } from '@/lib/surfaceScan360PdfReport';
 import { generateSurfaceScan360Docx } from '@/lib/surfaceScan360DocxReport';
+import { redactInternalSourceNames } from '@/lib/surfaceSourceLabels';
 
 interface AiReport {
   generated_at: string;
@@ -62,26 +63,7 @@ const sevColor = (s?: string) => {
 
 const PAGE_SIZE = 20;
 
-const redactReportWords = (value: string) => {
-  const tokens = [
-    /\bshodan\b/gi,
-    /\bpentest-?tools?\b/gi,
-    /\bweb[\s-]?check\b/gi,
-    /\burlscan\b/gi,
-    /\bapache\b/gi,
-    /\bnginx\b/gi,
-    /\bwordpress\b/gi,
-    /\bphp\b/gi,
-    /\bopenssl\b/gi,
-    /\biis\b/gi,
-    /\btomcat\b/gi,
-    /\bdrupal\b/gi,
-    /\bjoomla\b/gi,
-  ];
-  let out = String(value || '');
-  for (const token of tokens) out = out.replace(token, 'componente tecnologica');
-  return out.replace(/\s{2,}/g, ' ').trim();
-};
+const redactReportWords = (value: string) => redactInternalSourceNames(value, 'Motore exposure');
 
 const normalizeHost = (value?: string) => String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
 const getSubdomainDepth = (host: string, root: string) => {

@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import { COVER_BG_JPEG_B64, HISOLUTION_LOGO_PNG_B64 } from './reportCoverAssets';
 import { REPORT_GLOSSARY } from './reportGlossary';
+import { publicSourceLabel, redactInternalSourceNames } from './surfaceSourceLabels';
 
 interface RemediationTask {
   id: string;
@@ -122,7 +123,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   port_scanner: 'Porte e servizi esposti',
   ssl_scan: 'Analisi TLS/SSL',
 };
-const providerLabel = (p: string) => PROVIDER_LABELS[p] || 'Evidenze esterne';
+const providerLabel = (p: string) => PROVIDER_LABELS[p] || publicSourceLabel(p, 'Evidenze esterne');
 
 const hasHiComplianceBrand = (report: SurfaceScan360Report): boolean => {
   const org = report?.organization || {};
@@ -148,22 +149,7 @@ const drawHiSolutionLogo = (doc: jsPDF, x: number, y: number): void => {
   doc.text('Hi', x + 5, y + 12.5);
 };
 
-const redactReportWords = (value: string) => {
-  const providerTokens = [
-    /\bshodan\b/gi,
-    /\bpentest-?tools?\b/gi,
-    /\bweb[\s-]?check\b/gi,
-    /\burlscan\b/gi,
-    /\bnmap\b/gi,
-    /\bnuclei\b/gi,
-    /\bnikto\b/gi,
-    /\bhttpx\b/gi,
-    /\bwappalyzer\b/gi,
-  ];
-  let out = String(value || '');
-  for (const token of providerTokens) out = out.replace(token, 'SurfaceScan360');
-  return out.replace(/\s{2,}/g, ' ').trim();
-};
+const redactReportWords = (value: string) => redactInternalSourceNames(value, 'Motore exposure');
 
 const normalizeHost = (value: string): string => String(value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
 const isIpv4Address = (value: string): boolean => IPV4_STRICT_RX.test(String(value || '').trim());

@@ -48,13 +48,12 @@ export const TechnologiesTable: React.FC<TechnologiesTableProps> = ({ rows, load
               <TableHead>Categoria</TableHead>
               <TableHead>Confidence</TableHead>
               <TableHead>Porta</TableHead>
-              <TableHead>Source</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-6 text-muted-foreground">
+                <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
                   Caricamento tecnologie...
                 </TableCell>
               </TableRow>
@@ -62,7 +61,7 @@ export const TechnologiesTable: React.FC<TechnologiesTableProps> = ({ rows, load
 
             {!loading && filtered.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-6 text-muted-foreground">
+                <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
                   Nessuna tecnologia rilevata.
                 </TableCell>
               </TableRow>
@@ -80,7 +79,6 @@ export const TechnologiesTable: React.FC<TechnologiesTableProps> = ({ rows, load
                     {row.confidence != null ? `${Number(row.confidence).toFixed(0)}%` : '-'}
                   </TableCell>
                   <TableCell>{row.port || '-'}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">pentest_tools_website_recon</TableCell>
                 </TableRow>
               ))}
           </TableBody>
@@ -91,4 +89,3 @@ export const TechnologiesTable: React.FC<TechnologiesTableProps> = ({ rows, load
 };
 
 export default TechnologiesTable;
-

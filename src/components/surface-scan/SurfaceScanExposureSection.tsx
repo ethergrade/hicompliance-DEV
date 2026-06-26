@@ -30,6 +30,7 @@ import ExposureCharts from '@/components/surfacescan/ExposureCharts';
 import OpenPortsTable from '@/components/surfacescan/OpenPortsTable';
 import TechnologiesTable from '@/components/surfacescan/TechnologiesTable';
 import ExposureFindingsTable from '@/components/surfacescan/ExposureFindingsTable';
+import { publicScanTypeLabel, publicSourceLabel } from '@/lib/surfaceSourceLabels';
 
 interface SurfaceScanExposureSectionProps {
   isAdmin: boolean;
@@ -265,6 +266,31 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       });
   }, [openPorts, targetSnapshots]);
 
+  const assetsWithPorts = useMemo(
+    () => assetPortList.filter((asset) => asset.ports.length > 0),
+    [assetPortList],
+  );
+
+  const exposureUpdatedAt = useMemo(() => {
+    const candidates = [
+      ...openPorts.map((row) => row.last_seen_at || row.first_seen_at),
+      ...jobs.map((job) => job.completed_at || job.created_at),
+      summary?.target_snapshots?.[0]?.last_good?.completed_at,
+      summary?.target_snapshots?.[0]?.live?.created_at,
+    ]
+      .map((value) => Date.parse(String(value || '')))
+      .filter((value) => Number.isFinite(value));
+    if (candidates.length === 0) return null;
+    return new Date(Math.max(...candidates)).toISOString();
+  }, [jobs, openPorts, summary]);
+
+  const noOpenPortsMessage = useMemo(() => {
+    const when = exposureUpdatedAt
+      ? ` il ${new Date(exposureUpdatedAt).toLocaleString('it-IT')}`
+      : '';
+    return `Nessuna porta aperta trovata${when}.`;
+  }, [exposureUpdatedAt]);
+
   const selectedJob = useMemo(
     () => jobs.find((job) => String(job.id) === String(selectedJobId)) || null,
     [jobs, selectedJobId],
@@ -364,7 +390,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
           autoStartFailedKeyRef.current = '';
           setAutoStartStatus({
             kind: 'success',
-            message: 'Scansione scope automatica accodata in background',
+            message: 'Scansione scope accodata in background',
             detail: `Job ${result?.job_id || '-'} • Queue: ${result?.queue?.total || 0}`,
             at: new Date().toISOString(),
           });
@@ -559,10 +585,10 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
   ]);
 
   const handlePoll = async () => {
-    setPolling(true);
+      setPolling(true);
     try {
       await triggerExposurePoll();
-      toast.success('Poll Pentest-Tools completato');
+      toast.success('Poll motore exposure completato');
       await refreshData();
     } catch (error: any) {
       toast.error('Poll non riuscito', { description: error?.message || 'Errore di polling' });
@@ -659,10 +685,10 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
                     <Badge variant="outline">Live queued: {liveQueued}</Badge>
                     <Badge variant="secondary">Last-good fallback: {lastGood}</Badge>
                     {(summary?.included_scan_types || []).map((scanType) => (
-                      <Badge key={`scan-type-${scanType}`} variant="outline">{scanType}</Badge>
+                      <Badge key={`scan-type-${scanType}`} variant="outline">{publicScanTypeLabel(scanType)}</Badge>
                     ))}
                     {sourceCounts.map(([source, count]) => (
-                      <Badge key={`source-${source}`} variant="secondary">{source}: {count}</Badge>
+                      <Badge key={`source-${source}`} variant="secondary">{publicSourceLabel(source)}: {count}</Badge>
                     ))}
                   </div>
                 );
@@ -670,37 +696,35 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
             </div>
           )}
           <ExposureCharts summary={summary} openPorts={openPorts} technologies={technologies} />
+          {!loading && openPorts.length === 0 && (
+            <div className="rounded-lg border border-border bg-muted/15 p-4 text-sm text-muted-foreground">
+              {noOpenPortsMessage}
+            </div>
+          )}
 
-          <Card className="border-border">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Lista Asset con Porte</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Vista rapida per asset in scope: sotto ogni dominio/IP trovi le porte aperte rilevate.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {assetPortList.length === 0 && (
-                <div className="rounded-md border border-border p-4 text-sm text-muted-foreground">
-                  Nessun asset disponibile nello scope.
-                </div>
-              )}
-              {assetPortList.map((asset) => (
-                <div key={asset.key} className="rounded-md border border-border p-3">
-                  <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold text-foreground break-all">{asset.label}</p>
-                      <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
-                        <Badge variant="outline">{asset.ports.length} porte</Badge>
-                        {asset.ips.length > 0 && (
-                          <span className="break-all">IP: {asset.ips.join(', ')}</span>
-                        )}
+          {assetsWithPorts.length > 0 && (
+            <Card className="border-border">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Lista Asset con Porte</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Vista rapida per asset in scope: sotto ogni dominio/IP trovi le porte aperte rilevate.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {assetsWithPorts.map((asset) => (
+                  <div key={asset.key} className="rounded-md border border-border p-3">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-foreground break-all">{asset.label}</p>
+                        <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+                          <Badge variant="outline">{asset.ports.length} porte</Badge>
+                          {asset.ips.length > 0 && (
+                            <span className="break-all">IP: {asset.ips.join(', ')}</span>
+                          )}
+                        </div>
                       </div>
+                      <Badge variant="secondary">Porte rilevate</Badge>
                     </div>
-                    <Badge variant={asset.ports.length > 0 ? 'secondary' : 'outline'}>
-                      {asset.ports.length > 0 ? 'Porte rilevate' : 'Nessuna porta'}
-                    </Badge>
-                  </div>
-                  {asset.ports.length > 0 ? (
                     <div className="mt-3 flex flex-wrap gap-2">
                       {asset.ports.map((portRow, index) => {
                         const serviceLabel = [
@@ -726,15 +750,11 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
                         );
                       })}
                     </div>
-                  ) : (
-                    <p className="mt-3 text-xs text-muted-foreground">
-                      Nessuna porta aperta rilevata su questo asset nell'ultimo snapshot valido.
-                    </p>
-                  )}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
           {isAdmin && (
             <Card className="border-border">
@@ -830,9 +850,9 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
             </Card>
           )}
 
-          <OpenPortsTable rows={openPorts} />
-          <TechnologiesTable rows={technologies} />
-          <ExposureFindingsTable rows={findings} />
+          {openPorts.length > 0 && <OpenPortsTable rows={openPorts} />}
+          {technologies.length > 0 && <TechnologiesTable rows={technologies} />}
+          {findings.length > 0 && <ExposureFindingsTable rows={findings} />}
         </CardContent>
       )}
     </Card>

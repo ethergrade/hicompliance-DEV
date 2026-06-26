@@ -16,6 +16,8 @@ import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 interface AssetRow {
   asset_type: string;
   asset_value: string;
+  hostname?: string | null;
+  root_domain?: string | null;
   source?: string;
   ip?: string | null;
   raw?: { ip?: string; _scope_excluded?: boolean; _scope_exclusion_reason?: string } | null;
@@ -67,7 +69,7 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
       const scopeFilter = `customer_id.eq.${organizationId},organization_id.eq.${organizationId}`;
       const { data, error } = await supabase
         .from('surface_assets' as any)
-        .select('asset_type, asset_value, source, ip, raw')
+        .select('asset_type, asset_value, hostname, root_domain, source, ip, raw')
         .or(scopeFilter)
         .in('asset_type', ['subdomain', 'reverse_dns_hostname', 'domain', 'ip'])
         .order('last_seen', { ascending: false })
@@ -173,7 +175,7 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
     };
 
     for (const row of rows) {
-      const value = String(row.asset_value || '').trim().toLowerCase().replace(/\.$/, '');
+      const value = String(row.hostname || row.asset_value || '').trim().toLowerCase().replace(/\.$/, '');
       if (!value) continue;
 
       if (row.asset_type === 'ip') {
@@ -230,7 +232,11 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
         const ipCandidate = String(row.ip || row?.raw?.ip || '').trim();
         if (ipCandidate && !meta.ips.includes(ipCandidate)) meta.ips.push(ipCandidate);
         if (source.includes('reverse_dns')) meta.fromReverseDns = true;
-        if (source.includes('subdomain_dump') || source.includes('certificate_transparency')) meta.fromDump = true;
+        if (
+          source.includes('subdomain_dump')
+          || source.includes('certificate_transparency')
+          || source.includes('connectsecure')
+        ) meta.fromDump = true;
         if (classification.inScope) meta.fromScope = true;
 
         if (!isExcluded) {

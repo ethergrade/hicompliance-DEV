@@ -420,6 +420,15 @@ function recordString(record: Record<string, unknown>, keys: string[]): string {
     if (typeof value === 'string' && value.trim()) return value.trim();
     if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   }
+  const normalized = new Map<string, unknown>();
+  for (const [key, value] of Object.entries(record)) {
+    normalized.set(key.toLowerCase().replace(/[\s_-]+/g, ''), value);
+  }
+  for (const key of keys) {
+    const value = normalized.get(key.toLowerCase().replace(/[\s_-]+/g, ''));
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
   return '';
 }
 
@@ -446,12 +455,61 @@ function parsePortProtocols(value: unknown): Array<{ port: number; protocol: str
   return ports;
 }
 
-export function csExtractSubdomains(result: Pick<CsResult, 'subdomains'>): string[] {
-  const subdomains = new Set<string>();
-  for (const sub of meaningfulRecords(result.subdomains)) {
-    const domain = recordString(sub, ['subdomain', 'domain', 'hostname', 'name'])
+function normalizeResultHostname(value: unknown): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    return new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).hostname
       .toLowerCase()
       .replace(/\.$/, '');
+  } catch {
+    return raw
+      .replace(/^https?:\/\//i, '')
+      .replace(/\/.*$/, '')
+      .split(/[\s,;|]+/)[0]
+      .toLowerCase()
+      .replace(/\.$/, '');
+  }
+}
+
+function extractSubdomainEntries(result: Record<string, unknown>, rootDomain?: string): Array<{ domain: string; raw: Record<string, unknown> }> {
+  const root = normalizeResultHostname(rootDomain || '');
+  const sources = [
+    result.subdomains,
+    (result as any).sub_domains,
+    (result as any).subdomain_results,
+    (result as any).discovered_subdomains,
+    (result as any).hosts,
+    (result as any).domains,
+  ];
+  const byDomain = new Map<string, Record<string, unknown>>();
+
+  for (const source of sources) {
+    for (const sub of meaningfulRecords(source)) {
+      const domain = normalizeResultHostname(recordString(sub, [
+        'subdomain',
+        'sub_domain',
+        'Sub Domain',
+        'hostname',
+        'host',
+        'domain',
+        'name',
+        'url',
+      ]));
+      if (!domain || !domain.includes('.') || domain.includes('*')) continue;
+      if (root && (domain === root || !domain.endsWith(`.${root}`))) continue;
+      if (!byDomain.has(domain)) byDomain.set(domain, sub);
+    }
+  }
+
+  return Array.from(byDomain.entries())
+    .map(([domain, raw]) => ({ domain, raw }))
+    .sort((a, b) => a.domain.localeCompare(b.domain));
+}
+
+export function csExtractSubdomains(result: Pick<CsResult, 'subdomains'> | Record<string, unknown>): string[] {
+  const subdomains = new Set<string>();
+  for (const { domain } of extractSubdomainEntries(result as Record<string, unknown>)) {
     if (!domain || !domain.includes('.') || domain.includes('*')) continue;
     subdomains.add(domain);
   }
@@ -465,9 +523,7 @@ export function csMapToFindings(result: CsResult, rootDomain: string, depth: num
   const observations: CsMapResult['observations'] = [];
 
   // ── Subdomains → assets ───────────────────────────────────────────────────
-  for (const sub of meaningfulRecords(result.subdomains)) {
-    const domain = recordString(sub, ['subdomain', 'domain', 'hostname', 'name']).toLowerCase().replace(/\.$/, '');
-    if (!domain) continue;
+  for (const { domain, raw } of extractSubdomainEntries(result as unknown as Record<string, unknown>, rootDomain)) {
     assets.push({
       asset_type: 'subdomain',
       asset_value: domain,
@@ -475,7 +531,7 @@ export function csMapToFindings(result: CsResult, rootDomain: string, depth: num
       root_domain: rootDomain,
       source: 'connectsecure',
       confidence: 'high',
-      raw: { depth: depth + 1, parent_domain: rootDomain, dns_records: sub.dns_records || null },
+      raw: { depth: depth + 1, parent_domain: rootDomain, dns_records: raw.dns_records || raw.dnsRecords || null },
     });
   }
 
@@ -491,21 +547,21 @@ export function csMapToFindings(result: CsResult, rootDomain: string, depth: num
     for (const { port, protocol } of portProtos) {
       const proto = protocol || 'tcp';
 
-      ports.push({ port, host: ip, ip, protocol: proto.toLowerCase() });
+      ports.push({ port, host: rootDomain, ip, protocol: proto.toLowerCase() });
 
       findings.push({
         provider:      'connectsecure',
         module:        'connectsecure',
         finding_type:  'open_port_exposed',
         severity:      portSeverity(port),
-        title:         `Porta ${port}/${proto.toLowerCase()} esposta su ${ip}`,
-        description:   `IP ${ip}: porta ${port}/${proto.toLowerCase()} aperta.${cves.length ? ` CVE associati: ${cves.slice(0, 3).join(', ')}` : ''}`,
-        affected_asset: ip,
+        title:         `Porta ${port}/${proto.toLowerCase()} esposta su ${rootDomain}`,
+        description:   `Dominio ${rootDomain} risolve sull'IP ${ip}: porta ${port}/${proto.toLowerCase()} aperta.${cves.length ? ` CVE associati: ${cves.slice(0, 3).join(', ')}` : ''}`,
+        affected_asset: rootDomain,
         ip,
         port,
         protocol:      proto.toLowerCase(),
         cve:           cves,
-        evidence:      { source: 'connectsecure', ip, port, asn: target.ASN, location: target.Location },
+        evidence:      { source: 'connectsecure', scope_target_host: rootDomain, ip, port, asn: target.ASN, location: target.Location },
       });
     }
 
@@ -516,12 +572,12 @@ export function csMapToFindings(result: CsResult, rootDomain: string, depth: num
         module:        'connectsecure',
         finding_type:  'vulnerability_detected',
         severity:      'high',
-        title:         `Vulnerabilità rilevate su ${ip}`,
-        description:   `CVE associati all'IP ${ip}: ${cves.join(', ')}`,
-        affected_asset: ip,
+        title:         `Vulnerabilità rilevate su ${rootDomain}`,
+        description:   `CVE associate all'IP ${ip} collegato a ${rootDomain}: ${cves.join(', ')}`,
+        affected_asset: rootDomain,
         ip,
         cve:           cves,
-        evidence:      { source: 'connectsecure', asn: target.ASN },
+        evidence:      { source: 'connectsecure', scope_target_host: rootDomain, asn: target.ASN },
       });
     }
   }

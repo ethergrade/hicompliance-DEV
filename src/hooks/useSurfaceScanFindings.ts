@@ -14,6 +14,7 @@ import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 export interface SurfaceFindingRow {
   id: string;
+  scan_job_id?: string | null;
   provider: string | null;
   module: string | null;
   finding_type: string;
@@ -38,6 +39,27 @@ export interface SurfaceFindingRow {
   first_seen_at?: string | null;
   last_seen_at?: string | null;
   occurrence_count?: number | null;
+}
+
+interface SurfaceOpenPortRow {
+  id: string;
+  scan_job_id: string | null;
+  host: string | null;
+  ip: string | null;
+  port: number | null;
+  protocol: string | null;
+  source?: string | null;
+  state?: string | null;
+  service_name?: string | null;
+  service_product?: string | null;
+  service_version?: string | null;
+  exposure_level?: string | null;
+  is_web?: boolean | null;
+  is_tls?: boolean | null;
+  remediation_hint?: string | null;
+  first_seen_at?: string | null;
+  last_seen_at?: string | null;
+  raw?: Record<string, any> | null;
 }
 
 const ORGANIZATION_SCOPE_REPORT_TITLE = 'SurfaceScan360 Report - Organization Scope';
@@ -199,6 +221,133 @@ const buildSyntheticCveRowsFromReport = (
   return out;
 };
 
+const targetHostFromValue = (value: unknown): string => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    return new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).hostname.toLowerCase();
+  } catch {
+    return raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').replace(/\.$/, '').toLowerCase();
+  }
+};
+
+const openPortSeverity = (port: number, exposureLevel?: string | null): SurfaceFindingRow['severity'] => {
+  const configured = String(exposureLevel || '').toLowerCase();
+  if (['critical', 'high', 'medium', 'low', 'info'].includes(configured)) {
+    return configured as SurfaceFindingRow['severity'];
+  }
+  if ([3389, 5900, 6379, 9200, 27017, 11211, 2375, 10250, 1521, 1433].includes(port)) return 'high';
+  if ([21, 22, 23, 445, 3306, 5432, 8080, 8443, 8888, 9000].includes(port)) return 'medium';
+  if ([80, 443].includes(port)) return 'info';
+  return 'low';
+};
+
+const openPortServiceLabel = (row: SurfaceOpenPortRow): string => {
+  const service = [
+    row.service_name,
+    row.service_product,
+    row.service_version,
+  ].map((entry) => String(entry || '').trim()).filter(Boolean).join(' ');
+  if (service) return service;
+  const protocol = String(row.protocol || 'tcp').toUpperCase();
+  return `${protocol}/${row.port || '-'}`;
+};
+
+const openPortSignature = (row: Pick<SurfaceFindingRow, 'affected_asset' | 'ip' | 'port' | 'protocol'>): string => [
+  normalizeAssetKey(row.affected_asset || ''),
+  String(row.ip || '').trim().toLowerCase(),
+  Number(row.port || 0),
+  String(row.protocol || 'tcp').trim().toLowerCase() || 'tcp',
+].join('|');
+
+const buildSyntheticOpenPortRows = (
+  ports: SurfaceOpenPortRow[],
+  jobTargets: Map<string, { raw_target: string; normalized_target: string; hostname: string }>,
+  existingRows: SurfaceFindingRow[],
+): SurfaceFindingRow[] => {
+  const existing = new Set(
+    existingRows
+      .filter((row) => ['open_port_exposed', 'service_fingerprint_exposed', 'sensitive_port_exposed'].includes(row.finding_type))
+      .map((row) => openPortSignature(row)),
+  );
+  const out: SurfaceFindingRow[] = [];
+  const added = new Set<string>();
+
+  for (const row of ports) {
+    const port = Number(row.port || 0);
+    if (!Number.isFinite(port) || port <= 0 || port > 65535) continue;
+    const protocol = String(row.protocol || 'tcp').trim().toLowerCase() || 'tcp';
+    const raw = row.raw && typeof row.raw === 'object' ? row.raw : {};
+    const jobTarget = row.scan_job_id ? jobTargets.get(String(row.scan_job_id)) : null;
+    const rawHost = targetHostFromValue(
+      raw.scope_target_host
+      || raw.root_domain
+      || raw.target
+      || row.host
+      || '',
+    );
+    const jobHost = targetHostFromValue(jobTarget?.hostname || jobTarget?.normalized_target || jobTarget?.raw_target || '');
+    const rowHost = targetHostFromValue(row.host || '');
+    const host = rawHost && !isIpv4(rawHost) && !isIpv6(rawHost)
+      ? rawHost
+      : jobHost && !isIpv4(jobHost) && !isIpv6(jobHost)
+        ? jobHost
+        : rowHost || String(row.ip || '').trim() || 'asset monitorato';
+    const ip = String(row.ip || '').trim() || (isIpv4(rowHost) || isIpv6(rowHost) ? rowHost : '');
+
+    const candidate: Pick<SurfaceFindingRow, 'affected_asset' | 'ip' | 'port' | 'protocol'> = {
+      affected_asset: host,
+      ip: ip || null,
+      port,
+      protocol,
+    };
+    const signature = openPortSignature(candidate);
+    if (existing.has(signature) || added.has(signature)) continue;
+    added.add(signature);
+
+    const service = openPortServiceLabel(row);
+    const seenAt = String(row.last_seen_at || row.first_seen_at || new Date().toISOString());
+    out.push({
+      id: `open-port-${String(row.id || signature)}`,
+      provider: 'surface_open_ports',
+      module: 'open_ports',
+      finding_type: 'open_port_exposed',
+      title: `Porta ${port}/${protocol.toUpperCase()} aperta su ${host}`,
+      description: `Servizio ${service} rilevato su ${host}${ip ? ` (${ip})` : ''}. CVSS/EPSS non disponibili finche non viene correlata una CVE specifica al servizio esposto.`,
+      severity: openPortSeverity(port, row.exposure_level),
+      affected_asset: host,
+      affected_url: row.is_web ? `${row.is_tls ? 'https' : 'http'}://${host}` : null,
+      ip: ip || null,
+      port,
+      protocol,
+      cve: [],
+      cwe: null,
+      cvss: null,
+      epss: null,
+      cisa_kev: false,
+      remediation: row.remediation_hint || 'Verificare che la porta sia necessaria, limitare l\'accesso da Internet dove possibile e rieseguire la scansione dopo la mitigazione.',
+      evidence: {
+        source: row.source || raw.source || 'surface_open_ports',
+        open_port_id: row.id,
+        service_name: row.service_name || null,
+        service_product: row.service_product || null,
+        service_version: row.service_version || null,
+        scope_target_host: host,
+        ip: ip || null,
+        _derived_from_open_port: true,
+      },
+      attribution_confidence: 'high',
+      status: 'open',
+      created_at: seenAt,
+      first_seen_at: row.first_seen_at || seenAt,
+      last_seen_at: row.last_seen_at || seenAt,
+      occurrence_count: 1,
+    });
+  }
+
+  return out;
+};
+
 export const useSurfaceScanFindings = () => {
   const [findings, setFindings] = useState<SurfaceFindingRow[]>([]);
   const [scopeRules, setScopeRules] = useState<SurfaceMonitoredScopeRule[]>([]);
@@ -210,6 +359,7 @@ export const useSurfaceScanFindings = () => {
     if (!record || !record.id) return null;
     return {
       id: String(record.id),
+      scan_job_id: record.scan_job_id ? String(record.scan_job_id) : null,
       provider: record.provider ?? null,
       module: record.module ?? null,
       finding_type: String(record.finding_type || ''),
@@ -281,11 +431,11 @@ export const useSurfaceScanFindings = () => {
     if (!background) setLoading(true);
     try {
       const scopeFilter = `customer_id.eq.${organizationId},organization_id.eq.${organizationId}`;
-      const [findingsRes, scopeRulesRes, reportRes] = await Promise.all([
+      const [findingsRes, scopeRulesRes, reportRes, openPortsRes] = await Promise.all([
         supabase
           .from('surface_findings' as any)
           .select(
-            'id, provider, module, finding_type, title, description, severity, affected_asset, affected_url, ip, port, protocol, cve, cwe, cvss, epss, cisa_kev, remediation, evidence, attribution_confidence, status, created_at, first_seen_at, last_seen_at, occurrence_count',
+            'id, scan_job_id, provider, module, finding_type, title, description, severity, affected_asset, affected_url, ip, port, protocol, cve, cwe, cvss, epss, cisa_kev, remediation, evidence, attribution_confidence, status, created_at, first_seen_at, last_seen_at, occurrence_count',
           )
           .or(scopeFilter)
           .order('created_at', { ascending: false })
@@ -300,11 +450,19 @@ export const useSurfaceScanFindings = () => {
           .eq('organization_id', organizationId)
           .order('created_at', { ascending: false })
           .limit(20),
+        supabase
+          .from('surface_open_ports' as any)
+          .select('id, scan_job_id, host, ip, port, protocol, source, state, service_name, service_product, service_version, exposure_level, is_web, is_tls, remediation_hint, first_seen_at, last_seen_at, raw')
+          .or(scopeFilter)
+          .eq('state', 'open')
+          .order('last_seen_at', { ascending: false })
+          .limit(1000),
       ]);
 
       if (findingsRes.error) throw findingsRes.error;
       if (scopeRulesRes.error) throw scopeRulesRes.error;
       if (reportRes.error) throw reportRes.error;
+      if (openPortsRes.error) throw openPortsRes.error;
 
       const rules = (scopeRulesRes.data || []) as SurfaceMonitoredScopeRule[];
       setScopeRules(rules);
@@ -313,11 +471,66 @@ export const useSurfaceScanFindings = () => {
         .map((record) => mapRecord(record))
         .filter((record): record is SurfaceFindingRow => Boolean(record));
 
+      const openPorts = (openPortsRes.data || []) as SurfaceOpenPortRow[];
+      const openPortJobIds = [
+        ...new Set([
+          ...openPorts.map((row) => String(row.scan_job_id || '').trim()),
+          ...normalizedRows.map((row) => String(row.scan_job_id || '').trim()),
+        ].filter(Boolean)),
+      ];
+      const jobTargets = new Map<string, { raw_target: string; normalized_target: string; hostname: string }>();
+      if (openPortJobIds.length > 0) {
+        const { data: jobRows, error: jobsError } = await supabase
+          .from('surface_scan_jobs' as any)
+          .select('id, raw_target, normalized_target, hostname')
+          .in('id', openPortJobIds);
+        if (jobsError) throw jobsError;
+        for (const row of (jobRows || []) as Array<Record<string, unknown>>) {
+          jobTargets.set(String(row.id || ''), {
+            raw_target: String(row.raw_target || ''),
+            normalized_target: String(row.normalized_target || ''),
+            hostname: String(row.hostname || ''),
+          });
+        }
+      }
+
+      const normalizedRowsWithJobTargets = normalizedRows.map((row) => {
+        if (
+          !['open_port_exposed', 'service_fingerprint_exposed', 'sensitive_port_exposed'].includes(row.finding_type)
+          || !row.scan_job_id
+        ) {
+          return row;
+        }
+        const currentAsset = normalizeAssetKey(row.affected_asset || '');
+        if (!currentAsset || (!isIpv4(currentAsset) && !isIpv6(currentAsset))) return row;
+        const jobTarget = jobTargets.get(String(row.scan_job_id || ''));
+        const jobHost = targetHostFromValue(jobTarget?.hostname || jobTarget?.normalized_target || jobTarget?.raw_target || '');
+        if (!jobHost || isIpv4(jobHost) || isIpv6(jobHost)) return row;
+        const protocol = String(row.protocol || 'tcp').toLowerCase();
+        const port = Number(row.port || 0);
+        return {
+          ...row,
+          affected_asset: jobHost,
+          affected_url: row.affected_url || ([80, 443].includes(port) ? `${port === 443 ? 'https' : 'http'}://${jobHost}` : null),
+          title: port > 0 ? `Porta ${port}/${protocol.toUpperCase()} aperta su ${jobHost}` : row.title,
+          description: row.description
+            ? row.description.replace(currentAsset, `${jobHost} (${currentAsset})`)
+            : `Servizio esposto rilevato su ${jobHost} (${currentAsset}). CVSS/EPSS non disponibili finche non viene correlata una CVE specifica.`,
+          evidence: {
+            ...(row.evidence || {}),
+            scope_target_host: jobHost,
+            original_affected_asset: currentAsset,
+          },
+        } satisfies SurfaceFindingRow;
+      });
+
+      const syntheticOpenPortRows = buildSyntheticOpenPortRows(openPorts, jobTargets, normalizedRowsWithJobTargets);
+
       const reportRows = (reportRes.data || []) as Record<string, any>[];
       const canonicalRows = reportRows.filter((row) => isOrganizationScopeReport(row));
       const selectedReport = canonicalRows[0] || reportRows[0] || null;
-      const syntheticCveRows = buildSyntheticCveRowsFromReport(selectedReport, normalizedRows);
-      const mergedRows = [...normalizedRows, ...syntheticCveRows];
+      const syntheticCveRows = buildSyntheticCveRowsFromReport(selectedReport, [...normalizedRowsWithJobTargets, ...syntheticOpenPortRows]);
+      const mergedRows = [...normalizedRowsWithJobTargets, ...syntheticOpenPortRows, ...syntheticCveRows];
 
       setFindings(
         mergedRows

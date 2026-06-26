@@ -67,7 +67,7 @@ export const ConnectSecureConfigPanel: React.FC<ConnectSecureConfigPanelProps> =
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium">Attack Surface Mapper — ConnectSecure</p>
+          <p className="text-sm font-medium">Attack Surface Mapper — scanner esterno</p>
           <p className="text-xs text-muted-foreground mt-0.5">
             Credenziali configurate tramite secrets Supabase.
           </p>
