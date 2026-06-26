@@ -15,18 +15,18 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   const { isSales } = useUserRoles();
 
   return <SidebarProvider defaultOpen={true}>
-      <div className="min-h-screen flex w-full bg-background">
+      <div className="flex h-svh min-h-0 w-full overflow-hidden bg-background">
         <AppSidebar />
         
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {isSales && (
             <div className="px-4 py-1 text-[11px] leading-4 bg-amber-500/10 text-amber-300 border-b border-amber-500/25">
               Ambiente Demo, Funzionalità in corso di sviluppo.
             </div>
           )}
           <ClientIndicator />
-          
-          <main className="flex-1 p-6 overflow-x-hidden overflow-y-auto">
+
+          <main className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-6">
             {children}
             <AppFooter />
           </main>
