@@ -36,7 +36,7 @@ export const OpenPortsTable: React.FC<OpenPortsTableProps> = ({ rows, loading = 
   const [search, setSearch] = useState('');
   const [onlyRisky, setOnlyRisky] = useState(false);
   const [onlyWeb, setOnlyWeb] = useState(false);
-  const [onlyExposed, setOnlyExposed] = useState(true);
+  const [onlyExposed, setOnlyExposed] = useState(false);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -70,7 +70,7 @@ export const OpenPortsTable: React.FC<OpenPortsTableProps> = ({ rows, loading = 
         if (hostDelta !== 0) return hostDelta;
         return Number(a.port || 0) - Number(b.port || 0);
       });
-  }, [rows, search, onlyRisky, onlyWeb]);
+  }, [rows, search, onlyRisky, onlyWeb, onlyExposed]);
 
   return (
     <div className="space-y-3">

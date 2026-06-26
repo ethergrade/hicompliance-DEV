@@ -66,7 +66,7 @@ interface ModuleResultRow {
   completed_at: string | null;
   error_message?: string | null;
   normalized?: Record<string, any> | null;
-  raw?: Record<string, any> | null;
+  raw?: Record<string, unknown> | null;
   source?: string | null;
 }
 
@@ -99,12 +99,30 @@ interface ExposureOpenPortRow {
   ip: string | null;
   port: number;
   protocol: string;
+  state?: string | null;
   service_name: string | null;
   service_product: string | null;
   service_version: string | null;
   exposure_level: string;
   is_web: boolean;
   is_tls: boolean;
+  source?: string | null;
+  raw?: Record<string, unknown> | null;
+  remediation_hint?: string | null;
+  first_seen_at?: string | null;
+  last_seen_at?: string | null;
+}
+
+interface SurfaceAssetRow {
+  scan_job_id: string;
+  asset_type: string;
+  asset_value: string;
+  hostname: string | null;
+  root_domain: string | null;
+  ip: string | null;
+  source: string | null;
+  confidence?: string | null;
+  raw?: Record<string, unknown> | null;
 }
 
 interface ConfiguredScopeTarget {
@@ -481,6 +499,41 @@ const severityForPort = (port: number): 'critical' | 'high' | 'medium' | 'low' |
   return 'low';
 };
 
+const defaultServiceLabelForPort = (port: number): string => {
+  if (port === 80) return 'HTTP';
+  if (port === 443) return 'HTTPS';
+  if (port === 22) return 'SSH';
+  if (port === 25) return 'SMTP';
+  if (port === 53) return 'DNS';
+  if (port === 110) return 'POP3';
+  if (port === 143) return 'IMAP';
+  if (port === 465) return 'SMTPS';
+  if (port === 587) return 'SMTP Submission';
+  if (port === 993) return 'IMAPS';
+  if (port === 995) return 'POP3S';
+  if (port === 3306) return 'MySQL';
+  if (port === 5432) return 'PostgreSQL';
+  if (port === 3389) return 'RDP';
+  if (port === 5900) return 'VNC';
+  return '';
+};
+
+const openPortServiceLabel = (entry: Record<string, unknown>): string =>
+  firstText(
+    entry?.service,
+    entry?.service_name,
+    entry?.serviceName,
+    entry?.service_product,
+    entry?.product,
+    entry?.service_version,
+    defaultServiceLabelForPort(Number(entry?.port || 0)),
+  ) || 'Servizio non classificato';
+
+const compactHeaderName = (value: string): string =>
+  String(value || '')
+    .replace(/_/g, '-')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
 export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
   isAdminView = false,
   subdomains,
@@ -498,9 +551,11 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
   const [observations, setObservations] = useState<ObservationRow[]>([]);
   const [riskFindings, setRiskFindings] = useState<FindingRow[]>([]);
   const [exposureOpenPorts, setExposureOpenPorts] = useState<ExposureOpenPortRow[]>([]);
+  const [surfaceAssets, setSurfaceAssets] = useState<SurfaceAssetRow[]>([]);
   const [subdomainSearch, setSubdomainSearch] = useState('');
   const [subdomainPage, setSubdomainPage] = useState(1);
   const [rawExpanded, setRawExpanded] = useState(false);
+  const [connectsecureHeadersExpanded, setConnectsecureHeadersExpanded] = useState(false);
   const [scopeTargetSearch, setScopeTargetSearch] = useState('');
   const [selectedScopeTargetKey, setSelectedScopeTargetKey] = useState('');
 
@@ -647,12 +702,13 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
           setObservations([]);
           setRiskFindings([]);
           setExposureOpenPorts([]);
+          setSurfaceAssets([]);
           return;
         }
 
         const jobIds = scopeJobs.map((job) => String(job.id));
 
-        const [moduleRows, observationRows, findingRows, exposureRows] = await Promise.all([
+        const [moduleRows, observationRows, findingRows, exposureRows, assetRows] = await Promise.all([
           fetchRowsByJobIds<ModuleResultRow>(
             'surface_scan_module_results',
             'scan_job_id, module_key, module_label, status, severity, duration_ms, completed_at, error_message, normalized, raw, source',
@@ -673,9 +729,15 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
           ),
           fetchRowsByJobIds<ExposureOpenPortRow>(
             'surface_open_ports',
-            'scan_job_id, host, ip, port, protocol, service_name, service_product, service_version, exposure_level, is_web, is_tls',
+            'scan_job_id, host, ip, port, protocol, state, service_name, service_product, service_version, exposure_level, is_web, is_tls, source, raw, remediation_hint, first_seen_at, last_seen_at',
             jobIds,
             { orderBy: 'last_seen_at', ascending: false },
+          ),
+          fetchRowsByJobIds<SurfaceAssetRow>(
+            'surface_assets',
+            'scan_job_id, asset_type, asset_value, hostname, root_domain, ip, source, confidence, raw',
+            jobIds,
+            { orderBy: 'last_seen', ascending: false },
           ),
         ]);
 
@@ -688,6 +750,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
         setObservations(observationRows);
         setRiskFindings(prioritizedFindings);
         setExposureOpenPorts(exposureRows);
+        setSurfaceAssets(assetRows);
       } catch (error) {
         console.error('Error loading SurfaceScan module cards:', error);
         setLatestScan(null);
@@ -698,6 +761,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
         setObservations([]);
         setRiskFindings([]);
         setExposureOpenPorts([]);
+        setSurfaceAssets([]);
       } finally {
         setLoading(false);
       }
@@ -806,6 +870,11 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
     [exposureOpenPorts, selectedScopeJobId],
   );
 
+  const selectedSurfaceAssets = useMemo(
+    () => (selectedScopeJobId ? surfaceAssets.filter((row) => String(row.scan_job_id) === selectedScopeJobId) : []),
+    [surfaceAssets, selectedScopeJobId],
+  );
+
   const observationByModule = useMemo(() => {
     const map: Record<string, ObservationRow | undefined> = {};
     for (const row of selectedObservations) {
@@ -903,12 +972,17 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
       const key = `${ip}|${port}|${protocol}`;
       if (!merged.has(key)) {
         merged.set(key, {
+          host: String(entry?.host || entry?.hostname || entry?.target || ip).trim() || ip,
           ip,
           port,
           protocol,
           service: entry?.service || null,
           product: entry?.product || null,
           source: entry?.source || 'scan_engine',
+          exposure_level: entry?.exposure_level || severityForPort(port),
+          is_web: Boolean(entry?.is_web) || [80, 443, 8080, 8443].includes(port),
+          is_tls: Boolean(entry?.is_tls) || [443, 8443, 993, 995, 465].includes(port),
+          raw: entry,
         });
       }
     }
@@ -921,12 +995,17 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
       const key = `${ip}|${port}|${protocol}`;
       if (!merged.has(key)) {
         merged.set(key, {
+          host: row.host || ip,
           ip,
           port,
           protocol,
           service: row.service_name || null,
           product: row.service_product || row.service_version || null,
-          source: 'exposure_pipeline',
+          source: row.source || row.raw?.source || 'exposure_pipeline',
+          exposure_level: row.exposure_level || severityForPort(port),
+          is_web: Boolean(row.is_web),
+          is_tls: Boolean(row.is_tls),
+          raw: row.raw || null,
         });
       }
     }
@@ -958,6 +1037,79 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
       hasBfs:          bfsObs.length > 0,
     };
   }, [selectedObservations]);
+
+  const connectsecureOverview = useMemo(() => {
+    const moduleRow = selectedModuleResults.find((row) => row.module_key === 'connectsecure');
+    const moduleNormalized = (moduleRow?.normalized || {}) as Record<string, unknown>;
+    const sourceMatchesConnectSecure = (value: unknown) =>
+      String(value || '').toLowerCase().includes('connectsecure');
+    const isConnectSecureScan = String(selectedScopeTargetRow?.profile || '').toLowerCase().includes('connectsecure');
+
+    const csAssets = selectedSurfaceAssets.filter((row) => sourceMatchesConnectSecure(row.source));
+    const subdomainSet = new Set<string>();
+    const ipSet = new Set<string>();
+
+    for (const asset of csAssets) {
+      const type = String(asset.asset_type || '').toLowerCase();
+      if (type.includes('subdomain')) {
+        const value = String(asset.hostname || asset.asset_value || '').trim().toLowerCase();
+        if (value) subdomainSet.add(value);
+      }
+      if (type.includes('ipv4') || type.includes('ipv6') || type === 'ip') {
+        const value = String(asset.ip || asset.asset_value || '').trim();
+        if (value) ipSet.add(value);
+      }
+    }
+
+    const portsFromSource = openPortRows.filter((entry) => {
+      const source = String(entry?.source || entry?.raw?.source || entry?.raw?.provider || '').toLowerCase();
+      return source.includes('connectsecure');
+    });
+    const ports = portsFromSource.length > 0 || !isConnectSecureScan ? portsFromSource : openPortRows;
+
+    for (const portRow of ports as Array<Record<string, unknown>>) {
+      const ip = String(portRow?.ip || '').trim();
+      if (ip) ipSet.add(ip);
+    }
+
+    const headerObs = selectedObservations.find((row) =>
+      row.module === 'connectsecure' && row.observation_type === 'http_server_banner'
+    );
+    const headersValue = (headerObs?.value?.headers || {}) as Record<string, unknown>;
+    const headerEntries = Object.entries(headersValue)
+      .map(([name, value]) => ({
+        name: compactHeaderName(name),
+        value: Array.isArray(value) ? value.join(', ') : String(value || '').trim(),
+      }))
+      .filter((entry) => entry.name && entry.value)
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const domainsFromBfs = Number(connectsecureSummary.domainsScanned || 0);
+    const normalizedAssets = Number(moduleNormalized.assets || 0);
+    const normalizedPorts = Number(moduleNormalized.ports || 0);
+
+    return {
+      hasData: Boolean(moduleRow || csAssets.length || ports.length || headerEntries.length || connectsecureSummary.hasBfs),
+      moduleRow,
+      targetIps: Array.from(ipSet).sort(),
+      subdomains: Array.from(subdomainSet).sort(),
+      ports,
+      headerEntries,
+      server: String(headerObs?.value?.server || '').trim(),
+      assetsCount: normalizedAssets || csAssets.length,
+      portsCount: Math.max(normalizedPorts || 0, ports.length),
+      subdomainsCount: Math.max(subdomainSet.size, domainsFromBfs || 0),
+      observationsCount: Number(moduleNormalized.observations || 0),
+      findingsCount: Number(moduleNormalized.findings || 0),
+    };
+  }, [
+    selectedModuleResults,
+    selectedScopeTargetRow?.profile,
+    selectedSurfaceAssets,
+    openPortRows,
+    selectedObservations,
+    connectsecureSummary,
+  ]);
 
   const moduleOutcomes = useMemo(() => {
     const outcomes: Record<string, ModuleOutcomeStatus> = {};
@@ -1551,32 +1703,140 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
               </div>
             </div>
 
-            <div className="rounded-lg border border-border p-3 space-y-3">
+            <div className="rounded-lg border border-border p-3 space-y-4 md:col-span-2 xl:col-span-3">
               <div className="flex items-center justify-between">
-                <div className="font-medium flex items-center gap-2"><Globe2 className="w-4 h-4 text-blue-400" />Attack Surface</div>
+                <div className="font-medium flex items-center gap-2"><Globe2 className="w-4 h-4 text-blue-400" />ConnectSecure ASM</div>
                 <Badge className={statusBadgeClass[moduleOutcomes.connectsecure || 'success_no_data']}>
                   {statusLabel(moduleOutcomes.connectsecure || 'success_no_data')}
                 </Badge>
               </div>
-              {connectsecureSummary.hasBfs ? (
-                <div className="space-y-2 text-xs">
-                  <div className="flex flex-wrap gap-2">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Badge variant="outline" className="text-[11px]">
-                          <Network className="w-3 h-3 mr-1" />{connectsecureSummary.domainsScanned} domini
-                        </Badge>
-                      </TooltipTrigger>
-                      <TooltipContent className="text-xs">Domini scansionati via BFS</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Badge variant="outline" className="text-[11px]">
-                          Depth {connectsecureSummary.maxDepth}
-                        </Badge>
-                      </TooltipTrigger>
-                      <TooltipContent className="text-xs">Profondità BFS raggiunta (max 10)</TooltipContent>
-                    </Tooltip>
+              {connectsecureOverview.hasData ? (
+                <div className="space-y-4 text-xs">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                    <div className="rounded-md border border-border/70 p-2">
+                      <div className="text-muted-foreground">Target IPs</div>
+                      <div className="text-lg font-semibold">{connectsecureOverview.targetIps.length}</div>
+                    </div>
+                    <div className="rounded-md border border-border/70 p-2">
+                      <div className="text-muted-foreground">Open Port/Protocol</div>
+                      <div className="text-lg font-semibold">{connectsecureOverview.portsCount}</div>
+                    </div>
+                    <div className="rounded-md border border-border/70 p-2">
+                      <div className="text-muted-foreground">Subdomains</div>
+                      <div className="text-lg font-semibold">{connectsecureOverview.subdomainsCount}</div>
+                    </div>
+                    <div className="rounded-md border border-border/70 p-2">
+                      <div className="text-muted-foreground">RAW Headers</div>
+                      <div className="text-lg font-semibold">{connectsecureOverview.headerEntries.length}</div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                    <div className="rounded-md border border-border/70 p-3 space-y-2">
+                      <div className="flex items-center gap-2 font-medium">
+                        <MapPin className="w-3.5 h-3.5 text-blue-400" />
+                        Target IP Addresses
+                        <Badge variant="secondary" className="text-[10px]">{connectsecureOverview.targetIps.length}</Badge>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {connectsecureOverview.targetIps.slice(0, 8).map((ip) => (
+                          <Badge key={ip} variant="outline" className="font-mono text-[11px]">
+                            {ip}
+                          </Badge>
+                        ))}
+                        {connectsecureOverview.targetIps.length === 0 && (
+                          <span className="text-muted-foreground">Nessun IP target salvato.</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border border-border/70 p-3 space-y-2">
+                      <div className="flex items-center gap-2 font-medium">
+                        <Cable className="w-3.5 h-3.5 text-emerald-400" />
+                        Open Port/Protocol
+                        <Badge variant="secondary" className="text-[10px]">{connectsecureOverview.ports.length}</Badge>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {connectsecureOverview.ports.slice(0, 12).map((entry: Record<string, unknown>, idx: number) => {
+                          const serviceLabel = openPortServiceLabel(entry);
+                          const severity = severityForPort(Number(entry?.port || 0));
+                          return (
+                            <Badge
+                              key={`${entry?.ip || entry?.host || 'port'}-${entry?.port || idx}-${entry?.protocol || 'tcp'}`}
+                              variant="outline"
+                              className={`text-[11px] ${severityBadgeClass[severity] || severityBadgeClass.info}`}
+                            >
+                              {entry?.port} - {serviceLabel}
+                            </Badge>
+                          );
+                        })}
+                        {connectsecureOverview.ports.length === 0 && (
+                          <span className="text-muted-foreground">Nessuna porta aperta ricevuta da ConnectSecure.</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {connectsecureOverview.headerEntries.length > 0 && (
+                    <div className="rounded-md border border-border/70 p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 font-medium">
+                          <Server className="w-3.5 h-3.5 text-sky-400" />
+                          RAW Headers
+                          <Badge variant="secondary" className="text-[10px]">{connectsecureOverview.headerEntries.length}</Badge>
+                          {connectsecureOverview.server && (
+                            <Badge variant="outline" className="text-[10px]">Server {connectsecureOverview.server}</Badge>
+                          )}
+                        </div>
+                        {connectsecureOverview.headerEntries.length > 8 && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-[11px]"
+                            onClick={() => setConnectsecureHeadersExpanded((prev) => !prev)}
+                          >
+                            {connectsecureHeadersExpanded ? 'Riduci' : 'Mostra tutti'}
+                          </Button>
+                        )}
+                      </div>
+                      <div className="divide-y divide-border/60 rounded border border-border/50 overflow-hidden">
+                        {(connectsecureHeadersExpanded
+                          ? connectsecureOverview.headerEntries
+                          : connectsecureOverview.headerEntries.slice(0, 8)
+                        ).map((entry) => (
+                          <div key={entry.name} className="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-1 px-2 py-1.5">
+                            <div className="font-medium text-muted-foreground">{entry.name}</div>
+                            <div className="font-mono text-[11px] break-all">{entry.value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {connectsecureOverview.subdomains.length > 0 && (
+                    <div className="rounded-md border border-border/70 p-3 space-y-2">
+                      <div className="flex items-center gap-2 font-medium">
+                        <Network className="w-3.5 h-3.5 text-violet-400" />
+                        Subdomains
+                        <Badge variant="secondary" className="text-[10px]">{connectsecureOverview.subdomains.length}</Badge>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-auto pr-1">
+                        {connectsecureOverview.subdomains.slice(0, 40).map((domain) => (
+                          <Badge key={domain} variant="outline" className="text-[10px]">
+                            {domain}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap gap-2 text-muted-foreground">
+                    <Badge variant="outline" className="text-[11px]">Assets {connectsecureOverview.assetsCount}</Badge>
+                    <Badge variant="outline" className="text-[11px]">Findings {connectsecureOverview.findingsCount}</Badge>
+                    <Badge variant="outline" className="text-[11px]">Observations {connectsecureOverview.observationsCount}</Badge>
+                    {connectsecureSummary.hasBfs && (
+                      <Badge variant="outline" className="text-[11px]">BFS depth {connectsecureSummary.maxDepth}</Badge>
+                    )}
                     {connectsecureSummary.emailsFound > 0 && (
                       <Badge variant="outline" className="text-[11px]">{connectsecureSummary.emailsFound} email</Badge>
                     )}
@@ -1584,12 +1844,9 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                       <Badge variant="outline" className="text-[11px]">{connectsecureSummary.employeesFound} dipendenti</Badge>
                     )}
                   </div>
-                  <p className="text-muted-foreground">
-                    {connectsecureSummary.totalVisited} domini visitati · profondità max {connectsecureSummary.maxDepth}
-                  </p>
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground">Attack Surface Mapper non configurato o non ancora eseguito.</p>
+                <p className="text-xs text-muted-foreground">ConnectSecure ASM non configurato o non ancora eseguito per il target attivo.</p>
               )}
             </div>
 
@@ -1799,12 +2056,12 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                 {openPortRows.slice(0, 8).map((entry: any, idx: number) => (
                   <div key={`${entry?.ip || 'ip'}-${entry?.port || idx}`} className="rounded border border-border/70 p-2 text-xs space-y-1">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium">{entry?.ip || '-'}:{entry?.port}</span>
+                      <span className="font-medium">{entry?.ip || entry?.host || '-'}:{entry?.port}</span>
                       <Badge className={severityBadgeClass[severityForPort(Number(entry?.port || 0))] || severityBadgeClass.low}>
                         {severityForPort(Number(entry?.port || 0)).toUpperCase()}
                       </Badge>
                     </div>
-                    <div className="text-muted-foreground">{entry?.service || entry?.product || 'Servizio non classificato'}</div>
+                    <div className="text-muted-foreground">{openPortServiceLabel(entry)}</div>
                     <div className="text-muted-foreground">Source: {entry?.source || '-'}</div>
                   </div>
                 ))}
