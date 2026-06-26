@@ -27,9 +27,16 @@ import {
   Shield,
   AlertTriangle,
   Eye,
+  Activity,
+  FileText,
+  Layers,
+  Mail,
+  Network,
   Plus,
   Trash2,
   Search,
+  Server,
+  Settings,
   ChevronDown,
   ChevronRight,
 } from 'lucide-react';
@@ -199,6 +206,14 @@ interface ReverseAssetRow {
 }
 
 const SurfaceScan360: React.FC = () => {
+  const overviewSectionRef = useRef<HTMLDivElement>(null);
+  const scopeSectionRef = useRef<HTMLDivElement>(null);
+  const connectSecureSectionRef = useRef<HTMLDivElement>(null);
+  const subdomainsSectionRef = useRef<HTMLDivElement>(null);
+  const findingsSectionRef = useRef<HTMLDivElement>(null);
+  const emailSectionRef = useRef<HTMLDivElement>(null);
+  const reportsSectionRef = useRef<HTMLDivElement>(null);
+  const liveSectionRef = useRef<HTMLDivElement>(null);
   const dependencyMapRef = useRef<HTMLDivElement>(null);
   const exposureSectionRef = useRef<HTMLDivElement>(null);
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
@@ -244,6 +259,18 @@ const SurfaceScan360: React.FC = () => {
   // Operators (admin/super_admin via isAdminUser, or sales) keep seeing everything.
   const clientReadOnly = !isAdminUser && !isSuperAdmin && !isSales;
 
+  const sectionNavItems = useMemo(() => [
+    { key: 'overview', label: 'Overview', icon: Globe, ref: overviewSectionRef },
+    { key: 'scope', label: 'Scope', icon: Settings, ref: scopeSectionRef, hidden: clientReadOnly },
+    { key: 'exposure', label: 'Exposure', icon: Server, ref: exposureSectionRef, hidden: clientReadOnly },
+    { key: 'connectsecure', label: 'ConnectSecure', icon: Network, ref: connectSecureSectionRef, hidden: clientReadOnly },
+    { key: 'subdomains', label: 'Subdomains', icon: Layers, ref: subdomainsSectionRef, hidden: clientReadOnly },
+    { key: 'findings', label: 'Findings', icon: Shield, ref: findingsSectionRef },
+    { key: 'email', label: 'Email/TLS', icon: Mail, ref: emailSectionRef },
+    { key: 'reports', label: 'Reports', icon: FileText, ref: reportsSectionRef },
+    { key: 'live', label: 'Live', icon: Activity, ref: liveSectionRef, hidden: clientReadOnly },
+  ].filter((item) => !item.hidden), [clientReadOnly]);
+
   const { ipScopeRules } = useMemo(
     () => splitMonitoredScopeRules(monitoredIpRules as any),
     [monitoredIpRules],
@@ -266,6 +293,10 @@ const SurfaceScan360: React.FC = () => {
 
   const scrollToExposureSection = () => {
     exposureSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const scrollToSection = (ref: React.RefObject<HTMLDivElement>) => {
+    ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const scanDiscovery = useMemo(() => {
@@ -670,13 +701,128 @@ const SurfaceScan360: React.FC = () => {
               Scansione completa della superficie di attacco esterna
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" onClick={scrollToExposureSection}>
-              Ports &amp; Technologies
-            </Button>
+        </div>
+
+        <div className="sticky top-0 z-20 -mx-6 border-b border-border bg-background/95 px-6 pb-3 pt-1 backdrop-blur">
+          <div className="grid grid-cols-2 gap-2 rounded-md bg-muted p-1 md:grid-cols-5 lg:grid-cols-9">
+            {sectionNavItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Button
+                  key={item.key}
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 justify-center gap-1.5 px-2 text-xs font-medium"
+                  onClick={() => scrollToSection(item.ref)}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span className="truncate">{item.label}</span>
+                </Button>
+              );
+            })}
           </div>
         </div>
 
+        <div ref={overviewSectionRef} className="scroll-mt-24 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Host unici scansionati</p>
+                    <p className="text-2xl font-bold text-foreground">
+                      {scanDiscovery.scannedDomains.length + scanDiscovery.scannedIps.length}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Target lanciati: {scanDiscovery.scannedTargets.length}
+                    </p>
+                  </div>
+                  <Globe className="w-8 h-8 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-sm text-muted-foreground">Vulnerabilità Critiche</p>
+                      <AlertBellButton alertCount={activeAlertsCount} onClick={() => setAlertDialogOpen(true)} />
+                    </div>
+                    <p className="text-2xl font-bold text-red-500">{findingsCounts.critical}</p>
+                  </div>
+                  <AlertTriangle className="w-8 h-8 text-red-500" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Finding Totali</p>
+                    <p className="text-2xl font-bold text-foreground">{findingsCounts.total}</p>
+                    <p className="text-xs text-muted-foreground">
+                      High: {findingsCounts.high} • Medium: {findingsCounts.medium} • Low: {findingsCounts.low}
+                    </p>
+                  </div>
+                  <Shield className="w-8 h-8 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Asset IP Monitorati</p>
+                    <p className="text-2xl font-bold text-foreground">{monitoredLiveIps.length}</p>
+                  </div>
+                  <Eye className="w-8 h-8 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Ultima Scansione</p>
+                    <p className="text-sm font-medium text-foreground">{scanDiscovery.lastScanLabel}</p>
+                  </div>
+                  <Eye className="w-8 h-8 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <SurfaceScanAlertBanner />
+          <SurfaceScanActionItems />
+        </div>
+
+        {!clientReadOnly && (
+          <div ref={exposureSectionRef} className="scroll-mt-24">
+            <SurfaceScanExposureSection isAdmin={isAdmin} />
+          </div>
+        )}
+
+        {!clientReadOnly && (
+          <div ref={connectSecureSectionRef} className="scroll-mt-24">
+            <SurfaceScanModuleCards
+              isAdminView={isAdminUser}
+              subdomains={scanDiscovery.discoveredSubdomains}
+              onAddSubdomainToScope={handleAddSubdomainToScope}
+              onScanSubdomain={handleScanSingleSubdomain}
+            />
+          </div>
+        )}
+
+        <div ref={findingsSectionRef} className="scroll-mt-24">
+          <SecurityFindings />
+        </div>
+
+        <div ref={scopeSectionRef} className="scroll-mt-24 space-y-6">
         {(isAdminUser || isSuperAdmin) && (
           <Card className="border-primary/30 bg-primary/5">
             <CardHeader>
@@ -747,22 +893,6 @@ const SurfaceScan360: React.FC = () => {
           </Card>
         )}
 
-        <SubdomainDumpPanel isAdmin={isAdminUser} />
-
-        {(isAdminUser || isSuperAdmin) && organizationId && (
-          <Card className="border-border">
-            <CardHeader>
-              <CardTitle>Attack Surface — Albero Sottodomini</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Visualizzazione ad albero dei sottodomini scoperti via BFS (profondità max 10).
-              </p>
-            </CardHeader>
-            <CardContent>
-              <SubdomainDepthTree organizationId={organizationId} />
-            </CardContent>
-          </Card>
-        )}
-
         {(isAdminUser || isSuperAdmin) && (
           <Card className="border-border">
             <CardHeader>
@@ -793,93 +923,27 @@ const SurfaceScan360: React.FC = () => {
             </CardContent>
           </Card>
         )}
-
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Host unici scansionati</p>
-                  <p className="text-2xl font-bold text-foreground">
-                    {scanDiscovery.scannedDomains.length + scanDiscovery.scannedIps.length}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Target lanciati: {scanDiscovery.scannedTargets.length}
-                  </p>
-                </div>
-                <Globe className="w-8 h-8 text-primary" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-sm text-muted-foreground">Vulnerabilità Critiche</p>
-                    <AlertBellButton alertCount={activeAlertsCount} onClick={() => setAlertDialogOpen(true)} />
-                  </div>
-                  <p className="text-2xl font-bold text-red-500">{findingsCounts.critical}</p>
-                </div>
-                <AlertTriangle className="w-8 h-8 text-red-500" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Finding Totali</p>
-                  <p className="text-2xl font-bold text-foreground">{findingsCounts.total}</p>
-                  <p className="text-xs text-muted-foreground">
-                    High: {findingsCounts.high} • Medium: {findingsCounts.medium} • Low: {findingsCounts.low}
-                  </p>
-                </div>
-                <Shield className="w-8 h-8 text-primary" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Asset IP Monitorati</p>
-                  <p className="text-2xl font-bold text-foreground">{monitoredLiveIps.length}</p>
-                </div>
-                <Eye className="w-8 h-8 text-primary" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Ultima Scansione</p>
-                  <p className="text-sm font-medium text-foreground">{scanDiscovery.lastScanLabel}</p>
-                </div>
-                <Eye className="w-8 h-8 text-primary" />
-              </div>
-            </CardContent>
-          </Card>
         </div>
 
-        <SurfaceScanAlertBanner />
+        <div ref={subdomainsSectionRef} className="scroll-mt-24 space-y-6">
+          <SubdomainDumpPanel isAdmin={isAdminUser} />
 
-        <SurfaceScanActionItems />
+          {(isAdminUser || isSuperAdmin) && organizationId && (
+            <Card className="border-border">
+              <CardHeader>
+                <CardTitle>Attack Surface — Albero Sottodomini</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Visualizzazione ad albero dei sottodomini scoperti via BFS (profondità max 10).
+                </p>
+              </CardHeader>
+              <CardContent>
+                <SubdomainDepthTree organizationId={organizationId} />
+              </CardContent>
+            </Card>
+          )}
+        </div>
 
-        <SecurityFindings />
-
-        {!clientReadOnly && (
-          <div ref={exposureSectionRef}>
-            <SurfaceScanExposureSection isAdmin={isAdmin} />
-          </div>
-        )}
-
-        <Card className="border-border">
+        <Card ref={emailSectionRef} className="border-border scroll-mt-24">
           <CardHeader>
             <CardTitle className="text-base">Sicurezza Email (SPF / DKIM / DMARC)</CardTitle>
             <p className="text-sm text-muted-foreground">Stato configurazione anti-spoofing per ogni dominio in scope.</p>
@@ -1267,18 +1331,12 @@ const SurfaceScan360: React.FC = () => {
         </Card>
         )}
 
-        <SurfaceScanReportRepository scanJobs={scanJobs} organizationId={organizationId ?? undefined} canManage={!clientReadOnly} />
+        <div ref={reportsSectionRef} className="scroll-mt-24">
+          <SurfaceScanReportRepository scanJobs={scanJobs} organizationId={organizationId ?? undefined} canManage={!clientReadOnly} />
+        </div>
 
         {!clientReadOnly && (
-          <SurfaceScanModuleCards
-            isAdminView={isAdminUser}
-            subdomains={scanDiscovery.discoveredSubdomains}
-            onAddSubdomainToScope={handleAddSubdomainToScope}
-            onScanSubdomain={handleScanSingleSubdomain}
-          />
-        )}
-
-        {!clientReadOnly && (
+        <div ref={liveSectionRef} className="scroll-mt-24 space-y-6">
         <Card className="border-border">
           <CardHeader>
             <CardTitle>Asset IP Pubblici Monitorati ({monitoredLiveIps.length} trovati)</CardTitle>
@@ -1379,9 +1437,7 @@ const SurfaceScan360: React.FC = () => {
             )}
           </CardContent>
         </Card>
-        )}
 
-        {!clientReadOnly && (
         <Card className="border-border">
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
@@ -1457,6 +1513,7 @@ const SurfaceScan360: React.FC = () => {
             </CardContent>
           )}
         </Card>
+        </div>
         )}
       </div>
 

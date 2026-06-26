@@ -475,7 +475,7 @@ export function csMapToFindings(result: CsResult, rootDomain: string, depth: num
       root_domain: rootDomain,
       source: 'connectsecure',
       confidence: 'high',
-      raw: { depth, dns_records: sub.dns_records || null },
+      raw: { depth: depth + 1, parent_domain: rootDomain, dns_records: sub.dns_records || null },
     });
   }
 

@@ -977,11 +977,19 @@ export async function runSurfaceScanEnrichment(
   const seenPortKeys = new Set<string>();
   const scanWarnings: string[] = [];
   const jobConfig = (job.config && typeof job.config === "object") ? job.config : {};
-  const { data: monitoredScopeRows } = await adminClient
-    .from("surface_scan_monitored_ips" as any)
-    .select("entry_type, input_value, ip_start, ip_end")
-    .eq("organization_id", organizationId);
+  const [{ data: monitoredScopeRows }, { data: organizationRuntime }] = await Promise.all([
+    adminClient
+      .from("surface_scan_monitored_ips" as any)
+      .select("entry_type, input_value, ip_start, ip_end")
+      .eq("organization_id", organizationId),
+    adminClient
+      .from("organizations" as any)
+      .select("surface_scan_extended")
+      .eq("id", organizationId)
+      .maybeSingle(),
+  ]);
   const { scopeDomains, ipScopeRules } = splitMonitoredScopeRules((monitoredScopeRows || []) as any[]);
+  const surfaceScanExtended = Boolean((organizationRuntime as any)?.surface_scan_extended);
 
   const scopeCounters = {
     in_scope: 0,
@@ -1282,14 +1290,21 @@ export async function runSurfaceScanEnrichment(
     if (jobConfig.auto_expand_subdomains === false) {
       return { discovered: 0, eligible: 0, inserted: 0, skippedExisting: 0, skippedCurrent: 0, skippedLimit: 0 };
     }
-    if (String(job.scan_type || "") === "subdomain_enrichment") {
-      return { discovered: 0, eligible: 0, inserted: 0, skippedExisting: 0, skippedCurrent: 0, skippedLimit: 0 };
-    }
-    if (parsedTarget.target_type !== "domain" || !rootDomain) {
+    if (!["domain", "subdomain"].includes(parsedTarget.target_type) || !rootDomain) {
       return { discovered: 0, eligible: 0, inserted: 0, skippedExisting: 0, skippedCurrent: 0, skippedLimit: 0 };
     }
 
-    const limit = toPositiveInt(Deno.env.get("SURFACESCAN_SUBDOMAIN_CHILD_JOB_LIMIT"), 75);
+    const maxDepth = Math.min(toPositiveInt((jobConfig as any).subdomain_max_depth, 10), 10);
+    const currentDepth = toPositiveInt((jobConfig as any).subdomain_depth, parsedTarget.target_type === "subdomain" ? 1 : 0);
+    if (currentDepth >= maxDepth) {
+      return { discovered: discoveredHostnames.size, eligible: 0, inserted: 0, skippedExisting: 0, skippedCurrent: 0, skippedLimit: 0 };
+    }
+
+    const configuredLimit = toPositiveInt(
+      (jobConfig as any).subdomain_child_job_limit ?? Deno.env.get("SURFACESCAN_SUBDOMAIN_CHILD_JOB_LIMIT"),
+      surfaceScanExtended ? 75 : 10,
+    );
+    const limit = surfaceScanExtended ? configuredLimit : Math.min(configuredLimit, 10);
     const cooldownHours = toPositiveInt(Deno.env.get("SURFACESCAN_SUBDOMAIN_CHILD_COOLDOWN_HOURS"), 24);
     const cooldownIso = new Date(Date.now() - cooldownHours * 60 * 60 * 1000).toISOString();
     const currentHost = String(hostname || "").trim().toLowerCase();
@@ -1350,14 +1365,22 @@ export async function runSurfaceScanEnrichment(
           config: {
             parent_scan_job_id: job.id,
             parent_target: parsedTarget.normalized_target,
-            discovered_from: "surface_scan_engine",
-            auto_expand_subdomains: false,
+            parent_depth: currentDepth,
+            subdomain_depth: currentDepth + 1,
+            subdomain_max_depth: maxDepth,
+            discovered_from: String((jobConfig as any).subdomain_source || "surface_scan_engine"),
+            discovered_parent: currentHost || parsedTarget.normalized_target,
+            auto_expand_subdomains: true,
             no_pentest_tools: true,
+            no_connectsecure: true,
           },
           summary: {
             parent_scan_job_id: job.id,
             root_domain: rootDomain,
-            discovered_from: "surface_scan_engine",
+            parent_depth: currentDepth,
+            subdomain_depth: currentDepth + 1,
+            subdomain_max_depth: maxDepth,
+            discovered_from: String((jobConfig as any).subdomain_source || "surface_scan_engine"),
           },
         });
 
@@ -1387,6 +1410,10 @@ export async function runSurfaceScanEnrichment(
           root_domain: rootDomain,
           limit,
           cooldown_hours: cooldownHours,
+          surface_scan_extended: surfaceScanExtended,
+          depth: currentDepth,
+          next_depth: currentDepth + 1,
+          max_depth: maxDepth,
           sample: selected.slice(0, 30),
         },
         severity: "info",
@@ -1396,6 +1423,10 @@ export async function runSurfaceScanEnrichment(
         root_domain: rootDomain,
         limit,
         cooldown_hours: cooldownHours,
+        surface_scan_extended: surfaceScanExtended,
+        depth: currentDepth,
+        next_depth: currentDepth + 1,
+        max_depth: maxDepth,
       });
     }
 
@@ -8237,8 +8268,15 @@ export async function runSurfaceScanEnrichment(
     },
   };
 
-  // ── ConnectSecure Attack Surface Mapper — BFS depth 10 ───────────────────
+  // ── ConnectSecure Attack Surface Mapper — root/scope scan only ───────────
   const runConnectSecureModule = async () => {
+    if (String(job.scan_type || "") === "subdomain_enrichment" || (jobConfig as any).no_connectsecure === true) {
+      await recordModuleSkipped(modules.connectsecure, "internal_subdomain_enrichment", {
+        scan_type: job.scan_type || null,
+      });
+      return;
+    }
+
     const { data: csCfg } = await adminClient
       .from("connectsecure_config" as any)
       .select("pod_host, client_auth_token, company_id, enabled")
@@ -8264,179 +8302,109 @@ export async function runSurfaceScanEnrichment(
       return;
     }
 
-    const MAX_DEPTH   = 10;
-    const MAX_DOMAINS = 500;
-    const session     = { current: await csAuthorize(cfg) };
-
     const startDomain = rootDomain || hostname || job.normalized_target || "";
     if (!startDomain) {
       await recordModuleSkipped(modules.connectsecure, "no_root_domain", {});
       return;
     }
 
-    const queue: Array<{ domain: string; depth: number; parentDomain?: string }> = [
-      { domain: startDomain, depth: 0 },
-    ];
-    const visited     = new Set<string>();
-    const queued      = new Set<string>([startDomain]);
-    let totalScanned  = 0;
-    let maxDepthReached = 0;
+    const session = { current: await csAuthorize(cfg) };
+    const domainId = await csGetOrCreateDomain(cfg, session, startDomain, adminClient, organizationId);
+    const scanRequestedAt = new Date(Date.now() - 5_000).toISOString();
+    await adminClient.from("connectsecure_domain_registry" as any).upsert({
+      organization_id: organizationId,
+      domain: startDomain,
+      cs_domain_id: domainId,
+      depth: 0,
+      parent_domain: null,
+      last_scanned_at: scanRequestedAt,
+    }, { onConflict: "organization_id,domain" });
 
-    while (queue.length > 0 && totalScanned < MAX_DOMAINS) {
-      const currentDepth  = queue[0].depth;
-      const batchItems    = queue.splice(0, queue.filter(q => q.depth === currentDepth).length);
-      const unvisited     = batchItems.filter(b => !visited.has(b.domain));
+    await csScanNow(cfg, session, [{ name: startDomain, domain: startDomain, company_id: cfg.company_id, id: domainId }]);
+    const result = await csWaitForResults(cfg, session, domainId, startDomain, 420_000, scanRequestedAt);
+    const { assets, findings, ports, observations, sensitiveData } = csMapToFindings(result, startDomain, 0);
 
-      if (unvisited.length === 0) continue;
-      unvisited.forEach(b => visited.add(b.domain));
+    for (const a of assets) {
+      await insertAsset({
+        asset_type:  a.asset_type,
+        asset_value: a.asset_value,
+        hostname:    a.hostname || undefined,
+        root_domain: a.root_domain || undefined,
+        ip:          a.ip || undefined,
+        source:      a.source,
+        confidence:  a.confidence,
+        raw:         a.raw || {},
+      });
+    }
 
-      // Crea/recupera domain IDs in ConnectSecure
-      const domainObjs: Array<{ name: string; domain: string; company_id: number; id: number; depth: number }> = [];
-      for (const b of unvisited) {
-        try {
-          const id = await csGetOrCreateDomain(cfg, session, b.domain, adminClient, organizationId);
-          domainObjs.push({ name: b.domain, domain: b.domain, company_id: cfg.company_id, id, depth: b.depth });
-          // Aggiorna parent + timestamp nel registry
-          await adminClient.from("connectsecure_domain_registry" as any).upsert({
-            organization_id: organizationId,
-            domain: b.domain,
-            cs_domain_id: id,
-            depth: b.depth,
-            parent_domain: b.parentDomain || null,
-            last_scanned_at: new Date().toISOString(),
-          }, { onConflict: "organization_id,domain" });
-        } catch (err) {
-          console.warn("[connectsecure] getOrCreateDomain failed:", b.domain, err);
-        }
-      }
+    for (const f of findings) {
+      await insertFinding({
+        provider:       f.provider,
+        module:         f.module,
+        finding_type:   f.finding_type,
+        severity:       f.severity,
+        title:          f.title,
+        description:    f.description,
+        affected_asset: f.affected_asset,
+        ip:             f.ip || undefined,
+        port:           f.port || undefined,
+        protocol:       f.protocol || undefined,
+        cve:            f.cve || [],
+        cwe:            f.cwe || [],
+        cvss:           f.cvss || undefined,
+        evidence:       f.evidence || {},
+        remediation:    f.remediation || undefined,
+      });
+    }
 
-      if (domainObjs.length === 0) continue;
+    for (const p of ports) {
+      await insertOpenPort(
+        p.port, p.host, p.ip, p.protocol,
+        "connectsecure",
+        p.serviceName, p.serviceVersion, p.banner,
+      );
+    }
 
-      // Lancia scansione batch
-      const scanRequestedAt = new Date(Date.now() - 5_000).toISOString();
-      try {
-        await csScanNow(cfg, session, domainObjs);
-      } catch (err) {
-        console.warn("[connectsecure] csScanNow failed for batch", err);
-        continue;
-      }
+    for (const obs of observations) {
+      await insertObservation({
+        module:           "connectsecure",
+        observation_type: obs.type,
+        title:            obs.title,
+        value:            obs.value,
+        severity:         obs.severity as any,
+      });
+    }
 
-      // Poll + fetch results per ogni dominio
-      for (const d of domainObjs) {
-        let result;
-        try {
-          result = await csWaitForResults(cfg, session, d.id, d.domain, 420_000, scanRequestedAt);
-        } catch (err) {
-          console.warn("[connectsecure] result polling failed:", d.domain, err);
-          continue;
-        }
+    if ((sensitiveData.creds?.length || 0) + (sensitiveData.hashes?.length || 0) > 0) {
+      await adminClient.from("connectsecure_sensitive_data" as any).insert({
+        organization_id: organizationId,
+        scan_job_id:     job.id,
+        domain:          sensitiveData.domain,
+        creds_count:     sensitiveData.creds?.length || 0,
+        hashes_count:    sensitiveData.hashes?.length || 0,
+        creds:           sensitiveData.creds || null,
+        hashes:          sensitiveData.hashes || null,
+      });
+    }
 
-        totalScanned++;
-        if (d.depth > maxDepthReached) maxDepthReached = d.depth;
-
-        const { assets, findings, ports, observations, sensitiveData } = csMapToFindings(
-          result, d.domain, d.depth
-        );
-
-        for (const a of assets) {
-          await insertAsset({
-            asset_type:  a.asset_type,
-            asset_value: a.asset_value,
-            hostname:    a.hostname || undefined,
-            root_domain: a.root_domain || undefined,
-            ip:          a.ip || undefined,
-            source:      a.source,
-            confidence:  a.confidence,
-            raw:         a.raw || {},
-          });
-        }
-
-        for (const f of findings) {
-          await insertFinding({
-            provider:      f.provider,
-            module:        f.module,
-            finding_type:  f.finding_type,
-            severity:      f.severity,
-            title:         f.title,
-            description:   f.description,
-            affected_asset: f.affected_asset,
-            ip:            f.ip || undefined,
-            port:          f.port || undefined,
-            protocol:      f.protocol || undefined,
-            cve:           f.cve || [],
-            cwe:           f.cwe || [],
-            cvss:          f.cvss || undefined,
-            evidence:      f.evidence || {},
-            remediation:   f.remediation || undefined,
-          });
-        }
-
-        for (const p of ports) {
-          await insertOpenPort(
-            p.port, p.host, p.ip, p.protocol,
-            "connectsecure",
-            p.serviceName, p.serviceVersion, p.banner,
-          );
-        }
-
-        for (const obs of observations) {
-          await insertObservation({
-            module:           "connectsecure",
-            observation_type: obs.type,
-            title:            obs.title,
-            value:            obs.value,
-            severity:         obs.severity as any,
-          });
-        }
-
-        // Salva creds/hashes (visibili agli admin — nessuna cifratura)
-        if ((sensitiveData.creds?.length || 0) + (sensitiveData.hashes?.length || 0) > 0) {
-          await adminClient.from("connectsecure_sensitive_data" as any).insert({
-            organization_id: organizationId,
-            scan_job_id:     job.id,
-            domain:          sensitiveData.domain,
-            creds_count:     sensitiveData.creds?.length || 0,
-            hashes_count:    sensitiveData.hashes?.length || 0,
-            creds:           sensitiveData.creds || null,
-            hashes:          sensitiveData.hashes || null,
-          });
-        }
-
-        // Enqueue subdomains al prossimo livello + seed scope per cron futuro
-        if (d.depth < MAX_DEPTH) {
-          for (const subDomain of csExtractSubdomains(result)) {
-            if (subDomain && !visited.has(subDomain) && !queued.has(subDomain)) {
-              queued.add(subDomain);
-              queue.push({ domain: subDomain, depth: d.depth + 1, parentDomain: d.domain });
-              try {
-                await adminClient.from("surface_scan_monitored_ips" as any).upsert({
-                  organization_id: organizationId,
-                  input_value:     subDomain,
-                  entry_type:      "domain",
-                  ip_start:        "",
-                  ip_end:          "",
-                  discovered_via:  "connectsecure_bfs",
-                  discovered_from: d.domain,
-                  created_by:      null,
-                }, { onConflict: "organization_id,input_value" });
-              } catch (e) {
-                console.warn("[connectsecure] scope seed failed:", subDomain, e);
-              }
-            }
-          }
-        }
-      }
+    const handedToInternalQueue = csExtractSubdomains(result)
+      .map((entry) => String(entry || "").trim().toLowerCase().replace(/\.$/, ""))
+      .filter((entry) => entry && entry !== startDomain && entry.endsWith(`.${rootDomain || startDomain}`));
+    for (const subDomain of handedToInternalQueue) {
+      discoveredHostnames.add(subDomain);
     }
 
     await insertObservation({
       module:           "connectsecure",
       observation_type: "bfs_scan_summary",
-      title:            "Attack Surface Mapper — BFS completato",
+      title:            "Attack Surface Mapper — root scan completato",
       value: {
-        domains_scanned:   totalScanned,
-        max_depth_reached: maxDepthReached,
-        total_visited:     visited.size,
-        max_depth_allowed: MAX_DEPTH,
+        domains_scanned: 1,
+        max_depth_reached: 0,
+        total_visited: 1,
+        max_depth_allowed: 10,
+        subdomains_handed_to_internal_queue: handedToInternalQueue.length,
+        internal_queue_limit_standard: 10,
       },
       severity: "info",
     });
@@ -8444,8 +8412,8 @@ export async function runSurfaceScanEnrichment(
     await insertExternalIntel(
       "connectsecure",
       rootDomain || hostname || "",
-      totalScanned > 0,
-      { domains_scanned: totalScanned, depth: maxDepthReached },
+      true,
+      { domains_scanned: 1, depth: 0, subdomains_handed_to_internal_queue: handedToInternalQueue.length },
       { company_id: cfg.company_id, pod_host: cfg.pod_host },
       "high",
     );

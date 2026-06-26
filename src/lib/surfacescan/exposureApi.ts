@@ -143,6 +143,8 @@ export type ExposureSummary = {
   tls_services: number;
   ssl_snapshots?: number;
   top_open_ports: Array<{ port: number; count: number }>;
+  included_scan_types?: string[];
+  source_counts?: Record<string, number>;
   technologies: Array<{ name: string; count: number }>;
   findings_by_severity: {
     critical: number;
@@ -169,6 +171,7 @@ export type ExposureOpenPortRow = {
   ip: string | null;
   port: number;
   protocol: string;
+  source?: string | null;
   state: string;
   service_name: string | null;
   service_product: string | null;
@@ -294,7 +297,7 @@ export async function fetchExposureJobs(customerId: string, limit = 20): Promise
     .from('surface_scan_jobs' as any)
     .select('id, created_at, completed_at, status, scan_name, scan_type, scan_profile, summary, config')
     .or(scopeFilter)
-    .eq('scan_type', 'exposure_port_technology')
+    .in('scan_type', ['exposure_port_technology', 'connectsecure_asm'])
     .order('created_at', { ascending: false })
     .limit(limit);
 
@@ -312,7 +315,7 @@ export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<Exposure
 
   const { data, error } = await supabase
     .from('surface_open_ports' as any)
-    .select('id, scan_job_id, target_id, host, ip, port, protocol, state, service_name, service_product, service_version, is_web, is_tls, exposure_level, remediation_hint, first_seen_at, last_seen_at, raw')
+    .select('id, scan_job_id, target_id, host, ip, port, protocol, source, state, service_name, service_product, service_version, is_web, is_tls, exposure_level, remediation_hint, first_seen_at, last_seen_at, raw')
     .in('scan_job_id', uniqueJobIds)
     .order('exposure_level', { ascending: false })
     .order('host', { ascending: true })
@@ -413,6 +416,7 @@ export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<Exposure
       ip,
       port,
       protocol,
+      source: String((finding as any)?.source || 'surface_findings'),
       state: 'open',
       service_name: service || null,
       service_product: null,
@@ -450,6 +454,7 @@ export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<Exposure
         ip,
         port,
         protocol,
+        source: String((entry as any)?.source || (value as any)?.source || 'surface_observations'),
         state: 'open',
         service_name: service || null,
         service_product: null,

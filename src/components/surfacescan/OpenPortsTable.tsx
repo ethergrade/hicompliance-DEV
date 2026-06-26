@@ -14,8 +14,9 @@ interface OpenPortsTableProps {
 const RISKY_PORTS = new Set([21, 23, 445, 3389, 5900, 6379, 9200, 9300, 11211, 27017, 3306, 5432, 1433, 1521]);
 const EXPOSED_LEVELS = new Set(['critical', 'high', 'medium']);
 
-function sourceLabel(raw?: Record<string, unknown> | null): string {
-  const src = String(raw?.source || raw?.provider || '').toLowerCase();
+function sourceLabel(row: ExposureOpenPortRow): string {
+  const raw = row.raw || {};
+  const src = String(row.source || raw?.source || raw?.provider || '').toLowerCase();
   if (src.includes('deno_tcp') || src === 'tcp_probe') return 'TCP Probe';
   if (src.includes('shodan')) return 'OSINT';
   if (src.includes('connectsecure') || src === 'cs') return 'ConnectSecure';
@@ -24,8 +25,9 @@ function sourceLabel(raw?: Record<string, unknown> | null): string {
   return 'Scan';
 }
 
-function sourceBadgeClass(raw?: Record<string, unknown> | null): string {
-  const src = String(raw?.source || raw?.provider || '').toLowerCase();
+function sourceBadgeClass(row: ExposureOpenPortRow): string {
+  const raw = row.raw || {};
+  const src = String(row.source || raw?.source || raw?.provider || '').toLowerCase();
   if (src.includes('shodan')) return 'bg-violet-500/20 text-violet-400 border-violet-500/30';
   if (src.includes('connectsecure') || src === 'cs') return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
   if (src.includes('pentest') || src.includes('ptools')) return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
@@ -56,7 +58,8 @@ export const OpenPortsTable: React.FC<OpenPortsTableProps> = ({ rows, loading = 
           row.service_product || '',
           row.service_version || '',
           row.exposure_level,
-          sourceLabel(row.raw),
+          row.source || '',
+          sourceLabel(row),
         ]
           .join(' ')
           .toLowerCase();
@@ -136,8 +139,8 @@ export const OpenPortsTable: React.FC<OpenPortsTableProps> = ({ rows, loading = 
                   <TableCell>{row.ip || '-'}</TableCell>
                   <TableCell>{row.port}</TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={`text-[10px] ${sourceBadgeClass(row.raw)}`}>
-                      {sourceLabel(row.raw)}
+                    <Badge variant="outline" className={`text-[10px] ${sourceBadgeClass(row)}`}>
+                      {sourceLabel(row)}
                     </Badge>
                   </TableCell>
                   <TableCell>{row.service_name || row.service_product || '-'}</TableCell>

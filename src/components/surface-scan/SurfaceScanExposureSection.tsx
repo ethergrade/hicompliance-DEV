@@ -35,6 +35,27 @@ interface SurfaceScanExposureSectionProps {
   isAdmin: boolean;
 }
 
+type AutoStartStatus = {
+  kind: 'running' | 'success' | 'error';
+  message: string;
+  detail?: string;
+  at: string;
+};
+
+const AUTO_START_COOLDOWN_MS = 12 * 60 * 60 * 1000;
+
+const hashAutoStartKey = (value: string): string => {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
+};
+
+const autoStartStorageKey = (organizationId: string, scopeSignature: string): string =>
+  `surfacescan360:auto-exposure:${organizationId}:${hashAutoStartKey(scopeSignature)}`;
+
 const statusLabel = (status: string): string => {
   const key = String(status || '').toLowerCase();
   if (key === 'completed') return 'Completata';
@@ -169,6 +190,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
   const [isControlsCollapsed, setIsControlsCollapsed] = useState(true);
   const [isSectionCollapsed, setIsSectionCollapsed] = useState(false);
   const [targetSnapshots, setTargetSnapshots] = useState<ExposureSummary['target_snapshots']>([]);
+  const [autoStartStatus, setAutoStartStatus] = useState<AutoStartStatus | null>(null);
 
   const [scanName, setScanName] = useState('Exposure Full Scan');
   const [customPorts, setCustomPorts] = useState('top1000');
@@ -340,11 +362,18 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
         if (options?.auto) {
           autoStartInFlightKeyRef.current = '';
           autoStartFailedKeyRef.current = '';
+          setAutoStartStatus({
+            kind: 'success',
+            message: 'Scansione scope automatica accodata in background',
+            detail: `Job ${result?.job_id || '-'} • Queue: ${result?.queue?.total || 0}`,
+            at: new Date().toISOString(),
+          });
+        } else {
+          toast.success('Scansione exposure avviata', {
+            description: `Job ${result?.job_id || '-'} • Queue: ${result?.queue?.total || 0}`,
+          });
         }
         setSelectedJobId(String(result?.job_id || ''));
-        toast.success(options?.auto ? 'Scansione scope avviata automaticamente' : 'Scansione exposure avviata', {
-          description: `Job ${result?.job_id || '-'} • Queue: ${result?.queue?.total || 0}`,
-        });
 
         // Kick immediato del poll per evitare job in coda senza avvio motori.
         try {
@@ -359,8 +388,15 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
         if (options?.auto && options.autoKey) {
           autoStartInFlightKeyRef.current = '';
           autoStartFailedKeyRef.current = options.autoKey;
+          setAutoStartStatus({
+            kind: 'error',
+            message: 'Auto-scan scope non accodato',
+            detail: error?.message || 'Errore durante avvio',
+            at: new Date().toISOString(),
+          });
+          return null;
         }
-        toast.error(options?.auto ? 'Auto-avvio scope non riuscito' : 'Avvio scansione non riuscito', {
+        toast.error('Avvio scansione non riuscito', {
           description: error?.message || 'Errore durante avvio',
         });
         throw error;
@@ -443,10 +479,29 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       || hasFailedLatestTargets;
     if (!shouldAutoStart) return;
 
-    const autoStartKey = [
+    const scopeSignature = [
       organizationId,
       [...scopeDomains].sort().join(','),
       [...scopePublicIps].sort().join(','),
+      customPorts,
+      fullControls.includeSubDiscovery ? 'sub=1' : 'sub=0',
+      fullControls.includePortScan ? 'ports=1' : 'ports=0',
+      fullControls.includeWebTech ? 'web=1' : 'web=0',
+      fullControls.includeSsl ? 'ssl=1' : 'ssl=0',
+    ].join('::');
+    const autoStartKey = `scope:${hashAutoStartKey(scopeSignature)}`;
+    if (typeof window !== 'undefined') {
+      try {
+        const storageKey = autoStartStorageKey(organizationId, scopeSignature);
+        const lastAttempt = Number(window.localStorage.getItem(storageKey) || 0);
+        if (Number.isFinite(lastAttempt) && Date.now() - lastAttempt < AUTO_START_COOLDOWN_MS) return;
+        window.localStorage.setItem(storageKey, String(Date.now()));
+      } catch (storageError) {
+        console.warn('SurfaceScan auto-start cooldown unavailable:', storageError);
+      }
+    }
+
+    const autoStartReason = [
       jobs
         .slice(0, 8)
         .map((job) => `${String(job?.id || '')}:${String(job?.status || '')}`)
@@ -460,6 +515,12 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
     if (autoStartInFlightKeyRef.current === autoStartKey) return;
     if (autoStartFailedKeyRef.current === autoStartKey) return;
     autoStartInFlightKeyRef.current = autoStartKey;
+    setAutoStartStatus({
+      kind: 'running',
+      message: 'Auto-scan scope accodato in background',
+      detail: autoStartReason ? 'Cooldown anti-duplicazione attivo per questo scope.' : undefined,
+      at: new Date().toISOString(),
+    });
 
     const payload: ExposureStartRequest = {
       tenant_id: organizationId,
@@ -565,6 +626,24 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
 
       {!isSectionCollapsed && (
         <CardContent className="space-y-5">
+          {autoStartStatus && (
+            <div className="rounded-lg border border-border bg-muted/20 p-3 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  variant={autoStartStatus.kind === 'error' ? 'destructive' : autoStartStatus.kind === 'running' ? 'secondary' : 'outline'}
+                >
+                  {autoStartStatus.kind === 'error' ? 'Auto-scan' : 'Background'}
+                </Badge>
+                <span className="font-medium text-foreground">{autoStartStatus.message}</span>
+                <span className="text-xs text-muted-foreground">
+                  {new Date(autoStartStatus.at).toLocaleString('it-IT')}
+                </span>
+              </div>
+              {autoStartStatus.detail && (
+                <p className="mt-1 text-xs text-muted-foreground">{autoStartStatus.detail}</p>
+              )}
+            </div>
+          )}
           <ExposureKpiCards summary={summary} />
           {targetSnapshots && targetSnapshots.length > 0 && (
             <div className="rounded-lg border border-border p-3 text-xs text-muted-foreground">
@@ -572,12 +651,19 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
                 const liveRunning = targetSnapshots.filter((entry) => ['running', 'waiting'].includes(String(entry.live?.status || '').toLowerCase())).length;
                 const liveQueued = targetSnapshots.filter((entry) => ['queued', 'pending'].includes(String(entry.live?.status || '').toLowerCase())).length;
                 const lastGood = targetSnapshots.filter((entry) => entry.snapshot_source === 'last_good').length;
+                const sourceCounts = Object.entries(summary?.source_counts || {});
                 return (
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="outline">Target scope: {targetSnapshots.length}</Badge>
                     <Badge variant="outline">Live running: {liveRunning}</Badge>
                     <Badge variant="outline">Live queued: {liveQueued}</Badge>
                     <Badge variant="secondary">Last-good fallback: {lastGood}</Badge>
+                    {(summary?.included_scan_types || []).map((scanType) => (
+                      <Badge key={`scan-type-${scanType}`} variant="outline">{scanType}</Badge>
+                    ))}
+                    {sourceCounts.map(([source, count]) => (
+                      <Badge key={`source-${source}`} variant="secondary">{source}: {count}</Badge>
+                    ))}
                   </div>
                 );
               })()}
