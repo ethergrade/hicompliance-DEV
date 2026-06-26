@@ -962,8 +962,10 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                 </div>
                 <Input
                   value={sensitivePowerQuery}
-                  onChange={(event) => setSensitivePowerQuery(event.target.value)}
-                  placeholder="Es. categoria:Password dominio:panapesca query:@panapesca.it valore:chrome marcato:2026"
+                  onChange={(event) =>
+                    setSensitivePowerQuery(event.target.value)
+                  }
+                  placeholder="Es. categoria:Password dominio:dominio.it query:@dominio.it valore:chrome marcato:2026"
                   className="h-9 text-xs"
                 />
                 <div className="flex flex-wrap items-center gap-2">
