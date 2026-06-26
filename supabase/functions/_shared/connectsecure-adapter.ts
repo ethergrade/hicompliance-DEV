@@ -63,8 +63,9 @@ export interface CsTargetIp {
   'IP Address': string;
   ASN?:         string;
   Location?:    string;
-  port_protocol?: string[];
+  port_protocol?: string[] | string;
   Vulnerabities?: string; // CSV di CVE IDs (typo intenzionale nella loro API)
+  Vulnerabilities?: string;
 }
 
 export interface CsSubdomain {
@@ -79,21 +80,21 @@ export interface CsResult {
   status:               string;
   attack_surface_domain_id: number;
   company_id:           number;
-  target_ips?:          CsTargetIp[];
-  subdomains?:          CsSubdomain[];
-  dns_records?:         Array<{ type: string; value: string }>;
+  target_ips?:          unknown;
+  subdomains?:          unknown;
+  dns_records?:         unknown;
   mx?:                  { hosts?: string[]; warnings?: string[]; error?: string };
   spf?:                 { valid?: boolean; record?: string; warnings?: string[]; dns_lookups?: number };
   dmarc?:               { valid?: boolean; record?: string; location?: string; warnings?: string[] };
   email_spoof_checks?:  Array<{ check: string; result: string; passed?: boolean }>;
-  emails?:              string[];
-  guessed_emails?:      string[];
-  usernames?:           string[];
-  employees?:           Array<{ name?: string; title?: string; email?: string }>;
+  emails?:              unknown;
+  guessed_emails?:      unknown;
+  usernames?:           unknown;
+  employees?:           unknown;
   raw_headers?:         Record<string, string>;
-  s3buckets?:           Array<{ name?: string; url?: string; public?: boolean }>;
-  creds?:               Array<Record<string, unknown>>;
-  hashes?:              Array<Record<string, unknown>>;
+  s3buckets?:           unknown;
+  creds?:               unknown;
+  hashes?:              unknown;
   created?:             string;
   updated?:             string;
 }
@@ -354,6 +355,82 @@ function portSeverity(p: number): 'critical' | 'high' | 'medium' | 'low' | 'info
   return 'low';
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function flattenList(value: unknown): unknown[] {
+  if (value === null || value === undefined) return [];
+  if (!Array.isArray(value)) return [value];
+  return value.flatMap(entry => flattenList(entry));
+}
+
+function hasMeaningfulValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (typeof value === 'boolean') return value === true;
+  if (Array.isArray(value)) return flattenList(value).some(hasMeaningfulValue);
+  if (isRecord(value)) return Object.values(value).some(hasMeaningfulValue);
+  return false;
+}
+
+function meaningfulRecords(value: unknown): Array<Record<string, unknown>> {
+  return flattenList(value)
+    .filter(isRecord)
+    .filter(record => Object.values(record).some(hasMeaningfulValue));
+}
+
+function meaningfulStrings(value: unknown): string[] {
+  return Array.from(new Set(flattenList(value)
+    .map(entry => String(entry || '').trim())
+    .filter(Boolean)));
+}
+
+function recordString(record: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return '';
+}
+
+function parsePortProtocols(value: unknown): Array<{ port: number; protocol: string }> {
+  const seen = new Set<string>();
+  const ports: Array<{ port: number; protocol: string }> = [];
+  for (const entry of flattenList(value)) {
+    const chunks = String(entry || '')
+      .split(/[,\s;]+/)
+      .map(chunk => chunk.trim())
+      .filter(Boolean);
+    for (const chunk of chunks) {
+      const match = chunk.match(/^(\d{1,5})(?:\/([a-z0-9]+))?$/i);
+      if (!match) continue;
+      const port = Number(match[1]);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) continue;
+      const protocol = String(match[2] || 'tcp').toLowerCase();
+      const key = `${port}/${protocol}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      ports.push({ port, protocol });
+    }
+  }
+  return ports;
+}
+
+export function csExtractSubdomains(result: Pick<CsResult, 'subdomains'>): string[] {
+  const subdomains = new Set<string>();
+  for (const sub of meaningfulRecords(result.subdomains)) {
+    const domain = recordString(sub, ['subdomain', 'domain', 'hostname', 'name'])
+      .toLowerCase()
+      .replace(/\.$/, '');
+    if (!domain || !domain.includes('.') || domain.includes('*')) continue;
+    subdomains.add(domain);
+  }
+  return Array.from(subdomains).sort();
+}
+
 export function csMapToFindings(result: CsResult, rootDomain: string, depth: number): CsMapResult {
   const assets:       CsMappedAsset[]   = [];
   const findings:     CsMappedFinding[] = [];
@@ -361,25 +438,31 @@ export function csMapToFindings(result: CsResult, rootDomain: string, depth: num
   const observations: CsMapResult['observations'] = [];
 
   // ── Subdomains → assets ───────────────────────────────────────────────────
-  for (const sub of result.subdomains || []) {
-    const domain = String(sub.subdomain || '').trim().toLowerCase();
+  for (const sub of meaningfulRecords(result.subdomains)) {
+    const domain = recordString(sub, ['subdomain', 'domain', 'hostname', 'name']).toLowerCase().replace(/\.$/, '');
     if (!domain) continue;
-    assets.push({ asset_type: 'subdomain', asset_value: domain, hostname: domain, root_domain: rootDomain, source: 'connectsecure', confidence: 'high', raw: { depth } });
+    assets.push({
+      asset_type: 'subdomain',
+      asset_value: domain,
+      hostname: domain,
+      root_domain: rootDomain,
+      source: 'connectsecure',
+      confidence: 'high',
+      raw: { depth, dns_records: sub.dns_records || null },
+    });
   }
 
   // ── target_ips → ports + CVE findings ────────────────────────────────────
-  for (const target of result.target_ips || []) {
-    const ip = String(target['IP Address'] || '').trim();
+  for (const target of meaningfulRecords(result.target_ips)) {
+    const ip = recordString(target, ['IP Address', 'ip_address', 'ip']).trim();
     if (!ip) continue;
     assets.push({ asset_type: 'ipv4', asset_value: ip, ip, root_domain: rootDomain, source: 'connectsecure', confidence: 'high' });
 
-    const cves = parseCsvCves(target.Vulnerabities);
-    const portProtos = Array.isArray(target.port_protocol) ? target.port_protocol : [];
+    const cves = parseCsvCves(String(target.Vulnerabities || target.Vulnerabilities || ''));
+    const portProtos = parsePortProtocols(target.port_protocol || target.ports || target.open_ports);
 
-    for (const ppRaw of portProtos) {
-      const [portStr, proto = 'tcp'] = String(ppRaw).split('/');
-      const port = parseInt(portStr, 10);
-      if (!port || isNaN(port)) continue;
+    for (const { port, protocol } of portProtos) {
+      const proto = protocol || 'tcp';
 
       ports.push({ port, host: ip, ip, protocol: proto.toLowerCase() });
 
@@ -455,42 +538,50 @@ export function csMapToFindings(result: CsResult, rootDomain: string, depth: num
   }
 
   // ── S3 Buckets esposti ────────────────────────────────────────────────────
-  for (const bucket of result.s3buckets || []) {
+  for (const bucket of meaningfulRecords(result.s3buckets)) {
+    const bucketName = recordString(bucket, ['name', 'bucket', 'bucket_name']);
+    const bucketUrl = recordString(bucket, ['url', 'uri', 'endpoint']);
+    if (!bucketName && !bucketUrl) continue;
     findings.push({
       provider:      'connectsecure',
       module:        'connectsecure',
       finding_type:  'exposed_storage_bucket',
       severity:      'high',
-      title:         `Bucket storage esposto: ${bucket.name || bucket.url || 'sconosciuto'}`,
-      description:   `Bucket ${bucket.name || ''} (${bucket.url || ''}) risulta pubblicamente accessibile.`,
-      affected_asset: bucket.url || bucket.name || rootDomain,
+      title:         `Bucket storage esposto: ${bucketName || bucketUrl}`,
+      description:   `Bucket ${bucketName || ''} (${bucketUrl || ''}) risulta pubblicamente accessibile.`,
+      affected_asset: bucketUrl || bucketName || rootDomain,
       evidence:      { bucket, source: 'connectsecure' },
       remediation:   'Impostare il bucket come privato e rivedere le policy di accesso.',
     });
   }
 
   // ── Observations: emails, employees, DNS ─────────────────────────────────
-  if ((result.emails?.length || 0) + (result.guessed_emails?.length || 0) > 0) {
+  const emails = meaningfulStrings(result.emails);
+  const guessedEmails = meaningfulStrings(result.guessed_emails);
+  const usernames = meaningfulStrings(result.usernames);
+  if (emails.length + guessedEmails.length + usernames.length > 0) {
     observations.push({
       type:     'discovered_emails',
       title:    `Email scoperte per ${rootDomain}`,
-      value:    { emails: result.emails || [], guessed: result.guessed_emails || [], usernames: result.usernames || [] },
+      value:    { emails, guessed: guessedEmails, usernames },
       severity: 'info',
     });
   }
-  if ((result.employees?.length || 0) > 0) {
+  const employees = meaningfulRecords(result.employees);
+  if (employees.length > 0) {
     observations.push({
       type:     'osint_employees',
       title:    `Dipendenti rilevati via OSINT per ${rootDomain}`,
-      value:    { employees: result.employees || [] },
+      value:    { employees },
       severity: 'info',
     });
   }
-  if ((result.dns_records?.length || 0) > 0) {
+  const dnsRecords = flattenList(result.dns_records).filter(hasMeaningfulValue);
+  if (dnsRecords.length > 0) {
     observations.push({
       type:     'dns_records',
       title:    `Record DNS per ${rootDomain}`,
-      value:    { dns_records: result.dns_records || [] },
+      value:    { dns_records: dnsRecords },
       severity: 'info',
     });
   }
@@ -509,8 +600,8 @@ export function csMapToFindings(result: CsResult, rootDomain: string, depth: num
     ports,
     observations,
     sensitiveData: {
-      creds:  result.creds,
-      hashes: result.hashes,
+      creds:  meaningfulRecords(result.creds),
+      hashes: meaningfulRecords(result.hashes),
       domain: rootDomain,
     },
   };

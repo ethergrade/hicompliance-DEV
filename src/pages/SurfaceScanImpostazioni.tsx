@@ -259,31 +259,31 @@ const SurfaceScanImpostazioni: React.FC = () => {
               </CardContent>
             </Card>
 
-            {/* BFS controls */}
+            {/* ConnectSecure ASM controls */}
             <Card className="border-border">
               <CardHeader>
-                <CardTitle>Scansione BFS</CardTitle>
+                <CardTitle>ConnectSecure ASM</CardTitle>
                 <CardDescription>
-                  Lancia una scansione BFS su tutti i clienti configurati, o solo sull'org corrente.
+                  Avvia Attack Surface Mapper ConnectSecure su tutti i clienti configurati, o solo sull'org corrente.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center gap-3 flex-wrap">
                   <Button onClick={handleSweepAll} disabled={sweepingAll}>
                     {sweepingAll ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Globe className="w-4 h-4 mr-2" />}
-                    Lancia BFS globale (tutte le org)
+                    Lancia ASM globale (tutte le org)
                   </Button>
 
                   {organizationId && (
                     <Button variant="outline" onClick={handleScanOrg} disabled={scanningOrg}>
                       {scanningOrg ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Play className="w-4 h-4 mr-2" />}
-                      Avvia BFS org corrente
+                      Avvia ASM org corrente
                     </Button>
                   )}
                 </div>
 
                 <p className="text-xs text-muted-foreground">
-                  "BFS globale" itera tutte le org con ConnectSecure abilitato. "Org corrente" scansiona solo l'org selezionata in sidebar.
+                  "ASM globale" itera tutte le org con ConnectSecure abilitato. "Org corrente" scansiona solo l'org selezionata in sidebar.
                 </p>
 
                 {sweepResult && (

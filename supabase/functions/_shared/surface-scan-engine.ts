@@ -5,6 +5,7 @@ import {
   csScanNow,
   csWaitForResults,
   csMapToFindings,
+  csExtractSubdomains,
   csNormalizeClientAuthToken,
   type CsConfig,
 } from "./connectsecure-adapter.ts";
@@ -8402,8 +8403,7 @@ export async function runSurfaceScanEnrichment(
 
         // Enqueue subdomains al prossimo livello + seed scope per cron futuro
         if (d.depth < MAX_DEPTH) {
-          for (const sub of result.subdomains || []) {
-            const subDomain = String(sub.subdomain || "").trim().toLowerCase();
+          for (const subDomain of csExtractSubdomains(result)) {
             if (subDomain && !visited.has(subDomain) && !queued.has(subDomain)) {
               queued.add(subDomain);
               queue.push({ domain: subDomain, depth: d.depth + 1, parentDomain: d.domain });

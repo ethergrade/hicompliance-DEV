@@ -1,0 +1,51 @@
+import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  csExtractSubdomains,
+  csMapToFindings,
+  type CsResult,
+} from "./connectsecure-adapter.ts";
+
+Deno.test("csMapToFindings normalizes nested ConnectSecure ASM arrays", () => {
+  const result = {
+    id: 1,
+    name: "example.com",
+    website: "example.com",
+    status: "Completed",
+    attack_surface_domain_id: 123,
+    company_id: 13805,
+    target_ips: [
+      {
+        "IP Address": "203.0.113.10",
+        ASN: "64500",
+        Location: "IT",
+        Vulnerabities: "",
+        port_protocol: "80, 443",
+      },
+    ],
+    subdomains: [[
+      { subdomain: "VPN.Example.com.", dns_records: { A: ["203.0.113.10"] } },
+      { subdomain: "mail.example.com" },
+    ]],
+    dns_records: [[]],
+    emails: [[]],
+    guessed_emails: [[]],
+    usernames: [[]],
+    s3buckets: [[]],
+    creds: [[]],
+    hashes: [[{ algorithm: "sha256", value: "sample" }]],
+    raw_headers: { server: "nginx" },
+  } satisfies CsResult;
+
+  const mapped = csMapToFindings(result, "example.com", 0);
+
+  assertEquals(csExtractSubdomains(result), ["mail.example.com", "vpn.example.com"]);
+  assert(mapped.assets.some(asset => asset.asset_type === "subdomain" && asset.asset_value === "vpn.example.com"));
+  assert(mapped.assets.some(asset => asset.asset_type === "ipv4" && asset.asset_value === "203.0.113.10"));
+  assertEquals(mapped.ports.map(port => `${port.port}/${port.protocol}`), ["80/tcp", "443/tcp"]);
+  assertEquals(mapped.findings.some(finding => finding.finding_type === "exposed_storage_bucket"), false);
+  assertEquals(mapped.observations.some(obs => obs.type === "discovered_emails"), false);
+  assertEquals(mapped.observations.some(obs => obs.type === "dns_records"), false);
+  assertEquals(mapped.observations.some(obs => obs.type === "http_server_banner"), true);
+  assertEquals(mapped.sensitiveData.creds?.length, 0);
+  assertEquals(mapped.sensitiveData.hashes?.length, 1);
+});
