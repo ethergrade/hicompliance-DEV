@@ -18,10 +18,10 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
 
   return (
     <SidebarProvider defaultOpen={true}>
-      <div className="min-h-screen flex w-full bg-background">
+      <div className="flex h-svh min-h-0 w-full overflow-hidden bg-background">
         <AppSidebar />
 
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {/* Mobile-only top bar with hamburger to open the sidebar sheet */}
           <div className="md:hidden sticky top-0 z-20 flex items-center gap-2 border-b border-border bg-background/95 backdrop-blur px-3 py-2">
             <SidebarTrigger aria-label="Apri menu" />
@@ -49,7 +49,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
 
           <ClientIndicator />
 
-          <main className="flex-1 p-6 overflow-x-hidden overflow-y-auto">
+          <main className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-6">
             {children}
             <AppFooter />
           </main>

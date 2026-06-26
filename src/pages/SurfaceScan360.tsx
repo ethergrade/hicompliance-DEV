@@ -906,7 +906,10 @@ const SurfaceScan360: React.FC = () => {
           </div>
         </div>
 
-        <div className="sticky top-0 z-30 -mx-6 border-b border-border bg-background/95 px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/85">
+        <div
+          data-testid="surface-scan-section-nav"
+          className="sticky top-0 z-40 -mx-6 border-b border-border bg-background/95 px-6 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/90"
+        >
           <div className="flex min-w-0 gap-1 overflow-x-auto rounded-md bg-muted p-1">
             {sectionNavItems.map((item) => {
               const Icon = item.icon;
