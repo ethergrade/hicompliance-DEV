@@ -484,6 +484,25 @@ const isNonEmptyObject = (value: unknown): boolean => {
   return Object.keys(value as Record<string, unknown>).length > 0;
 };
 
+const hasArrayItems = (value: unknown): boolean =>
+  Array.isArray(value) && value.some((entry) => String(entry ?? '').trim() !== '');
+
+const hasOwnValue = (value: Record<string, any>, key: string): boolean =>
+  Object.prototype.hasOwnProperty.call(value || {}, key)
+  && value[key] !== null
+  && value[key] !== undefined
+  && String(value[key]).trim() !== '';
+
+const hasKnownBoolean = (value: Record<string, any>, key: string): boolean =>
+  Object.prototype.hasOwnProperty.call(value || {}, key) && typeof value[key] === 'boolean';
+
+const hasPositiveNumber = (value: unknown): boolean => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0;
+};
+
+const hasAnyPositiveNumber = (...values: unknown[]): boolean => values.some(hasPositiveNumber);
+
 const severityRank: Record<string, number> = {
   critical: 5,
   high: 4,
@@ -1106,9 +1125,20 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
     const domainsFromBfs = Number(connectsecureSummary.domainsScanned || 0);
     const normalizedAssets = Number(moduleNormalized.assets || 0);
     const normalizedPorts = Number(moduleNormalized.ports || 0);
+    const normalizedFindings = Number(moduleNormalized.findings || 0);
+    const normalizedObservations = Number(moduleNormalized.observations || 0);
+    const hasNormalizedData = hasAnyPositiveNumber(
+      normalizedAssets,
+      normalizedPorts,
+      normalizedFindings,
+      normalizedObservations,
+      domainsFromBfs,
+      connectsecureSummary.emailsFound,
+      connectsecureSummary.employeesFound,
+    );
 
     return {
-      hasData: Boolean(moduleRow || csAssets.length || ports.length || headerEntries.length || connectsecureSummary.hasBfs),
+      hasData: Boolean(hasNormalizedData || csAssets.length || ports.length || headerEntries.length),
       moduleRow,
       targetIps: Array.from(ipSet).sort(),
       subdomains: Array.from(subdomainSet).sort(),
@@ -1118,8 +1148,8 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
       assetsCount: normalizedAssets || csAssets.length,
       portsCount: Math.max(normalizedPorts || 0, ports.length),
       subdomainsCount: Math.max(subdomainSet.size, domainsFromBfs || 0),
-      observationsCount: Number(moduleNormalized.observations || 0),
-      findingsCount: Number(moduleNormalized.findings || 0),
+      observationsCount: normalizedObservations,
+      findingsCount: normalizedFindings,
     };
   }, [
     selectedModuleResults,
@@ -1380,7 +1410,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
   }, [httpHeaderScannerFindings]);
   const httpSecurityOutcome = moduleOutcomes.http_security || 'success_no_data';
   const httpSecurityDiagnostic = moduleDiagnostics.http_security;
-  const httpSecurityEvaluated = httpSecurityOutcome === 'success_with_data' || httpSecurityOutcome === 'success_no_data';
+  const httpSecurityEvaluated = httpSecurityOutcome === 'success_with_data';
   const dnssec = (observationByModule.dnssec?.value || {}) as Record<string, any>;
   const dnsLookupOutcome = moduleOutcomes.dns || 'success_no_data';
   const dnsLookupDiagnostic = moduleDiagnostics.dns;
@@ -1427,6 +1457,141 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
   const serverInfo = (observationByModule.server_info?.value || {}) as Record<string, any>;
   const redirects = ((observationByModule.redirects?.value || observationByModule.redirect_chain?.value) || {}) as Record<string, any>;
   const mailConfig = (observationByModule.mail_config?.value || {}) as Record<string, any>;
+  const hasModuleRuntimeState = (moduleKey: string): boolean => {
+    const outcome = moduleOutcomes[moduleKey] || 'success_no_data';
+    return outcome === 'error' || outcome === 'running' || outcome === 'queued';
+  };
+  const moduleHasEvaluatedData = (moduleKey: string): boolean =>
+    (moduleOutcomes[moduleKey] || 'success_no_data') === 'success_with_data';
+  const shouldShowModuleCard = (moduleKey: string, hasData: boolean): boolean =>
+    hasData || hasModuleRuntimeState(moduleKey);
+
+  const httpSecurityHasData = Boolean(
+    httpSecurityDiagnostic
+    || (
+      moduleHasEvaluatedData('http_security')
+      && (
+        hasPositiveNumber(httpSecurity.score)
+        || hasOwnValue(httpSecurity, 'statusCode')
+        || hasOwnValue(httpSecurity, 'status_code')
+        || Boolean(toLabelValue(httpSecurity.grade))
+        || Object.values(httpChecks).some((entry) => typeof entry === 'boolean')
+        || hasAnyPositiveNumber(httpHeaderSummary.ok, httpHeaderSummary.weak, httpHeaderSummary.missing)
+        || httpHeaderScannerFindings.length > 0
+      )
+    )
+  );
+  const dnsSummary = (dnsLookupSummary?.summary || {}) as Record<string, any>;
+  const dnsSummaryHasData = Boolean(
+    hasPositiveNumber(dnsLookupSummary.score)
+    || Boolean(toLabelValue(dnsLookupSummary.grade))
+    || dnsLookupFindings.length > 0
+    || Object.values(dnsSummary).some((entry) => hasPositiveNumber(entry))
+  );
+  const dnsPostureHasData = Boolean(
+    dnsLookupDiagnostic
+    || dnsSummaryHasData
+  );
+  const dnssecHasData = Boolean(
+    moduleHasEvaluatedData('dnssec')
+    && (
+      hasKnownBoolean(dnssec, 'dnskey_present')
+      || hasKnownBoolean(dnssec, 'ds_present')
+      || hasKnownBoolean(dnssec, 'rrsig_present')
+      || hasArrayItems(dnssec.records?.dnskey)
+      || hasArrayItems(dnssec.records?.ds)
+    )
+  );
+  const qualityHasData = qualityRows.length > 0
+    || qualityFailedAudits.length > 0
+    || hasAnyPositiveNumber(
+      qualityCategories.performance,
+      qualityCategories.accessibility,
+      qualityCategories.best_practices,
+      qualityCategories.seo,
+    );
+  const openPortsHasData = openPortRows.length > 0;
+  const threatsHasData = Boolean(
+    (moduleHasEvaluatedData('threats') && isNonEmptyObject(threats))
+    || (moduleHasEvaluatedData('dns_blocklists') && isNonEmptyObject(blocklists))
+  );
+  const whoisHasData = Boolean(
+    whoisCoverage > 0
+    && (
+      toLabelValue(latestWhois?.registrar)
+      || toLabelValue(latestWhois?.expires)
+      || latestWhois?.days_to_expiry != null
+      || toLabelValue(latestWhois?.dnssec)
+    )
+  );
+  const sslTlsHasData = Boolean(
+    (moduleHasEvaluatedData('ssl_certificate') || moduleHasEvaluatedData('tls_summary'))
+    && (
+      hasKnownBoolean(ssl, 'trusted')
+      || hasOwnValue(ssl, 'expiresInDays')
+      || hasKnownBoolean(tls, 'tls12Supported')
+      || hasKnownBoolean(tls, 'tls13Supported')
+      || hasKnownBoolean(tls, 'tls10Supported')
+      || hasKnownBoolean(tls, 'tls11Supported')
+    )
+  );
+  const serverInfoHasData = Boolean(
+    toLabelValue(serverInfo.asn)
+    || toLabelValue(serverInfo.organization)
+    || toLabelValue(serverInfo.org)
+    || hasArrayItems(serverInfo.ports)
+  );
+  const serverLocationHasData = Boolean(
+    serverLocationCoverage > 0
+    && (
+      toLabelValue(latestServerLocation?.city)
+      || toLabelValue(latestServerLocation?.country)
+      || toLabelValue(latestServerLocation?.countryCode)
+      || toLabelValue(latestServerLocation?.ip)
+    )
+  );
+  const mailConfigHasData = Boolean(
+    hasArrayItems(mailConfig.mx_records)
+    || hasArrayItems(mailConfig.spf_records)
+    || hasArrayItems(mailConfig.dmarc_records)
+    || hasArrayItems(mailConfig.dkim_selectors_found)
+    || hasArrayItems(mailConfig.bimi_records)
+    || (
+      moduleHasEvaluatedData('mail_config')
+      && (
+        hasKnownBoolean(mailConfig, 'has_spf')
+        || hasKnownBoolean(mailConfig, 'has_dmarc')
+        || hasKnownBoolean(mailConfig, 'spf_valid')
+        || hasKnownBoolean(mailConfig, 'dmarc_valid')
+      )
+    )
+  );
+  const redirectsHasData = Boolean(
+    (moduleHasEvaluatedData('redirects') || moduleHasEvaluatedData('redirect_chain'))
+    && (
+      hasPositiveNumber(redirects.hopCount)
+      || hasKnownBoolean(redirects, 'redirectsToHttps')
+      || hasKnownBoolean(redirects, 'externalRedirect')
+    )
+  );
+  const passesHasData = passItems.length > 0;
+  const connectsecureHasData = connectsecureOverview.hasData;
+
+  const showPassesCard = shouldShowModuleCard('passes', passesHasData);
+  const showConnectsecureCard = shouldShowModuleCard('connectsecure', connectsecureHasData);
+  const showHttpSecurityCard = shouldShowModuleCard('http_security', httpSecurityHasData);
+  const showDnsPostureCard = dnsPostureHasData || hasModuleRuntimeState('dns');
+  const showDnssecCard = shouldShowModuleCard('dnssec', dnssecHasData);
+  const showQualityCard = shouldShowModuleCard('quality', qualityHasData);
+  const showOpenPortsCard = shouldShowModuleCard('open_ports', openPortsHasData);
+  const showThreatsCard = shouldShowModuleCard('threats', threatsHasData);
+  const showWhoisCard = shouldShowModuleCard('whois', whoisHasData);
+  const showSslTlsCard = shouldShowModuleCard('ssl_certificate', sslTlsHasData);
+  const showServerInfoCard = shouldShowModuleCard('server_info', serverInfoHasData);
+  const showServerLocationCard = shouldShowModuleCard('server_location', serverLocationHasData);
+  const showMailConfigCard = shouldShowModuleCard('mail_config', mailConfigHasData);
+  const showRedirectsCard = shouldShowModuleCard('redirects', redirectsHasData)
+    || shouldShowModuleCard('redirect_chain', redirectsHasData);
 
   const allSubdomains = useMemo(() => {
     const list = (subdomains && subdomains.length > 0 ? subdomains : discoveredSubdomains) || [];
@@ -1691,7 +1856,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            <div className="rounded-lg border border-border p-3 space-y-3">
+            <div hidden={!showPassesCard} className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium">Passes</div>
                 <Badge className={statusBadgeClass[moduleOutcomes.passes || 'success_no_data']}>
@@ -1722,7 +1887,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
               </div>
             </div>
 
-            <div className="rounded-lg border border-border p-3 space-y-4 md:col-span-2 xl:col-span-3">
+            <div hidden={!showConnectsecureCard} className="rounded-lg border border-border p-3 space-y-4 md:col-span-2 xl:col-span-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium flex items-center gap-2"><Globe2 className="w-4 h-4 text-blue-400" />Servizi esposti esterni</div>
                 <Badge className={statusBadgeClass[moduleOutcomes.connectsecure || 'success_no_data']}>
@@ -1869,7 +2034,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
               )}
             </div>
 
-            <div className="rounded-lg border border-border p-3 space-y-3">
+            <div hidden={!showHttpSecurityCard} className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium flex items-center gap-2"><Shield className="w-4 h-4" />HTTP Security</div>
                 <Badge className={statusBadgeClass[httpSecurityOutcome]}>
@@ -1952,7 +2117,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
               )}
             </div>
 
-            <div className="rounded-lg border border-border p-3 space-y-3">
+            <div hidden={!showDnsPostureCard} className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium">DNS Posture</div>
                 <Badge className={statusBadgeClass[dnsLookupOutcome]}>
@@ -2014,7 +2179,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
               </div>
             </div>
 
-            <div className="rounded-lg border border-border p-3 space-y-3">
+            <div hidden={!showDnssecCard} className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium">DNSSEC</div>
                 <Badge className={statusBadgeClass[moduleOutcomes.dnssec || 'success_no_data']}>
@@ -2029,7 +2194,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
               <p className="text-xs text-muted-foreground">Abilitare DNSSEC presso registrar/provider DNS e verificare DS in parent zone.</p>
             </div>
 
-            <div className="rounded-lg border border-border p-3 space-y-3">
+            <div hidden={!showQualityCard} className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium">Quality Summary</div>
                 <Badge className={statusBadgeClass[moduleOutcomes.quality || 'success_no_data']}>
@@ -2063,7 +2228,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
               )}
             </div>
 
-            <div className="rounded-lg border border-border p-3 space-y-3">
+            <div hidden={!showOpenPortsCard} className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium flex items-center gap-2"><Cable className="w-4 h-4" />Open Ports</div>
                 <Badge className={statusBadgeClass[moduleOutcomes.open_ports || 'success_no_data']}>
@@ -2091,7 +2256,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
               )}
             </div>
 
-            <div className="rounded-lg border border-border p-3 space-y-3">
+            <div hidden={!showThreatsCard} className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium">Threats</div>
                 <Badge className={statusBadgeClass[moduleOutcomes.threats || 'success_no_data']}>
@@ -2110,7 +2275,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
               </div>
             </div>
 
-            <div className="rounded-lg border border-border p-3 space-y-3">
+            <div hidden={!showWhoisCard} className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium flex items-center gap-2"><Globe2 className="w-4 h-4" />Domain WHOIS</div>
                 <Badge className={statusBadgeClass[moduleOutcomes.whois || 'success_no_data']}>
@@ -2133,7 +2298,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
               )}
             </div>
 
-            <div className="rounded-lg border border-border p-3 space-y-3">
+            <div hidden={!showSslTlsCard} className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium flex items-center gap-2"><Lock className="w-4 h-4" />SSL/TLS</div>
                 <Badge className={statusBadgeClass[moduleOutcomes.ssl_certificate || 'success_no_data']}>
@@ -2147,7 +2312,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
               </div>
             </div>
 
-            <div className="rounded-lg border border-border p-3 space-y-3">
+            <div hidden={!showServerInfoCard} className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium flex items-center gap-2"><Server className="w-4 h-4" />Server Info</div>
                 <Badge className={statusBadgeClass[moduleOutcomes.server_info || 'success_no_data']}>
@@ -2162,7 +2327,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
               </div>
             </div>
 
-            <div className="rounded-lg border border-border p-3 space-y-3">
+            <div hidden={!showServerLocationCard} className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium flex items-center gap-2"><MapPin className="w-4 h-4" />Server Location</div>
                 <Badge className={statusBadgeClass[moduleOutcomes.server_location || 'success_no_data']}>
@@ -2181,7 +2346,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
               )}
             </div>
 
-            <div className="rounded-lg border border-border p-3 space-y-3">
+            <div hidden={!showMailConfigCard} className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium flex items-center gap-2"><MailCheck className="w-4 h-4" />Mail Config</div>
                 <Badge className={statusBadgeClass[moduleOutcomes.mail_config || 'success_no_data']}>
@@ -2195,7 +2360,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
               </div>
             </div>
 
-            <div className="rounded-lg border border-border p-3 space-y-3">
+            <div hidden={!showRedirectsCard} className="rounded-lg border border-border p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium flex items-center gap-2"><Network className="w-4 h-4" />Redirect Chain</div>
                 <Badge className={statusBadgeClass[moduleOutcomes.redirects || moduleOutcomes.redirect_chain || 'success_no_data']}>
@@ -2311,7 +2476,9 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
 
           {selectedModuleResults.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              {moduleOrder.map((moduleKey) => {
+              {moduleOrder
+                .filter((moduleKey) => (moduleOutcomes[moduleKey] || 'success_no_data') !== 'success_no_data')
+                .map((moduleKey) => {
                 const status = moduleOutcomes[moduleKey] || 'success_no_data';
                 return (
                   <Badge key={moduleKey} variant="outline" className={statusBadgeClass[status]}>

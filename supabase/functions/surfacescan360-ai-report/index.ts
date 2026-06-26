@@ -598,6 +598,48 @@ function isPlaceholderSummary(value: string): boolean {
     || text === 'nessun dato';
 }
 
+const reportIdentityKeys = new Set([
+  'asset',
+  'asset_value',
+  'domain',
+  'domain_scanned',
+  'final_url',
+  'finalurl',
+  'host',
+  'hostname',
+  'ip',
+  'ip_address',
+  'root_domain',
+  'target',
+  'url',
+]);
+
+function hasMeaningfulReportValue(value: unknown, key = ''): boolean {
+  if (value === null || value === undefined) return false;
+  const normalizedKey = key.trim().toLowerCase();
+  if (Array.isArray(value)) return value.some((entry) => hasMeaningfulReportValue(entry, key));
+  if (typeof value === 'boolean') return value === true;
+  if (typeof value === 'number') return Number.isFinite(value) && value !== 0;
+  if (typeof value === 'string') {
+    if (reportIdentityKeys.has(normalizedKey)) return false;
+    return !isPlaceholderSummary(value) && !['-', '--', 'null', 'undefined'].includes(value.trim().toLowerCase());
+  }
+  if (typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>).some(([key, nested]) => {
+      if (['source', 'provider'].includes(String(key).toLowerCase())) return false;
+      return hasMeaningfulReportValue(nested, key);
+    });
+  }
+  return false;
+}
+
+function isReportableObservation(observation: any): boolean {
+  const type = String(observation?.observation_type || '').toLowerCase();
+  if (['module_skipped', 'rdap_unavailable'].includes(type)) return false;
+  if (['module_error', 'module_timeout'].includes(type)) return true;
+  return hasMeaningfulReportValue(observation?.value);
+}
+
 function mapIntelCategory(provider: string): string {
   const key = String(provider || '').toLowerCase();
   if (key.includes('shodan')) return 'Esposizione servizi pubblici';
@@ -2137,6 +2179,8 @@ Produci un report STRUTTURATO in italiano, formato JSON con campi:
 }
 Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN emoji.`;
 
+    const reportableObservations = observations.filter(isReportableObservation);
+
     const userPayload = {
       organization: { name: org?.name, legal_name: profile?.legal_name, sector: profile?.business_sector, nis2: profile?.nis2_classification },
       scan: {
@@ -2166,7 +2210,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       findings_by_severity: sevCount,
       top_findings: topFindings,
       intel_summary: intel.slice(0, 40),
-      key_observations: observations.slice(0, 80),
+      key_observations: reportableObservations.slice(0, 80),
       monitored_scope: monitored_scope.slice(0, 200),
       scope_guard_summary,
       cve_catalog: cve_catalog.slice(0, 80).map((item: any) => ({
@@ -2456,7 +2500,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
         return String(a.asset).localeCompare(String(b.asset));
       });
 
-    const observationsForReport = observations.map((observation: any) => {
+    const observationsForReport = reportableObservations.map((observation: any) => {
       const rawValue = observation?.value && typeof observation.value === 'object' ? observation.value as Record<string, any> : {};
       const compactValue: Record<string, unknown> = {};
       const passKeys = [
