@@ -5,6 +5,7 @@ import {
   csScanNow,
   csWaitForResults,
   csMapToFindings,
+  csNormalizeClientAuthToken,
   type CsConfig,
 } from "./connectsecure-adapter.ts";
 import {
@@ -8241,19 +8242,26 @@ export async function runSurfaceScanEnrichment(
       .from("connectsecure_config" as any)
       .select("pod_host, client_auth_token, company_id, enabled")
       .eq("organization_id", organizationId)
-      .eq("enabled", true)
       .maybeSingle();
 
-    if (!csCfg) {
-      await recordModuleSkipped(modules.connectsecure, "no_config", { organization_id: organizationId });
+    if (csCfg?.enabled === false) {
+      await recordModuleSkipped(modules.connectsecure, "disabled", { organization_id: organizationId });
       return;
     }
 
+    const globalPodHost = String(Deno.env.get("CS_POD_HOST") || "").trim();
+    const globalToken = String(Deno.env.get("CS_CLIENT_AUTH_TOKEN") || "").trim();
+    const globalCompany = String(Deno.env.get("CS_COMPANY_ID") || "").trim();
     const cfg: CsConfig = {
-      pod_host:          String(csCfg.pod_host),
-      client_auth_token: String(csCfg.client_auth_token),
-      company_id:        Number(csCfg.company_id),
+      pod_host: (globalPodHost || String(csCfg?.pod_host || "")).trim().replace(/^https?:\/\//i, "").replace(/\/+$/, ""),
+      client_auth_token: csNormalizeClientAuthToken(globalToken || String(csCfg?.client_auth_token || "")),
+      company_id: globalCompany ? Number(globalCompany) : Number(csCfg?.company_id || 0),
     };
+
+    if (!cfg.pod_host || !cfg.client_auth_token || !cfg.company_id) {
+      await recordModuleSkipped(modules.connectsecure, "no_config", { organization_id: organizationId });
+      return;
+    }
 
     const MAX_DEPTH   = 10;
     const MAX_DOMAINS = 500;

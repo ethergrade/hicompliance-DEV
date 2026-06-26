@@ -19,6 +19,22 @@ export interface CsSession {
   userId: string;
 }
 
+export function csNormalizeClientAuthToken(value: string): string {
+  let token = String(value || '').trim();
+  token = token.replace(/^['"]|['"]$/g, '').trim();
+  token = token.replace(/^Client-Auth-Token\s*:\s*/i, '').trim();
+
+  const compact = token.replace(/\s+/g, '');
+  const looksBase64 = /^[A-Za-z0-9+/]+={0,2}$/.test(compact) && compact.length % 4 === 0;
+  if (looksBase64) return compact;
+
+  if (token.includes(':')) {
+    return btoa(token);
+  }
+
+  return compact || token;
+}
+
 function normalizePodHost(podHost: string): string {
   return String(podHost || '').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
 }
@@ -85,7 +101,7 @@ export interface CsResult {
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 export async function csAuthorize(cfg: CsConfig): Promise<CsSession> {
-  const token = cfg.client_auth_token.trim();
+  const token = csNormalizeClientAuthToken(cfg.client_auth_token);
   const url = csUrl(cfg, '/w/authorize');
   const r = await fetch(url, {
     method:  'POST',
