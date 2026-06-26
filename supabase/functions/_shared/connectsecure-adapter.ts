@@ -366,7 +366,7 @@ export interface CsMapResult {
   assets:         CsMappedAsset[];
   findings:       CsMappedFinding[];
   ports:          CsMappedPort[];
-  observations:   Array<{ type: string; title: string; value: Record<string, unknown>; severity: string }>;
+  observations:   Array<{ module?: string; type: string; title: string; value: Record<string, unknown>; severity: string }>;
   sensitiveData:  { creds?: Array<Record<string, unknown>>; hashes?: Array<Record<string, unknown>>; domain: string };
 }
 
@@ -475,6 +475,18 @@ function storageBucketEvidence(record: Record<string, unknown>): { name: string;
     label: name || url,
     asset: url || name,
   };
+}
+
+function firstString(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return '';
+}
+
+function asStringArray(value: unknown): string[] {
+  return meaningfulStrings(value)
+    .map(entry => String(entry || '').trim())
+    .filter(Boolean);
 }
 
 function parsePortProtocols(value: unknown): Array<{ port: number; protocol: string }> {
@@ -778,6 +790,46 @@ export function csMapToFindings(result: CsResult, rootDomain: string, depth: num
     ...(result.spf?.warnings || []),
     ...(result.dmarc?.warnings || []),
   ].filter(Boolean);
+  const mxRecords = asStringArray(result.mx?.hosts);
+  const spfRecord = firstString(result.spf?.record);
+  const dmarcRecord = firstString(result.dmarc?.record);
+  const spoofChecks = meaningfulRecords(result.email_spoof_checks);
+  const hasMailConfigData = Boolean(
+    result.mx ||
+    result.spf ||
+    result.dmarc ||
+    spfRecord ||
+    dmarcRecord ||
+    mxRecords.length > 0 ||
+    spoofChecks.length > 0
+  );
+  if (hasMailConfigData) {
+    observations.push({
+      module:   'mail_config',
+      type:     'mail_config_summary',
+      title:    `Configurazione email per ${rootDomain}`,
+      value:    {
+        domain: rootDomain,
+        source: 'connectsecure',
+        has_mx: mxRecords.length > 0,
+        mx_records: mxRecords,
+        has_spf: Boolean(spfRecord || result.spf?.valid === true),
+        spf_records: spfRecord ? [spfRecord] : [],
+        spf_valid: result.spf?.valid ?? null,
+        spf_dns_lookups: result.spf?.dns_lookups ?? null,
+        spf_warnings: result.spf?.warnings || [],
+        has_dmarc: Boolean(dmarcRecord || result.dmarc?.valid === true),
+        dmarc_records: dmarcRecord ? [dmarcRecord] : [],
+        dmarc_valid: result.dmarc?.valid ?? null,
+        dmarc_location: result.dmarc?.location || rootDomain,
+        dmarc_warnings: result.dmarc?.warnings || [],
+        dkim_checked: false,
+        dkim_selectors_found: [],
+        email_spoof_checks: spoofChecks,
+      },
+      severity: 'info',
+    });
+  }
 
   if (mailWarnings.length > 0 || result.spf?.valid === false || result.dmarc?.valid === false) {
     const sevScore = (!result.spf?.valid ? 1 : 0) + (!result.dmarc?.valid ? 1 : 0) + (mailWarnings.length > 2 ? 1 : 0);

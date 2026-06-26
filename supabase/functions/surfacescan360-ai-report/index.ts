@@ -2193,7 +2193,30 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
     const observationsForReport = observations.map((observation: any) => {
       const rawValue = observation?.value && typeof observation.value === 'object' ? observation.value as Record<string, any> : {};
       const compactValue: Record<string, unknown> = {};
-      const passKeys = ['host', 'hostname', 'domain', 'target', 'url', 'ip', 'ip_address', 'host_ip', 'asn', 'org', 'type', 'policy'];
+      const passKeys = [
+        'host',
+        'hostname',
+        'domain',
+        'target',
+        'url',
+        'ip',
+        'ip_address',
+        'host_ip',
+        'asn',
+        'org',
+        'type',
+        'policy',
+        'has_mx',
+        'has_spf',
+        'has_dmarc',
+        'has_bimi',
+        'has_dkim',
+        'spf_valid',
+        'spf_dns_lookups',
+        'dmarc_valid',
+        'dmarc_location',
+        'dkim_checked',
+      ];
       for (const key of passKeys) {
         if (rawValue?.[key] != null && String(rawValue[key]).trim() !== '') {
           compactValue[key] = rawValue[key];
@@ -2207,6 +2230,11 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       }
       if (Array.isArray(rawValue?.hostnames)) {
         compactValue.hostnames = rawValue.hostnames.map((entry: any) => String(entry || '').trim()).filter(Boolean).slice(0, 25);
+      }
+      for (const key of ['mx_records', 'spf_records', 'dmarc_records', 'dkim_selectors_found', 'bimi_records', 'spf_warnings', 'dmarc_warnings']) {
+        if (Array.isArray(rawValue?.[key])) {
+          compactValue[key] = rawValue[key].map((entry: any) => String(entry || '').trim()).filter(Boolean).slice(0, 20);
+        }
       }
       if (Array.isArray(rawValue?.data)) {
         compactValue.data = rawValue.data.slice(0, 30).map((entry: any) => ({

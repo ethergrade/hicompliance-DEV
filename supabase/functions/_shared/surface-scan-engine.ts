@@ -7194,8 +7194,9 @@ export async function runSurfaceScanEnrichment(
     }
 
     for (const obs of observations) {
+      const moduleKey = String(obs.module || "").trim() || "connectsecure";
       await insertObservation({
-        module:           "connectsecure",
+        module:           moduleKey,
         observation_type: obs.type,
         title:            obs.title,
         value:            obs.value,
