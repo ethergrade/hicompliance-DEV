@@ -237,7 +237,7 @@ const SurfaceScanImpostazioni: React.FC = () => {
                   <p className="font-medium text-foreground/60">Secrets richiesti (via CLI):</p>
                   <code className="block">supabase secrets set CS_POD_HOST=pod401.myconnectsecure.com</code>
                   <code className="block">supabase secrets set CS_COMPANY_ID=12345</code>
-                  <code className="block">supabase secrets set CS_CLIENT_AUTH_TOKEN=aWN0cGx1cys...</code>
+                  <code className="block">supabase secrets set CS_CLIENT_AUTH_TOKEN='&lt;Client-Auth-Token base64 oppure tenant+client:secret&gt;'</code>
                 </div>
               </CardContent>
             </Card>

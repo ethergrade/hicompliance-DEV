@@ -165,6 +165,7 @@ Integrazione con CyberCNS/ConnectSecure per ricognizione esterna certificata.
 **Provider tag:** `connectsecure`
 
 > Il scan è asincrono. Le chiamate UI/cron triggerano lo scan e l'ingest prosegue in background: il token viene rigenerato a ogni run e su eventuale 401. Ogni run ConnectSecure standalone crea un `surface_scan_jobs` con modulo `connectsecure`, così la GUI SurfaceScan360 legge stato e risultati tramite `scan_job_id`. La vista `/r/company/jobs` resta solo diagnostica, perché ConnectSecure può restituire descrizioni generiche non correlate al dominio.
+> `CS_CLIENT_AUTH_TOKEN` puo' contenere il valore base64 gia' pronto per l'header `Client-Auth-Token` oppure la credenziale raw `tenant+client:secret`; l'adapter la normalizza prima di chiamare `/w/authorize`. BFS org corrente e BFS globale usano la stessa priorita': secret globali `CS_*`, poi override per-org, con `enabled=false` come blocco esplicito della singola org.
 
 ---
 

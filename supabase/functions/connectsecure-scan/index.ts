@@ -13,6 +13,7 @@ import {
   csAuthorize,
   csGetOrCreateDomain,
   csMapToFindings,
+  csNormalizeClientAuthToken,
   csScanNow,
   csWaitForResults,
   type CsConfig,
@@ -57,7 +58,7 @@ Deno.serve(async (req: Request) => {
   function mergeWithGlobal(dbCfg: Partial<CsConfig> = {}): CsConfig {
     return {
       pod_host:          (GLOBAL_POD_HOST || dbCfg.pod_host || '').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, ''),
-      client_auth_token: (GLOBAL_TOKEN    || dbCfg.client_auth_token || '').trim(),
+      client_auth_token: csNormalizeClientAuthToken(GLOBAL_TOKEN || dbCfg.client_auth_token || ''),
       company_id:        GLOBAL_COMPANY  ? parseInt(GLOBAL_COMPANY.trim(), 10) : (dbCfg.company_id ?? 0),
     };
   }
