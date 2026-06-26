@@ -1,5 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 export type ScanProfile = 'recon_safe' | 'cve_web' | 'cve_network';
@@ -56,16 +55,7 @@ export const useExternalScanJobs = () => {
       const data = q.state.data as ExternalScanJob[] | undefined;
       return data?.some((j) => ['queued', 'running'].includes(j.status)) ? 30000 : false;
     },
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('external_scan_jobs' as any)
-        .select('*')
-        .eq('organization_id', organizationId!)
-        .order('created_at', { ascending: false })
-        .limit(50);
-      if (error) throw error;
-      return (data ?? []) as unknown as ExternalScanJob[];
-    },
+    queryFn: async () => [] as ExternalScanJob[],
   });
 };
 
@@ -75,13 +65,7 @@ export const useExternalCveFindings = (jobId?: string) => {
     queryKey: ['external-cve-findings', organizationId, jobId],
     enabled: !!organizationId,
     refetchInterval: 30000,
-    queryFn: async () => {
-      let q = supabase.from('external_cve_findings' as any).select('*').eq('organization_id', organizationId!);
-      if (jobId) q = q.eq('scan_job_id', jobId);
-      const { data, error } = await q.order('risk_level', { ascending: false }).limit(500);
-      if (error) throw error;
-      return (data ?? []) as unknown as ExternalCveFinding[];
-    },
+    queryFn: async () => [] as ExternalCveFinding[],
   });
 };
 
@@ -93,25 +77,11 @@ export interface TriggerScanInput {
   resolved_ips?: string[];
 }
 
-export const useTriggerPentestScan = () => {
-  const { organizationId } = useClientOrganization();
+export const useTriggerExternalExposureScan = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: TriggerScanInput) => {
-      const { data, error } = await supabase.functions.invoke('pentest-tools-orchestrator', {
-        body: {
-          organization_id: organizationId,
-          target: input.target,
-          profile: input.profile,
-          authorization_proof: input.authorization_proof,
-          technologies: input.technologies ?? [],
-          resolved_ips: input.resolved_ips ?? [],
-          triggered_by: 'manual',
-        },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      return data;
+    mutationFn: async (_input: TriggerScanInput) => {
+      throw new Error('Motore di validazione attiva non ancora migrato al backend API');
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['external-scan-jobs'] });

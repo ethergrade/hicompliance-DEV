@@ -95,7 +95,7 @@ const ClientCrudDialog: React.FC<Props> = ({ open, onOpenChange, organization, o
             hicompliance_enabled: hicompliance,
             surface_scan360_enabled: surfaceScan,
             surface_scan_extended: surfaceScan && surfaceScanTier === 'extended',
-            pentest_tools_auto_validation: surfaceScan,
+            surface_scan_auto_validation: surfaceScan,
             dark_risk360_enabled: darkRisk || darkRiskEsteso,
             darkrisk_esteso_enabled: darkRiskEsteso,
             hicompliance_contract_start: hicompliance ? hicomplianceStart : null,

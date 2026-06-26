@@ -3759,7 +3759,7 @@ export type Database = {
           id: string
           irp_extended: boolean
           name: string
-          pentest_tools_auto_validation: boolean
+          surface_scan_auto_validation: boolean
           sales_owner_user_id: string | null
           services_pause_reason: string | null
           services_paused: boolean
@@ -3785,7 +3785,7 @@ export type Database = {
           id?: string
           irp_extended?: boolean
           name: string
-          pentest_tools_auto_validation?: boolean
+          surface_scan_auto_validation?: boolean
           sales_owner_user_id?: string | null
           services_pause_reason?: string | null
           services_paused?: boolean
@@ -3811,7 +3811,7 @@ export type Database = {
           id?: string
           irp_extended?: boolean
           name?: string
-          pentest_tools_auto_validation?: boolean
+          surface_scan_auto_validation?: boolean
           sales_owner_user_id?: string | null
           services_pause_reason?: string | null
           services_paused?: boolean
@@ -3826,7 +3826,7 @@ export type Database = {
         }
         Relationships: []
       }
-      pentest_tools_scans: {
+      external_exposure_scan_tasks: {
         Row: {
           created_at: string
           customer_id: string
@@ -3904,14 +3904,14 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "pentest_tools_scans_scan_job_id_fkey"
+            foreignKeyName: "external_exposure_scan_tasks_scan_job_id_fkey"
             columns: ["scan_job_id"]
             isOneToOne: false
             referencedRelation: "surface_scan_jobs"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "pentest_tools_scans_target_id_fkey"
+            foreignKeyName: "external_exposure_scan_tasks_target_id_fkey"
             columns: ["target_id"]
             isOneToOne: false
             referencedRelation: "surface_scan_targets"
@@ -4647,7 +4647,7 @@ export type Database = {
             foreignKeyName: "surface_exposure_findings_source_scan_id_fkey"
             columns: ["source_scan_id"]
             isOneToOne: false
-            referencedRelation: "pentest_tools_scans"
+            referencedRelation: "external_exposure_scan_tasks"
             referencedColumns: ["id"]
           },
           {
@@ -5313,7 +5313,7 @@ export type Database = {
             foreignKeyName: "surface_open_ports_source_scan_id_fkey"
             columns: ["source_scan_id"]
             isOneToOne: false
-            referencedRelation: "pentest_tools_scans"
+            referencedRelation: "external_exposure_scan_tasks"
             referencedColumns: ["id"]
           },
           {
@@ -5951,7 +5951,7 @@ export type Database = {
             foreignKeyName: "surface_ssl_results_source_scan_id_fkey"
             columns: ["source_scan_id"]
             isOneToOne: false
-            referencedRelation: "pentest_tools_scans"
+            referencedRelation: "external_exposure_scan_tasks"
             referencedColumns: ["id"]
           },
           {
@@ -6036,7 +6036,7 @@ export type Database = {
             foreignKeyName: "surface_web_technologies_source_scan_id_fkey"
             columns: ["source_scan_id"]
             isOneToOne: false
-            referencedRelation: "pentest_tools_scans"
+            referencedRelation: "external_exposure_scan_tasks"
             referencedColumns: ["id"]
           },
           {
@@ -6231,7 +6231,7 @@ export type Database = {
             foreignKeyName: "surface_open_ports_source_scan_id_fkey"
             columns: ["source_scan_id"]
             isOneToOne: false
-            referencedRelation: "pentest_tools_scans"
+            referencedRelation: "external_exposure_scan_tasks"
             referencedColumns: ["id"]
           },
           {

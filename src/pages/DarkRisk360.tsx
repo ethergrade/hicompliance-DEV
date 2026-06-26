@@ -119,7 +119,7 @@ const classifyThreatCategory = (title: string, findingType: string, source: stri
   if (/mail|email/.test(sourceText) && /leak|expos|compromis/.test(sourceText)) return 'Email esposte';
   if (/database|dump|db /.test(sourceText)) return 'Database leak';
   if (/phish|brand|impersonation/.test(sourceText)) return 'Phishing e brand abuse';
-  if (/open_port|open port|service_fingerprint|ports|pentest_tool|shodan/.test(sourceText)) return 'Servizi esposti';
+  if (/open_port|open port|service_fingerprint|ports|shodan/.test(sourceText)) return 'Servizi esposti';
   if (/dmarc|spf|dkim|mail_security|mx|bimi/.test(sourceText)) return 'Email security';
   if (/dns|tls|ssl|hsts|whois|rdap|http_security|headers/.test(sourceText)) return 'DNS e TLS';
   if (/safe_browsing|urlhaus|phishtank|reputation|dnsbl|threat/.test(sourceText)) return 'Reputation';

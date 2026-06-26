@@ -31,7 +31,6 @@ const TECHNOLOGY_TOKENS: RegExp[] = [
   /\bdrupal\b/gi,
   /\bjoomla\b/gi,
   /\bshodan\b/gi,
-  /\bpentest-?tools?\b/gi,
   /\bweb[\s-]?check\b/gi,
   /\burlscan\b/gi,
   /\bcrt\.sh\b/gi,
@@ -57,7 +56,7 @@ function isIpv4(value: string): boolean {
 
 function parseHostname(value: string): string | null {
   const raw = String(value || '')
-    .replace(/\b(?:shodan|urlscan|web\s*-?\s*check|pentest\s*-?\s*tools?)\b/gi, ' ')
+    .replace(/\b(?:shodan|urlscan|web\s*-?\s*check)\b/gi, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim();
   if (!raw) return null;
@@ -265,7 +264,7 @@ function getScopeReasonFromFinding(
 
 function normalizeAssetLabel(value: string): string {
   const raw = String(value || '')
-    .replace(/\b(?:shodan|urlscan|web\s*-?\s*check|pentest\s*-?\s*tools?)\b/gi, ' ')
+    .replace(/\b(?:shodan|urlscan|web\s*-?\s*check)\b/gi, ' ')
     .replace(/\bscope completo in monitoraggio\s*\(\d+\s*target\)/gi, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim();
@@ -367,7 +366,7 @@ function priorityFromCvss(cvss: number | null): { priority: string; color: strin
 function redactTechnologyMentions(value: string): string {
   let out = String(value || '');
   out = out
-    .replace(/\b(?:shodan|urlscan|web\s*-?\s*check|pentest\s*-?\s*tools?)\b/gi, 'SurfaceScan360');
+    .replace(/\b(?:shodan|urlscan|web\s*-?\s*check)\b/gi, 'SurfaceScan360');
   for (const token of TECHNOLOGY_TOKENS) out = out.replace(token, 'componente tecnologica');
   return out.replace(/\s{2,}/g, ' ').trim();
 }
@@ -507,7 +506,6 @@ function isPlaceholderSummary(value: string): boolean {
 
 function mapIntelCategory(provider: string): string {
   const key = String(provider || '').toLowerCase();
-  if (key.includes('pentest')) return 'Validazione esposizione e vulnerabilità';
   if (key.includes('shodan')) return 'Esposizione servizi pubblici';
   if (key.includes('urlscan')) return 'Comportamento applicativo esterno';
   if (key.includes('dns') || key.includes('mail')) return 'Postura DNS e posta';

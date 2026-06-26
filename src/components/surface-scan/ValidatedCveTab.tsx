@@ -15,10 +15,10 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import {
   useExternalScanJobs,
   useExternalCveFindings,
-  useTriggerPentestScan,
+  useTriggerExternalExposureScan,
   type ScanProfile,
   type ExternalCveFinding,
-} from '@/hooks/usePentestTools';
+} from '@/hooks/useExternalExposureValidation';
 
 const severityClass: Record<string, string> = {
   critical: 'bg-destructive text-destructive-foreground',
@@ -58,7 +58,7 @@ export const ValidatedCveTab: React.FC = () => {
   const [filterJobId, setFilterJobId] = useState<string | undefined>();
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const { data: findings = [], isLoading: findingsLoading } = useExternalCveFindings(filterJobId);
-  const triggerMut = useTriggerPentestScan();
+  const triggerMut = useTriggerExternalExposureScan();
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [target, setTarget] = useState('');

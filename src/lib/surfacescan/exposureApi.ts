@@ -5,7 +5,7 @@ const IPV6_RX = /\b(?:[a-f0-9]{1,4}:){2,}[a-f0-9:]{1,}\b/i;
 
 const stripProviderNoise = (value: string): string => {
   const cleaned = String(value || '')
-    .replace(/\b(?:shodan|urlscan|web\s*-?\s*check|pentest\s*-?\s*tools?)\b/gi, ' ')
+    .replace(/\b(?:shodan|urlscan|web\s*-?\s*check)\b/gi, ' ')
     .replace(/[:;,]\s*\d+\s*(?:porte?|services?|servizi?)\b.*$/i, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim();
@@ -80,28 +80,6 @@ const sortPortRows = (rows: ExposureOpenPortRow[]): ExposureOpenPortRow[] =>
     if (hostDelta !== 0) return hostDelta;
     return Number(a.port || 0) - Number(b.port || 0);
   });
-
-export type ExposureStartRequest = {
-  tenant_id: string;
-  customer_id: string;
-  assessment_id?: string;
-  scan_name: string;
-  root_domains?: string[];
-  subdomains?: string[];
-  public_ips?: string[];
-  include_subdomain_discovery: boolean;
-  include_port_scan: boolean;
-  include_web_technology_detection: boolean;
-  include_ssl_scan: boolean;
-  include_network_vuln_scan: boolean;
-  scan_depth: 'light' | 'deep' | 'custom';
-  protocol: 'tcp' | 'udp' | 'both';
-  custom_ports?: string;
-  check_alive: boolean;
-  detect_service_version: boolean;
-  detect_os: boolean;
-  traceroute: boolean;
-};
 
 export type ExposureSummary = {
   job_id: string | null;
@@ -265,18 +243,6 @@ async function invokeFunctionJson<T>(name: string, body: unknown): Promise<T> {
     throw enriched;
   }
   return data as T;
-}
-
-export async function startExposureScan(input: ExposureStartRequest) {
-  return await invokeFunctionJson<any>('ptools-start-exposure-scan', input);
-}
-
-export async function triggerExposurePoll() {
-  return await invokeFunctionJson<any>('ptools-poll-scans', { trigger: 'manual_ui' });
-}
-
-export async function resyncExposureJob(jobId: string) {
-  return await invokeFunctionJson<any>('ptools-resync-job', { job_id: jobId });
 }
 
 export async function fetchExposureSummary(params: {

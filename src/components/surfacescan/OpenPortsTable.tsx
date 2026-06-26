@@ -27,7 +27,6 @@ function sourceBadgeClass(row: ExposureOpenPortRow): string {
   const src = String(row.source || raw?.source || raw?.provider || '').toLowerCase();
   if (src.includes('shodan')) return 'bg-violet-500/20 text-violet-400 border-violet-500/30';
   if (src.includes('connectsecure') || src === 'cs') return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-  if (src.includes('pentest') || src.includes('ptools')) return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
   return 'bg-muted text-muted-foreground border-border';
 }
 

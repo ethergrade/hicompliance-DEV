@@ -85,7 +85,7 @@ serve(async (req: Request) => {
           .eq('organization_id', organizationId)
           .in('status', ['queued', 'running', 'partial']),
         adminClient
-          .from('pentest_tools_scans' as any)
+          .from('external_exposure_scan_tasks' as any)
           .update({
             status: 'failed',
             error_message: `services_paused:${pauseReason}`,

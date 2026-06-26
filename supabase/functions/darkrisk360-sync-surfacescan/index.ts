@@ -1174,7 +1174,7 @@ function classifyThreatCategoryText(input: string): string {
   if (/mail|email/.test(sourceText) && /leak|expos|compromis/.test(sourceText)) return 'Email esposte';
   if (/database|dump|db /.test(sourceText)) return 'Database leak';
   if (/phish|brand|impersonation/.test(sourceText)) return 'Phishing e brand abuse';
-  if (/open_port|open port|service_fingerprint|ports|pentest_tool|shodan/.test(sourceText)) return 'Servizi esposti';
+  if (/open_port|open port|service_fingerprint|ports|shodan/.test(sourceText)) return 'Servizi esposti';
   if (/dmarc|spf|dkim|mail_security|mx|bimi/.test(sourceText)) return 'Email security';
   if (/dns|tls|ssl|hsts|whois|rdap|http_security|headers/.test(sourceText)) return 'DNS e TLS';
   if (/safe_browsing|urlhaus|phishtank|reputation|dnsbl|threat/.test(sourceText)) return 'Reputation';
@@ -1531,8 +1531,6 @@ serve(async (req: Request) => {
 
     let autoClassicQueued = 0;
     let autoClassicFailed = 0;
-    let autoExposureStarted = false;
-    let autoExposureError: string | null = null;
 
     const shouldAutoQueueScope =
       autoScopeScan
@@ -1588,53 +1586,6 @@ serve(async (req: Request) => {
         }
       }
 
-      const exposureCtrl = new AbortController();
-      const exposureTimeout = setTimeout(() => exposureCtrl.abort(), SURFACESCAN_SCOPE_AUTOSTART_TIMEOUT_MS);
-      try {
-        const exposureRes = await fetch(`${SUPABASE_URL}/functions/v1/ptools-start-exposure-scan`, {
-          method: 'POST',
-          headers: {
-            Authorization: relayAuthorization,
-            apikey: relayApiKey,
-            'Content-Type': 'application/json',
-            ...(SURFACESCAN_INTERNAL_SECRET ? { 'x-surface-internal-secret': SURFACESCAN_INTERNAL_SECRET } : {}),
-            ...(DARKRISK_INTERNAL_SECRET ? { 'x-darkrisk-internal-secret': DARKRISK_INTERNAL_SECRET } : {}),
-          },
-          body: JSON.stringify({
-            tenant_id: customerId,
-            customer_id: customerId,
-            scan_name: `DarkRisk360 Scope Auto · ${new Date().toISOString().slice(0, 16)}`,
-            root_domains: scopeDomains,
-            subdomains: [],
-            public_ips: scopeIps,
-            include_subdomain_discovery: true,
-            include_port_scan: true,
-            include_web_technology_detection: true,
-            include_ssl_scan: true,
-            include_network_vuln_scan: false,
-            scan_depth: 'deep',
-            protocol: 'tcp',
-            custom_ports: 'top1000',
-            check_alive: true,
-            detect_service_version: true,
-            detect_os: true,
-            traceroute: false,
-          }),
-          signal: exposureCtrl.signal,
-        });
-        const exposurePayload = await exposureRes.json().catch(() => ({}));
-        if (!exposureRes.ok || exposurePayload?.error) {
-          autoExposureError = normalizeText(
-            exposurePayload?.error || `HTTP_${exposureRes.status}_ptools_start_exposure`,
-          ) || 'ptools_start_exposure_failed';
-        } else {
-          autoExposureStarted = true;
-        }
-      } catch (exposureErr: any) {
-        autoExposureError = normalizeText(exposureErr?.message) || 'ptools_start_exposure_failed';
-      } finally {
-        clearTimeout(exposureTimeout);
-      }
     }
 
     const completedScopeJobsRes = await adminClient
@@ -1729,8 +1680,6 @@ serve(async (req: Request) => {
             enabled: shouldAutoQueueScope,
             queued_classic: autoClassicQueued,
             failed_classic: autoClassicFailed,
-            exposure_started: autoExposureStarted,
-            exposure_error: autoExposureError,
             surface_internal_secret_configured: Boolean(SURFACESCAN_INTERNAL_SECRET),
             darkrisk_internal_secret_configured: Boolean(DARKRISK_INTERNAL_SECRET),
             internal_functions_key_kind: INTERNAL_FUNCTIONS_API_KEY.startsWith('eyJ') ? 'jwt' : 'opaque',

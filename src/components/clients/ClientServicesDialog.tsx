@@ -33,7 +33,6 @@ interface OrganizationFlags {
   hicompliance_enabled: boolean;
   irp_extended: boolean;
   surface_scan_extended: boolean;
-  pentest_tools_auto_validation: boolean;
   surface_scan360_enabled: boolean;
   dark_risk360_enabled: boolean;
   darkrisk_esteso_enabled: boolean;
@@ -106,7 +105,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     queryFn: async () => {
       const { data, error } = await supabase
         .from('organizations')
-        .select('hicompliance_enabled, irp_extended, surface_scan_extended, pentest_tools_auto_validation, surface_scan360_enabled, dark_risk360_enabled, darkrisk_esteso_enabled, services_paused, services_paused_at, services_pause_reason, hicompliance_contract_start, hicompliance_contract_years, surface_scan_contract_start, surface_scan_contract_years, dark_risk_contract_start, dark_risk_contract_years')
+        .select('hicompliance_enabled, irp_extended, surface_scan_extended, surface_scan360_enabled, dark_risk360_enabled, darkrisk_esteso_enabled, services_paused, services_paused_at, services_pause_reason, hicompliance_contract_start, hicompliance_contract_years, surface_scan_contract_start, surface_scan_contract_years, dark_risk_contract_start, dark_risk_contract_years')
         .eq('id', organizationId)
         .maybeSingle();
       if (error) throw error;
@@ -114,7 +113,6 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
         hicompliance_enabled: false,
         irp_extended: false,
         surface_scan_extended: false,
-        pentest_tools_auto_validation: true,
         surface_scan360_enabled: false,
         dark_risk360_enabled: false,
         darkrisk_esteso_enabled: false,
@@ -557,7 +555,6 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                     disabled={updateFlagsMutation.isPending}
                     onCheckedChange={(v) => {
                       const patch: Record<string, unknown> = { surface_scan360_enabled: v };
-                      if (v) { patch.pentest_tools_auto_validation = true; }
                       if (!v) {
                         patch.surface_scan_extended = false;
                         patch.surface_scan_contract_start = null;
