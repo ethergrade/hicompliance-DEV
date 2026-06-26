@@ -2,16 +2,17 @@ import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.50.3";
 import {
   csAuthorize,
   csGetOrCreateDomain,
-  csMapToFindings,
-  csExtractSubdomains,
   csScanNow,
   csWaitForResults,
+  csMapToFindings,
+  csExtractSubdomains,
   csNormalizeClientAuthToken,
   type CsConfig,
 } from "./connectsecure-adapter.ts";
 import {
   classifyTargetScope,
   classifyHostForScope,
+  evaluateOrganizationServiceGate,
   fetchWithTimeout,
   fetchWithSsrfGuard,
   isIpWithinMonitoredScope,
@@ -20,10 +21,25 @@ import {
   summarizeDnssecStatus,
   summarizeThreatSignals,
   summarizeWhoisRdap,
+  summarizeWhoisText,
   splitMonitoredScopeRules,
   toSeverity,
   TargetType,
+  type WhoisRdapSummary,
 } from "./surface-scan-utils.ts";
+import {
+  evaluateHeaders,
+  type HttpHeaderScanReport,
+} from "./httpHeadersScanner.ts";
+import {
+  scanDnsLookup,
+  type DnsLookupResult,
+} from "./dnsLookupScanner.ts";
+import {
+  resolveAmassDiscoveryGate,
+  runAmassDiscovery,
+} from "./amassDiscovery.ts";
+import { firecrawlScrape } from "./darkrisk-dti-enrichment.ts";
 
 interface SurfaceScanJob {
   id: string;
@@ -42,6 +58,9 @@ interface SurfaceScanJob {
   started_at?: string | null;
   completed_at?: string | null;
   created_at?: string | null;
+  scan_type?: string | null;
+  config?: Record<string, unknown> | null;
+  summary?: Record<string, unknown> | null;
 }
 
 interface RunOptions {
@@ -195,6 +214,10 @@ interface ModuleExecutionConfig {
   label: string;
   timeoutMs: number;
   featureFlag?: string;
+  defaultEnabled?: boolean;
+  retryOnError?: boolean;
+  maxRetries?: number;
+  retryBackoffMs?: number;
 }
 
 interface ModuleExecutionRecord {
@@ -207,6 +230,38 @@ interface ModuleExecutionRecord {
   duration_ms?: number;
   error_message?: string | null;
   source?: string | null;
+}
+
+type SurfaceEngineStatus = "success" | "partial" | "failed" | "skipped";
+
+type SurfaceEngineEnvelope = {
+  engine: string;
+  target: string;
+  status: SurfaceEngineStatus;
+  durationMs: number;
+  error?: string | null;
+  summary?: Record<string, unknown>;
+};
+
+let dnsDumpsterLastRequestAt = 0;
+
+const waitMs = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const asStringArray = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry || "").trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+  return [];
+};
+
+function toPositiveInt(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.round(parsed);
 }
 
 function severityRank(severity: string): number {
@@ -234,6 +289,190 @@ const COMMON_PORTS = [
   5060, 5900, 8000, 8080, 8888, 8443, 9443, 9200, 9300, 5432, 6379,
   27017, 11211, 1521, 8081, 9000, 9090,
 ];
+
+// ─── TCP Port Scanner — lista porte, mappa servizi, CVE hints ────────────────
+
+const TCP_PROBE_PORTS = [
+  // Accesso remoto
+  21, 22, 23, 3389, 5900, 5901, 990, 20,
+  // Mail
+  25, 110, 143, 465, 587, 993, 995,
+  // Web
+  80, 443, 8080, 8443, 8888, 9000, 9090, 9443, 7080, 7443, 3000, 4000, 5000, 10000,
+  // Database
+  1433, 1521, 3306, 5432, 5984, 6379, 9200, 9300, 11211, 27017, 27018, 28017,
+  // Rete/Infrastruttura
+  53, 161, 389, 636, 2049, 111, 135, 139, 445,
+  // Container/Cloud native
+  2375, 2376, 2379, 2380, 6443, 10250, 10255, 8500, 4646,
+  // Message Queue
+  5672, 15672, 9092, 2181,
+  // VPN/Tunneling
+  1194, 1723, 500,
+  // Stampa/IoT
+  515, 631, 9100,
+  // Altro
+  69, 79, 88, 9418,
+];
+
+const PORT_SERVICE: Record<number, { name: string; description: string; risk: string }> = {
+  20:    { name: "ftp-data",     description: "FTP Data Transfer",                         risk: "Trasferimento file non cifrato" },
+  21:    { name: "ftp",          description: "FTP - File Transfer Protocol",               risk: "Credenziali in chiaro, directory traversal" },
+  22:    { name: "ssh",          description: "SSH - Secure Shell",                         risk: "Brute force, versioni vulnerabili" },
+  23:    { name: "telnet",       description: "Telnet - terminale non cifrato",             risk: "Credenziali e dati in chiaro" },
+  25:    { name: "smtp",         description: "SMTP Mail Relay",                            risk: "Open relay, spam, enumerazione utenti" },
+  53:    { name: "dns",          description: "DNS - Domain Name System",                  risk: "Zone transfer, amplification DDoS" },
+  69:    { name: "tftp",         description: "TFTP - Trivial FTP",                        risk: "Nessuna autenticazione, accesso file" },
+  79:    { name: "finger",       description: "Finger - user info",                        risk: "Enumerazione utenti sistema" },
+  80:    { name: "http",         description: "HTTP Web Server",                            risk: "Applicazioni web non cifrate" },
+  88:    { name: "kerberos",     description: "Kerberos Authentication",                   risk: "Kerberoasting, AS-REP roasting" },
+  110:   { name: "pop3",         description: "POP3 Mail",                                 risk: "Credenziali in chiaro" },
+  111:   { name: "rpcbind",      description: "RPC Portmapper",                            risk: "Enumerazione servizi RPC/NFS" },
+  135:   { name: "msrpc",        description: "Microsoft RPC Endpoint Mapper",             risk: "Enumerazione servizi Windows, lateral movement" },
+  139:   { name: "netbios-ssn",  description: "NetBIOS Session Service",                   risk: "Enumerazione SMB, pass-the-hash" },
+  143:   { name: "imap",         description: "IMAP Mail",                                 risk: "Credenziali in chiaro" },
+  161:   { name: "snmp",         description: "SNMP Network Management",                   risk: "Community string default, info disclosure" },
+  389:   { name: "ldap",         description: "LDAP Directory Service",                   risk: "Enumerazione utenti AD, credenziali in chiaro" },
+  443:   { name: "https",        description: "HTTPS Web Server",                          risk: "Versioni TLS/cipher deboli" },
+  445:   { name: "smb",          description: "SMB - Server Message Block",               risk: "EternalBlue CVE-2017-0144, ransomware" },
+  465:   { name: "smtps",        description: "SMTP over TLS",                             risk: "Configurazione TLS debole" },
+  500:   { name: "isakmp",       description: "IKE/IPSec VPN",                             risk: "Vulnerabilità IKEv1" },
+  515:   { name: "lpd",          description: "Line Printer Daemon",                       risk: "Stampa non autenticata, path traversal" },
+  587:   { name: "submission",   description: "SMTP Mail Submission",                      risk: "Open relay se mal configurato" },
+  631:   { name: "ipp",          description: "Internet Printing Protocol",                risk: "CUPS vulnerabilità, info disclosure" },
+  636:   { name: "ldaps",        description: "LDAP over TLS",                             risk: "Configurazione TLS, certificate validation" },
+  990:   { name: "ftps",         description: "FTP over TLS",                              risk: "Configurazione TLS debole" },
+  993:   { name: "imaps",        description: "IMAP over TLS",                             risk: "Configurazione TLS debole" },
+  995:   { name: "pop3s",        description: "POP3 over TLS",                             risk: "Configurazione TLS debole" },
+  1194:  { name: "openvpn",      description: "OpenVPN",                                   risk: "CVE-2017-7479, configurazioni deboli" },
+  1433:  { name: "mssql",        description: "Microsoft SQL Server",                      risk: "SA blank password, xp_cmdshell, injection" },
+  1521:  { name: "oracle",       description: "Oracle Database",                           risk: "Default credentials, TNS Poison" },
+  1723:  { name: "pptp",         description: "PPTP VPN",                                  risk: "MS-CHAPv2 vulnerabile" },
+  2049:  { name: "nfs",          description: "NFS - Network File System",                risk: "Mount senza autenticazione, root squash" },
+  2181:  { name: "zookeeper",    description: "Apache ZooKeeper",                         risk: "Nessuna autenticazione default, info disclosure" },
+  2375:  { name: "docker",       description: "Docker API (non TLS!)",                    risk: "RCE completo, escape container CRITICO" },
+  2376:  { name: "docker-tls",   description: "Docker API over TLS",                      risk: "Configurazione TLS, client auth" },
+  2379:  { name: "etcd",         description: "etcd - Kubernetes key-value",              risk: "Secrets Kubernetes in chiaro, no auth default" },
+  2380:  { name: "etcd-peer",    description: "etcd peer communication",                  risk: "Cluster takeover" },
+  3000:  { name: "grafana",      description: "Grafana Dashboard",                        risk: "Default admin:admin, CVE-2021-43798" },
+  3306:  { name: "mysql",        description: "MySQL / MariaDB",                          risk: "Default root senza password, SQL injection" },
+  3389:  { name: "rdp",          description: "RDP - Remote Desktop Protocol",            risk: "BlueKeep CVE-2019-0708, brute force" },
+  4000:  { name: "http-dev",     description: "HTTP Dev Server",                          risk: "Applicazioni in ambiente development" },
+  4646:  { name: "nomad",        description: "HashiCorp Nomad",                          risk: "Nessun ACL default, exec arbitrario" },
+  5000:  { name: "http-alt",     description: "HTTP alternativo / Docker Registry",       risk: "Registry non autenticato" },
+  5432:  { name: "postgresql",   description: "PostgreSQL Database",                      risk: "Default postgres senza password, COPY TO/FROM" },
+  5672:  { name: "amqp",         description: "RabbitMQ AMQP",                            risk: "Default guest:guest, message injection" },
+  5900:  { name: "vnc",          description: "VNC Remote Desktop",                       risk: "Nessuna password, CVE-2019-15681" },
+  5901:  { name: "vnc-1",        description: "VNC display :1",                           risk: "Nessuna password, accesso desktop remoto" },
+  5984:  { name: "couchdb",      description: "CouchDB HTTP API",                         risk: "Admin party (no auth), CVE-2017-12635" },
+  6379:  { name: "redis",        description: "Redis in-memory DB",                      risk: "No auth default, RCE via config write, CVE-2023-28425" },
+  6443:  { name: "k8s-api",      description: "Kubernetes API Server",                   risk: "Cluster takeover, CVE-2018-1002105" },
+  7080:  { name: "http-alt",     description: "HTTP alternativo",                        risk: "Pannelli admin non cifrati" },
+  7443:  { name: "https-alt",    description: "HTTPS alternativo",                       risk: "TLS configuration" },
+  8080:  { name: "http-proxy",   description: "HTTP alternativo / proxy",                risk: "Pannelli admin, Tomcat, Jenkins esposti" },
+  8443:  { name: "https-alt",    description: "HTTPS alternativo (Tomcat/JBoss/WebLogic)", risk: "Admin panel esposto" },
+  8500:  { name: "consul",       description: "HashiCorp Consul HTTP",                   risk: "Nessun ACL default, service mesh takeover" },
+  8888:  { name: "jupyter",      description: "Jupyter Notebook / HTTP alt",             risk: "Nessun token, RCE arbitrario" },
+  9000:  { name: "sonarqube",    description: "SonarQube / Portainer",                   risk: "Default admin, code disclosure" },
+  9090:  { name: "prometheus",   description: "Prometheus Metrics",                      risk: "Info disclosure, CVE-2019-3826" },
+  9092:  { name: "kafka",        description: "Apache Kafka",                            risk: "No auth default, message interception" },
+  9100:  { name: "jetdirect",    description: "HP JetDirect / RAW print",               risk: "Info disclosure, phishing via printer" },
+  9200:  { name: "elasticsearch",description: "Elasticsearch HTTP API",                 risk: "No auth default, dati esposti, CVE-2021-22145" },
+  9300:  { name: "es-transport", description: "Elasticsearch transport",                risk: "Cluster join non autenticato" },
+  9418:  { name: "git",          description: "Git daemon",                              risk: "Repository esposti in lettura" },
+  9443:  { name: "https-alt",    description: "HTTPS alternativo",                      risk: "TLS configuration" },
+  10000: { name: "webmin",       description: "Webmin Admin Panel",                     risk: "CVE-2019-15107 RCE, brute force" },
+  10250: { name: "kubelet",      description: "Kubernetes Kubelet API",                 risk: "RCE, pod/secret access CRITICO" },
+  10255: { name: "kubelet-ro",   description: "Kubernetes Kubelet read-only",           risk: "Info disclosure pods/secrets" },
+  11211: { name: "memcached",    description: "Memcached",                              risk: "No auth, data dump, DDoS amplification" },
+  15672: { name: "rabbitmq-ui",  description: "RabbitMQ Management UI",                 risk: "Default guest:guest, message injection" },
+  27017: { name: "mongodb",      description: "MongoDB",                                risk: "No auth default, data dump CRITICO" },
+  27018: { name: "mongodb-shard",description: "MongoDB Shard",                         risk: "No auth default" },
+  28017: { name: "mongodb-web",  description: "MongoDB Web Interface",                  risk: "Info disclosure, admin panel" },
+};
+
+const SERVICE_CVE_MAP: Record<string, string[]> = {
+  openssh:       ["CVE-2024-6387","CVE-2023-38408","CVE-2021-41617","CVE-2018-15473"],
+  rdp:           ["CVE-2019-0708","CVE-2020-0609","CVE-2020-0610","CVE-2021-34527"],
+  vnc:           ["CVE-2019-15681","CVE-2006-2369","CVE-2023-29445"],
+  telnet:        ["CVE-1999-0619","CVE-2011-4862"],
+  ftp:           ["CVE-1999-0497","CVE-2010-4221","CVE-2015-3306"],
+  apache:        ["CVE-2021-41773","CVE-2021-42013","CVE-2023-25690","CVE-2022-22721"],
+  nginx:         ["CVE-2021-23017","CVE-2022-41741","CVE-2022-41742"],
+  iis:           ["CVE-2022-21907","CVE-2021-31166","CVE-2017-7269"],
+  tomcat:        ["CVE-2020-1938","CVE-2019-0232","CVE-2017-12617"],
+  weblogic:      ["CVE-2023-21839","CVE-2021-2109","CVE-2020-14882"],
+  jboss:         ["CVE-2017-12149","CVE-2015-7501"],
+  jenkins:       ["CVE-2024-23897","CVE-2023-43494","CVE-2019-1003000"],
+  php:           ["CVE-2024-4577","CVE-2022-31625","CVE-2021-21703"],
+  openssl:       ["CVE-2022-0778","CVE-2021-3449","CVE-2021-3450","CVE-2014-0160"],
+  mysql:         ["CVE-2023-21980","CVE-2022-21427","CVE-2020-2574"],
+  postgresql:    ["CVE-2023-2454","CVE-2023-2455","CVE-2019-9193"],
+  mssql:         ["CVE-2020-0618","CVE-2019-1068","CVE-2018-8273"],
+  oracle:        ["CVE-2022-21410","CVE-2021-2121","CVE-2020-14871"],
+  redis:         ["CVE-2023-28425","CVE-2022-0543","CVE-2015-8080"],
+  elasticsearch: ["CVE-2021-22145","CVE-2021-22144","CVE-2015-1427"],
+  mongodb:       ["CVE-2021-20328","CVE-2021-32035"],
+  memcached:     ["CVE-2018-1000115","CVE-2011-4971"],
+  couchdb:       ["CVE-2022-24706","CVE-2017-12635","CVE-2017-12636"],
+  smb:           ["CVE-2017-0144","CVE-2020-0796","CVE-2021-34527"],
+  msrpc:         ["CVE-2003-0352","CVE-2008-4250"],
+  ldap:          ["CVE-2021-44228","CVE-2017-8563"],
+  kerberos:      ["CVE-2020-17049","CVE-2014-6324"],
+  docker:        ["CVE-2019-5736","CVE-2020-15257","CVE-2021-41091"],
+  kubernetes:    ["CVE-2018-1002105","CVE-2019-9946","CVE-2019-11253"],
+  etcd:          ["CVE-2020-15106","CVE-2018-16873"],
+  consul:        ["CVE-2020-28053","CVE-2021-37219"],
+  grafana:       ["CVE-2021-43798","CVE-2022-26148","CVE-2023-22462"],
+  prometheus:    ["CVE-2019-3826","CVE-2022-46146"],
+  webmin:        ["CVE-2019-15107","CVE-2022-0824"],
+  rabbitmq:      ["CVE-2023-46118","CVE-2021-32718","CVE-2022-25717"],
+  kafka:         ["CVE-2023-25194","CVE-2018-17196"],
+  zookeeper:     ["CVE-2023-44981","CVE-2019-0201"],
+  smtp:          ["CVE-2020-7247","CVE-2019-15605"],
+  postfix:       ["CVE-2023-51764","CVE-2011-1720"],
+  exim:          ["CVE-2019-10149","CVE-2021-38371"],
+  snmp:          ["CVE-2002-0013","CVE-2017-6742","CVE-2023-20198"],
+  nfs:           ["CVE-2019-3010","CVE-2021-3197"],
+  openvpn:       ["CVE-2017-7479","CVE-2020-15078"],
+};
+
+function cveHintsForService(serviceName: string): string[] {
+  const norm = (serviceName || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  for (const [svc, cves] of Object.entries(SERVICE_CVE_MAP)) {
+    if (norm.includes(svc)) return cves;
+  }
+  return [];
+}
+
+async function tcpProbe(
+  host: string, port: number, timeoutMs = 2500,
+): Promise<{ open: boolean; banner: string }> {
+  let conn: Deno.TcpConn | null = null;
+  try {
+    conn = await Promise.race([
+      Deno.connect({ hostname: host, port, transport: "tcp" }),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), timeoutMs)),
+    ]);
+    let banner = "";
+    try {
+      const buf = new Uint8Array(512);
+      const n = await Promise.race([
+        conn.read(buf),
+        new Promise<number>(res => setTimeout(() => res(0), 500)),
+      ]);
+      if (n) {
+        banner = new TextDecoder("utf-8", { fatal: false })
+          .decode(buf.subarray(0, Number(n))).trim().slice(0, 300);
+      }
+    } catch { /* banner opzionale */ }
+    return { open: true, banner };
+  } catch {
+    return { open: false, banner: "" };
+  } finally {
+    try { conn?.close(); } catch {}
+  }
+}
 
 function severityForExposedPort(
   port: number,
@@ -478,72 +717,158 @@ export async function dispatchSurfaceScanQueue(
   organizationId: string,
   options: DispatchQueueOptions = {},
 ): Promise<string[]> {
+  const { data: orgRuntimeFlags, error: orgRuntimeErr } = await adminClient
+    .from("organizations" as any)
+    .select(
+      "surface_scan360_enabled, services_paused, services_paused_at, services_pause_reason, surface_scan_contract_start, surface_scan_contract_years",
+    )
+    .eq("id", organizationId)
+    .maybeSingle();
+  if (orgRuntimeErr) {
+    throw new Error(orgRuntimeErr.message || "Unable to validate organization runtime before queue dispatch");
+  }
+  const serviceGate = evaluateOrganizationServiceGate(orgRuntimeFlags as any, "surface_scan360");
+  if (!serviceGate.allowed) {
+    await adminClient
+      .from("surface_scan_jobs" as any)
+      .update({
+        status: "failed",
+        completed_at: new Date().toISOString(),
+        error_message: `service_gate_blocked:${serviceGate.code}`,
+      })
+      .eq("organization_id", organizationId)
+      .in("status", ["queued", "pending", "running"]);
+
+    return [];
+  }
+
   const nowIso = new Date().toISOString();
   const stalePendingCutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
   const staleRunningCutoff = new Date(Date.now() - 45 * 60 * 1000).toISOString();
 
+  // Max 1 recovery attempt per job (uses recovery_attempt_count column, not fragile string check)
+  const MAX_RECOVERY_ATTEMPTS = 1;
+
   const [stalePendingRes, staleRunningRes] = await Promise.all([
     adminClient
       .from("surface_scan_jobs" as any)
-      .select("id")
+      .select("id, recovery_attempt_count")
       .eq("organization_id", organizationId)
       .eq("status", "pending")
       .lt("created_at", stalePendingCutoff)
       .limit(50),
     adminClient
       .from("surface_scan_jobs" as any)
-      .select("id")
+      .select("id, recovery_attempt_count")
       .eq("organization_id", organizationId)
       .eq("status", "running")
       .lt("started_at", staleRunningCutoff)
       .limit(50),
   ]);
 
-  const stalePendingIds = (stalePendingRes.data || [])
-    .map((row: any) => String(row?.id || "").trim())
-    .filter(Boolean);
-  const staleRunningIds = (staleRunningRes.data || [])
-    .map((row: any) => String(row?.id || "").trim())
-    .filter(Boolean);
+  const stalePendingRows = (stalePendingRes.data || []) as Array<{ id?: string; recovery_attempt_count?: number }>;
+  const staleRunningRows = (staleRunningRes.data || []) as Array<{ id?: string; recovery_attempt_count?: number }>;
 
-  if (stalePendingIds.length > 0) {
+  // Pending: recover once, then fail
+  const recoverablePending = stalePendingRows
+    .filter((row) => (row?.recovery_attempt_count ?? 0) < MAX_RECOVERY_ATTEMPTS)
+    .map((row) => String(row?.id || "").trim()).filter(Boolean);
+  const terminalPending = stalePendingRows
+    .filter((row) => (row?.recovery_attempt_count ?? 0) >= MAX_RECOVERY_ATTEMPTS)
+    .map((row) => String(row?.id || "").trim()).filter(Boolean);
+
+  if (recoverablePending.length > 0) {
     await adminClient
       .from("surface_scan_jobs" as any)
       .update({
-        status: "failed",
-        completed_at: nowIso,
-        error_message: "Queue timeout while pending",
+        status: "queued",
+        started_at: null,
+        completed_at: null,
+        error_message: null,
+        recovery_attempt_count: MAX_RECOVERY_ATTEMPTS,
       })
-      .in("id", stalePendingIds);
+      .in("id", recoverablePending);
 
     await adminClient.from("surface_scan_audit_log" as any).insert(
-      stalePendingIds.map((id: string) => ({
+      recoverablePending.map((id: string) => ({
         scan_job_id: id,
         user_id: options.initiatedByUserId || null,
-        action: "scan_auto_failed_pending_timeout",
-        details: { reason: "pending_timeout_10m" },
+        action: "scan_auto_requeued_pending_timeout",
+        details: { reason: "pending_timeout_10m", recovery: "queued_again" },
       })),
     );
   }
 
-  if (staleRunningIds.length > 0) {
+  if (terminalPending.length > 0) {
     await adminClient
       .from("surface_scan_jobs" as any)
       .update({
         status: "failed",
         completed_at: nowIso,
-        error_message: "Scan timed out while running",
+        error_message: "pending_timeout_no_recovery_left",
       })
-      .in("id", staleRunningIds);
-
+      .in("id", terminalPending);
     await adminClient.from("surface_scan_audit_log" as any).insert(
-      staleRunningIds.map((id: string) => ({
+      terminalPending.map((id: string) => ({
         scan_job_id: id,
         user_id: options.initiatedByUserId || null,
-        action: "scan_auto_failed_timeout",
-        details: { reason: "running_timeout_45m" },
+        action: "scan_auto_failed_pending_timeout",
+        details: { reason: "pending_timeout_max_recovery" },
       })),
     );
+  }
+
+  if (staleRunningRows.length > 0) {
+    const recoverableRunning = staleRunningRows
+      .filter((row) => (row?.recovery_attempt_count ?? 0) < MAX_RECOVERY_ATTEMPTS)
+      .map((row) => String(row?.id || "").trim())
+      .filter(Boolean);
+    const terminalRunning = staleRunningRows
+      .filter((row) => (row?.recovery_attempt_count ?? 0) >= MAX_RECOVERY_ATTEMPTS)
+      .map((row) => String(row?.id || "").trim())
+      .filter(Boolean);
+
+    if (recoverableRunning.length > 0) {
+      await adminClient
+        .from("surface_scan_jobs" as any)
+        .update({
+          status: "queued",
+          started_at: null,
+          completed_at: null,
+          error_message: null,
+          recovery_attempt_count: MAX_RECOVERY_ATTEMPTS,
+        })
+        .in("id", recoverableRunning);
+
+      await adminClient.from("surface_scan_audit_log" as any).insert(
+        recoverableRunning.map((id: string) => ({
+          scan_job_id: id,
+          user_id: options.initiatedByUserId || null,
+          action: "scan_auto_requeued_running_timeout",
+          details: { reason: "running_timeout_45m", recovery: "queued_again" },
+        })),
+      );
+    }
+
+    if (terminalRunning.length > 0) {
+      await adminClient
+        .from("surface_scan_jobs" as any)
+        .update({
+          status: "failed",
+          completed_at: nowIso,
+          error_message: "running_timeout_max_recovery",
+        })
+        .in("id", terminalRunning);
+
+      await adminClient.from("surface_scan_audit_log" as any).insert(
+        terminalRunning.map((id: string) => ({
+          scan_job_id: id,
+          user_id: options.initiatedByUserId || null,
+          action: "scan_auto_failed_timeout",
+          details: { reason: "running_timeout_45m", recovery: "failed_after_retry" },
+        })),
+      );
+    }
   }
 
   const maxConcurrent = 3;
@@ -593,8 +918,29 @@ export async function dispatchSurfaceScanQueue(
     const runTask = runSurfaceScanEnrichment(adminClient, claimedJob as SurfaceScanJob, {
       initiatedByUserId: options.initiatedByUserId || claimedJob.requested_by || null,
       force: false,
-    }).catch((error) => {
-      console.error("[surface-scan-queue] run task failed:", error);
+    }).catch(async (error) => {
+      const message = error instanceof Error ? error.message : String(error ?? "unknown");
+      console.error("[surface-scan-queue] run task failed for job", claimedJob.id, ":", message);
+      // Mark job as failed — prevents it from being stuck in pending indefinitely
+      try {
+        await adminClient
+          .from("surface_scan_jobs" as any)
+          .update({
+            status: "failed",
+            completed_at: new Date().toISOString(),
+            error_message: `queue_dispatch_error:${message.slice(0, 400)}`,
+          })
+          .eq("id", claimedJob.id)
+          .in("status", ["pending", "running"]);
+        await adminClient.from("surface_scan_audit_log" as any).insert({
+          scan_job_id: claimedJob.id,
+          user_id: options.initiatedByUserId || null,
+          action: "scan_failed_queue_dispatch_error",
+          details: { error: message.slice(0, 400) },
+        });
+      } catch (dbErr) {
+        console.error("[surface-scan-queue] failed to mark job as failed:", dbErr);
+      }
     });
 
     if (!enqueueBackgroundTask(runTask)) {
@@ -628,12 +974,22 @@ export async function runSurfaceScanEnrichment(
   const targetUrl = parsedTarget.normalized_target;
   const seenAssetKeys = new Set<string>();
   const seenFindingKeys = new Set<string>();
+  const seenPortKeys = new Set<string>();
   const scanWarnings: string[] = [];
-  const { data: monitoredScopeRows } = await adminClient
-    .from("surface_scan_monitored_ips" as any)
-    .select("entry_type, input_value, ip_start, ip_end")
-    .eq("organization_id", organizationId);
+  const jobConfig = (job.config && typeof job.config === "object") ? job.config : {};
+  const [{ data: monitoredScopeRows }, { data: organizationRuntime }] = await Promise.all([
+    adminClient
+      .from("surface_scan_monitored_ips" as any)
+      .select("entry_type, input_value, ip_start, ip_end")
+      .eq("organization_id", organizationId),
+    adminClient
+      .from("organizations" as any)
+      .select("surface_scan_extended")
+      .eq("id", organizationId)
+      .maybeSingle(),
+  ]);
   const { scopeDomains, ipScopeRules } = splitMonitoredScopeRules((monitoredScopeRows || []) as any[]);
+  const surfaceScanExtended = Boolean((organizationRuntime as any)?.surface_scan_extended);
 
   const scopeCounters = {
     in_scope: 0,
@@ -650,6 +1006,9 @@ export async function runSurfaceScanEnrichment(
 
   const scopeReasonFromIp = (candidateIp: string): "scope_excluded_ip" | null => {
     if (!candidateIp) return null;
+    // If no IP scope rules are configured, IP-based restriction is not active:
+    // IPs resolved from in-scope domains are implicitly allowed.
+    if (ipScopeRules.length === 0) return null;
     return isIpWithinMonitoredScope(candidateIp, ipScopeRules) ? null : "scope_excluded_ip";
   };
 
@@ -767,7 +1126,7 @@ export async function runSurfaceScanEnrichment(
 
     const evidenceWithScope = addScopeRaw(input.evidence || {}, findingScopeReason);
 
-    await adminClient.from("surface_findings" as any).insert({
+    await adminClient.from("surface_findings" as any).upsert({
       organization_id: organizationId,
       tenant_id: tenantId,
       customer_id: customerId,
@@ -792,7 +1151,47 @@ export async function runSurfaceScanEnrichment(
       evidence: evidenceWithScope,
       attribution_confidence: input.attribution_confidence || "medium",
       status: input.status || "open",
-    });
+      first_seen_at: new Date().toISOString(),
+      last_seen_at:  new Date().toISOString(),
+      occurrence_count: 1,
+    }, { onConflict: "dedup_fingerprint" });
+  };
+
+  const insertOpenPort = async (
+    portNum: number,
+    host: string,
+    ip: string,
+    protocol = "tcp",
+    source = "shodan",
+    serviceName?: string,
+    serviceVersion?: string,
+    banner?: string,
+  ) => {
+    const key = [(host || ip).toLowerCase(), (ip || "").toLowerCase(), portNum, protocol].join("|");
+    if (seenPortKeys.has(key)) return;
+    seenPortKeys.add(key);
+    const isWeb = [80,443,8080,8443,8888,9000,3000,4000,5000,7080,7443,9090,10000].includes(portNum);
+    const isTls = [443,8443,993,995,465,636,2376,5986].includes(portNum);
+    await adminClient.from("surface_open_ports" as any).upsert({
+      scan_job_id: job.id,
+      organization_id: organizationId,
+      tenant_id: tenantId,
+      customer_id: customerId,
+      host: host || ip,
+      ip: ip || null,
+      port: portNum,
+      protocol,
+      state: "open",
+      service_name: serviceName || null,
+      service_version: serviceVersion || null,
+      banner: banner?.slice(0, 500) || null,
+      is_web: isWeb,
+      is_tls: isTls,
+      exposure_level: severityForExposedPort(portNum),
+      first_seen_at: new Date().toISOString(),
+      last_seen_at:  new Date().toISOString(),
+      raw: { source, service: serviceName, version: serviceVersion },
+    }, { onConflict: "scan_job_id,host,port,protocol" });
   };
 
   const insertAsset = async (input: AssetInput): Promise<string | null> => {
@@ -877,6 +1276,178 @@ export async function runSurfaceScanEnrichment(
       user_id: options.initiatedByUserId || job.requested_by,
       action,
       details,
+    });
+  };
+
+  const enqueueDiscoveredSubdomainJobs = async (): Promise<{
+    discovered: number;
+    eligible: number;
+    inserted: number;
+    skippedExisting: number;
+    skippedCurrent: number;
+    skippedLimit: number;
+  }> => {
+    if (jobConfig.auto_expand_subdomains === false) {
+      return { discovered: 0, eligible: 0, inserted: 0, skippedExisting: 0, skippedCurrent: 0, skippedLimit: 0 };
+    }
+    if (!["domain", "subdomain"].includes(parsedTarget.target_type) || !rootDomain) {
+      return { discovered: 0, eligible: 0, inserted: 0, skippedExisting: 0, skippedCurrent: 0, skippedLimit: 0 };
+    }
+
+    const maxDepth = Math.min(toPositiveInt((jobConfig as any).subdomain_max_depth, 10), 10);
+    const currentDepth = toPositiveInt((jobConfig as any).subdomain_depth, parsedTarget.target_type === "subdomain" ? 1 : 0);
+    if (currentDepth >= maxDepth) {
+      return { discovered: discoveredHostnames.size, eligible: 0, inserted: 0, skippedExisting: 0, skippedCurrent: 0, skippedLimit: 0 };
+    }
+
+    const configuredLimit = toPositiveInt(
+      (jobConfig as any).subdomain_child_job_limit ?? Deno.env.get("SURFACESCAN_SUBDOMAIN_CHILD_JOB_LIMIT"),
+      surfaceScanExtended ? 75 : 10,
+    );
+    const limit = surfaceScanExtended ? configuredLimit : Math.min(configuredLimit, 10);
+    const cooldownHours = toPositiveInt(Deno.env.get("SURFACESCAN_SUBDOMAIN_CHILD_COOLDOWN_HOURS"), 24);
+    const cooldownIso = new Date(Date.now() - cooldownHours * 60 * 60 * 1000).toISOString();
+    const currentHost = String(hostname || "").trim().toLowerCase();
+    const candidates = [...new Set(
+      [...discoveredHostnames]
+        .map((entry) => String(entry || "").trim().toLowerCase().replace(/\.$/, ""))
+        .filter(Boolean)
+        .filter((entry) => entry !== rootDomain)
+        .filter((entry) => entry !== currentHost)
+        .filter((entry) => entry.endsWith(`.${rootDomain}`))
+        .filter((entry) => isValidHostnameCandidate(entry))
+        .filter((entry) => shouldAcceptScannableHost(entry)),
+    )].sort();
+
+    const selected = candidates.slice(0, limit);
+    let inserted = 0;
+    let skippedExisting = 0;
+    let skippedCurrent = candidates.length - selected.length;
+
+    for (const subdomain of selected) {
+      const normalizedChild = normalizeTargetInput(subdomain);
+      const { count: existingCount } = await adminClient
+        .from("surface_scan_jobs" as any)
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", organizationId)
+        .eq("normalized_target", normalizedChild.normalized_target)
+        .in("status", ["queued", "pending", "running", "completed"])
+        .gte("created_at", cooldownIso);
+
+      if ((existingCount || 0) > 0) {
+        skippedExisting += 1;
+        continue;
+      }
+
+      const [aRecords, aaaaRecords] = await Promise.all([
+        resolveWithDnsOverHttps(subdomain, "A").catch(() => [] as string[]),
+        resolveWithDnsOverHttps(subdomain, "AAAA").catch(() => [] as string[]),
+      ]);
+
+      const { error } = await adminClient
+        .from("surface_scan_jobs" as any)
+        .insert({
+          organization_id: organizationId,
+          tenant_id: tenantId,
+          customer_id: customerId,
+          requested_by: options.initiatedByUserId || job.requested_by || null,
+          raw_target: subdomain,
+          normalized_target: normalizedChild.normalized_target,
+          target_type: normalizedChild.target_type,
+          hostname: normalizedChild.hostname,
+          root_domain: normalizedChild.root_domain || rootDomain,
+          resolved_ips: [...new Set([...aRecords, ...aaaaRecords])],
+          scan_profile: job.scan_profile || "domain_exposure",
+          scan_type: "subdomain_enrichment",
+          scan_name: `Subdomain enrichment · ${subdomain}`,
+          status: "queued",
+          authorization_confirmed: true,
+          config: {
+            parent_scan_job_id: job.id,
+            parent_target: parsedTarget.normalized_target,
+            parent_depth: currentDepth,
+            subdomain_depth: currentDepth + 1,
+            subdomain_max_depth: maxDepth,
+            discovered_from: String((jobConfig as any).subdomain_source || "surface_scan_engine"),
+            discovered_parent: currentHost || parsedTarget.normalized_target,
+            auto_expand_subdomains: true,
+            no_pentest_tools: true,
+            no_connectsecure: true,
+          },
+          summary: {
+            parent_scan_job_id: job.id,
+            root_domain: rootDomain,
+            parent_depth: currentDepth,
+            subdomain_depth: currentDepth + 1,
+            subdomain_max_depth: maxDepth,
+            discovered_from: String((jobConfig as any).subdomain_source || "surface_scan_engine"),
+          },
+        });
+
+      if (error) {
+        skippedCurrent += 1;
+        continue;
+      }
+      inserted += 1;
+    }
+
+    const stats = {
+      discovered: discoveredHostnames.size,
+      eligible: candidates.length,
+      inserted,
+      skippedExisting,
+      skippedCurrent: Math.max(0, skippedCurrent),
+      skippedLimit: Math.max(0, candidates.length - selected.length),
+    };
+
+    if (candidates.length > 0 || inserted > 0) {
+      await insertObservation({
+        module: "subdomain_queue",
+        observation_type: "subdomain_child_jobs",
+        title: "Discovered subdomains queued for SurfaceScan360 enrichment",
+        value: {
+          ...stats,
+          root_domain: rootDomain,
+          limit,
+          cooldown_hours: cooldownHours,
+          surface_scan_extended: surfaceScanExtended,
+          depth: currentDepth,
+          next_depth: currentDepth + 1,
+          max_depth: maxDepth,
+          sample: selected.slice(0, 30),
+        },
+        severity: "info",
+      });
+      await logAudit("subdomain_child_jobs_queued", {
+        ...stats,
+        root_domain: rootDomain,
+        limit,
+        cooldown_hours: cooldownHours,
+        surface_scan_extended: surfaceScanExtended,
+        depth: currentDepth,
+        next_depth: currentDepth + 1,
+        max_depth: maxDepth,
+      });
+    }
+
+    return stats;
+  };
+
+  const emitEngineEnvelope = async (envelope: SurfaceEngineEnvelope) => {
+    await insertObservation({
+      module: "engine_orchestrator",
+      observation_type: "engine_run",
+      title: `${envelope.engine} • ${envelope.status}`,
+      value: {
+        engine: envelope.engine,
+        target: envelope.target,
+        status: envelope.status,
+        duration_ms: envelope.durationMs,
+        error: envelope.error || null,
+        summary: envelope.summary || {},
+      },
+      severity: envelope.status === "failed" ? "medium" : envelope.status === "partial" ? "low" : "info",
+      confidence: envelope.status === "failed" ? "low" : "high",
     });
   };
 
@@ -970,6 +1541,17 @@ export async function runSurfaceScanEnrichment(
       });
 
       const reportBody = await reportRes.json().catch(() => ({}));
+      const reportCode = String(reportBody?.code || '').trim().toLowerCase();
+      const isScopePending = reportRes.status === 409 && reportCode === 'scope_incomplete_pending_targets';
+      if (isScopePending) {
+        await logAudit("scan_report_auto_skipped", {
+          reason: "scope_incomplete_pending_targets",
+          pending_targets: Array.isArray(reportBody?.pending_targets) ? reportBody.pending_targets.slice(0, 50) : [],
+          required_targets_total: Number(reportBody?.required_targets_total || 0),
+          completed_targets_total: Number(reportBody?.completed_targets_total || 0),
+        });
+        return;
+      }
       if (!reportRes.ok || reportBody?.error) {
         await logAudit("scan_report_auto_failed", {
           status: reportRes.status,
@@ -1227,15 +1809,27 @@ export async function runSurfaceScanEnrichment(
     const attemptedUrls: string[] = [];
     const candidates = buildHttpCandidateUrls();
     let lastError: unknown = null;
+    const httpAttemptTimeoutMs = Math.max(
+      5000,
+      Math.min(30000, Number(Deno.env.get("SURFACESCAN_HTTP_ATTEMPT_TIMEOUT_MS") || "15000")),
+    );
+    const httpMaxRedirects = Math.max(
+      3,
+      Math.min(15, Number(Deno.env.get("SURFACESCAN_HTTP_MAX_REDIRECTS") || "10")),
+    );
+    const httpMaxResponseBytes = Math.max(
+      100000,
+      Math.min(2000000, Number(Deno.env.get("SURFACESCAN_HTTP_MAX_RESPONSE_BYTES") || "350000")),
+    );
 
     for (const candidate of candidates) {
       attemptedUrls.push(candidate);
       try {
         const start = Date.now();
         const safeFetch = await fetchWithSsrfGuard(candidate, {}, {
-          timeoutMs: 10000,
-          maxRedirects: 10,
-          maxResponseBytes: 350000,
+          timeoutMs: httpAttemptTimeoutMs,
+          maxRedirects: httpMaxRedirects,
+          maxResponseBytes: httpMaxResponseBytes,
         });
         const response = safeFetch.response;
         const responseTimeMs = Date.now() - start;
@@ -1266,8 +1860,21 @@ export async function runSurfaceScanEnrichment(
     throw lastError || new Error("HTTP fetch failed for all candidate URLs");
   };
 
+  const isRetryableModuleError = (error: unknown): boolean => {
+    const message = String((error as any)?.message || error || "").toLowerCase();
+    if (!message) return false;
+    if (message.includes("timeout")) return true;
+    if (message.includes("network")) return true;
+    if (message.includes("fetch failed")) return true;
+    if (message.includes("temporar")) return true;
+    if (message.includes("econnreset") || message.includes("econnrefused")) return true;
+    if (message.includes("tls")) return true;
+    if (message.includes("http fetch failed")) return true;
+    return false;
+  };
+
   const safeRun = async (config: ModuleExecutionConfig, fn: () => Promise<void>) => {
-    if (!isFeatureEnabled(config.featureFlag, true)) {
+    if (!isFeatureEnabled(config.featureFlag, config.defaultEnabled ?? true)) {
       await upsertModuleResult(config, "skipped", {
         severity: "info",
         normalized: {
@@ -1313,87 +1920,181 @@ export async function runSurfaceScanEnrichment(
     });
 
     const timeoutError = new Error(`Module timeout after ${config.timeoutMs}ms`);
-    let timeoutHandle: number | null = null;
+    const totalAttempts = config.retryOnError ? Math.max(1, Number(config.maxRetries || 0) + 1) : 1;
+    let attempt = 0;
+    let lastError: any = null;
 
-    try {
-      await Promise.race([
-        fn(),
-        new Promise<never>((_, reject) => {
-          timeoutHandle = setTimeout(() => reject(timeoutError), config.timeoutMs) as unknown as number;
-        }),
-      ]);
-      if (timeoutHandle !== null) clearTimeout(timeoutHandle);
+    while (attempt < totalAttempts) {
+      attempt += 1;
+      let timeoutHandle: number | null = null;
 
-      const completedAtIso = new Date().toISOString();
-      const durationMs = Date.now() - startedAtMs;
-      await upsertModuleResult(config, "success", {
-        severity: "info",
-        startedAt: startedAtIso,
-        completedAt: completedAtIso,
-        durationMs,
-        normalized: {
+      try {
+        await Promise.race([
+          fn(),
+          new Promise<never>((_, reject) => {
+            timeoutHandle = setTimeout(() => reject(timeoutError), config.timeoutMs) as unknown as number;
+          }),
+        ]);
+        if (timeoutHandle !== null) clearTimeout(timeoutHandle);
+
+        const completedAtIso = new Date().toISOString();
+        const durationMs = Date.now() - startedAtMs;
+        await upsertModuleResult(config, "success", {
+          severity: "info",
+          startedAt: startedAtIso,
+          completedAt: completedAtIso,
+          durationMs,
+          normalized: {
+            module: config.key,
+            status: "success",
+            duration_ms: durationMs,
+            attempts: attempt,
+            retry_enabled: totalAttempts > 1,
+          },
+        });
+        await logAudit("module_completed", {
           module: config.key,
+          duration_ms: durationMs,
+          attempts: attempt,
+        });
+        console.info("surface_scan_module_complete", {
+          scanRunId: job.id,
+          tenantId: organizationId,
+          moduleKey: config.key,
           status: "success",
-          duration_ms: durationMs,
-        },
-      });
-      await logAudit("module_completed", { module: config.key, duration_ms: durationMs });
-      console.info("surface_scan_module_complete", {
-        scanRunId: job.id,
-        tenantId: organizationId,
-        moduleKey: config.key,
-        status: "success",
-        durationMs,
-      });
-    } catch (error: any) {
-      if (timeoutHandle !== null) clearTimeout(timeoutHandle);
-      const completedAtIso = new Date().toISOString();
-      const durationMs = Date.now() - startedAtMs;
-      const isTimeout = error?.message === timeoutError.message;
-      const status: ModuleStatus = isTimeout ? "timeout" : "error";
-      const severity: "info" | "low" | "medium" = isTimeout ? "low" : "medium";
-      const errorMessage = error?.message || "Errore non gestito";
+          durationMs,
+          attempts: attempt,
+        });
+        return;
+      } catch (error: any) {
+        if (timeoutHandle !== null) clearTimeout(timeoutHandle);
+        lastError = error;
+        const isTimeout = error?.message === timeoutError.message;
+        const shouldRetry =
+          attempt < totalAttempts &&
+          config.retryOnError &&
+          (isTimeout || isRetryableModuleError(error));
 
-      await insertObservation({
-        module: config.key,
-        observation_type: isTimeout ? "module_timeout" : "module_error",
-        title: isTimeout ? `Timeout modulo ${config.label}` : `Errore modulo ${config.label}`,
-        value: { error: errorMessage, timeout_ms: config.timeoutMs },
-        severity,
-      });
+        if (!shouldRetry) {
+          break;
+        }
 
-      await upsertModuleResult(config, status, {
-        severity,
-        startedAt: startedAtIso,
-        completedAt: completedAtIso,
-        durationMs,
-        errorMessage,
-        normalized: {
+        const retryDelayMs = Math.max(250, Number(config.retryBackoffMs || 750) * attempt);
+        await insertObservation({
           module: config.key,
-          status,
-          timeout_ms: config.timeoutMs,
-          duration_ms: durationMs,
-        },
-        raw: {
-          error: errorMessage,
-        },
-      });
+          observation_type: "module_retry",
+          title: `Retry modulo ${config.label}`,
+          value: {
+            attempt,
+            max_attempts: totalAttempts,
+            retry_delay_ms: retryDelayMs,
+            reason: String(error?.message || "retryable_error"),
+          },
+          severity: "low",
+        });
+        await logAudit("module_retry_scheduled", {
+          module: config.key,
+          attempt,
+          max_attempts: totalAttempts,
+          retry_delay_ms: retryDelayMs,
+          reason: String(error?.message || "retryable_error"),
+        });
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
 
-      await logAudit("module_failed", {
+    const completedAtIso = new Date().toISOString();
+    const durationMs = Date.now() - startedAtMs;
+    const isTimeout = String(lastError?.message || "") === timeoutError.message;
+    const status: ModuleStatus = isTimeout ? "timeout" : "error";
+    const severity: "info" | "low" | "medium" = isTimeout ? "low" : "medium";
+    const errorMessage = lastError?.message || "Errore non gestito";
+
+    await insertObservation({
+      module: config.key,
+      observation_type: isTimeout ? "module_timeout" : "module_error",
+      title: isTimeout ? `Timeout modulo ${config.label}` : `Errore modulo ${config.label}`,
+      value: {
+        error: errorMessage,
+        timeout_ms: config.timeoutMs,
+        attempts: attempt,
+        max_attempts: totalAttempts,
+      },
+      severity,
+    });
+
+    await upsertModuleResult(config, status, {
+      severity,
+      startedAt: startedAtIso,
+      completedAt: completedAtIso,
+      durationMs,
+      errorMessage,
+      normalized: {
         module: config.key,
         status,
-        error: errorMessage,
+        timeout_ms: config.timeoutMs,
         duration_ms: durationMs,
-      });
-      console.warn("surface_scan_module_error", {
-        scanRunId: job.id,
-        tenantId: organizationId,
-        moduleKey: config.key,
-        status,
-        durationMs,
-        errorMessage,
-      });
-    }
+        attempts: attempt,
+        max_attempts: totalAttempts,
+      },
+      raw: {
+        error: errorMessage,
+      },
+    });
+
+    await logAudit("module_failed", {
+      module: config.key,
+      status,
+      error: errorMessage,
+      duration_ms: durationMs,
+      attempts: attempt,
+      max_attempts: totalAttempts,
+    });
+    console.warn("surface_scan_module_error", {
+      scanRunId: job.id,
+      tenantId: organizationId,
+      moduleKey: config.key,
+      status,
+      durationMs,
+      errorMessage,
+      attempts: attempt,
+      maxAttempts: totalAttempts,
+    });
+  };
+
+  const recordModuleSkipped = async (
+    config: ModuleExecutionConfig,
+    reason: string,
+    extra: Record<string, unknown> = {},
+  ) => {
+    const nowIso = new Date().toISOString();
+    await upsertModuleResult(config, "skipped", {
+      severity: "info",
+      startedAt: nowIso,
+      completedAt: nowIso,
+      durationMs: 0,
+      normalized: {
+        module: config.key,
+        status: "skipped",
+        reason,
+        ...extra,
+      },
+    });
+    await insertObservation({
+      module: config.key,
+      observation_type: "module_skipped",
+      title: `Modulo ${config.label} saltato`,
+      value: {
+        reason,
+        ...extra,
+      },
+      severity: "info",
+    });
+    await logAudit("module_skipped", {
+      module: config.key,
+      reason,
+      ...extra,
+    });
   };
 
   const queryDnsJson = async (
@@ -1414,6 +2115,28 @@ export async function runSurfaceScanEnrichment(
 
   const runDnsModule = async () => {
     if (!hostname || !rootDomain) return;
+    let dnsLookupReport: DnsLookupResult | null = null;
+    try {
+      const lookupDomain = rootDomain || hostname;
+      dnsLookupReport = await scanDnsLookup({
+        domain: lookupDomain,
+        resolverUrl: Deno.env.get("DNS_LOOKUP_RESOLVER_URL") || undefined,
+        timeoutMs: Number(Deno.env.get("DNS_LOOKUP_TIMEOUT_MS") || 6000),
+        includeEmailSecurityChecks: true,
+        includeDkimSelectorChecks: false,
+        includeWildcardCheck: true,
+        userAgent: "SurfaceScan360-DNSLookup/1.0",
+      });
+    } catch (error) {
+      console.warn("surface_scan_dns_lookup_error", {
+        scanRunId: job.id,
+        tenantId: organizationId,
+        hostname,
+        rootDomain,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     const types = ["A", "AAAA", "MX", "TXT", "NS", "CNAME", "SOA", "CAA"];
     const records: Record<string, string[]> = {};
     for (const type of types) {
@@ -1676,6 +2399,135 @@ export async function runSurfaceScanEnrichment(
         bimi_records: bimiRecords,
       },
     });
+
+    if (dnsLookupReport) {
+      await insertObservation({
+        module: "dns_lookup",
+        observation_type: "dns_lookup_summary",
+        title: "DNS Lookup posture summary",
+        value: {
+          domain_scanned: dnsLookupReport.normalizedDomain,
+          score: dnsLookupReport.score,
+          grade: dnsLookupReport.grade,
+          resolver: dnsLookupReport.resolver,
+          duration_ms: dnsLookupReport.durationMs,
+          summary: dnsLookupReport.summary,
+        },
+      });
+
+      await insertObservation({
+        module: "dns_lookup_records",
+        observation_type: "dns_lookup_records_snapshot",
+        title: "DNS Lookup records snapshot",
+        value: {
+          domain_scanned: dnsLookupReport.normalizedDomain,
+          records: dnsLookupReport.records,
+          additional_records: dnsLookupReport.additionalRecords,
+        },
+      });
+
+      await insertObservation({
+        module: "dns_lookup",
+        observation_type: "dns_lookup_findings",
+        title: "DNS Lookup findings",
+        value: {
+          domain_scanned: dnsLookupReport.normalizedDomain,
+          findings: dnsLookupReport.findings.map((entry) => ({
+            id: entry.id,
+            category: entry.category,
+            title: entry.title,
+            severity: entry.severity,
+            status: entry.status,
+            recommendation: entry.recommendation,
+            report_summary: entry.reportSummary,
+            evidence: entry.evidence || {},
+          })),
+        },
+      });
+
+      try {
+        const reportSummary = dnsLookupReport.summary || ({} as Record<string, unknown>);
+        const summaryJson = reportSummary as unknown as Record<string, unknown>;
+        const recordsJson = (dnsLookupReport.records || {}) as unknown as Record<string, unknown>;
+        const additionalJson = (dnsLookupReport.additionalRecords || {}) as unknown as Record<string, unknown>;
+        const rawResultJson = dnsLookupReport as unknown as Record<string, unknown>;
+
+        const insertedResult = await adminClient
+          .from("surface_dns_lookup_results" as any)
+          .insert({
+            tenant_id: organizationId,
+            organization_id: organizationId,
+            customer_id: customerId,
+            scan_id: job.id,
+            asset_id: null,
+            domain: dnsLookupReport.domain,
+            normalized_domain: dnsLookupReport.normalizedDomain,
+            resolver: dnsLookupReport.resolver,
+            score: dnsLookupReport.score,
+            grade: dnsLookupReport.grade,
+            records: recordsJson,
+            additional_records: additionalJson,
+            summary: summaryJson,
+            raw_result: rawResultJson,
+            duration_ms: dnsLookupReport.durationMs,
+            scanned_at: dnsLookupReport.completedAt,
+          })
+          .select("id")
+          .maybeSingle();
+
+        const dnsResultId = String(insertedResult.data?.id || "").trim();
+        if (dnsResultId) {
+          const payload = dnsLookupReport.findings.map((entry) => ({
+            tenant_id: organizationId,
+            organization_id: organizationId,
+            customer_id: customerId,
+            dns_lookup_result_id: dnsResultId,
+            scan_id: job.id,
+            asset_id: null,
+            domain: dnsLookupReport.normalizedDomain,
+            finding_key: entry.id,
+            category: entry.category,
+            severity: entry.severity,
+            status: entry.status,
+            title: entry.title,
+            description: entry.description,
+            evidence: (entry.evidence || {}) as Record<string, unknown>,
+            recommendation: entry.recommendation,
+            report_summary: entry.reportSummary || null,
+          }));
+          if (payload.length > 0) {
+            await adminClient.from("surface_dns_lookup_findings" as any).insert(payload);
+          }
+        }
+      } catch (error) {
+        console.warn("surface_scan_dns_lookup_persist_error", {
+          scanRunId: job.id,
+          tenantId: organizationId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      for (const dnsFinding of dnsLookupReport.findings) {
+        const status = String(dnsFinding.status || "").toLowerCase();
+        if (status === "pass" || status === "info") continue;
+        const severity = toSeverity(dnsFinding.severity);
+        await insertFinding({
+          module: "dns_lookup",
+          finding_type: `dns_lookup_${dnsFinding.id}`,
+          severity,
+          title: dnsFinding.title,
+          description: dnsFinding.description,
+          affected_asset: dnsLookupReport.normalizedDomain,
+          evidence: {
+            category: dnsFinding.category,
+            status: dnsFinding.status,
+            report_summary: dnsFinding.reportSummary,
+            ...((dnsFinding.evidence || {}) as Record<string, unknown>),
+          },
+          remediation: dnsFinding.recommendation,
+        });
+      }
+    }
   };
 
   const runDnssecModule = async () => {
@@ -1732,53 +2584,271 @@ export async function runSurfaceScanEnrichment(
   };
 
   const runWhoisModule = async () => {
-    if (!rootDomain) return;
-    const rdapUrl = `https://rdap.org/domain/${encodeURIComponent(rootDomain)}`;
-    const response = await fetchWithTimeout(rdapUrl, {
-      headers: {
-        accept: "application/rdap+json, application/json;q=0.9",
-        "user-agent": "SurfaceScan360/1.0",
-      },
-    }, 10000);
+    if (!rootDomain) {
+      await insertObservation({
+        module: "whois",
+        observation_type: "module_skipped",
+        title: "WHOIS module skipped",
+        value: {
+          reason: "missing_root_domain",
+          target_type: parsedTarget.target_type,
+          hostname: hostname || null,
+        },
+        severity: "info",
+      });
+      return;
+    }
 
-    if (!response.ok) {
+    const nowMs = Date.now();
+    const rdapUrl = `https://rdap.org/domain/${encodeURIComponent(rootDomain)}`;
+    const firecrawlApiKey = String(Deno.env.get("FIRECRAWL_API_KEY") || "").trim();
+    const firecrawlWhoisEnabled =
+      String(Deno.env.get("SURFACESCAN_WHOIS_FIRECRAWL_ENABLED") || "true").toLowerCase() !== "false";
+    const firecrawlWhoisTimeoutMs = Math.max(
+      2500,
+      Math.min(8000, Number(Deno.env.get("SURFACESCAN_WHOIS_FIRECRAWL_TIMEOUT_MS") || "6000")),
+    );
+    const firecrawlWhoisRetries = Math.max(
+      0,
+      Math.min(1, Number(Deno.env.get("SURFACESCAN_WHOIS_FIRECRAWL_RETRIES") || "0")),
+    );
+    const firecrawlWhoisMaxMarkdownChars = Math.max(
+      1000,
+      Math.min(50000, Number(Deno.env.get("SURFACESCAN_WHOIS_FIRECRAWL_MAX_CHARS") || "15000")),
+    );
+    const firecrawlMiskWhoisUrl = `https://www.misk.com/tools/#whois/${encodeURIComponent(rootDomain)}`;
+
+    type WhoisProviderResult = {
+      provider: string;
+      ok: boolean;
+      status: number | null;
+      error: string | null;
+      summary: WhoisRdapSummary | null;
+      details?: Record<string, unknown>;
+    };
+
+    const mergeWhoisSummaries = (primary: WhoisRdapSummary | null, fallback: WhoisRdapSummary | null): WhoisRdapSummary | null => {
+      if (!primary && !fallback) return null;
+      if (!primary) return fallback;
+      if (!fallback) return primary;
+
+      const expires = primary.expires || fallback.expires;
+      const expiryMs = expires ? Date.parse(expires) : Number.NaN;
+      const daysToExpiry = primary.days_to_expiry !== null
+        ? primary.days_to_expiry
+        : fallback.days_to_expiry !== null
+          ? fallback.days_to_expiry
+          : Number.isFinite(expiryMs)
+            ? Math.round((expiryMs - nowMs) / 86400000)
+            : null;
+
+      return {
+        domain: primary.domain || fallback.domain || rootDomain,
+        registrar: primary.registrar || fallback.registrar,
+        created: primary.created || fallback.created,
+        updated: primary.updated || fallback.updated,
+        expires,
+        days_to_expiry: daysToExpiry,
+        registration_valid: daysToExpiry === null ? false : daysToExpiry >= 0,
+        nameservers: Array.from(new Set([...(primary.nameservers || []), ...(fallback.nameservers || [])])),
+        dnssec: primary.dnssec || fallback.dnssec,
+      };
+    };
+
+    const rdapTask = (async (): Promise<WhoisProviderResult> => {
+      try {
+        const response = await fetchWithTimeout(
+          rdapUrl,
+          {
+            headers: {
+              accept: "application/rdap+json, application/json;q=0.9",
+              "user-agent": "SurfaceScan360/1.0",
+            },
+          },
+          10000,
+        );
+
+        if (!response.ok) {
+          return {
+            provider: "rdap.org",
+            ok: false,
+            status: response.status,
+            error: `rdap_http_${response.status}`,
+            summary: null,
+          };
+        }
+
+        const payload = await response.json().catch(() => ({}));
+        return {
+          provider: "rdap.org",
+          ok: true,
+          status: response.status,
+          error: null,
+          summary: summarizeWhoisRdap(payload, nowMs),
+          details: {
+            status: Array.isArray((payload as any)?.status) ? (payload as any).status : [],
+          },
+        };
+      } catch (error: any) {
+        return {
+          provider: "rdap.org",
+          ok: false,
+          status: null,
+          error: String(error?.message || "rdap_fetch_failed"),
+          summary: null,
+        };
+      }
+    })();
+
+    const firecrawlTask = (async (): Promise<WhoisProviderResult> => {
+      if (!firecrawlWhoisEnabled || !firecrawlApiKey) {
+        return {
+          provider: "misk.com/firecrawl",
+          ok: false,
+          status: null,
+          error: firecrawlWhoisEnabled ? "firecrawl_not_configured" : "firecrawl_disabled",
+          summary: null,
+        };
+      }
+
+      try {
+        const scrape = await firecrawlScrape({
+          apiKey: firecrawlApiKey,
+          targetUrl: firecrawlMiskWhoisUrl,
+          timeoutMs: firecrawlWhoisTimeoutMs,
+          retries: firecrawlWhoisRetries,
+          maxMarkdownChars: firecrawlWhoisMaxMarkdownChars,
+          onlyMainContent: false,
+          onlyCleanContent: false,
+          waitForMs: 1500,
+          actions: [
+            { type: "wait", milliseconds: 1000 },
+            { type: "click", selector: "input[name='domain']" },
+            { type: "write", text: rootDomain },
+            { type: "press", key: "Enter" },
+            { type: "wait", milliseconds: 1800 },
+          ],
+          requestHeaders: {
+            Referer: "https://www.misk.com/tools/",
+            Origin: "https://www.misk.com",
+          },
+        });
+
+        const rawText = `${scrape.title}\n${scrape.summary}\n${scrape.markdown}`.trim();
+        const parsedSummary = summarizeWhoisText(rawText, rootDomain, nowMs);
+        const hasCoreData =
+          Boolean(parsedSummary.registrar) ||
+          Boolean(parsedSummary.expires) ||
+          parsedSummary.days_to_expiry !== null ||
+          parsedSummary.nameservers.length > 0 ||
+          Boolean(parsedSummary.dnssec);
+
+        return {
+          provider: "misk.com/firecrawl",
+          ok: scrape.ok && hasCoreData,
+          status: scrape.status,
+          error: scrape.ok
+            ? (hasCoreData ? null : "firecrawl_whois_no_core_fields")
+            : String(scrape.error || "firecrawl_whois_failed"),
+          summary: hasCoreData ? parsedSummary : null,
+          details: {
+            source_url: scrape.sourceUrl,
+            warning: scrape.warning,
+            links_count: scrape.links.length,
+          },
+        };
+      } catch (error: any) {
+        return {
+          provider: "misk.com/firecrawl",
+          ok: false,
+          status: null,
+          error: String(error?.message || "firecrawl_whois_failed"),
+          summary: null,
+        };
+      }
+    })();
+
+    const [rdapResult, firecrawlResult] = await Promise.all([rdapTask, firecrawlTask]);
+    const mergedSummary = mergeWhoisSummaries(rdapResult.summary, firecrawlResult.summary);
+
+    if (!mergedSummary) {
       await insertObservation({
         module: "whois",
         observation_type: "rdap_unavailable",
-        title: "RDAP lookup unavailable",
+        title: "RDAP/WHOIS lookup unavailable",
         value: {
           domain: rootDomain,
           rdap_url: rdapUrl,
-          status: response.status,
+          rdap_status: rdapResult.status,
+          rdap_error: rdapResult.error,
+          fallback_provider: firecrawlResult.provider,
+          fallback_status: firecrawlResult.status,
+          fallback_error: firecrawlResult.error,
+          fallback_target_url: firecrawlMiskWhoisUrl,
         },
         severity: "low",
       });
       return;
     }
 
-    const payload = await response.json().catch(() => ({}));
-    const whoisSummary = summarizeWhoisRdap(payload);
+    if (!rdapResult.ok) {
+      await insertObservation({
+        module: "whois",
+        observation_type: "rdap_unavailable",
+        title: "RDAP lookup unavailable (fallback used)",
+        value: {
+          domain: rootDomain,
+          rdap_url: rdapUrl,
+          rdap_status: rdapResult.status,
+          rdap_error: rdapResult.error,
+          fallback_provider: firecrawlResult.provider,
+          fallback_status: firecrawlResult.status,
+          fallback_error: firecrawlResult.error,
+          fallback_target_url: firecrawlMiskWhoisUrl,
+        },
+        severity: "low",
+      });
+    }
+
+    const sourceLabel = (() => {
+      if (rdapResult.ok && firecrawlResult.ok) return "rdap.org+misk.com/firecrawl";
+      if (rdapResult.ok) return "rdap.org";
+      if (firecrawlResult.ok) return "misk.com/firecrawl";
+      return "unknown";
+    })();
 
     await insertObservation({
       module: "whois",
       observation_type: "whois_rdap",
       title: "Domain WHOIS via RDAP",
       value: {
-        domain: rootDomain,
-        registrar: whoisSummary.registrar,
-        created: whoisSummary.created,
-        updated: whoisSummary.updated,
-        expires: whoisSummary.expires,
-        days_to_expiry: whoisSummary.days_to_expiry,
-        registration_valid: whoisSummary.registration_valid,
-        nameservers: whoisSummary.nameservers,
-        status: Array.isArray(payload?.status) ? payload.status : [],
-        dnssec: whoisSummary.dnssec,
-        source: "rdap.org",
+        domain: mergedSummary.domain || rootDomain,
+        registrar: mergedSummary.registrar,
+        created: mergedSummary.created,
+        updated: mergedSummary.updated,
+        expires: mergedSummary.expires,
+        days_to_expiry: mergedSummary.days_to_expiry,
+        registration_valid: mergedSummary.registration_valid,
+        nameservers: mergedSummary.nameservers,
+        status: Array.isArray(rdapResult.details?.status) ? rdapResult.details?.status : [],
+        dnssec: mergedSummary.dnssec,
+        source: sourceLabel,
+        providers: {
+          rdap: {
+            ok: rdapResult.ok,
+            status: rdapResult.status,
+            error: rdapResult.error,
+          },
+          misk_firecrawl: {
+            ok: firecrawlResult.ok,
+            status: firecrawlResult.status,
+            error: firecrawlResult.error,
+          },
+        },
       },
     });
 
-    if (whoisSummary.days_to_expiry !== null && whoisSummary.days_to_expiry < 0) {
+    if (mergedSummary.days_to_expiry !== null && mergedSummary.days_to_expiry < 0) {
       await insertFinding({
         module: "whois",
         finding_type: "domain_expired",
@@ -1788,29 +2858,29 @@ export async function runSurfaceScanEnrichment(
         description: "Il dominio risulta scaduto secondo i dati RDAP.",
         remediation: "Rinnovare immediatamente il dominio e verificare stato presso il registrar.",
       });
-    } else if (whoisSummary.days_to_expiry !== null && whoisSummary.days_to_expiry < 30) {
+    } else if (mergedSummary.days_to_expiry !== null && mergedSummary.days_to_expiry < 30) {
       await insertFinding({
         module: "whois",
         finding_type: "domain_expiry_soon_30d",
         severity: "high",
         title: "Domain expires in less than 30 days",
         affected_asset: rootDomain,
-        description: `Scadenza dominio imminente (${whoisSummary.days_to_expiry} giorni).`,
+        description: `Scadenza dominio imminente (${mergedSummary.days_to_expiry} giorni).`,
         remediation: "Pianificare rinnovo immediato per evitare interruzioni operative.",
       });
-    } else if (whoisSummary.days_to_expiry !== null && whoisSummary.days_to_expiry < 90) {
+    } else if (mergedSummary.days_to_expiry !== null && mergedSummary.days_to_expiry < 90) {
       await insertFinding({
         module: "whois",
         finding_type: "domain_expiry_soon_90d",
         severity: "medium",
         title: "Domain expires in less than 90 days",
         affected_asset: rootDomain,
-        description: `Scadenza dominio nei prossimi ${whoisSummary.days_to_expiry} giorni.`,
+        description: `Scadenza dominio nei prossimi ${mergedSummary.days_to_expiry} giorni.`,
         remediation: "Programmare rinnovo dominio e verifica contatti amministrativi.",
       });
     }
 
-    if (!whoisSummary.registrar || !whoisSummary.expires) {
+    if (!mergedSummary.registrar || !mergedSummary.expires) {
       await insertFinding({
         module: "whois",
         finding_type: "whois_partial_data",
@@ -1842,34 +2912,28 @@ export async function runSurfaceScanEnrichment(
     const xXssLegacy = headerValue("x-xss-protection");
     const serverHeader = headerValue("server");
     const poweredByHeader = headerValue("x-powered-by");
+    const headerReport = evaluateHeaders(
+      snapshot.requestUrl,
+      snapshot.finalUrl || null,
+      Number.isFinite(snapshot.statusCode) ? snapshot.statusCode : null,
+      Number.isFinite(snapshot.responseTimeMs) ? snapshot.responseTimeMs : 0,
+      headers,
+    );
+    const findingByRule = new Map(headerReport.findings.map((entry) => [entry.ruleId, entry] as const));
 
     const checks = {
-      contentSecurityPolicy: Boolean(csp),
-      strictTransportSecurity: Boolean(hsts),
-      xContentTypeOptions: Boolean(xcto),
-      xFrameOptions: Boolean(xfo) || Boolean(csp && /frame-ancestors/i.test(csp)),
-      referrerPolicy: Boolean(referrer),
-      permissionsPolicy: Boolean(permissions),
-      crossOriginOpenerPolicy: Boolean(coop),
-      crossOriginResourcePolicy: Boolean(corp),
-      crossOriginEmbedderPolicy: Boolean(coep),
+      contentSecurityPolicy: findingByRule.get("csp")?.status === "ok",
+      strictTransportSecurity: findingByRule.get("hsts")?.status === "ok",
+      xContentTypeOptions: findingByRule.get("x-content-type-options")?.status === "ok",
+      xFrameOptions: findingByRule.get("frame-protection")?.status === "ok",
+      referrerPolicy: findingByRule.get("referrer-policy")?.status === "ok",
+      permissionsPolicy: findingByRule.get("permissions-policy")?.status === "ok",
+      crossOriginOpenerPolicy: findingByRule.get("coop")?.status === "ok",
+      crossOriginResourcePolicy: findingByRule.get("corp")?.status === "ok",
+      crossOriginEmbedderPolicy: findingByRule.get("coep")?.status === "ok",
       xXssProtectionLegacy: Boolean(xXssLegacy),
     };
-
-    const scoreWeights = {
-      contentSecurityPolicy: 20,
-      strictTransportSecurity: 20,
-      xContentTypeOptions: 10,
-      xFrameOptions: 10,
-      referrerPolicy: 10,
-      permissionsPolicy: 10,
-      crossOriginOpenerPolicy: 7,
-      crossOriginResourcePolicy: 7,
-      crossOriginEmbedderPolicy: 6,
-    };
-    const score = Object.entries(scoreWeights).reduce((acc, [key, weight]) => {
-      return checks[key as keyof typeof checks] ? acc + weight : acc;
-    }, 0);
+    const score = Number(headerReport.score || 0);
 
     await insertObservation({
       module: "http_status",
@@ -1942,6 +3006,148 @@ export async function runSurfaceScanEnrichment(
         source: "http_fetch",
       },
     });
+
+    await insertObservation({
+      module: "http_security",
+      observation_type: "http_headers_scanner_summary",
+      title: "HTTP header scanner summary",
+      value: {
+        url: snapshot.requestUrl,
+        finalUrl: headerReport.finalUrl,
+        statusCode: headerReport.statusCode,
+        checks,
+        headers: {
+          "content-security-policy": csp,
+          "strict-transport-security": hsts,
+          "x-content-type-options": xcto,
+          "x-frame-options": xfo,
+          "referrer-policy": referrer,
+          "permissions-policy": permissions,
+          "cross-origin-opener-policy": coop,
+          "cross-origin-resource-policy": corp,
+          "cross-origin-embedder-policy": coep,
+          "x-xss-protection": xXssLegacy,
+        },
+        scanner: headerReport.scanner,
+        scanner_version: headerReport.scannerVersion,
+        score: headerReport.score,
+        grade: headerReport.grade,
+        summary: headerReport.summary,
+        response_time_ms: headerReport.responseTimeMs,
+        status_code: headerReport.statusCode,
+        final_url: headerReport.finalUrl,
+        is_https: headerReport.isHttps,
+      },
+    });
+
+    await insertObservation({
+      module: "headers",
+      observation_type: "http_headers_scanner_findings",
+      title: "HTTP header scanner findings",
+      value: {
+        findings: headerReport.findings.map((entry) => ({
+          rule_id: entry.ruleId,
+          header: entry.header,
+          severity: entry.severity,
+          status: entry.status,
+          category: entry.category,
+          note: entry.note,
+          recommendation: entry.recommendation,
+          actual_value: entry.actualValue,
+          earned_points: entry.earnedPoints,
+          weight: entry.weight,
+          evidence: entry.evidence || {},
+        })),
+      },
+    });
+
+    const { data: insertedHeaderResult } = await adminClient
+      .from("surface_http_header_results" as any)
+      .insert({
+        organization_id: organizationId,
+        tenant_id: tenantId,
+        customer_id: customerId,
+        scan_id: job.id,
+        project_id: customerId || organizationId,
+        asset_id: null,
+        asset_type: parsedTarget.target_type === "url" ? "url" : "domain",
+        input_url: snapshot.requestUrl,
+        normalized_url: headerReport.normalizedUrl,
+        final_url: headerReport.finalUrl,
+        status_code: headerReport.statusCode,
+        is_https: headerReport.isHttps,
+        response_time_ms: headerReport.responseTimeMs,
+        score: headerReport.score,
+        grade: headerReport.grade,
+        ok_count: headerReport.summary.ok,
+        weak_count: headerReport.summary.weak,
+        missing_count: headerReport.summary.missing,
+        high_impact_open_count: headerReport.summary.highImpactOpen,
+        raw_headers: headerReport.rawHeaders,
+        error_message: headerReport.error || null,
+        scanned_at: headerReport.scannedAt,
+      })
+      .select("id")
+      .maybeSingle();
+
+    if (insertedHeaderResult?.id) {
+      const payload = headerReport.findings.map((entry) => ({
+        result_id: insertedHeaderResult.id,
+        scan_id: job.id,
+        project_id: customerId || organizationId,
+        organization_id: organizationId,
+        tenant_id: tenantId,
+        customer_id: customerId,
+        asset_id: null,
+        rule_id: entry.ruleId,
+        header_name: entry.header,
+        category: entry.category,
+        severity: entry.severity,
+        status: entry.status,
+        weight: entry.weight,
+        earned_points: entry.earnedPoints,
+        actual_value: entry.actualValue,
+        note: entry.note,
+        description: entry.description,
+        recommendation: entry.recommendation,
+        evidence: entry.evidence || {},
+      }));
+      if (payload.length > 0) {
+        await adminClient.from("surface_http_header_findings" as any).insert(payload);
+      }
+    }
+
+    const knownMissingFindingRules = new Set([
+      "csp",
+      "hsts",
+      "x-content-type-options",
+      "frame-protection",
+      "referrer-policy",
+      "permissions-policy",
+      "coop",
+      "corp",
+      "coep",
+    ]);
+    for (const entry of headerReport.findings) {
+      if (entry.status === "ok") continue;
+      if (entry.status === "missing" && knownMissingFindingRules.has(entry.ruleId)) continue;
+      await insertFinding({
+        module: "http_security",
+        finding_type: `http_header_${entry.ruleId}_${entry.status}`,
+        severity: entry.severity,
+        title: `${entry.header} ${entry.status === "missing" ? "missing" : "weak"}`,
+        description: entry.note,
+        remediation: entry.recommendation,
+        affected_url: snapshot.finalUrl || snapshot.requestUrl,
+        evidence: {
+          header: entry.header,
+          status: entry.status,
+          actual_value: entry.actualValue,
+          category: entry.category,
+          score_weight: entry.weight,
+        },
+      });
+    }
 
     if (snapshot.statusCode >= 500) {
       await insertFinding({
@@ -2639,6 +3845,26 @@ export async function runSurfaceScanEnrichment(
       result.isSelfSigned = isSelfSigned;
       result.raw = certPayload;
 
+      // Wildcard certificate detection
+      const wildcardSans = san
+        .map(e => e.replace(/^DNS:/i, "").trim())
+        .filter(e => e.startsWith("*."));
+      const isWildcard = wildcardSans.length > 0 || Boolean(subject?.startsWith("*."));
+      result.isWildcard = isWildcard;
+      if (isWildcard) {
+        await insertFinding({
+          module: "ssl_certificate",
+          finding_type: "ssl_wildcard_certificate",
+          severity: "info",
+          title: "Certificato wildcard rilevato",
+          description: `Certificato con copertura wildcard: ${wildcardSans.join(", ") || subject}. Verificare che emissione e gestione chiavi siano controllate.`,
+          affected_asset: hostForCert,
+          cwe: ["CWE-295"],
+          evidence: { is_wildcard: true, wildcard_domains: wildcardSans, subject, issuer },
+          remediation: "Usare wildcard solo se necessario. Proteggere la chiave privata con HSM. Monitorare via Certificate Transparency.",
+        });
+      }
+
       const hasHostnameMatch = san.length > 0
         ? san.some((entry) => {
           const candidate = entry.replace(/^DNS:/i, "").toLowerCase();
@@ -2962,6 +4188,374 @@ export async function runSurfaceScanEnrichment(
       observation_type: "server_location",
       title: "Approximate server location",
       value: location,
+    });
+  };
+
+  const runIpGeoAndAsnModule = async () => {
+    const startedAt = Date.now();
+    const scopedIps = [...discoveredIps]
+      .filter((ip) => isIpAllowedInScope(ip))
+      .slice(0, 25);
+    if (scopedIps.length === 0) {
+      await emitEngineEnvelope({
+        engine: "ip_geo_asn",
+        target: hostname || rootDomain || job.normalized_target,
+        status: "skipped",
+        durationMs: 0,
+        summary: { reason: "no_in_scope_ips" },
+      });
+      return;
+    }
+
+    const geoSummaries: Array<Record<string, unknown>> = [];
+    const asnSummaries: Array<Record<string, unknown>> = [];
+    let failedLookups = 0;
+
+    for (const ip of scopedIps) {
+      let ipApiFallbackUsed = false;
+      try {
+        const geoRes = await fetchWithTimeout(`https://ipwho.is/${encodeURIComponent(ip)}`, {
+          headers: { accept: "application/json" },
+        }, 10000);
+        if (geoRes.ok) {
+          const geoPayload = await geoRes.json().catch(() => ({}));
+          const success = Boolean((geoPayload as any)?.success !== false);
+          const geo = {
+            ip,
+            success,
+            country: String((geoPayload as any)?.country || "").trim() || null,
+            region: String((geoPayload as any)?.region || "").trim() || null,
+            city: String((geoPayload as any)?.city || "").trim() || null,
+            latitude: typeof (geoPayload as any)?.latitude === "number" ? (geoPayload as any).latitude : null,
+            longitude: typeof (geoPayload as any)?.longitude === "number" ? (geoPayload as any).longitude : null,
+            timezone: String((geoPayload as any)?.timezone?.id || "").trim() || null,
+            isp: String((geoPayload as any)?.connection?.isp || "").trim() || null,
+            org: String((geoPayload as any)?.connection?.org || "").trim() || null,
+            asn: String((geoPayload as any)?.connection?.asn || "").trim() || null,
+            is_proxy: Boolean((geoPayload as any)?.security?.proxy),
+            is_hosting: Boolean((geoPayload as any)?.security?.hosting),
+            is_tor: Boolean((geoPayload as any)?.security?.tor),
+          };
+          if (!geo.country && !geo.org && !geo.asn) {
+            throw new Error("ipwhois_payload_missing_core_fields");
+          }
+          geoSummaries.push(geo);
+          if (geo.asn) {
+            await insertAsset({
+              asset_type: "asn",
+              asset_value: geo.asn,
+              hostname: hostname || rootDomain || null,
+              root_domain: rootDomain,
+              ip,
+              source: "ip_geo_asn",
+              confidence: "medium",
+              raw: { org: geo.org, isp: geo.isp },
+            });
+          }
+          if (geo.is_proxy || geo.is_tor) {
+            await insertFinding({
+              module: "ip_geo_asn",
+              finding_type: geo.is_tor ? "ip_tor_exit_node" : "ip_proxy_reputation_flag",
+              severity: geo.is_tor ? "high" : "medium",
+              title: geo.is_tor ? "IP detected as Tor exit node" : "IP reputation indicates proxy usage",
+              affected_asset: hostname || rootDomain || ip,
+              ip,
+              evidence: geo,
+              remediation: "Verificare se l'IP è atteso nel deployment. Applicare allowlist/segregazione e monitoraggio attivo.",
+            });
+          }
+        }
+      } catch {
+        // Fallback engine aligned with WIP spec (best-effort, non-blocking).
+        try {
+          const ipApiRes = await fetchWithTimeout(
+            `http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,country,countryCode,regionName,city,lat,lon,timezone,isp,org,as,asname,mobile,proxy,hosting,query`,
+            { headers: { accept: "application/json" } },
+            10000,
+          );
+          if (ipApiRes.ok) {
+            const ipApiPayload = await ipApiRes.json().catch(() => ({}));
+            if (String((ipApiPayload as any)?.status || "").toLowerCase() === "success") {
+              ipApiFallbackUsed = true;
+              const geo = {
+                ip,
+                success: true,
+                country: String((ipApiPayload as any)?.country || "").trim() || null,
+                region: String((ipApiPayload as any)?.regionName || "").trim() || null,
+                city: String((ipApiPayload as any)?.city || "").trim() || null,
+                latitude: typeof (ipApiPayload as any)?.lat === "number" ? (ipApiPayload as any).lat : null,
+                longitude: typeof (ipApiPayload as any)?.lon === "number" ? (ipApiPayload as any).lon : null,
+                timezone: String((ipApiPayload as any)?.timezone || "").trim() || null,
+                isp: String((ipApiPayload as any)?.isp || "").trim() || null,
+                org: String((ipApiPayload as any)?.org || "").trim() || null,
+                asn: String((ipApiPayload as any)?.as || "").trim() || null,
+                is_proxy: Boolean((ipApiPayload as any)?.proxy),
+                is_hosting: Boolean((ipApiPayload as any)?.hosting),
+                is_tor: false,
+                source: "ip-api-fallback",
+              };
+              geoSummaries.push(geo);
+              if (geo.asn) {
+                await insertAsset({
+                  asset_type: "asn",
+                  asset_value: geo.asn,
+                  hostname: hostname || rootDomain || null,
+                  root_domain: rootDomain,
+                  ip,
+                  source: "ip_geo_asn",
+                  confidence: "medium",
+                  raw: { org: geo.org, isp: geo.isp, source: geo.source },
+                });
+              }
+              if (geo.is_proxy) {
+                await insertFinding({
+                  module: "ip_geo_asn",
+                  finding_type: "ip_proxy_reputation_flag",
+                  severity: "medium",
+                  title: "IP reputation indicates proxy usage",
+                  affected_asset: hostname || rootDomain || ip,
+                  ip,
+                  evidence: geo,
+                  remediation: "Verificare se l'IP è atteso nel deployment. Applicare allowlist/segregazione e monitoraggio attivo.",
+                });
+              }
+            }
+          }
+        } catch {
+          // no-op, counted below
+        }
+        if (!ipApiFallbackUsed) {
+          failedLookups += 1;
+        }
+      }
+
+      try {
+        const bgpRes = await fetchWithTimeout(`https://api.bgpview.io/ip/${encodeURIComponent(ip)}`, {
+          headers: { accept: "application/json" },
+        }, 10000);
+        if (!bgpRes.ok) continue;
+        const bgpPayload = await bgpRes.json().catch(() => ({}));
+        const data = ((bgpPayload as any)?.data || {}) as Record<string, unknown>;
+        const asnObj = ((data as any)?.prefixes || [])[0]?.asn || (data as any)?.asn || null;
+        const asnNumber = String((asnObj as any)?.asn || "").trim();
+        const asnName = String((asnObj as any)?.name || "").trim();
+        const prefix = String(((data as any)?.prefixes || [])[0]?.prefix || "").trim();
+        const summary = {
+          ip,
+          asn: asnNumber ? `AS${asnNumber}` : null,
+          asn_name: asnName || null,
+          prefix: prefix || null,
+        };
+        asnSummaries.push(summary);
+        if (summary.asn) {
+          await insertAsset({
+            asset_type: "asn",
+            asset_value: summary.asn,
+            hostname: hostname || rootDomain || null,
+            root_domain: rootDomain,
+            ip,
+            source: "bgp_asn_lookup",
+            confidence: "high",
+            raw: { asn_name: summary.asn_name, prefix: summary.prefix },
+          });
+        }
+        if (summary.prefix) {
+          await insertAsset({
+            asset_type: "netblock",
+            asset_value: summary.prefix,
+            hostname: hostname || rootDomain || null,
+            root_domain: rootDomain,
+            ip,
+            source: "bgp_asn_lookup",
+            confidence: "medium",
+            raw: { asn: summary.asn, asn_name: summary.asn_name },
+          });
+        }
+      } catch {
+        failedLookups += 1;
+      }
+    }
+
+    await insertObservation({
+      module: "ip_geo_asn",
+      observation_type: "ip_geo_asn_summary",
+      title: "IP geolocation, reputation and ASN summary",
+      value: {
+        checked_ips: scopedIps,
+        geo: geoSummaries,
+        asn: asnSummaries,
+        failed_lookups: failedLookups,
+      },
+      severity: failedLookups > 0 ? "low" : "info",
+    });
+
+    await insertExternalIntel(
+      "ip_geo_asn",
+      hostname || rootDomain || job.normalized_target,
+      geoSummaries.length > 0 || asnSummaries.length > 0,
+      {
+        ips_checked: scopedIps.length,
+        geo_records: geoSummaries.length,
+        asn_records: asnSummaries.length,
+        failed_lookups: failedLookups,
+      },
+      {
+        geo: geoSummaries,
+        asn: asnSummaries,
+      },
+      failedLookups > 0 ? "medium" : "high",
+    );
+
+    await emitEngineEnvelope({
+      engine: "ip_geo_asn",
+      target: hostname || rootDomain || job.normalized_target,
+      status: failedLookups > 0 ? "partial" : "success",
+      durationMs: Date.now() - startedAt,
+      summary: {
+        ips_checked: scopedIps.length,
+        failed_lookups: failedLookups,
+      },
+    });
+  };
+
+  const runCveIntelModule = async () => {
+    const startedAt = Date.now();
+    const cveFindingRes = await adminClient
+      .from("surface_findings" as any)
+      .select("cve")
+      .eq("scan_job_id", job.id)
+      .not("cve", "is", null)
+      .limit(2000);
+    const cveSet = new Set<string>();
+    for (const row of (cveFindingRes.data || []) as Array<Record<string, unknown>>) {
+      const cveList = asStringArray(row?.cve);
+      for (const cve of cveList) {
+        const normalized = cve.trim().toUpperCase();
+        if (/^CVE-\d{4}-\d{4,7}$/.test(normalized)) cveSet.add(normalized);
+      }
+    }
+    const cves = [...cveSet].slice(0, 60);
+    if (cves.length === 0) {
+      await emitEngineEnvelope({
+        engine: "cve_intel",
+        target: hostname || rootDomain || job.normalized_target,
+        status: "skipped",
+        durationMs: 0,
+        summary: { reason: "no_cves_in_findings" },
+      });
+      return;
+    }
+
+    const intelRows: Array<Record<string, unknown>> = [];
+    let failed = 0;
+    for (const cve of cves) {
+      try {
+        let enriched = false;
+
+        // ── Primary: MITRE CVE AWG (CVE 5.0 format, CVSSv3.1, CWE IDs, affected products) ──
+        try {
+          const mitreRes = await fetchWithTimeout(
+            `https://cveawg.mitre.org/api/cve/${encodeURIComponent(cve)}`,
+            { headers: { accept: "application/json", "user-agent": "SurfaceScan360/1.0" } },
+            10_000,
+          );
+          if (mitreRes.ok) {
+            const mitreData = await mitreRes.json().catch(() => null);
+            if (mitreData?.cveMetadata?.cveId) {
+              const cna = mitreData.containers?.cna;
+              const metrics = (cna?.metrics as any[] | undefined) || [];
+              let cvss: number | null = null;
+              let cvss_vector: string | null = null;
+              let cvss_version = "";
+              for (const m of metrics) {
+                const v31 = m.cvssV3_1 || m.cvssV3_0 || m.cvssV31;
+                if (v31) { cvss = v31.baseScore ?? null; cvss_vector = v31.vectorString ?? null; cvss_version = "3.1"; break; }
+                const v2 = m.cvssV2_0 || m.cvssV2;
+                if (v2) { cvss = v2.baseScore ?? null; cvss_vector = v2.vectorString ?? null; cvss_version = "2.0"; break; }
+              }
+              const problemTypes = (cna?.problemTypes as any[] | undefined) || [];
+              const cweId = problemTypes[0]?.descriptions?.[0]?.cweId
+                || problemTypes[0]?.descriptions?.[0]?.description
+                || null;
+              const affected = ((cna?.affected as any[] | undefined) || []).slice(0, 5).map((a: any) => ({
+                vendor: a.vendor || "Unknown",
+                product: a.product || "Unknown",
+                versions: ((a.versions as any[] | undefined) || []).slice(0, 3).map((v: any) => v.version).filter(Boolean),
+              }));
+              const description = ((cna?.descriptions as any[] | undefined) || []).find((d: any) => d.lang === "en")?.value
+                || (cna?.descriptions as any[])?.[0]?.value || "";
+              const summary = {
+                cve,
+                cvss,
+                cvss_vector,
+                cvss_version,
+                cwe: cweId,
+                published: mitreData.cveMetadata?.datePublished || null,
+                modified: mitreData.cveMetadata?.dateUpdated || null,
+                references_count: ((cna?.references as any[] | undefined) || []).length,
+                summary: description.slice(0, 800),
+                affected: affected.slice(0, 5),
+                source: "mitre",
+              };
+              intelRows.push(summary);
+              await insertExternalIntel("cve_intel_mitre", cve, true, summary, mitreData as Record<string, unknown>, "high");
+              enriched = true;
+            }
+          }
+        } catch { /* fall through to CIRCL */ }
+
+        if (enriched) continue;
+
+        // ── Fallback: CIRCL CVE API ──────────────────────────────────────────────────────
+        const cveRes = await fetchWithTimeout(`https://cve.circl.lu/api/cve/${encodeURIComponent(cve)}`, {
+          headers: { accept: "application/json" },
+        }, 10_000);
+        if (!cveRes.ok) {
+          failed += 1;
+          continue;
+        }
+        const payload = await cveRes.json().catch(() => ({}));
+        const summary = {
+          cve,
+          cvss: Number((payload as any)?.cvss || 0) || null,
+          cvss_version: "2.0",
+          cwe: String((payload as any)?.cwe || "").trim() || null,
+          published: String((payload as any)?.Published || "").trim() || null,
+          modified: String((payload as any)?.Modified || "").trim() || null,
+          references_count: Array.isArray((payload as any)?.references) ? (payload as any).references.length : 0,
+          summary: String((payload as any)?.summary || "").trim().slice(0, 800),
+          source: "circl",
+        };
+        intelRows.push(summary);
+        await insertExternalIntel("cve_intel_circl", cve, true, summary, payload as Record<string, unknown>, "high");
+      } catch {
+        failed += 1;
+      }
+    }
+
+    await insertObservation({
+      module: "cve_intel",
+      observation_type: "cve_intel_summary",
+      title: "CVE intelligence enrichment summary",
+      value: {
+        total_cves: cves.length,
+        enriched_cves: intelRows.length,
+        failed_cves: failed,
+        sample: intelRows.slice(0, 30),
+      },
+      severity: failed > 0 ? "low" : "info",
+    });
+
+    await emitEngineEnvelope({
+      engine: "cve_intel",
+      target: hostname || rootDomain || job.normalized_target,
+      status: failed > 0 ? "partial" : "success",
+      durationMs: Date.now() - startedAt,
+      summary: {
+        total_cves: cves.length,
+        enriched_cves: intelRows.length,
+        failed_cves: failed,
+      },
     });
   };
 
@@ -3317,6 +4911,31 @@ export async function runSurfaceScanEnrichment(
       }
     }
 
+    let torExitMatches: string[] = [];
+    try {
+      const ipv4Candidates = [...discoveredIps]
+        .map((entry) => String(entry || "").trim())
+        .filter((entry) => /^\d{1,3}(\.\d{1,3}){3}$/.test(entry))
+        .slice(0, 80);
+      if (ipv4Candidates.length > 0) {
+        const torRes = await fetchWithTimeout("https://check.torproject.org/torbulkexitlist", {
+          headers: { accept: "text/plain" },
+        }, 10000);
+        if (torRes.ok) {
+          const torList = await torRes.text();
+          const lines = new Set(
+            torList
+              .split("\n")
+              .map((line) => line.trim())
+              .filter(Boolean),
+          );
+          torExitMatches = ipv4Candidates.filter((ip) => lines.has(ip));
+        }
+      }
+    } catch {
+      torExitMatches = [];
+    }
+
     const normalizeIocType = (value: string): "domain" | "ip" | "url" => {
       if (value.includes("://")) return "url";
       if (/^\d{1,3}(\.\d{1,3}){3}$/.test(value) || value.includes(":")) return "ip";
@@ -3574,6 +5193,85 @@ export async function runSurfaceScanEnrichment(
       matchedIocIndicators.push(...fallback);
     }
 
+    const otxDomainTarget = String(rootDomain || hostname || "").trim().toLowerCase();
+    const otxIpTargets = [...iocContext.ipCandidates].slice(0, 8);
+    let otxDomainPulseCount = 0;
+    let otxIpPulseCount = 0;
+    const otxSignals: Array<Record<string, unknown>> = [];
+    if (otxDomainTarget) {
+      const pullOtx = async (url: string) => {
+        const res = await fetchWithTimeout(url, { headers: { accept: "application/json" } }, 12000);
+        if (!res.ok) return null;
+        const payload = await res.json().catch(() => ({}));
+        return payload && typeof payload === "object" ? (payload as Record<string, unknown>) : null;
+      };
+
+      try {
+        const domainPayload = await pullOtx(
+          `https://otx.alienvault.com/api/v1/indicators/domain/${encodeURIComponent(otxDomainTarget)}/general`,
+        );
+        if (domainPayload) {
+          const pulseCount = Number((domainPayload as any)?.pulse_info?.count || 0);
+          if (Number.isFinite(pulseCount) && pulseCount > 0) {
+            otxDomainPulseCount = pulseCount;
+            otxSignals.push({
+              type: "domain",
+              target: otxDomainTarget,
+              pulse_count: pulseCount,
+              reputation: Number((domainPayload as any)?.reputation || 0) || null,
+            });
+            await insertExternalIntel(
+              "otx",
+              otxDomainTarget,
+              true,
+              {
+                pulse_count: pulseCount,
+                reputation: Number((domainPayload as any)?.reputation || 0) || null,
+              },
+              domainPayload as Record<string, unknown>,
+              pulseCount >= 10 ? "high" : pulseCount > 0 ? "medium" : "low",
+            );
+          }
+        }
+      } catch {
+        // non-blocking by design
+      }
+
+      for (const ip of otxIpTargets) {
+        if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) continue;
+        try {
+          const ipPayload = await pullOtx(
+            `https://otx.alienvault.com/api/v1/indicators/IPv4/${encodeURIComponent(ip)}/general`,
+          );
+          if (!ipPayload) continue;
+          const pulseCount = Number((ipPayload as any)?.pulse_info?.count || 0);
+          if (!Number.isFinite(pulseCount) || pulseCount <= 0) continue;
+          otxIpPulseCount += pulseCount;
+          otxSignals.push({
+            type: "ip",
+            target: ip,
+            pulse_count: pulseCount,
+            reputation: Number((ipPayload as any)?.reputation || 0) || null,
+            country: String((ipPayload as any)?.country_name || "").trim() || null,
+            asn: String((ipPayload as any)?.asn || "").trim() || null,
+          });
+          await insertExternalIntel(
+            "otx",
+            ip,
+            true,
+            {
+              pulse_count: pulseCount,
+              reputation: Number((ipPayload as any)?.reputation || 0) || null,
+            },
+            ipPayload as Record<string, unknown>,
+            pulseCount >= 10 ? "high" : pulseCount > 0 ? "medium" : "low",
+          );
+        } catch {
+          // non-blocking by design
+        }
+      }
+    }
+
     const internalHighConfidence = matchedIocIndicators.filter((entry) => (entry.confidence || 0) >= 90);
     const internalMediumConfidence = matchedIocIndicators.filter((entry) => (entry.confidence || 0) >= 70 && (entry.confidence || 0) < 90);
 
@@ -3630,6 +5328,20 @@ export async function runSurfaceScanEnrichment(
         intelguard: {
           matched: matchedIocIndicators.length > 0,
           indicators: matchedIocIndicators.slice(0, 30),
+        },
+        otx: {
+          domain_target: otxDomainTarget || null,
+          domain_pulse_count: otxDomainPulseCount,
+          ip_pulse_count: otxIpPulseCount,
+          total_pulse_count: otxDomainPulseCount + otxIpPulseCount,
+          signals: otxSignals.slice(0, 40),
+        },
+        tor_exit_nodes: {
+          checked: [...discoveredIps]
+            .map((entry) => String(entry || "").trim())
+            .filter((entry) => /^\d{1,3}(\.\d{1,3}){3}$/.test(entry)).length,
+          listed_count: torExitMatches.length,
+          listed_ips: torExitMatches.slice(0, 30),
         },
         no_threat_matches: noThreatMatches,
       },
@@ -3702,6 +5414,37 @@ export async function runSurfaceScanEnrichment(
           indicators: internalMediumConfidence.slice(0, 20),
         },
         remediation: "Validare IOC con controlli aggiuntivi (DNS, proxy, EDR) e confermare attribuzione.",
+      });
+    }
+
+    if (otxDomainPulseCount + otxIpPulseCount > 0) {
+      await insertFinding({
+        module: "threats",
+        finding_type: "otx_pulse_match",
+        severity: otxDomainPulseCount + otxIpPulseCount >= 15 ? "high" : "medium",
+        title: "OTX threat pulse correlation detected",
+        affected_asset: hostname || rootDomain || null,
+        affected_url: targetUrlCandidate,
+        evidence: {
+          domain_pulse_count: otxDomainPulseCount,
+          ip_pulse_count: otxIpPulseCount,
+          signals: otxSignals.slice(0, 30),
+        },
+        remediation: "Eseguire verifica IOC su asset esposti, validare exploitability e applicare containment dove necessario.",
+      });
+    }
+
+    if (torExitMatches.length > 0) {
+      await insertFinding({
+        module: "threats",
+        finding_type: "tor_exit_node_match",
+        severity: "high",
+        title: "In-scope IP detected in Tor exit node list",
+        affected_asset: hostname || rootDomain || null,
+        evidence: {
+          tor_exit_ips: torExitMatches.slice(0, 30),
+        },
+        remediation: "Confermare se gli IP Tor sono attesi. In caso contrario applicare filtering, hardening servizi esposti e monitoraggio antifrode.",
       });
     }
   };
@@ -4259,6 +6002,7 @@ export async function runSurfaceScanEnrichment(
           const payload = await crtRes.json();
           const rows = Array.isArray(payload) ? payload : [];
           const names = new Set<string>();
+          const wildcardCertNames = new Set<string>();
           let resolvedSubdomains = 0;
           let unresolvedSubdomains = 0;
 
@@ -4267,11 +6011,10 @@ export async function runSurfaceScanEnrichment(
             if (!nameValue) continue;
             for (const candidate of nameValue.split("\n")) {
               const normalized = candidate.trim().toLowerCase().replace(/\.$/, "");
-              if (
-                normalized.endsWith(rootDomain) &&
-                !normalized.startsWith("*.") &&
-                isValidHostnameCandidate(normalized)
-              ) {
+              if (!normalized.endsWith(rootDomain)) continue;
+              if (normalized.startsWith("*.")) {
+                wildcardCertNames.add(normalized);
+              } else if (isValidHostnameCandidate(normalized)) {
                 names.add(normalized);
               }
             }
@@ -4331,6 +6074,20 @@ export async function runSurfaceScanEnrichment(
             }
           }
 
+          for (const wildcard of wildcardCertNames) {
+            await insertFinding({
+              module: "dns_certificate_transparency",
+              finding_type: "ssl_wildcard_certificate",
+              severity: "info",
+              title: `Wildcard rilevato in Certificate Transparency: ${wildcard}`,
+              description: `Il dominio wildcard ${wildcard} appare nei log pubblici di Certificate Transparency (crt.sh). Verificare che l'emissione sia autorizzata.`,
+              affected_asset: wildcard,
+              cwe: ["CWE-295"],
+              evidence: { source: "crt.sh", wildcard_domain: wildcard },
+              remediation: "Usare wildcard solo se necessario. Monitorare emissioni non autorizzate via CT alert.",
+            });
+          }
+
           await insertObservation({
             module: "dns_dumpster_like",
             observation_type: "subdomain_discovery",
@@ -4338,6 +6095,7 @@ export async function runSurfaceScanEnrichment(
             value: {
               root_domain: rootDomain,
               subdomains_found: names.size,
+              wildcard_certs_found: wildcardCertNames.size,
               resolved_subdomains: resolvedSubdomains,
               unresolved_subdomains: unresolvedSubdomains,
               sample: [...names].slice(0, 50),
@@ -4353,7 +6111,410 @@ export async function runSurfaceScanEnrichment(
           severity: "low",
         });
       }
+
+      const dnsDumpsterApiKey = String(Deno.env.get("DNSDUMPSTER_API_KEY") || "").trim();
+      if (dnsDumpsterApiKey) {
+        const dnsDumpsterStartedAt = Date.now();
+        const dnsDumpUrl = `https://api.dnsdumpster.com/domain/${encodeURIComponent(rootDomain)}`;
+        let dnsDumpStatus = "failed";
+        let dnsDumpError: string | null = null;
+        let dnsDumpSummary: Record<string, unknown> = {};
+        try {
+          const minDelayMs = 2000;
+          const elapsedSinceLast = Date.now() - dnsDumpsterLastRequestAt;
+          if (dnsDumpsterLastRequestAt > 0 && elapsedSinceLast < minDelayMs) {
+            await waitMs(minDelayMs - elapsedSinceLast);
+          }
+
+          let dnsPayload: Record<string, unknown> | null = null;
+          let httpStatus = 0;
+          let attempts = 0;
+          while (attempts < 3 && !dnsPayload) {
+            attempts += 1;
+            const response = await fetchWithTimeout(
+              dnsDumpUrl,
+              {
+                headers: {
+                  "X-API-Key": dnsDumpsterApiKey,
+                  accept: "application/json",
+                  "user-agent": "SurfaceScan360/1.0",
+                },
+              },
+              10000,
+            );
+            dnsDumpsterLastRequestAt = Date.now();
+            httpStatus = response.status;
+
+            if (response.status === 429 && attempts < 3) {
+              await waitMs(2000 * attempts);
+              continue;
+            }
+
+            if (!response.ok) {
+              dnsDumpError = `dnsdumpster_http_${response.status}`;
+              break;
+            }
+
+            const parsed = await response.json().catch(() => ({}));
+            dnsPayload = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+          }
+
+          if (!dnsPayload) {
+            dnsDumpStatus = "partial";
+            dnsDumpSummary = {
+              root_domain: rootDomain,
+              status: "no_payload",
+              http_status: httpStatus || null,
+              attempts,
+              reason: dnsDumpError || "dnsdumpster_unavailable",
+            };
+          } else {
+            const hostSet = new Set<string>();
+            const ipSet = new Set<string>();
+            const mxSet = new Set<string>();
+            const nsSet = new Set<string>();
+            const txtRecords = new Set<string>();
+            const asnSet = new Set<string>();
+            const netblockSet = new Set<string>();
+            const countrySet = new Set<string>();
+
+            const inspectValue = (value: unknown, parentKey = "") => {
+              if (value === null || value === undefined) return;
+              if (typeof value === "string") {
+                const candidate = value.trim();
+                if (!candidate) return;
+                if (candidate.includes(rootDomain) && isValidHostnameCandidate(candidate.replace(/\.$/, ""))) {
+                  hostSet.add(candidate.replace(/\.$/, "").toLowerCase());
+                }
+                if (/^\d{1,3}(\.\d{1,3}){3}$/.test(candidate) || candidate.includes(":")) {
+                  ipSet.add(candidate.toLowerCase());
+                }
+                if (parentKey.includes("asn")) asnSet.add(candidate.toUpperCase());
+                if (parentKey.includes("net") || parentKey.includes("prefix")) netblockSet.add(candidate);
+                if (parentKey.includes("country")) countrySet.add(candidate);
+                if (parentKey.includes("txt")) txtRecords.add(candidate);
+                return;
+              }
+              if (Array.isArray(value)) {
+                for (const entry of value) inspectValue(entry, parentKey);
+                return;
+              }
+              if (typeof value === "object") {
+                const obj = value as Record<string, unknown>;
+                const hostCandidate = String(
+                  obj.host || obj.hostname || obj.domain || obj.subdomain || obj.name || obj.target || "",
+                )
+                  .trim()
+                  .toLowerCase()
+                  .replace(/\.$/, "");
+                if (hostCandidate && hostCandidate.includes(rootDomain) && isValidHostnameCandidate(hostCandidate)) {
+                  hostSet.add(hostCandidate);
+                }
+                const ipCandidate = String(obj.ip || obj.address || obj.ipv4 || obj.ipv6 || "").trim().toLowerCase();
+                if (ipCandidate && (ipCandidate.includes(":") || /^\d{1,3}(\.\d{1,3}){3}$/.test(ipCandidate))) {
+                  ipSet.add(ipCandidate);
+                }
+                const mxCandidate = String(obj.mx || "").trim().toLowerCase().replace(/\.$/, "");
+                if (mxCandidate) mxSet.add(mxCandidate);
+                const nsCandidate = String(obj.ns || obj.nameserver || "").trim().toLowerCase().replace(/\.$/, "");
+                if (nsCandidate) nsSet.add(nsCandidate);
+                const asnCandidate = String(obj.asn || "").trim();
+                if (asnCandidate) asnSet.add(asnCandidate.toUpperCase());
+                const netblockCandidate = String(obj.netblock || obj.prefix || "").trim();
+                if (netblockCandidate) netblockSet.add(netblockCandidate);
+                const countryCandidate = String(obj.country || "").trim();
+                if (countryCandidate) countrySet.add(countryCandidate);
+                const txtCandidate = String(obj.txt || "").trim();
+                if (txtCandidate) txtRecords.add(txtCandidate);
+                for (const [k, v] of Object.entries(obj)) inspectValue(v, k.toLowerCase());
+              }
+            };
+
+            inspectValue(dnsPayload);
+
+            for (const subdomain of Array.from(hostSet).slice(0, 250)) {
+              if (!shouldAcceptScannableHost(subdomain)) {
+                const exclusionReason = scopeReasonFromHost(subdomain) || "scope_excluded_domain";
+                await insertAsset({
+                  asset_type: "subdomain",
+                  asset_value: subdomain,
+                  hostname: subdomain,
+                  root_domain: rootDomain,
+                  source: "dnsdumpster",
+                  confidence: "low",
+                  raw: {
+                    _scope_excluded: true,
+                    _scope_exclusion_reason: exclusionReason,
+                    _scope_excluded_at: new Date().toISOString(),
+                  },
+                });
+                continue;
+              }
+              discoveredHostnames.add(subdomain);
+              await insertAsset({
+                asset_type: "subdomain",
+                asset_value: subdomain,
+                hostname: subdomain,
+                root_domain: rootDomain,
+                source: "dnsdumpster",
+                confidence: "medium",
+              });
+            }
+
+            for (const ip of Array.from(ipSet).slice(0, 250)) {
+              discoveredIps.add(ip);
+              await insertAsset({
+                asset_type: "ip",
+                asset_value: ip,
+                hostname: hostname || rootDomain,
+                root_domain: rootDomain,
+                ip,
+                source: "dnsdumpster",
+                confidence: isIpAllowedInScope(ip) ? "medium" : "low",
+                raw: {
+                  in_scope: isIpAllowedInScope(ip),
+                },
+              });
+            }
+
+            for (const mx of Array.from(mxSet).slice(0, 100)) {
+              await insertAsset({
+                asset_type: "mx_host",
+                asset_value: mx,
+                hostname: mx,
+                root_domain: rootDomain,
+                source: "dnsdumpster",
+                confidence: "medium",
+              });
+            }
+
+            for (const ns of Array.from(nsSet).slice(0, 100)) {
+              await insertAsset({
+                asset_type: "ns_host",
+                asset_value: ns,
+                hostname: ns,
+                root_domain: rootDomain,
+                source: "dnsdumpster",
+                confidence: "medium",
+              });
+            }
+
+            dnsDumpStatus = "success";
+            dnsDumpSummary = {
+              root_domain: rootDomain,
+              subdomains_found: hostSet.size,
+              ip_found: ipSet.size,
+              mx_found: mxSet.size,
+              ns_found: nsSet.size,
+              txt_found: txtRecords.size,
+              asn_found: asnSet.size,
+              netblocks_found: netblockSet.size,
+              countries_found: countrySet.size,
+            };
+
+            await insertObservation({
+              module: "dns_dumpster",
+              observation_type: "dnsdumpster_summary",
+              title: "DNSDumpster discovery summary",
+              value: {
+                ...dnsDumpSummary,
+                sample_subdomains: Array.from(hostSet).slice(0, 80),
+                sample_ips: Array.from(ipSet).slice(0, 80),
+                sample_asn: Array.from(asnSet).slice(0, 40),
+                sample_netblocks: Array.from(netblockSet).slice(0, 40),
+                sample_countries: Array.from(countrySet).slice(0, 20),
+                sample_txt: Array.from(txtRecords).slice(0, 80),
+              },
+              severity: "info",
+            });
+
+            await insertExternalIntel(
+              "dnsdumpster",
+              rootDomain,
+              true,
+              dnsDumpSummary,
+              dnsPayload,
+              hostSet.size > 0 || ipSet.size > 0 ? "high" : "medium",
+            );
+          }
+        } catch (error: any) {
+          dnsDumpStatus = "partial";
+          dnsDumpError = error?.message || String(error);
+          dnsDumpSummary = {
+            root_domain: rootDomain,
+            reason: dnsDumpError,
+          };
+          await insertObservation({
+            module: "dns_dumpster",
+            observation_type: "dnsdumpster_error",
+            title: "DNSDumpster lookup failed",
+            value: {
+              root_domain: rootDomain,
+              error: dnsDumpError,
+            },
+            severity: "low",
+          });
+        } finally {
+          await emitEngineEnvelope({
+            engine: "dnsdumpster",
+            target: rootDomain,
+            status: dnsDumpStatus as SurfaceEngineStatus,
+            durationMs: Date.now() - dnsDumpsterStartedAt,
+            error: dnsDumpError,
+            summary: dnsDumpSummary,
+          });
+        }
+      } else {
+        await insertObservation({
+          module: "dns_dumpster",
+          observation_type: "dnsdumpster_skipped",
+          title: "DNSDumpster skipped",
+          value: {
+            reason: "missing_api_key",
+            root_domain: rootDomain,
+          },
+          severity: "info",
+        });
+        await emitEngineEnvelope({
+          engine: "dnsdumpster",
+          target: rootDomain,
+          status: "skipped",
+          durationMs: 0,
+          summary: { reason: "missing_api_key" },
+        });
+      }
     }
+  };
+
+  const runAmassModule = async () => {
+    const serviceUrl = String(Deno.env.get("SURFACESCAN_AMASS_SERVICE_URL") || "").trim();
+    const sharedSecret = String(Deno.env.get("SURFACESCAN_AMASS_SHARED_SECRET") || "").trim();
+    const timeoutSeconds = Math.max(
+      10,
+      Math.min(120, Number(Deno.env.get("SURFACESCAN_AMASS_TIMEOUT_SECONDS") || "45")),
+    );
+    const maxNames = Math.max(
+      1,
+      Math.min(500, Number(Deno.env.get("SURFACESCAN_AMASS_MAX_NAMES") || "250")),
+    );
+
+    const amassResult = await runAmassDiscovery({
+      serviceUrl,
+      sharedSecret,
+      target: hostname || rootDomain || targetUrl,
+      rootDomain,
+      scanJobId: job.id,
+      timeoutSeconds,
+      maxNames,
+    });
+
+    let acceptedSubdomains = 0;
+    let excludedSubdomains = 0;
+    let acceptedIps = 0;
+    let excludedIps = 0;
+
+    for (const subdomain of amassResult.subdomains) {
+      if (!shouldAcceptScannableHost(subdomain)) {
+        excludedSubdomains += 1;
+        await insertAsset({
+          asset_type: "subdomain",
+          asset_value: subdomain,
+          hostname: subdomain,
+          root_domain: rootDomain,
+          source: "amass",
+          confidence: "low",
+          raw: {
+            mode: "active_light",
+            amass_version: amassResult.amass_version,
+            _scope_excluded: true,
+            _scope_exclusion_reason: scopeReasonFromHost(subdomain) || "scope_excluded_domain",
+            _scope_excluded_at: new Date().toISOString(),
+          },
+        });
+        continue;
+      }
+      acceptedSubdomains += 1;
+      discoveredHostnames.add(subdomain);
+      await insertAsset({
+        asset_type: "subdomain",
+        asset_value: subdomain,
+        hostname: subdomain,
+        root_domain: rootDomain,
+        source: "amass",
+        confidence: "medium",
+        raw: {
+          mode: "active_light",
+          amass_version: amassResult.amass_version,
+        },
+      });
+    }
+
+    for (const ip of amassResult.ips) {
+      const inScope = isIpAllowedInScope(ip);
+      if (!inScope) {
+        excludedIps += 1;
+      } else {
+        acceptedIps += 1;
+        discoveredIps.add(ip);
+      }
+      await insertAsset({
+        asset_type: "ip",
+        asset_value: ip,
+        hostname: hostname || rootDomain,
+        root_domain: rootDomain,
+        ip,
+        source: "amass",
+        confidence: inScope ? "medium" : "low",
+        raw: {
+          mode: "active_light",
+          amass_version: amassResult.amass_version,
+          in_scope: inScope,
+        },
+      });
+    }
+
+    const summary = {
+      root_domain: rootDomain,
+      target: hostname || rootDomain || targetUrl,
+      mode: "active_light",
+      subdomains_found: amassResult.subdomains.length,
+      subdomains_accepted: acceptedSubdomains,
+      subdomains_excluded: excludedSubdomains,
+      ips_found: amassResult.ips.length,
+      ips_accepted: acceptedIps,
+      ips_excluded: excludedIps,
+      warnings: amassResult.warnings,
+      duration_ms: amassResult.duration_ms,
+      amass_version: amassResult.amass_version,
+      sample_subdomains: amassResult.subdomains.slice(0, 80),
+      sample_ips: amassResult.ips.slice(0, 80),
+    };
+
+    await insertObservation({
+      module: "amass_discovery",
+      observation_type: "amass_summary",
+      title: "Amass active-light discovery summary",
+      value: summary,
+      severity: "info",
+      confidence: acceptedSubdomains > 0 || acceptedIps > 0 ? "high" : "medium",
+    });
+
+    await insertExternalIntel(
+      "amass",
+      rootDomain || hostname || targetUrl,
+      amassResult.subdomains.length > 0 || amassResult.ips.length > 0,
+      summary,
+      amassResult.raw,
+      acceptedSubdomains > 0 || acceptedIps > 0 ? "high" : "medium",
+    );
+
+    await emitEngineEnvelope({
+      engine: "amass",
+      target: rootDomain || hostname || targetUrl,
+      status: "success",
+      durationMs: amassResult.duration_ms || 0,
+      summary,
+    });
   };
 
   const runShodanModule = async () => {
@@ -4612,14 +6773,17 @@ export async function runSurfaceScanEnrichment(
             port: portNumber,
             protocol: "tcp",
             cwe: ["CWE-284"],
+            cve: cveHintsForService(PORT_SERVICE[portNumber]?.name ?? ""),
             evidence: {
               ip,
               port: portNumber,
               source: "shodan",
               hostnames: hostnames.slice(0, 10),
+              service_description: PORT_SERVICE[portNumber]?.description,
             },
             remediation: remediationForExposedPort(portNumber),
           });
+          await insertOpenPort(portNumber, hostname || ip, ip, "tcp", "shodan", PORT_SERVICE[portNumber]?.name);
         }
 
         for (const cpe of cpes.slice(0, 20)) {
@@ -5249,14 +7413,17 @@ export async function runSurfaceScanEnrichment(
             port,
             protocol,
             cwe: ["CWE-284"],
+            cve: cveHintsForService(serviceName ?? PORT_SERVICE[port]?.name ?? ""),
             evidence: {
               source: "pentest_tools_port_scanner",
               service: serviceName || null,
               version: serviceVersion || null,
               raw: portData,
+              service_description: PORT_SERVICE[port]?.description,
             },
             remediation: remediationForExposedPort(port),
           });
+          await insertOpenPort(port, associatedHost || hostname || ipAddress || "", ipAddress || "", protocol, "pentest_tools", serviceName, serviceVersion);
 
           if (serviceName || serviceVersion) {
             await insertFinding({
@@ -5839,29 +8006,140 @@ export async function runSurfaceScanEnrichment(
     }
   };
 
+  const runDenoTcpProbeModule = async () => {
+    const targetIps = new Set<string>([
+      ...(job.resolved_ips ?? []),
+      ...Array.from(discoveredIps).filter(v => /^\d{1,3}(\.\d{1,3}){3}$/.test(v)),
+    ].filter(Boolean));
+
+    const portListEnv = Deno.env.get("SURFACESCAN_TCP_PROBE_PORTS");
+    const portsToScan = portListEnv
+      ? portListEnv.split(",").map(Number).filter(n => n > 0 && n < 65536)
+      : TCP_PROBE_PORTS;
+
+    if (targetIps.size === 0) {
+      await insertObservation({
+        module: "deno_tcp_probe",
+        observation_type: "tcp_probe_skipped",
+        title: "TCP probe saltato: nessun IP risolto",
+        value: { reason: "no_ips" },
+        severity: "info",
+      });
+      return;
+    }
+
+    const CONCURRENCY = Number(Deno.env.get("SURFACESCAN_TCP_CONCURRENCY") ?? "10");
+    const TIMEOUT_MS  = Number(Deno.env.get("SURFACESCAN_TCP_TIMEOUT_MS")  ?? "2500");
+    const openResults: Array<{ ip: string; port: number; banner: string }> = [];
+
+    for (const ip of targetIps) {
+      for (let i = 0; i < portsToScan.length; i += CONCURRENCY) {
+        const chunk = portsToScan.slice(i, i + CONCURRENCY);
+        const results = await Promise.allSettled(
+          chunk.map(port => tcpProbe(ip, port, TIMEOUT_MS)),
+        );
+        for (let j = 0; j < chunk.length; j++) {
+          const r = results[j];
+          if (r.status === "fulfilled" && r.value.open) {
+            openResults.push({ ip, port: chunk[j], banner: r.value.banner });
+          }
+        }
+        if (i + CONCURRENCY < portsToScan.length) {
+          await new Promise(res => setTimeout(res, 100));
+        }
+      }
+    }
+
+    for (const { ip, port, banner } of openResults) {
+      const svcInfo = PORT_SERVICE[port];
+      await insertOpenPort(port, ip, ip, "tcp", "deno_tcp_probe", svcInfo?.name, undefined, banner);
+      await insertFinding({
+        provider: "deno_tcp_probe",
+        module: "deno_tcp_probe",
+        finding_type: "open_port_exposed",
+        severity: severityForExposedPort(port),
+        title: `Porta ${port}${svcInfo ? ` (${svcInfo.name})` : ""} esposta`,
+        description: svcInfo
+          ? `${svcInfo.description}. ${svcInfo.risk}.${banner ? ` Banner: ${banner.slice(0, 80)}` : ""}`
+          : `Porta aperta ${port}/tcp.${banner ? ` Banner: ${banner.slice(0, 80)}` : ""}`,
+        affected_asset: job.hostname || ip,
+        ip,
+        port,
+        protocol: "tcp",
+        cwe: ["CWE-284"],
+        cve: cveHintsForService(svcInfo?.name ?? ""),
+        evidence: {
+          source: "deno_tcp_probe",
+          banner: banner || null,
+          service_description: svcInfo?.description,
+          risk_summary: svcInfo?.risk,
+        },
+        remediation: remediationForExposedPort(port),
+      });
+    }
+
+    await insertObservation({
+      module: "deno_tcp_probe",
+      observation_type: "tcp_probe_summary",
+      title: "TCP Port Probe completato",
+      value: {
+        ips_scanned: targetIps.size,
+        ports_checked: portsToScan.length,
+        open_count: openResults.length,
+        open_ports: openResults.map(p => `${p.ip}:${p.port}`),
+      },
+      severity: openResults.length > 0 ? "medium" : "info",
+    });
+  };
+
   const modules: Record<string, ModuleExecutionConfig> = {
-    dns: { key: "dns", label: "DNS & Mail Intelligence", timeoutMs: 20000 },
+    dns: {
+      key: "dns",
+      label: "DNS & Mail Intelligence",
+      timeoutMs: 20000,
+      retryOnError: true,
+      maxRetries: 1,
+      retryBackoffMs: 500,
+    },
     dnssec: {
       key: "dnssec",
       label: "DNSSEC",
       timeoutMs: 8000,
       featureFlag: "SURFACESCAN_ENABLE_DNSSEC",
+      retryOnError: true,
+      maxRetries: 1,
+      retryBackoffMs: 500,
     },
     whois: {
       key: "whois",
       label: "Domain WHOIS/RDAP",
       timeoutMs: 12000,
       featureFlag: "SURFACESCAN_ENABLE_WEBCHECK_MODULES",
+      retryOnError: true,
+      maxRetries: 1,
+      retryBackoffMs: 600,
     },
     http_security: {
       key: "http_security",
       label: "HTTP Security",
-      timeoutMs: 18000,
+      timeoutMs: Math.max(
+        25000,
+        Math.min(90000, Number(Deno.env.get("SURFACESCAN_HTTP_MODULE_TIMEOUT_MS") || "50000")),
+      ),
+      retryOnError: true,
+      maxRetries: Math.max(1, Math.min(3, Number(Deno.env.get("SURFACESCAN_HTTP_MODULE_MAX_RETRIES") || "2"))),
+      retryBackoffMs: Math.max(500, Math.min(5000, Number(Deno.env.get("SURFACESCAN_HTTP_MODULE_RETRY_BACKOFF_MS") || "1250"))),
     },
     headers: {
       key: "headers",
       label: "HTTP Headers",
-      timeoutMs: 18000,
+      timeoutMs: Math.max(
+        25000,
+        Math.min(90000, Number(Deno.env.get("SURFACESCAN_HTTP_MODULE_TIMEOUT_MS") || "50000")),
+      ),
+      retryOnError: true,
+      maxRetries: Math.max(1, Math.min(3, Number(Deno.env.get("SURFACESCAN_HTTP_MODULE_MAX_RETRIES") || "2"))),
+      retryBackoffMs: Math.max(500, Math.min(5000, Number(Deno.env.get("SURFACESCAN_HTTP_MODULE_RETRY_BACKOFF_MS") || "1250"))),
     },
     robots: { key: "robots", label: "Robots.txt", timeoutMs: 12000 },
     security_txt: { key: "security_txt", label: "Security.txt", timeoutMs: 12000 },
@@ -5887,6 +8165,14 @@ export async function runSurfaceScanEnrichment(
       label: "Server Location",
       timeoutMs: 12000,
     },
+    ip_geo_asn: {
+      key: "ip_geo_asn",
+      label: "IP Geo & ASN Intelligence",
+      timeoutMs: 30000,
+      retryOnError: true,
+      maxRetries: 1,
+      retryBackoffMs: 700,
+    },
     tech_stack: {
       key: "tech_stack",
       label: "Tech Stack",
@@ -5903,18 +8189,37 @@ export async function runSurfaceScanEnrichment(
       label: "Threat Checks",
       timeoutMs: 18000,
       featureFlag: "SURFACESCAN_ENABLE_THREATS",
+      retryOnError: true,
+      maxRetries: 1,
+      retryBackoffMs: 600,
     },
     dns_blocklists: {
       key: "dns_blocklists",
       label: "DNS Blocklists",
       timeoutMs: 15000,
       featureFlag: "SURFACESCAN_ENABLE_WEBCHECK_MODULES",
+      retryOnError: true,
+      maxRetries: 1,
+      retryBackoffMs: 700,
     },
     reverse_dns_and_dumpster: {
       key: "reverse_dns_and_dumpster",
       label: "Subdomain Discovery",
       timeoutMs: 30000,
       featureFlag: "SURFACESCAN_ENABLE_SUBDOMAINS",
+    },
+    amass_discovery: {
+      key: "amass_discovery",
+      label: "Amass Discovery",
+      timeoutMs: Math.max(
+        20000,
+        Math.min(150000, Number(Deno.env.get("SURFACESCAN_AMASS_MODULE_TIMEOUT_MS") || "90000")),
+      ),
+      featureFlag: "SURFACESCAN_ENABLE_AMASS",
+      defaultEnabled: false,
+      retryOnError: true,
+      maxRetries: 1,
+      retryBackoffMs: 1500,
     },
     shodan: { key: "shodan", label: "Shodan Intel", timeoutMs: 30000 },
     urlscan: { key: "urlscan", label: "URLScan Intel", timeoutMs: 20000 },
@@ -5923,12 +8228,29 @@ export async function runSurfaceScanEnrichment(
       label: "Pentest-Tools",
       timeoutMs: 240000,
       featureFlag: "SURFACESCAN_ENABLE_PENTEST_TOOLS",
+      defaultEnabled: false,
+    },
+    deno_tcp_probe: {
+      key: "deno_tcp_probe",
+      label: "TCP Port Probe",
+      timeoutMs: 120_000,
+      featureFlag: "SURFACESCAN_ENABLE_TCP_PROBE",
+      defaultEnabled: true,
+      retryOnError: false,
     },
     open_ports: {
       key: "open_ports",
       label: "Open Ports",
       timeoutMs: 30000,
       featureFlag: "SURFACESCAN_ENABLE_OPEN_PORTS",
+    },
+    cve_intel: {
+      key: "cve_intel",
+      label: "CVE Intelligence (MITRE+CIRCL)",
+      timeoutMs: 60000,
+      retryOnError: true,
+      maxRetries: 1,
+      retryBackoffMs: 900,
     },
     passes: {
       key: "passes",
@@ -5941,25 +8263,20 @@ export async function runSurfaceScanEnrichment(
       label: "Attack Surface Mapper",
       timeoutMs: 660_000,
       featureFlag: "CONNECTSECURE_ENABLED",
+      defaultEnabled: true,
+      retryOnError: false,
     },
   };
 
-  const skipModule = async (
-    config: ModuleExecutionConfig,
-    reason: string,
-    extra: Record<string, unknown> = {},
-  ) => {
-    await insertObservation({
-      module: config.key,
-      observation_type: "module_skipped",
-      title: `Modulo ${config.label} saltato`,
-      value: { reason, ...extra },
-      severity: "info",
-    });
-  };
-
-  // ConnectSecure Attack Surface Mapper - BFS depth 10
+  // ── ConnectSecure Attack Surface Mapper — root/scope scan only ───────────
   const runConnectSecureModule = async () => {
+    if (String(job.scan_type || "") === "subdomain_enrichment" || (jobConfig as any).no_connectsecure === true) {
+      await recordModuleSkipped(modules.connectsecure, "internal_subdomain_enrichment", {
+        scan_type: job.scan_type || null,
+      });
+      return;
+    }
+
     const { data: csCfg } = await adminClient
       .from("connectsecure_config" as any)
       .select("pod_host, client_auth_token, company_id, enabled")
@@ -5967,7 +8284,7 @@ export async function runSurfaceScanEnrichment(
       .maybeSingle();
 
     if (csCfg?.enabled === false) {
-      await skipModule(modules.connectsecure, "disabled", { organization_id: organizationId });
+      await recordModuleSkipped(modules.connectsecure, "disabled", { organization_id: organizationId });
       return;
     }
 
@@ -5981,187 +8298,113 @@ export async function runSurfaceScanEnrichment(
     };
 
     if (!cfg.pod_host || !cfg.client_auth_token || !cfg.company_id) {
-      await skipModule(modules.connectsecure, "no_config", { organization_id: organizationId });
+      await recordModuleSkipped(modules.connectsecure, "no_config", { organization_id: organizationId });
       return;
     }
-
-    const MAX_DEPTH   = 10;
-    const MAX_DOMAINS = 500;
-    const session     = { current: await csAuthorize(cfg) };
 
     const startDomain = rootDomain || hostname || job.normalized_target || "";
     if (!startDomain) {
-      await skipModule(modules.connectsecure, "no_root_domain");
+      await recordModuleSkipped(modules.connectsecure, "no_root_domain", {});
       return;
     }
 
-    const queue: Array<{ domain: string; depth: number; parentDomain?: string }> = [
-      { domain: startDomain, depth: 0 },
-    ];
-    const visited = new Set<string>();
-    const queued = new Set<string>([startDomain]);
-    let totalScanned = 0;
-    let maxDepthReached = 0;
+    const session = { current: await csAuthorize(cfg) };
+    const domainId = await csGetOrCreateDomain(cfg, session, startDomain, adminClient, organizationId);
+    const scanRequestedAt = new Date(Date.now() - 5_000).toISOString();
+    await adminClient.from("connectsecure_domain_registry" as any).upsert({
+      organization_id: organizationId,
+      domain: startDomain,
+      cs_domain_id: domainId,
+      depth: 0,
+      parent_domain: null,
+      last_scanned_at: scanRequestedAt,
+    }, { onConflict: "organization_id,domain" });
 
-    while (queue.length > 0 && totalScanned < MAX_DOMAINS) {
-      const currentDepth = queue[0].depth;
-      const batchItems = queue.splice(0, queue.filter(q => q.depth === currentDepth).length);
-      const unvisited = batchItems.filter(b => !visited.has(b.domain));
+    await csScanNow(cfg, session, [{ name: startDomain, domain: startDomain, company_id: cfg.company_id, id: domainId }]);
+    const result = await csWaitForResults(cfg, session, domainId, startDomain, 420_000, scanRequestedAt);
+    const { assets, findings, ports, observations, sensitiveData } = csMapToFindings(result, startDomain, 0);
 
-      if (unvisited.length === 0) continue;
-      unvisited.forEach(b => visited.add(b.domain));
+    for (const a of assets) {
+      await insertAsset({
+        asset_type:  a.asset_type,
+        asset_value: a.asset_value,
+        hostname:    a.hostname || undefined,
+        root_domain: a.root_domain || undefined,
+        ip:          a.ip || undefined,
+        source:      a.source,
+        confidence:  a.confidence,
+        raw:         a.raw || {},
+      });
+    }
 
-      const domainObjs: Array<{ name: string; domain: string; company_id: number; id: number; depth: number }> = [];
-      for (const b of unvisited) {
-        try {
-          const id = await csGetOrCreateDomain(cfg, session, b.domain, adminClient, organizationId);
-          domainObjs.push({ name: b.domain, domain: b.domain, company_id: cfg.company_id, id, depth: b.depth });
-          await adminClient.from("connectsecure_domain_registry" as any).upsert({
-            organization_id: organizationId,
-            domain: b.domain,
-            cs_domain_id: id,
-            depth: b.depth,
-            parent_domain: b.parentDomain || null,
-            last_scanned_at: new Date().toISOString(),
-          }, { onConflict: "organization_id,domain" });
-        } catch (err) {
-          console.warn("[connectsecure] getOrCreateDomain failed:", b.domain, err);
-        }
-      }
+    for (const f of findings) {
+      await insertFinding({
+        provider:       f.provider,
+        module:         f.module,
+        finding_type:   f.finding_type,
+        severity:       f.severity,
+        title:          f.title,
+        description:    f.description,
+        affected_asset: f.affected_asset,
+        ip:             f.ip || undefined,
+        port:           f.port || undefined,
+        protocol:       f.protocol || undefined,
+        cve:            f.cve || [],
+        cwe:            f.cwe || [],
+        cvss:           f.cvss || undefined,
+        evidence:       f.evidence || {},
+        remediation:    f.remediation || undefined,
+      });
+    }
 
-      if (domainObjs.length === 0) continue;
+    for (const p of ports) {
+      await insertOpenPort(
+        p.port, p.host, p.ip, p.protocol,
+        "connectsecure",
+        p.serviceName, p.serviceVersion, p.banner,
+      );
+    }
 
-      // Lancia scansione batch
-      const scanRequestedAt = new Date(Date.now() - 5_000).toISOString();
-      try {
-        await csScanNow(cfg, session, domainObjs);
-      } catch (err) {
-        console.warn("[connectsecure] csScanNow failed for batch", err);
-        continue;
-      }
+    for (const obs of observations) {
+      await insertObservation({
+        module:           "connectsecure",
+        observation_type: obs.type,
+        title:            obs.title,
+        value:            obs.value,
+        severity:         obs.severity as any,
+      });
+    }
 
-      for (const d of domainObjs) {
-        let result;
-        try {
-          result = await csWaitForResults(cfg, session, d.id, d.domain, 420_000, scanRequestedAt);
-        } catch (err) {
-          console.warn("[connectsecure] result polling failed:", d.domain, err);
-          continue;
-        }
+    if ((sensitiveData.creds?.length || 0) + (sensitiveData.hashes?.length || 0) > 0) {
+      await adminClient.from("connectsecure_sensitive_data" as any).insert({
+        organization_id: organizationId,
+        scan_job_id:     job.id,
+        domain:          sensitiveData.domain,
+        creds_count:     sensitiveData.creds?.length || 0,
+        hashes_count:    sensitiveData.hashes?.length || 0,
+        creds:           sensitiveData.creds || null,
+        hashes:          sensitiveData.hashes || null,
+      });
+    }
 
-        totalScanned++;
-        if (d.depth > maxDepthReached) maxDepthReached = d.depth;
-
-        const { assets, findings, ports, observations, sensitiveData } = csMapToFindings(result, d.domain, d.depth);
-
-        for (const a of assets) {
-          await insertAsset({
-            asset_type:  a.asset_type,
-            asset_value: a.asset_value,
-            hostname:    a.hostname || undefined,
-            root_domain: a.root_domain || undefined,
-            ip:          a.ip || undefined,
-            source:      a.source,
-            confidence:  a.confidence,
-            raw:         a.raw || {},
-          });
-        }
-
-        for (const f of findings) {
-          await insertFinding({
-            provider:      f.provider,
-            module:        f.module,
-            finding_type:  f.finding_type,
-            severity:      f.severity,
-            title:         f.title,
-            description:   f.description,
-            affected_asset: f.affected_asset,
-            ip:            f.ip || undefined,
-            port:          f.port || undefined,
-            protocol:      f.protocol || undefined,
-            cve:           f.cve || [],
-            cwe:           f.cwe || [],
-            cvss:          f.cvss || undefined,
-            evidence:      f.evidence || {},
-            remediation:   f.remediation || undefined,
-          });
-        }
-
-        for (const port of ports) {
-          await insertAsset({
-            asset_type: "open_port",
-            asset_value: `${port.ip || port.host}:${port.port}`,
-            hostname: port.host,
-            root_domain: d.domain,
-            ip: port.ip,
-            source: "connectsecure",
-            confidence: "high",
-            raw: {
-              port: port.port,
-              protocol: port.protocol,
-              service_name: port.serviceName || null,
-              service_version: port.serviceVersion || null,
-              banner: port.banner || null,
-            },
-          });
-        }
-
-        for (const obs of observations) {
-          await insertObservation({
-            module:           "connectsecure",
-            observation_type: obs.type,
-            title:            obs.title,
-            value:            obs.value,
-            severity:         obs.severity as any,
-          });
-        }
-
-        if ((sensitiveData.creds?.length || 0) + (sensitiveData.hashes?.length || 0) > 0) {
-          await adminClient.from("connectsecure_sensitive_data" as any).insert({
-            organization_id: organizationId,
-            scan_job_id:     job.id,
-            domain:          sensitiveData.domain,
-            creds_count:     sensitiveData.creds?.length || 0,
-            hashes_count:    sensitiveData.hashes?.length || 0,
-            creds:           sensitiveData.creds || null,
-            hashes:          sensitiveData.hashes || null,
-          });
-        }
-
-        if (d.depth < MAX_DEPTH) {
-          for (const subDomain of csExtractSubdomains(result)) {
-            if (subDomain && !visited.has(subDomain) && !queued.has(subDomain)) {
-              queued.add(subDomain);
-              queue.push({ domain: subDomain, depth: d.depth + 1, parentDomain: d.domain });
-              try {
-                await adminClient.from("surface_scan_monitored_ips" as any).upsert({
-                  organization_id: organizationId,
-                  input_value:     subDomain,
-                  entry_type:      "domain",
-                  ip_start:        "",
-                  ip_end:          "",
-                  discovered_via:  "connectsecure_bfs",
-                  discovered_from: d.domain,
-                  created_by:      null,
-                }, { onConflict: "organization_id,input_value" });
-              } catch (e) {
-                console.warn("[connectsecure] scope seed failed:", subDomain, e);
-              }
-            }
-          }
-        }
-      }
+    const handedToInternalQueue = csExtractSubdomains(result)
+      .map((entry) => String(entry || "").trim().toLowerCase().replace(/\.$/, ""))
+      .filter((entry) => entry && entry !== startDomain && entry.endsWith(`.${rootDomain || startDomain}`));
+    for (const subDomain of handedToInternalQueue) {
+      discoveredHostnames.add(subDomain);
     }
 
     await insertObservation({
       module:           "connectsecure",
       observation_type: "bfs_scan_summary",
-      title:            "Attack Surface Mapper - BFS completato",
+      title:            "Attack Surface Mapper — root scan completato",
       value: {
-        domains_scanned:   totalScanned,
-        max_depth_reached: maxDepthReached,
-        total_visited:     visited.size,
-        max_depth_allowed: MAX_DEPTH,
+        domains_scanned: 1,
+        max_depth_reached: 0,
+        total_visited: 1,
+        max_depth_allowed: 10,
+        subdomains_handed_to_internal_queue: handedToInternalQueue.length,
+        internal_queue_limit_standard: 10,
       },
       severity: "info",
     });
@@ -6169,11 +8412,36 @@ export async function runSurfaceScanEnrichment(
     await insertExternalIntel(
       "connectsecure",
       rootDomain || hostname || "",
-      totalScanned > 0,
-      { domains_scanned: totalScanned, depth: maxDepthReached },
+      true,
+      { domains_scanned: 1, depth: 0, subdomains_handed_to_internal_queue: handedToInternalQueue.length },
       { company_id: cfg.company_id, pod_host: cfg.pod_host },
       "high",
     );
+  };
+
+  const runAmassDiscoveryIfEnabled = async () => {
+    const serviceUrl = String(Deno.env.get("SURFACESCAN_AMASS_SERVICE_URL") || "").trim();
+    const sharedSecret = String(Deno.env.get("SURFACESCAN_AMASS_SHARED_SECRET") || "").trim();
+    const gate = resolveAmassDiscoveryGate({
+      featureEnabled: isFeatureEnabled("SURFACESCAN_ENABLE_AMASS", false),
+      serviceUrl,
+      sharedSecret,
+      jobConfig,
+      targetType: parsedTarget.target_type,
+      rootDomain,
+    });
+
+    if (!gate.enabled) {
+      await recordModuleSkipped(modules.amass_discovery, gate.reason || "amass_disabled", {
+        feature_flag: "SURFACESCAN_ENABLE_AMASS",
+        target_type: parsedTarget.target_type,
+        has_service_url: Boolean(serviceUrl),
+        has_shared_secret: Boolean(sharedSecret),
+      });
+      return;
+    }
+
+    await safeRun(modules.amass_discovery, runAmassModule);
   };
 
   const runSafeRecon = async () => {
@@ -6203,16 +8471,20 @@ export async function runSurfaceScanEnrichment(
     if (["domain_exposure", "ip_exposure", "cve_api_validation"].includes(job.scan_profile)) {
       const phase3: Promise<void>[] = [
         safeRun(modules.reverse_dns_and_dumpster, runReverseAndDumpsterModule),
+        runAmassDiscoveryIfEnabled(),
         safeRun(modules.shodan, runShodanModule),
+        safeRun(modules.ip_geo_asn, runIpGeoAndAsnModule),
       ];
       if (["domain_exposure", "cve_api_validation"].includes(job.scan_profile)) {
         phase3.push(safeRun(modules.urlscan, runUrlscanModule));
       }
       await Promise.allSettled(phase3);
-      await safeRun(modules.pentest_tools, runPentestToolsModule);
     }
+    // ConnectSecure BFS depth-10 — eseguito per tutti i profili se config presente
     await safeRun(modules.connectsecure, runConnectSecureModule);
+    await safeRun(modules.deno_tcp_probe, runDenoTcpProbeModule);
     await safeRun(modules.open_ports, runOpenPortsModule);
+    await safeRun(modules.cve_intel, runCveIntelModule);
 
     await Promise.allSettled([
       safeRun(modules.ssl_certificate, runSslCertificateModule),
@@ -6483,6 +8755,7 @@ export async function runSurfaceScanEnrichment(
       } as Record<string, number>,
     );
     await triggerCveEnrichmentQueue();
+    const subdomainQueueStats = await enqueueDiscoveredSubdomainJobs();
 
     const scanSummary = {
       overall_score: overallScore,
@@ -6499,6 +8772,7 @@ export async function runSurfaceScanEnrichment(
       scope_guard: scopeCounters,
       hosting_context: hostingContext,
       shodan_status: shodanStatus,
+      subdomain_child_queue: subdomainQueueStats,
       warnings: scanWarnings.length > 0 ? scanWarnings : undefined,
     };
 

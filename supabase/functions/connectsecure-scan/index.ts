@@ -11,6 +11,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
   csAuthorize,
+  csExtractSubdomains,
   csGetOrCreateDomain,
   csMapToFindings,
   csNormalizeClientAuthToken,
@@ -382,6 +383,7 @@ async function saveResult(
 ): Promise<void> {
   const { assets: mappedAssets, findings, ports: mappedPorts, observations, sensitiveData } = csMapToFindings(result, domain, 0);
   const now = new Date().toISOString();
+  const subdomainQueueStats = await enqueueConnectSecureSubdomainJobs(adminClient, orgId, domain, result, scanJobId);
 
   for (const a of mappedAssets) {
     await logQueryError('unable to upsert surface asset', adminClient.from('surface_assets').upsert({
@@ -506,6 +508,7 @@ async function saveResult(
         findings: findings.length,
         ports: mappedPorts.length,
         observations: observations.length,
+        subdomain_child_queue: subdomainQueueStats,
         severity_counts: severityCounts,
       },
       raw: {
@@ -526,6 +529,7 @@ async function saveResult(
         findings: findings.length,
         ports: mappedPorts.length,
         observations: observations.length,
+        subdomain_child_queue: subdomainQueueStats,
         severity_counts: severityCounts,
         updated: result.updated || now,
       },
@@ -574,6 +578,143 @@ async function markConnectSecureJobFailed(
       error: message,
     },
   }).eq('id', scanJobId));
+}
+
+type SubdomainQueueStats = {
+  discovered: number;
+  eligible: number;
+  inserted: number;
+  skippedExisting: number;
+  skippedLimit: number;
+  limit: number;
+  surface_scan_extended: boolean;
+};
+
+function toPositiveInt(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.round(parsed);
+}
+
+async function enqueueConnectSecureSubdomainJobs(
+  adminClient: AdminClient,
+  orgId: string,
+  rootDomain: string,
+  result: CsResult,
+  parentScanJobId: string | null,
+): Promise<SubdomainQueueStats> {
+  const normalizedRoot = normalizeDomain(rootDomain);
+  const discovered = csExtractSubdomains(result)
+    .map((entry) => normalizeDomain(entry))
+    .filter((entry) => entry && entry !== normalizedRoot && entry.endsWith(`.${normalizedRoot}`));
+  const uniqueDiscovered = Array.from(new Set(discovered)).sort();
+
+  const { data: orgRuntime } = await adminClient
+    .from('organizations')
+    .select('surface_scan_extended')
+    .eq('id', orgId)
+    .maybeSingle();
+  const surfaceScanExtended = Boolean(orgRuntime?.surface_scan_extended);
+  const configuredLimit = toPositiveInt(Deno.env.get('SURFACESCAN_SUBDOMAIN_CHILD_JOB_LIMIT'), surfaceScanExtended ? 75 : 10);
+  const limit = surfaceScanExtended ? configuredLimit : Math.min(configuredLimit, 10);
+  const cooldownHours = toPositiveInt(Deno.env.get('SURFACESCAN_SUBDOMAIN_CHILD_COOLDOWN_HOURS'), 24);
+  const cooldownIso = new Date(Date.now() - cooldownHours * 60 * 60 * 1000).toISOString();
+  const selected = uniqueDiscovered.slice(0, limit);
+  let inserted = 0;
+  let skippedExisting = 0;
+
+  for (const subdomain of selected) {
+    const { count: existingCount } = await adminClient
+      .from('surface_scan_jobs')
+      .select('id', { count: 'exact', head: true })
+      .eq('organization_id', orgId)
+      .eq('normalized_target', subdomain)
+      .in('status', ['queued', 'pending', 'running', 'completed'])
+      .gte('created_at', cooldownIso);
+
+    if ((existingCount || 0) > 0) {
+      skippedExisting += 1;
+      continue;
+    }
+
+    const { error } = await adminClient.from('surface_scan_jobs').insert({
+      organization_id: orgId,
+      tenant_id: orgId,
+      customer_id: orgId,
+      requested_by: null,
+      raw_target: subdomain,
+      normalized_target: subdomain,
+      target_type: 'subdomain',
+      hostname: subdomain,
+      root_domain: normalizedRoot,
+      resolved_ips: [],
+      scan_profile: 'domain_exposure',
+      scan_type: 'subdomain_enrichment',
+      scan_name: `ConnectSecure subdomain enrichment - ${subdomain}`,
+      status: 'queued',
+      authorization_confirmed: true,
+      config: {
+        parent_scan_job_id: parentScanJobId,
+        parent_target: normalizedRoot,
+        parent_depth: 0,
+        subdomain_depth: 1,
+        subdomain_max_depth: 10,
+        subdomain_child_job_limit: limit,
+        subdomain_source: 'connectsecure',
+        discovered_from: 'connectsecure',
+        discovered_parent: normalizedRoot,
+        auto_expand_subdomains: true,
+        no_connectsecure: true,
+      },
+      summary: {
+        parent_scan_job_id: parentScanJobId,
+        root_domain: normalizedRoot,
+        parent_depth: 0,
+        subdomain_depth: 1,
+        subdomain_max_depth: 10,
+        discovered_from: 'connectsecure',
+      },
+    });
+
+    if (error) {
+      console.warn('[connectsecure-scan] unable to enqueue subdomain enrichment:', error.message || error);
+      continue;
+    }
+    inserted += 1;
+  }
+
+  const stats = {
+    discovered: uniqueDiscovered.length,
+    eligible: uniqueDiscovered.length,
+    inserted,
+    skippedExisting,
+    skippedLimit: Math.max(0, uniqueDiscovered.length - selected.length),
+    limit,
+    surface_scan_extended: surfaceScanExtended,
+  };
+
+  if (parentScanJobId && (uniqueDiscovered.length > 0 || inserted > 0)) {
+    await logQueryError('unable to insert connectsecure subdomain queue observation', adminClient.from('surface_observations').insert({
+      organization_id: orgId,
+      customer_id: orgId,
+      tenant_id: orgId,
+      scan_job_id: parentScanJobId,
+      module: 'connectsecure',
+      observation_type: 'connectsecure_subdomain_child_jobs',
+      title: 'ConnectSecure subdomains queued for SurfaceScan360 enrichment',
+      value: {
+        ...stats,
+        root_domain: normalizedRoot,
+        max_depth: 10,
+        cooldown_hours: cooldownHours,
+        sample: selected.slice(0, 30),
+      },
+      severity: 'info',
+      confidence: 'high',
+    }));
+  }
+
+  return stats;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

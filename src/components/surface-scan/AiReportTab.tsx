@@ -4,11 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, FileText, Download, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
-import { surfaceScan360Api } from '@/lib/api/surface-scan360';
 import { generateSurfaceScan360Pdf } from '@/lib/surfaceScan360PdfReport';
 import { generateSurfaceScan360Docx } from '@/lib/surfaceScan360DocxReport';
-import { getErrorDetail } from "@/lib/api-client";
 
 interface AiReport {
   generated_at: string;
@@ -117,7 +116,7 @@ export const AiReportTab: React.FC = () => {
   const [cvePage, setCvePage] = useState(0);
   const [intelPage, setIntelPage] = useState(0);
   const [obsPage, setObsPage] = useState(0);
-  const { organizationId, groupId } = useClientOrganization();
+  const { organizationId } = useClientOrganization();
 
   const generate = async () => {
     if (!organizationId) {
@@ -127,16 +126,15 @@ export const AiReportTab: React.FC = () => {
     setLoading(true);
     setAssetPage(0); setFindingPage(0); setCvePage(0); setIntelPage(0); setObsPage(0);
     try {
-      const result = await surfaceScan360Api.createAiReport(
-        organizationId,
-        { scope_mode: 'organization_scope', trigger_source: 'manual' },
-        groupId,
-      );
-      const reportData = (result as any)?.payload || (result as any)?.report || (result as any);
-      setReport(reportData as AiReport);
+      const { data, error } = await supabase.functions.invoke('surfacescan360-ai-report', {
+        body: { organization_id: organizationId },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      setReport((data as any).report as AiReport);
       toast.success('Report AI generato');
     } catch (e: any) {
-      toast.error('Errore generazione report: ' + (getErrorDetail(e)));
+      toast.error('Errore generazione report: ' + (e.message || 'unknown'));
     } finally {
       setLoading(false);
     }

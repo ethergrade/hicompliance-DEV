@@ -29,8 +29,7 @@ import {
 } from '@/components/ui/select';
 import { SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
 import { useOrganizationUsers } from '@/hooks/useOrganizationUsers';
-import { useUserRoles } from '@/hooks/useUserRoles';
-import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 const alertFormSchema = z.object({
   target_user_id: z.string().optional(),
@@ -76,9 +75,11 @@ export const SurfaceScanAlertConfigDialog: React.FC<SurfaceScanAlertConfigDialog
   defaultValues,
   mode = 'create',
 }) => {
-  const { groupId } = useClientOrganization();
-  const { users, loading: usersLoading } = useOrganizationUsers(groupId);
-  const { isSuperAdmin: isAdmin } = useUserRoles();
+  const { userProfile } = useAuth();
+  const isAdmin = userProfile?.user_type === 'admin';
+  const { users, loading: usersLoading } = useOrganizationUsers({
+    enabled: open && isAdmin && mode === 'create',
+  });
 
   const form = useForm<AlertFormValues>({
     resolver: zodResolver(alertFormSchema),
@@ -159,9 +160,14 @@ export const SurfaceScanAlertConfigDialog: React.FC<SurfaceScanAlertConfigDialog
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
+                        {usersLoading ? (
+                          <SelectItem value="__loading__" disabled>
+                            Caricamento utenti...
+                          </SelectItem>
+                        ) : null}
                         {users.map((user) => (
-                          <SelectItem key={user.id} value={String(user.id)}>
-                            {user.name} ({user.email})
+                          <SelectItem key={user.auth_user_id} value={user.auth_user_id}>
+                            {user.full_name} ({user.email})
                           </SelectItem>
                         ))}
                       </SelectContent>

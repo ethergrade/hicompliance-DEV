@@ -36,6 +36,36 @@ export interface CallerProfile {
   isAdminLike: boolean;
 }
 
+export type OrganizationServiceKind = "hicompliance" | "surface_scan360" | "dark_risk360";
+
+export interface OrganizationServiceRuntimeFlags {
+  hicompliance_enabled?: boolean | null;
+  surface_scan360_enabled?: boolean | null;
+  dark_risk360_enabled?: boolean | null;
+  services_paused?: boolean | null;
+  services_paused_at?: string | null;
+  services_pause_reason?: string | null;
+  hicompliance_contract_start?: string | null;
+  hicompliance_contract_years?: number | null;
+  surface_scan_contract_start?: string | null;
+  surface_scan_contract_years?: number | null;
+  dark_risk_contract_start?: string | null;
+  dark_risk_contract_years?: number | null;
+}
+
+export interface OrganizationServiceGateDecision {
+  allowed: boolean;
+  code:
+    | "ok"
+    | "service_disabled"
+    | "services_paused"
+    | "contract_not_started"
+    | "contract_expired";
+  reason: string;
+  contract_start: string | null;
+  contract_end: string | null;
+}
+
 export interface HostScopeClassification {
   host: string;
   normalizedHost: string;
@@ -64,9 +94,301 @@ const BLOCKED_HOSTS = new Set(["localhost"]);
 const BLOCKED_SCHEMES = new Set(["file:", "ftp:", "ws:", "wss:"]);
 const SALES_LOCK_EMAIL = "sales@sales.com";
 const SALES_LOCK_ORG_CODE = "cliente1";
+const KNOWN_USER_BOOTSTRAP: Record<string, {
+  fullName: string;
+  userType: "admin" | "client";
+  role?: "super_admin" | "sales";
+  organizationCode?: string;
+}> = {
+  "superadmin@superadmin.com": {
+    fullName: "Super Administrator",
+    userType: "admin",
+    role: "super_admin",
+  },
+  "admin@admin.com": {
+    fullName: "Administrator",
+    userType: "admin",
+    role: "super_admin",
+  },
+  [SALES_LOCK_EMAIL]: {
+    fullName: "Sales User",
+    userType: "client",
+    role: "sales",
+    organizationCode: SALES_LOCK_ORG_CODE,
+  },
+};
+
+export class SurfaceScanHttpError extends Error {
+  status: number;
+  code: string;
+  details: Record<string, unknown>;
+
+  constructor(
+    status: number,
+    message: string,
+    code = "request_error",
+    details: Record<string, unknown> = {},
+  ) {
+    super(message);
+    this.name = "SurfaceScanHttpError";
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
 
 export const isAllowedProfile = (profile: string): profile is ScanProfile =>
   (ALLOWED_PROFILES as readonly string[]).includes(profile);
+
+async function findOrganizationIdByCode(
+  adminClient: SupabaseClient,
+  code: string | undefined,
+): Promise<string | null> {
+  const normalizedCode = String(code || "").trim().toLowerCase();
+  if (!normalizedCode) return null;
+
+  const { data, error } = await adminClient
+    .from("organizations")
+    .select("id")
+    .eq("code", normalizedCode)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || `Unable to resolve organization "${normalizedCode}"`);
+  }
+
+  return data?.id ? String(data.id) : null;
+}
+
+async function ensureKnownUserProfile(
+  adminClient: SupabaseClient,
+  authUserId: string,
+  email: string,
+): Promise<{
+  auth_user_id: string | null;
+  email: string;
+  user_type: string;
+  organization_id: string | null;
+} | null> {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const seed = KNOWN_USER_BOOTSTRAP[normalizedEmail];
+  if (!seed) return null;
+
+  const organizationId = await findOrganizationIdByCode(adminClient, seed.organizationCode);
+  const { data: existingRow, error: existingError } = await adminClient
+    .from("users")
+    .select("id, auth_user_id, email, full_name, user_type, organization_id")
+    .eq("email", normalizedEmail)
+    .maybeSingle();
+
+  if (existingError) {
+    throw new Error(existingError.message || "Unable to inspect user bootstrap row");
+  }
+
+  if (existingRow?.id) {
+    const patch: Record<string, unknown> = {};
+    if (String(existingRow.auth_user_id || "") !== authUserId) {
+      patch.auth_user_id = authUserId;
+    }
+    if (String(existingRow.user_type || "") !== seed.userType) {
+      patch.user_type = seed.userType;
+    }
+    if (!String(existingRow.full_name || "").trim()) {
+      patch.full_name = seed.fullName;
+    }
+    if (
+      seed.organizationCode
+      && String(existingRow.organization_id || "") !== String(organizationId || "")
+    ) {
+      patch.organization_id = organizationId;
+    }
+
+    if (Object.keys(patch).length > 0) {
+      const { error: updateError } = await adminClient
+        .from("users")
+        .update(patch)
+        .eq("id", existingRow.id);
+      if (updateError) {
+        throw new Error(updateError.message || "Unable to repair existing user bootstrap row");
+      }
+    }
+  } else {
+    const { error: insertError } = await adminClient
+      .from("users")
+      .insert({
+        auth_user_id: authUserId,
+        email: normalizedEmail,
+        full_name: seed.fullName,
+        user_type: seed.userType,
+        organization_id: organizationId,
+      });
+    if (insertError) {
+      throw new Error(insertError.message || "Unable to insert missing user bootstrap row");
+    }
+  }
+
+  if (seed.role) {
+    const { error: roleError } = await adminClient
+      .from("user_roles")
+      .upsert(
+        {
+          user_id: authUserId,
+          role: seed.role,
+        },
+        {
+          onConflict: "user_id,role",
+        },
+      );
+    if (roleError) {
+      throw new Error(roleError.message || "Unable to repair bootstrap role mapping");
+    }
+  }
+
+  const { data: repairedRow, error: repairedError } = await adminClient
+    .from("users")
+    .select("auth_user_id, email, user_type, organization_id")
+    .eq("auth_user_id", authUserId)
+    .maybeSingle();
+
+  if (repairedError) {
+    throw new Error(repairedError.message || "Unable to load repaired user row");
+  }
+
+  return repairedRow || null;
+}
+
+export function toErrorResponsePayload(
+  error: unknown,
+  fallbackMessage = "Internal error",
+): {
+  status: number;
+  body: Record<string, unknown>;
+} {
+  if (error instanceof SurfaceScanHttpError) {
+    return {
+      status: error.status,
+      body: {
+        error: error.message,
+        code: error.code,
+        ...error.details,
+      },
+    };
+  }
+
+  return {
+    status: 500,
+    body: {
+      error: error instanceof Error ? error.message : fallbackMessage,
+    },
+  };
+}
+
+function parseDateOnly(value: string | null | undefined): Date | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const asIsoDate = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00.000Z` : raw;
+  const parsed = new Date(asIsoDate);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function addYearsSafe(value: Date, years: number): Date {
+  const copy = new Date(value.getTime());
+  copy.setUTCFullYear(copy.getUTCFullYear() + years);
+  return copy;
+}
+
+export function evaluateOrganizationServiceGate(
+  org: OrganizationServiceRuntimeFlags | null | undefined,
+  service: OrganizationServiceKind,
+  now: Date = new Date(),
+): OrganizationServiceGateDecision {
+  const row = (org || {}) as OrganizationServiceRuntimeFlags;
+  if (Boolean(row.services_paused)) {
+    return {
+      allowed: false,
+      code: "services_paused",
+      reason: row.services_pause_reason
+        ? `Servizi in pausa: ${row.services_pause_reason}`
+        : "Servizi in pausa per questo cliente",
+      contract_start: null,
+      contract_end: null,
+    };
+  }
+
+  const isEnabled = (() => {
+    if (service === "hicompliance") return Boolean(row.hicompliance_enabled);
+    if (service === "surface_scan360") return Boolean(row.surface_scan360_enabled);
+    return Boolean(row.dark_risk360_enabled);
+  })();
+
+  if (!isEnabled) {
+    return {
+      allowed: false,
+      code: "service_disabled",
+      reason: "Servizio disabilitato per questo cliente",
+      contract_start: null,
+      contract_end: null,
+    };
+  }
+
+  const contractStartRaw = (() => {
+    if (service === "hicompliance") return row.hicompliance_contract_start;
+    if (service === "surface_scan360") return row.surface_scan_contract_start;
+    return row.dark_risk_contract_start;
+  })();
+  const contractYearsRaw = (() => {
+    if (service === "hicompliance") return row.hicompliance_contract_years;
+    if (service === "surface_scan360") return row.surface_scan_contract_years;
+    return row.dark_risk_contract_years;
+  })();
+
+  const contractStartDate = parseDateOnly(contractStartRaw);
+  const contractYears = Number(contractYearsRaw ?? 0);
+
+  // Backward compatibility: legacy customers without explicit contract window remain active.
+  if (!contractStartDate || !Number.isFinite(contractYears) || contractYears <= 0) {
+    return {
+      allowed: true,
+      code: "ok",
+      reason: "Servizio attivo (finestra legacy senza scadenza esplicita)",
+      contract_start: null,
+      contract_end: null,
+    };
+  }
+
+  const contractEndDate = addYearsSafe(contractStartDate, Math.floor(contractYears));
+  const contractStartIso = contractStartDate.toISOString();
+  const contractEndIso = contractEndDate.toISOString();
+
+  if (now.getTime() < contractStartDate.getTime()) {
+    return {
+      allowed: false,
+      code: "contract_not_started",
+      reason: "Contratto non ancora avviato",
+      contract_start: contractStartIso,
+      contract_end: contractEndIso,
+    };
+  }
+
+  if (now.getTime() >= contractEndDate.getTime()) {
+    return {
+      allowed: false,
+      code: "contract_expired",
+      reason: "Contratto scaduto",
+      contract_start: contractStartIso,
+      contract_end: contractEndIso,
+    };
+  }
+
+  return {
+    allowed: true,
+    code: "ok",
+    reason: "Servizio attivo in finestra contrattuale",
+    contract_start: contractStartIso,
+    contract_end: contractEndIso,
+  };
+}
 
 function normalizeHostname(value: string): string {
   return value.trim().toLowerCase().replace(/\.$/, "");
@@ -497,14 +819,14 @@ export async function getCallerProfile(
   adminClient: SupabaseClient,
   authUserId: string,
 ): Promise<CallerProfile> {
-  const { data: userRow, error: userError } = await adminClient
+  let { data: userRow, error: userError } = await adminClient
     .from("users")
     .select("auth_user_id, email, user_type, organization_id")
     .eq("auth_user_id", authUserId)
-    .single();
+    .maybeSingle();
 
-  if (userError || !userRow) {
-    throw new Error("Profilo utente non trovato");
+  if (userError) {
+    throw new Error(userError.message || "Unable to load caller profile");
   }
 
   const [manageRes, roleRes] = await Promise.all([
@@ -512,8 +834,47 @@ export async function getCallerProfile(
     adminClient.rpc("has_role", { _user_id: authUserId, _role: "super_admin" }),
   ]);
 
+  let normalizedEmail = String(userRow?.email || "").toLowerCase();
+
+  if (!userRow) {
+    const { data: authLookup, error: authLookupError } = await adminClient.auth.admin.getUserById(authUserId);
+    if (authLookupError) {
+      throw new Error(authLookupError.message || "Unable to resolve auth user");
+    }
+
+    normalizedEmail = String(authLookup.user?.email || "").trim().toLowerCase();
+    if (normalizedEmail) {
+      userRow = await ensureKnownUserProfile(adminClient, authUserId, normalizedEmail);
+    }
+  }
+
+  if (!userRow) {
+    const canManageAllOrganizations = Boolean(manageRes.data);
+    const isSuperAdmin = Boolean(roleRes.data);
+    if (canManageAllOrganizations || isSuperAdmin) {
+      return {
+        authUserId,
+        email: normalizedEmail,
+        userType: "admin",
+        organizationId: null,
+        canManageAllOrganizations,
+        isSuperAdmin,
+        isAdminLike: true,
+      };
+    }
+
+    throw new SurfaceScanHttpError(
+      403,
+      "Profilo utente non sincronizzato",
+      "user_profile_not_synced",
+      {
+        auth_user_id: authUserId,
+      },
+    );
+  }
+
   let callerOrganizationId = userRow.organization_id;
-  const normalizedEmail = String(userRow.email || "").toLowerCase();
+  normalizedEmail = String(userRow.email || normalizedEmail || "").toLowerCase();
   if (normalizedEmail === SALES_LOCK_EMAIL) {
     const { data: salesOrg } = await adminClient
       .from("organizations")
@@ -545,12 +906,12 @@ export function assertCustomerAccess(
   const isLockedSalesUser = caller.email === SALES_LOCK_EMAIL;
 
   if (isLockedSalesUser && callerOrgId !== normalizedCustomerId) {
-    throw new Error("Accesso cliente non autorizzato");
+    throw new SurfaceScanHttpError(403, "Accesso cliente non autorizzato", "customer_access_denied");
   }
 
   const canAccess = caller.canManageAllOrganizations || callerOrgId === normalizedCustomerId;
   if (!canAccess) {
-    throw new Error("Accesso cliente non autorizzato");
+    throw new SurfaceScanHttpError(403, "Accesso cliente non autorizzato", "customer_access_denied");
   }
 }
 
@@ -749,13 +1110,36 @@ function asDnsAuthority(payload: unknown): DnsJsonAnswer[] {
   return Array.isArray(value) ? value : [];
 }
 
-function parseRdapEventDate(events: unknown, eventAction: string): string | null {
+function parseRdapEventDate(events: unknown, eventAction: string | string[]): string | null {
   if (!Array.isArray(events)) return null;
+  const accepted = (Array.isArray(eventAction) ? eventAction : [eventAction])
+    .map((entry) => String(entry || "").trim().toLowerCase())
+    .filter(Boolean);
+  if (accepted.length === 0) return null;
+
   const row = events.find((entry: any) =>
-    String(entry?.eventAction || "").trim().toLowerCase() === eventAction.toLowerCase()
+    accepted.includes(String(entry?.eventAction || "").trim().toLowerCase())
   ) as Record<string, unknown> | undefined;
   const rawDate = String(row?.eventDate || "").trim();
   return rawDate || null;
+}
+
+function extractWhoisValue(text: string, patterns: RegExp[]): string | null {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    const value = String(match?.[1] || "").trim();
+    if (value) return value;
+  }
+  return null;
+}
+
+function normalizeWhoisDate(value: string | null): string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const cleaned = raw.replace(/\s+\(.*?\)\s*$/, "").trim();
+  const parsedMs = Date.parse(cleaned);
+  if (!Number.isFinite(parsedMs)) return cleaned || null;
+  return new Date(parsedMs).toISOString();
 }
 
 function normalizeHeaderMap(
@@ -803,7 +1187,7 @@ export function summarizeWhoisRdap(payload: unknown, nowMs = Date.now()): WhoisR
 
   const nameservers = Array.isArray(data.nameservers)
     ? data.nameservers
-      .map((entry: any) => String(entry?.ldhName || "").trim().toLowerCase())
+      .map((entry: any) => String(entry?.ldhName || entry?.unicodeName || "").trim().toLowerCase())
       .filter(Boolean)
     : [];
 
@@ -812,17 +1196,18 @@ export function summarizeWhoisRdap(payload: unknown, nowMs = Date.now()): WhoisR
   );
 
   const registrarName = (() => {
+    const fallbackRegistrarText = String(data?.registrar || data?.name || "").trim();
     const vcard = Array.isArray((registrarEntity as any)?.vcardArray) ? (registrarEntity as any).vcardArray[1] : [];
-    if (!Array.isArray(vcard)) return null;
+    if (!Array.isArray(vcard)) return fallbackRegistrarText || null;
     const fnEntry = vcard.find((entry: any) => Array.isArray(entry) && String(entry?.[0] || "").toLowerCase() === "fn");
-    if (!Array.isArray(fnEntry)) return null;
+    if (!Array.isArray(fnEntry)) return fallbackRegistrarText || null;
     const candidate = String(fnEntry?.[3] || "").trim();
-    return candidate || null;
+    return candidate || fallbackRegistrarText || null;
   })();
 
-  const created = parseRdapEventDate(events, "registration");
-  const updated = parseRdapEventDate(events, "last changed");
-  const expires = parseRdapEventDate(events, "expiration");
+  const created = parseRdapEventDate(events, ["registration", "registered", "creation", "created"]);
+  const updated = parseRdapEventDate(events, ["last changed", "last changed date", "last update"]);
+  const expires = parseRdapEventDate(events, ["expiration", "expiry", "expires", "expiration date"]);
   const expirationMs = expires ? Date.parse(expires) : Number.NaN;
   const daysToExpiry = Number.isFinite(expirationMs)
     ? Math.round((expirationMs - nowMs) / 86400000)
@@ -841,6 +1226,92 @@ export function summarizeWhoisRdap(payload: unknown, nowMs = Date.now()): WhoisR
     registration_valid: daysToExpiry === null ? false : daysToExpiry >= 0,
     nameservers,
     dnssec: secureDnsSigned === true ? "signed" : secureDnsSigned === false ? "unsigned" : null,
+  };
+}
+
+export function summarizeWhoisText(
+  rawText: string,
+  fallbackDomain: string | null = null,
+  nowMs = Date.now(),
+): WhoisRdapSummary {
+  const text = String(rawText || "").replace(/\r/g, "\n");
+  const domain = (() => {
+    const domainRaw = extractWhoisValue(text, [
+      /^\s*Domain Name:\s*(.+)$/im,
+      /^\s*domain:\s*(.+)$/im,
+      /^\s*Domain:\s*(.+)$/im,
+    ]) || fallbackDomain;
+    const cleaned = String(domainRaw || "").trim().toLowerCase().replace(/\.$/, "");
+    return cleaned || null;
+  })();
+
+  const registrar = extractWhoisValue(text, [
+    /^\s*Registrar:\s*(.+)$/im,
+    /^\s*Sponsoring Registrar:\s*(.+)$/im,
+    /^\s*registrar:\s*(.+)$/im,
+  ]);
+
+  const created = normalizeWhoisDate(extractWhoisValue(text, [
+    /^\s*Domain Creation Date:\s*(.+)$/im,
+    /^\s*Creation Date:\s*(.+)$/im,
+    /^\s*Created On:\s*(.+)$/im,
+    /^\s*created:\s*(.+)$/im,
+  ]));
+
+  const updated = normalizeWhoisDate(extractWhoisValue(text, [
+    /^\s*Domain Updated Date:\s*(.+)$/im,
+    /^\s*Updated Date:\s*(.+)$/im,
+    /^\s*Last Updated On:\s*(.+)$/im,
+    /^\s*changed:\s*(.+)$/im,
+  ]));
+
+  const expires = normalizeWhoisDate(extractWhoisValue(text, [
+    /^\s*Domain Registry Expiration Date:\s*(.+)$/im,
+    /^\s*Registrar Registration Expiration Date:\s*(.+)$/im,
+    /^\s*Registry Expiry Date:\s*(.+)$/im,
+    /^\s*Expiration Date:\s*(.+)$/im,
+    /^\s*Expiry Date:\s*(.+)$/im,
+    /^\s*Expires On:\s*(.+)$/im,
+    /^\s*paid-till:\s*(.+)$/im,
+    /^\s*expire:\s*(.+)$/im,
+  ]));
+
+  const nameservers = Array.from(
+    text.matchAll(/^\s*(?:Name Server|Nameserver):\s*([^\s#]+)\s*$/gim),
+  )
+    .map((match) => String(match?.[1] || "").trim().toLowerCase().replace(/\.$/, ""))
+    .filter(Boolean);
+
+  const dnssecRaw = extractWhoisValue(text, [
+    /^\s*DNSSEC:\s*(.+)$/im,
+    /^\s*dnssec:\s*(.+)$/im,
+  ]);
+
+  let dnssec: "signed" | "unsigned" | null = null;
+  if (dnssecRaw) {
+    const normalized = dnssecRaw.toLowerCase();
+    if (normalized.includes("unsigned") || normalized.includes("not signed") || normalized === "false") {
+      dnssec = "unsigned";
+    } else if (normalized.includes("signed")) {
+      dnssec = "signed";
+    }
+  }
+
+  const expirationMs = expires ? Date.parse(expires) : Number.NaN;
+  const daysToExpiry = Number.isFinite(expirationMs)
+    ? Math.round((expirationMs - nowMs) / 86400000)
+    : null;
+
+  return {
+    domain,
+    registrar: registrar || null,
+    created,
+    updated,
+    expires,
+    days_to_expiry: daysToExpiry,
+    registration_valid: daysToExpiry === null ? false : daysToExpiry >= 0,
+    nameservers,
+    dnssec,
   };
 }
 

@@ -22,12 +22,15 @@ type OpenPortSnapshot = {
   ip?: string | null;
   port: number;
   protocol: string;
+  source?: string | null;
   service_name?: string | null;
   exposure_level?: string | null;
   is_web?: boolean;
   is_tls?: boolean;
   last_seen_at?: string | null;
 };
+
+const UNIFIED_EXPOSURE_SCAN_TYPES = ['exposure_port_technology', 'connectsecure_asm'];
 
 type ClassicPortFindingRow = {
   port?: number | null;
@@ -65,9 +68,14 @@ type ExposureJobMeta = {
   id: string;
   customer_id: string | null;
   organization_id: string | null;
+  raw_target?: string | null;
+  normalized_target?: string | null;
+  target_type?: string | null;
+  hostname?: string | null;
   created_at: string;
   completed_at: string | null;
   status: string;
+  scan_type?: string | null;
   scan_profile: string | null;
   summary: Record<string, unknown> | null;
 };
@@ -371,6 +379,8 @@ function emptySummary(scopeMode: 'single_job' | 'scope_latest_per_target', count
     tls_services: 0,
     top_open_ports: [],
     technologies: [],
+    included_scan_types: UNIFIED_EXPOSURE_SCAN_TYPES,
+    source_counts: {},
     findings_by_severity: {
       critical: 0,
       high: 0,
@@ -427,9 +437,9 @@ serve(async (req: Request) => {
     const jobScopeFilter = `customer_id.eq.${customerId},organization_id.eq.${customerId}`;
     const { data: allJobsRows, error: allJobsError } = await adminClient
       .from('surface_scan_jobs' as any)
-      .select('id, customer_id, organization_id, created_at, completed_at, status, scan_profile, summary')
+      .select('id, customer_id, organization_id, raw_target, normalized_target, target_type, hostname, created_at, completed_at, status, scan_type, scan_profile, summary')
       .or(jobScopeFilter)
-      .eq('scan_type', 'exposure_port_technology')
+      .in('scan_type', UNIFIED_EXPOSURE_SCAN_TYPES)
       .order('created_at', { ascending: false })
       .limit(500);
     if (allJobsError) throw allJobsError;
@@ -486,6 +496,27 @@ serve(async (req: Request) => {
         .in('scan_job_id', allJobIds);
 
       const jobsById = new Map(allJobs.map((entry) => [String(entry.id), entry]));
+      const explicitTargetRows = ((targetRows || []) as Array<Record<string, unknown>>)
+        .map((row) => ({
+          scan_job_id: String(row?.scan_job_id || '').trim(),
+          target_value: String(row?.target_value || '').trim().toLowerCase(),
+          target_type: String(row?.target_type || '').trim().toLowerCase(),
+        }))
+        .filter((row) => row.scan_job_id && row.target_value);
+      const jobsWithExplicitTargets = new Set(explicitTargetRows.map((row) => row.scan_job_id));
+      const synthesizedTargetRows = allJobs
+        .filter((job) => !jobsWithExplicitTargets.has(String(job.id || '')))
+        .map((job) => {
+          const targetValue = String(job.normalized_target || job.raw_target || job.hostname || '').trim().toLowerCase();
+          const targetType = String(job.target_type || (targetValue.includes(':') || isValidIPv4(targetValue) ? 'ipv4' : 'domain')).trim().toLowerCase();
+          return {
+            scan_job_id: String(job.id || '').trim(),
+            target_value: targetValue,
+            target_type: targetType,
+          };
+        })
+        .filter((row) => row.scan_job_id && row.target_value);
+      const allTargetRows = [...explicitTargetRows, ...synthesizedTargetRows];
       const countedTargets = new Set<string>();
       const groupedTargets = new Map<string, {
         target_value: string;
@@ -493,10 +524,10 @@ serve(async (req: Request) => {
         jobs: ExposureJobMeta[];
       }>();
 
-      for (const row of (targetRows || []) as Array<Record<string, unknown>>) {
-        const scanJobId = String(row?.scan_job_id || '').trim();
-        const targetValue = String(row?.target_value || '').trim().toLowerCase();
-        const targetType = String(row?.target_type || '').trim().toLowerCase();
+      for (const row of allTargetRows) {
+        const scanJobId = row.scan_job_id;
+        const targetValue = row.target_value;
+        const targetType = row.target_type;
         if (!scanJobId || !targetValue) continue;
         const targetKey = `${targetType || 'target'}|${targetValue}`;
 
@@ -623,7 +654,7 @@ serve(async (req: Request) => {
         .in('scan_job_id', selectedJobIds),
       adminClient
         .from('surface_open_ports' as any)
-        .select('host, ip, port, protocol, service_name, service_product, service_version, exposure_level, is_web, is_tls, last_seen_at')
+        .select('host, ip, port, protocol, source, service_name, service_product, service_version, exposure_level, is_web, is_tls, last_seen_at')
         .in('scan_job_id', selectedJobIds),
       adminClient
         .from('surface_exposure_findings' as any)
@@ -652,7 +683,7 @@ serve(async (req: Request) => {
         .from('surface_scan_jobs' as any)
         .select('id')
         .or(`customer_id.eq.${resolvedCustomerId},organization_id.eq.${resolvedCustomerId}`)
-        .eq('scan_type', 'exposure_port_technology')
+        .in('scan_type', UNIFIED_EXPOSURE_SCAN_TYPES)
         .lt('created_at', String(job.created_at || new Date().toISOString()))
         .order('created_at', { ascending: false })
         .limit(1)
@@ -692,10 +723,13 @@ serve(async (req: Request) => {
 
     const hostsWithOpenPorts = new Set(openPorts.map((row) => String(row.host || '').trim().toLowerCase()).filter(Boolean));
     const topPortCounter = new Map<number, number>();
+    const sourceCounter = new Map<string, number>();
     for (const row of openPorts) {
       const port = Number(row.port || 0);
       if (!Number.isFinite(port) || port <= 0) continue;
       topPortCounter.set(port, (topPortCounter.get(port) || 0) + 1);
+      const source = String(row.source || 'legacy').trim().toLowerCase() || 'legacy';
+      sourceCounter.set(source, (sourceCounter.get(source) || 0) + 1);
     }
 
     const technologyCounter = new Map<string, number>();
@@ -726,7 +760,7 @@ serve(async (req: Request) => {
       const [prevPortsRes, prevTechRes] = await Promise.all([
         adminClient
           .from('surface_open_ports' as any)
-          .select('host, ip, port, protocol, service_name, exposure_level, last_seen_at')
+          .select('host, ip, port, protocol, source, service_name, exposure_level, last_seen_at')
           .eq('scan_job_id', previousJobId),
         adminClient
           .from('surface_web_technologies' as any)
@@ -763,6 +797,8 @@ serve(async (req: Request) => {
         .map(([port, count]) => ({ port, count }))
         .sort((a, b) => b.count - a.count)
         .slice(0, 10),
+      included_scan_types: UNIFIED_EXPOSURE_SCAN_TYPES,
+      source_counts: Object.fromEntries(sourceCounter.entries()),
       technologies: Array.from(technologyCounter.entries())
         .map(([name, count]) => ({ name, count }))
         .sort((a, b) => b.count - a.count)
