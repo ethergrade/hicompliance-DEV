@@ -906,7 +906,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{
                   onChange={(event) =>
                     setSensitivePowerQuery(event.target.value)
                   }
-                  placeholder="Es. categoria:Password dominio:panapesca query:@dominio.it valore:chrome marcato:2026"
+                  placeholder="Es. categoria:Password dominio:dominio.it query:@dominio.it valore:chrome marcato:2026"
                   className="h-9 text-xs"
                 />
                 <div className="flex flex-wrap items-center gap-2">

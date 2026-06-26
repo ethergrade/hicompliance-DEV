@@ -472,7 +472,7 @@ const AdminCompanies: React.FC = () => {
 							<Input
 								value={newGroupName}
 								onChange={(e) => setNewGroupName(e.target.value)}
-								placeholder="es. Panapesca S.p.A."
+								placeholder="es. Azienda S.p.A."
 								onKeyDown={(e) => {
 									if (e.key === "Enter") handleCreateGroup();
 								}}

@@ -205,6 +205,41 @@ interface ReverseAssetRow {
   raw: { ip?: string } | null;
 }
 
+interface DomainIpRelationRow {
+  asset_type?: string | null;
+  asset_value?: string | null;
+  hostname?: string | null;
+  root_domain?: string | null;
+  ip?: string | null;
+  source?: string | null;
+  raw?: Record<string, unknown> | null;
+}
+
+interface DomainIpFindingRow {
+  affected_asset?: string | null;
+  affected_url?: string | null;
+  ip?: string | null;
+  evidence?: Record<string, unknown> | null;
+}
+
+interface DomainReverseSummary {
+  ips: string[];
+  reverseHosts: string[];
+  sources: string[];
+}
+
+const normalizeDomainKey = (value: unknown): string => {
+  const host = extractHostFromTarget(String(value || '').trim());
+  if (!host || IPV4_REGEX.test(host) || isIpv6(host) || !isDomainLike(host)) return '';
+  return host.toLowerCase();
+};
+
+const normalizeIpCandidate = (value: unknown): string => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  return IPV4_REGEX.test(raw) || isIpv6(raw) ? raw : '';
+};
+
 const SurfaceScan360: React.FC = () => {
   const overviewSectionRef = useRef<HTMLDivElement>(null);
   const scopeSectionRef = useRef<HTMLDivElement>(null);
@@ -226,6 +261,7 @@ const SurfaceScan360: React.FC = () => {
   const [showScopeDiagnostics, setShowScopeDiagnostics] = useState(false);
   const [enableAmassDiscovery, setEnableAmassDiscovery] = useState(false);
   const [reverseDnsMap, setReverseDnsMap] = useState<Record<string, string[]>>({});
+  const [domainIpMap, setDomainIpMap] = useState<Record<string, { ips: string[]; sources: string[] }>>({});
   const [activeSection, setActiveSection] = useState('overview');
 
   const assetsPerPage = 15;
@@ -469,6 +505,117 @@ const SurfaceScan360: React.FC = () => {
     };
   }, [organizationId]);
 
+  React.useEffect(() => {
+    const loadDomainIpMap = async () => {
+      if (!organizationId) {
+        setDomainIpMap({});
+        return;
+      }
+
+      const scopeFilter = `customer_id.eq.${organizationId},organization_id.eq.${organizationId}`;
+      const [assetsRes, findingsRes] = await Promise.all([
+        supabase
+          .from('surface_assets' as any)
+          .select('asset_type, asset_value, hostname, root_domain, ip, source, raw')
+          .or(scopeFilter)
+          .in('asset_type', ['domain', 'subdomain', 'ip', 'ipv4', 'reverse_dns_hostname'])
+          .order('last_seen', { ascending: false })
+          .limit(1500),
+        supabase
+          .from('surface_findings' as any)
+          .select('affected_asset, affected_url, ip, evidence')
+          .or(scopeFilter)
+          .in('finding_type', ['open_port_exposed', 'service_fingerprint_exposed', 'sensitive_port_exposed'])
+          .order('last_seen_at', { ascending: false })
+          .limit(1000),
+      ]);
+
+      if (assetsRes.error) {
+        console.error('Error loading SurfaceScan domain/IP assets:', assetsRes.error);
+      }
+      if (findingsRes.error) {
+        console.error('Error loading SurfaceScan domain/IP findings:', findingsRes.error);
+      }
+
+      const map: Record<string, { ips: string[]; sources: string[] }> = {};
+      const add = (domainValue: unknown, ipValue: unknown, sourceValue?: unknown) => {
+        const domain = normalizeDomainKey(domainValue);
+        const ip = normalizeIpCandidate(ipValue);
+        if (!domain || !ip) return;
+        if (!map[domain]) map[domain] = { ips: [], sources: [] };
+        if (!map[domain].ips.includes(ip)) map[domain].ips.push(ip);
+        const source = String(sourceValue || '').trim().toLowerCase();
+        if (source && !map[domain].sources.includes(source)) map[domain].sources.push(source);
+      };
+
+      for (const row of (assetsRes.data || []) as DomainIpRelationRow[]) {
+        const raw = row.raw || {};
+        const assetType = String(row.asset_type || '').toLowerCase();
+        const ip = normalizeIpCandidate(row.ip || raw.ip || (assetType === 'ip' || assetType === 'ipv4' ? row.asset_value : ''));
+        const domainCandidates = [
+          row.hostname,
+          row.root_domain,
+          raw.scope_target_host,
+          raw.root_domain,
+          raw.domain,
+          raw.hostname,
+          raw.target,
+          assetType === 'domain' || assetType === 'subdomain' || assetType === 'reverse_dns_hostname' ? row.asset_value : '',
+        ];
+        for (const domain of domainCandidates) add(domain, ip, row.source || raw.source);
+      }
+
+      for (const row of (findingsRes.data || []) as DomainIpFindingRow[]) {
+        const evidence = row.evidence || {};
+        const ip = normalizeIpCandidate(row.ip || evidence.ip);
+        const domainCandidates = [
+          evidence.scope_target_host,
+          evidence.root_domain,
+          evidence.domain,
+          evidence.hostname,
+          evidence.host,
+          evidence.target,
+          row.affected_url,
+          row.affected_asset,
+        ];
+        for (const domain of domainCandidates) add(domain, ip, evidence.source);
+      }
+
+      setDomainIpMap(map);
+    };
+
+    void loadDomainIpMap();
+    if (!organizationId) return;
+
+    const domainIpChannel = supabase
+      .channel(`surface-domain-ip-${organizationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'surface_assets',
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        () => { void loadDomainIpMap(); },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'surface_findings',
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        () => { void loadDomainIpMap(); },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(domainIpChannel);
+    };
+  }, [organizationId]);
+
   const latestJobByHost = useMemo(() => {
     const map = new Map<string, (typeof scanJobs)[number]>();
     for (const job of scanJobs) {
@@ -496,6 +643,35 @@ const SurfaceScan360: React.FC = () => {
     }
     return map;
   }, [scanJobs]);
+
+  const monitoredDomainReverseSummary = useMemo(() => {
+    const map = new Map<string, DomainReverseSummary>();
+    const addIp = (domain: string, ip: string, source?: string) => {
+      if (!domain || !ip) return;
+      if (!map.has(domain)) map.set(domain, { ips: [], reverseHosts: [], sources: [] });
+      const entry = map.get(domain)!;
+      if (!entry.ips.includes(ip)) entry.ips.push(ip);
+      const reverseHosts = reverseDnsMap[ip] || [];
+      for (const host of reverseHosts) {
+        if (!entry.reverseHosts.includes(host)) entry.reverseHosts.push(host);
+      }
+      const normalizedSource = String(source || '').trim().toLowerCase();
+      if (normalizedSource && !entry.sources.includes(normalizedSource)) entry.sources.push(normalizedSource);
+    };
+
+    for (const rule of monitoredIpRules) {
+      if (String(rule.entry_type || '').toLowerCase() !== 'domain') continue;
+      const domain = normalizeDomainKey(rule.input_value);
+      if (!domain) continue;
+      for (const ip of resolvedIpsByHost.get(domain) || []) addIp(domain, ip, 'surface_scan');
+      const linked = domainIpMap[domain];
+      for (const ip of linked?.ips || []) {
+        addIp(domain, ip, linked?.sources?.[0] || 'surface_assets');
+      }
+    }
+
+    return map;
+  }, [domainIpMap, monitoredIpRules, resolvedIpsByHost, reverseDnsMap]);
 
   const reverseAnalysisRows = useMemo(() => {
     const rows: Array<{
@@ -866,12 +1042,12 @@ const SurfaceScan360: React.FC = () => {
               <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground space-y-1">
                 <div className="font-medium text-foreground">Legenda input scope (misto supportato)</div>
                 <div>Separatore lista: `,` `;` `|` oppure a capo.</div>
-                <div>Esempio: `panapesca.it, 203.0.113.10, 203.0.113.10-203.0.113.20, 203.0.113.0/24`</div>
+                <div>Esempio: `dominio.it, 204.0.0.1, 204.0.0.10-204.0.0.20, 204.0.0.0/24`</div>
                 <div>Tipi supportati: dominio, IP singolo, range IP, CIDR.</div>
               </div>
               <div className="flex flex-col md:flex-row gap-2">
                 <Input
-                  placeholder="Es. panapesca.it, 203.0.113.10, 203.0.113.10-203.0.113.20, 203.0.113.0/24"
+                  placeholder="Es. dominio.it, 204.0.0.1, 204.0.0.10-204.0.0.20, 204.0.0.0/24"
                   value={newMonitoredIpInput}
                   onChange={(event) => setNewMonitoredIpInput(event.target.value)}
                   disabled={monitoredIpRulesSaving}
@@ -898,25 +1074,59 @@ const SurfaceScan360: React.FC = () => {
                   </div>
                 ) : (
                   <div className="divide-y divide-border">
-                    {monitoredIpRules.map((rule) => (
-                      <div key={rule.id} className="flex items-center justify-between px-3 py-2">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="uppercase">
-                            {rule.entry_type}
-                          </Badge>
-                          <span className="text-sm font-medium">{rule.input_value}</span>
+                    {monitoredIpRules.map((rule) => {
+                      const domainKey = String(rule.entry_type || '').toLowerCase() === 'domain'
+                        ? normalizeDomainKey(rule.input_value)
+                        : '';
+                      const reverseSummary = domainKey ? monitoredDomainReverseSummary.get(domainKey) : null;
+                      return (
+                        <div key={rule.id} className="flex flex-col gap-2 px-3 py-2 md:flex-row md:items-center md:justify-between">
+                          <div className="min-w-0 space-y-1.5">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant="outline" className="uppercase">
+                                {rule.entry_type}
+                              </Badge>
+                              {domainKey && reverseSummary?.ips?.length ? (
+                                <Badge variant="secondary" className="bg-blue-500/10 text-blue-300">
+                                  Reverse IP
+                                </Badge>
+                              ) : null}
+                              <span className="text-sm font-medium">{rule.input_value}</span>
+                            </div>
+                            {domainKey && reverseSummary?.ips?.length ? (
+                              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                                {reverseSummary.ips.slice(0, 3).map((ip) => (
+                                  <span key={ip} className="rounded-md border border-border bg-background/70 px-2 py-1 font-mono">
+                                    {ip}
+                                  </span>
+                                ))}
+                                {reverseSummary.ips.length > 3 && (
+                                  <span className="rounded-md border border-border bg-background/70 px-2 py-1">
+                                    +{reverseSummary.ips.length - 3} IP
+                                  </span>
+                                )}
+                                {reverseSummary.reverseHosts.length > 0 && (
+                                  <span className="truncate">
+                                    PTR: {reverseSummary.reverseHosts.slice(0, 2).join(', ')}
+                                    {reverseSummary.reverseHosts.length > 2 ? ` +${reverseSummary.reverseHosts.length - 2}` : ''}
+                                  </span>
+                                )}
+                              </div>
+                            ) : null}
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveMonitoredIpRule(rule.id)}
+                            disabled={monitoredIpRulesSaving}
+                            className="self-start md:self-auto"
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Rimuovi
+                          </Button>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRemoveMonitoredIpRule(rule.id)}
-                          disabled={monitoredIpRulesSaving}
-                        >
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Rimuovi
-                        </Button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
