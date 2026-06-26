@@ -25,12 +25,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-surface-internal-secret',
 };
 
+type ConfigSource = 'global' | 'org' | 'missing';
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   const SUPABASE_URL     = Deno.env.get('SUPABASE_URL')!;
   const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const INTERNAL_SECRET  = Deno.env.get('SURFACE_SCAN_CRON_INTERNAL_SECRET') || '';
+  const INTERNAL_SECRET  = Deno.env.get('SURFACE_SCAN_CRON_INTERNAL_SECRET') || Deno.env.get('SURFACESCAN_CRON_INTERNAL_SECRET') || '';
 
   const authHeader    = req.headers.get('Authorization') || '';
   const internalToken = req.headers.get('x-surface-internal-secret') || '';
@@ -55,12 +57,15 @@ Deno.serve(async (req: Request) => {
   const GLOBAL_COMPANY  = Deno.env.get('CS_COMPANY_ID');
   const hasGlobalCfg    = !!(GLOBAL_POD_HOST && GLOBAL_TOKEN && GLOBAL_COMPANY);
 
-  function mergeWithGlobal(dbCfg: Partial<CsConfig> = {}): CsConfig {
-    return {
+  function resolveConfig(dbCfg: Partial<CsConfig> = {}): { cfg: CsConfig; source: ConfigSource } {
+    const hasOrgCfg = !!(dbCfg.pod_host && dbCfg.client_auth_token && dbCfg.company_id);
+    const cfg = {
       pod_host:          (GLOBAL_POD_HOST || dbCfg.pod_host || '').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, ''),
       client_auth_token: csNormalizeClientAuthToken(GLOBAL_TOKEN || dbCfg.client_auth_token || ''),
       company_id:        GLOBAL_COMPANY  ? parseInt(GLOBAL_COMPANY.trim(), 10) : (dbCfg.company_id ?? 0),
     };
+    const source: ConfigSource = hasGlobalCfg ? 'global' : hasOrgCfg ? 'org' : 'missing';
+    return { cfg, source };
   }
 
   try {
@@ -69,8 +74,8 @@ Deno.serve(async (req: Request) => {
     const orgId     = body.organization_id as string | undefined;
     const inputDomain = body.domain as string | undefined;
 
-    // ── Test auth ───────────────────────────────────────────────────────────
-    if (action === 'test_auth') {
+    // ── Test / diagnose auth ────────────────────────────────────────────────
+    if (action === 'test_auth' || action === 'diagnose_auth') {
       let cfgBase: Partial<CsConfig> = {};
       if (orgId) {
         const { data } = await adminClient
@@ -80,18 +85,25 @@ Deno.serve(async (req: Request) => {
           .maybeSingle();
         cfgBase = data || {};
       }
-      const cfg = mergeWithGlobal(cfgBase);
-      if (!cfg.pod_host || !cfg.client_auth_token) return jsonErr('nessuna configurazione ConnectSecure disponibile', 404);
-      const session = await csAuthorize(cfg);
-      return json({ ok: true, user_id: session.userId, pod_host: cfg.pod_host, global_cfg: hasGlobalCfg });
+      const { cfg, source } = resolveConfig(cfgBase);
+      const diagnostic = await diagnoseConnectSecureAuth(cfg, source);
+      if (action === 'diagnose_auth') return json({ ok: diagnostic.auth_ok, diagnostic });
+      if (!diagnostic.token_present) return jsonErr('nessuna configurazione ConnectSecure disponibile', 404, { diagnostic });
+      if (!diagnostic.auth_ok) return jsonAuthFailed(diagnostic);
+      return json({ ok: true, user_id: diagnostic.user_id, pod_host: cfg.pod_host, global_cfg: hasGlobalCfg });
     }
 
     // ── Weekly sweep ────────────────────────────────────────────────────────
     if (action === 'weekly_all') {
-      const configs = await listWeeklyConfigs(adminClient, hasGlobalCfg, mergeWithGlobal);
+      const configs = await listWeeklyConfigs(adminClient, hasGlobalCfg, resolveConfig);
       const results: Array<{ org_id: string; triggered: number; domains: number; background: boolean; error?: string }> = [];
       for (const cfg of configs) {
         try {
+          const diagnostic = await diagnoseConnectSecureAuth(cfg, cfg.config_source);
+          if (!diagnostic.auth_ok) {
+            results.push({ org_id: cfg.organization_id, triggered: 0, domains: 0, background: false, error: 'auth_failed_config_diagnostic' });
+            continue;
+          }
           const trigger = await triggerAttackSurfaceForOrg(adminClient, cfg, undefined);
           const background = runInBackground(
             ingestAttackSurfaceResults(adminClient, cfg, trigger.domains)
@@ -103,7 +115,7 @@ Deno.serve(async (req: Request) => {
             background,
           });
         } catch (err) {
-          results.push({ org_id: cfg.organization_id, triggered: 0, domains: 0, background: false, error: String(err) });
+          results.push({ org_id: cfg.organization_id, triggered: 0, domains: 0, background: false, error: safeConnectSecureError(err) });
         }
       }
       return json({ ok: true, orgs_swept: results.length, results });
@@ -120,12 +132,14 @@ Deno.serve(async (req: Request) => {
 
     if (dbCfg?.enabled === false) return jsonErr('ConnectSecure disabilitato per questa org', 409);
 
-    const cfg = mergeWithGlobal(dbCfg || {});
+    const { cfg, source } = resolveConfig(dbCfg || {});
     if (!cfg.pod_host || !cfg.client_auth_token) return jsonErr('nessuna configurazione ConnectSecure per questa org', 404);
+    const diagnostic = await diagnoseConnectSecureAuth(cfg, source);
+    if (!diagnostic.auth_ok) return jsonAuthFailed(diagnostic);
 
     const trigger = await triggerAttackSurfaceForOrg(adminClient, { ...cfg, organization_id: orgId }, inputDomain);
     const background = runInBackground(
-      ingestAttackSurfaceResults(adminClient, { ...cfg, organization_id: orgId }, trigger.domains)
+      ingestAttackSurfaceResults(adminClient, { ...cfg, organization_id: orgId, config_source: source }, trigger.domains)
     );
     return json({
       ok: true,
@@ -139,20 +153,20 @@ Deno.serve(async (req: Request) => {
 
   } catch (err) {
     console.error('[connectsecure-scan] errore:', err);
-    return json({ ok: false, error: String(err) }, 500);
+    return json({ ok: false, error: safeConnectSecureError(err) }, 500);
   }
 });
 
 // ── Attack Surface Mapper Engine ──────────────────────────────────────────────
 
 type AdminClient = any;
-type CsOrgConfig = CsConfig & { organization_id: string };
+type CsOrgConfig = CsConfig & { organization_id: string; config_source: ConfigSource };
 type TriggeredDomain = { domain: string; id: number; jobId: string | null };
 
 async function listWeeklyConfigs(
   adminClient: AdminClient,
   hasGlobalCfg: boolean,
-  mergeWithGlobal: (dbCfg?: Partial<CsConfig>) => CsConfig,
+  resolveConfig: (dbCfg?: Partial<CsConfig>) => { cfg: CsConfig; source: ConfigSource },
 ): Promise<CsOrgConfig[]> {
   if (!hasGlobalCfg) {
     const { data } = await adminClient
@@ -160,7 +174,8 @@ async function listWeeklyConfigs(
       .select('organization_id, pod_host, client_auth_token, company_id')
       .eq('enabled', true);
     return (data || []).map((cfg: any) => ({
-      ...mergeWithGlobal(cfg as Partial<CsConfig>),
+      ...resolveConfig(cfg as Partial<CsConfig>).cfg,
+      config_source: resolveConfig(cfg as Partial<CsConfig>).source,
       organization_id: String(cfg.organization_id),
     })).filter((cfg: CsOrgConfig) => Boolean(cfg.organization_id && cfg.pod_host && cfg.client_auth_token && cfg.company_id));
   }
@@ -181,8 +196,10 @@ async function listWeeklyConfigs(
     .map((org: any) => {
       const override = overrideByOrg.get(String(org.id));
       if (override?.enabled === false) return null;
+      const resolved = resolveConfig(override || {});
       return {
-        ...mergeWithGlobal(override || {}),
+        ...resolved.cfg,
+        config_source: resolved.source,
         organization_id: String(org.id),
       };
     })
@@ -546,6 +563,65 @@ async function markConnectSecureJobFailed(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+type AuthDiagnostic = {
+  config_source: ConfigSource;
+  pod_host: string;
+  company_id: number;
+  token_present: boolean;
+  token_length: number;
+  token_sha256_prefix: string | null;
+  auth_ok: boolean;
+  user_id?: string;
+  auth_error?: string;
+};
+
+async function diagnoseConnectSecureAuth(cfg: CsConfig, source: ConfigSource): Promise<AuthDiagnostic> {
+  const token = csNormalizeClientAuthToken(cfg.client_auth_token || '');
+  const base: AuthDiagnostic = {
+    config_source: source,
+    pod_host: cfg.pod_host || '',
+    company_id: Number(cfg.company_id || 0),
+    token_present: Boolean(token),
+    token_length: token.length,
+    token_sha256_prefix: token ? await sha256Prefix(token) : null,
+    auth_ok: false,
+  };
+
+  if (!cfg.pod_host || !token || !cfg.company_id) {
+    return { ...base, auth_error: 'missing_connectsecure_config' };
+  }
+
+  try {
+    const session = await csAuthorize({ ...cfg, client_auth_token: token });
+    return { ...base, auth_ok: true, user_id: session.userId };
+  } catch (err) {
+    return { ...base, auth_error: safeConnectSecureError(err) };
+  }
+}
+
+async function sha256Prefix(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 12);
+}
+
+function safeConnectSecureError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/Failed to authorize|authorize failed|auth failed/i.test(message)) {
+    return 'auth_failed_config_diagnostic';
+  }
+  return message.substring(0, 300);
+}
+
+function jsonAuthFailed(diagnostic: AuthDiagnostic) {
+  return json({
+    ok: false,
+    error: 'auth_failed_config_diagnostic',
+    message: 'Secret ConnectSecure non valido o non aggiornato in Supabase',
+    diagnostic,
+  }, 401);
+}
+
 async function logQueryError(context: string, query: PromiseLike<{ error?: { message?: string } | null }>): Promise<void> {
   const { error } = await query;
   if (error) console.warn(`[connectsecure-scan] ${context}:`, error.message || error);
@@ -564,8 +640,8 @@ function json(body: unknown, status = 200) {
   });
 }
 
-function jsonErr(msg: string, status: number) {
-  return new Response(JSON.stringify({ error: msg }), {
+function jsonErr(msg: string, status: number, extra: Record<string, unknown> = {}) {
+  return new Response(JSON.stringify({ error: msg, ...extra }), {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });

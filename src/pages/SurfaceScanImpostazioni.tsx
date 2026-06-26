@@ -119,6 +119,13 @@ const SurfaceScanImpostazioni: React.FC = () => {
     return res.json();
   }, []);
 
+  const connectSecureErrorMessage = (payload: any, fallback = 'Scan fallito') => {
+    if (payload?.error === 'auth_failed_config_diagnostic') {
+      return 'Secret ConnectSecure non valido o non aggiornato in Supabase';
+    }
+    return payload?.message || payload?.error || fallback;
+  };
+
   const loadCveStats = useCallback(async () => {
     setCveStatsLoading(true);
     const [{ count: queued }, { count: failed }, { count: ok }] = await Promise.all([
@@ -138,12 +145,22 @@ const SurfaceScanImpostazioni: React.FC = () => {
     try {
       const json = await callEdge('connectsecure-scan', { action: 'weekly_all' });
       if (json.ok) {
+        const authFailures = Array.isArray(json.results)
+          ? json.results.filter((row: any) => row?.error === 'auth_failed_config_diagnostic').length
+          : 0;
+        if (authFailures > 0) {
+          const msg = `Secret ConnectSecure non valido o non aggiornato in Supabase — ${authFailures} org non avviate`;
+          setSweepResult(msg);
+          toast.error(msg);
+          return;
+        }
         const msg = `Attack Surface Mapper avviato in background — ${json.orgs_swept ?? 0} org processate`;
         setSweepResult(msg);
         toast.success(msg);
       } else {
-        setSweepResult(`Errore: ${json.error || 'unknown'}`);
-        toast.error('Sweep fallito: ' + (json.error || 'unknown'));
+        const msg = connectSecureErrorMessage(json, 'Sweep fallito');
+        setSweepResult(`Errore: ${msg}`);
+        toast.error(msg);
       }
     } catch (err) {
       setSweepResult(`Errore: ${String(err)}`);
@@ -160,7 +177,7 @@ const SurfaceScanImpostazioni: React.FC = () => {
       const json = await callEdge('connectsecure-scan', { action: 'scan', organization_id: organizationId });
       setScanOrgResult(json.ok
         ? { ok: true, msg: `Attack Surface Mapper avviato in background — ${json.triggered ?? 0} domini accodati` }
-        : { ok: false, msg: json.error || 'Scan fallito' });
+        : { ok: false, msg: connectSecureErrorMessage(json) });
     } catch (err) {
       setScanOrgResult({ ok: false, msg: String(err) });
     } finally {

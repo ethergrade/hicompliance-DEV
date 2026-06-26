@@ -296,7 +296,7 @@ POST-CRON (asincrono):
 |----------|---------|-------------------|
 | `surfacescan360-start-scan` | UI / API manuale | Normalizza target, verifica auth, inserisce job, dispatchQueue |
 | `surface-scan-cron` | pg_cron weekly (lun 02:00 Rome) | Subdomain discovery, scope scans, queue dispatch, Shodan, exposure sync |
-| `connectsecure-scan` | API manuale + cron async | `scan` (org singola), `weekly_all`; `test_auth` solo diagnostica admin |
+| `connectsecure-scan` | API manuale + cron async | `scan` (org singola), `weekly_all`; `test_auth` / `diagnose_auth` solo diagnostica admin |
 | `cve-enrichment` | API manuale + post-cron | Drain coda CVE → NVD + EPSS + KEV |
 | `surfacescan360-monthly-report` | pg_cron monthly (1° mese 05:00 UTC) | Genera report PDF mensili per org |
 
@@ -305,6 +305,9 @@ POST-CRON (asincrono):
 ```json
 { "action": "test_auth", "organization_id": "..." }
 // ← { ok: true, user_id: "...", pod_host: "pod401.myconnectsecure.com", global_cfg: true }
+
+{ "action": "diagnose_auth", "organization_id": "..." }
+// ← { ok, diagnostic: { config_source, pod_host, company_id, token_present, token_length, token_sha256_prefix, auth_ok, user_id? } }
 
 { "action": "scan", "organization_id": "..." }
 // ← { ok: true, status: "triggered", triggered: N, domains: ["example.com"], background: true }
