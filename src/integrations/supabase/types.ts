@@ -1796,7 +1796,7 @@ export type Database = {
           id: string
           irp_extended: boolean
           name: string
-          pentest_tools_auto_validation: boolean
+          surface_scan_auto_validation: boolean
           subdomain_dump_depth: number
           subdomain_dump_enabled: boolean
           surface_scan_extended: boolean
@@ -1811,7 +1811,7 @@ export type Database = {
           id?: string
           irp_extended?: boolean
           name: string
-          pentest_tools_auto_validation?: boolean
+          surface_scan_auto_validation?: boolean
           subdomain_dump_depth?: number
           subdomain_dump_enabled?: boolean
           surface_scan_extended?: boolean
@@ -1826,7 +1826,7 @@ export type Database = {
           id?: string
           irp_extended?: boolean
           name?: string
-          pentest_tools_auto_validation?: boolean
+          surface_scan_auto_validation?: boolean
           subdomain_dump_depth?: number
           subdomain_dump_enabled?: boolean
           surface_scan_extended?: boolean

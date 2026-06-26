@@ -28,7 +28,6 @@ interface ShodanBanner {
 }
 
 const MAX_IPS_PER_RULE = 256;
-const EXPOSURE_SCOPE_AUTOSCAN_TIMEOUT = 30_000;
 const REPORT_SCOPE_REFRESH_TIMEOUT = 45_000;
 const DARKRISK_WEEKLY_SYNC_TIMEOUT = 45_000;
 
@@ -97,16 +96,9 @@ function bannersToHosts(banners: ShodanBanner[]) {
   return Array.from(map.values());
 }
 
-interface RuleScanResult {
-  rule: MonitoredRule;
-  host: any | null;
-  ip: string | null;
-}
-
 async function scanOrganization(orgId: string, rules: MonitoredRule[], shodanKey: string) {
   const assets: any[] = [];
   const truncated: string[] = [];
-  const perRule: RuleScanResult[] = [];
   for (const r of rules) {
     try {
       // 'single' (IP) e 'domain' (hostname) → 1 asset (host risolto)
@@ -116,294 +108,24 @@ async function scanOrganization(orgId: string, rules: MonitoredRule[], shodanKey
         const hosts = bannersToHosts(banners);
         if (hosts.length > MAX_IPS_PER_RULE) truncated.push(r.input_value);
         hosts.slice(0, MAX_IPS_PER_RULE).forEach(h => assets.push(aggregateAsset(h)));
-        perRule.push({ rule: r, host: hosts[0] ?? null, ip: hosts[0]?.ip_str ?? null });
       } else {
         let ip = r.input_value;
         if (!isIp(ip)) {
           const resolved = await shodanResolve(ip, shodanKey);
-          if (!resolved) { perRule.push({ rule: r, host: null, ip: null }); continue; }
+          if (!resolved) continue;
           ip = resolved;
         }
         const host = await shodanHost(ip, shodanKey);
         if (host) assets.push(aggregateAsset(host));
-        perRule.push({ rule: r, host, ip });
       }
     } catch (e) {
       console.error(`Rule ${r.input_value} failed:`, e);
-      perRule.push({ rule: r, host: null, ip: null });
     }
   }
   // Dedup
   const dedup = new Map<string, any>();
   assets.forEach(a => dedup.set(a.ip, a));
-  return { assets: Array.from(dedup.values()), truncated, perRule };
-}
-
-const AUTO_VAL_MAX_RETRIES = 3;
-const AUTO_VAL_BASE_DELAY = 1000;
-const AUTO_VAL_TIMEOUT = 20_000;
-
-async function callOrchestratorWithRetry(
-  supabaseUrl: string,
-  serviceRoleKey: string,
-  internalSecret: string | null,
-  payload: Record<string, unknown>,
-): Promise<{ ok: boolean; status: number; body: any; attempts: number; error?: string }> {
-  let lastErr: string | undefined;
-  for (let attempt = 0; attempt <= AUTO_VAL_MAX_RETRIES; attempt++) {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), AUTO_VAL_TIMEOUT);
-    try {
-      const resp = await fetch(`${supabaseUrl}/functions/v1/pentest-tools-orchestrator`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${serviceRoleKey}`,
-          ...(internalSecret ? { 'x-surface-internal-secret': internalSecret } : {}),
-        },
-        body: JSON.stringify(payload),
-        signal: ctrl.signal,
-      });
-      clearTimeout(t);
-      const body = await resp.json().catch(() => ({}));
-      // 200 (anche con skipped per rate-limit settimanale) → terminale
-      // 4xx (no 429) → terminale, non riprovare
-      if (resp.status < 500 && resp.status !== 429) {
-        return { ok: resp.ok, status: resp.status, body, attempts: attempt + 1 };
-      }
-      lastErr = `HTTP ${resp.status}: ${body?.error ?? 'transient'}`;
-    } catch (e) {
-      clearTimeout(t);
-      const isAbort = (e as any)?.name === 'AbortError';
-      lastErr = isAbort ? 'timeout' : `network: ${(e as Error).message}`;
-    }
-    if (attempt === AUTO_VAL_MAX_RETRIES) break;
-    const wait = Math.min(AUTO_VAL_BASE_DELAY * Math.pow(2, attempt), 15_000) + Math.floor(Math.random() * 300);
-    console.warn(`[auto-validation] retry in ${wait}ms (attempt ${attempt + 1}/${AUTO_VAL_MAX_RETRIES}) reason: ${lastErr}`);
-    await new Promise((r) => setTimeout(r, wait));
-  }
-  return { ok: false, status: 0, body: null, attempts: AUTO_VAL_MAX_RETRIES + 1, error: lastErr };
-}
-
-async function maybeTriggerAutoValidation(
-  supabase: any,
-  supabaseUrl: string,
-  serviceRoleKey: string,
-  internalSecret: string | null,
-  orgId: string,
-  perRule: RuleScanResult[],
-) {
-  for (const r of perRule) {
-    const target = r.rule.input_value;
-    const host = r.host;
-    const hostnames: string[] = host?.hostnames ?? [];
-    const ports: number[] = host?.ports ?? [];
-    const vulns: string[] = host?.vulns
-      ? Array.isArray(host.vulns) ? host.vulns : Object.keys(host.vulns)
-      : [];
-    const snapshot = host ? {
-      found: true, hostnames, ports, vulns,
-      last_update: host.last_update, asn: host.asn, org: host.org,
-    } : { found: false, hostnames: [], ports: [], vulns: [] };
-
-    const startedAt = new Date().toISOString();
-    const result = await callOrchestratorWithRetry(supabaseUrl, serviceRoleKey, internalSecret, {
-      organization_id: orgId,
-      target,
-      profile: 'recon_safe',
-      triggered_by: 'auto_from_shodan',
-      resolved_ips: r.ip ? [r.ip] : [],
-      shodan_snapshot: snapshot,
-    });
-
-    const baseDetails = {
-      target,
-      triggered_by: 'auto_from_shodan',
-      attempts: result.attempts,
-      http_status: result.status,
-      resolved_ip: r.ip,
-      requested_at: startedAt,
-      shodan_found: snapshot.found,
-    };
-
-    try {
-      if (result.ok) {
-        console.log(`[auto-validation] org=${orgId} target=${target} OK job=${result.body?.job_id ?? '-'} attempts=${result.attempts}`);
-        await supabase.from('external_scan_audit_log').insert({
-          organization_id: orgId,
-          scan_job_id: result.body?.job_id ?? null,
-          actor_email: 'system:cron',
-          action: 'auto_trigger_accepted',
-          details: { ...baseDetails, job_id: result.body?.job_id ?? null, tasks: result.body?.tasks?.length ?? 0 },
-        });
-      } else if (result.status === 200 && result.body?.skipped) {
-        console.warn(`[auto-validation] org=${orgId} target=${target} skipped: ${result.body?.error}`);
-        await supabase.from('external_scan_audit_log').insert({
-          organization_id: orgId,
-          actor_email: 'system:cron',
-          action: 'auto_trigger_skipped',
-          details: { ...baseDetails, reason: result.body?.error ?? 'weekly_limit' },
-        });
-      } else if (result.status === 403) {
-        console.warn(`[auto-validation] org=${orgId} target=${target} blocked: ${result.body?.error}`);
-        await supabase.from('external_scan_audit_log').insert({
-          organization_id: orgId,
-          actor_email: 'system:cron',
-          action: 'auto_trigger_blocked',
-          details: { ...baseDetails, reason: result.body?.error ?? 'plan_blocked' },
-        });
-      } else if (result.status === 429) {
-        console.warn(`[auto-validation] org=${orgId} target=${target} rate-limited`);
-        await supabase.from('external_scan_audit_log').insert({
-          organization_id: orgId,
-          actor_email: 'system:cron',
-          action: 'auto_trigger_rate_limited',
-          details: { ...baseDetails, reason: result.body?.error ?? 'concurrency_limit' },
-        });
-      } else {
-        const errorMsg = result.error ?? result.body?.error ?? 'unknown';
-        console.error(`[auto-validation] org=${orgId} target=${target} FAILED dopo ${result.attempts} tentativi: ${errorMsg}`);
-        await supabase.from('external_scan_audit_log').insert({
-          organization_id: orgId,
-          actor_email: 'system:cron',
-          action: 'auto_trigger_failed',
-          details: { ...baseDetails, error: errorMsg },
-        });
-      }
-    } catch (e) {
-      console.error(`[auto-validation] audit log insert failed for org=${orgId} target=${target}:`, e);
-    }
-  }
-}
-
-function splitScopeTargetsForExposure(rules: MonitoredRule[]): { domains: string[]; publicIps: string[] } {
-  const domains = new Set<string>();
-  const publicIps = new Set<string>();
-  for (const rule of rules) {
-    const entryType = String(rule.entry_type || '').toLowerCase();
-    const input = String(rule.input_value || '').trim().toLowerCase();
-    if (!input) continue;
-    if (entryType === 'domain') {
-      domains.add(input);
-      continue;
-    }
-    if (entryType === 'single' && isIp(input)) {
-      publicIps.add(input);
-    }
-  }
-  return { domains: Array.from(domains), publicIps: Array.from(publicIps) };
-}
-
-async function triggerWeeklyScopeExposureScan(
-  supabase: any,
-  supabaseUrl: string,
-  serviceRoleKey: string,
-  internalSecret: string | null,
-  orgId: string,
-  rules: MonitoredRule[],
-) {
-  const { domains, publicIps } = splitScopeTargetsForExposure(rules);
-  if (domains.length === 0 && publicIps.length === 0) {
-    await supabase.from('external_scan_audit_log').insert({
-      organization_id: orgId,
-      actor_email: 'system:cron',
-      action: 'auto_scope_exposure_skipped',
-      details: { reason: 'no_supported_scope_targets' },
-    });
-    return;
-  }
-
-  const { count: activeExposureJobs } = await supabase
-    .from('surface_scan_jobs')
-    .select('id', { count: 'exact', head: true })
-    .eq('organization_id', orgId)
-    .eq('scan_type', 'exposure_port_technology')
-    .in('status', ['queued', 'pending', 'running']);
-
-  if ((activeExposureJobs || 0) > 0) {
-    await supabase.from('external_scan_audit_log').insert({
-      organization_id: orgId,
-      actor_email: 'system:cron',
-      action: 'auto_scope_exposure_skipped',
-      details: { reason: 'active_exposure_job_exists', active_jobs: activeExposureJobs || 0 },
-    });
-    return;
-  }
-
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), EXPOSURE_SCOPE_AUTOSCAN_TIMEOUT);
-  try {
-    const response = await fetch(`${supabaseUrl}/functions/v1/ptools-start-exposure-scan`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${serviceRoleKey}`,
-        ...(internalSecret ? { 'x-surface-internal-secret': internalSecret } : {}),
-      },
-      body: JSON.stringify({
-        tenant_id: orgId,
-        customer_id: orgId,
-        scan_name: `Exposure Weekly Scope Auto · ${new Date().toISOString().slice(0, 16)}`,
-        root_domains: domains,
-        subdomains: [],
-        public_ips: publicIps,
-        include_subdomain_discovery: true,
-        include_port_scan: true,
-        include_web_technology_detection: true,
-        include_ssl_scan: true,
-        include_network_vuln_scan: false,
-        scan_depth: 'deep',
-        protocol: 'tcp',
-        custom_ports: 'top1000',
-        check_alive: true,
-        detect_service_version: true,
-        detect_os: true,
-        traceroute: false,
-      }),
-      signal: ctrl.signal,
-    });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok || !body?.job_id) {
-      await supabase.from('external_scan_audit_log').insert({
-        organization_id: orgId,
-        actor_email: 'system:cron',
-        action: 'auto_scope_exposure_failed',
-        details: {
-          http_status: response.status,
-          error: body?.error || 'unknown',
-          domains_count: domains.length,
-          public_ips_count: publicIps.length,
-        },
-      });
-      return;
-    }
-
-    await supabase.from('external_scan_audit_log').insert({
-      organization_id: orgId,
-      scan_job_id: body.job_id,
-      actor_email: 'system:cron',
-      action: 'auto_scope_exposure_started',
-      details: {
-        job_id: body.job_id,
-        domains_count: domains.length,
-        public_ips_count: publicIps.length,
-        queue_total: Number(body?.queue?.total || 0),
-      },
-    });
-  } catch (error) {
-    await supabase.from('external_scan_audit_log').insert({
-      organization_id: orgId,
-      actor_email: 'system:cron',
-      action: 'auto_scope_exposure_failed',
-      details: {
-        error: (error as Error)?.message || 'network_error',
-        domains_count: domains.length,
-        public_ips_count: publicIps.length,
-      },
-    });
-  } finally {
-    clearTimeout(t);
-  }
+  return { assets: Array.from(dedup.values()), truncated };
 }
 
 async function refreshWeeklyScopeRepositoryReport(
@@ -594,7 +316,7 @@ Deno.serve(async (req) => {
     for (const [orgId, orgRules] of byOrg.entries()) {
       let queuedClassicStarted = 0;
       try {
-        const startedClassicJobs = await dispatchSurfaceScanQueue(supabase, orgId, {
+        const startedClassicJobs = await dispatchSurfaceScanQueue(supabase as any, orgId, {
           initiatedByUserId: null,
           maxToStart: 3,
         });
@@ -621,7 +343,7 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const { assets, truncated, perRule } = await scanOrganization(orgId, orgRules, SHODAN_API_KEY);
+      const { assets, truncated } = await scanOrganization(orgId, orgRules, SHODAN_API_KEY);
 
       const total = assets.length;
       const critical = assets.filter(a => a.status === 'Critico').length;
@@ -653,15 +375,6 @@ Deno.serve(async (req) => {
         results.push({ orgId, ok: true, total_assets: total, critical, warning, safe, queued_classic_started: queuedClassicStarted });
       }
 
-      const pentestToolsEnabled = Deno.env.get('SURFACESCAN_ENABLE_PENTEST_TOOLS') === 'true';
-      if (pentestToolsEnabled) {
-        // Pentest-Tools validation: attiva solo se SURFACESCAN_ENABLE_PENTEST_TOOLS=true
-        await maybeTriggerAutoValidation(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, perRule);
-        // Exposure full-scope: avvio automatico settimanale su tutti i domini/IP in scope.
-        await triggerWeeklyScopeExposureScan(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId, orgRules);
-      } else {
-        console.log(`[cron] pentest-tools disabled (SURFACESCAN_ENABLE_PENTEST_TOOLS != true) — skipping auto-validation and exposure scan for org=${orgId}`);
-      }
       // Report repository canonico SurfaceScan360: refresh automatico settimanale.
       await refreshWeeklyScopeRepositoryReport(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId);
       // DarkRisk360 standard weekly sync: DTI esteso escluso dai run cron.

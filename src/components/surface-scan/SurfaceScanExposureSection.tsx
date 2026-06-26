@@ -1,13 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
-import { ChevronDown, ChevronRight, Loader2, Play, RefreshCw, RotateCw, ShieldAlert } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, Play, RefreshCw } from 'lucide-react';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -16,12 +12,8 @@ import {
   fetchExposureSummary,
   fetchOpenPortsByJobIds,
   fetchTechnologiesByJobIds,
-  resyncExposureJob,
-  startExposureScan,
-  triggerExposurePoll,
   type ExposureFindingRow,
   type ExposureOpenPortRow,
-  type ExposureStartRequest,
   type ExposureSummary,
   type ExposureTechnologyRow,
 } from '@/lib/surfacescan/exposureApi';
@@ -181,7 +173,6 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
   const { organizationId } = useClientOrganization();
   const [loading, setLoading] = useState(false);
   const [startingScan, setStartingScan] = useState(false);
-  const [polling, setPolling] = useState(false);
   const [jobs, setJobs] = useState<any[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string>('');
   const [summary, setSummary] = useState<ExposureSummary | null>(null);
@@ -193,27 +184,10 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
   const [targetSnapshots, setTargetSnapshots] = useState<ExposureSummary['target_snapshots']>([]);
   const [autoStartStatus, setAutoStartStatus] = useState<AutoStartStatus | null>(null);
 
-  const [scanName, setScanName] = useState('Exposure Full Scan');
-  const [customPorts, setCustomPorts] = useState('top1000');
   const [scopeDomains, setScopeDomains] = useState<string[]>([]);
   const [scopePublicIps, setScopePublicIps] = useState<string[]>([]);
   const autoStartInFlightKeyRef = useRef('');
   const autoStartFailedKeyRef = useRef('');
-
-  const fullControls = useMemo(
-    () => ({
-      includeSubDiscovery: true,
-      includePortScan: true,
-      includeWebTech: true,
-      includeSsl: true,
-      includeNetworkVuln: false,
-      detectOs: true,
-      detectServiceVersion: true,
-      checkAlive: true,
-      traceroute: false,
-    }),
-    [],
-  );
 
   const assetPortList = useMemo(() => {
     const grouped = new Map<string, {
@@ -380,43 +354,43 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
     void refreshData();
   }, [refreshData]);
 
-  const runExposureScan = useCallback(
-    async (payload: ExposureStartRequest, options?: { auto?: boolean; autoKey?: string }) => {
+  const runBackgroundAsm = useCallback(
+    async (options?: { auto?: boolean; autoKey?: string }) => {
+      if (!organizationId) return null;
       setStartingScan(true);
       try {
-        const result = await startExposureScan(payload);
+        const { data, error } = await supabase.functions.invoke('connectsecure-scan', {
+          body: { action: 'scan', organization_id: organizationId },
+        });
+        if (error) throw error;
+        if ((data as any)?.error) throw new Error(String((data as any).error));
+
+        const enqueued = Number((data as any)?.enqueued || 0);
+        const detail = enqueued > 0
+          ? `${enqueued} domini accodati`
+          : 'Nessun nuovo dominio accodato';
+
         if (options?.auto) {
           autoStartInFlightKeyRef.current = '';
           autoStartFailedKeyRef.current = '';
           setAutoStartStatus({
             kind: 'success',
-            message: 'Scansione scope accodata in background',
-            detail: `Job ${result?.job_id || '-'} • Queue: ${result?.queue?.total || 0}`,
+            message: 'ASM scope accodato in background',
+            detail,
             at: new Date().toISOString(),
           });
         } else {
-          toast.success('Scansione exposure avviata', {
-            description: `Job ${result?.job_id || '-'} • Queue: ${result?.queue?.total || 0}`,
-          });
+          toast.success('ASM avviato in background', { description: detail });
         }
-        setSelectedJobId(String(result?.job_id || ''));
-
-        // Kick immediato del poll per evitare job in coda senza avvio motori.
-        try {
-          await triggerExposurePoll();
-        } catch (pollError) {
-          console.warn('Immediate exposure poll failed:', pollError);
-        }
-
         await refreshData();
-        return result;
+        return data;
       } catch (error: any) {
         if (options?.auto && options.autoKey) {
           autoStartInFlightKeyRef.current = '';
           autoStartFailedKeyRef.current = options.autoKey;
           setAutoStartStatus({
             kind: 'error',
-            message: 'Auto-scan scope non accodato',
+            message: 'ASM automatico non accodato',
             detail: error?.message || 'Errore durante avvio',
             at: new Date().toISOString(),
           });
@@ -430,7 +404,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
         setStartingScan(false);
       }
     },
-    [refreshData],
+    [organizationId, refreshData],
   );
 
   const handleStartScan = async () => {
@@ -446,27 +420,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       return;
     }
 
-    const payload: ExposureStartRequest = {
-      tenant_id: organizationId,
-      customer_id: organizationId,
-      scan_name: scanName.trim() || `Exposure Full Scan · Scope ${new Date().toISOString().slice(0, 16)}`,
-      root_domains: normalizedDomains,
-      subdomains: [],
-      public_ips: normalizedIps,
-      include_subdomain_discovery: fullControls.includeSubDiscovery,
-      include_port_scan: fullControls.includePortScan,
-      include_web_technology_detection: fullControls.includeWebTech,
-      include_ssl_scan: fullControls.includeSsl,
-      include_network_vuln_scan: fullControls.includeNetworkVuln,
-      scan_depth: 'deep',
-      protocol: 'tcp',
-      custom_ports: customPorts,
-      check_alive: fullControls.checkAlive,
-      detect_service_version: fullControls.detectServiceVersion,
-      detect_os: fullControls.detectOs,
-      traceroute: fullControls.traceroute,
-    };
-    await runExposureScan(payload);
+    await runBackgroundAsm();
   };
 
   useEffect(() => {
@@ -509,11 +463,6 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       organizationId,
       [...scopeDomains].sort().join(','),
       [...scopePublicIps].sort().join(','),
-      customPorts,
-      fullControls.includeSubDiscovery ? 'sub=1' : 'sub=0',
-      fullControls.includePortScan ? 'ports=1' : 'ports=0',
-      fullControls.includeWebTech ? 'web=1' : 'web=0',
-      fullControls.includeSsl ? 'ssl=1' : 'ssl=0',
     ].join('::');
     const autoStartKey = `scope:${hashAutoStartKey(scopeSignature)}`;
     if (typeof window !== 'undefined') {
@@ -548,28 +497,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       at: new Date().toISOString(),
     });
 
-    const payload: ExposureStartRequest = {
-      tenant_id: organizationId,
-      customer_id: organizationId,
-      scan_name: `Exposure Scope Auto · ${new Date().toISOString().slice(0, 16)}`,
-      root_domains: scopeDomains,
-      subdomains: [],
-      public_ips: scopePublicIps,
-      include_subdomain_discovery: fullControls.includeSubDiscovery,
-      include_port_scan: fullControls.includePortScan,
-      include_web_technology_detection: fullControls.includeWebTech,
-      include_ssl_scan: fullControls.includeSsl,
-      include_network_vuln_scan: fullControls.includeNetworkVuln,
-      scan_depth: 'deep',
-      protocol: 'tcp',
-      custom_ports: customPorts,
-      check_alive: fullControls.checkAlive,
-      detect_service_version: fullControls.detectServiceVersion,
-      detect_os: fullControls.detectOs,
-      traceroute: fullControls.traceroute,
-    };
-
-    void runExposureScan(payload, { auto: true, autoKey: autoStartKey });
+    void runBackgroundAsm({ auto: true, autoKey: autoStartKey });
   }, [
     isAdmin,
     organizationId,
@@ -579,42 +507,8 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
     scopePublicIps,
     jobs,
     targetSnapshots,
-    fullControls,
-    customPorts,
-    runExposureScan,
+    runBackgroundAsm,
   ]);
-
-  const handlePoll = async () => {
-      setPolling(true);
-    try {
-      await triggerExposurePoll();
-      toast.success('Poll motore exposure completato');
-      await refreshData();
-    } catch (error: any) {
-      toast.error('Poll non riuscito', { description: error?.message || 'Errore di polling' });
-    } finally {
-      setPolling(false);
-    }
-  };
-
-  const handleResync = async () => {
-    if (!selectedJobId) {
-      toast.error('Seleziona prima un job');
-      return;
-    }
-    setPolling(true);
-    try {
-      await resyncExposureJob(selectedJobId);
-      toast.success('Resync job avviato');
-      await refreshData();
-    } catch (error: any) {
-      toast.error('Resync non riuscito', {
-        description: error?.message || 'Errore durante resync',
-      });
-    } finally {
-      setPolling(false);
-    }
-  };
 
   return (
     <Card className="border-border" id="surface-scan-exposure-unified">
@@ -632,7 +526,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
               variant="outline"
               size="sm"
               onClick={refreshData}
-              disabled={loading || polling}
+              disabled={loading}
             >
               <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Aggiorna
@@ -760,7 +654,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
             <Card className="border-border">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between gap-2">
-                  <CardTitle className="text-base">Controlli avanzati Exposure (Admin)</CardTitle>
+                  <CardTitle className="text-base">Azioni Background Exposure (Admin)</CardTitle>
                   <Button
                     variant="outline"
                     size="sm"
@@ -773,62 +667,29 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
               </CardHeader>
               {!isControlsCollapsed && (
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Nome scansione</Label>
-                      <Input value={scanName} onChange={(event) => setScanName(event.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Profilo porte (custom_ports)</Label>
-                      <Input value={customPorts} onChange={(event) => setCustomPorts(event.target.value)} placeholder="top1000 oppure 22,80,443,8443" />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>Target in scope (auto)</Label>
-                      <div className="rounded-md border border-border p-2 space-y-2">
-                        <div className="flex flex-wrap gap-1.5">
-                          {scopeDomains.map((domain) => (
-                            <Badge key={`scope-domain-${domain}`} variant="secondary">{domain}</Badge>
-                          ))}
-                          {scopePublicIps.map((ip) => (
-                            <Badge key={`scope-ip-${ip}`} variant="outline">{ip}</Badge>
-                          ))}
-                          {scopeDomains.length === 0 && scopePublicIps.length === 0 && (
-                            <span className="text-xs text-muted-foreground">Nessun target in scope.</span>
-                          )}
-                        </div>
+                  <div className="space-y-2">
+                    <div className="rounded-md border border-border p-2 space-y-2">
+                      <div className="flex flex-wrap gap-1.5">
+                        {scopeDomains.map((domain) => (
+                          <Badge key={`scope-domain-${domain}`} variant="secondary">{domain}</Badge>
+                        ))}
+                        {scopePublicIps.map((ip) => (
+                          <Badge key={`scope-ip-${ip}`} variant="outline">{ip}</Badge>
+                        ))}
+                        {scopeDomains.length === 0 && scopePublicIps.length === 0 && (
+                          <span className="text-xs text-muted-foreground">Nessun target in scope.</span>
+                        )}
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        La scansione include sempre tutti i domini e IP in scope con controlli completi.
-                      </p>
                     </div>
-                  </div>
-
-                  <Separator />
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-                    <label className="flex items-center gap-2"><Checkbox checked={fullControls.includeSubDiscovery} disabled />Subdomain discovery</label>
-                    <label className="flex items-center gap-2"><Checkbox checked={fullControls.includePortScan} disabled />Port scan</label>
-                    <label className="flex items-center gap-2"><Checkbox checked={fullControls.includeWebTech} disabled />Web technologies</label>
-                    <label className="flex items-center gap-2"><Checkbox checked={fullControls.includeSsl} disabled />SSL/TLS</label>
-                    <label className="flex items-center gap-2"><Checkbox checked={fullControls.includeNetworkVuln} disabled />Network vulnerability scan</label>
-                    <label className="flex items-center gap-2"><Checkbox checked={fullControls.detectOs} disabled />OS detection</label>
-                    <label className="flex items-center gap-2"><Checkbox checked={fullControls.detectServiceVersion} disabled />Service version</label>
-                    <label className="flex items-center gap-2"><Checkbox checked={fullControls.checkAlive} disabled />Check alive</label>
-                    <label className="flex items-center gap-2"><Checkbox checked={fullControls.traceroute} disabled />Traceroute</label>
+                    <p className="text-xs text-muted-foreground">
+                      L'avvio manuale manda in background l'ASM per l'organizzazione corrente. I dati vengono letti dalle tabelle SurfaceScan360 canoniche.
+                    </p>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
                     <Button onClick={handleStartScan} disabled={startingScan || (scopeDomains.length === 0 && scopePublicIps.length === 0)}>
                       {startingScan ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
-                      Avvia scansione scope completa
-                    </Button>
-                    <Button variant="outline" onClick={handlePoll} disabled={polling}>
-                      {polling ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RotateCw className="w-4 h-4 mr-2" />}
-                      Poll scans
-                    </Button>
-                    <Button variant="outline" onClick={handleResync} disabled={!selectedJobId || polling}>
-                      <ShieldAlert className="w-4 h-4 mr-2" />
-                      Resync job selezionato
+                      Avvia ASM org corrente
                     </Button>
                   </div>
 

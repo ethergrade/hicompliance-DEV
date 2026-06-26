@@ -179,7 +179,7 @@ const classifyThreatCategory = (
 	if (/phish|brand|impersonation/.test(sourceText))
 		return "Phishing e brand abuse";
 	if (
-		/open_port|open port|service_fingerprint|ports|pentest_tool|shodan/.test(
+		/open_port|open port|service_fingerprint|ports|shodan/.test(
 			sourceText,
 		)
 	)

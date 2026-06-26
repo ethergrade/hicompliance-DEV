@@ -169,10 +169,10 @@ const formatExposureJobError = (errorMessage: string | null | undefined): string
   if (!raw) return '-';
 
   const normalized = raw.toLowerCase();
-  if (normalized.includes('no pentest-tools tasks for this exposure job')) {
+  if (normalized.includes('no active exposure tasks generated for this job')) {
     return 'Recovery automatica motore exposure in corso';
   }
-  if (normalized.includes('all pentest-tools tasks failed')) {
+  if (normalized.includes('all exposure tasks failed')) {
     return 'Motore exposure non ha completato i task: retry automatico pianificato';
   }
   if (normalized.includes('completed with partial optional-phase failures')) {

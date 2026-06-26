@@ -56,7 +56,6 @@ function deriveFlags(services: TenantServiceResource[]) {
     hicompliance_license: ((hc?.settings as any)?.license as string) || 'standard',
     irp_extended: !!(hc?.settings as any)?.extended_range,
     surface_scan_extended: !!(ht?.settings as any)?.extended_range,
-    pentest_tools_auto_validation: true,
     surface_scan360_enabled: !!ht,
     dark_risk360_enabled: !!dr,
     hipatch_enabled: !!hp,
@@ -595,7 +594,6 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                     disabled={updateFlagsMutation.isPending}
                     onCheckedChange={(v) => {
                       const patch: any = { surface_scan360_enabled: v };
-                      if (v) { patch.pentest_tools_auto_validation = true; }
                       if (!v) { patch.surface_scan_extended = false; }
                       updateFlagsMutation.mutate(patch);
                     }}

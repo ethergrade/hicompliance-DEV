@@ -188,7 +188,7 @@ function classifyThreatCategory(finding: FindingLite): string {
   if (/mail|email/.test(sourceText) && /leak|expos|compromis/.test(sourceText)) return 'Email esposte';
   if (/database|dump|db /.test(sourceText)) return 'Database leak';
   if (/phish|brand|impersonation/.test(sourceText)) return 'Phishing e brand abuse';
-  if (/open_port|open port|service_fingerprint|ports|pentest_tool|shodan/.test(sourceText)) return 'Servizi esposti';
+  if (/open_port|open port|service_fingerprint|ports|shodan/.test(sourceText)) return 'Servizi esposti';
   if (/dmarc|spf|dkim|mail_security|mx|bimi/.test(sourceText)) return 'Email security';
   if (/dns|tls|ssl|hsts|whois|rdap|http_security|headers/.test(sourceText)) return 'DNS e TLS';
   if (/safe_browsing|urlhaus|phishtank|reputation|dnsbl|threat/.test(sourceText)) return 'Reputation';
@@ -296,7 +296,7 @@ function buildCoverageControls(
     { key: 'dns', control: 'DNS', modules: ['dns', 'dnssec', 'dns_blocklists'], source: 'SurfaceScan360' },
     { key: 'whois', control: 'WHOIS/RDAP', modules: ['whois'], source: 'SurfaceScan360' },
     { key: 'email_security', control: 'Email security', modules: ['mail_security', 'mail_config'], source: 'SurfaceScan360' },
-    { key: 'ports_services', control: 'Porte e servizi', modules: ['open_ports', 'shodan', 'pentest_tools'], source: 'SurfaceScan360' },
+    { key: 'ports_services', control: 'Porte e servizi', modules: ['open_ports', 'shodan'], source: 'SurfaceScan360' },
     { key: 'intelx_domain', control: 'DarkRisk360 dominio', modules: [], source: 'DarkRisk360' },
     { key: 'intelx_selectors', control: 'DarkRisk360 selector', modules: [], source: 'DarkRisk360' },
     { key: 'phonebook', control: 'Phonebook', modules: [], source: 'DarkRisk360' },

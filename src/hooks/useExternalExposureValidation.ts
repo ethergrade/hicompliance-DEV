@@ -1,5 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 export type ScanProfile = 'recon_safe' | 'cve_web' | 'cve_network';
@@ -56,10 +55,7 @@ export const useExternalScanJobs = () => {
       const data = q.state.data as ExternalScanJob[] | undefined;
       return data?.some((j) => ['queued', 'running'].includes(j.status)) ? 30000 : false;
     },
-    queryFn: async () => {
-      // TODO: migrate to backend API
-      return [] as ExternalScanJob[];
-    },
+    queryFn: async () => [] as ExternalScanJob[],
   });
 };
 
@@ -69,10 +65,7 @@ export const useExternalCveFindings = (jobId?: string) => {
     queryKey: ['external-cve-findings', organizationId, jobId],
     enabled: !!organizationId,
     refetchInterval: 30000,
-    queryFn: async () => {
-      // TODO: migrate to backend API
-      return [] as ExternalCveFinding[];
-    },
+    queryFn: async () => [] as ExternalCveFinding[],
   });
 };
 
@@ -84,13 +77,11 @@ export interface TriggerScanInput {
   resolved_ips?: string[];
 }
 
-export const useTriggerPentestScan = () => {
-  const { organizationId } = useClientOrganization();
+export const useTriggerExternalExposureScan = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: TriggerScanInput) => {
-      // TODO: migrate to backend API
-      throw new Error('Pentest orchestrator non ancora migrato al backend API');
+    mutationFn: async (_input: TriggerScanInput) => {
+      throw new Error('Motore di validazione attiva non ancora migrato al backend API');
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['external-scan-jobs'] });
