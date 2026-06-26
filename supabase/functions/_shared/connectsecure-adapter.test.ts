@@ -94,6 +94,32 @@ Deno.test("csMapToFindings extracts subdomains from asset-oriented ConnectSecure
   assertEquals(subdomainObservation?.value.total, 5);
 });
 
+Deno.test("csMapToFindings emits valid ConnectSecure mail config as mail_config observation", () => {
+  const result = {
+    id: 1,
+    name: "example.com",
+    website: "example.com",
+    status: "Completed",
+    attack_surface_domain_id: 123,
+    company_id: 13805,
+    mx: { hosts: ["mx1.example.com"] },
+    spf: { valid: true, record: "v=spf1 mx -all", dns_lookups: 1 },
+    dmarc: { valid: true, record: "v=DMARC1; p=quarantine;", location: "example.com" },
+  } satisfies CsResult;
+
+  const mapped = csMapToFindings(result, "example.com", 0);
+  const mailObservation = mapped.observations.find(obs =>
+    obs.module === "mail_config" && obs.type === "mail_config_summary"
+  );
+
+  assert(mailObservation);
+  assertEquals(mailObservation?.value.has_spf, true);
+  assertEquals(mailObservation?.value.spf_records, ["v=spf1 mx -all"]);
+  assertEquals(mailObservation?.value.has_dmarc, true);
+  assertEquals(mailObservation?.value.dmarc_records, ["v=DMARC1; p=quarantine;"]);
+  assertEquals(mapped.findings.some(finding => finding.finding_type === "dns_mail_security"), false);
+});
+
 Deno.test("csMapToFindings ignores placeholder storage bucket records", () => {
   const result = {
     id: 1,

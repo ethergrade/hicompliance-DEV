@@ -461,12 +461,13 @@ async function saveResult(
   }
 
   for (const obs of observations) {
+    const moduleKey = String(obs.module || '').trim() || 'connectsecure';
     await logQueryError('unable to insert surface observation', adminClient.from('surface_observations').insert({
       organization_id: orgId,
       customer_id:     orgId,
       tenant_id:       orgId,
       scan_job_id:     scanJobId,
-      module:          'connectsecure',
+      module:          moduleKey,
       observation_type: obs.type,
       title:           obs.title,
       value:           obs.value,
