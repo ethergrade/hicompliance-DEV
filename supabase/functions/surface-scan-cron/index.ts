@@ -538,22 +538,44 @@ async function triggerWeeklyClassicScopeScans(
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  try {
-    const SHODAN_API_KEY = Deno.env.get('SHODAN_API_KEY');
-    if (!SHODAN_API_KEY) {
-      return new Response(JSON.stringify({ error: 'SHODAN_API_KEY missing' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const serviceRoleKey = String(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '').trim();
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+  const bearerToken = String(req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
+  const internalToken = String(req.headers.get('x-surface-internal-secret') || '').trim();
+  const configuredInternalSecret =
+    Deno.env.get('SURFACESCAN_CRON_INTERNAL_SECRET') ||
+    Deno.env.get('SURFACESCAN_INTERNAL_SECRET') ||
+    '';
+  const isServiceRole = Boolean(serviceRoleKey && bearerToken === serviceRoleKey);
+  let isInternal = Boolean(
+    configuredInternalSecret &&
+    internalToken === configuredInternalSecret
+  );
+  if (!isServiceRole && !isInternal && internalToken) {
+    const { data: validInternalToken } = await supabase.rpc(
+      'surface_scan_validate_internal_secret',
+      { candidate: internalToken },
     );
+    isInternal = validInternalToken === true;
+  }
+  if (!isServiceRole && !isInternal) {
+    return new Response(JSON.stringify({ error: 'unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
 
+  try {
     const body = await req.json().catch(() => ({}));
     const orgFilter: string | undefined = body.organization_id;
     const triggeredBy: string = body.triggered_by ?? 'cron';
     const dispatchOnly = Boolean(body.dispatch_only);
+    const SHODAN_API_KEY = Deno.env.get('SHODAN_API_KEY');
+    if (!dispatchOnly && !SHODAN_API_KEY) {
+      return new Response(JSON.stringify({ error: 'SHODAN_API_KEY missing' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     // 1) Carica regole monitorate (filtra opzionalmente per org)
     let query = supabase.from('surface_scan_monitored_ips').select('*');
@@ -567,6 +589,19 @@ Deno.serve(async (req) => {
       const arr = byOrg.get(r.organization_id) ?? [];
       arr.push(r);
       byOrg.set(r.organization_id, arr);
+    }
+    if (dispatchOnly) {
+      let queuedQuery = supabase
+        .from('surface_scan_jobs')
+        .select('organization_id')
+        .eq('status', 'queued');
+      if (orgFilter) queuedQuery = queuedQuery.eq('organization_id', orgFilter);
+      const { data: queuedJobs, error: queuedJobsError } = await queuedQuery;
+      if (queuedJobsError) throw queuedJobsError;
+      for (const queuedJob of queuedJobs || []) {
+        const queuedOrgId = String(queuedJob.organization_id || '');
+        if (queuedOrgId && !byOrg.has(queuedOrgId)) byOrg.set(queuedOrgId, []);
+      }
     }
 
     const orgIds = Array.from(byOrg.keys());
@@ -585,8 +620,6 @@ Deno.serve(async (req) => {
 
     const results: any[] = [];
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const internalSecret =
       Deno.env.get('SURFACESCAN_CRON_INTERNAL_SECRET') ||
       Deno.env.get('SURFACESCAN_INTERNAL_SECRET') ||
@@ -714,7 +747,7 @@ Deno.serve(async (req) => {
       let assets: any[] = [];
       let truncated: string[] = [];
       if (surfaceGate.allowed) {
-        const scanRes = await scanOrganization(orgId, effectiveRules, SHODAN_API_KEY);
+        const scanRes = await scanOrganization(orgId, effectiveRules, SHODAN_API_KEY!);
         assets = scanRes.assets;
         truncated = scanRes.truncated;
       }
