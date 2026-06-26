@@ -3,6 +3,10 @@ import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
+import {
+  isUnverifiedStorageBucketFinding,
+  presentStorageBucketFinding,
+} from '@/lib/surfacescan/storageFindingPresentation';
 
 interface ActionItem {
   rank: number;
@@ -36,7 +40,7 @@ export const SurfaceScanActionItems: React.FC = () => {
 
       const { data: findings } = await supabase
         .from('surface_findings')
-        .select('id, title, severity, affected_asset, finding_type, cvss, cve, cisa_kev, remediation')
+        .select('id, title, description, severity, affected_asset, finding_type, cvss, cve, cisa_kev, remediation, evidence')
         .eq('organization_id', organizationId)
         .eq('status', 'open')
         .in('severity', ['critical', 'high'])
@@ -46,10 +50,15 @@ export const SurfaceScanActionItems: React.FC = () => {
         .limit(10);
 
       if (!cancelled && findings) {
-        const ranked: ActionItem[] = findings.slice(0, 5).map((f: any, idx) => {
+        const actionableFindings = findings
+          .map((finding: any) => presentStorageBucketFinding(finding))
+          .filter((finding: any) => !isUnverifiedStorageBucketFinding(finding));
+
+        const ranked: ActionItem[] = actionableFindings.slice(0, 5).map((f: any, idx) => {
           const asset = String(f.affected_asset || '').replace(/^https?:\/\//, '').split('/')[0];
-          const detail = f.remediation
-            ? String(f.remediation).slice(0, 120) + (f.remediation.length > 120 ? '...' : '')
+          const remediation = String(f.remediation || '').trim();
+          const detail = remediation
+            ? remediation.slice(0, 120) + (remediation.length > 120 ? '...' : '')
             : `Risolvere ${f.finding_type?.replace(/_/g, ' ') || 'vulnerabilità'} su ${asset}`;
 
           return {

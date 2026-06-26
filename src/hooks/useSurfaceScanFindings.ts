@@ -11,6 +11,7 @@ import {
   splitMonitoredScopeRules,
   type SurfaceMonitoredScopeRule,
 } from '@/lib/surfaceScopeGuard';
+import { presentStorageBucketFinding } from '@/lib/surfacescan/storageFindingPresentation';
 
 export interface SurfaceFindingRow {
   id: string;
@@ -245,7 +246,7 @@ const buildSyntheticCveRowsFromReport = (
 
 const mapApiFinding = (record: Record<string, any> | null): SurfaceFindingRow | null => {
   if (!record || !record.id) return null;
-  return {
+  return presentStorageBucketFinding({
     id: String(record.id),
     scan_job_id: record.scan_job_id ? String(record.scan_job_id) : null,
     provider: record.provider ?? null,
@@ -272,7 +273,7 @@ const mapApiFinding = (record: Record<string, any> | null): SurfaceFindingRow | 
     first_seen_at: record.first_seen_at ?? null,
     last_seen_at: record.last_seen_at ?? null,
     occurrence_count: record.occurrence_count ?? null,
-  };
+  }) as SurfaceFindingRow;
 };
 
 const normalizeOpenPortFindingTargets = (

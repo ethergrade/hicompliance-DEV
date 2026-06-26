@@ -51,6 +51,47 @@ Deno.test("csMapToFindings normalizes nested ConnectSecure ASM arrays", () => {
   assertEquals(mapped.sensitiveData.hashes?.length, 1);
 });
 
+Deno.test("csMapToFindings ignores placeholder storage bucket records", () => {
+  const result = {
+    id: 1,
+    name: "example.com",
+    website: "example.com",
+    status: "Completed",
+    attack_surface_domain_id: 123,
+    company_id: 13805,
+    s3buckets: [
+      { name: "sconosciuto", url: "" },
+      { bucket: "unknown" },
+      { bucket_name: "n/a" },
+    ],
+  } satisfies CsResult;
+
+  const mapped = csMapToFindings(result, "example.com", 0);
+
+  assertEquals(mapped.findings.some(finding => finding.finding_type === "exposed_storage_bucket"), false);
+});
+
+Deno.test("csMapToFindings keeps actionable storage bucket evidence", () => {
+  const result = {
+    id: 1,
+    name: "example.com",
+    website: "example.com",
+    status: "Completed",
+    attack_surface_domain_id: 123,
+    company_id: 13805,
+    s3buckets: [
+      { bucket_name: "assets-example-public", endpoint: "https://assets-example-public.s3.amazonaws.com" },
+    ],
+  } satisfies CsResult;
+
+  const mapped = csMapToFindings(result, "example.com", 0);
+  const finding = mapped.findings.find(item => item.finding_type === "exposed_storage_bucket");
+
+  assert(finding);
+  assertEquals(finding?.title, "Bucket storage pubblico rilevato: assets-example-public");
+  assertEquals(finding?.affected_asset, "https://assets-example-public.s3.amazonaws.com");
+});
+
 Deno.test("csWaitForResults ignores completed results older than the scan request", async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
