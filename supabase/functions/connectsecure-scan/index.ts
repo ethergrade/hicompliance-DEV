@@ -479,11 +479,19 @@ async function resolveScopeDomains(
 
   const { data } = await adminClient
     .from('surface_scan_monitored_ips')
-    .select('entry_type, input_value')
+    .select('entry_type, input_value, discovered_via')
     .eq('organization_id', orgId)
     .eq('entry_type', 'domain');
 
+  const autoDiscoveredSources = new Set([
+    'subdomain_dump',
+    'connectsecure',
+    'external_asm',
+    'bfs',
+    'auto',
+  ]);
   return Array.from(new Set((data || [])
+    .filter((r: any) => !autoDiscoveredSources.has(String(r.discovered_via || '').trim().toLowerCase()))
     .map((r: any) => normalizeDomain(String(r.input_value || '')))
     .filter(Boolean)));
 }
