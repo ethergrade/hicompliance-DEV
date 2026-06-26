@@ -51,6 +51,49 @@ Deno.test("csMapToFindings normalizes nested ConnectSecure ASM arrays", () => {
   assertEquals(mapped.sensitiveData.hashes?.length, 1);
 });
 
+Deno.test("csMapToFindings extracts subdomains from asset-oriented ConnectSecure payloads", () => {
+  const result = {
+    id: 1,
+    name: "example.com",
+    website: "example.com",
+    status: "Completed",
+    attack_surface_domain_id: 123,
+    company_id: 13805,
+    assets: [
+      { host_name: "www.example.com", ip: "203.0.113.20" },
+      { asset_value: "https://shop.example.com/login" },
+      { name: "api.example.com." },
+      { name: "example.com" },
+      { name: "outside.test" },
+    ],
+    results: {
+      rows: [
+        { fqdn: "cdn.example.com", dns_records: [{ type: "CNAME", value: "edge.example.net" }] },
+        { domain_name: "mail.example.com" },
+      ],
+    },
+  } satisfies CsResult;
+
+  const mapped = csMapToFindings(result, "example.com", 0);
+
+  assertEquals(csExtractSubdomains(result), [
+    "api.example.com",
+    "cdn.example.com",
+    "mail.example.com",
+    "shop.example.com",
+    "www.example.com",
+  ]);
+  assertEquals(
+    mapped.assets
+      .filter(asset => asset.asset_type === "subdomain")
+      .map(asset => asset.asset_value),
+    ["api.example.com", "cdn.example.com", "mail.example.com", "shop.example.com", "www.example.com"],
+  );
+  const subdomainObservation = mapped.observations.find(obs => obs.type === "connectsecure_discovered_subdomains");
+  assert(subdomainObservation);
+  assertEquals(subdomainObservation?.value.total, 5);
+});
+
 Deno.test("csMapToFindings ignores placeholder storage bucket records", () => {
   const result = {
     id: 1,

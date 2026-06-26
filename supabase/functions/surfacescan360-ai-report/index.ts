@@ -1448,7 +1448,31 @@ Deno.serve(async (req) => {
       };
     });
     const assetKeys = new Set(rawAssets.map((a: any) => normalizeHost(a.hostname || a.asset_value || a.ip)));
-    const discoveredSubdomainAssets = subdomain_dumps.flatMap((dump: any) =>
+    const discoveredSubdomainAssetsByHost = new Map<string, any>();
+    for (const asset of rawAssets) {
+      const assetType = String(asset?.asset_type || '').toLowerCase();
+      if (!assetType.includes('subdomain')) continue;
+      const host = normalizeHost(String(asset?.hostname || asset?.asset_value || ''));
+      if (!host) continue;
+      const normalized = {
+        asset_type: 'subdomain',
+        asset_value: host,
+        hostname: host,
+        ip: String(asset?.ip || asset?.raw?.ip || '').trim() || null,
+        source: asset?.source || 'surface_assets',
+        root_domain: asset?.root_domain || asset?.raw?.root_domain || null,
+        depth: Number(asset?.raw?.depth ?? asset?.depth ?? 0) || null,
+        discovered_at: asset?.last_seen || asset?.first_seen || null,
+        evidence: asset?.raw || {},
+      };
+      const reason = getScopeReasonFromAsset(normalized, scopeDomains, ipScopeRules);
+      trackScopeReason(reason);
+      if (!reason && !discoveredSubdomainAssetsByHost.has(host)) {
+        discoveredSubdomainAssetsByHost.set(host, normalized);
+      }
+    }
+
+    const dumpedSubdomainAssets = subdomain_dumps.flatMap((dump: any) =>
       ((dump.results ?? []) as any[]).map((r: any) => ({
         asset_type: 'subdomain',
         asset_value: r.subdomain,
@@ -1472,9 +1496,12 @@ Deno.serve(async (req) => {
       trackScopeReason(reason);
       if (reason) return false;
       assetKeys.add(key);
+      if (!discoveredSubdomainAssetsByHost.has(key)) discoveredSubdomainAssetsByHost.set(key, a);
       return true;
     });
-    const assets = [...rawAssets, ...discoveredSubdomainAssets];
+    const discoveredSubdomainAssets = Array.from(discoveredSubdomainAssetsByHost.values())
+      .sort((a: any, b: any) => String(a.hostname || a.asset_value || '').localeCompare(String(b.hostname || b.asset_value || '')));
+    const assets = [...rawAssets, ...dumpedSubdomainAssets];
 
     const exposureFindingsForMerge = (rawExposureFindingsAll || []).map((finding: any) => ({
       provider: 'surface_exposure_engine',
@@ -2011,7 +2038,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       },
       asset_count: assets.length,
       assets_sample: assets.slice(0, 30),
-      subdomain_evidence: discoveredSubdomainAssets.map((a: any) => ({ host: a.hostname, ip: a.ip, root_domain: a.root_domain, depth: a.depth })).slice(0, 50),
+      subdomain_evidence: discoveredSubdomainAssets.map((a: any) => ({ host: a.hostname, ip: a.ip, root_domain: a.root_domain, depth: a.depth })),
       findings_by_severity: sevCount,
       top_findings: topFindings,
       intel_summary: intel.slice(0, 40),

@@ -1839,8 +1839,8 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
                         Subdomains
                         <Badge variant="secondary" className="text-[10px]">{connectsecureOverview.subdomains.length}</Badge>
                       </div>
-                      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-auto pr-1">
-                        {connectsecureOverview.subdomains.slice(0, 40).map((domain) => (
+                      <div className="flex flex-wrap gap-1.5 max-h-44 overflow-auto pr-1">
+                        {connectsecureOverview.subdomains.map((domain) => (
                           <Badge key={domain} variant="outline" className="text-[10px]">
                             {domain}
                           </Badge>

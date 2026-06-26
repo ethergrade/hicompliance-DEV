@@ -256,7 +256,7 @@ const SurfaceScan360: React.FC = () => {
   const [ownershipProof, setOwnershipProof] = useState('');
   const [assetSearch, setAssetSearch] = useState('');
   const [assetPage, setAssetPage] = useState(1);
-  const [isDiscoveryCollapsed, setIsDiscoveryCollapsed] = useState(true);
+  const [isDiscoveryCollapsed, setIsDiscoveryCollapsed] = useState(false);
   const [isLiveResultsCollapsed, setIsLiveResultsCollapsed] = useState(true);
   const [showScopeDiagnostics, setShowScopeDiagnostics] = useState(false);
   const [enableAmassDiscovery, setEnableAmassDiscovery] = useState(false);
@@ -392,7 +392,8 @@ const SurfaceScan360: React.FC = () => {
           .filter((host) => !classifySurfaceHostForScope(host, scopeDomains).blocked),
       );
 
-    const mergedSubdomains = [...new Set([...discoveredSubdomains, ...dumpedSubdomains])];
+    const mergedSubdomains = [...new Set([...discoveredSubdomains, ...dumpedSubdomains])]
+      .sort((a, b) => a.localeCompare(b));
 
     return {
       scannedTargets: [...scannedTargets],
@@ -1275,8 +1276,8 @@ const SurfaceScan360: React.FC = () => {
 
               <div>
                 <p className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Subdomain trovati</p>
-                <div className="flex flex-wrap gap-2">
-                  {scanDiscovery.discoveredSubdomains.slice(0, 16).map((subdomain) => (
+                <div className="flex flex-wrap gap-2 max-h-40 overflow-auto pr-1">
+                  {scanDiscovery.discoveredSubdomains.map((subdomain) => (
                     <Badge key={subdomain} variant="secondary" className="max-w-full truncate">
                       {subdomain}
                     </Badge>
@@ -1367,7 +1368,7 @@ const SurfaceScan360: React.FC = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {scanDiscovery.discoveredSubdomains.slice(0, 20).map((subdomain) => {
+                  {scanDiscovery.discoveredSubdomains.map((subdomain) => {
                     const directJob = latestJobByHost.get(subdomain);
                     const rootJob = latestJobByHost.get(simpleRootDomain(subdomain));
                     const classification = classifySurfaceHostForScope(subdomain, scopeDomains);

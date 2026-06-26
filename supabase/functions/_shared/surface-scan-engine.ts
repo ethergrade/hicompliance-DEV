@@ -7215,7 +7215,7 @@ export async function runSurfaceScanEnrichment(
       });
     }
 
-    const handedToInternalQueue = csExtractSubdomains(result)
+    const handedToInternalQueue = csExtractSubdomains(result, rootDomain || startDomain)
       .map((entry) => String(entry || "").trim().toLowerCase().replace(/\.$/, ""))
       .filter((entry) => entry && entry !== startDomain && entry.endsWith(`.${rootDomain || startDomain}`));
     for (const subDomain of handedToInternalQueue) {

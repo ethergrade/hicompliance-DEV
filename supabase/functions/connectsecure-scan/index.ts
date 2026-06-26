@@ -609,7 +609,7 @@ async function enqueueConnectSecureSubdomainJobs(
   parentScanJobId: string | null,
 ): Promise<SubdomainQueueStats> {
   const normalizedRoot = normalizeDomain(rootDomain);
-  const discovered = csExtractSubdomains(result)
+  const discovered = csExtractSubdomains(result, normalizedRoot)
     .map((entry) => normalizeDomain(entry))
     .filter((entry) => entry && entry !== normalizedRoot && entry.endsWith(`.${normalizedRoot}`));
   const uniqueDiscovered = Array.from(new Set(discovered)).sort();
