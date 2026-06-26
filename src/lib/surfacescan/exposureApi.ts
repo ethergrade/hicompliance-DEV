@@ -123,6 +123,31 @@ export type ExposureSummary = {
   top_open_ports: Array<{ port: number; count: number }>;
   included_scan_types?: string[];
   source_counts?: Record<string, number>;
+  posture_score: number;
+  risk_level: 'Basso' | 'Medio' | 'Alto' | 'Critico';
+  risk_points: number;
+  risk_breakdown: {
+    web_ports: ExposureRiskComponent;
+    alternative_web_ports: ExposureRiskComponent;
+    admin_web_ports: ExposureRiskComponent;
+    sensitive_ports: ExposureRiskComponent;
+    other_services: ExposureRiskComponent;
+    tls_header: ExposureRiskComponent;
+    findings: ExposureRiskComponent & { by_severity: Record<string, number> };
+    confirmed_cves: ExposureRiskComponent;
+    candidate_cves: ExposureRiskComponent;
+    kev_epss: ExposureRiskComponent;
+    delta: ExposureRiskComponent;
+    missing_data: ExposureRiskComponent;
+  };
+  vulnerability_summary: {
+    confirmed: number;
+    candidate: number;
+    unknown: number;
+    not_vulnerable_evidence: number;
+    services_total: number;
+    explanation: string;
+  };
   technologies: Array<{ name: string; count: number }>;
   findings_by_severity: {
     critical: number;
@@ -138,6 +163,12 @@ export type ExposureSummary = {
     new_technologies: any[];
     removed_technologies: any[];
   };
+};
+
+export type ExposureRiskComponent = {
+  count: number;
+  points: number;
+  details?: Array<Record<string, unknown>>;
 };
 
 export type ExposureOpenPortRow = {
@@ -512,9 +543,7 @@ export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<Exposure
   const dedupe = new Map<string, ExposureOpenPortRow>();
   for (const row of [...normalizedExposureRows, ...fallbackRows]) {
     const key = [
-      String(row.scan_job_id || ''),
       String(row.host || '').toLowerCase(),
-      String(row.ip || '').toLowerCase(),
       Number(row.port || 0),
       String(row.protocol || 'tcp').toLowerCase(),
     ].join('|');

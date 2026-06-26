@@ -3,7 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { AlertTriangle, Globe, Network, Server, ShieldCheck, Workflow } from 'lucide-react';
 import type { ExposureSummary } from '@/lib/surfacescan/exposureApi';
-import { computeExposureRiskScore, severityBadgeClass } from '@/lib/surfacescan/exposureScoring';
+import { severityBadgeClass } from '@/lib/surfacescan/exposureScoring';
 
 interface ExposureKpiCardsProps {
   summary: ExposureSummary | null;
@@ -13,11 +13,9 @@ interface ExposureKpiCardsProps {
 const placeholder = '...';
 
 export const ExposureKpiCards: React.FC<ExposureKpiCardsProps> = ({ summary, loading = false }) => {
-  const risk = computeExposureRiskScore({
-    openPortsTotal: summary?.open_ports_total || 0,
-    criticalExposures: summary?.critical_exposures || 0,
-    findingsBySeverity: summary?.findings_by_severity,
-  });
+  const postureScore = Number(summary?.posture_score ?? 100);
+  const riskLevel = summary?.risk_level || 'Basso';
+  const riskPoints = Number(summary?.risk_points ?? 0);
 
   const valueOrPlaceholder = (value: string | number) => (loading ? placeholder : value);
 
@@ -69,20 +67,23 @@ export const ExposureKpiCards: React.FC<ExposureKpiCardsProps> = ({ summary, loa
         <CardContent className="p-4">
           <div className="flex items-start justify-between gap-2">
             <div className="space-y-1">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Exposure Risk Score</p>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Indice postura exposure</p>
               <div className="flex items-center gap-2">
-                <p className="text-2xl font-semibold">{valueOrPlaceholder(risk.score)}</p>
-                <Badge className={severityBadgeClass(risk.level === 'Critico' ? 'critical' : risk.level === 'Alto' ? 'high' : risk.level === 'Medio' ? 'medium' : 'low')}>
-                  {risk.level}
+                <p className="text-2xl font-semibold">{valueOrPlaceholder(postureScore)}</p>
+                <Badge className={severityBadgeClass(riskLevel === 'Critico' ? 'critical' : riskLevel === 'Alto' ? 'high' : riskLevel === 'Medio' ? 'medium' : 'low')}>
+                  Rischio {riskLevel}
                 </Badge>
               </div>
+              <p className="text-xs text-muted-foreground">100 = postura ottima · {riskPoints} punti rischio</p>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Severità: C {summary?.findings_by_severity?.critical || 0} · H {summary?.findings_by_severity?.high || 0} · M {summary?.findings_by_severity?.medium || 0}</span>
+                <span>
+                  CVE: {summary?.vulnerability_summary?.confirmed || 0} confermate · {summary?.vulnerability_summary?.candidate || 0} candidate
+                </span>
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Workflow className="w-3.5 h-3.5" />
-                <span>Delta: +{summary?.diff?.new_open_ports?.length || 0} porte · +{summary?.diff?.new_technologies?.length || 0} tech</span>
+                <span>{summary?.vulnerability_summary?.explanation || 'Nessuna evidenza di vulnerabilità confermata.'}</span>
               </div>
             </div>
             <Server className="w-5 h-5 text-primary" />

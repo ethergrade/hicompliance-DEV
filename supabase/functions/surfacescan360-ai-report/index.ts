@@ -2,6 +2,10 @@
 // Body: { job_id?: string, scan_job_id?: string, organization_id?: string, trigger_source?: "manual"|"auto_on_complete", force_regenerate?: boolean }
 // Se job_id non fornito, usa l'ultimo job completato dell'organizzazione.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  computeExposureScoreV2,
+  type ExposureScoreV2Result,
+} from '../_shared/exposure-score-v2.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -91,12 +95,13 @@ function dedupeReportOpenPorts(rows: any[]): any[] {
     const raw = row?.raw && typeof row.raw === 'object' ? row.raw : {};
     const scopeHost = parseHostname(String(raw?.scope_target_host || raw?.root_domain || ''));
     const rowHost = parseHostname(String(row?.host || ''));
-    const ip = String(row?.ip || (isIpv4(String(row?.host || '')) ? row.host : '') || '').trim().toLowerCase();
+    const ipCandidate = String(row?.ip || (isIpv4(String(row?.host || '')) ? row.host : '') || '').trim().toLowerCase();
+    const ip = isIpv4(ipCandidate) || isIpv6(ipCandidate) ? ipCandidate : '';
     const host = String(scopeHost || rowHost || ip || row?.host || '').trim().toLowerCase();
     const port = Number(row?.port || 0);
     const protocol = String(row?.protocol || 'tcp').trim().toLowerCase() || 'tcp';
     if (!host || !Number.isFinite(port) || port <= 0) continue;
-    const key = [host, ip, port, protocol].join('|');
+    const key = [host, port, protocol].join('|');
     const existing = map.get(key);
     if (!existing) {
       map.set(key, { ...row, host: host || row.host, ip: ip || row.ip || null });
@@ -1047,9 +1052,10 @@ function buildFallbackAiReport(input: {
   assets: any[];
   monitoredScope: any[];
   discoveredSubdomains: any[];
+  exposureScore: ExposureScoreV2Result;
 }): any {
-  const score = computeRiskScoreFromSeverity(input.sevCount);
-  const level = normalizeRiskLevelFromScore(score);
+  const score = input.exposureScore.posture_score;
+  const level = input.exposureScore.risk_level;
   const totalFindings = Object.values(input.sevCount || {}).reduce((sum, v) => sum + Number(v || 0), 0);
   const recommendations = buildConsultingRecommendations({
     findings: input.findings,
@@ -1068,6 +1074,7 @@ function buildFallbackAiReport(input: {
     executive_summary:
       `La valutazione dell’esposizione esterna per ${input.orgName || 'l’organizzazione'} sul target ${input.target || 'selezionato'} ` +
       `mostra ${totalFindings} evidenze totali (critiche: ${critical}, alte: ${high}, medie: ${medium}). ` +
+      `L’indice di postura exposure e ${score}/100 (100 indica postura ottima), con rischio ${level.toLowerCase()}: ${input.exposureScore.vulnerability_summary.explanation} ` +
       `Lo scope monitorato include ${scopeCount} regole e sono stati rilevati ${subCount} sottodomini nel perimetro osservato. ` +
       `La priorità operativa è ridurre i punti più esposti e consolidare i controlli di sicurezza sugli asset pubblici.`,
     risk_score: score,
@@ -1396,6 +1403,7 @@ Deno.serve(async (req) => {
       rawOpenPortsAll,
       rawWebTechAll,
       rawSslAll,
+      rawServiceVulnerabilityMatchesAll,
     ] = await Promise.all([
       supabase.from('organization_profiles').select('*').eq('organization_id', organization_id).maybeSingle(),
       supabase.from('organizations').select('id, name, hicompliance_enabled').eq('id', organization_id).maybeSingle(),
@@ -1439,7 +1447,7 @@ Deno.serve(async (req) => {
       fetchRowsByJobIds(
         supabase,
         'surface_open_ports',
-        'host, ip, port, protocol, service_name, service_product, service_version, exposure_level, remediation_hint, is_web, is_tls, source, raw, last_seen_at, scan_job_id',
+        'id, host, ip, port, protocol, service_name, service_product, service_version, banner, exposure_level, remediation_hint, is_web, is_tls, source, raw, last_seen_at, scan_job_id',
         scopedJobIds,
         { orderBy: 'last_seen_at', ascending: false, pageSize: 1200, maxRows: 60000 },
       ),
@@ -1456,6 +1464,13 @@ Deno.serve(async (req) => {
         'url, host, port, grade, weak_protocols, weak_ciphers, certificate_subject, certificate_issuer, created_at, scan_job_id',
         scopedJobIds,
         { orderBy: 'created_at', ascending: false, pageSize: 800, maxRows: 20000 },
+      ),
+      fetchRowsByJobIds(
+        supabase,
+        'surface_service_vulnerability_matches',
+        'open_port_id, host, ip, port, protocol, cve_id, match_status, cvss_score, epss_score, epss_percentile, cisa_kev, service_product, service_version, cpe_name, match_confidence, last_seen_at, scan_job_id',
+        scopedJobIds,
+        { orderBy: 'last_seen_at', ascending: false, pageSize: 1000, maxRows: 50000 },
       ),
     ]);
 
@@ -1737,7 +1752,41 @@ Deno.serve(async (req) => {
       summary_text: entry.summary_text || '',
       confidence: entry.confidence || null,
     })).filter((entry: any) => !isPlaceholderSummary(entry.summary_text));
-    const reportOpenPorts = dedupeReportOpenPorts(rawOpenPortsAll || []);
+    const findingDerivedPorts = findings
+      .filter((finding: any) =>
+        ['open_port_exposed', 'service_fingerprint_exposed', 'sensitive_port_exposed'].includes(String(finding?.finding_type || '').toLowerCase())
+        && Number.isFinite(Number(finding?.port))
+        && Number(finding?.port) > 0
+      )
+      .map((finding: any) => ({
+        id: null,
+        scan_job_id: finding.scan_job_id || null,
+        host: finding.affected_asset || finding.affected_url || finding.ip || 'n/d',
+        ip: finding.ip || null,
+        port: Number(finding.port),
+        protocol: finding.protocol || 'tcp',
+        service_name: finding.evidence?.service || null,
+        service_product: finding.evidence?.product || null,
+        service_version: finding.evidence?.version || null,
+        banner: finding.evidence?.banner || null,
+        exposure_level: finding.severity || 'info',
+        is_web: [80, 443, 8000, 8080, 8081, 8443, 8888, 9443].includes(Number(finding.port)),
+        is_tls: [443, 465, 636, 853, 989, 990, 993, 995, 8443, 9443].includes(Number(finding.port)),
+        source: 'normalized_finding',
+        raw: finding.evidence || {},
+        last_seen_at: finding.created_at || null,
+      }));
+    const reportOpenPorts = dedupeReportOpenPorts([...(rawOpenPortsAll || []), ...findingDerivedPorts]);
+    const tlsHeaderWeaknesses = findings.filter((finding: any) =>
+      /tls|ssl|security_header|http_header|hsts|cipher|certificate/i.test(String(finding?.finding_type || ''))
+    ).length;
+    const exposureScore = computeExposureScoreV2({
+      ports: reportOpenPorts,
+      findings,
+      vulnerabilityMatches: rawServiceVulnerabilityMatchesAll || [],
+      newOpenPorts: 0,
+      tlsHeaderWeaknesses,
+    });
     const syntheticOpenPortObservations = reportOpenPorts.map((row: any) => ({
       module: 'port_scanner',
       observation_type: 'open_port',
@@ -2005,6 +2054,24 @@ Deno.serve(async (req) => {
         matrixRow.open_port_keys.add(`${ipKey}:${portCandidate}`);
       }
     });
+
+    for (const match of (rawServiceVulnerabilityMatchesAll || [])) {
+      const matchStatus = String(match?.match_status || '').toLowerCase();
+      const cveId = String(match?.cve_id || '').toUpperCase().trim();
+      if (!['confirmed', 'candidate'].includes(matchStatus) || !/^CVE-\d{4}-\d{4,7}$/.test(cveId)) continue;
+      cveSet.add(cveId);
+      if (!cveByAsset.has(cveId)) cveByAsset.set(cveId, new Set<string>());
+      const host = normalizeAssetLabel(String(match?.host || match?.ip || ''));
+      const ip = normalizeAssetLabel(String(match?.ip || ''));
+      if (host && isValidCveAssetLabel(host)) cveByAsset.get(cveId)!.add(host);
+      if (ip && isValidCveAssetLabel(ip)) cveByAsset.get(cveId)!.add(ip);
+      const matrixRow = ensureMatrixRow(host || ip, inferAssetType(host || ip));
+      if (matrixRow) {
+        matrixRow.cve_set.add(cveId);
+        const port = Number(match?.port || 0);
+        if (Number.isFinite(port) && port > 0) matrixRow.open_port_keys.add(`${ip || 'n/a'}:${port}`);
+      }
+    }
     const cveIds = Array.from(cveSet);
 
     const cveIntelById = new Map<string, any>();
@@ -2019,6 +2086,15 @@ Deno.serve(async (req) => {
     const cve_catalog = cveIds
       .map((cveId) => {
         const intelRow = cveIntelById.get(cveId);
+        const serviceMatches = (rawServiceVulnerabilityMatchesAll || []).filter((match: any) =>
+          String(match?.cve_id || '').toUpperCase() === cveId
+          && ['confirmed', 'candidate'].includes(String(match?.match_status || '').toLowerCase())
+        );
+        const matchStatus = serviceMatches.some((match: any) => String(match?.match_status || '').toLowerCase() === 'confirmed')
+          ? 'confirmed'
+          : serviceMatches.length > 0
+            ? 'candidate'
+            : null;
         const fallbackCvss = findings.find((f: any) => Array.isArray(f.cve) && f.cve.includes(cveId))?.cvss ?? null;
         const references = Array.isArray(intelRow?.references_json)
           ? intelRow.references_json
@@ -2065,6 +2141,17 @@ Deno.serve(async (req) => {
           published_at: intelRow?.published_at || null,
           last_modified_at: intelRow?.last_modified_at || null,
           refreshed_at: intelRow?.refreshed_at || null,
+          match_status: matchStatus,
+          service_context: serviceMatches.slice(0, 20).map((match: any) => ({
+            host: match?.host || null,
+            ip: match?.ip || null,
+            port: match?.port || null,
+            protocol: match?.protocol || null,
+            product: match?.service_product || null,
+            version: match?.service_version || null,
+            cpe: match?.cpe_name || null,
+            confidence: match?.match_confidence ?? null,
+          })),
         };
       })
       .sort((a, b) => {
@@ -2135,6 +2222,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
         cisa_kev: item.cisa_kev,
         affected_assets: item.affected_assets,
       })),
+      exposure_score: exposureScore,
     };
 
     let aiReport: any = null;
@@ -2147,6 +2235,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       assets,
       monitoredScope: monitored_scope,
       discoveredSubdomains: discoveredSubdomainAssets,
+      exposureScore,
     });
     try {
       if (OPENAI_API_KEY) {
@@ -2159,6 +2248,10 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       aiError = (e as Error).message;
     }
     aiReport = sanitizeAiReport(aiReport, fallbackAiReport, sevCount);
+    aiReport.risk_score = exposureScore.posture_score;
+    aiReport.risk_level = exposureScore.risk_level;
+    aiReport.risk_points = exposureScore.risk_points;
+    aiReport.score_method = 'exposure_score_v2';
     aiError = null;
 
     // ---- Auto-genera azioni di remediation per CVE KEV (se non esistono già) ----
@@ -2392,6 +2485,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
       assets_in_scope: assetsForReport,
       findings,
       findings_by_severity: sevCount,
+      exposure_score: exposureScore,
       cve_catalog,
       intel,
       observations: observationsForReport,

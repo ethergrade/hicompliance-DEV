@@ -208,7 +208,7 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
                 <TableHead>Creato</TableHead>
                 <TableHead>Target</TableHead>
                 <TableHead>Profilo</TableHead>
-                <TableHead>Risk</TableHead>
+                <TableHead>Postura</TableHead>
                 <TableHead>Findings</TableHead>
                 <TableHead>Origine</TableHead>
                 <TableHead>Azioni</TableHead>
@@ -234,8 +234,8 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
               {!loading &&
                 reports.map((row) => {
                   const payload = row.payload as SurfaceScan360Report;
-                  const riskScore = payload?.ai?.risk_score ?? payload?.scan?.overall_score;
-                  const riskLevel = payload?.ai?.risk_level ?? payload?.scan?.risk_level;
+                  const riskScore = payload?.exposure_score?.posture_score ?? payload?.ai?.risk_score ?? payload?.scan?.overall_score;
+                  const riskLevel = payload?.exposure_score?.risk_level ?? payload?.ai?.risk_level ?? payload?.scan?.risk_level;
                   const target =
                     payload?.scan?.target ||
                     payload?.scan?.normalized_target ||

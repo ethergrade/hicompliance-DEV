@@ -9,6 +9,10 @@ import {
   isValidIPv4,
   splitMonitoredScopeRules,
 } from '../_shared/surface-scan-utils.ts';
+import {
+  computeExposureScoreV2,
+  type ExposureVulnerabilityMatch,
+} from '../_shared/exposure-score-v2.ts';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -18,12 +22,16 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 type OpenPortSnapshot = {
+  id?: string | null;
   host: string;
   ip?: string | null;
   port: number;
   protocol: string;
   source?: string | null;
   service_name?: string | null;
+  service_product?: string | null;
+  service_version?: string | null;
+  banner?: string | null;
   exposure_level?: string | null;
   is_web?: boolean;
   is_tls?: boolean;
@@ -101,7 +109,10 @@ type TargetSnapshot = {
 };
 
 function keyOpenPort(row: OpenPortSnapshot): string {
-  return `${String(row.host || '').toLowerCase()}|${String(row.ip || '').toLowerCase()}|${Number(row.port || 0)}|${String(row.protocol || 'tcp').toLowerCase()}`;
+  const host = String(row.host || '').trim().toLowerCase();
+  const ip = String(row.ip || '').trim().toLowerCase();
+  const identity = host && host !== 'n/d' && host !== '-' ? host : ip;
+  return `${identity}|${Number(row.port || 0)}|${String(row.protocol || 'tcp').toLowerCase()}`;
 }
 
 function keyTech(row: TechnologySnapshot): string {
@@ -147,12 +158,21 @@ function dedupeOpenPorts(rows: OpenPortSnapshot[]): OpenPortSnapshot[] {
   for (const row of rows || []) {
     const key = keyOpenPort(row);
     const existing = map.get(key);
+    const normalizedRow = {
+      ...row,
+      ip: isValidIPv4(String(row.ip || '').trim()) || String(row.ip || '').includes(':') ? row.ip : null,
+    };
     if (!existing) {
-      map.set(key, row);
+      map.set(key, normalizedRow);
       continue;
     }
-    if (toTimestamp(row.last_seen_at) >= toTimestamp(existing.last_seen_at)) {
-      map.set(key, row);
+    const rowCompleteness = [normalizedRow.ip, normalizedRow.service_product, normalizedRow.service_version, normalizedRow.banner].filter(Boolean).length;
+    const existingCompleteness = [existing.ip, existing.service_product, existing.service_version, existing.banner].filter(Boolean).length;
+    if (
+      rowCompleteness > existingCompleteness
+      || (rowCompleteness === existingCompleteness && toTimestamp(normalizedRow.last_seen_at) >= toTimestamp(existing.last_seen_at))
+    ) {
+      map.set(key, normalizedRow);
     }
   }
   return Array.from(map.values());
@@ -362,6 +382,7 @@ function scopeReasonForTarget(
 }
 
 function emptySummary(scopeMode: 'single_job' | 'scope_latest_per_target', counters: ScopeCounterState, isAggregate: boolean) {
+  const score = computeExposureScoreV2({});
   return {
     job_id: null,
     job_ids: [],
@@ -381,6 +402,7 @@ function emptySummary(scopeMode: 'single_job' | 'scope_latest_per_target', count
     technologies: [],
     included_scan_types: UNIFIED_EXPOSURE_SCAN_TYPES,
     source_counts: {},
+    ...score,
     findings_by_severity: {
       critical: 0,
       high: 0,
@@ -568,7 +590,23 @@ serve(async (req: Request) => {
         const lastGood = completedWithData || failedWithData || completedAny || terminalAny || null;
         const dataJob = lastGood || live;
 
-        if (dataJob?.id) selectedIdsSet.add(String(dataJob.id));
+        const latestDataJobByScanType = new Map<string, ExposureJobMeta>();
+        for (const candidate of jobs) {
+          const scanType = String(candidate.scan_type || 'unknown').toLowerCase();
+          if (latestDataJobByScanType.has(scanType)) continue;
+          const hasData = hasExposureData(candidate.summary)
+            || (jobDataPresence.get(String(candidate.id || '')) || 0) > 0;
+          const status = String(candidate.status || '').toLowerCase();
+          if ((isTerminalGoodStatus(status) || status === 'failed') && hasData) {
+            latestDataJobByScanType.set(scanType, candidate);
+          }
+        }
+        if (latestDataJobByScanType.size === 0 && dataJob) {
+          latestDataJobByScanType.set(String(dataJob.scan_type || 'unknown'), dataJob);
+        }
+        for (const selectedDataJob of latestDataJobByScanType.values()) {
+          if (selectedDataJob.id) selectedIdsSet.add(String(selectedDataJob.id));
+        }
         if (live?.id) liveIdsSet.add(String(live.id));
 
         targetSnapshots.push({
@@ -642,11 +680,13 @@ serve(async (req: Request) => {
       targetsRes,
       openPortsRes,
       findingsRes,
+      scoreFindingsRes,
       classicPortFindingsRes,
       classicPortObservationsRes,
       technologiesRes,
       sslRes,
       previousJobRes,
+      vulnerabilityMatchesRes,
     ] = await Promise.all([
       adminClient
         .from('surface_scan_targets' as any)
@@ -654,11 +694,15 @@ serve(async (req: Request) => {
         .in('scan_job_id', selectedJobIds),
       adminClient
         .from('surface_open_ports' as any)
-        .select('host, ip, port, protocol, source, service_name, service_product, service_version, exposure_level, is_web, is_tls, last_seen_at')
+        .select('id, host, ip, port, protocol, source, service_name, service_product, service_version, banner, exposure_level, is_web, is_tls, last_seen_at')
         .in('scan_job_id', selectedJobIds),
       adminClient
         .from('surface_exposure_findings' as any)
-        .select('severity')
+        .select('id, severity, finding_type')
+        .in('scan_job_id', selectedJobIds),
+      adminClient
+        .from('surface_findings' as any)
+        .select('id, severity, finding_type, status')
         .in('scan_job_id', selectedJobIds),
       adminClient
         .from('surface_findings' as any)
@@ -688,6 +732,11 @@ serve(async (req: Request) => {
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle(),
+      adminClient
+        .from('surface_service_vulnerability_matches' as any)
+        .select('open_port_id, host, ip, port, protocol, cve_id, match_status, cvss_score, epss_score, epss_percentile, cisa_kev, service_product, service_version, cpe_name, match_confidence')
+        .eq('organization_id', resolvedCustomerId)
+        .in('scan_job_id', selectedJobIds),
     ]);
 
     const targets = (targetsRes.data || []) as Array<Record<string, unknown>>;
@@ -717,9 +766,13 @@ serve(async (req: Request) => {
       .filter(Boolean) as OpenPortSnapshot[];
     const observationOpenPorts = classicPortObservations.flatMap((row) => toOpenPortsFromClassicObservation(row));
     const openPorts = dedupeOpenPorts([...exposureOpenPorts, ...classicOpenPorts, ...observationOpenPorts]);
-    const findings = (findingsRes.data || []) as any[];
+    const exposureFindings = (findingsRes.data || []) as any[];
+    const classicScoreFindings = ((scoreFindingsRes.data || []) as any[])
+      .filter((row) => !['resolved', 'suppressed', 'false_positive', 'accepted_risk'].includes(String(row?.status || '').toLowerCase()));
+    const findings = classicScoreFindings.length > 0 ? classicScoreFindings : exposureFindings;
     const technologies = dedupeTechnologies((technologiesRes.data || []) as TechnologySnapshot[]);
     const ssl = (sslRes.data || []) as any[];
+    const vulnerabilityMatches = (vulnerabilityMatchesRes.data || []) as ExposureVulnerabilityMatch[];
 
     const hostsWithOpenPorts = new Set(openPorts.map((row) => String(row.host || '').trim().toLowerCase()).filter(Boolean));
     const topPortCounter = new Map<number, number>();
@@ -776,6 +829,17 @@ serve(async (req: Request) => {
       );
     }
 
+    const tlsHeaderWeaknesses = findings.filter((row) =>
+      /tls|ssl|security_header|http_header|hsts|cipher|certificate/i.test(String(row?.finding_type || ''))
+    ).length;
+    const exposureScore = computeExposureScoreV2({
+      ports: openPorts,
+      findings,
+      vulnerabilityMatches,
+      newOpenPorts: diff.new_open_ports.length,
+      tlsHeaderWeaknesses,
+    });
+
     return jsonResponse({
       job_id: anchorJobId,
       job_ids: selectedJobIds,
@@ -799,6 +863,7 @@ serve(async (req: Request) => {
         .slice(0, 10),
       included_scan_types: UNIFIED_EXPOSURE_SCAN_TYPES,
       source_counts: Object.fromEntries(sourceCounter.entries()),
+      ...exposureScore,
       technologies: Array.from(technologyCounter.entries())
         .map(([name, count]) => ({ name, count }))
         .sort((a, b) => b.count - a.count)

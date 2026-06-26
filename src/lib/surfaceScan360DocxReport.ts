@@ -298,6 +298,7 @@ export async function generateSurfaceScan360Docx(
 		? (report.ai?.top_recommendations ?? [])
 		: [];
 	const severity = report.findings_by_severity || {};
+	const exposureScore = report.exposure_score;
 
 	const anagraficaRows = [
 		["Ragione sociale", asText(org.legal_name || org.name)],
@@ -335,6 +336,18 @@ export async function generateSurfaceScan360Docx(
 		],
 	];
 
+	const postureRows = exposureScore
+		? [
+			["Indice postura exposure", `${exposureScore.posture_score}/100 (100 = ottimo)`],
+			["Livello di rischio", asText(exposureScore.risk_level)],
+			["Punti rischio", `${exposureScore.risk_points}/100`],
+			["Vulnerabilità confermate", asText(exposureScore.vulnerability_summary?.confirmed ?? 0, "0")],
+			["CVE candidate", asText(exposureScore.vulnerability_summary?.candidate ?? 0, "0")],
+			["Servizi con vulnerabilità non determinabile", asText(exposureScore.vulnerability_summary?.unknown ?? 0, "0")],
+			["Interpretazione", asText(exposureScore.vulnerability_summary?.explanation)],
+		]
+		: [["Indice postura exposure", `${report.ai?.risk_score ?? "n/d"}/100`], ["Livello di rischio", asText(report.ai?.risk_level)]];
+
 	const findingsRows = findings
 		.slice(0, 120)
 		.map((finding: unknown) => [
@@ -348,6 +361,7 @@ export async function generateSurfaceScan360Docx(
 		.slice(0, 120)
 		.map((entry: unknown) => [
 			asText(entry.cve_id),
+			entry.match_status === "candidate" ? "Candidata" : "Confermata",
 			asText(entry.cvss ?? "-"),
 			entry.cisa_kev ? "SI" : "NO",
 			asText((entry.affected_assets || []).join(", "), "-"),
@@ -381,7 +395,10 @@ export async function generateSurfaceScan360Docx(
 					heading("2. Dettagli scansione"),
 					buildSimpleTable(["Campo", "Valore"], scanRows),
 
-					heading("3. Riepilogo severità"),
+					heading("3. Indice postura exposure"),
+					buildSimpleTable(["Indicatore", "Valore"], postureRows),
+
+					heading("4. Riepilogo severità"),
 					buildSimpleTable(
 						["Critiche", "Alte", "Medie", "Basse", "Info"],
 						[
@@ -395,7 +412,7 @@ export async function generateSurfaceScan360Docx(
 						],
 					),
 
-					heading("4. Security Findings & Vulnerabilità"),
+					heading("5. Security Findings & Vulnerabilità"),
 					buildSimpleTable(
 						["Severity", "Titolo", "Asset impattato", "Remediation"],
 						findingsRows.length > 0
@@ -403,15 +420,15 @@ export async function generateSurfaceScan360Docx(
 							: [["-", "Nessun finding disponibile", "-", "-"]],
 					),
 
-					heading("5. Catalogo CVE"),
+					heading("6. Catalogo CVE"),
 					buildSimpleTable(
-						["CVE", "CVSS", "KEV", "Asset", "Descrizione"],
+						["CVE", "Stato", "CVSS", "KEV", "Asset", "Descrizione"],
 						cveRows.length > 0
 							? cveRows
-							: [["-", "-", "-", "-", "Nessuna CVE disponibile"]],
+							: [["-", "-", "-", "-", "-", "Nessuna CVE disponibile"]],
 					),
 
-					heading("6. Priorità operative"),
+					heading("7. Priorità operative"),
 					buildSimpleTable(
 						["Priorità", "Titolo", "Severità", "Azione", "Asset"],
 						recommendationRows.length > 0

@@ -2772,6 +2772,150 @@ export type Database = {
         }
         Relationships: []
       }
+      surface_service_fingerprint_queue: {
+        Row: {
+          attempts: number
+          cooldown_until: string | null
+          created_at: string
+          host: string
+          id: string
+          ip: string | null
+          last_error: string | null
+          not_before: string
+          open_port_id: string
+          organization_id: string
+          port: number
+          protocol: string
+          reason: string
+          scan_job_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          cooldown_until?: string | null
+          created_at?: string
+          host: string
+          id?: string
+          ip?: string | null
+          last_error?: string | null
+          not_before?: string
+          open_port_id: string
+          organization_id: string
+          port: number
+          protocol?: string
+          reason?: string
+          scan_job_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          cooldown_until?: string | null
+          created_at?: string
+          host?: string
+          id?: string
+          ip?: string | null
+          last_error?: string | null
+          not_before?: string
+          open_port_id?: string
+          organization_id?: string
+          port?: number
+          protocol?: string
+          reason?: string
+          scan_job_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      surface_service_vulnerability_matches: {
+        Row: {
+          cisa_kev: boolean
+          cpe_name: string | null
+          created_at: string
+          cve_id: string | null
+          cvss_score: number | null
+          epss_percentile: number | null
+          epss_score: number | null
+          evidence: Json
+          first_seen_at: string
+          host: string
+          id: string
+          ip: string | null
+          last_seen_at: string
+          match_basis: string | null
+          match_confidence: number | null
+          match_key: string
+          match_status: string
+          open_port_id: string | null
+          organization_id: string
+          port: number
+          protocol: string
+          scan_job_id: string | null
+          service_name: string | null
+          service_product: string | null
+          service_version: string | null
+          updated_at: string
+        }
+        Insert: {
+          cisa_kev?: boolean
+          cpe_name?: string | null
+          created_at?: string
+          cve_id?: string | null
+          cvss_score?: number | null
+          epss_percentile?: number | null
+          epss_score?: number | null
+          evidence?: Json
+          first_seen_at?: string
+          host: string
+          id?: string
+          ip?: string | null
+          last_seen_at?: string
+          match_basis?: string | null
+          match_confidence?: number | null
+          match_key: string
+          match_status: string
+          open_port_id?: string | null
+          organization_id: string
+          port: number
+          protocol?: string
+          scan_job_id?: string | null
+          service_name?: string | null
+          service_product?: string | null
+          service_version?: string | null
+          updated_at?: string
+        }
+        Update: {
+          cisa_kev?: boolean
+          cpe_name?: string | null
+          created_at?: string
+          cve_id?: string | null
+          cvss_score?: number | null
+          epss_percentile?: number | null
+          epss_score?: number | null
+          evidence?: Json
+          first_seen_at?: string
+          host?: string
+          id?: string
+          ip?: string | null
+          last_seen_at?: string
+          match_basis?: string | null
+          match_confidence?: number | null
+          match_key?: string
+          match_status?: string
+          open_port_id?: string | null
+          organization_id?: string
+          port?: number
+          protocol?: string
+          scan_job_id?: string | null
+          service_name?: string | null
+          service_product?: string | null
+          service_version?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_preferences: {
         Row: {
           created_at: string
