@@ -73,6 +73,7 @@ import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 const IPV4_REGEX =
   /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
+const MONITORED_SUBDOMAIN_LIMIT = 10;
 
 const isIpv6 = (value: string): boolean => value.includes(':');
 const isDomainLike = (value: string): boolean => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(value);
@@ -287,6 +288,9 @@ const SurfaceScan360: React.FC = () => {
     loading: monitoredIpRulesLoading,
     saving: monitoredIpRulesSaving,
     isAdmin: isAdminUser,
+    scopeTier,
+    manualScopeCount,
+    manualScopeLimit,
     addRule: addMonitoredIpRule,
     removeRule: removeMonitoredIpRule,
   } = useSurfaceScanMonitoredIps();
@@ -416,6 +420,44 @@ const SurfaceScan360: React.FC = () => {
       return !classifySurfaceHostForScope(host, scopeDomains).blocked;
     });
   }, [scanDiscovery.scannedTargets, scopeDomains, ipScopeRules]);
+
+  const monitoredAssetSummary = useMemo(() => {
+    const domains = new Set<string>();
+    const ipEntries = new Set<string>();
+    const subdomains = new Set<string>();
+
+    for (const rule of monitoredIpRules) {
+      const entryType = String(rule.entry_type || '').toLowerCase();
+      const inputValue = String(rule.input_value || '').trim().toLowerCase();
+      const discoveredVia = String(rule.discovered_via || 'manual').toLowerCase();
+      if (!inputValue) continue;
+
+      if (['domain', 'hostname'].includes(entryType)) {
+        if (discoveredVia === 'manual') domains.add(inputValue);
+        else subdomains.add(inputValue);
+      } else if (discoveredVia === 'manual') {
+        ipEntries.add(inputValue);
+      }
+    }
+
+    for (const job of scanJobs) {
+      if (String(job.target_type || '').toLowerCase() !== 'subdomain') continue;
+      if (['failed', 'cancelled'].includes(String(job.status || '').toLowerCase())) continue;
+      const host = extractHostFromTarget(String(job.normalized_target || job.raw_target || ''));
+      if (!host || classifySurfaceHostForScope(host, scopeDomains).blocked) continue;
+      subdomains.add(host);
+    }
+
+    for (const domain of domains) subdomains.delete(domain);
+    const monitoredSubdomains = [...subdomains].sort().slice(0, MONITORED_SUBDOMAIN_LIMIT);
+
+    return {
+      domains: domains.size,
+      ips: ipEntries.size,
+      subdomains: monitoredSubdomains.length,
+      total: domains.size + ipEntries.size + monitoredSubdomains.length,
+    };
+  }, [monitoredIpRules, scanJobs, scopeDomains]);
 
   const excludedScannedTargets = useMemo(() => {
     return scanDiscovery.scannedTargets.filter((target) => !visibleScannedTargets.includes(target));
@@ -827,6 +869,26 @@ const SurfaceScan360: React.FC = () => {
       return;
     }
 
+    if (manualScopeLimit !== null) {
+      const existingInputs = new Set(
+        monitoredIpRules
+          .filter((rule) => String(rule.discovered_via || 'manual').toLowerCase() === 'manual')
+          .map((rule) => String(rule.input_value || '').trim().toLowerCase()),
+      );
+      const newInputs = new Set(
+        entries
+          .map((entry) => entry.trim().toLowerCase())
+          .filter((entry) => entry && !existingInputs.has(entry)),
+      );
+      const remainingSlots = Math.max(0, manualScopeLimit - manualScopeCount);
+      if (newInputs.size > remainingSlots) {
+        toast.error(`SurfaceScan360 Standard consente ${manualScopeLimit} asset principali`, {
+          description: `Slot disponibili: ${remainingSlots}. Usa qualsiasi combinazione di domini e IP.`,
+        });
+        return;
+      }
+    }
+
     let successCount = 0;
     const failedEntries: string[] = [];
 
@@ -987,8 +1049,14 @@ const SurfaceScan360: React.FC = () => {
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-muted-foreground">Asset IP Monitorati</p>
-                    <p className="text-2xl font-bold text-foreground">{monitoredLiveIps.length}</p>
+                    <p className="text-sm text-muted-foreground">Asset monitorati</p>
+                    <p className="text-2xl font-bold text-foreground">{monitoredAssetSummary.total}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {monitoredAssetSummary.domains} domini • {monitoredAssetSummary.ips} IP
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Sottodomini: {monitoredAssetSummary.subdomains}/{MONITORED_SUBDOMAIN_LIMIT}
+                    </p>
                   </div>
                   <Eye className="w-8 h-8 text-primary" />
                 </div>
@@ -1037,9 +1105,16 @@ const SurfaceScan360: React.FC = () => {
         {(isAdminUser || isSuperAdmin) && (
           <Card className="border-primary/30 bg-primary/5">
             <CardHeader>
-              <CardTitle>Gestione IP Monitorati (Solo Admin)</CardTitle>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle>Gestione asset monitorati (Solo Admin)</CardTitle>
+                <Badge variant="outline">
+                  {scopeTier === 'extended' ? 'SurfaceScan360 Esteso' : 'SurfaceScan360 Standard'}
+                </Badge>
+              </div>
               <p className="text-sm text-muted-foreground">
-                Aggiungi IP singoli, range o reti CIDR per controllare quali asset pubblici rientrano nel monitoraggio.
+                {scopeTier === 'extended'
+                  ? 'Lo scope principale è definito dal cliente. Vengono orchestrati fino a 10 sottodomini.'
+                  : 'Massimo 4 asset principali in qualsiasi combinazione di domini e IP, più 10 sottodomini orchestrati.'}
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1584,11 +1659,11 @@ const SurfaceScan360: React.FC = () => {
         <div ref={liveSectionRef} className="scroll-mt-24 space-y-6">
         <Card className="border-border">
           <CardHeader>
-            <CardTitle>Asset IP Pubblici Monitorati ({monitoredLiveIps.length} trovati)</CardTitle>
+            <CardTitle>Indirizzi IP rilevati ({monitoredLiveIps.length})</CardTitle>
             <p className="text-sm text-muted-foreground">
               {ipScopeRules.length > 0
                 ? `Filtrati da ${ipScopeRules.length} regole IP attive`
-                : 'Nessuna regola IP attiva: con strict scope gli IP fuori regola sono esclusi'}
+                : 'IP osservati durante le scansioni degli asset in scope; non rappresentano il totale degli asset monitorati'}
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
