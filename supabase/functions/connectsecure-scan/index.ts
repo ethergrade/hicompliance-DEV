@@ -162,7 +162,7 @@ Deno.serve(async (req: Request) => {
 
 type AdminClient = any;
 type CsOrgConfig = CsConfig & { organization_id: string; config_source: ConfigSource };
-type TriggeredDomain = { domain: string; id: number; jobId: string | null };
+type TriggeredDomain = { domain: string; id: number; jobId: string | null; requestedAt: string };
 
 async function listWeeklyConfigs(
   adminClient: AdminClient,
@@ -219,11 +219,12 @@ async function triggerAttackSurfaceForOrg(
   if (domains.length === 0) return { triggered: 0, domains: [] };
 
   const session = { current: await csAuthorize(cfg) };
+  const scanRequestedAt = new Date(Date.now() - 5_000).toISOString();
   const domainObjs: TriggeredDomain[] = [];
   for (const domain of domains) {
     const id = await csGetOrCreateDomain(cfg, session, domain, adminClient, orgId);
     const jobId = await createConnectSecureJob(adminClient, orgId, domain, id);
-    domainObjs.push({ domain, id, jobId });
+    domainObjs.push({ domain, id, jobId, requestedAt: scanRequestedAt });
   }
 
   await csScanNow(
@@ -231,6 +232,17 @@ async function triggerAttackSurfaceForOrg(
     session,
     domainObjs.map(d => ({ name: d.domain, domain: d.domain, company_id: cfg.company_id, id: d.id })),
   );
+
+  for (const d of domainObjs) {
+    await logQueryError('unable to update connectsecure registry scan timestamp', adminClient
+      .from('connectsecure_domain_registry')
+      .upsert({
+        organization_id: orgId,
+        domain: d.domain,
+        cs_domain_id: d.id,
+        last_scanned_at: scanRequestedAt,
+      }, { onConflict: 'organization_id,domain' }));
+  }
 
   return { triggered: domainObjs.length, domains: domainObjs };
 }
@@ -352,7 +364,7 @@ async function ingestAttackSurfaceResults(
   const session = { current: await csAuthorize(cfg) };
   for (const d of domains) {
     try {
-      const result = await csWaitForResults(cfg, session, d.id, d.domain, 420_000);
+      const result = await csWaitForResults(cfg, session, d.id, d.domain, 420_000, d.requestedAt);
       await saveResult(adminClient, cfg.organization_id, d.domain, result, d.jobId);
     } catch (err) {
       if (d.jobId) await markConnectSecureJobFailed(adminClient, d.jobId, cfg.organization_id, d.domain, d.id, err);

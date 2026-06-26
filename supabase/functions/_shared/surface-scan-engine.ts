@@ -6031,6 +6031,8 @@ export async function runSurfaceScanEnrichment(
 
       if (domainObjs.length === 0) continue;
 
+      // Lancia scansione batch
+      const scanRequestedAt = new Date(Date.now() - 5_000).toISOString();
       try {
         await csScanNow(cfg, session, domainObjs);
       } catch (err) {
@@ -6041,7 +6043,7 @@ export async function runSurfaceScanEnrichment(
       for (const d of domainObjs) {
         let result;
         try {
-          result = await csWaitForResults(cfg, session, d.id, d.domain, 420_000);
+          result = await csWaitForResults(cfg, session, d.id, d.domain, 420_000, scanRequestedAt);
         } catch (err) {
           console.warn("[connectsecure] result polling failed:", d.domain, err);
           continue;

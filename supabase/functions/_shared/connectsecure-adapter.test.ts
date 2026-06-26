@@ -2,6 +2,7 @@ import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.t
 import {
   csExtractSubdomains,
   csMapToFindings,
+  csWaitForResults,
   type CsResult,
 } from "./connectsecure-adapter.ts";
 
@@ -48,4 +49,53 @@ Deno.test("csMapToFindings normalizes nested ConnectSecure ASM arrays", () => {
   assertEquals(mapped.observations.some(obs => obs.type === "http_server_banner"), true);
   assertEquals(mapped.sensitiveData.creds?.length, 0);
   assertEquals(mapped.sensitiveData.hashes?.length, 1);
+});
+
+Deno.test("csWaitForResults ignores completed results older than the scan request", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  const stale = {
+    id: 1,
+    name: "example.com",
+    website: "example.com",
+    status: "Completed",
+    attack_surface_domain_id: 123,
+    company_id: 13805,
+    created: "2026-06-26T09:00:00",
+    updated: "2026-06-26T09:00:30",
+  };
+  const fresh = {
+    ...stale,
+    id: 2,
+    created: "2026-06-26T09:30:00",
+    updated: "2026-06-26T09:30:30",
+  };
+
+  globalThis.fetch = (() => {
+    calls += 1;
+    return Promise.resolve(new Response(JSON.stringify({
+      status: true,
+      data: [calls === 1 ? stale : fresh],
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+  }) as typeof fetch;
+
+  try {
+    const result = await csWaitForResults(
+      { pod_host: "pod.example", client_auth_token: "unused", company_id: 13805 },
+      { current: { token: "access-token", userId: "user-id" } },
+      123,
+      "example.com",
+      1_000,
+      "2026-06-26T09:29:59Z",
+      1,
+    );
+
+    assertEquals(result.id, 2);
+    assertEquals(calls, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

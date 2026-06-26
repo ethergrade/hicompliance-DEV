@@ -254,15 +254,39 @@ export async function csGetResults(
   return /completed/i.test(r.status || '') ? r : null;
 }
 
+function parseConnectSecureTimestamp(value: unknown): number {
+  const raw = String(value || '').trim();
+  if (!raw) return 0;
+  const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/.test(raw) ? raw : `${raw}Z`;
+  const ms = Date.parse(normalized);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function freshAfterMs(value?: string | number | Date | null): number {
+  if (!value) return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (value instanceof Date) return value.getTime();
+  return parseConnectSecureTimestamp(value);
+}
+
+function resultFreshnessMs(result: CsResult): number {
+  return Math.max(
+    parseConnectSecureTimestamp(result.updated),
+    parseConnectSecureTimestamp(result.created),
+  );
+}
+
 export async function csWaitForResults(
   cfg:       CsConfig,
   session:   { current: CsSession },
   domainId:  number,
   domain:    string,
   timeoutMs: number = 420_000,
+  freshAfter?: string | number | Date,
+  pollMs: number = 20_000,
 ): Promise<CsResult> {
   const deadline = Date.now() + timeoutMs;
-  const pollMs   = 20_000;
+  const minFreshMs = freshAfterMs(freshAfter);
 
   while (Date.now() < deadline) {
     const url = csUrl(cfg, `/r/company/attack_surface_results?condition=attack_surface_domain_id=${domainId}&order_by=updated desc`);
@@ -271,7 +295,10 @@ export async function csWaitForResults(
     const result = results[0];
 
     if (result) {
-      if (/completed/i.test(result.status || '')) return result;
+      if (/completed/i.test(result.status || '')) {
+        const resultMs = resultFreshnessMs(result);
+        if (!minFreshMs || (resultMs && resultMs >= minFreshMs)) return result;
+      }
       if (/failed|error/i.test(result.status || '')) {
         throw new Error(`[ConnectSecure] scan failed for ${domain}: ${result.status}`);
       }
