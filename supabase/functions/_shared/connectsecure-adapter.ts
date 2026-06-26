@@ -432,6 +432,40 @@ function recordString(record: Record<string, unknown>, keys: string[]): string {
   return '';
 }
 
+const STORAGE_PLACEHOLDER_VALUES = new Set([
+  'unknown',
+  'sconosciuto',
+  'n/a',
+  'na',
+  'none',
+  'null',
+  'undefined',
+  '-',
+  '--',
+  'not available',
+  'non disponibile',
+]);
+
+function isUsableStorageIdentifier(value: string): boolean {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return false;
+  return !STORAGE_PLACEHOLDER_VALUES.has(normalized);
+}
+
+function storageBucketEvidence(record: Record<string, unknown>): { name: string; url: string; label: string; asset: string } | null {
+  const rawName = recordString(record, ['name', 'bucket', 'bucket_name', 'bucketName']);
+  const rawUrl = recordString(record, ['url', 'uri', 'endpoint', 'host', 'hostname']);
+  const name = isUsableStorageIdentifier(rawName) ? rawName : '';
+  const url = isUsableStorageIdentifier(rawUrl) ? rawUrl : '';
+  if (!name && !url) return null;
+  return {
+    name,
+    url,
+    label: name || url,
+    asset: url || name,
+  };
+}
+
 function parsePortProtocols(value: unknown): Array<{ port: number; protocol: string }> {
   const seen = new Set<string>();
   const ports: Array<{ port: number; protocol: string }> = [];
@@ -622,19 +656,23 @@ export function csMapToFindings(result: CsResult, rootDomain: string, depth: num
 
   // ── S3 Buckets esposti ────────────────────────────────────────────────────
   for (const bucket of meaningfulRecords(result.s3buckets)) {
-    const bucketName = recordString(bucket, ['name', 'bucket', 'bucket_name']);
-    const bucketUrl = recordString(bucket, ['url', 'uri', 'endpoint']);
-    if (!bucketName && !bucketUrl) continue;
+    const storage = storageBucketEvidence(bucket);
+    if (!storage) continue;
     findings.push({
       provider:      'connectsecure',
       module:        'connectsecure',
       finding_type:  'exposed_storage_bucket',
       severity:      'high',
-      title:         `Bucket storage esposto: ${bucketName || bucketUrl}`,
-      description:   `Bucket ${bucketName || ''} (${bucketUrl || ''}) risulta pubblicamente accessibile.`,
-      affected_asset: bucketUrl || bucketName || rootDomain,
-      evidence:      { bucket, source: 'connectsecure' },
-      remediation:   'Impostare il bucket come privato e rivedere le policy di accesso.',
+      title:         `Bucket storage pubblico rilevato: ${storage.label}`,
+      description:   `Il motore ASM esterno ha rilevato un bucket o endpoint storage pubblicamente accessibile collegato a ${rootDomain}. Evidenza: ${storage.label}.`,
+      affected_asset: storage.asset || rootDomain,
+      evidence:      {
+        bucket,
+        source:      'connectsecure',
+        bucket_name: storage.name || null,
+        bucket_url:  storage.url || null,
+      },
+      remediation:   'Verificare ownership del bucket, disabilitare accesso pubblico anonimo, restringere policy/ACL e ruotare eventuali credenziali o oggetti sensibili esposti.',
     });
   }
 

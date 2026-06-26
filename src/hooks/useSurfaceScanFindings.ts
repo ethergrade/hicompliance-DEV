@@ -11,6 +11,7 @@ import {
   type SurfaceMonitoredScopeRule,
 } from '@/lib/surfaceScopeGuard';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import { presentStorageBucketFinding } from '@/lib/surfacescan/storageFindingPresentation';
 
 export interface SurfaceFindingRow {
   id: string;
@@ -229,6 +230,38 @@ const targetHostFromValue = (value: unknown): string => {
   } catch {
     return raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').replace(/\.$/, '').toLowerCase();
   }
+};
+
+const mapApiFinding = (record: Record<string, any> | null): SurfaceFindingRow | null => {
+  if (!record || !record.id) return null;
+  return presentStorageBucketFinding({
+    id: String(record.id),
+    scan_job_id: record.scan_job_id ? String(record.scan_job_id) : null,
+    provider: record.provider ?? null,
+    module: record.module ?? null,
+    finding_type: String(record.finding_type || ''),
+    title: String(record.title || ''),
+    description: record.description ?? null,
+    severity: (record.severity || 'info') as SurfaceFindingRow['severity'],
+    affected_asset: record.affected_asset ?? null,
+    affected_url: record.affected_url ?? null,
+    ip: record.ip ? String(record.ip) : null,
+    port: record.port ?? null,
+    protocol: record.protocol ?? null,
+    cve: Array.isArray(record.cve) ? record.cve : null,
+    cwe: Array.isArray(record.cwe) ? record.cwe : null,
+    cvss: record.cvss ?? null,
+    epss: record.epss ?? null,
+    cisa_kev: record.cisa_kev ?? null,
+    remediation: record.remediation ?? null,
+    evidence: record.evidence && typeof record.evidence === 'object' ? (record.evidence as Record<string, any>) : null,
+    attribution_confidence: record.attribution_confidence ?? null,
+    status: record.status ?? null,
+    created_at: String(record.created_at || new Date().toISOString()),
+    first_seen_at: record.first_seen_at ?? null,
+    last_seen_at: record.last_seen_at ?? null,
+    occurrence_count: record.occurrence_count ?? null,
+  }) as SurfaceFindingRow;
 };
 
 const openPortSeverity = (port: number, exposureLevel?: string | null): SurfaceFindingRow['severity'] => {

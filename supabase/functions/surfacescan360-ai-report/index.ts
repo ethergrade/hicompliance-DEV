@@ -371,6 +371,100 @@ function redactTechnologyMentions(value: string): string {
   return out.replace(/\s{2,}/g, ' ').trim();
 }
 
+const STORAGE_PLACEHOLDER_VALUES = new Set([
+  'unknown',
+  'sconosciuto',
+  'n/a',
+  'na',
+  'none',
+  'null',
+  'undefined',
+  '-',
+  '--',
+  'not available',
+  'non disponibile',
+]);
+
+function isUsableStorageValue(value: unknown): boolean {
+  const normalized = String(value || '').trim().toLowerCase();
+  return Boolean(normalized) && !STORAGE_PLACEHOLDER_VALUES.has(normalized);
+}
+
+function firstUsableStorageValue(...values: unknown[]): string {
+  for (const value of values) {
+    if (isUsableStorageValue(value)) return String(value).trim();
+  }
+  return '';
+}
+
+function storageBucketRecord(evidence: Record<string, unknown>): Record<string, unknown> {
+  const raw = evidence?.bucket;
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  if (Array.isArray(raw)) {
+    const entry = raw.find(item => item && typeof item === 'object' && !Array.isArray(item));
+    return entry ? entry as Record<string, unknown> : {};
+  }
+  return {};
+}
+
+function presentStorageBucketFindingForReport(finding: any): {
+  title?: string;
+  description?: string;
+  remediation?: string;
+  severity?: string;
+  evidenceSummary?: string;
+  quality?: 'verified_identifier' | 'unverified';
+} {
+  if (String(finding?.finding_type || '').toLowerCase() !== 'exposed_storage_bucket') return {};
+
+  const evidence = finding?.evidence && typeof finding.evidence === 'object'
+    ? finding.evidence as Record<string, unknown>
+    : {};
+  const bucket = storageBucketRecord(evidence);
+  const name = firstUsableStorageValue(
+    evidence.bucket_name,
+    bucket.bucket_name,
+    bucket.bucketName,
+    bucket.bucket,
+    bucket.name,
+  );
+  const url = firstUsableStorageValue(
+    evidence.bucket_url,
+    bucket.url,
+    bucket.uri,
+    bucket.endpoint,
+    bucket.host,
+    bucket.hostname,
+  );
+  const asset = String(finding?.affected_asset || finding?.affected_url || 'asset monitorato').trim();
+  const label = name || url;
+
+  if (!label) {
+    return {
+      title: 'Possibile esposizione storage da verificare',
+      description:
+        `Il motore ASM esterno ha restituito un indicatore storage per ${asset}, ` +
+        'ma non ha fornito nome, URL o endpoint del bucket. Il dato va validato manualmente prima di considerarlo un bucket pubblico confermato.',
+      remediation:
+        'Verificare manualmente nel portale ASM/cloud se esistono bucket o endpoint storage collegati al dominio. Se confermato, disabilitare accesso pubblico anonimo e restringere policy/ACL.',
+      severity: ['critical', 'high'].includes(String(finding?.severity || '').toLowerCase()) ? 'medium' : String(finding?.severity || 'info').toLowerCase(),
+      evidenceSummary: 'Segnale ASM storage senza nome/URL bucket; richiede validazione manuale.',
+      quality: 'unverified',
+    };
+  }
+
+  return {
+    title: `Bucket storage pubblico rilevato: ${label}`,
+    description:
+      `Il motore ASM esterno ha rilevato un bucket o endpoint storage pubblicamente accessibile collegato a ${asset}. ` +
+      `Evidenza disponibile: ${label}.`,
+    remediation:
+      'Verificare ownership del bucket, disabilitare accesso pubblico anonimo, restringere policy/ACL e ruotare eventuali credenziali o oggetti sensibili esposti.',
+    evidenceSummary: `Bucket/endpoint storage identificato: ${label}.`,
+    quality: 'verified_identifier',
+  };
+}
+
 function extractCvesFromText(value: string): string[] {
   const matches = String(value || '').toUpperCase().match(CVE_REGEX) ?? [];
   return Array.from(new Set(matches));
@@ -802,6 +896,35 @@ function buildConsultingRecommendations(input: {
       rationale: 'Header e controlli web incompleti favoriscono attacchi opportunistici su asset Internet-facing.',
       action: 'Applicare baseline standard sui controlli HTTP di sicurezza e rieseguire la validazione di conformità tecnica.',
       affected_assets: affectedAssets,
+      severity: 'medium',
+    });
+  }
+
+  const verifiedStorageFindings = findings.filter((f: any) =>
+    String(f.finding_type || '').toLowerCase() === 'exposed_storage_bucket' &&
+    String(f.storage_signal_quality || '') !== 'unverified'
+  );
+  const unverifiedStorageFindings = findings.filter((f: any) =>
+    String(f.finding_type || '').toLowerCase() === 'exposed_storage_bucket' &&
+    String(f.storage_signal_quality || '') === 'unverified'
+  );
+
+  if (verifiedStorageFindings.length > 0) {
+    out.push({
+      priority: 5,
+      title: 'Rimuovere accesso pubblico da bucket storage identificati',
+      rationale: 'Sono presenti bucket o endpoint storage con identificativo verificabile e accessibilità pubblica segnalata.',
+      action: 'Confermare ownership, disabilitare accesso pubblico anonimo, restringere policy/ACL e verificare eventuale esposizione di oggetti sensibili.',
+      affected_assets: Array.from(new Set(verifiedStorageFindings.map((f: any) => String(f.affected_asset || f.affected_url || '').trim()).filter(Boolean))).slice(0, TOP_RECOMMENDATIONS_LIMIT),
+      severity: 'high',
+    });
+  } else if (unverifiedStorageFindings.length > 0) {
+    out.push({
+      priority: 5,
+      title: 'Validare segnali storage non attribuiti',
+      rationale: 'Il motore ASM ha restituito un indicatore storage senza nome, URL o endpoint del bucket; non è una conferma tecnica sufficiente per remediation immediata.',
+      action: 'Verificare manualmente nel portale ASM/cloud se esistono bucket collegati agli asset indicati e chiudere il finding se il segnale non è riproducibile.',
+      affected_assets: Array.from(new Set(unverifiedStorageFindings.map((f: any) => String(f.affected_asset || f.affected_url || '').trim()).filter(Boolean))).slice(0, TOP_RECOMMENDATIONS_LIMIT),
       severity: 'medium',
     });
   }
@@ -1535,13 +1658,14 @@ Deno.serve(async (req) => {
           : cves.length === 0 && taxonomy
             ? Number(taxonomy.baselineCvss)
             : null;
+      const storagePresentation = presentStorageBucketFindingForReport(f);
       const normalizedFinding = {
         provider: String(f.provider || '').trim() || null,
         module: String(f.module || '').trim() || null,
         finding_type: String(f.finding_type || '').trim() || null,
-        title: redactTechnologyMentions(String(f.title || '')),
-        description: redactTechnologyMentions(String(f.description || '')),
-        severity: String(f.severity || 'info').toLowerCase(),
+        title: redactTechnologyMentions(String(storagePresentation.title || f.title || '')),
+        description: redactTechnologyMentions(String(storagePresentation.description || f.description || '')),
+        severity: String(storagePresentation.severity || f.severity || 'info').toLowerCase(),
         affected_asset: String(f.affected_asset || '').trim() || null,
         affected_url: String(f.affected_url || '').trim() || null,
         ip: String(f.ip || '').trim() || null,
@@ -1555,7 +1679,8 @@ Deno.serve(async (req) => {
         cvss: Number.isFinite(Number(resolvedCvss)) ? Number(resolvedCvss) : null,
         cvss_source: f.cvss != null ? 'provider' : taxonomy ? 'baseline' : null,
         attribution_confidence: String(f.attribution_confidence || '').trim() || null,
-        evidence_summary: toTextSummary(f.evidence),
+        evidence_summary: storagePresentation.evidenceSummary || toTextSummary(f.evidence),
+        storage_signal_quality: storagePresentation.quality || null,
         created_at: f.created_at || null,
       };
       const findingKey = [
