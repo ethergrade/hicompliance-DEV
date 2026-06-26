@@ -80,8 +80,19 @@ export interface CsResult {
   status:               string;
   attack_surface_domain_id: number;
   company_id:           number;
+  assets?:              unknown;
+  data?:                unknown;
+  results?:             unknown;
+  records?:             unknown;
+  items?:               unknown;
+  rows?:                unknown;
   target_ips?:          unknown;
   subdomains?:          unknown;
+  sub_domains?:         unknown;
+  subdomain_results?:   unknown;
+  discovered_subdomains?: unknown;
+  hosts?:               unknown;
+  domains?:             unknown;
   dns_records?:         unknown;
   mx?:                  { hosts?: string[]; warnings?: string[]; error?: string };
   spf?:                 { valid?: boolean; record?: string; warnings?: string[]; dns_lookups?: number };
@@ -506,34 +517,161 @@ function normalizeResultHostname(value: unknown): string {
   }
 }
 
+const SUBDOMAIN_SOURCE_KEYS = [
+  'subdomains',
+  'sub_domains',
+  'subdomain_results',
+  'discovered_subdomains',
+  'discoveredSubdomains',
+  'hosts',
+  'hostnames',
+  'domains',
+  'assets',
+  'attack_surface_assets',
+  'attackSurfaceAssets',
+  'attack_surface_results',
+  'attackSurfaceResults',
+  'domain_configurations',
+  'domainConfigurations',
+  'data',
+  'results',
+  'records',
+  'items',
+  'rows',
+  'dns_records',
+  'dnsRecords',
+];
+
+const SUBDOMAIN_HOST_FIELD_KEYS = [
+  'subdomain',
+  'sub_domain',
+  'subDomain',
+  'Sub Domain',
+  'hostname',
+  'host_name',
+  'hostName',
+  'host',
+  'fqdn',
+  'dns_name',
+  'dnsName',
+  'domain',
+  'domain_name',
+  'domainName',
+  'name',
+  'asset',
+  'asset_name',
+  'assetName',
+  'asset_value',
+  'assetValue',
+  'config_name',
+  'configName',
+  'url',
+  'uri',
+  'website',
+  'address',
+  'target',
+];
+
+function normalizedObjectKey(value: string): string {
+  return value.toLowerCase().replace(/[\s_-]+/g, '');
+}
+
+const SUBDOMAIN_SOURCE_KEY_SET = new Set(SUBDOMAIN_SOURCE_KEYS.map(normalizedObjectKey));
+const SUBDOMAIN_HOST_FIELD_KEY_SET = new Set(SUBDOMAIN_HOST_FIELD_KEYS.map(normalizedObjectKey));
+
+function recordValueByKey(record: Record<string, unknown>, key: string): unknown {
+  if (key in record) return record[key];
+  const wanted = normalizedObjectKey(key);
+  for (const [candidateKey, value] of Object.entries(record)) {
+    if (normalizedObjectKey(candidateKey) === wanted) return value;
+  }
+  return undefined;
+}
+
+function trimHostCandidate(value: string): string {
+  return value
+    .trim()
+    .replace(/^[<("'[\{]+/, '')
+    .replace(/[>\)"'\]},.;]+$/, '');
+}
+
+function candidateStrings(value: unknown): string[] {
+  if (typeof value === 'number' && Number.isFinite(value)) return [String(value)];
+  if (typeof value !== 'string') return [];
+  const raw = value.trim();
+  if (!raw) return [];
+  const cleaned = trimHostCandidate(raw);
+  const chunks = cleaned
+    .split(/[\s,;|]+/)
+    .map(trimHostCandidate)
+    .filter(Boolean);
+  return chunks.length > 0 ? chunks : [cleaned];
+}
+
+function addSubdomainCandidate(
+  value: unknown,
+  raw: Record<string, unknown>,
+  root: string,
+  byDomain: Map<string, Record<string, unknown>>,
+): void {
+  for (const candidate of candidateStrings(value)) {
+    if (candidate.includes('@') && !/^https?:\/\//i.test(candidate)) continue;
+    const domain = normalizeResultHostname(candidate);
+    if (!domain || !domain.includes('.') || domain.includes('*') || domain.includes('@')) continue;
+    if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(domain)) continue;
+    if (root && (domain === root || !domain.endsWith(`.${root}`))) continue;
+    if (!byDomain.has(domain)) byDomain.set(domain, raw);
+  }
+}
+
+function collectSubdomainEntries(
+  value: unknown,
+  root: string,
+  byDomain: Map<string, Record<string, unknown>>,
+  depth = 0,
+  seen: WeakSet<object> = new WeakSet(),
+): void {
+  if (value === null || value === undefined || depth > 10 || byDomain.size >= 5000) return;
+
+  if (typeof value === 'string' || typeof value === 'number') {
+    addSubdomainCandidate(value, { value }, root, byDomain);
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const entry of value) collectSubdomainEntries(entry, root, byDomain, depth + 1, seen);
+    return;
+  }
+
+  if (!isRecord(value)) return;
+  if (seen.has(value)) return;
+  seen.add(value);
+
+  for (const key of SUBDOMAIN_HOST_FIELD_KEYS) {
+    const rawValue = recordValueByKey(value, key);
+    if (rawValue !== undefined) addSubdomainCandidate(rawValue, value, root, byDomain);
+  }
+
+  for (const [key, nested] of Object.entries(value)) {
+    const normalizedKey = normalizedObjectKey(key);
+    if (
+      SUBDOMAIN_SOURCE_KEY_SET.has(normalizedKey) ||
+      SUBDOMAIN_HOST_FIELD_KEY_SET.has(normalizedKey) ||
+      Array.isArray(nested) ||
+      isRecord(nested)
+    ) {
+      collectSubdomainEntries(nested, root, byDomain, depth + 1, seen);
+    }
+  }
+}
+
 function extractSubdomainEntries(result: Record<string, unknown>, rootDomain?: string): Array<{ domain: string; raw: Record<string, unknown> }> {
   const root = normalizeResultHostname(rootDomain || '');
-  const sources = [
-    result.subdomains,
-    (result as any).sub_domains,
-    (result as any).subdomain_results,
-    (result as any).discovered_subdomains,
-    (result as any).hosts,
-    (result as any).domains,
-  ];
   const byDomain = new Map<string, Record<string, unknown>>();
 
-  for (const source of sources) {
-    for (const sub of meaningfulRecords(source)) {
-      const domain = normalizeResultHostname(recordString(sub, [
-        'subdomain',
-        'sub_domain',
-        'Sub Domain',
-        'hostname',
-        'host',
-        'domain',
-        'name',
-        'url',
-      ]));
-      if (!domain || !domain.includes('.') || domain.includes('*')) continue;
-      if (root && (domain === root || !domain.endsWith(`.${root}`))) continue;
-      if (!byDomain.has(domain)) byDomain.set(domain, sub);
-    }
+  for (const key of SUBDOMAIN_SOURCE_KEYS) {
+    const source = recordValueByKey(result, key);
+    collectSubdomainEntries(source, root, byDomain);
   }
 
   return Array.from(byDomain.entries())
@@ -541,9 +679,11 @@ function extractSubdomainEntries(result: Record<string, unknown>, rootDomain?: s
     .sort((a, b) => a.domain.localeCompare(b.domain));
 }
 
-export function csExtractSubdomains(result: Pick<CsResult, 'subdomains'> | Record<string, unknown>): string[] {
+export function csExtractSubdomains(result: Pick<CsResult, 'subdomains'> | Record<string, unknown>, rootDomain?: string): string[] {
+  const record = result as Record<string, unknown>;
+  const inferredRoot = rootDomain || normalizeResultHostname(recordString(record, ['website', 'domain', 'root_domain', 'rootDomain', 'name']));
   const subdomains = new Set<string>();
-  for (const { domain } of extractSubdomainEntries(result as Record<string, unknown>)) {
+  for (const { domain } of extractSubdomainEntries(record, inferredRoot)) {
     if (!domain || !domain.includes('.') || domain.includes('*')) continue;
     subdomains.add(domain);
   }
@@ -555,9 +695,10 @@ export function csMapToFindings(result: CsResult, rootDomain: string, depth: num
   const findings:     CsMappedFinding[] = [];
   const ports:        CsMappedPort[]    = [];
   const observations: CsMapResult['observations'] = [];
+  const subdomainEntries = extractSubdomainEntries(result as unknown as Record<string, unknown>, rootDomain);
 
   // ── Subdomains → assets ───────────────────────────────────────────────────
-  for (const { domain, raw } of extractSubdomainEntries(result as unknown as Record<string, unknown>, rootDomain)) {
+  for (const { domain, raw } of subdomainEntries) {
     assets.push({
       asset_type: 'subdomain',
       asset_value: domain,
@@ -566,6 +707,21 @@ export function csMapToFindings(result: CsResult, rootDomain: string, depth: num
       source: 'connectsecure',
       confidence: 'high',
       raw: { depth: depth + 1, parent_domain: rootDomain, dns_records: raw.dns_records || raw.dnsRecords || null },
+    });
+  }
+  if (subdomainEntries.length > 0) {
+    const subdomains = subdomainEntries.map(entry => entry.domain);
+    observations.push({
+      type:     'connectsecure_discovered_subdomains',
+      title:    `Sottodomini rilevati dallo scanner esterno per ${rootDomain}`,
+      value:    {
+        root_domain: rootDomain,
+        total: subdomains.length,
+        max_depth: 10,
+        source: 'connectsecure',
+        subdomains,
+      },
+      severity: 'info',
     });
   }
 

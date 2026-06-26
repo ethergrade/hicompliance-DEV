@@ -71,7 +71,7 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
         .from('surface_assets' as any)
         .select('asset_type, asset_value, hostname, root_domain, source, ip, raw')
         .or(scopeFilter)
-        .in('asset_type', ['subdomain', 'reverse_dns_hostname', 'domain', 'ip'])
+        .in('asset_type', ['subdomain', 'reverse_dns_hostname', 'domain', 'ip', 'ipv4', 'ipv6'])
         .order('last_seen', { ascending: false })
         .limit(1500);
 
@@ -178,7 +178,7 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
       const value = String(row.hostname || row.asset_value || '').trim().toLowerCase().replace(/\.$/, '');
       if (!value) continue;
 
-      if (row.asset_type === 'ip') {
+      if (['ip', 'ipv4', 'ipv6'].includes(String(row.asset_type || '').toLowerCase())) {
         if (isIpv4(value) || isIpv6(value)) {
           const backendExcluded = Boolean(row?.raw?._scope_excluded);
           const backendReason = String(row?.raw?._scope_exclusion_reason || '').trim().toLowerCase();
