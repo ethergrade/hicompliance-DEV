@@ -203,6 +203,7 @@ export async function generateSurfaceScan360Docx(report: SurfaceScan360Report): 
   const cveCatalog = Array.isArray(report.cve_catalog) ? report.cve_catalog : [];
   const recommendations = Array.isArray(report.ai?.top_recommendations) ? report.ai?.top_recommendations ?? [] : [];
   const severity = report.findings_by_severity || {};
+  const exposureScore = report.exposure_score;
 
   const anagraficaRows = [
     ['Ragione sociale', asText(org.legal_name || org.name)],
@@ -226,6 +227,21 @@ export async function generateSurfaceScan360Docx(report: SurfaceScan360Report): 
     ['Completata', asText(scan.completed_at ? new Date(scan.completed_at).toLocaleString('it-IT') : '-')],
   ];
 
+  const postureRows = exposureScore
+    ? [
+        ['Indice postura exposure', `${exposureScore.posture_score}/100 (100 = ottimo)`],
+        ['Livello di rischio', asText(exposureScore.risk_level)],
+        ['Punti di rischio', asText(exposureScore.risk_points, '0')],
+        ['Vulnerabilita confermate', asText(exposureScore.vulnerability_summary?.confirmed ?? 0, '0')],
+        ['CVE candidate', asText(exposureScore.vulnerability_summary?.candidate ?? 0, '0')],
+        ['Servizi con vulnerabilita non determinabile', asText(exposureScore.vulnerability_summary?.unknown ?? 0, '0')],
+        ['Interpretazione', asText(exposureScore.vulnerability_summary?.explanation, 'Nessuna evidenza CVE associabile ai servizi rilevati.')],
+      ]
+    : [
+        ['Indice postura exposure', 'Non disponibile'],
+        ['Interpretazione', 'Lo score verra calcolato quando saranno disponibili dati di esposizione sufficienti.'],
+      ];
+
   const findingsRows = findings.slice(0, 120).map((finding: any) => [
     asText(String(finding.severity || '').toUpperCase(), 'INFO'),
     asText(finding.title),
@@ -235,6 +251,7 @@ export async function generateSurfaceScan360Docx(report: SurfaceScan360Report): 
 
   const cveRows = cveCatalog.slice(0, 120).map((entry: any) => [
     asText(entry.cve_id),
+    entry.match_status === 'candidate' ? 'Candidata' : 'Confermata',
     asText(entry.cvss ?? '-'),
     entry.cisa_kev ? 'SI' : 'NO',
     asText((entry.affected_assets || []).join(', '), '-'),
@@ -252,7 +269,7 @@ export async function generateSurfaceScan360Docx(report: SurfaceScan360Report): 
   // Glossario: paragrafi da iniettare nell'unica section del documento
   const glossaryNodes = [
     new Paragraph({
-      text: '7. Glossario tecnico',
+      text: '8. Glossario tecnico',
       heading: HeadingLevel.HEADING_1,
       pageBreakBefore: true,
     }),
@@ -288,7 +305,10 @@ export async function generateSurfaceScan360Docx(report: SurfaceScan360Report): 
           heading('2. Dettagli scansione'),
           buildSimpleTable(['Campo', 'Valore'], scanRows),
 
-          heading('3. Riepilogo severità'),
+          heading('3. Indice postura exposure'),
+          buildSimpleTable(['Indicatore', 'Valore'], postureRows),
+
+          heading('4. Riepilogo severità'),
           buildSimpleTable(
             ['Critiche', 'Alte', 'Medie', 'Basse', 'Info'],
             [[
@@ -300,19 +320,19 @@ export async function generateSurfaceScan360Docx(report: SurfaceScan360Report): 
             ]],
           ),
 
-          heading('4. Security Findings & Vulnerabilità'),
+          heading('5. Security Findings & Vulnerabilità'),
           buildSimpleTable(
             ['Severity', 'Titolo', 'Asset impattato', 'Remediation'],
             findingsRows.length > 0 ? findingsRows : [['-', 'Nessun finding disponibile', '-', '-']],
           ),
 
-          heading('5. Catalogo CVE'),
+          heading('6. Catalogo CVE'),
           buildSimpleTable(
-            ['CVE', 'CVSS', 'KEV', 'Asset', 'Descrizione'],
-            cveRows.length > 0 ? cveRows : [['-', '-', '-', '-', 'Nessuna CVE disponibile']],
+            ['CVE', 'Stato', 'CVSS', 'KEV', 'Asset', 'Descrizione'],
+            cveRows.length > 0 ? cveRows : [['-', '-', '-', '-', '-', 'Nessuna CVE disponibile']],
           ),
 
-          heading('6. Priorità operative'),
+          heading('7. Priorità operative'),
           buildSimpleTable(
             ['Priorità', 'Titolo', 'Severità', 'Azione', 'Asset'],
             recommendationRows.length > 0 ? recommendationRows : [['#1', 'Nessuna priorità disponibile', 'low', '-', '-']],

@@ -23,6 +23,20 @@ export interface SurfaceScan360Report {
   assets_in_scope: any[];
   findings: any[];
   findings_by_severity: Record<string, number>;
+  exposure_score?: {
+    posture_score: number;
+    risk_level: string;
+    risk_points: number;
+    risk_breakdown?: Record<string, { count?: number; points?: number }>;
+    vulnerability_summary?: {
+      confirmed?: number;
+      candidate?: number;
+      unknown?: number;
+      not_vulnerable_evidence?: number;
+      services_total?: number;
+      explanation?: string;
+    };
+  };
   scope_guard_summary?: {
     in_scope?: number;
     excluded_by_scope?: number;
@@ -45,6 +59,8 @@ export interface SurfaceScan360Report {
     published_at?: string | null;
     last_modified_at?: string | null;
     refreshed_at?: string | null;
+    match_status?: 'confirmed' | 'candidate' | null;
+    service_context?: Array<Record<string, unknown>>;
   }>;
   intel: any[];
   observations?: any[];
@@ -69,6 +85,8 @@ export interface SurfaceScan360Report {
     executive_summary?: string;
     risk_score?: number;
     risk_level?: string;
+    risk_points?: number;
+    score_method?: string;
     top_recommendations?: Array<{
       priority: number;
       title: string;
@@ -428,7 +446,13 @@ const computeFallbackRisk = (report: SurfaceScan360Report): { score: number; lev
 };
 
 const buildFallbackAi = (report: SurfaceScan360Report) => {
-  const risk = computeFallbackRisk(report);
+  const fallbackRisk = computeFallbackRisk(report);
+  const risk = report.exposure_score
+    ? {
+        score: report.exposure_score.posture_score,
+        level: report.exposure_score.risk_level,
+      }
+    : fallbackRisk;
   const totalFindings = (report.findings || []).length;
   const totalScope = (report.monitored_scope || []).length;
   const totalSub = (report.subdomain_dumps || []).reduce((sum, dump: any) => {
@@ -700,11 +724,11 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   doc.text(brandTitle, margin, titleY + 74);
   doc.text(`Generato il ${new Date(report.generated_at).toLocaleDateString('it-IT')}`, margin, titleY + 87);
 
-  // 11. Risk Score badge (right side)
+  // 11. Exposure posture badge (right side)
   if (aiData?.risk_score != null) {
     const score = aiData.risk_score;
     const level = aiData.risk_level || '';
-    const label = `Risk Score ${score}/100  ·  ${level}`;
+    const label = `Postura exposure ${score}/100  ·  Rischio ${level}`;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     const tw = doc.getTextWidth(label) + 20;
@@ -1376,6 +1400,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
     text('Catalogo CVE con descrizione tecnica', { bold: true, size: 10, color: [BRAND.r, BRAND.g, BRAND.b] });
     y += 2;
     const cveRows = cveCatalogScoped.map((entry) => {
+      const matchStatus = entry.match_status === 'candidate' ? 'Candidata' : 'Confermata';
       const cvss = entry.cvss != null ? String(entry.cvss) : '-';
       const epss = entry.epss != null ? `${(Number(entry.epss) * 100).toFixed(2)}%` : '-';
       const kev = entry.cisa_kev ? 'Sì' : 'No';
@@ -1383,6 +1408,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
       const desc = redactReportWords(String(entry.description || 'Descrizione non disponibile.'));
       return [
         entry.cve_id || '-',
+        matchStatus,
         cvss,
         epss,
         kev,
@@ -1390,7 +1416,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
         desc,
       ];
     });
-    drawTable(['CVE', 'CVSS', 'EPSS', 'KEV', 'Asset', 'Descrizione'], cveRows, [88, 42, 52, 38, 110, 185]);
+    drawTable(['CVE', 'Stato', 'CVSS', 'EPSS', 'KEV', 'Asset', 'Descrizione'], cveRows, [72, 55, 36, 44, 32, 95, 181]);
   } else {
     text('Nessuna CVE associabile in modo attendibile ad asset dominio/sottodominio/IP in scope.', {
       color: [MUTED.r, MUTED.g, MUTED.b],
@@ -1476,7 +1502,20 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
   if (aiData) {
     sectionTitle(7, 'Executive summary (AI CISO)');
     if (aiData.risk_score != null) {
-      text(`Risk score: ${aiData.risk_score}/100  ·  Livello: ${aiData.risk_level || 'n/d'}`, { bold: true });
+      text(
+        `Indice postura exposure: ${aiData.risk_score}/100 (100 = ottimo)  ·  Rischio: ${aiData.risk_level || 'n/d'}`,
+        { bold: true },
+      );
+    }
+    if (report.exposure_score) {
+      const vulnerability = report.exposure_score.vulnerability_summary || {};
+      text(
+        `Punti di rischio: ${report.exposure_score.risk_points}  ·  CVE confermate: ${vulnerability.confirmed || 0}  ·  CVE candidate: ${vulnerability.candidate || 0}  ·  Servizi non determinabili: ${vulnerability.unknown || 0}`,
+        { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] },
+      );
+      if (vulnerability.explanation) {
+        text(redactReportWords(vulnerability.explanation), { size: 9 });
+      }
     }
     if (aiData.executive_summary) text(redactReportWords(aiData.executive_summary));
 

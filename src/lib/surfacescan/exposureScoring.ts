@@ -27,33 +27,3 @@ export function severityBadgeClass(severity: string): string {
   return 'bg-slate-600 text-white';
 }
 
-export function computeExposureRiskScore(input: {
-  openPortsTotal: number;
-  criticalExposures: number;
-  findingsBySeverity?: {
-    critical?: number;
-    high?: number;
-    medium?: number;
-    low?: number;
-    info?: number;
-  };
-}): { score: number; level: 'Basso' | 'Medio' | 'Alto' | 'Critico' } {
-  const openPortsTotal = Number(input.openPortsTotal || 0);
-  const criticalExposures = Number(input.criticalExposures || 0);
-  const sev = input.findingsBySeverity || {};
-  const penalty =
-    criticalExposures * 12 +
-    Number(sev.critical || 0) * 18 +
-    Number(sev.high || 0) * 10 +
-    Number(sev.medium || 0) * 5 +
-    Number(sev.low || 0) * 2 +
-    Math.min(openPortsTotal, 50);
-
-  const score = Math.max(5, Math.min(100, 100 - penalty));
-
-  if (score <= 30) return { score, level: 'Critico' };
-  if (score <= 50) return { score, level: 'Alto' };
-  if (score <= 75) return { score, level: 'Medio' };
-  return { score, level: 'Basso' };
-}
-

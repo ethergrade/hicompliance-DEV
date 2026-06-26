@@ -107,7 +107,6 @@ const dedupeOpenPortsRows = (rows: ExposureOpenPortRow[]): ExposureOpenPortRow[]
   for (const row of rows || []) {
     const key = [
       String(row.host || '').toLowerCase(),
-      String(row.ip || '').toLowerCase(),
       Number(row.port || 0),
       String(row.protocol || 'tcp').toLowerCase(),
     ].join('|');

@@ -176,7 +176,8 @@ const buildSyntheticCveRowsFromReport = (
         added.add(signature);
 
         const severity = severityFromCvss(item?.cvss);
-        const description = String(item?.description || '').trim();
+        const matchStatus = String(item?.match_status || 'confirmed').toLowerCase();
+        const isCandidate = matchStatus === 'candidate';
         const affectedLabel = String(assetEntry || normalizedAsset).trim();
         const remediation = item?.kev_required_action
           ? String(item.kev_required_action)
@@ -186,9 +187,12 @@ const buildSyntheticCveRowsFromReport = (
           id: `report-cve-${cveId}-${normalizedAsset}-${String(ipCandidate || '').replace(/[^a-z0-9]/gi, '-')}`,
           provider: 'surface_report',
           module: 'cve_catalog',
-          finding_type: 'cve_catalog_reported',
-          title: `${cveId} rilevata su ${affectedLabel}`,
-          description: description || `CVE presente nel catalogo report per asset ${affectedLabel}.`,
+          finding_type: isCandidate ? 'cve_candidate' : 'cve_confirmed',
+          title: isCandidate ? `${cveId} candidata su ${affectedLabel}` : `${cveId} confermata su ${affectedLabel}`,
+          description: String(item?.description || '').trim()
+            || (isCandidate
+              ? `Correlazione CVE candidata per ${affectedLabel}; richiede conferma di prodotto e versione.`
+              : `CVE confermata dal fingerprint del servizio esposto su ${affectedLabel}.`),
           severity,
           affected_asset: affectedLabel,
           affected_url: null,
@@ -208,10 +212,12 @@ const buildSyntheticCveRowsFromReport = (
             report_id: reportRow.id,
             report_created_at: reportRow.created_at,
             _from_report_cve_catalog: true,
+            match_status: matchStatus,
+            service_context: Array.isArray(item?.service_context) ? item.service_context : [],
             affected_asset: affectedLabel,
             ip: ipCandidate || null,
           },
-          attribution_confidence: 'high',
+          attribution_confidence: isCandidate ? 'medium' : 'high',
           status: 'open',
           created_at: String(item?.refreshed_at || item?.last_modified_at || reportRow.created_at || new Date().toISOString()),
         });

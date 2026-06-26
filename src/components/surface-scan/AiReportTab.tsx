@@ -17,6 +17,17 @@ interface AiReport {
   assets_in_scope: any[];
   findings: any[];
   findings_by_severity: Record<string, number>;
+  exposure_score?: {
+    posture_score: number;
+    risk_level: string;
+    risk_points: number;
+    vulnerability_summary?: {
+      confirmed?: number;
+      candidate?: number;
+      unknown?: number;
+      explanation?: string;
+    };
+  };
   scope_guard_summary?: {
     in_scope?: number;
     excluded_by_scope?: number;
@@ -32,6 +43,8 @@ interface AiReport {
     epss_percentile?: number | null;
     cisa_kev?: boolean;
     affected_assets?: string[];
+    match_status?: 'confirmed' | 'candidate' | null;
+    service_context?: Array<Record<string, unknown>>;
   }>;
   intel: any[];
   observations?: any[];
@@ -291,8 +304,14 @@ export const AiReportTab: React.FC = () => {
               <CardContent className="space-y-2">
                 {report.ai.risk_score != null && (
                   <Badge className={sevColor(report.ai.risk_level)}>
-                    {report.ai.risk_level} · {report.ai.risk_score}/100
+                    Postura {report.ai.risk_score}/100 · Rischio {report.ai.risk_level}
                   </Badge>
+                )}
+                {report.exposure_score && (
+                  <p className="text-xs text-muted-foreground">
+                    100 = postura ottima · {report.exposure_score.risk_points} punti rischio.{' '}
+                    {report.exposure_score.vulnerability_summary?.explanation}
+                  </p>
                 )}
                 <p className="text-sm whitespace-pre-wrap">{redactReportWords(String(report.ai.executive_summary || ''))}</p>
               </CardContent>

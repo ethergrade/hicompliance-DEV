@@ -1594,16 +1594,23 @@ export async function runSurfaceScanEnrichment(
     }
 
     try {
+      const internalSecret =
+        Deno.env.get("SURFACESCAN_REPORT_INTERNAL_SECRET")
+        || Deno.env.get("SURFACESCAN_INTERNAL_REPORT_SECRET")
+        || "";
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceRole}`,
+      };
+      if (internalSecret) headers["x-surface-internal-secret"] = internalSecret;
       const res = await fetch(`${supabaseUrl}/functions/v1/cve-enrichment`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${serviceRole}`,
-        },
+        headers,
         body: JSON.stringify({
+          action: "enrich_services",
+          organization_id: job.organization_id,
           trigger: "surface_scan_complete",
-          max_per_run: 1,
-          drain_all: false,
+          max_services: 2,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -1617,7 +1624,7 @@ export async function runSurfaceScanEnrichment(
       }
       await logAudit("scan_cve_enrichment_triggered", {
         processed_count: body?.processed_count ?? null,
-        mode: body?.mode ?? null,
+        action: body?.action ?? null,
       });
     } catch (error: any) {
       await logAudit("scan_cve_enrichment_trigger_failed", {

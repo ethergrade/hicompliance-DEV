@@ -879,15 +879,18 @@ async function runPostIngestionTasks(
     'connectsecure_result_ingested',
   );
 
-  await fetch(`${options.supabaseUrl}/functions/v1/cve-enrichment`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      trigger: 'connectsecure_result_ingested',
-      max_per_run: Math.max(1, organizationIds.length),
-      drain_all: false,
-    }),
-  }).catch(() => undefined);
+  await Promise.allSettled(organizationIds.map(organizationId =>
+    fetch(`${options.supabaseUrl}/functions/v1/cve-enrichment`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        action: 'enrich_services',
+        organization_id: organizationId,
+        trigger: 'connectsecure_result_ingested',
+        max_services: 2,
+      }),
+    })
+  ));
 }
 
 async function enqueueReportRefreshes(
