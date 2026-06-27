@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import { COVER_BG_JPEG_B64, HISOLUTION_LOGO_PNG_B64 } from './reportCoverAssets';
 import { REPORT_GLOSSARY } from './reportGlossary';
 import { publicSourceLabel, redactInternalSourceNames } from './surfaceSourceLabels';
+import { sanitizeSurfaceScanReport } from './surfacescan/reportVisibility';
 
 interface RemediationTask {
 	id: string;
@@ -602,6 +603,7 @@ const buildFallbackAi = (report: SurfaceScan360Report) => {
 };
 
 export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
+	report = sanitizeSurfaceScanReport(report);
 	const doc = new jsPDF({
 		unit: "pt",
 		format: "a4",

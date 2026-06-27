@@ -9,6 +9,7 @@ import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { generateSurfaceScan360Pdf } from '@/lib/surfaceScan360PdfReport';
 import { generateSurfaceScan360Docx } from '@/lib/surfaceScan360DocxReport';
 import { redactInternalSourceNames } from '@/lib/surfaceSourceLabels';
+import { sanitizeSurfaceScanReport } from '@/lib/surfacescan/reportVisibility';
 
 interface AiReport {
   generated_at: string;
@@ -126,7 +127,7 @@ export const AiReportTab: React.FC = () => {
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
-      setReport((data as any).report as AiReport);
+      setReport(sanitizeSurfaceScanReport((data as any).report as AiReport));
       toast.success('Report AI generato');
     } catch (e: any) {
       toast.error('Errore generazione report: ' + (e.message || 'unknown'));

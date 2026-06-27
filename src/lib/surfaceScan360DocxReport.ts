@@ -16,6 +16,7 @@ import { saveAs } from "file-saver";
 import type { SurfaceScan360Report } from "./surfaceScan360PdfReport";
 import { REPORT_GLOSSARY } from './reportGlossary';
 import { redactInternalSourceNames } from './surfaceSourceLabels';
+import { sanitizeSurfaceScanReport } from './surfacescan/reportVisibility';
 
 const SURFACESCAN_BRAND_TITLE_HICOMPLIANCE = "HICOMPLIANCE · SURFACESCAN360";
 const SURFACESCAN_BRAND_TITLE_HICONSOLE = "HiConsole - SURFACESCAN360";
@@ -288,6 +289,7 @@ const buildTemplateFrontMatter = (
 export async function generateSurfaceScan360Docx(
 	report: SurfaceScan360Report,
 ): Promise<void> {
+	report = sanitizeSurfaceScanReport(report);
 	const org = report.organization || {};
 	const scan = report.scan || {};
 	const findings = Array.isArray(report.findings) ? report.findings : [];

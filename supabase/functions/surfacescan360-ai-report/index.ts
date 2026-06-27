@@ -677,10 +677,21 @@ function hasMeaningfulReportValue(value: unknown, key = ''): boolean {
 }
 
 function isReportableObservation(observation: any): boolean {
+  if (isHiddenReportSource(
+    observation?.module,
+    observation?.observation_type,
+    observation?.title,
+    observation?.value?.source,
+    observation?.value?.provider,
+  )) return false;
   const type = String(observation?.observation_type || '').toLowerCase();
   if (['module_skipped', 'rdap_unavailable'].includes(type)) return false;
   if (['module_error', 'module_timeout'].includes(type)) return true;
   return hasMeaningfulReportValue(observation?.value);
+}
+
+function isHiddenReportSource(...values: unknown[]): boolean {
+  return values.some((value) => /\bamass(?:[_-\s]?discovery)?\b/i.test(String(value || '')));
 }
 
 function mapIntelCategory(provider: string): string {
@@ -1499,6 +1510,7 @@ Deno.serve(async (req) => {
     };
 
     const rawAssetsScoped = (rawAssetsAll || []).filter((asset: any) => {
+      if (isHiddenReportSource(asset?.source, asset?.raw?.source, asset?.raw?.provider)) return false;
       const reason = getScopeReasonFromAsset(asset, scopeDomains, ipScopeRules);
       trackScopeReason(reason);
       return reason === null;
@@ -1519,8 +1531,12 @@ Deno.serve(async (req) => {
       }
     }
     const rawAssets = Array.from(rawAssetsByKey.values());
-    const subdomain_dumps = (subdomainDumpRes.data ?? []).map((dump: any) => {
+    const subdomain_dumps = (subdomainDumpRes.data ?? []).filter((dump: any) => {
+      const sources = Array.isArray(dump?.sources) ? dump.sources : [];
+      return sources.length === 0 || sources.some((source: unknown) => !isHiddenReportSource(source));
+    }).map((dump: any) => {
       const filteredResults = ((dump?.results ?? []) as any[]).filter((entry: any) => {
+        if (isHiddenReportSource(entry?.source, entry?.provider)) return false;
         const host = String(entry?.subdomain || '').trim().toLowerCase();
         if (!host) return false;
         const hostReason = classifyHostScopeReason(host, scopeDomains);
@@ -1621,6 +1637,7 @@ Deno.serve(async (req) => {
     }));
 
     const findingsRaw = ([...(rawFindingsAll || []), ...exposureFindingsForMerge])
+      .filter((finding: any) => !isHiddenReportSource(finding?.provider, finding?.module, finding?.source))
       .filter((finding: any) => !['resolved', 'suppressed', 'false_positive', 'accepted_risk'].includes(String(finding?.status || '').toLowerCase()))
       .filter((finding: any) => {
         const reason = getScopeReasonFromFinding(finding, scopeDomains, ipScopeRules);
@@ -1709,6 +1726,7 @@ Deno.serve(async (req) => {
       return String(a?.affected_asset || a?.affected_url || '').localeCompare(String(b?.affected_asset || b?.affected_url || ''));
     });
     const intelScoped = (rawIntelAll || []).filter((entry: any) => {
+      if (isHiddenReportSource(entry?.provider, entry?.source, entry?.category)) return false;
       const target = String(entry?.target || '').trim().toLowerCase();
       if (!target) return true;
       if (isIpv4(target) || isIpv6(target)) {
@@ -1836,7 +1854,13 @@ Deno.serve(async (req) => {
     }));
 
     const mergedObservations = [
-      ...(rawObservationsAll || []),
+      ...(rawObservationsAll || []).filter((observation: any) => !isHiddenReportSource(
+        observation?.module,
+        observation?.observation_type,
+        observation?.title,
+        observation?.value?.source,
+        observation?.value?.provider,
+      )),
       ...syntheticOpenPortObservations,
       ...syntheticTechObservations,
       ...syntheticSslObservations,

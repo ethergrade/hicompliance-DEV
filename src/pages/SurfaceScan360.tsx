@@ -44,7 +44,6 @@ import SecurityFindings from '@/components/surface-scan/SecurityFindings';
 import SurfaceScanModuleCards from '@/components/surface-scan/SurfaceScanModuleCards';
 import SurfaceScanReportRepository from '@/components/surface-scan/SurfaceScanReportRepository';
 import SurfaceScanExposureSection from '@/components/surface-scan/SurfaceScanExposureSection';
-import { ConnectSecureConfigPanel } from '@/components/surface-scan/ConnectSecureConfigPanel';
 import { SubdomainDepthTree } from '@/components/surface-scan/SubdomainDepthTree';
 import { SurfaceScanTrendline } from '@/components/surface-scan/SurfaceScanTrendline';
 import { SurfaceScanAlertBanner } from '@/components/surface-scan/SurfaceScanAlertBanner';
@@ -177,10 +176,10 @@ const formatExposureJobError = (errorMessage: string | null | undefined): string
     return 'Motore exposure non ha completato i task: retry automatico pianificato';
   }
   if (normalized.includes('completed with partial optional-phase failures')) {
-    return 'Completata con moduli opzionali non disponibili';
+    return 'Completata con alcuni controlli non disponibili';
   }
   if (normalized.includes('optional phase skipped')) {
-    return 'Modulo opzionale saltato dal motore';
+    return 'Controllo non applicabile al target';
   }
   return raw;
 };
@@ -260,7 +259,6 @@ const SurfaceScan360: React.FC = () => {
   const [isDiscoveryCollapsed, setIsDiscoveryCollapsed] = useState(false);
   const [isLiveResultsCollapsed, setIsLiveResultsCollapsed] = useState(true);
   const [showScopeDiagnostics, setShowScopeDiagnostics] = useState(false);
-  const [enableAmassDiscovery, setEnableAmassDiscovery] = useState(false);
   const [reverseDnsMap, setReverseDnsMap] = useState<Record<string, string[]>>({});
   const [domainIpMap, setDomainIpMap] = useState<Record<string, { ips: string[]; sources: string[] }>>({});
   const [activeSection, setActiveSection] = useState('overview');
@@ -952,7 +950,6 @@ const SurfaceScan360: React.FC = () => {
       scan_profiles: scanProfiles,
       authorization_confirmed: true,
       ownership_proof: ownershipProof || 'subdomain_module_card',
-      enable_amass: enableAmassDiscovery,
     });
   };
 
@@ -1213,36 +1210,6 @@ const SurfaceScan360: React.FC = () => {
           </Card>
         )}
 
-        {(isAdminUser || isSuperAdmin) && (
-          <Card className="border-border">
-            <CardHeader>
-              <CardTitle>Moduli opzionali</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Questi moduli partono solo se abilitati anche lato backend tramite variabili ambiente.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
-                <div>
-                  <p className="text-sm font-medium">Amass active-light</p>
-                  <p className="text-xs text-muted-foreground">
-                    Usa il container Cloudflare Amass per arricchire discovery subdomain/IP in modo opzionale.
-                  </p>
-                </div>
-                <Switch
-                  checked={enableAmassDiscovery}
-                  onCheckedChange={setEnableAmassDiscovery}
-                  aria-label="Abilita Amass active-light per le prossime scansioni"
-                />
-              </div>
-              {organizationId && (
-                <div className="rounded-lg border border-border p-3">
-                  <ConnectSecureConfigPanel organizationId={organizationId} />
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
         </div>
 
         <div ref={subdomainsSectionRef} className="scroll-mt-24 space-y-6">
@@ -1657,6 +1624,7 @@ const SurfaceScan360: React.FC = () => {
 
         {!clientReadOnly && (
         <div ref={liveSectionRef} className="scroll-mt-24 space-y-6">
+        {monitoredLiveIps.length > 0 && (
         <Card className="border-border">
           <CardHeader>
             <CardTitle>Indirizzi IP rilevati ({monitoredLiveIps.length})</CardTitle>
@@ -1757,6 +1725,7 @@ const SurfaceScan360: React.FC = () => {
             )}
           </CardContent>
         </Card>
+        )}
 
         <Card className="border-border">
           <CardHeader>

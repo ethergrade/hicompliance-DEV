@@ -2,35 +2,77 @@ project_id = "hcllvyzhefcqftesahnv"
 
 [functions.send-demo-request]
 verify_jwt = false
- 
- [functions.fetch-acn-feeds]
- verify_jwt = false
 
- [functions.ai-ciso-chat]
- verify_jwt = false
+[functions.fetch-acn-feeds]
+verify_jwt = false
 
- [functions.surface-scan-cron]
- verify_jwt = false
+[functions.ai-ciso-chat]
+verify_jwt = false
 
- [functions.surfacescan360-run-enrichment]
- verify_jwt = false
- [functions.surfacescan360-ai-report]
- verify_jwt = false
+# SurfaceScan360 canonical runtime manifest. These functions implement custom
+# service/internal/user authorization and therefore keep gateway verification off.
+[functions.shodan-scan]
+verify_jwt = false
 
- [functions.cve-enrichment]
- verify_jwt = false
+[functions.surface-scan-cron]
+verify_jwt = false
 
- [functions.cisa-kev-sync]
- verify_jwt = false
+[functions.surfacescan360-run-enrichment]
+verify_jwt = false
 
- [functions.surfacescan360-start-scan]
- verify_jwt = false
+[functions.surfacescan360-start-scan]
+verify_jwt = false
 
- [functions.darkrisk360-sync-surfacescan]
- verify_jwt = false
+[functions.surfacescan360-get-scan-status]
+verify_jwt = false
 
- [functions.darkrisk360-generate-recommendations]
- verify_jwt = false
+[functions.surfacescan360-ai-report]
+verify_jwt = false
 
- [functions.darkrisk360-generate-report]
- verify_jwt = false
+[functions.surfacescan360-monthly-report]
+verify_jwt = false
+
+[functions.surface-exposure-summary]
+verify_jwt = false
+
+[functions.connectsecure-scan]
+verify_jwt = false
+
+[functions.subdomain-dump]
+verify_jwt = false
+
+[functions.cve-enrichment]
+verify_jwt = false
+
+[functions.cisa-kev-sync]
+verify_jwt = false
+
+[functions.darkrisk360-sync-surfacescan]
+verify_jwt = false
+
+[functions.darkrisk360-generate-recommendations]
+verify_jwt = false
+
+[functions.darkrisk360-generate-report]
+verify_jwt = false
+
+[functions.darkrisk360-overview]
+verify_jwt = false
+
+[functions.darkrisk360-qa-status]
+verify_jwt = false
+
+[functions.darkrisk360-report-access]
+verify_jwt = false
+
+[functions.darkrisk360-retention-cleanup]
+verify_jwt = false
+
+[functions.darkrisk360-reveal-evidence]
+verify_jwt = false
+
+[functions.darkrisk360-roadmap-status]
+verify_jwt = false
+
+[functions.darkrisk-dti-esteso-report]
+verify_jwt = false
