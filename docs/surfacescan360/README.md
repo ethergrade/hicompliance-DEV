@@ -9,6 +9,7 @@ Questa cartella e' la source of truth per architettura, dati e promozione DEV ->
 3. [Supabase Edge, SQL e cron](./03-SUPABASE-EDGE-SQL-CRON.md)
 4. [Runbook DEV -> Produzione](./04-RUNBOOK-DEV-TO-PRODUCTION.md)
 5. [Data dictionary](./05-DATA-DICTIONARY.md)
+6. [Stato implementativo e handoff](./06-IMPLEMENTATION-HANDOFF.md)
 
 ## Flusso end-to-end
 
