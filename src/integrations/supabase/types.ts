@@ -475,6 +475,160 @@ export type Database = {
         }
         Relationships: []
       }
+      connectsecure_config: {
+        Row: {
+          client_auth_token: string
+          company_id: number
+          created_at: string
+          enabled: boolean
+          id: string
+          organization_id: string
+          pod_host: string
+          updated_at: string
+        }
+        Insert: {
+          client_auth_token: string
+          company_id: number
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          organization_id: string
+          pod_host?: string
+          updated_at?: string
+        }
+        Update: {
+          client_auth_token?: string
+          company_id?: number
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          organization_id?: string
+          pod_host?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "connectsecure_config_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "connectsecure_config_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+        ]
+      }
+      connectsecure_domain_registry: {
+        Row: {
+          created_at: string
+          cs_domain_id: number
+          depth: number
+          domain: string
+          id: string
+          last_scanned_at: string | null
+          organization_id: string
+          parent_domain: string | null
+        }
+        Insert: {
+          created_at?: string
+          cs_domain_id: number
+          depth?: number
+          domain: string
+          id?: string
+          last_scanned_at?: string | null
+          organization_id: string
+          parent_domain?: string | null
+        }
+        Update: {
+          created_at?: string
+          cs_domain_id?: number
+          depth?: number
+          domain?: string
+          id?: string
+          last_scanned_at?: string | null
+          organization_id?: string
+          parent_domain?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "connectsecure_domain_registry_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "connectsecure_domain_registry_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+        ]
+      }
+      connectsecure_sensitive_data: {
+        Row: {
+          created_at: string
+          creds: Json | null
+          creds_count: number
+          domain: string
+          hashes: Json | null
+          hashes_count: number
+          id: string
+          organization_id: string
+          scan_job_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          creds?: Json | null
+          creds_count?: number
+          domain: string
+          hashes?: Json | null
+          hashes_count?: number
+          id?: string
+          organization_id: string
+          scan_job_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          creds?: Json | null
+          creds_count?: number
+          domain?: string
+          hashes?: Json | null
+          hashes_count?: number
+          id?: string
+          organization_id?: string
+          scan_job_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "connectsecure_sensitive_data_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "connectsecure_sensitive_data_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "connectsecure_sensitive_data_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       consistenze_clienti: {
         Row: {
           created_at: string
@@ -6045,6 +6199,57 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "surface_scan_targets"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      surface_scan_monthly_reports: {
+        Row: {
+          created_at: string
+          id: string
+          month_key: string
+          month_start: string
+          organization_id: string
+          payload: Json
+          pdf_url: string | null
+          triggered_by: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          month_key: string
+          month_start: string
+          organization_id: string
+          payload?: Json
+          pdf_url?: string | null
+          triggered_by?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          month_key?: string
+          month_start?: string
+          organization_id?: string
+          payload?: Json
+          pdf_url?: string | null
+          triggered_by?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_scan_monthly_reports_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_scan_monthly_reports_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
           },
         ]
       }

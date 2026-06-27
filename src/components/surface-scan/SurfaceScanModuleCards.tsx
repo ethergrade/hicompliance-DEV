@@ -193,7 +193,6 @@ const moduleOrder = [
   'quality',
   'threats',
   'dns_blocklists',
-  'amass_discovery',
 ];
 
 const headerRules: Array<{ key: string; label: string; remediation: string }> = [
@@ -433,10 +432,10 @@ const moduleReasonLabel = (reason: string): string => {
   const key = String(reason || '').toLowerCase();
   if (key.includes('missing_google_cloud_api_key')) return 'Prerequisito mancante: GOOGLE_API_KEY per Quality.';
   if (key.includes('feature_flag_disabled')) return 'Modulo disabilitato da feature flag.';
-  if (key.includes('job_toggle_disabled')) return 'Modulo opzionale non selezionato per questa scansione.';
-  if (key.includes('missing_service_url')) return 'Prerequisito mancante: endpoint container Amass non configurato.';
-  if (key.includes('missing_shared_secret')) return 'Prerequisito mancante: secret condiviso Amass non configurato.';
-  if (key.includes('target_not_domain')) return 'Amass applicabile solo a domini, subdomain o URL.';
+  if (key.includes('job_toggle_disabled')) return 'Controllo non richiesto per questa scansione.';
+  if (key.includes('missing_service_url')) return 'Prerequisito tecnico non configurato.';
+  if (key.includes('missing_shared_secret')) return 'Credenziale tecnica non configurata.';
+  if (key.includes('target_not_domain')) return 'Controllo applicabile solo a domini, sottodomini o URL.';
   if (key.includes('missing_root_domain')) return 'Target senza dominio registrabile: WHOIS applicabile solo a domini.';
   if (key.includes('rdap')) return 'RDAP temporaneamente non disponibile per WHOIS.';
   if (key.includes('server_location_no_ip')) return 'Nessun IP in-scope geolocalizzabile disponibile.';

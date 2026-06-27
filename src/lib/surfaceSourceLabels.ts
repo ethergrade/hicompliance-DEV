@@ -12,6 +12,7 @@ const SOURCE_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
 ];
 
 const INTERNAL_SOURCE_TOKENS: RegExp[] = [
+  /\bamass(?:[_-\s]?discovery)?\b/gi,
   /\bconnectsecure\b/gi,
   /\bcybercns\b/gi,
   /\bshodan\b/gi,
@@ -24,6 +25,19 @@ const INTERNAL_SOURCE_TOKENS: RegExp[] = [
   /\bsurface[_-\s]?scan(?:360)?[_-\s]?engine\b/gi,
   /\b[a-z0-9]+(?:_[a-z0-9]+){2,}\b/gi,
 ];
+
+const HIDDEN_SURFACE_SOURCE_PATTERN = /\bamass(?:[_-\s]?discovery)?\b/i;
+
+export const isHiddenSurfaceSource = (...values: unknown[]): boolean =>
+  values.some((value) => {
+    if (value === null || value === undefined) return false;
+    if (typeof value === 'string') return HIDDEN_SURFACE_SOURCE_PATTERN.test(value);
+    try {
+      return HIDDEN_SURFACE_SOURCE_PATTERN.test(JSON.stringify(value));
+    } catch {
+      return false;
+    }
+  });
 
 export const publicSourceLabel = (source: unknown, fallback = 'Evidenza esterna'): string => {
   const raw = String(source || '').trim();

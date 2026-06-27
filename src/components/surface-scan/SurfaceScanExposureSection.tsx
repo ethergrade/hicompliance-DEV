@@ -187,6 +187,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
   const [scopePublicIps, setScopePublicIps] = useState<string[]>([]);
   const autoStartInFlightKeyRef = useRef('');
   const autoStartFailedKeyRef = useRef('');
+  const assetListRef = useRef<HTMLDivElement>(null);
 
   const assetPortList = useMemo(() => {
     const grouped = new Map<string, {
@@ -194,6 +195,9 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       label: string;
       ports: ExposureOpenPortRow[];
       ips: Set<string>;
+      snapshotSource: 'live' | 'last_good' | null;
+      snapshotStatus: string | null;
+      snapshotAt: string | null;
     }>();
 
     const ensureGroup = (key: string, label: string) => {
@@ -203,6 +207,9 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
           label,
           ports: [],
           ips: new Set<string>(),
+          snapshotSource: null,
+          snapshotStatus: null,
+          snapshotAt: null,
         });
       }
       return grouped.get(key)!;
@@ -213,7 +220,12 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       if (!label) continue;
       const key = targetMatchKey(label);
       if (!key) continue;
-      ensureGroup(key, label);
+      const group = ensureGroup(key, label);
+      group.snapshotSource = snapshot.snapshot_source;
+      group.snapshotStatus = snapshot.live?.status || snapshot.last_good?.status || null;
+      group.snapshotAt = snapshot.snapshot_source === 'last_good'
+        ? snapshot.last_good?.completed_at || snapshot.last_good?.created_at || null
+        : snapshot.live?.created_at || snapshot.last_good?.completed_at || null;
     }
 
     for (const row of openPorts || []) {
@@ -232,6 +244,9 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
         label: entry.label,
         ips: Array.from(entry.ips.values()).sort((a, b) => a.localeCompare(b)),
         ports: [...entry.ports].sort((a, b) => Number(a.port || 0) - Number(b.port || 0)),
+        snapshotSource: entry.snapshotSource,
+        snapshotStatus: entry.snapshotStatus,
+        snapshotAt: entry.snapshotAt,
       }))
       .sort((a, b) => {
         if (b.ports.length !== a.ports.length) return b.ports.length - a.ports.length;
@@ -239,10 +254,9 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       });
   }, [openPorts, targetSnapshots]);
 
-  const assetsWithPorts = useMemo(
-    () => assetPortList.filter((asset) => asset.ports.length > 0),
-    [assetPortList],
-  );
+  const scrollToAssetList = useCallback(() => {
+    assetListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
 
   const exposureUpdatedAt = useMemo(() => {
     const candidates = [
@@ -563,7 +577,10 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
               )}
             </div>
           )}
-          <ExposureKpiCards summary={summary} />
+          <ExposureKpiCards
+            summary={summary}
+            onAssetsClick={assetPortList.length > 0 ? scrollToAssetList : undefined}
+          />
           {targetSnapshots && targetSnapshots.length > 0 && (
             <div className="rounded-lg border border-border p-3 text-xs text-muted-foreground">
               {(() => {
@@ -595,16 +612,16 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
             </div>
           )}
 
-          {assetsWithPorts.length > 0 && (
-            <Card className="border-border">
+          {assetPortList.length > 0 && (
+            <Card ref={assetListRef} className="scroll-mt-28 border-border">
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Lista Asset con Porte</CardTitle>
+                <CardTitle className="text-base">Asset scansionati</CardTitle>
                 <p className="text-xs text-muted-foreground">
-                  Vista rapida per asset in scope: sotto ogni dominio/IP trovi le porte aperte rilevate.
+                  Elenco latest-per-target completo, inclusi gli asset per cui non risultano porte aperte.
                 </p>
               </CardHeader>
               <CardContent className="space-y-3">
-                {assetsWithPorts.map((asset) => (
+                {assetPortList.map((asset) => (
                   <div key={asset.key} className="rounded-md border border-border p-3">
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div className="space-y-1">
@@ -614,12 +631,23 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
                           {asset.ips.length > 0 && (
                             <span className="break-all">IP: {asset.ips.join(', ')}</span>
                           )}
+                          {asset.snapshotAt && (
+                            <span>Aggiornato: {new Date(asset.snapshotAt).toLocaleString('it-IT')}</span>
+                          )}
                         </div>
                       </div>
-                      <Badge variant="secondary">Porte rilevate</Badge>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {asset.snapshotSource === 'last_good' && (
+                          <Badge variant="outline">Ultimo snapshot valido</Badge>
+                        )}
+                        <Badge variant={asset.ports.length > 0 ? 'secondary' : 'outline'}>
+                          {asset.ports.length > 0 ? 'Porte rilevate' : statusLabel(asset.snapshotStatus || 'completed')}
+                        </Badge>
+                      </div>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {asset.ports.map((portRow, index) => {
+                    {asset.ports.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {asset.ports.map((portRow, index) => {
                         const serviceLabel = [
                           portRow.service_name,
                           portRow.service_product,
@@ -641,8 +669,13 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
                             </span>
                           </div>
                         );
-                      })}
-                    </div>
+                        })}
+                      </div>
+                    ) : (
+                      <div className="mt-3 rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+                        Nessuna porta aperta rilevata nello snapshot disponibile.
+                      </div>
+                    )}
                   </div>
                 ))}
               </CardContent>
