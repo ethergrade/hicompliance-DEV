@@ -7,7 +7,6 @@ import { ChevronDown, ChevronRight, Loader2, Play, RefreshCw } from 'lucide-reac
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { supabase } from '@/integrations/supabase/client';
 import {
-  fetchExposureFindingsByJobIds,
   fetchExposureJobs,
   fetchExposureSummary,
   fetchOpenPortsByJobIds,
@@ -101,6 +100,12 @@ const exposureSeverityClass = (severity: string): string => {
   if (key === 'low') return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
   return 'bg-sky-500/20 text-sky-300 border-sky-500/30';
 };
+
+const serviceEndpointKey = (value: { host?: string | null; ip?: string | null; port: number; protocol?: string | null }): string => [
+  String(value.ip || value.host || '').trim().toLowerCase(),
+  Number(value.port || 0),
+  String(value.protocol || 'tcp').trim().toLowerCase(),
+].join('|');
 
 const dedupeOpenPortsRows = (rows: ExposureOpenPortRow[]): ExposureOpenPortRow[] => {
   const map = new Map<string, ExposureOpenPortRow>();
@@ -345,14 +350,26 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
         }
       }
 
-      const [portsRes, techRes, findingsRes2] = await Promise.allSettled([
+      const [portsRes, techRes] = await Promise.allSettled([
         fetchOpenPortsByJobIds(effectiveJobIds),
         fetchTechnologiesByJobIds(effectiveJobIds),
-        fetchExposureFindingsByJobIds(effectiveJobIds),
       ]);
-      setOpenPorts(portsRes.status === 'fulfilled' ? dedupeOpenPortsRows(portsRes.value) : []);
+      const assessmentByEndpoint = new Map(
+        (summaryData?.service_assessments || []).map((assessment) => [serviceEndpointKey(assessment), assessment]),
+      );
+      const normalizedPorts = portsRes.status === 'fulfilled' ? dedupeOpenPortsRows(portsRes.value) : [];
+      setOpenPorts(normalizedPorts.map((row) => {
+        const assessment = assessmentByEndpoint.get(serviceEndpointKey(row));
+        if (!assessment) return row;
+        return {
+          ...row,
+          exposure_level: assessment.severity,
+          remediation_hint: assessment.remediation,
+          risk_assessment: assessment,
+        };
+      }));
       setTechnologies(techRes.status === 'fulfilled' ? dedupeTechnologiesRows(techRes.value) : []);
-      setFindings(findingsRes2.status === 'fulfilled' ? dedupeFindingsRows(findingsRes2.value) : []);
+      setFindings(dedupeFindingsRows(summaryData?.exposure_findings || []));
     } catch (error: any) {
       console.error('Exposure refresh error:', error);
       toast.error('Impossibile caricare dati exposure', {

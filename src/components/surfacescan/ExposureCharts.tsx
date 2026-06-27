@@ -1,8 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { ExposureOpenPortRow, ExposureSummary, ExposureTechnologyRow } from '@/lib/surfacescan/exposureApi';
-import { Globe2, Network, ShieldCheck, Signal } from 'lucide-react';
+import { Circle, Crosshair, Globe2, Network, Radar, ShieldCheck, Signal } from 'lucide-react';
 import {
   Bar,
   BarChart,
@@ -14,6 +14,7 @@ import {
   Tooltip,
   XAxis,
   YAxis,
+  type PieLabelRenderProps,
 } from 'recharts';
 
 interface ExposureChartsProps {
@@ -22,7 +23,46 @@ interface ExposureChartsProps {
   technologies?: ExposureTechnologyRow[];
 }
 
-const COLORS = ['#6366F1', '#14B8A6', '#F97316', '#EF4444', '#A855F7', '#22C55E', '#FACC15'];
+const SEVERITY_META = {
+  Critical: {
+    color: '#ff4057',
+    code: 'CRIT',
+    description: 'Compromissione o impatto immediato',
+  },
+  High: {
+    color: '#ff8a3d',
+    code: 'HIGH',
+    description: 'Remediation prioritaria',
+  },
+  Medium: {
+    color: '#f2c94c',
+    code: 'MED',
+    description: 'Riduzione del rischio pianificata',
+  },
+  Low: {
+    color: '#35d0a4',
+    code: 'LOW',
+    description: 'Hardening e verifica periodica',
+  },
+  Info: {
+    color: '#5f8cff',
+    code: 'INFO',
+    description: 'Evidenza contestuale',
+  },
+} as const;
+
+type SeverityName = keyof typeof SEVERITY_META;
+
+type SeverityChartRow = {
+  name: SeverityName;
+  value: number;
+  color: string;
+  code: string;
+  description: string;
+};
+
+const renderSeverityLabel = ({ name, value, percent }: PieLabelRenderProps & { value?: number }): string =>
+  `${name} ${Number(value || 0)} · ${Math.round(Number(percent || 0) * 100)}%`;
 const RISKY_PORTS = new Set([21, 23, 445, 3389, 5900, 6379, 9200, 9300, 11211, 27017, 3306, 5432, 1433, 1521, 2375]);
 const TLS_PORTS = new Set([443, 465, 636, 853, 989, 990, 993, 995, 8443, 9443]);
 const WEB_PORTS = new Set([80, 443, 8000, 8080, 8081, 8443, 8888, 9443]);
@@ -59,6 +99,7 @@ export const ExposureCharts: React.FC<ExposureChartsProps> = ({
   openPorts = [],
   technologies = [],
 }) => {
+  const [activeSeverityIndex, setActiveSeverityIndex] = useState<number | null>(null);
   const topPortsData = useMemo(() => {
     if (summary?.top_open_ports?.length) return summary.top_open_ports;
     const map = new Map<number, number>();
@@ -110,14 +151,24 @@ export const ExposureCharts: React.FC<ExposureChartsProps> = ({
   const severityData = useMemo(() => {
     const fallback = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
     const sev = summary?.findings_by_severity || fallback;
-    return [
+    const rows: Array<{ name: SeverityName; value: number }> = [
       { name: 'Critical', value: sev.critical },
       { name: 'High', value: sev.high },
       { name: 'Medium', value: sev.medium },
       { name: 'Low', value: sev.low },
       { name: 'Info', value: sev.info },
-    ].filter((entry) => Number(entry.value || 0) > 0);
+    ];
+    return rows
+      .filter((entry) => Number(entry.value || 0) > 0)
+      .map((entry): SeverityChartRow => ({ ...entry, ...SEVERITY_META[entry.name] }));
   }, [summary]);
+
+  const totalSeverityFindings = useMemo(
+    () => severityData.reduce((total, entry) => total + Number(entry.value || 0), 0),
+    [severityData],
+  );
+
+  const activeSeverity = activeSeverityIndex == null ? null : severityData[activeSeverityIndex] || null;
 
   const topTechData = useMemo(() => {
     if (summary?.technologies?.length) return summary.technologies.slice(0, 10);
@@ -224,22 +275,143 @@ export const ExposureCharts: React.FC<ExposureChartsProps> = ({
       )}
 
       {severityData.length > 0 && (
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="text-base">Distribuzione Severity Exposure</CardTitle>
+        <Card className="overflow-hidden border-slate-700/70 bg-[#0b111a] shadow-[0_18px_45px_-30px_rgba(55,189,248,0.45)] xl:col-span-2">
+          <CardHeader className="border-b border-slate-800/90 pb-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-base tracking-tight">
+                  <Radar className="h-4 w-4 text-cyan-300" />
+                  Distribuzione Severity Exposure
+                </CardTitle>
+                <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-slate-500">
+                  Risk signal matrix // snapshot corrente
+                </p>
+              </div>
+              <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-300">
+                <Signal className="h-3.5 w-3.5" />
+                {totalSeverityFindings} segnali classificati
+              </div>
+            </div>
           </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={severityData} dataKey="value" nameKey="name" outerRadius={90} innerRadius={45}>
-                    {severityData.map((_, index) => (
-                      <Cell key={`sev-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
+          <CardContent className="p-4 sm:p-5">
+            <div className="grid gap-5 md:grid-cols-[minmax(0,1.35fr)_minmax(220px,0.65fr)]">
+              <div className="relative min-h-[300px] overflow-hidden rounded-md border border-slate-800 bg-[#080d14]">
+                <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-600">
+                  <Crosshair className="h-3.5 w-3.5" />
+                  Severity topology
+                </div>
+                <div className="h-[300px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart margin={{ top: 34, right: 62, bottom: 22, left: 62 }}>
+                      <Pie
+                        data={severityData}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="53%"
+                        outerRadius={88}
+                        innerRadius={56}
+                        paddingAngle={2}
+                        cornerRadius={2}
+                        stroke="#0b111a"
+                        strokeWidth={2}
+                        label={renderSeverityLabel}
+                        labelLine={{ stroke: '#43536a', strokeWidth: 1 }}
+                        activeIndex={activeSeverityIndex == null ? undefined : activeSeverityIndex}
+                        activeShape={{ outerRadius: 96, stroke: '#c8f5ff', strokeWidth: 1 }}
+                        inactiveShape={activeSeverityIndex == null ? undefined : { opacity: 0.38 }}
+                        onMouseEnter={(_, index) => setActiveSeverityIndex(index)}
+                        onMouseLeave={() => setActiveSeverityIndex(null)}
+                      >
+                        {severityData.map((entry) => (
+                          <Cell key={`sev-${entry.name}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        cursor={false}
+                        contentStyle={{
+                          background: '#0b111a',
+                          border: '1px solid #334155',
+                          borderRadius: '6px',
+                          boxShadow: '0 18px 36px rgba(0,0,0,0.35)',
+                          color: '#e2e8f0',
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                          fontSize: '11px',
+                        }}
+                        itemStyle={{ color: '#e2e8f0' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="pointer-events-none absolute left-1/2 top-[53%] flex h-[94px] w-[94px] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border border-slate-800 bg-[#0b111a]/95 text-center shadow-[inset_0_0_22px_rgba(56,189,248,0.05)]">
+                  <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-500">
+                    {activeSeverity ? activeSeverity.code : 'TOTAL'}
+                  </span>
+                  <span className="mt-0.5 text-2xl font-semibold tabular-nums text-slate-100">
+                    {activeSeverity ? activeSeverity.value : totalSeverityFindings}
+                  </span>
+                  <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-cyan-300/80">
+                    {activeSeverity
+                      ? `${Math.round((activeSeverity.value / totalSeverityFindings) * 100)}% quota`
+                      : 'findings'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-slate-800 bg-[#0d141e] p-3">
+                <div className="mb-3 flex items-center justify-between border-b border-slate-800 pb-2">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">Legenda operativa</span>
+                  <span className="font-mono text-[10px] text-slate-600">COUNT / SHARE</span>
+                </div>
+                <div className="space-y-1.5">
+                  {severityData.map((entry, index) => {
+                    const percentage = Math.round((entry.value / totalSeverityFindings) * 100);
+                    const isActive = activeSeverityIndex === index;
+                    return (
+                      <button
+                        key={entry.name}
+                        type="button"
+                        className={`group w-full rounded border px-3 py-2.5 text-left transition-colors ${
+                          isActive
+                            ? 'border-cyan-400/50 bg-cyan-400/10'
+                            : 'border-transparent bg-slate-950/30 hover:border-slate-700 hover:bg-slate-900/70'
+                        }`}
+                        aria-pressed={isActive}
+                        onMouseEnter={() => setActiveSeverityIndex(index)}
+                        onMouseLeave={() => setActiveSeverityIndex(null)}
+                        onFocus={() => setActiveSeverityIndex(index)}
+                        onBlur={() => setActiveSeverityIndex(null)}
+                        onClick={() => setActiveSeverityIndex((current) => current === index ? null : index)}
+                      >
+                        <span className="flex items-start gap-2.5">
+                          <Circle
+                            className="mt-1 h-2.5 w-2.5 shrink-0"
+                            fill="currentColor"
+                            strokeWidth={0}
+                            style={{ color: entry.color }}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center justify-between gap-3">
+                              <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-200">
+                                {entry.name}
+                              </span>
+                              <span className="font-mono text-[11px] tabular-nums text-slate-300">
+                                {entry.value} / {percentage}%
+                              </span>
+                            </span>
+                            <span className="mt-0.5 block text-[10px] leading-4 text-slate-500 group-hover:text-slate-400">
+                              {entry.description}
+                            </span>
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-3 border-t border-slate-800 pt-3 text-[10px] leading-4 text-slate-500">
+                  Passa sui segmenti o sulla legenda per isolare il segnale e leggerne il peso relativo.
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>

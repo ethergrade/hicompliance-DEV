@@ -25,14 +25,17 @@ export interface SurfaceScan360Report {
 	findings: unknown[];
 	findings_by_severity: Record<string, number>;
 	exposure_score?: {
+		score_version?: string;
 		posture_score: number;
 		risk_level: string;
 		risk_points: number;
 		risk_breakdown?: Record<string, { count?: number; points?: number }>;
 		vulnerability_summary?: {
+			exposure_findings?: number;
 			confirmed?: number;
 			candidate?: number;
 			unknown?: number;
+			fingerprint_unknown?: number;
 			not_vulnerable_evidence?: number;
 			services_total?: number;
 			explanation?: string;
@@ -1611,7 +1614,13 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
 				{ bold: true },
 			);
 			if (report.exposure_score) {
-				text(`Punti rischio: ${report.exposure_score.risk_points}/100.`);
+				text(`Punti rischio: ${report.exposure_score.risk_points}/100 · Metodo Exposure Score V${report.exposure_score.score_version || "3.0"}.`);
+				text(
+					`Esposizioni operative: ${report.exposure_score.vulnerability_summary?.exposure_findings || 0} · ` +
+					`CVE confermate: ${report.exposure_score.vulnerability_summary?.confirmed || 0} · ` +
+					`CVE candidate: ${report.exposure_score.vulnerability_summary?.candidate || 0} · ` +
+					`Fingerprint da completare: ${report.exposure_score.vulnerability_summary?.fingerprint_unknown || 0}.`,
+				);
 				if (report.exposure_score.vulnerability_summary?.explanation) {
 					text(report.exposure_score.vulnerability_summary.explanation);
 				}

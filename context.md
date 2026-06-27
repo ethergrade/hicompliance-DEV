@@ -170,3 +170,14 @@ The 0/7 coverage, 0 threats, 0 leaks display is **expected** when no SurfaceScan
 ## Start Here
 
 Open `src/pages/DarkRisk360.tsx:326` — the stubbed findings query is the most actionable gap. The TODO comments at lines 326, 430, 454, and 877 mark multiple `{ data: [], error: null }` stubs that need backend API migration.
+
+## SurfaceScan Exposure Risk V3 — implementation trace (2026-06-27)
+
+- Added the shared service exposure matrix and `Exposure Score V3` under `supabase/functions/_shared/`.
+- Every canonical exposed service now produces a deterministic `internet_exposed_service` finding with likelihood, impact, matrix score, evidence status, and remediation; port-only evidence never invents a CVE.
+- Exposure aggregation uses primary service risk, diminishing breadth, and capped uncertainty so numerous ordinary web services do not saturate the organization at critical risk.
+- `surface-exposure-summary` now returns unified exposure findings and service assessments; SurfaceScan UI, AI report, PDF, and DOCX consume the V3 result.
+- Source-specific port severities were replaced with the shared matrix for the SurfaceScan engine and ConnectSecure adapter.
+- Acceptance baseline: 34 HTTPS services without fingerprint produce 34 findings, 17.6 risk points, posture 82/100, and risk level `Medio`.
+- Validation completed: 51 Deno tests, TypeScript, production build, Edge Function checks, and unauthenticated browser smoke test.
+- Visual follow-up completed: `Distribuzione Severity Exposure` now has semantic severity colors, segment pin-points/leader labels, center total/selected state, interactive keyboard-accessible legend, tooltip, and restrained cyber Palantir/Gotham styling. Desktop `893px` and mobile `390px` renders passed design QA; see `design-qa.md`.

@@ -10,6 +10,15 @@ interface ExposureFindingsTableProps {
   loading?: boolean;
 }
 
+const evidenceLabel = (status?: string): string | null => {
+  if (status === 'cve_confirmed') return 'CVE confermata';
+  if (status === 'cve_candidate') return 'CVE candidata';
+  if (status === 'no_known_cve') return 'Nessuna CVE nota';
+  if (status === 'fingerprint_unknown') return 'Fingerprint da completare';
+  if (status === 'exposure_only') return 'Esposizione confermata';
+  return null;
+};
+
 export const ExposureFindingsTable: React.FC<ExposureFindingsTableProps> = ({ rows, loading = false }) => {
   const [search, setSearch] = useState('');
 
@@ -82,24 +91,40 @@ export const ExposureFindingsTable: React.FC<ExposureFindingsTableProps> = ({ ro
             )}
 
             {!loading &&
-              filtered.map((row) => (
+              filtered.map((row) => {
+                const rowEvidenceLabel = evidenceLabel(row.evidence_status);
+                return (
                 <TableRow key={row.id}>
                   <TableCell>
                     <Badge className={severityBadgeClass(row.severity)}>
                       {normalizeSeverity(row.severity).toUpperCase()}
                     </Badge>
                   </TableCell>
-                  <TableCell className="font-medium max-w-[300px] truncate">{row.title}</TableCell>
+                  <TableCell className="font-medium max-w-[320px]">
+                    <div className="truncate">{row.title}</div>
+                    {row.service_class_label && <div className="text-xs font-normal text-muted-foreground">{row.service_class_label}</div>}
+                    {row.matrix_score != null && (
+                      <div className="text-xs font-normal text-muted-foreground">
+                        Matrice {row.likelihood}×{row.impact}={row.matrix_score}
+                      </div>
+                    )}
+                  </TableCell>
                   <TableCell>{row.affected_host || row.affected_url || '-'}</TableCell>
-                  <TableCell>{row.affected_port || '-'}</TableCell>
+                  <TableCell>{row.affected_port ? `${row.affected_port}/${row.affected_protocol || 'tcp'}` : '-'}</TableCell>
                   <TableCell className="max-w-[260px] text-xs">
                     {Array.isArray(row.cve_ids) && row.cve_ids.length > 0 ? row.cve_ids.join(', ') : '-'}
                   </TableCell>
                   <TableCell className="max-w-[280px] text-xs text-muted-foreground">{row.evidence || '-'}</TableCell>
                   <TableCell className="max-w-[320px] text-sm text-muted-foreground">{row.recommendation || '-'}</TableCell>
-                  <TableCell>{row.status}</TableCell>
+                  <TableCell>
+                    <div>{row.status}</div>
+                    {rowEvidenceLabel && (
+                      <div className="text-xs text-muted-foreground">{rowEvidenceLabel}</div>
+                    )}
+                  </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
           </TableBody>
         </Table>
       </div>
@@ -108,4 +133,3 @@ export const ExposureFindingsTable: React.FC<ExposureFindingsTableProps> = ({ ro
 };
 
 export default ExposureFindingsTable;
-

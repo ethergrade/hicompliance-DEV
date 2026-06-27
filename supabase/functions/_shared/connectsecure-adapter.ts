@@ -1,3 +1,5 @@
+import { severityForExposedService } from './service-exposure-matrix.ts';
+
 /**
  * ConnectSecure (CyberCNS) Attack Surface Mapper — API Adapter
  *
@@ -423,10 +425,7 @@ const HIGH_RISK_PORTS = new Set([3389, 5900, 6379, 9200, 27017, 11211, 2375, 102
 const MEDIUM_RISK_PORTS = new Set([21, 23, 445, 3306, 5432, 8080, 8443, 8888, 9000, 22]);
 
 function portSeverity(p: number): 'critical' | 'high' | 'medium' | 'low' | 'info' {
-  if (HIGH_RISK_PORTS.has(p)) return 'critical';
-  if (MEDIUM_RISK_PORTS.has(p)) return 'medium';
-  if ([80, 443].includes(p)) return 'info';
-  return 'low';
+  return severityForExposedService({ port: p });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

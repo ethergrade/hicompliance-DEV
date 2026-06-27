@@ -66,18 +66,18 @@ La diagnostica deve mostrare soltanto presenza, lunghezza e prefisso hash; mai i
 
 Le informazioni SPF, DKIM, DMARC, porte, servizi, IP e sottodomini ricevute dal motore esterno vengono mappate nei rispettivi moduli canonici e fuse con i risultati dei motori interni.
 
-## 5. Exposure Score V2
+## 5. Exposure Score V3
 
 - Il valore mostrato e' un indice di postura: `100` significa postura migliore, non rischio massimo.
 - Il rischio viene calcolato separatamente in punti rischio e classificato per livello.
-- Una porta web aperta non implica automaticamente una vulnerabilita'.
+- Ogni porta aperta genera un finding operativo di esposizione, distinto da una CVE.
 - La correlazione CVE richiede un prodotto/versione attendibile o un'evidenza equivalente.
 - Le CVE confermate pesano integralmente; le candidate hanno peso ridotto.
 - CVSS misura la severita', EPSS la probabilita' di sfruttamento e KEV indica sfruttamento noto.
 - Servizi sensibili possono produrre rischio anche senza CVE.
 - In assenza di correlazione attendibile la UI dichiara lo stato non determinabile e non inventa CVE, CVSS o EPSS.
 
-Test di riferimento: `supabase/functions/_shared/exposure-score-v2.test.ts`.
+Test di riferimento: `supabase/functions/_shared/exposure-score-v3.test.ts`.
 
 ## 6. Comportamento UI e report
 
@@ -90,6 +90,8 @@ Test di riferimento: `supabase/functions/_shared/exposure-score-v2.test.ts`.
 - PDF, DOCX, report AI e report mensili passano dal filtro di visibilita' in `src/lib/surfacescan/reportVisibility.ts`.
 - I vecchi payload vengono filtrati durante l'export per evitare la ricomparsa di moduli o provider nascosti.
 - I placeholder di bucket storage senza evidenza concreta non generano finding; le evidenze realmente azionabili restano visibili e spiegate.
+- Il grafico `Distribuzione Severity Exposure` usa colori severity stabili, pin-point esterni con leader line, totale centrale e legenda interattiva accessibile da tastiera.
+- Su viewport stretti i pin-point esterni vengono omessi per evitare clipping; la legenda mantiene sempre label, conteggio e percentuale.
 
 ## 7. Migrazioni di portabilita' applicate in DEV
 
@@ -136,24 +138,21 @@ Schedulazioni verificate:
 ## 9. Verifiche eseguite
 
 - `deno check` sulle Edge canoniche: superato.
-- Test adapter ConnectSecure e Score V2: 12 superati, 0 falliti.
+- `npm run test:deno`: 51 test superati, 0 falliti, inclusa la suite Exposure Score V3.
+- `npm run check`: TypeScript e build di produzione superati; resta soltanto il warning noto sulla dimensione del bundle.
+- `npx eslint src/components/surfacescan/ExposureCharts.tsx`: superato.
 - `npm run qa:no-secrets`: superato.
-- `npm run build`: superato; resta soltanto il warning noto sulla dimensione del bundle.
 - `git diff --check`: superato.
 - Search gate UI/report per moduli opzionali, Amass visibile, Pentest e PTools: superato.
 - Controlli RLS, grant, cron, foreign key e assenza orfani in DEV: superati per gli artefatti introdotti.
 
-## 10. Verifica browser ancora da completare
+## 10. Verifica browser completata
 
-Il server locale risponde senza errori console, ma la route protetta reindirizza a `/auth`. Non sono state copiate sessioni o credenziali per aggirare il login.
-
-Procedura consigliata:
-
-1. Aprire nel Browser integrato l'ambiente esatto da verificare.
-2. L'utente inserisce direttamente credenziali temporanee e MFA nel browser, senza pubblicarle in chat.
-3. Lasciare aperta la sessione e comunicare `login completato`.
-4. Verificare click KPI asset, scroll, lista 11/9, stati senza porte, sezioni IP, export PDF/DOCX e assenza provider.
-5. Revocare l'account temporaneo al termine.
+- Desktop verificato a `893 x 520`: grafico e legenda affiancati senza overflow.
+- Mobile verificato a `390 x 844`: layout impilato, nessun clipping o overflow orizzontale.
+- Stato selezionato verificato: enfasi segmento, valore centrale, percentuale e `aria-pressed` si aggiornano insieme.
+- Nessun errore console rilevato durante il flusso di verifica.
+- Evidenze e checklist sono conservate in `design-qa.md`; le immagini di confronto restano artefatti locali e non sono richieste dal runtime.
 
 ## 11. File principali
 
@@ -167,7 +166,8 @@ Procedura consigliata:
 - Adapter: `supabase/functions/_shared/connectsecure-adapter.ts`
 - Orchestratore: `supabase/functions/connectsecure-scan/index.ts`
 - Summary: `supabase/functions/surface-exposure-summary/index.ts`
-- Score V2: `supabase/functions/_shared/exposure-score-v2.ts`
+- Score V3: `supabase/functions/_shared/exposure-score-v3.ts`
+- Matrice servizi: `supabase/functions/_shared/service-exposure-matrix.ts`
 - CVE: `supabase/functions/cve-enrichment/index.ts`
 - Report AI: `supabase/functions/surfacescan360-ai-report/index.ts`
 - Report mensile: `supabase/functions/surfacescan360-monthly-report/index.ts`
@@ -182,6 +182,7 @@ Procedura consigliata:
 5. Non includere file sporchi non correlati nei commit.
 6. Applicare migrazioni e deploy remoti soltanto sull'ambiente esplicitamente richiesto.
 7. Prima della produzione eseguire il runbook completo con `<PROD_PROJECT_REF>` e smoke test autenticati.
+8. `.env_per_stefano` e gli altri file `.env*` sono locali: non forzarne mai l'aggiunta con `git add -f`.
 
 ## 13. Documenti correlati
 
@@ -190,3 +191,4 @@ Procedura consigliata:
 - [Supabase Edge, SQL e cron](./03-SUPABASE-EDGE-SQL-CRON.md)
 - [Runbook DEV -> Produzione](./04-RUNBOOK-DEV-TO-PRODUCTION.md)
 - [Data dictionary](./05-DATA-DICTIONARY.md)
+- [Exposure Risk V3 e visualizzazione severity](./07-EXPOSURE-RISK-V3.md)

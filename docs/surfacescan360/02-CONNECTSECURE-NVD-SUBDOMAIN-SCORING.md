@@ -89,13 +89,17 @@ Stati match:
 - `unknown`: fingerprint/versione insufficienti; retry in coda.
 - `rejected`: CPE esatto verificato senza CVE applicabili.
 
-## Exposure Score V2
+## Exposure Score V3
 
 Il punteggio mostrato e' un indice di postura:
 
 ```text
-risk_points = min(100, somma componenti)
-posture_score = 100 - risk_points
+primary = 30 * (massimo matrix_score / 25)
+breadth = min(10, 1.5 * somma degli altri matrix_score / 25)
+uncertainty = min(5, 1 + 0.75 * log2(servizi_unknown + 1))
+service_exposure_points = min(45, primary + breadth + uncertainty)
+risk_points = min(100, exposure + finding verificati + CVE + threat intelligence + delta)
+posture_score = round(100 - risk_points)
 ```
 
 Soglie rischio:
@@ -107,19 +111,15 @@ Soglie rischio:
 | 25-59,9 | Alto |
 | 60-100 | Critico |
 
-Componenti principali:
+Matrice dei servizi:
 
-| Evidenza | Punti |
-|---|---:|
-| Web 80/443 | 1 per servizio |
-| Web alternativo 8000/8080/8081/8888 | 4 |
-| Admin web 2375/2376/6443/8443/9000/9090/9443 | 10 |
-| Porta sensibile | 10-25 secondo tabella |
-| Finding critical/high/medium/low/info | 25/12/6/2/0,5 |
-| CVE confermata | `CVSS * 4 + EPSS percentile * 10 + KEV 25`, cap 60 per servizio |
-| CVE candidata | meta' della componente confermata |
-| Delta nuove porte | cap 5 |
-| Debolezze TLS/header | 3 ciascuna, cap 12 |
-| Dato vulnerabilita' mancante | 0,25 per servizio, cap 2 |
+| Classe | Likelihood | Impact | Score | Severity |
+|---|---:|---:|---:|---|
+| Pubblico standard/protetto | 2 | 2 | 4 | low |
+| Pubblico clear-text/alternativo | 3 | 3 | 9 | medium |
+| Servizio non identificato | 3 | 3 | 9 | medium |
+| Accesso remoto/amministrativo | 4 | 4 | 16 | high |
+| Protocollo legacy/infrastrutturale | 5 | 4 | 20 | high |
+| Database/cache/control plane | 5 | 5 | 25 | critical |
 
-I finding che rappresentano soltanto una porta (`open_port_exposed`, `service_fingerprint_exposed`, `sensitive_port_exposed`) non vengono conteggiati una seconda volta nella componente finding.
+Ogni servizio produce un finding `internet_exposed_service`, ma non una CVE. Le CVE vengono conteggiate solo con match `candidate` o `confirmed`; i finding di porta legacy non vengono conteggiati una seconda volta. L'esposizione pura e l'incertezza hanno cap complessivo 45, quindi il livello critico richiede evidenze tecniche ulteriori.

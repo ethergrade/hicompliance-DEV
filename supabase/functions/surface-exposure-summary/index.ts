@@ -10,9 +10,9 @@ import {
   splitMonitoredScopeRules,
 } from '../_shared/surface-scan-utils.ts';
 import {
-  computeExposureScoreV2,
+  computeExposureScoreV3,
   type ExposureVulnerabilityMatch,
-} from '../_shared/exposure-score-v2.ts';
+} from '../_shared/exposure-score-v3.ts';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -23,6 +23,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 type OpenPortSnapshot = {
   id?: string | null;
+  scan_job_id?: string | null;
   host: string;
   ip?: string | null;
   port: number;
@@ -41,6 +42,7 @@ type OpenPortSnapshot = {
 const UNIFIED_EXPOSURE_SCAN_TYPES = ['exposure_port_technology', 'connectsecure_asm'];
 
 type ClassicPortFindingRow = {
+  scan_job_id?: string | null;
   port?: number | null;
   protocol?: string | null;
   severity?: string | null;
@@ -54,6 +56,7 @@ type ClassicPortFindingRow = {
 };
 
 type ClassicPortObservationRow = {
+  scan_job_id?: string | null;
   value?: Record<string, unknown> | null;
   created_at?: string | null;
 };
@@ -224,6 +227,7 @@ function toOpenPortFromClassicFinding(row: ClassicPortFindingRow): OpenPortSnaps
   const service = String(evidence?.service || evidence?.product || row?.title || '').trim();
 
   return {
+    scan_job_id: row?.scan_job_id || null,
     host,
     ip,
     port,
@@ -252,6 +256,7 @@ function toOpenPortsFromClassicObservation(row: ClassicPortObservationRow): Open
     const service = String(entry?.service || entry?.product || '').trim();
     const ip = String(entry?.ip || entry?.ip_address || baseIp || '').trim() || null;
     out.push({
+      scan_job_id: row?.scan_job_id || null,
       host,
       ip,
       port,
@@ -270,6 +275,7 @@ function toOpenPortsFromClassicObservation(row: ClassicPortObservationRow): Open
       const port = normalizePortNumber(entry);
       if (!port) continue;
       out.push({
+        scan_job_id: row?.scan_job_id || null,
         host,
         ip: baseIp,
         port,
@@ -382,7 +388,7 @@ function scopeReasonForTarget(
 }
 
 function emptySummary(scopeMode: 'single_job' | 'scope_latest_per_target', counters: ScopeCounterState, isAggregate: boolean) {
-  const score = computeExposureScoreV2({});
+  const score = computeExposureScoreV3({});
   return {
     job_id: null,
     job_ids: [],
@@ -694,24 +700,24 @@ serve(async (req: Request) => {
         .in('scan_job_id', selectedJobIds),
       adminClient
         .from('surface_open_ports' as any)
-        .select('id, host, ip, port, protocol, source, service_name, service_product, service_version, banner, exposure_level, is_web, is_tls, last_seen_at')
+        .select('id, scan_job_id, host, ip, port, protocol, source, service_name, service_product, service_version, banner, exposure_level, is_web, is_tls, last_seen_at')
         .in('scan_job_id', selectedJobIds),
       adminClient
         .from('surface_exposure_findings' as any)
-        .select('id, severity, finding_type')
+        .select('id, scan_job_id, finding_type, title, severity, cvss, cve_ids, affected_host, affected_port, affected_url, description, evidence, recommendation, source, status, created_at')
         .in('scan_job_id', selectedJobIds),
       adminClient
         .from('surface_findings' as any)
-        .select('id, severity, finding_type, status')
+        .select('id, scan_job_id, provider, module, severity, finding_type, status, title, description, affected_asset, affected_url, ip, port, protocol, remediation, cve, cvss, evidence, created_at')
         .in('scan_job_id', selectedJobIds),
       adminClient
         .from('surface_findings' as any)
-        .select('port, protocol, severity, finding_type, title, affected_asset, affected_url, ip, evidence, created_at')
+        .select('scan_job_id, port, protocol, severity, finding_type, title, affected_asset, affected_url, ip, evidence, created_at')
         .in('scan_job_id', selectedJobIds)
         .in('finding_type', ['open_port_exposed', 'service_fingerprint_exposed', 'sensitive_port_exposed']),
       adminClient
         .from('surface_observations' as any)
-        .select('value, created_at')
+        .select('scan_job_id, value, created_at')
         .in('scan_job_id', selectedJobIds)
         .eq('module', 'open_ports')
         .in('observation_type', ['open_ports', 'open_ports_summary']),
@@ -769,7 +775,7 @@ serve(async (req: Request) => {
     const exposureFindings = (findingsRes.data || []) as any[];
     const classicScoreFindings = ((scoreFindingsRes.data || []) as any[])
       .filter((row) => !['resolved', 'suppressed', 'false_positive', 'accepted_risk'].includes(String(row?.status || '').toLowerCase()));
-    const findings = classicScoreFindings.length > 0 ? classicScoreFindings : exposureFindings;
+    const findings = [...classicScoreFindings, ...exposureFindings];
     const technologies = dedupeTechnologies((technologiesRes.data || []) as TechnologySnapshot[]);
     const ssl = (sslRes.data || []) as any[];
     const vulnerabilityMatches = (vulnerabilityMatchesRes.data || []) as ExposureVulnerabilityMatch[];
@@ -791,14 +797,6 @@ serve(async (req: Request) => {
       if (!name) continue;
       technologyCounter.set(name, (technologyCounter.get(name) || 0) + 1);
     }
-
-    const findingsBySeverity = {
-      critical: findings.filter((row) => String(row.severity || '').toLowerCase() === 'critical').length,
-      high: findings.filter((row) => String(row.severity || '').toLowerCase() === 'high').length,
-      medium: findings.filter((row) => String(row.severity || '').toLowerCase() === 'medium').length,
-      low: findings.filter((row) => String(row.severity || '').toLowerCase() === 'low').length,
-      info: findings.filter((row) => String(row.severity || '').toLowerCase() === 'info').length,
-    };
 
     let diff = {
       new_open_ports: [] as OpenPortSnapshot[],
@@ -829,16 +827,58 @@ serve(async (req: Request) => {
       );
     }
 
-    const tlsHeaderWeaknesses = findings.filter((row) =>
-      /tls|ssl|security_header|http_header|hsts|cipher|certificate/i.test(String(row?.finding_type || ''))
-    ).length;
-    const exposureScore = computeExposureScoreV2({
+    const exposureScore = computeExposureScoreV3({
       ports: openPorts,
       findings,
       vulnerabilityMatches,
       newOpenPorts: diff.new_open_ports.length,
-      tlsHeaderWeaknesses,
     });
+
+    const portOnlyTypes = new Set(['internet_exposed_service', 'open_port_exposed', 'service_fingerprint_exposed', 'sensitive_port_exposed']);
+    const normalizedGenericFindings = classicScoreFindings
+      .filter((row) => !portOnlyTypes.has(String(row?.finding_type || '').toLowerCase()))
+      .map((row) => ({
+        id: String(row.id || ''),
+        scan_job_id: String(row.scan_job_id || '') || null,
+        finding_type: String(row.finding_type || 'generic_finding'),
+        title: String(row.title || 'Finding SurfaceScan'),
+        severity: String(row.severity || 'info').toLowerCase(),
+        cvss: Number.isFinite(Number(row.cvss)) ? Number(row.cvss) : null,
+        cve_ids: Array.isArray(row.cve) ? row.cve : [],
+        affected_host: row.affected_asset || row.ip || null,
+        affected_port: Number.isFinite(Number(row.port)) ? Number(row.port) : null,
+        affected_protocol: row.protocol || null,
+        affected_url: row.affected_url || null,
+        description: row.description || null,
+        evidence: row.evidence ? JSON.stringify(row.evidence) : null,
+        recommendation: row.remediation || null,
+        source: row.provider || row.module || 'surface_findings',
+        status: row.status || 'open',
+        created_at: row.created_at || new Date(0).toISOString(),
+      }));
+    const unifiedFindingMap = new Map<string, any>();
+    for (const row of [...exposureScore.exposure_findings, ...exposureFindings, ...normalizedGenericFindings]) {
+      const key = [
+        String(row.finding_type || '').toLowerCase(),
+        String(row.affected_host || row.affected_url || '').toLowerCase(),
+        Number(row.affected_port || 0),
+        String(row.title || '').toLowerCase(),
+        ...(Array.isArray(row.cve_ids) ? row.cve_ids : []),
+      ].join('|');
+      if (!unifiedFindingMap.has(key)) unifiedFindingMap.set(key, row);
+    }
+    const unifiedExposureFindings = Array.from(unifiedFindingMap.values()).sort((a, b) => {
+      const rank: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+      const severityDelta = (rank[String(b.severity || '').toLowerCase()] || 0) - (rank[String(a.severity || '').toLowerCase()] || 0);
+      if (severityDelta !== 0) return severityDelta;
+      return Date.parse(String(b.created_at || '')) - Date.parse(String(a.created_at || ''));
+    });
+    const unifiedFindingsBySeverity = unifiedExposureFindings.reduce((counts, row) => {
+      const severity = String(row.severity || 'info').toLowerCase();
+      const key = severity in counts ? severity as keyof typeof counts : 'info';
+      counts[key] += 1;
+      return counts;
+    }, { critical: 0, high: 0, medium: 0, low: 0, info: 0 });
 
     return jsonResponse({
       job_id: anchorJobId,
@@ -853,7 +893,7 @@ serve(async (req: Request) => {
       targets_total: counters.in_scope,
       hosts_with_open_ports: hostsWithOpenPorts.size,
       open_ports_total: openPorts.length,
-      critical_exposures: findingsBySeverity.critical + findingsBySeverity.high,
+      critical_exposures: unifiedFindingsBySeverity.critical + unifiedFindingsBySeverity.high,
       web_services: openPorts.filter((row) => Boolean(row.is_web)).length,
       tls_services: openPorts.filter((row) => Boolean(row.is_tls)).length,
       ssl_snapshots: ssl.length,
@@ -864,11 +904,12 @@ serve(async (req: Request) => {
       included_scan_types: UNIFIED_EXPOSURE_SCAN_TYPES,
       source_counts: Object.fromEntries(sourceCounter.entries()),
       ...exposureScore,
+      exposure_findings: unifiedExposureFindings,
       technologies: Array.from(technologyCounter.entries())
         .map(([name, count]) => ({ name, count }))
         .sort((a, b) => b.count - a.count)
         .slice(0, 20),
-      findings_by_severity: findingsBySeverity,
+      findings_by_severity: unifiedFindingsBySeverity,
       diff,
     });
   } catch (error: any) {

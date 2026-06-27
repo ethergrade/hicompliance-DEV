@@ -340,12 +340,14 @@ export async function generateSurfaceScan360Docx(
 
 	const postureRows = exposureScore
 		? [
+			["Metodo di scoring", `Exposure Score V${exposureScore.score_version || "3.0"}`],
 			["Indice postura exposure", `${exposureScore.posture_score}/100 (100 = ottimo)`],
 			["Livello di rischio", asText(exposureScore.risk_level)],
 			["Punti rischio", `${exposureScore.risk_points}/100`],
-			["Vulnerabilità confermate", asText(exposureScore.vulnerability_summary?.confirmed ?? 0, "0")],
+			["Esposizioni operative", asText(exposureScore.vulnerability_summary?.exposure_findings ?? 0, "0")],
+			["CVE confermate", asText(exposureScore.vulnerability_summary?.confirmed ?? 0, "0")],
 			["CVE candidate", asText(exposureScore.vulnerability_summary?.candidate ?? 0, "0")],
-			["Servizi con vulnerabilità non determinabile", asText(exposureScore.vulnerability_summary?.unknown ?? 0, "0")],
+			["Servizi da fingerprintare", asText(exposureScore.vulnerability_summary?.fingerprint_unknown ?? 0, "0")],
 			["Interpretazione", asText(exposureScore.vulnerability_summary?.explanation)],
 		]
 		: [["Indice postura exposure", `${report.ai?.risk_score ?? "n/d"}/100`], ["Livello di rischio", asText(report.ai?.risk_level)]];

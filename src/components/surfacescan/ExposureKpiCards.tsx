@@ -91,18 +91,28 @@ export const ExposureKpiCards: React.FC<ExposureKpiCardsProps> = ({
             <div className="space-y-1">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Indice postura exposure</p>
               <div className="flex items-center gap-2">
-                <p className="text-2xl font-semibold">{valueOrPlaceholder(postureScore)}</p>
+                <p className="text-2xl font-semibold">{valueOrPlaceholder(`${postureScore}/100`)}</p>
                 <Badge className={severityBadgeClass(riskLevel === 'Critico' ? 'critical' : riskLevel === 'Alto' ? 'high' : riskLevel === 'Medio' ? 'medium' : 'low')}>
                   Rischio {riskLevel}
                 </Badge>
+                {summary?.score_version && <Badge variant="outline">V{summary.score_version}</Badge>}
               </div>
               <p className="text-xs text-muted-foreground">100 = postura ottima · {riskPoints} punti rischio</p>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>{summary?.vulnerability_summary?.exposure_findings || 0} esposizioni di servizio operative</span>
+              </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <ShieldCheck className="w-3.5 h-3.5" />
                 <span>
                   CVE: {summary?.vulnerability_summary?.confirmed || 0} confermate · {summary?.vulnerability_summary?.candidate || 0} candidate
                 </span>
               </div>
+              {(summary?.vulnerability_summary?.fingerprint_unknown || 0) > 0 && (
+                <p className="text-xs text-amber-400">
+                  {summary?.vulnerability_summary?.fingerprint_unknown} servizi richiedono identificazione di prodotto/versione
+                </p>
+              )}
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Workflow className="w-3.5 h-3.5" />
                 <span>{summary?.vulnerability_summary?.explanation || 'Nessuna evidenza di vulnerabilità confermata.'}</span>

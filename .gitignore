@@ -36,6 +36,9 @@ test_roles.js
 graphify-out/
 .env*
 
+# Local developer handoff credentials (never commit)
+.env_per_stefano
+
 # Local Pi runtime state
 .atl/
 .claude/settings.local.json

@@ -3,9 +3,9 @@
 // Se job_id non fornito, usa l'ultimo job completato dell'organizzazione.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
-  computeExposureScoreV2,
-  type ExposureScoreV2Result,
-} from '../_shared/exposure-score-v2.ts';
+  computeExposureScoreV3,
+  type ExposureScoreV3Result,
+} from '../_shared/exposure-score-v3.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -762,8 +762,9 @@ const FINDING_TAXONOMY: Record<string, { cwe: string; owasp: string; baselineCvs
   sensitive_file_exposed: { cwe: 'CWE-538', owasp: 'A01:2021', baselineCvss: 7.5 },
   outdated_software: { cwe: 'CWE-1104', owasp: 'A06:2021', baselineCvss: 6.5 },
   default_credentials: { cwe: 'CWE-798', owasp: 'A07:2021', baselineCvss: 9.8 },
-  open_port_exposed: { cwe: 'CWE-284', owasp: 'A05:2021', baselineCvss: 5.8 },
-  service_fingerprint_exposed: { cwe: 'CWE-200', owasp: 'A05:2021', baselineCvss: 3.3 },
+  open_port_exposed: { cwe: 'CWE-284', owasp: 'A05:2021', baselineCvss: 0 },
+  internet_exposed_service: { cwe: 'CWE-284', owasp: 'A05:2021', baselineCvss: 0 },
+  service_fingerprint_exposed: { cwe: 'CWE-200', owasp: 'A05:2021', baselineCvss: 0 },
   shodan_cve_signal: { cwe: 'CWE-1104', owasp: 'A06:2021', baselineCvss: 6.8 },
   shodan_cve_signal_domain: { cwe: 'CWE-1104', owasp: 'A06:2021', baselineCvss: 6.8 },
   shodan_cve_signal_ip: { cwe: 'CWE-1104', owasp: 'A06:2021', baselineCvss: 7.2 },
@@ -1063,7 +1064,7 @@ function buildFallbackAiReport(input: {
   assets: any[];
   monitoredScope: any[];
   discoveredSubdomains: any[];
-  exposureScore: ExposureScoreV2Result;
+  exposureScore: ExposureScoreV3Result;
 }): any {
   const score = input.exposureScore.posture_score;
   const level = input.exposureScore.risk_level;
@@ -1652,10 +1653,12 @@ Deno.serve(async (req) => {
       });
     const findingDedupMap = new Map<string, any>();
     for (const f of findingsRaw) {
-      const cvesFromArray = Array.isArray(f.cve)
+      const findingType = String(f.finding_type || '').trim().toLowerCase();
+      const portOnlyFinding = ['internet_exposed_service', 'open_port_exposed', 'service_fingerprint_exposed', 'sensitive_port_exposed'].includes(findingType);
+      const cvesFromArray = !portOnlyFinding && Array.isArray(f.cve)
         ? f.cve.map((c: unknown) => String(c || '').toUpperCase().trim()).filter(Boolean)
         : [];
-      const cvesFromText = extractCvesFromText(
+      const cvesFromText = portOnlyFinding ? [] : extractCvesFromText(
         `${String(f.title || '')} ${String(f.description || '')} ${String(f.remediation || '')}`,
       );
       const cves = Array.from(new Set([...cvesFromArray, ...cvesFromText]));
@@ -1668,7 +1671,9 @@ Deno.serve(async (req) => {
         ...(taxonomy?.cwe ? [taxonomy.cwe] : []),
       ]));
       const resolvedCvss =
-        f.cvss != null
+        portOnlyFinding
+          ? null
+          : f.cvss != null
           ? Number(f.cvss)
           : cves.length === 0 && taxonomy
             ? Number(taxonomy.baselineCvss)
@@ -1692,7 +1697,7 @@ Deno.serve(async (req) => {
         owasp: taxonomy?.owasp || null,
         owasp_label: taxonomy?.owasp_label || null,
         cvss: Number.isFinite(Number(resolvedCvss)) ? Number(resolvedCvss) : null,
-        cvss_source: f.cvss != null ? 'provider' : taxonomy ? 'baseline' : null,
+        cvss_source: portOnlyFinding ? null : f.cvss != null ? 'provider' : taxonomy ? 'baseline' : null,
         attribution_confidence: String(f.attribution_confidence || '').trim() || null,
         evidence_summary: storagePresentation.evidenceSummary || toTextSummary(f.evidence),
         storage_signal_quality: storagePresentation.quality || null,
@@ -1720,7 +1725,7 @@ Deno.serve(async (req) => {
         occurrence_count: 1,
       });
     }
-    const findings = Array.from(findingDedupMap.values()).sort((a, b) => {
+    let findings = Array.from(findingDedupMap.values()).sort((a, b) => {
       const sevDelta = (SEV_RANK[String(b?.severity || '').toLowerCase()] ?? 0) - (SEV_RANK[String(a?.severity || '').toLowerCase()] ?? 0);
       if (sevDelta !== 0) return sevDelta;
       return String(a?.affected_asset || a?.affected_url || '').localeCompare(String(b?.affected_asset || b?.affected_url || ''));
@@ -1795,15 +1800,51 @@ Deno.serve(async (req) => {
         last_seen_at: finding.created_at || null,
       }));
     const reportOpenPorts = dedupeReportOpenPorts([...(rawOpenPortsAll || []), ...findingDerivedPorts]);
-    const tlsHeaderWeaknesses = findings.filter((finding: any) =>
-      /tls|ssl|security_header|http_header|hsts|cipher|certificate/i.test(String(finding?.finding_type || ''))
-    ).length;
-    const exposureScore = computeExposureScoreV2({
+    const exposureScore = computeExposureScoreV3({
       ports: reportOpenPorts,
       findings,
       vulnerabilityMatches: rawServiceVulnerabilityMatchesAll || [],
       newOpenPorts: 0,
-      tlsHeaderWeaknesses,
+    });
+    const matrixFindings = exposureScore.exposure_findings.map((finding) => ({
+      provider: finding.source,
+      module: 'exposure_matrix_v3',
+      finding_type: finding.finding_type,
+      title: finding.title,
+      description: finding.description,
+      severity: finding.severity,
+      affected_asset: finding.affected_host,
+      affected_url: null,
+      ip: null,
+      port: finding.affected_port,
+      protocol: finding.affected_protocol,
+      remediation: finding.recommendation,
+      cve: [],
+      cwe: ['CWE-284'],
+      owasp: 'A05:2021',
+      owasp_label: 'Security Misconfiguration',
+      cvss: null,
+      cvss_source: null,
+      attribution_confidence: 'high',
+      evidence_summary: finding.evidence,
+      storage_signal_quality: null,
+      created_at: finding.created_at,
+      occurrence_count: 1,
+      service_key: finding.service_key,
+      service_class: finding.service_class,
+      likelihood: finding.likelihood,
+      impact: finding.impact,
+      matrix_score: finding.matrix_score,
+      evidence_status: finding.evidence_status,
+    }));
+    findings = [...findings.filter((finding: any) => ![
+      'open_port_exposed',
+      'service_fingerprint_exposed',
+      'sensitive_port_exposed',
+    ].includes(String(finding?.finding_type || '').toLowerCase())), ...matrixFindings].sort((a, b) => {
+      const sevDelta = (SEV_RANK[String(b?.severity || '').toLowerCase()] ?? 0) - (SEV_RANK[String(a?.severity || '').toLowerCase()] ?? 0);
+      if (sevDelta !== 0) return sevDelta;
+      return String(a?.affected_asset || '').localeCompare(String(b?.affected_asset || ''));
     });
     const syntheticOpenPortObservations = reportOpenPorts.map((row: any) => ({
       module: 'port_scanner',
@@ -2275,7 +2316,7 @@ Regole: usa solo dati forniti, NON inventare CVE/asset. Bullet stretti. NESSUN e
     aiReport.risk_score = exposureScore.posture_score;
     aiReport.risk_level = exposureScore.risk_level;
     aiReport.risk_points = exposureScore.risk_points;
-    aiReport.score_method = 'exposure_score_v2';
+    aiReport.score_method = 'exposure_score_v3';
     aiError = null;
 
     // ---- Auto-genera azioni di remediation per CVE KEV (se non esistono già) ----

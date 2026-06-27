@@ -15,6 +15,14 @@ interface OpenPortsTableProps {
 const RISKY_PORTS = new Set([21, 23, 445, 3389, 5900, 6379, 9200, 9300, 11211, 27017, 3306, 5432, 1433, 1521]);
 const EXPOSED_LEVELS = new Set(['critical', 'high', 'medium']);
 
+const evidenceStatusLabel = (status?: string): string => {
+  if (status === 'cve_confirmed') return 'CVE confermata';
+  if (status === 'cve_candidate') return 'CVE candidata';
+  if (status === 'no_known_cve') return 'Nessuna CVE nota';
+  if (status === 'fingerprint_unknown') return 'Fingerprint incompleto';
+  return 'Solo esposizione';
+};
+
 function sourceLabel(row: ExposureOpenPortRow): string {
   const raw = row.raw || {};
   const src = String(row.source || raw?.source || raw?.provider || '').toLowerCase();
@@ -41,7 +49,7 @@ export const OpenPortsTable: React.FC<OpenPortsTableProps> = ({ rows, loading = 
 
     return [...rows]
       .filter((row) => {
-        if (onlyRisky && !RISKY_PORTS.has(Number(row.port || 0))) return false;
+        if (onlyRisky && !RISKY_PORTS.has(Number(row.port || 0)) && !['critical', 'high'].includes(String(row.risk_assessment?.severity || '').toLowerCase())) return false;
         if (onlyWeb && !row.is_web && !row.is_tls) return false;
         if (onlyExposed && !EXPOSED_LEVELS.has(String(row.exposure_level || '').toLowerCase())) return false;
         if (!query) return true;
@@ -148,9 +156,17 @@ export const OpenPortsTable: React.FC<OpenPortsTableProps> = ({ rows, loading = 
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge className={severityBadgeClass(row.exposure_level)}>
-                      {normalizeSeverity(row.exposure_level).toUpperCase()}
-                    </Badge>
+                    <div className="space-y-1">
+                      <Badge className={severityBadgeClass(row.exposure_level)}>
+                        {normalizeSeverity(row.exposure_level).toUpperCase()}
+                      </Badge>
+                      {row.risk_assessment && (
+                        <div className="text-[11px] text-muted-foreground">
+                          Matrice {row.risk_assessment.likelihood}×{row.risk_assessment.impact}={row.risk_assessment.matrix_score}
+                          <br />{evidenceStatusLabel(row.risk_assessment.evidence_status)}
+                        </div>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="max-w-[320px] text-sm text-muted-foreground">{row.remediation_hint || '-'}</TableCell>
                   <TableCell className="text-xs">{new Date(row.first_seen_at).toLocaleString('it-IT')}</TableCell>
