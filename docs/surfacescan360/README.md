@@ -10,6 +10,7 @@ Questa cartella e' la source of truth per architettura, dati e promozione DEV ->
 4. [Runbook DEV -> Produzione](./04-RUNBOOK-DEV-TO-PRODUCTION.md)
 5. [Data dictionary](./05-DATA-DICTIONARY.md)
 6. [Stato implementativo e handoff](./06-IMPLEMENTATION-HANDOFF.md)
+7. [Exposure Risk V3 e visualizzazione severity](./07-EXPOSURE-RISK-V3.md)
 
 ## Flusso end-to-end
 
@@ -64,7 +65,12 @@ flowchart LR
 - ConnectSecure: `supabase/functions/connectsecure-scan/index.ts`
 - Adapter ConnectSecure: `supabase/functions/_shared/connectsecure-adapter.ts`
 - Exposure summary e score: `supabase/functions/surface-exposure-summary/index.ts`
-- Score V2: `supabase/functions/_shared/exposure-score-v2.ts`
+- Score V3: `supabase/functions/_shared/exposure-score-v3.ts`
+- Matrice servizi: `supabase/functions/_shared/service-exposure-matrix.ts`
 - CVE enrichment: `supabase/functions/cve-enrichment/index.ts`
 - Report canonico: `supabase/functions/surfacescan360-ai-report/index.ts`
 - Report mensile: `supabase/functions/surfacescan360-monthly-report/index.ts`
+
+## Credenziali locali di handoff
+
+Il file `.env_per_stefano` viene generato nella root del repository per l'handoff locale. E' coperto da `.gitignore`, deve avere permessi `600` e non deve essere aggiunto a Git, copiato nei report o condiviso in chat. La procedura e l'elenco delle variabili attese sono descritti nel documento [Exposure Risk V3](./07-EXPOSURE-RISK-V3.md#configurazione-locale-per-lo-sviluppo).

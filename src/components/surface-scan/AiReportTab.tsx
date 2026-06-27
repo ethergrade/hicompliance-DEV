@@ -19,13 +19,16 @@ interface AiReport {
   findings: any[];
   findings_by_severity: Record<string, number>;
   exposure_score?: {
+    score_version?: string;
     posture_score: number;
     risk_level: string;
     risk_points: number;
     vulnerability_summary?: {
+      exposure_findings?: number;
       confirmed?: number;
       candidate?: number;
       unknown?: number;
+      fingerprint_unknown?: number;
       explanation?: string;
     };
   };

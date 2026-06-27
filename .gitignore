@@ -22,3 +22,24 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+# Local agent / automation artifacts
+.sisyphus/
+.playwright-mcp/
+.engram/
+auth_snapshot.md
+dashboard_snapshot.md
+snapshot.md
+test_roles.js
+.env
+.pi/
+graphify-out/
+.env*
+
+# Local developer handoff credentials (never commit)
+.env_per_stefano
+
+# Local Pi runtime state
+.atl/
+.claude/settings.local.json
+
+/hicompliance-DEV-main

@@ -30,6 +30,10 @@ import {
   runAmassDiscovery,
 } from "./amassDiscovery.ts";
 import { firecrawlScrape } from "./darkrisk-dti-enrichment.ts";
+import {
+  remediationForExposedService,
+  severityForExposedService,
+} from "./service-exposure-matrix.ts";
 
 interface SurfaceScanJob {
   id: string;
@@ -467,34 +471,11 @@ async function tcpProbe(
 function severityForExposedPort(
   port: number,
 ): "info" | "low" | "medium" | "high" | "critical" {
-  if (CRITICAL_EXPOSED_PORTS.has(port)) return "critical";
-  if (HIGH_EXPOSED_PORTS.has(port)) return "high";
-  if (MEDIUM_EXPOSED_PORTS.has(port)) return "medium";
-  if (INFO_EXPOSED_PORTS.has(port)) return "info";
-  if (COMMON_PORTS.includes(port)) return "low";
-  return "low";
+  return severityForExposedService({ port });
 }
 
 function remediationForExposedPort(port: number): string {
-  if (port === 23) {
-    return "Disabilitare Telnet e sostituire con SSH; consentire accesso solo via VPN/allowlist.";
-  }
-  if (port === 3389) {
-    return "Non esporre RDP su Internet. Usare VPN/ZTNA, MFA e allowlist IP.";
-  }
-  if (port === 445) {
-    return "Non esporre SMB su Internet. Limitare accesso a rete privata.";
-  }
-  if ([3306, 5432, 1433, 1521, 27017].includes(port)) {
-    return "Non esporre database pubblicamente. Applicare firewall, private networking e bastion.";
-  }
-  if ([9200, 9300, 6379, 11211].includes(port)) {
-    return "Limitare esposizione di servizi backend/cache e attivare autenticazione forte.";
-  }
-  if ([8080, 8443, 9443, 9000, 9090].includes(port)) {
-    return "Verificare pannelli admin esposti: proteggere con auth forte, MFA e restrizioni IP.";
-  }
-  return "Confermare necessità della porta e applicare principio di minima esposizione.";
+  return remediationForExposedService({ port });
 }
 
 interface SurfaceScoreBreakdown {
@@ -6761,7 +6742,8 @@ export async function runSurfaceScanEnrichment(
             port: portNumber,
             protocol: "tcp",
             cwe: ["CWE-284"],
-            cve: cveHintsForService(PORT_SERVICE[portNumber]?.name ?? ""),
+            // Una porta aperta è un finding di esposizione, non prova una CVE.
+            cve: [],
             evidence: {
               ip,
               port: portNumber,
@@ -6919,7 +6901,8 @@ export async function runSurfaceScanEnrichment(
         port,
         protocol: "tcp",
         cwe: ["CWE-284"],
-        cve: cveHintsForService(svcInfo?.name ?? ""),
+        // Le CVE vengono aggiunte solo dalla correlazione prodotto/versione/CPE.
+        cve: [],
         evidence: {
           source: "deno_tcp_probe",
           banner: banner || null,

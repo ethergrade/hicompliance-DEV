@@ -9,7 +9,7 @@
 | `surfacescan360-get-scan-status` | stato e progress job | JWT con accesso org |
 | `surface-scan-cron` | weekly, dispatch e report refresh | secret internal/service |
 | `connectsecure-scan` | auth, scan, poll e ingest ASM | JWT/internal/service |
-| `surface-exposure-summary` | KPI latest-per-target e Score V2 | JWT con accesso org |
+| `surface-exposure-summary` | KPI latest-per-target, finding unificati e Score V3 | JWT con accesso org |
 | `subdomain-dump` | discovery e persistenza sottodomini | JWT/internal |
 | `shodan-scan` | enrichment rete pubblica | internal/service |
 | `cve-enrichment` | fingerprint, CPE, NVD e EPSS | internal/service |

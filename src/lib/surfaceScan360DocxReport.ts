@@ -231,12 +231,14 @@ export async function generateSurfaceScan360Docx(report: SurfaceScan360Report): 
 
   const postureRows = exposureScore
     ? [
+        ['Metodo di scoring', `Exposure Score V${exposureScore.score_version || '3.0'}`],
         ['Indice postura exposure', `${exposureScore.posture_score}/100 (100 = ottimo)`],
         ['Livello di rischio', asText(exposureScore.risk_level)],
         ['Punti di rischio', asText(exposureScore.risk_points, '0')],
-        ['Vulnerabilita confermate', asText(exposureScore.vulnerability_summary?.confirmed ?? 0, '0')],
+        ['Esposizioni operative', asText(exposureScore.vulnerability_summary?.exposure_findings ?? 0, '0')],
+        ['CVE confermate', asText(exposureScore.vulnerability_summary?.confirmed ?? 0, '0')],
         ['CVE candidate', asText(exposureScore.vulnerability_summary?.candidate ?? 0, '0')],
-        ['Servizi con vulnerabilita non determinabile', asText(exposureScore.vulnerability_summary?.unknown ?? 0, '0')],
+        ['Servizi da fingerprintare', asText(exposureScore.vulnerability_summary?.fingerprint_unknown ?? 0, '0')],
         ['Interpretazione', asText(exposureScore.vulnerability_summary?.explanation, 'Nessuna evidenza CVE associabile ai servizi rilevati.')],
       ]
     : [

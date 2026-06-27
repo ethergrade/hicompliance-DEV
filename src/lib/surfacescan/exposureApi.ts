@@ -82,6 +82,7 @@ const sortPortRows = (rows: ExposureOpenPortRow[]): ExposureOpenPortRow[] =>
   });
 
 export type ExposureSummary = {
+  score_version: '3.0';
   job_id: string | null;
   job_ids?: string[];
   live_job_ids?: string[];
@@ -127,27 +128,29 @@ export type ExposureSummary = {
   risk_level: 'Basso' | 'Medio' | 'Alto' | 'Critico';
   risk_points: number;
   risk_breakdown: {
-    web_ports: ExposureRiskComponent;
-    alternative_web_ports: ExposureRiskComponent;
-    admin_web_ports: ExposureRiskComponent;
-    sensitive_ports: ExposureRiskComponent;
-    other_services: ExposureRiskComponent;
-    tls_header: ExposureRiskComponent;
-    findings: ExposureRiskComponent & { by_severity: Record<string, number> };
+    service_exposure: ExposureRiskComponent & {
+      primary_points: number;
+      breadth_points: number;
+    };
+    uncertainty: ExposureRiskComponent;
+    verified_findings: ExposureRiskComponent & { by_severity: Record<string, number> };
     confirmed_cves: ExposureRiskComponent;
     candidate_cves: ExposureRiskComponent;
-    kev_epss: ExposureRiskComponent;
+    threat_intel: ExposureRiskComponent;
     delta: ExposureRiskComponent;
-    missing_data: ExposureRiskComponent;
   };
   vulnerability_summary: {
+    exposure_findings: number;
     confirmed: number;
     candidate: number;
     unknown: number;
+    fingerprint_unknown: number;
     not_vulnerable_evidence: number;
     services_total: number;
     explanation: string;
   };
+  service_assessments: ServiceExposureAssessment[];
+  exposure_findings: ExposureFindingRow[];
   technologies: Array<{ name: string; count: number }>;
   findings_by_severity: {
     critical: number;
@@ -171,11 +174,33 @@ export type ExposureRiskComponent = {
   details?: Array<Record<string, unknown>>;
 };
 
+export type ServiceExposureAssessment = {
+  service_key: string;
+  open_port_id: string | null;
+  host: string | null;
+  ip: string | null;
+  port: number;
+  protocol: string;
+  service_name: string | null;
+  service_product: string | null;
+  service_version: string | null;
+  service_class: 'public_protected' | 'public_cleartext_or_alternative' | 'generic_unknown' | 'remote_or_admin' | 'legacy_or_infrastructure' | 'data_or_control_plane';
+  service_class_label: string;
+  likelihood: number;
+  impact: number;
+  matrix_score: number;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  evidence_status: 'exposure_only' | 'fingerprint_unknown' | 'no_known_cve' | 'cve_candidate' | 'cve_confirmed';
+  rationale: string;
+  remediation: string;
+};
+
 export type ExposureOpenPortRow = {
   id: string;
   scan_job_id: string;
   target_id?: string | null;
   raw?: Record<string, unknown> | null;
+  risk_assessment?: ServiceExposureAssessment | null;
   host: string;
   ip: string | null;
   port: number;
@@ -216,6 +241,7 @@ export type ExposureFindingRow = {
   cve_ids: string[] | null;
   affected_host: string | null;
   affected_port: number | null;
+  affected_protocol?: string | null;
   affected_url: string | null;
   description: string | null;
   evidence: string | null;
@@ -223,6 +249,13 @@ export type ExposureFindingRow = {
   source: string;
   status: string;
   created_at: string;
+  service_key?: string;
+  service_class?: ServiceExposureAssessment['service_class'];
+  service_class_label?: string;
+  likelihood?: number;
+  impact?: number;
+  matrix_score?: number;
+  evidence_status?: ServiceExposureAssessment['evidence_status'];
 };
 
 type EdgeFunctionPayload = {
