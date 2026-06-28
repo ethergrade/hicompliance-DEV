@@ -73,7 +73,7 @@ const displaySource = (raw: unknown): string => {
 
 // Significato sintetico dei tipi di query DTI (colonna "Significato" della tabella Rilevazioni).
 const QUERY_KIND_MEANING: Record<string, string> = {
-  at_domain_tld: 'Tutto il dominio (es. @dominio)',
+  at_domain_tld: 'Dominio completo in scope (es. dominio.it)',
   selector: 'Asset specifico (sottodominio/URL)',
   email_selector: 'Indirizzo email specifico',
   leaks_log: 'Log malware infostealer',

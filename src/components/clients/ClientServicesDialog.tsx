@@ -47,15 +47,9 @@ interface OrganizationFlags {
   dark_risk_contract_years?: number | null;
 }
 
-interface DarkRiskEntitlement {
-  tier: 'standard' | 'extended';
-  enabled: boolean;
-}
-
 interface DarkRiskEstesoProfile {
   enabled: boolean;
   manual_only: boolean;
-  identity_model_valid_until: string;
 }
 
 interface LifecycleResponse {
@@ -133,34 +127,12 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     setDarkRiskYears(String(orgFlags.dark_risk_contract_years || 1));
   }, [orgFlags]);
 
-  const { data: darkRiskEntitlement } = useQuery({
-    queryKey: ['darkrisk-entitlement', organizationId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('darkrisk_entitlements' as never)
-        .select('tier, enabled')
-        .eq('organization_id', organizationId)
-        .maybeSingle();
-
-      if (error) {
-        const missingRelation = String((error as { code?: string } | null)?.code || '') === '42P01';
-        if (missingRelation) {
-          return { tier: 'standard', enabled: Boolean(orgFlags?.dark_risk360_enabled) };
-        }
-        throw error;
-      }
-
-      return (data as DarkRiskEntitlement | null) || { tier: 'standard', enabled: Boolean(orgFlags?.dark_risk360_enabled) };
-    },
-    enabled: open && !!organizationId,
-  });
-
   const { data: darkRiskEstesoProfile } = useQuery({
     queryKey: ['darkrisk-esteso-profile', organizationId],
     queryFn: async (): Promise<DarkRiskEstesoProfile> => {
       const { data, error } = await supabase
         .from('darkrisk_esteso_profiles' as never)
-        .select('enabled, manual_only, identity_model_valid_until')
+        .select('enabled, manual_only')
         .eq('organization_id', organizationId)
         .maybeSingle();
 
@@ -170,7 +142,6 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
           return {
             enabled: Boolean(orgFlags?.darkrisk_esteso_enabled),
             manual_only: true,
-            identity_model_valid_until: '2026-06-10',
           };
         }
         throw error;
@@ -180,7 +151,6 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
       return {
         enabled: Boolean(row?.enabled ?? orgFlags?.darkrisk_esteso_enabled),
         manual_only: Boolean(row?.manual_only ?? true),
-        identity_model_valid_until: String(row?.identity_model_valid_until || '2026-06-10'),
       };
     },
     enabled: open && !!organizationId,
@@ -252,35 +222,12 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     onError: (err: Error) => toast.error(`Errore lifecycle: ${err.message}`),
   });
 
-  const updateDarkRiskTierMutation = useMutation({
-    mutationFn: async (tier: 'standard' | 'extended') => {
-      const payload = {
-        organization_id: organizationId,
-        tier,
-        enabled: true,
-        updated_at: new Date().toISOString(),
-      };
-
-      const { error } = await supabase
-        .from('darkrisk_entitlements' as never)
-        .upsert(payload, { onConflict: 'organization_id' });
-
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['darkrisk-entitlement', organizationId] });
-      toast.success('Tier DarkRisk360 aggiornato');
-    },
-    onError: (err: Error) => toast.error(`Errore tier DarkRisk360: ${err.message}`),
-  });
-
   const updateDarkRiskEstesoProfileMutation = useMutation({
     mutationFn: async (enabled: boolean) => {
       const payload = {
         organization_id: organizationId,
         enabled,
         manual_only: true,
-        identity_model_valid_until: '2026-06-10',
         updated_at: new Date().toISOString(),
       };
 
@@ -460,6 +407,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                   disabled={updateFlagsMutation.isPending}
                   onCheckedChange={(v) => {
                     const patch: Record<string, unknown> = { hicompliance_enabled: v };
+                    if (v) patch.dark_risk360_enabled = true;
                     if (!v) { patch.irp_extended = false; }
                     if (!v) {
                       patch.hicompliance_contract_start = null;
@@ -651,36 +599,23 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                 </div>
               )}
 
-              {/* DarkRisk360 — independent */}
+              {/* DarkRisk360 Standard — incluso con HiCompliance o standalone */}
               <div className="flex items-center justify-between rounded-md border p-3">
                 <div className="flex items-center gap-3">
-                  <div className={`p-1.5 rounded-md ${orgFlags?.dark_risk360_enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                  <div className={`p-1.5 rounded-md ${(orgFlags?.dark_risk360_enabled || orgFlags?.hicompliance_enabled || orgFlags?.darkrisk_esteso_enabled) ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
                     <Eye className="w-4 h-4" />
                   </div>
                   <div>
                     <p className="text-sm font-medium">DarkRisk360</p>
-                    <p className="text-xs text-muted-foreground">Monitoraggio dark web e leak</p>
+                    <p className="text-xs text-muted-foreground">Monitoraggio settimanale count-only e report mensile</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Select
-                    value={String(darkRiskEntitlement?.tier || 'standard') === 'extended' ? 'extended' : 'standard'}
-                    onValueChange={(value) =>
-                      updateDarkRiskTierMutation.mutate(value === 'extended' ? 'extended' : 'standard')
-                    }
-                    disabled={updateDarkRiskTierMutation.isPending || !orgFlags?.dark_risk360_enabled}
-                  >
-                    <SelectTrigger className="h-8 w-[140px]">
-                      <SelectValue placeholder="Livello" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="standard">Standard</SelectItem>
-                      <SelectItem value="extended">Estesa</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  {orgFlags?.hicompliance_enabled && <Badge variant="outline" className="text-xs">Incluso da HiCompliance</Badge>}
+                  {!orgFlags?.hicompliance_enabled && orgFlags?.darkrisk_esteso_enabled && <Badge variant="outline" className="text-xs">Incluso da Esteso</Badge>}
                   <Switch
-                    checked={!!orgFlags?.dark_risk360_enabled}
-                    disabled={updateFlagsMutation.isPending}
+                    checked={!!(orgFlags?.dark_risk360_enabled || orgFlags?.hicompliance_enabled || orgFlags?.darkrisk_esteso_enabled)}
+                    disabled={updateFlagsMutation.isPending || !!orgFlags?.hicompliance_enabled || !!orgFlags?.darkrisk_esteso_enabled}
                   onCheckedChange={async (v) => {
                       const patch: Record<string, unknown> = { dark_risk360_enabled: v };
                       if (!v) {
@@ -692,11 +627,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                         patch.dark_risk_contract_years = parseContractYears(darkRiskYears);
                       }
                       await updateFlagsMutation.mutateAsync(patch);
-                      if (v) {
-                        await updateDarkRiskTierMutation.mutateAsync(
-                          (String(darkRiskEntitlement?.tier || 'standard') === 'extended' ? 'extended' : 'standard')
-                        );
-                      } else {
+                      if (!v) {
                         await updateDarkRiskEstesoProfileMutation.mutateAsync(false);
                       }
                     }}
@@ -735,25 +666,12 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between rounded-md border p-2.5">
-                    <div className="flex items-center gap-3">
-                      <Eye className="w-4 h-4 text-muted-foreground" />
-                      <div>
-                        <p className="text-sm font-medium">Tier DarkRisk360</p>
-                        <p className="text-xs text-muted-foreground">Standard o Estesa sullo stesso modulo</p>
-                      </div>
-                    </div>
-                    <Badge variant="outline" className="text-xs">
-                      {String(darkRiskEntitlement?.tier || 'standard') === 'extended' ? 'Estesa' : 'Standard'}
-                    </Badge>
-                  </div>
-
                   <div className="flex items-center justify-between rounded-md border border-amber-500/30 bg-amber-500/5 p-2.5">
                     <div className="flex items-center gap-3">
                       <ShieldAlert className="w-4 h-4 text-amber-500" />
                       <div>
-                        <p className="text-sm font-medium">DARKRISK_ESTESO (MVP)</p>
-                        <p className="text-xs text-muted-foreground">Manual-only, usa IntelX Search + Leaks senza Firecrawl.</p>
+                        <p className="text-sm font-medium">DarkRisk360 Esteso</p>
+                        <p className="text-xs text-muted-foreground">Identity spot su domini/IP dello scope; include sempre Standard.</p>
                       </div>
                     </div>
                     <Switch
@@ -772,23 +690,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                     />
                   </div>
 
-                  <div className="flex items-center justify-between rounded-md border p-2.5">
-                    <div className="flex items-center gap-3">
-                      <ShieldAlert className="w-4 h-4 text-muted-foreground" />
-                      <div>
-                        <p className="text-sm font-medium">Profilo esteso</p>
-                        <p className="text-xs text-muted-foreground">Scadenza modello identity e policy operativa.</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-xs">
-                        manual_only: {String(darkRiskEstesoProfile?.manual_only ?? true)}
-                      </Badge>
-                      <Badge variant="outline" className="text-xs">
-                        valid_until: {darkRiskEstesoProfile?.identity_model_valid_until || '2026-06-10'}
-                      </Badge>
-                    </div>
-                  </div>
+                  <div className="flex items-center justify-between rounded-md border p-2.5"><div><p className="text-sm font-medium">Modalità operativa</p><p className="text-xs text-muted-foreground">Solo scansioni spot avviate da admin o superadmin; nessun cron Esteso.</p></div><Badge variant="outline" className="text-xs">manual_only: {String(darkRiskEstesoProfile?.manual_only ?? true)}</Badge></div>
                 </div>
               )}
             </div>

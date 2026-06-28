@@ -50,11 +50,8 @@ const INTERNAL_FUNCTIONS_API_KEY = String(
 const DARKRISK_INTERNAL_SECRET = String(Deno.env.get('DARKRISK360_INTERNAL_SECRET') || '').trim();
 const DARKRISK_OPERATOR_SECRET = String(Deno.env.get('DARKRISK360_OPERATOR_SECRET') || '').trim();
 const INTELX_API_KEY = String(Deno.env.get('INTELX_API_KEY') || '').trim();
-const INTELX_API_URL = String(
-  Deno.env.get('INTELX_API_URL') ||
-  Deno.env.get('INTELX_BASE_URL') ||
-  'https://2.intelx.io',
-).replace(/\/+$/, '');
+const INTELX_API_URL = 'https://2.intelx.io';
+const INTELX_USER_AGENT = String(Deno.env.get('INTELX_USER_AGENT') || '').trim();
 const INTELX_MAX_SELECTORS_PER_RUN = Math.max(
   1,
   Math.min(60, Number(Deno.env.get('INTELX_MAX_SELECTORS_PER_RUN') || 20)),
@@ -343,7 +340,7 @@ async function fetchWithTimeout(
 }
 
 function isIntelxConfigured(): boolean {
-  return Boolean(INTELX_API_KEY && INTELX_API_URL);
+  return Boolean(INTELX_API_KEY && INTELX_API_URL && INTELX_USER_AGENT);
 }
 
 function isAuthzLikeError(message: string | null | undefined): boolean {
@@ -447,7 +444,7 @@ function normalizeScopeDomain(value: string): string {
 
 function buildAtDomainTldTerms(scopeDomains: string[]): string[] {
   const normalizedDomains = [...new Set(scopeDomains.map((entry) => normalizeScopeDomain(entry)).filter(isDomainLike))];
-  return normalizedDomains.map((domain) => `@${domain}`);
+  return normalizedDomains;
 }
 
 function buildIntelxQueryTerms(
@@ -468,7 +465,7 @@ function buildIntelxQueryTerms(
       term: clean,
       kind: 'at_domain_tld',
       selectorNormalized: null,
-      linkedAssetNormalized: clean.replace(/^@/, ''),
+      linkedAssetNormalized: clean,
     });
   }
 
@@ -937,7 +934,7 @@ async function intelxSubmitSearch(term: string): Promise<string | null> {
       headers: {
         'x-key': INTELX_API_KEY,
         'Content-Type': 'application/json',
-        'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
+        'User-Agent': INTELX_USER_AGENT,
       },
       body: JSON.stringify(payload),
     }, INTELX_HTTP_TIMEOUT_MS);
@@ -963,7 +960,7 @@ async function intelxFetchSearchResult(searchId: string): Promise<IntelxSearchRe
       method: 'GET',
       headers: {
         'x-key': INTELX_API_KEY,
-        'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
+        'User-Agent': INTELX_USER_AGENT,
       },
     }, INTELX_HTTP_TIMEOUT_MS);
 
@@ -982,7 +979,7 @@ async function intelxTerminateSearch(searchId: string): Promise<void> {
     method: 'GET',
     headers: {
       'x-key': INTELX_API_KEY,
-      'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
+      'User-Agent': INTELX_USER_AGENT,
     },
   }, Math.min(INTELX_HTTP_TIMEOUT_MS, 8_000)).catch(() => undefined);
 }
@@ -1007,7 +1004,7 @@ async function intelxSearchHealthCheck(
       method: 'GET',
       headers: {
         'x-key': INTELX_API_KEY,
-        'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
+        'User-Agent': INTELX_USER_AGENT,
       },
     }, INTELX_HTTP_TIMEOUT_MS);
 
@@ -1079,7 +1076,7 @@ async function intelxSubmitPhonebookSearch(term: string): Promise<string | null>
       headers: {
         'x-key': INTELX_API_KEY,
         'Content-Type': 'application/json',
-        'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
+        'User-Agent': INTELX_USER_AGENT,
       },
       body: JSON.stringify({
         term,
@@ -1105,7 +1102,7 @@ async function intelxFetchPhonebookResult(searchId: string): Promise<IntelxSearc
   return intelxFetchWithBackoff(async () => {
     const response = await fetchWithTimeout(url.toString(), {
       method: 'GET',
-      headers: { 'x-key': INTELX_API_KEY, 'User-Agent': 'HICONSOLE-DarkRisk360/1.0' },
+      headers: { 'x-key': INTELX_API_KEY, 'User-Agent': INTELX_USER_AGENT },
     }, INTELX_HTTP_TIMEOUT_MS);
     if (!response.ok) {
       const errorText = await response.text();
@@ -1319,10 +1316,10 @@ serve(async (req: Request) => {
     const requestedCustomerId = normalizeText(body?.customer_id);
     const requestedScanJobId = normalizeText(body?.scan_job_id);
     const triggerType = normalizeText(body?.trigger_type) || 'manual';
-    const includeDtiExtendedRequested = body?.include_dti_extended === undefined
-      ? !triggerType.startsWith('cron_weekly')
-      : Boolean(body?.include_dti_extended);
-    const manualIdentityEmails = parseIdentityEmailSelectors(body?.identity_emails);
+    // The legacy monolith is a Standard/Surface fallback only. Identity is
+    // exclusively orchestrated by V2 and cannot be selected by frontend data.
+    const includeDtiExtendedRequested = false;
+    const manualIdentityEmails: string[] = [];
 
     const customerId = requestedCustomerId || caller?.organizationId || '';
     if (!customerId) return jsonResponse({ error: 'customer_id is required' }, 400);

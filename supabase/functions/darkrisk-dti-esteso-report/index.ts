@@ -3,6 +3,11 @@
 // Pulls: leaks/credentials DarkRisk360, DNS analysis, port data, surface scan findings.
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.3';
+import { getCallerProfile } from '../_shared/surface-scan-utils.ts';
+import {
+  canStartExtendedRun,
+  resolveDarkRiskCapabilities,
+} from '../_shared/darkrisk-access-policy.ts';
 
 const SUPABASE_URL = String(Deno.env.get('SUPABASE_URL') || '').trim();
 const SERVICE_ROLE = String(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '').trim();
@@ -22,7 +27,7 @@ const corsHeaders = {
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders },
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...corsHeaders },
   });
 }
 
@@ -245,7 +250,7 @@ const CSS = `
 
 // ─── Report assembly ────────────────────────────────────────────────────────────
 async function buildDtiEstesoReport(
-  adminClient: ReturnType<typeof createClient>,
+  adminClient: any,
   orgId: string,
   scanRunId: string | null,
   clientLabel: string | null = null,
@@ -262,6 +267,22 @@ async function buildDtiEstesoReport(
   const orgName = String((orgRow as any)?.name || orgId.slice(0, 8));
   // Etichetta mostrata come "Cliente" nel report: override esplicito se fornito, altrimenti nome org.
   const displayName = (clientLabel && clientLabel.trim()) ? clientLabel.trim() : orgName;
+
+  // Resolve the exact run before loading any identity data. Extended reports are
+  // immutable run snapshots, never organization-wide rolling aggregations.
+  let scanRunQuery = adminClient
+    .from('darkrisk_scan_runs' as any)
+    .select('id, status, started_at, completed_at, stats, trigger_type')
+    .eq('organization_id', orgId);
+  scanRunQuery = scanRunId
+    ? scanRunQuery.eq('id', scanRunId)
+    : scanRunQuery.order('started_at', { ascending: false }).limit(1);
+  const { data: scanRunRow } = await scanRunQuery.maybeSingle();
+  const scanRun = (scanRunRow as any) || null;
+  if (!scanRun?.id) throw new Error('Extended report requires an existing scan run in the selected organization');
+  const effectiveScanRunId = String(scanRun.id);
+  const runStats = (scanRun?.stats as any) || {};
+  const intelxStats = (runStats?.intelx as any) || {};
 
   // ── 2. Scope: selectors + monitored IPs ───────────────────────────────────
   const [selectorsRes, monitoredRes] = await Promise.all([
@@ -293,6 +314,7 @@ async function buildDtiEstesoReport(
       .from('darkrisk_findings' as any)
       .select('id, title, finding_type, severity, risk_score, first_seen_at, affected_selector_id')
       .eq('organization_id', orgId)
+      .eq('scan_run_id', effectiveScanRunId)
       .in('affected_selector_id', emailSelectorIds)
       .order('risk_score', { ascending: false })
       .limit(500);
@@ -325,18 +347,6 @@ async function buildDtiEstesoReport(
       })),
     };
   });
-
-  // ── 3. Latest scan run ─────────────────────────────────────────────────────
-  const { data: scanRunRow } = await adminClient
-    .from('darkrisk_scan_runs' as any)
-    .select('id, status, started_at, completed_at, stats, trigger_type')
-    .eq('organization_id', orgId)
-    .order('started_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const scanRun = (scanRunRow as any) || null;
-  const runStats = (scanRun?.stats as any) || {};
-  const intelxStats = (runStats?.intelx as any) || {};
 
   // ── 4. DNS data ────────────────────────────────────────────────────────────
   const { data: dnsResultsRaw } = await adminClient
@@ -411,6 +421,7 @@ async function buildDtiEstesoReport(
     .from('darkrisk_findings' as any)
     .select('id, finding_type, title, description, severity, confidence, risk_score, first_seen_at, last_seen_at, metadata')
     .eq('organization_id', orgId)
+    .eq('scan_run_id', effectiveScanRunId)
     .ilike('finding_type', '%intelx%')
     .order('risk_score', { ascending: false })
     .limit(200);
@@ -421,6 +432,7 @@ async function buildDtiEstesoReport(
     .from('darkrisk_dti_source_runs' as any)
     .select('source, source_label, source_key, query_kind, query_term, asset_scope, status, result_count, metadata, completed_at')
     .eq('organization_id', orgId)
+    .eq('scan_run_id', effectiveScanRunId)
     .order('completed_at', { ascending: false })
     .limit(500);
   // Dedup: una riga per (source, query_kind, query_term) — già ordinati per completed_at desc → tiene il più recente.
@@ -448,13 +460,13 @@ async function buildDtiEstesoReport(
   const FIELDS = `id, tag, masked_value, clear_value, context_excerpt, query_term, asset_scope, source_label, query_kind, source_record_id, created_at`;
   const [pwRes, ccRes, otherRes] = await Promise.all([
     adminClient.from('darkrisk_dti_sensitive_hits' as any)
-      .select(FIELDS).eq('organization_id', orgId).eq('tag', 'passwords')
+      .select(FIELDS).eq('organization_id', orgId).eq('scan_run_id', effectiveScanRunId).eq('tag', 'passwords')
       .order('created_at', { ascending: false }).limit(500),
     adminClient.from('darkrisk_dti_sensitive_hits' as any)
-      .select(FIELDS).eq('organization_id', orgId).eq('tag', 'credit_cards')
+      .select(FIELDS).eq('organization_id', orgId).eq('scan_run_id', effectiveScanRunId).eq('tag', 'credit_cards')
       .order('created_at', { ascending: false }).limit(100),
     adminClient.from('darkrisk_dti_sensitive_hits' as any)
-      .select(FIELDS).eq('organization_id', orgId)
+      .select(FIELDS).eq('organization_id', orgId).eq('scan_run_id', effectiveScanRunId)
       .in('tag', ['domains', 'phone_numbers', 'addresses'])
       .order('created_at', { ascending: false }).limit(1000),
   ]);
@@ -464,17 +476,17 @@ async function buildDtiEstesoReport(
     ...((otherRes.data || []) as any[]),
   ];
 
-  // Gather source_record_ids — limita a 150 per non appesantire la IN query
-  // Prioritizza le password (più critiche)
-  const pwHits = sensitiveHits.filter((h) => h.tag === 'passwords');
-  const otherHitsForSr = sensitiveHits.filter((h) => h.tag !== 'passwords').slice(0, 50);
-  const hitsForSr = [...pwHits, ...otherHitsForSr];
-  const srIds = [...new Set(hitsForSr.map((h) => h.source_record_id).filter(Boolean))].slice(0, 150);
+  // Only evidence backed by a source record from the contractually allowed
+  // private bucket can enter the extended report.
+  const srIds = [...new Set(sensitiveHits.map((h) => h.source_record_id).filter(Boolean))].slice(0, 1000);
   const sourceRecordMap = new Map<string, { title: string; source_date: string }>();
   if (srIds.length > 0) {
     const { data: srRows } = await adminClient
       .from('darkrisk_source_records' as any)
-      .select('id, title, source_date, source_added_at')
+      .select('id, title, source_date, source_added_at, source_bucket')
+      .eq('organization_id', orgId)
+      .eq('scan_run_id', effectiveScanRunId)
+      .eq('source_bucket', 'leaks.private.general')
       .in('id', srIds);
     for (const r of (srRows || []) as any[]) {
       sourceRecordMap.set(String(r.id), {
@@ -485,10 +497,12 @@ async function buildDtiEstesoReport(
   }
 
   // Enrich hits with source record data
-  const enrichedHits = sensitiveHits.map((h) => {
+  const enrichedHits = sensitiveHits
+    .filter((h) => sourceRecordMap.has(String(h.source_record_id || '')))
+    .map((h) => {
     const sr = sourceRecordMap.get(String(h.source_record_id || '')) || { title: '—', source_date: '' };
     return { ...h, collection_title: sr.title, data_collection: sr.source_date };
-  });
+    });
 
   // Group credentials by domain/asset_scope
   const credsByDomain = new Map<string, any[]>();
@@ -914,7 +928,7 @@ async function buildDtiEstesoReport(
     generated_at: genAt,
     organization_id: orgId,
     organization_name: displayName,
-    scan_run_id: scanRunId,
+    scan_run_id: effectiveScanRunId,
     scan_run: scanRun ? {
       started_at: scanRun.started_at || null,
       completed_at: scanRun.completed_at || null,
@@ -1014,7 +1028,7 @@ async function buildDtiEstesoReport(
     <tr><td>Data generazione</td><td>${fmtDateTime(genAt)}</td></tr>
     <tr><td>Proprietario del documento</td><td>HiSolution Srl</td></tr>
     <tr><td>Cliente</td><td>${escHtml(displayName)}</td></tr>
-    <tr><td>Scan Run ID</td><td>${scanRunId || '—'}</td></tr>
+    <tr><td>Scan Run ID</td><td>${effectiveScanRunId}</td></tr>
     ${scanRun ? `<tr><td>Ultima run</td><td>${fmtDateTime(scanRun.started_at)} → ${fmtDateTime(scanRun.completed_at)} [${scanRun.status}]</td></tr>` : ''}
   </table>
 
@@ -1224,16 +1238,28 @@ serve(async (req: Request) => {
       if (authError || !authData?.user) {
         return jsonResponse({ ok: false, error: `Unauthorized: ${authError?.message || 'sessione non valida'}` }, 401);
       }
-      // Verifica che sia super admin (la generazione DTI è admin-only)
+      // Extended generation is restricted to organization admins/superadmins.
       const adminCheck = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
-      const { data: roleRow } = await adminCheck
-        .from('user_roles' as any)
-        .select('role')
-        .eq('user_id', authData.user.id)
-        .in('role', ['super_admin', 'sales'])
-        .maybeSingle();
-      if (!roleRow) {
-        return jsonResponse({ ok: false, error: 'Forbidden: richiesto ruolo super_admin' }, 403);
+      const caller = await getCallerProfile(adminCheck, authData.user.id);
+      const [{ data: entitlement }, grantsRes] = await Promise.all([
+        adminCheck
+          .from('darkrisk_entitlements' as any)
+          .select('enabled, tier')
+          .eq('organization_id', orgId)
+          .maybeSingle(),
+        adminCheck
+          .from('darkrisk_capability_grants' as any)
+          .select('capability, enabled')
+          .eq('organization_id', orgId)
+          .eq('enabled', true),
+      ]);
+      const capabilities = resolveDarkRiskCapabilities({
+        grants: (grantsRes.data || []) as Array<{ capability?: string | null; enabled?: boolean | null }>,
+        legacyEnabled: Boolean(entitlement?.enabled),
+        legacyTier: String(entitlement?.tier || ''),
+      });
+      if (!canStartExtendedRun(caller, orgId, capabilities)) {
+        return jsonResponse({ ok: false, error: 'Forbidden: extended entitlement and organization admin role required' }, 403);
       }
     }
   }
@@ -1243,7 +1269,52 @@ serve(async (req: Request) => {
   const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
   try {
+    const [{ data: entitlement, error: entitlementError }, grantsRes] = await Promise.all([
+      adminClient
+        .from('darkrisk_entitlements' as any)
+        .select('enabled, tier')
+        .eq('organization_id', orgId)
+        .maybeSingle(),
+      adminClient
+        .from('darkrisk_capability_grants' as any)
+        .select('capability, enabled')
+        .eq('organization_id', orgId)
+        .eq('enabled', true),
+    ]);
+    if (entitlementError && String((entitlementError as any)?.code || '') !== '42P01') throw entitlementError;
+    if (grantsRes.error && String((grantsRes.error as any)?.code || '') !== '42P01') throw grantsRes.error;
+    const capabilities = resolveDarkRiskCapabilities({
+      grants: (grantsRes.data || []) as Array<{ capability?: string | null; enabled?: boolean | null }>,
+      legacyEnabled: Boolean(entitlement?.enabled),
+      legacyTier: String(entitlement?.tier || ''),
+    });
+    if (!capabilities.has('extended_identity')) {
+      return jsonResponse({ ok: false, error: 'DarkRisk360 Esteso is not enabled for this organization' }, 403);
+    }
+
     const { html, json } = await buildDtiEstesoReport(adminClient, orgId, scanRunId, clientLabel, recommendationsOverride);
+    const effectiveScanRunId = String((json as any).scan_run_id || '');
+
+    const { data: existingSnapshot } = await adminClient
+      .from('darkrisk_report_snapshots' as any)
+      .select('id, html_storage_path')
+      .eq('organization_id', orgId)
+      .eq('scan_run_id', effectiveScanRunId)
+      .eq('tier', 'extended')
+      .limit(1)
+      .maybeSingle();
+    if (existingSnapshot?.id && existingSnapshot.html_storage_path) {
+      const { data: existingSignedUrl } = await adminClient.storage
+        .from('darkrisk-reports')
+        .createSignedUrl(String(existingSnapshot.html_storage_path), 900);
+      return jsonResponse({
+        ok: true,
+        reused: true,
+        report_id: existingSnapshot.id,
+        scan_run_id: effectiveScanRunId,
+        signed_url: existingSignedUrl?.signedUrl || null,
+      });
+    }
 
     // Store in Supabase Storage
     const bucketName = 'darkrisk-reports';
@@ -1272,15 +1343,25 @@ serve(async (req: Request) => {
       .insert({
         organization_id: orgId,
         tenant_id: orgId,
-        scan_run_id: scanRunId,
+        scan_run_id: effectiveScanRunId,
         title: `HiConsole - DARKRISK360 - ${String((json as any).organization_name || orgId.slice(0, 8))} - ${now.toLocaleDateString('it-IT')}`,
         tier: 'extended',
+        report_kind: 'extended_run',
+        period_key: null,
+        report_version: '2.0',
         classification: 'confidential',
         status: 'published',
         generated_at: now.toISOString(),
         html_storage_path: htmlPath,
         json_storage_path: jsonPath,
-        report_json: json,
+        report_json: {
+          organization_id: orgId,
+          scan_run_id: effectiveScanRunId,
+          generated_at: now.toISOString(),
+          sensitive_detail: 'private_storage_only',
+          total_credentials: Number((json as any).total_creds || 0),
+          stealer_hits: Number((json as any).stealer_count || 0),
+        },
         model_metadata: {
           generator: 'darkrisk-dti-esteso-report',
           version: '1.3',
@@ -1297,7 +1378,7 @@ serve(async (req: Request) => {
     // Get signed URL for immediate access
     const { data: signedUrl } = await adminClient.storage
       .from(bucketName)
-      .createSignedUrl(htmlPath, 3600); // 1h
+      .createSignedUrl(htmlPath, 900); // 15 minutes
 
     return jsonResponse({
       ok: true,

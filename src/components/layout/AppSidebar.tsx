@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   Shield,
+  ShieldAlert,
   ShieldCheck,
   Users,
   Settings,
@@ -50,6 +51,9 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { useClientContext } from '@/contexts/ClientContext';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useDarkRiskEntitlements } from '@/features/darkrisk/shared/useDarkRiskEntitlements';
+
+const DARKRISK_EXTENDED_UI_V2_ENABLED = String(import.meta.env.VITE_DARKRISK_EXTENDED_UI_V2 ?? 'true') !== 'false';
 
 const navigation = [
   { title: 'Home', href: '/', icon: Home },
@@ -67,7 +71,7 @@ const hiComplianceModules = [
   { title: 'Assessment', href: '/assessment', icon: ClipboardCheck },
   { title: 'SurfaceScan360', href: '/surface-scan', icon: Globe },
   { title: 'DarkRisk360', href: '/dark-risk', icon: Eye },
-  { title: 'DARKRISK_ESTESO', href: '/dark-risk-esteso', icon: Eye, superAdminOnly: true },
+  { title: 'DarkRisk360 Esteso', href: '/dark-risk-esteso', icon: ShieldAlert },
   { title: 'Surface Graph', href: '/surface-graph', icon: Network, superAdminOnly: true },
   { title: 'Analisi', href: '/analytics', icon: BarChart3 },
   { title: 'Remediation', href: '/remediation', icon: Wrench },
@@ -134,7 +138,7 @@ export const AppSidebar: React.FC = () => {
       if (!selectedOrganization?.id) return null;
       const { data } = await supabase
         .from('organizations')
-        .select('hicompliance_enabled, surface_scan360_enabled, dark_risk360_enabled, darkrisk_esteso_enabled' as any)
+        .select('hicompliance_enabled, surface_scan360_enabled' as any)
         .eq('id', selectedOrganization.id)
         .maybeSingle();
       return data as any;
@@ -146,16 +150,17 @@ export const AppSidebar: React.FC = () => {
     isLockedSalesUser && String(selectedOrganization?.code || '').trim().toLowerCase() === 'cliente1';
   const hicomplianceOn = forceDemoAccessForSalesCliente1 ? true : !!orgFlags?.hicompliance_enabled;
   const surfaceScanOn = forceDemoAccessForSalesCliente1 ? true : !!orgFlags?.surface_scan360_enabled;
-  const darkRiskOn = forceDemoAccessForSalesCliente1 ? true : !!orgFlags?.dark_risk360_enabled;
-  const darkRiskEstesoOn = forceDemoAccessForSalesCliente1 ? true : !!orgFlags?.darkrisk_esteso_enabled;
+  const darkRiskEntitlements = useDarkRiskEntitlements(selectedOrganization?.id || null);
+  const darkRiskOn = forceDemoAccessForSalesCliente1 ? true : darkRiskEntitlements.standardEnabled;
+  const darkRiskEstesoOn = DARKRISK_EXTENDED_UI_V2_ENABLED && (forceDemoAccessForSalesCliente1 ? true : darkRiskEntitlements.extendedEnabled);
   const { canViewRoute } = usePermissions();
 
   const isFeatureAllowed = (href: string) => {
     // SuperAdmin/Sales without a selected org see everything (console view)
     if (isConsoleUser && !selectedOrganization) return true;
     if (href === '/surface-scan' || href === '/surface-scan/exposure') return surfaceScanOn;
-    if (href === '/dark-risk') return darkRiskOn;
-    if (href === '/dark-risk-esteso') return darkRiskEstesoOn && isSuperAdmin;
+    if (href === '/dark-risk') return darkRiskOn || hicomplianceOn || darkRiskEstesoOn;
+    if (href === '/dark-risk-esteso') return darkRiskEstesoOn;
     // HiCompliance core modules
     if (['/assessment', '/analytics', '/remediation', '/incident-response', '/compliance-events'].includes(href)) {
       return hicomplianceOn;

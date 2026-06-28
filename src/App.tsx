@@ -1,6 +1,7 @@
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/components/auth/AuthProvider";
@@ -12,8 +13,6 @@ import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
 import ServiceDashboard from "./pages/ServiceDashboard";
 import SurfaceScan360 from "./pages/SurfaceScan360";
-import DarkRisk360 from "./pages/DarkRisk360";
-import DarkRiskEsteso from "./pages/DarkRiskEsteso";
 import Assessment from "./pages/Assessment";
 import Remediation from "./pages/Remediation";
 import Analytics from "./pages/Analytics";
@@ -33,7 +32,6 @@ import ComplianceEvents from "./pages/ComplianceEvents";
   import ClientSelection from "./pages/ClientSelection";
 import CyberNews from "./pages/CyberNews";
 import AdminReporting from "./pages/AdminReporting";
-import AdminDarkRiskEsteso from "./pages/AdminDarkRiskEsteso";
 import AdminSalesDashboard from "./pages/AdminSalesDashboard";
 import SurfaceGraph from "./pages/SurfaceGraph";
 import Consistenze from "./pages/Consistenze";
@@ -41,6 +39,10 @@ import AICiso from "./pages/AICiso";
 import NucleiScan360 from "./pages/NucleiScan360";
 import HiConsoleLanding from "./pages/HiConsoleLanding";
 import NotFound from "./pages/NotFound";
+
+const StandardDarkRiskPage = lazy(() => import("./features/darkrisk/standard/StandardDarkRiskPage"));
+const ExtendedDarkRiskPage = lazy(() => import("./features/darkrisk/extended/ExtendedDarkRiskPage"));
+const darkRiskFallback = <div className="p-8 text-sm text-muted-foreground">Caricamento DarkRisk360…</div>;
 
 const queryClient = new QueryClient();
 
@@ -64,8 +66,8 @@ const App = () => (
             <Route path="/dashboard/service/:serviceCode" element={<ClientSelectionGuard><ServiceDashboard /></ClientSelectionGuard>} />
             <Route path="/surface-scan" element={<ClientSelectionGuard><SurfaceScan360 /></ClientSelectionGuard>} />
             <Route path="/surface-scan/exposure" element={<Navigate to="/surface-scan" replace />} />
-            <Route path="/dark-risk" element={<ClientSelectionGuard><DarkRisk360 /></ClientSelectionGuard>} />
-            <Route path="/dark-risk-esteso" element={<ClientSelectionGuard><DarkRiskEsteso /></ClientSelectionGuard>} />
+            <Route path="/dark-risk" element={<ClientSelectionGuard><Suspense fallback={darkRiskFallback}><StandardDarkRiskPage /></Suspense></ClientSelectionGuard>} />
+            <Route path="/dark-risk-esteso" element={<ClientSelectionGuard><Suspense fallback={darkRiskFallback}><ExtendedDarkRiskPage /></Suspense></ClientSelectionGuard>} />
             <Route path="/surface-graph" element={<ClientSelectionGuard><SurfaceGraph /></ClientSelectionGuard>} />
             <Route path="/assessment" element={<ClientSelectionGuard><Assessment /></ClientSelectionGuard>} />
             <Route path="/remediation" element={<ClientSelectionGuard><Remediation /></ClientSelectionGuard>} />
@@ -84,7 +86,7 @@ const App = () => (
             <Route path="/impostazioni/surface-scan" element={<ClientSelectionGuard><SurfaceScanImpostazioni /></ClientSelectionGuard>} />
             <Route path="/admin/role-settings" element={<ClientSelectionGuard><RoleSettings /></ClientSelectionGuard>} />
             <Route path="/admin/reporting" element={<AdminReporting />} />
-            <Route path="/admin/darkrisk-esteso" element={<AdminDarkRiskEsteso />} />
+            <Route path="/admin/darkrisk-esteso" element={<ClientSelectionGuard><Suspense fallback={darkRiskFallback}><ExtendedDarkRiskPage /></Suspense></ClientSelectionGuard>} />
             <Route path="/admin/sales" element={<AdminSalesDashboard />} />
             <Route path="/admin/nuclei-scan360" element={<NucleiScan360 />} />
             <Route path="/consistenze" element={<ClientSelectionGuard><Consistenze /></ClientSelectionGuard>} />

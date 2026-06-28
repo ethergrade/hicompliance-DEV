@@ -7,12 +7,17 @@ import {
 } from '../_shared/surface-scan-utils.ts';
 import { normalizeText } from '../_shared/darkrisk-utils.ts';
 import { isEmailSelectorCoverageKind } from '../_shared/darkrisk-query-kind.ts';
+import {
+  canViewExtendedSensitiveData,
+  isSalesCaller,
+  resolveDarkRiskCapabilities,
+} from '../_shared/darkrisk-access-policy.ts';
 
 type Severity = 'info' | 'low' | 'medium' | 'high' | 'critical';
 type Confidence = 'low' | 'medium' | 'high';
 type Tier = 'standard' | 'extended';
 type Classification = 'public' | 'private' | 'confidential';
-type ReportMode = 'weekly' | 'extended';
+type ReportMode = 'monthly' | 'extended';
 
 type FindingRow = {
   id: string;
@@ -69,9 +74,11 @@ type EvidenceRow = {
 };
 
 type SourceRecordRow = {
+  id: string;
   source: string | null;
   source_type: string | null;
   source_media: string | null;
+  source_bucket: string | null;
   asset_id: string | null;
   selector_id: string | null;
 };
@@ -91,6 +98,7 @@ type DtiSourceRunRow = {
 };
 
 type DtiSensitiveHitRow = {
+  source_record_id?: string | null;
   source: string | null;
   source_label: string | null;
   query_kind: string | null;
@@ -274,6 +282,7 @@ function jsonResponse(body: unknown, status = 200): Response {
     headers: {
       ...corsHeaders,
       'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
     },
   });
 }
@@ -344,18 +353,13 @@ function normalizeTier(value: string | null | undefined): Tier {
 function normalizeReportMode(value: string | null | undefined, entitlementTier: Tier): ReportMode {
   const normalized = String(value || '').trim().toLowerCase();
   if (['extended', 'dti_extended', 'dti-esteso', 'esteso'].includes(normalized)) return 'extended';
-  if (['weekly', 'standard_weekly', 'settimanale', 'standard'].includes(normalized)) return 'weekly';
-  return entitlementTier === 'extended' ? 'extended' : 'weekly';
+  if (['monthly', 'standard_monthly', 'mensile', 'weekly', 'standard_weekly', 'settimanale', 'standard'].includes(normalized)) return 'monthly';
+  return 'monthly';
 }
 
-function startOfCurrentUtcWeekIso(): string {
+function startOfCurrentUtcMonthIso(): string {
   const now = new Date();
-  const day = now.getUTCDay();
-  const diff = day === 0 ? 6 : day - 1;
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  start.setUTCDate(start.getUTCDate() - diff);
-  start.setUTCHours(0, 0, 0, 0);
-  return start.toISOString();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
 }
 
 function normalizeClassification(value: string | null | undefined): Classification {
@@ -777,6 +781,9 @@ serve(async (req: Request) => {
         return jsonResponse({ ok: false, error: 'customer_id is required' }, 400);
       }
       assertCustomerAccess(caller, customerId);
+      if (isSalesCaller(caller)) {
+        return jsonResponse({ ok: false, error: 'Sales users cannot access DarkRisk reports' }, 403);
+      }
     }
 
     if (!customerId && requestedScanRunId) {
@@ -806,17 +813,36 @@ serve(async (req: Request) => {
       throw entitlementErr;
     }
 
-    if (!entitlement?.enabled) {
+    const grantsRes = await adminClient
+      .from('darkrisk_capability_grants' as any)
+      .select('capability, enabled')
+      .eq('organization_id', customerId)
+      .eq('enabled', true);
+    if (grantsRes.error && String((grantsRes.error as any)?.code || '') !== '42P01') {
+      throw grantsRes.error;
+    }
+
+    const darkRiskCapabilities = resolveDarkRiskCapabilities({
+      grants: (grantsRes.data || []) as Array<{ capability?: string | null; enabled?: boolean | null }>,
+      legacyEnabled: Boolean(entitlement?.enabled),
+      legacyTier: entitlement?.tier,
+    });
+    if (!darkRiskCapabilities.has('standard_monitor')) {
       return jsonResponse({ ok: false, error: 'DarkRisk360 not enabled for customer' }, 403);
     }
 
-    const entitlementTier = normalizeTier(entitlement?.tier);
+    const entitlementTier = darkRiskCapabilities.has('extended_identity') ? 'extended' : 'standard';
     const reportMode = normalizeReportMode(body?.report_mode || body?.report_kind || body?.mode, entitlementTier);
-    if (reportMode === 'extended' && entitlementTier !== 'extended') {
+    if (reportMode === 'extended' && !darkRiskCapabilities.has('extended_identity')) {
       return jsonResponse({ ok: false, error: 'DarkRisk360 extended report requires extended tier' }, 403);
     }
     const tier: Tier = reportMode === 'extended' ? 'extended' : 'standard';
-    const allowClearSensitiveInReport = true;
+    const allowClearSensitiveInReport = reportMode === 'extended' && (
+      isInternal || Boolean(callerProfile && canViewExtendedSensitiveData(callerProfile, customerId, darkRiskCapabilities))
+    );
+    if (reportMode === 'extended' && !allowClearSensitiveInReport) {
+      return jsonResponse({ ok: false, error: 'Extended report access denied' }, 403);
+    }
 
     const scanRunRes = requestedScanRunId
       ? await adminClient
@@ -851,8 +877,8 @@ serve(async (req: Request) => {
 
       if (requestedScanRunId) {
         existingReportQuery = existingReportQuery.eq('scan_run_id', scanRun.id);
-      } else if (reportMode === 'weekly') {
-        existingReportQuery = existingReportQuery.gte('generated_at', startOfCurrentUtcWeekIso());
+      } else if (reportMode === 'monthly') {
+        existingReportQuery = existingReportQuery.gte('generated_at', startOfCurrentUtcMonthIso());
       } else {
         // Extended reports are reusable only for the same scan run.
         existingReportQuery = existingReportQuery.eq('scan_run_id', scanRun.id);
@@ -874,7 +900,7 @@ serve(async (req: Request) => {
             action: 'darkrisk_report_reused',
             entity_type: 'darkrisk_report_snapshot',
             entity_id: existingReportRes.data.id,
-            reason: reportMode === 'extended' ? 'existing_final_extended_report' : 'existing_weekly_report',
+            reason: reportMode === 'extended' ? 'existing_extended_run_report' : 'existing_monthly_report',
             metadata: {
               tier,
               report_mode: reportMode,
@@ -915,9 +941,10 @@ serve(async (req: Request) => {
         .limit(500),
       adminClient
         .from('darkrisk_source_records' as any)
-        .select('source, source_type, source_media, asset_id, selector_id')
+        .select('id, source, source_type, source_media, source_bucket, asset_id, selector_id')
         .eq('organization_id', customerId)
-        .eq('scan_run_id', scanRun.id),
+        .eq('scan_run_id', scanRun.id)
+        .eq('source_bucket', reportMode === 'extended' ? 'leaks.private.general' : ''),
       adminClient
         .from('darkrisk_dti_source_runs' as any)
         .select('source, source_label, source_key, query_kind, query_term, asset_scope, status, result_count, warning, error_message, metadata')
@@ -925,13 +952,15 @@ serve(async (req: Request) => {
         .eq('scan_run_id', scanRun.id)
         .order('created_at', { ascending: false })
         .limit(2000),
-      adminClient
-        .from('darkrisk_dti_sensitive_hits' as any)
-        .select('source, source_label, query_kind, query_term, asset_scope, tag, masked_value, clear_value, match_policy, extraction_confidence, evidence_scope')
-        .eq('organization_id', customerId)
-        .eq('scan_run_id', scanRun.id)
-        .order('created_at', { ascending: false })
-        .limit(4000),
+      reportMode === 'extended'
+        ? adminClient
+            .from('darkrisk_dti_sensitive_hits' as any)
+            .select('source_record_id, source, source_label, query_kind, query_term, asset_scope, tag, masked_value, clear_value, match_policy, extraction_confidence, evidence_scope')
+            .eq('organization_id', customerId)
+            .eq('scan_run_id', scanRun.id)
+            .order('created_at', { ascending: false })
+            .limit(4000)
+        : Promise.resolve({ data: [], error: null }),
     ]);
 
     if (orgRes.error) throw orgRes.error;
@@ -947,7 +976,11 @@ serve(async (req: Request) => {
     const selectors = (selectorsRes.data || []) as SelectorRow[];
     const sourceRows = (sourceRes.data || []) as SourceRecordRow[];
     const dtiSourceRuns = (dtiSourceRunRes.data || []) as DtiSourceRunRow[];
+    const permittedSourceRecordIds = new Set(sourceRows.map((row) => row.id));
     const dtiSensitiveHits = ((dtiSensitiveHitsRes.data || []) as DtiSensitiveHitRow[])
+      .filter((hit) => reportMode !== 'extended' || (
+        Boolean(hit.source_record_id) && permittedSourceRecordIds.has(String(hit.source_record_id))
+      ))
       .filter((hit) => !shouldIgnoreSensitiveHit(hit));
 
     const findingIds = findings.map((finding) => finding.id);
@@ -1005,7 +1038,7 @@ serve(async (req: Request) => {
       const findingSelector = finding.affected_selector_id ? selectorById.get(finding.affected_selector_id) : null;
       const rawFindingTitle = String(finding.title || finding.finding_type || 'Finding');
       const reportFindingTitle =
-        reportMode === 'weekly' && isRepositoryStyleFindingTitle(rawFindingTitle)
+        reportMode === 'monthly' && isRepositoryStyleFindingTitle(rawFindingTitle)
           ? 'Segnale repository classificato (dettaglio disponibile in modalità estesa)'
           : rawFindingTitle;
 
@@ -1174,7 +1207,9 @@ serve(async (req: Request) => {
       };
 
       if (tag === 'passwords') {
-        const value = safeText(String(hit.clear_value || hit.masked_value || ''), 180);
+        const value = safeText(String(
+          allowClearSensitiveInReport ? hit.clear_value || hit.masked_value || '' : hit.masked_value || ''
+        ), 180);
         if (value) {
           const globalKey = `${scopeKey}::${value}`;
           if (!uniquePasswordGlobal.has(globalKey)) {
@@ -1376,6 +1411,22 @@ serve(async (req: Request) => {
     if (jsonUploadErr) throw jsonUploadErr;
 
     const primaryRecommendation = recommendations[0] || null;
+    const reportPeriodKey = reportMode === 'monthly'
+      ? normalizeText(body?.period_key) || generatedAt.slice(0, 7)
+      : null;
+    const snapshotReportJson = reportMode === 'extended'
+      ? {
+          report_id: reportId,
+          customer_id: customerId,
+          scan_run_id: scanRun.id,
+          tier,
+          classification: requestedClassification,
+          generated_at: generatedAt,
+          sensitive_detail: 'private_storage_only',
+          statistics: reportJson.statistics,
+          sensitive_summary: reportJson.dti_intelligence.sensitive_summary,
+        }
+      : reportJson;
 
     const { error: insertSnapshotErr } = await adminClient
       .from('darkrisk_report_snapshots' as any)
@@ -1385,10 +1436,13 @@ serve(async (req: Request) => {
         tenant_id: customerId,
         scan_run_id: scanRun.id,
         tier,
+        report_kind: reportMode === 'extended' ? 'extended_run' : 'standard_monthly',
+        period_key: reportPeriodKey,
+        report_version: '2.0',
         title: `${reportBrandTitle} - ${customerName} - ${new Date(generatedAt).toLocaleDateString('it-IT')}`,
         classification: requestedClassification,
         status: 'completed',
-        report_json: reportJson,
+        report_json: snapshotReportJson,
         html_storage_path: htmlStoragePath,
         json_storage_path: jsonStoragePath,
         pdf_storage_path: null,
@@ -1396,8 +1450,8 @@ serve(async (req: Request) => {
         generated_at: generatedAt,
         model_metadata: {
           report_mode: reportMode,
-          report_period: reportMode === 'weekly' ? 'weekly' : 'final_extended',
-          generated_policy: reportMode === 'extended' ? 'single_final_per_scan_run' : 'one_per_customer_week',
+          report_period: reportMode === 'monthly' ? 'monthly' : 'per_run_extended',
+          generated_policy: reportMode === 'extended' ? 'one_per_scan_run' : 'one_per_customer_month',
           report_schema_version: REPORT_SCHEMA_VERSION,
           prompt_version: primaryRecommendation?.prompt_version || null,
           model: primaryRecommendation?.model || null,
@@ -1440,10 +1494,10 @@ serve(async (req: Request) => {
       });
 
     const htmlSignedUrl = includeHtml && htmlStoragePath
-      ? (await adminClient.storage.from('darkrisk-reports').createSignedUrl(htmlStoragePath, 3600)).data?.signedUrl || null
+      ? (await adminClient.storage.from('darkrisk-reports').createSignedUrl(htmlStoragePath, 900)).data?.signedUrl || null
       : null;
 
-    const jsonSignedUrl = (await adminClient.storage.from('darkrisk-reports').createSignedUrl(jsonStoragePath, 3600)).data?.signedUrl || null;
+    const jsonSignedUrl = (await adminClient.storage.from('darkrisk-reports').createSignedUrl(jsonStoragePath, 900)).data?.signedUrl || null;
 
     return jsonResponse({
       ok: true,

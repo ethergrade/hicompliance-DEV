@@ -5,6 +5,7 @@ import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { dispatchSurfaceScanQueue } from '../_shared/surface-scan-engine.ts';
 import { evaluateOrganizationServiceGate } from '../_shared/surface-scan-utils.ts';
+import { getEuropeRomeScheduleDue } from '../darkrisk360-orchestrator-v2/orchestration.ts';
 
 interface MonitoredRule {
   id: string;
@@ -31,7 +32,7 @@ interface ShodanBanner {
 
 const MAX_IPS_PER_RULE = 256;
 const REPORT_SCOPE_REFRESH_TIMEOUT = 45_000;
-const DARKRISK_WEEKLY_SYNC_TIMEOUT = 45_000;
+const DARKRISK_ORCHESTRATOR_TIMEOUT = 45_000;
 
 const sev = (c?: number) => (c == null ? 'low' : c >= 7 ? 'high' : c >= 4 ? 'medium' : 'low');
 const isIp = (v: string) => /^(\d{1,3}\.){3}\d{1,3}$/.test(v);
@@ -306,29 +307,32 @@ async function refreshWeeklyScopeRepositoryReport(
   }
 }
 
-async function triggerWeeklyDarkRiskStandardScan(
+async function enqueueDarkRiskV2Workflow(
   supabase: any,
   supabaseUrl: string,
   serviceRoleKey: string,
-  internalSecret: string | null,
   orgId: string,
+  schedule: NonNullable<ReturnType<typeof getEuropeRomeScheduleDue>>,
 ) {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), DARKRISK_WEEKLY_SYNC_TIMEOUT);
+  const t = setTimeout(() => ctrl.abort(), DARKRISK_ORCHESTRATOR_TIMEOUT);
+  const isMonthlyReport = schedule.kind === 'monthly_report';
+  const workflow = isMonthlyReport ? 'monthly_report' : 'scan';
+  const idempotencyKey = `${isMonthlyReport ? 'standard-report' : 'standard'}:${orgId}:${schedule.periodKey}`;
   try {
-    const response = await fetch(`${supabaseUrl}/functions/v1/darkrisk360-sync-surfacescan`, {
+    const response = await fetch(`${supabaseUrl}/functions/v1/darkrisk360-orchestrator-v2`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${serviceRoleKey}`,
-        ...(internalSecret ? { 'x-darkrisk-internal-secret': internalSecret } : {}),
+        'Idempotency-Key': idempotencyKey,
       },
       body: JSON.stringify({
-        customer_id: orgId,
-        trigger_type: 'cron_weekly',
-        include_dti_extended: false,
-        auto_scope_scan: true,
-        force_scope_refresh: false,
+        organization_id: orgId,
+        mode: 'standard',
+        workflow,
+        trigger_type: isMonthlyReport ? 'cron_monthly_report' : 'cron_weekly',
+        period_key: schedule.periodKey,
       }),
       signal: ctrl.signal,
     });
@@ -338,8 +342,8 @@ async function triggerWeeklyDarkRiskStandardScan(
       const errorMessage = String(body?.error || `HTTP_${response.status}`);
       const action =
         response.status === 403 || /not enabled/i.test(errorMessage)
-          ? 'darkrisk_weekly_skipped'
-          : 'darkrisk_weekly_failed';
+          ? `darkrisk_v2_${schedule.kind}_skipped`
+          : `darkrisk_v2_${schedule.kind}_failed`;
       await supabase.from('external_scan_audit_log').insert({
         organization_id: orgId,
         actor_email: 'system:cron',
@@ -347,7 +351,8 @@ async function triggerWeeklyDarkRiskStandardScan(
         details: {
           http_status: response.status,
           error: errorMessage,
-          include_dti_extended: false,
+          period_key: schedule.periodKey,
+          orchestrator_version: '2.0',
         },
       });
       return;
@@ -356,26 +361,57 @@ async function triggerWeeklyDarkRiskStandardScan(
     await supabase.from('external_scan_audit_log').insert({
       organization_id: orgId,
       actor_email: 'system:cron',
-      action: 'darkrisk_weekly_started',
+      action: `darkrisk_v2_${schedule.kind}_queued`,
       details: {
-        scan_run_id: body?.scan_run_id || null,
+        scan_run_id: body?.run_id || null,
         status: body?.status || 'accepted',
-        include_dti_extended: false,
+        period_key: schedule.periodKey,
+        orchestrator_version: '2.0',
       },
     });
   } catch (error) {
     await supabase.from('external_scan_audit_log').insert({
       organization_id: orgId,
       actor_email: 'system:cron',
-      action: 'darkrisk_weekly_failed',
+      action: `darkrisk_v2_${schedule.kind}_failed`,
       details: {
         error: (error as Error)?.message || 'network_error',
-        include_dti_extended: false,
+        period_key: schedule.periodKey,
+        orchestrator_version: '2.0',
       },
     });
   } finally {
     clearTimeout(t);
   }
+}
+
+async function runDarkRiskV2Scheduler(
+  supabase: any,
+  supabaseUrl: string,
+  serviceRoleKey: string,
+) {
+  const schedule = getEuropeRomeScheduleDue(new Date());
+  if (!schedule) return { due: false, queued: 0, period_key: null };
+
+  const now = new Date().toISOString();
+  const { data: grants, error } = await supabase
+    .from('darkrisk_capability_grants')
+    .select('organization_id')
+    .eq('capability', 'standard_monitor')
+    .eq('enabled', true)
+    .lte('starts_at', now)
+    .or(`ends_at.is.null,ends_at.gt.${now}`);
+  if (error) throw error;
+
+  const organizationIds: string[] = Array.from(new Set<string>(
+    (grants || [])
+      .map((grant: { organization_id?: string }) => String(grant.organization_id || ''))
+      .filter((organizationId: string) => Boolean(organizationId)),
+  ));
+  for (const organizationId of organizationIds) {
+    await enqueueDarkRiskV2Workflow(supabase, supabaseUrl, serviceRoleKey, organizationId, schedule);
+  }
+  return { due: true, queued: organizationIds.length, period_key: schedule.periodKey, kind: schedule.kind };
 }
 
 // Subdomain discovery automatica: per ogni dominio ROOT in scope (non già
@@ -571,6 +607,14 @@ Deno.serve(async (req) => {
     const orgFilter: string | undefined = body.organization_id;
     const triggeredBy: string = body.triggered_by ?? 'cron';
     const dispatchOnly = Boolean(body.dispatch_only);
+    const darkriskScheduleOnly = Boolean(body.darkrisk_schedule_only);
+    if (darkriskScheduleOnly) {
+      const result = await runDarkRiskV2Scheduler(supabase, supabaseUrl, serviceRoleKey);
+      return new Response(JSON.stringify({ scheduled_at: new Date().toISOString(), ...result }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     const SHODAN_API_KEY = Deno.env.get('SHODAN_API_KEY');
     if (!dispatchOnly && !SHODAN_API_KEY) {
       return new Response(JSON.stringify({ error: 'SHODAN_API_KEY missing' }),
@@ -624,11 +668,6 @@ Deno.serve(async (req) => {
       Deno.env.get('SURFACESCAN_CRON_INTERNAL_SECRET') ||
       Deno.env.get('SURFACESCAN_INTERNAL_SECRET') ||
       null;
-    const darkriskInternalSecret =
-      Deno.env.get('DARKRISK360_INTERNAL_SECRET') ||
-      Deno.env.get('DARKRISK_INTERNAL_SECRET') ||
-      internalSecret;
-
     for (const [orgId, orgRules] of byOrg.entries()) {
       const orgRuntime = orgRuntimeById.get(orgId) || null;
       const surfaceGate = evaluateOrganizationServiceGate(orgRuntime, 'surface_scan360');
@@ -811,11 +850,6 @@ Deno.serve(async (req) => {
 
         // Report repository canonico SurfaceScan360: refresh automatico settimanale.
         await refreshWeeklyScopeRepositoryReport(supabase, supabaseUrl, serviceRoleKey, internalSecret, orgId);
-      }
-
-      // DarkRisk360 standard weekly sync: DTI esteso escluso dai run cron.
-      if (darkRiskGate.allowed) {
-        await triggerWeeklyDarkRiskStandardScan(supabase, supabaseUrl, serviceRoleKey, darkriskInternalSecret, orgId);
       }
 
       // ConnectSecure Attack Surface Mapper — sweep settimanale async

@@ -138,7 +138,7 @@ export function DarkRiskManualTargetManager({ organizationId }: Props) {
         </CardTitle>
         <CardDescription className="text-xs">
           Aggiungi domini, email o IP da monitorare. Per i domini viene generata automaticamente
-          la ricerca sull'apex e su @dominio.
+          la ricerca sul dominio bare autorizzato.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

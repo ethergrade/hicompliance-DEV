@@ -951,7 +951,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
               <div className="flex flex-col gap-3 mb-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <p className="text-xs font-medium">Dettaglio evidenze sensibili su query domini in scope (`@dominio`)</p>
+                    <p className="text-xs font-medium">Dettaglio evidenze sensibili su domini bare in scope (`dominio.it`)</p>
                     <p className="text-[11px] text-muted-foreground">
                       PowerQuery: testo libero oppure campi `categoria:`, `dominio:`, `query:`, `valore:`, `source:`, `kind:`, `marcato:`.
                     </p>
@@ -965,7 +965,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{ rows: Row[]; extendedMode?: b
                   onChange={(event) =>
                     setSensitivePowerQuery(event.target.value)
                   }
-                  placeholder="Es. categoria:Password dominio:dominio.it query:@dominio.it valore:chrome marcato:2026"
+                  placeholder="Es. categoria:Password dominio:dominio.it query:dominio.it valore:chrome marcato:2026"
                   className="h-9 text-xs"
                 />
                 <div className="flex flex-wrap items-center gap-2">

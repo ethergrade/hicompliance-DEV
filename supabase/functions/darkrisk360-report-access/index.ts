@@ -6,6 +6,11 @@ import {
   makeSupabaseClients,
 } from '../_shared/surface-scan-utils.ts';
 import { maskPotentialSecrets, normalizeText } from '../_shared/darkrisk-utils.ts';
+import {
+  canViewExtendedSensitiveData,
+  isSalesCaller,
+  resolveDarkRiskCapabilities,
+} from '../_shared/darkrisk-access-policy.ts';
 
 type ReportFormat = 'html' | 'json' | 'pdf';
 
@@ -15,6 +20,7 @@ function jsonResponse(body: unknown, status = 200): Response {
     headers: {
       ...corsHeaders,
       'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
     },
   });
 }
@@ -45,7 +51,7 @@ serve(async (req: Request) => {
     const requestedCustomerId = sanitize(body?.customer_id, 120);
     const reason = sanitize(body?.reason, 240) || 'manual_report_export';
     const format = normalizeFormat(body?.format);
-    const expiresIn = Math.max(60, Math.min(3600, Number(body?.expires_in || 900)));
+    const expiresIn = Math.max(60, Math.min(900, Number(body?.expires_in || 900)));
 
     if (!reportId) return jsonResponse({ ok: false, error: 'report_id is required' }, 400);
     if (!format) return jsonResponse({ ok: false, error: 'format must be html, json or pdf' }, 400);
@@ -53,7 +59,7 @@ serve(async (req: Request) => {
     const caller = await getCallerProfile(adminClient, authData.user.id);
     const reportRes = await adminClient
       .from('darkrisk_report_snapshots' as any)
-      .select('id, organization_id, title, classification, html_storage_path, json_storage_path, pdf_storage_path')
+      .select('id, organization_id, title, classification, tier, scan_run_id, html_storage_path, json_storage_path, pdf_storage_path')
       .eq('id', reportId)
       .maybeSingle();
 
@@ -65,10 +71,30 @@ serve(async (req: Request) => {
     if (!customerId) return jsonResponse({ ok: false, error: 'Unable to resolve customer scope' }, 400);
 
     assertCustomerAccess(caller, customerId);
+    if (isSalesCaller(caller)) {
+      return jsonResponse({ ok: false, error: 'Sales users cannot access DarkRisk reports' }, 403);
+    }
 
     const reportOrg = sanitize(String(report.organization_id || ''), 120);
     if (reportOrg !== customerId) {
       return jsonResponse({ ok: false, error: 'report_id not in selected customer scope' }, 403);
+    }
+
+    if (String(report.tier || '').toLowerCase() === 'extended') {
+      const [{ data: entitlement, error: entitlementError }, grantsRes] = await Promise.all([
+        adminClient.from('darkrisk_entitlements' as any).select('enabled, tier').eq('organization_id', customerId).maybeSingle(),
+        adminClient.from('darkrisk_capability_grants' as any).select('capability, enabled').eq('organization_id', customerId).eq('enabled', true),
+      ]);
+      if (entitlementError && String((entitlementError as any)?.code || '') !== '42P01') throw entitlementError;
+      if (grantsRes.error && String((grantsRes.error as any)?.code || '') !== '42P01') throw grantsRes.error;
+      const capabilities = resolveDarkRiskCapabilities({
+        grants: (grantsRes.data || []) as Array<{ capability?: string | null; enabled?: boolean | null }>,
+        legacyEnabled: Boolean(entitlement?.enabled),
+        legacyTier: String(entitlement?.tier || ''),
+      });
+      if (!canViewExtendedSensitiveData(caller, customerId, capabilities)) {
+        return jsonResponse({ ok: false, error: 'Extended report access denied' }, 403);
+      }
     }
 
     // NB: lo storage path è un valore di sistema (generato dalla edge function di build),
