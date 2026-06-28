@@ -8,7 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Link2, Unlink, Plug, Shield, Mail, Monitor, Smartphone, Activity, Search as SearchIcon, Server, ShieldCheck, FileCheck, Eye, Radar, Calendar } from 'lucide-react';
+import { Loader2, Link2, Unlink, Plug, Shield, ShieldAlert, Mail, Monitor, Smartphone, Activity, Search as SearchIcon, Server, ShieldCheck, FileCheck, Eye, Radar, Calendar } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { tenantServicesApi } from '@/lib/api';
@@ -57,7 +57,7 @@ function deriveFlags(services: TenantServiceResource[]) {
     irp_extended: !!(hc?.settings as any)?.extended_range,
     surface_scan_extended: !!(ht?.settings as any)?.extended_range,
     surface_scan360_enabled: !!ht,
-    dark_risk360_enabled: !!dr,
+    dark_risk360_enabled: !!dr || !!hc,
     hipatch_enabled: !!hp,
   };
 }
@@ -65,10 +65,13 @@ function deriveFlags(services: TenantServiceResource[]) {
 /** Derive DarkRisk tier from tenant-services list */
 function deriveDarkRiskTier(services: TenantServiceResource[]) {
   const dr = services.find(s => s.service_type === 'darkrisk' && (s.status === 'active' || !s.status));
-  const tier = (dr?.settings as any)?.tier;
+  const settings = (dr?.settings as Record<string, unknown> | null) ?? {};
+  const extended = settings.extended_identity === true || settings.extended_enabled === true || settings.tier === 'extended';
   return {
-    tier: (tier === 'extended' ? 'extended' : 'standard') as 'standard' | 'extended',
+    tier: (extended ? 'extended' : 'standard') as 'standard' | 'extended',
     enabled: !!dr,
+    standard: !!dr || extended,
+    extended,
   };
 }
 
@@ -227,7 +230,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
         tenant_id: organizationId,
         service_type: 'darkrisk',
         status: 'active',
-        settings: { tier: 'standard' },
+        settings: { tier: 'standard', standard_monitor: true, extended_identity: false },
       }, groupId);
     }
       }
@@ -255,7 +258,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
             tenant_id: organizationId,
             service_type: 'darkrisk',
             status: 'active',
-            settings: { tier: darkRiskTier, ...(defaultStart ? { contract_start: defaultStart } : {}) },
+            settings: { tier: darkRiskTier, standard_monitor: true, extended_identity: darkRiskTier === 'extended', ...(defaultStart ? { contract_start: defaultStart } : {}) },
           }, groupId);
         }
       }
@@ -278,6 +281,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     onSuccess: () => {
       refetchServices();
       queryClient.invalidateQueries({ queryKey: ['sidebar-org-flags'] });
+      queryClient.invalidateQueries({ queryKey: ['org-services-hydrate', organizationId, groupId] });
       // Also refresh the dashboard's `useServiceIntegrations` so the service tile
       // appears/disappears in realtime when toggled (no manual refresh required).
       queryClient.invalidateQueries({ queryKey: ['service-integrations', organizationId, groupId] });
@@ -287,7 +291,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
   });
 
   const updateDarkRiskTierMutation = useMutation({
-    mutationFn: async (tier: 'standard' | 'extended') => {
+    mutationFn: async (extended: boolean) => {
       if (!organizationId) throw new Error('Nessuna azienda selezionata');
       // Refetch to get fresh tenant-services after main toggle created the service
       const ts = await queryClient.fetchQuery({
@@ -296,16 +300,25 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
       });
       let dr = ts.find(s => s.service_type === 'darkrisk');
       if (!dr) {
-        dr = await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'darkrisk', status: 'active', settings: { tier } }, groupId);
+        dr = await tenantServicesApi.create({ tenant_id: organizationId, service_type: 'darkrisk', status: 'active', settings: { tier: extended ? 'extended' : 'standard', standard_monitor: true, extended_identity: extended } }, groupId);
       }
-      await tenantServicesApi.update(dr.id, { settings: { ...(dr.settings as any || {}), tier, enabled: true } }, groupId);
+      await tenantServicesApi.update(dr.id, {
+        settings: {
+          ...(dr.settings as Record<string, unknown> || {}),
+          tier: extended ? 'extended' : 'standard',
+          standard_monitor: true,
+          extended_identity: extended,
+          enabled: true,
+        },
+      }, groupId);
     },
     onSuccess: () => {
       refetchServices();
+      queryClient.invalidateQueries({ queryKey: ['org-services-hydrate', organizationId, groupId] });
       queryClient.invalidateQueries({ queryKey: ['service-integrations', organizationId, groupId] });
-      toast.success('Tier DarkRisk360 aggiornato');
+      toast.success('Moduli DarkRisk360 aggiornati');
     },
-    onError: (err: Error) => toast.error(`Errore tier DarkRisk360: ${getErrorDetail(err)}`),
+    onError: (err: Error) => toast.error(`Errore moduli DarkRisk360: ${getErrorDetail(err)}`),
   });
 
   const contractUpdateMutation = useMutation({
@@ -634,7 +647,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                 </div>
               )}
 
-              {/* DarkRisk360 — independent */}
+              {/* DarkRisk360 Standard — incluso con HiCompliance o standalone */}
               <div className="flex items-center justify-between rounded-md border p-3">
                 <div className="flex items-center gap-3">
                   <div className={`p-1.5 rounded-md ${orgFlags?.dark_risk360_enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
@@ -642,51 +655,49 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                   </div>
                   <div>
                     <p className="text-sm font-medium">DarkRisk360</p>
-                    <p className="text-xs text-muted-foreground">Monitoraggio dark web e leak</p>
+                    <p className="text-xs text-muted-foreground">Monitoraggio settimanale count-only e report mensile</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Select
-                    value={String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'extended' : 'standard'}
-                    onValueChange={(value) =>
-                      updateDarkRiskTierMutation.mutate(value === 'extended' ? 'extended' : 'standard')
-                    }
-                    disabled={updateDarkRiskTierMutation.isPending || !orgFlags?.dark_risk360_enabled}
-                  >
-                    <SelectTrigger className="h-8 w-[140px]">
-                      <SelectValue placeholder="Livello" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="standard">Standard</SelectItem>
-                      <SelectItem value="extended">Estesa</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  {orgFlags?.hicompliance_enabled && <Badge variant="outline" className="text-xs">Incluso da HiCompliance</Badge>}
+                  {!orgFlags?.hicompliance_enabled && darkRiskEntitlement.extended && <Badge variant="outline" className="text-xs">Incluso da Esteso</Badge>}
                   <Switch
                     checked={!!orgFlags?.dark_risk360_enabled}
-                    disabled={updateFlagsMutation.isPending}
+                    disabled={updateFlagsMutation.isPending || darkRiskEntitlement.extended || orgFlags?.hicompliance_enabled}
                     onCheckedChange={async (v) => {
-                      const tier = String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'extended' : 'standard';
-                      await updateFlagsMutation.mutateAsync({ dark_risk360_enabled: v, dark_risk_tier: tier });
+                      await updateFlagsMutation.mutateAsync({ dark_risk360_enabled: v, dark_risk_tier: 'standard' });
                     }}
                   />
                 </div>
               </div>
 
-              {orgFlags?.dark_risk360_enabled && (
+              {darkRiskEntitlement.enabled && (
                 <div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
                   {renderContractRow('darkrisk')}
-                  <div className="flex items-center justify-between rounded-md border p-2.5">
-                    <div className="flex items-center gap-3">
-                      <Eye className="w-4 h-4 text-muted-foreground" />
-                      <div>
-                        <p className="text-sm font-medium">Tier DarkRisk360</p>
-                        <p className="text-xs text-muted-foreground">Standard o Estesa sullo stesso modulo</p>
-                      </div>
-                    </div>
-                    <Badge variant="outline" className="text-xs">
-                      {String((darkRiskEntitlement as any)?.tier || 'standard') === 'extended' ? 'Estesa' : 'Standard'}
-                    </Badge>
+                  <div className="flex items-center justify-between rounded-md border p-2.5"><div className="flex items-center gap-3"><Calendar className="w-4 h-4 text-muted-foreground" /><div><p className="text-sm font-medium">Automazione Standard</p><p className="text-xs text-muted-foreground">Scansione settimanale e report mensile</p></div></div><Badge variant="outline" className="text-xs">Attiva</Badge></div>
+                </div>
+              )}
+
+              {/* DarkRisk360 Esteso — modulo spot separato; include sempre Standard */}
+              <div className="flex items-center justify-between rounded-md border border-violet-500/20 p-3">
+                <div className="flex items-center gap-3">
+                  <div className={`p-1.5 rounded-md ${darkRiskEntitlement.extended ? 'bg-violet-500/10 text-violet-400' : 'bg-muted text-muted-foreground'}`}><ShieldAlert className="w-4 h-4" /></div>
+                  <div>
+                    <p className="text-sm font-medium">DarkRisk360 Esteso</p>
+                    <p className="text-xs text-muted-foreground">Identity spot con evidenze e password; include DarkRisk360 Standard</p>
                   </div>
+                </div>
+                <Switch
+                  checked={darkRiskEntitlement.extended}
+                  disabled={updateDarkRiskTierMutation.isPending}
+                  onCheckedChange={(enabled) => updateDarkRiskTierMutation.mutate(enabled)}
+                />
+              </div>
+
+              {darkRiskEntitlement.extended && (
+                <div className="ml-4 flex items-center justify-between rounded-md border border-violet-500/15 p-2.5">
+                  <div><p className="text-sm font-medium">Modalità operativa</p><p className="text-xs text-muted-foreground">Solo scansioni spot avviate da admin o superadmin; nessun cron Esteso</p></div>
+                  <Badge className="bg-violet-500/15 text-violet-300">Identity attiva</Badge>
                 </div>
               )}
 

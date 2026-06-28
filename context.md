@@ -181,3 +181,28 @@ Open `src/pages/DarkRisk360.tsx:326` — the stubbed findings query is the most 
 - Acceptance baseline: 34 HTTPS services without fingerprint produce 34 findings, 17.6 risk points, posture 82/100, and risk level `Medio`.
 - Validation completed: 51 Deno tests, TypeScript, production build, Edge Function checks, and unauthenticated browser smoke test.
 - Visual follow-up completed: `Distribuzione Severity Exposure` now has semantic severity colors, segment pin-points/leader labels, center total/selected state, interactive keyboard-accessible legend, tooltip, and restrained cyber Palantir/Gotham styling. Desktop `893px` and mobile `390px` renders passed design QA; see `design-qa.md`.
+
+## SurfaceScan Exposure Risk V3 — durable checkpoint (2026-06-27)
+
+- Exposure Risk V3, unified service findings, shared port/service matrix, deduplication, CVE evidence rules, UI tables/cards, AI report, PDF and DOCX were completed.
+- The severity donut redesign was completed with semantic colors, pin-point labels, interactive legend, keyboard support and responsive cyber-intelligence styling.
+- Documentation was consolidated under `docs/surfacescan360/`, including `07-EXPOSURE-RISK-V3.md`; visual QA is recorded in `design-qa.md`.
+- Validation on `imnick`: 51 Deno tests passed, TypeScript/build passed, Edge checks passed, chart ESLint passed and the no-secrets gate passed.
+- Validation on `PRODOTTO`: 59 Deno tests passed, TypeScript/build passed, Edge checks passed, chart ESLint passed and the no-secrets gate passed.
+- Published commit on `imnick`: `749a1f2d853d35d9beec603a211ab2e9a7670a3d`.
+- Published commit on `PRODOTTO`: `10eccadc3f95470f5340553001f729e6d88795a5`.
+- Product conflicts were resolved by preserving the richer product report implementation and adding only the V3 fields; the DEV-only `context.md` deletion policy on `PRODOTTO` was preserved.
+- `.env_per_stefano` exists only in the DEV workspace, is ignored by Git, has permission mode `600`, and contains 13 authorized local configuration variables. Secret values must never be copied into Git, documentation, logs, screenshots or chat.
+- Unrelated pre-existing files and `supabase/.temp/cli-latest` were deliberately excluded from both commits.
+
+## DarkRisk360 Refactor V2 / IntelX — durable checkpoint (2026-06-28)
+
+- Standard and Esteso are separate capabilities: HiCompliance and Esteso grant Standard; Esteso is spot-only and admin/superadmin-started.
+- Canonical external scope is capped at four approved public domains/IPs; domains stay bare and email selectors are removed from the UI/API contract.
+- IntelX Search is pinned to `2.intelx.io`; Identity is pinned to `3.intelx.io`, bucket `leaks.private.general`, async `/accounts/csv`; `4.intelx.io` and `/accounts/1` are blocked and tested.
+- V2 persists idempotent runs/tasks with leases, retry/heartbeat, count-only Standard projection, canonical record occurrences and encrypted Extended payloads.
+- Weekly Standard and monthly report scheduling are Europe/Rome DST-safe. Extended has no scan cron. Contract-end purge removes sensitive payloads/reports/Storage within 24 hours.
+- Frontend routes are separated into `src/features/darkrisk/{standard,extended}` and call Laravel API boundaries; provider flags and identity email input are absent.
+- Semantic implementations exist on `imnick` and `PRODOTTO`; no automatic cherry-pick was used.
+- The Laravel repository is still required for REST controllers, transactional dual-write to SurfaceScan scope, report projectors, authorized decrypt/audit endpoints and percentage rollout.
+- `.env_per_stefano` remains ignored/mode 600; V2 variable names and a local-only development KEK were added without exposing secret values.

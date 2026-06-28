@@ -1,6 +1,7 @@
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/components/auth/AuthProvider";
@@ -12,7 +13,6 @@ import { ScrollToTop } from "@/components/ScrollToTop";
 import Dashboard from "./pages/Dashboard";
 import ServiceDashboard from "./pages/ServiceDashboard";
 import SurfaceScan360 from "./pages/SurfaceScan360";
-import DarkRisk360 from "./pages/DarkRisk360";
 import Assessment from "./pages/Assessment";
 import Remediation from "./pages/Remediation";
 import Analytics from "./pages/Analytics";
@@ -47,6 +47,11 @@ import SamlCallback from "./pages/SamlCallback";
 import EntraRedirect from "./pages/EntraRedirect";
 import NotFound from "./pages/NotFound";
 
+const StandardDarkRiskPage = lazy(() => import("./features/darkrisk/standard/StandardDarkRiskPage"));
+const ExtendedDarkRiskPage = lazy(() => import("./features/darkrisk/extended/ExtendedDarkRiskPage"));
+
+const darkRiskFallback = <div className="p-8 text-sm text-muted-foreground">Caricamento DarkRisk360…</div>;
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -76,7 +81,8 @@ const App = () => (
 							<Route path="/dashboard/service/:serviceCode" element={<ClientSelectionGuard><ServiceDashboard /></ClientSelectionGuard>} />
 							<Route path="/surface-scan" element={<ClientSelectionGuard><SurfaceScan360 /></ClientSelectionGuard>} />
 							<Route path="/surface-scan/exposure" element={<Navigate to="/surface-scan" replace />} />
-							<Route path="/dark-risk" element={<ClientSelectionGuard><DarkRisk360 /></ClientSelectionGuard>} />
+							<Route path="/dark-risk" element={<ClientSelectionGuard><Suspense fallback={darkRiskFallback}><StandardDarkRiskPage /></Suspense></ClientSelectionGuard>} />
+							<Route path="/dark-risk-esteso" element={<ClientSelectionGuard><Suspense fallback={darkRiskFallback}><ExtendedDarkRiskPage /></Suspense></ClientSelectionGuard>} />
 							<Route path="/assessment" element={<ClientSelectionGuard><Assessment /></ClientSelectionGuard>} />
 							<Route path="/remediation" element={<ClientSelectionGuard><Remediation /></ClientSelectionGuard>} />
 							<Route path="/analytics" element={<ClientSelectionGuard><Analytics /></ClientSelectionGuard>} />

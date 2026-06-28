@@ -6,6 +6,9 @@ import {
   makeSupabaseClients,
 } from '../_shared/surface-scan-utils.ts';
 import { isEmailSelectorCoverageKind } from '../_shared/darkrisk-query-kind.ts';
+import {
+  resolveDarkRiskCapabilities,
+} from '../_shared/darkrisk-access-policy.ts';
 
 type Severity = 'info' | 'low' | 'medium' | 'high' | 'critical';
 type CoverageStatus = 'completed' | 'partial' | 'error' | 'not_run' | 'planned';
@@ -111,6 +114,7 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: {
       'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
       ...corsHeaders,
     },
   });
@@ -427,10 +431,10 @@ serve(async (req: Request) => {
 
     assertCustomerAccess(caller, customerId);
 
-    const [orgFlagsRes, entitlementRes] = await Promise.all([
+    const [orgFlagsRes, entitlementRes, grantsRes] = await Promise.all([
       adminClient
         .from('organizations' as any)
-        .select('dark_risk360_enabled')
+        .select('hicompliance_enabled, dark_risk360_enabled')
         .eq('id', customerId)
         .maybeSingle(),
       adminClient
@@ -438,6 +442,11 @@ serve(async (req: Request) => {
         .select('enabled, tier, enable_raw_evidence')
         .eq('organization_id', customerId)
         .maybeSingle(),
+      adminClient
+        .from('darkrisk_capability_grants' as any)
+        .select('capability, enabled')
+        .eq('organization_id', customerId)
+        .eq('enabled', true),
     ]);
 
     const orgFlags = orgFlagsRes.data || null;
@@ -451,11 +460,22 @@ serve(async (req: Request) => {
       }
     }
 
-    const darkRiskEnabled = entitlement?.enabled ?? Boolean(orgFlags?.dark_risk360_enabled);
-    const darkRiskTier = String(entitlement?.tier || 'standard').toLowerCase() === 'extended'
+    if (grantsRes.error && String((grantsRes.error as any)?.code || '') !== '42P01') {
+      throw grantsRes.error;
+    }
+    const grantRows = (grantsRes.data || []) as Array<{ capability?: string | null; enabled?: boolean | null }>;
+    const darkRiskCapabilities = resolveDarkRiskCapabilities({
+      grants: grantRows,
+      legacyEnabled: Boolean(entitlement?.enabled || orgFlags?.hicompliance_enabled || orgFlags?.dark_risk360_enabled),
+      legacyTier: entitlement?.tier,
+    });
+    const darkRiskEnabled = darkRiskCapabilities.has('standard_monitor');
+    const darkRiskTier = darkRiskCapabilities.has('extended_identity')
       ? 'extended'
       : 'standard';
-    const privilegedSensitiveView = true;
+    // The overview is the Standard/count-only projection. Clear Identity data
+    // is served only by the run-scoped Extended results boundary.
+    const privilegedSensitiveView = false;
 
     const latestDarkriskRunRes = await adminClient
       .from('darkrisk_scan_runs' as any)
@@ -546,6 +566,10 @@ serve(async (req: Request) => {
       previousDataJob = previousDataJobRes.data || null;
     }
 
+    const dtiSensitiveHitFields = privilegedSensitiveView
+      ? 'id, source_run_id, source_record_id, finding_id, source, source_label, query_kind, query_term, asset_scope, tag, masked_value, clear_value, match_policy, extraction_confidence, evidence_scope, created_at'
+      : 'id, source_run_id, source_record_id, finding_id, source, source_label, query_kind, query_term, asset_scope, tag, masked_value, match_policy, extraction_confidence, evidence_scope, created_at';
+
     const [
       alertConfigsRes,
       monitoredDomainsRes,
@@ -619,7 +643,7 @@ serve(async (req: Request) => {
       latestDarkriskRun?.id
         ? adminClient
             .from('darkrisk_dti_sensitive_hits' as any)
-            .select('id, source_run_id, source_record_id, finding_id, source, source_label, query_kind, query_term, asset_scope, tag, masked_value, clear_value, match_policy, extraction_confidence, evidence_scope, created_at')
+            .select(dtiSensitiveHitFields)
             .eq('scan_run_id', latestDarkriskRun.id)
             .order('created_at', { ascending: false })
             .limit(3500)
@@ -747,7 +771,7 @@ serve(async (req: Request) => {
           query_term: String(row.query_term || ''),
           asset_scope: String(row.asset_scope || ''),
           tag,
-          value: String(row.clear_value || row.masked_value || ''),
+          value: String(privilegedSensitiveView ? row.clear_value || row.masked_value || '' : row.masked_value || ''),
           masked_value: String(row.masked_value || ''),
           match_policy: String((row as any).match_policy || ''),
           extraction_confidence: String((row as any).extraction_confidence || ''),

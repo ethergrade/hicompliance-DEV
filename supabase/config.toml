@@ -50,6 +50,12 @@ verify_jwt = false
 [functions.darkrisk360-sync-surfacescan]
 verify_jwt = false
 
+[functions.darkrisk360-orchestrator-v2]
+verify_jwt = false
+
+[functions.darkrisk360-worker-v2]
+verify_jwt = false
+
 [functions.darkrisk360-generate-recommendations]
 verify_jwt = false
 

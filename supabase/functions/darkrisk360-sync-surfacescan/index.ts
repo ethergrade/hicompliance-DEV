@@ -35,6 +35,8 @@ import {
   intelxDeepFetch,
 } from '../_shared/darkrisk-dti-enrichment.ts';
 import { isEmailSelectorCoverageKind } from '../_shared/darkrisk-query-kind.ts';
+import { IntelXSearchAdapter } from '../_shared/intelx-search-adapter.ts';
+import { intelXRecordFingerprint } from '../_shared/intelx-record-fingerprint.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
@@ -49,11 +51,8 @@ const INTERNAL_FUNCTIONS_API_KEY = String(
 const DARKRISK_INTERNAL_SECRET = String(Deno.env.get('DARKRISK360_INTERNAL_SECRET') || '').trim();
 const DARKRISK_OPERATOR_SECRET = String(Deno.env.get('DARKRISK360_OPERATOR_SECRET') || '').trim();
 const INTELX_API_KEY = Deno.env.get('INTELX_API_KEY') || '';
-const INTELX_API_URL = String(
-  Deno.env.get('INTELX_API_URL') ||
-  Deno.env.get('INTELX_BASE_URL') ||
-  'https://2.intelx.io',
-).replace(/\/+$/, '');
+const INTELX_API_URL = 'https://2.intelx.io';
+const INTELX_USER_AGENT = String(Deno.env.get('INTELX_USER_AGENT') || '').trim();
 const INTELX_MAX_SELECTORS_PER_RUN = Math.max(
   1,
   Math.min(60, Number(Deno.env.get('INTELX_MAX_SELECTORS_PER_RUN') || 20)),
@@ -293,7 +292,7 @@ type IntelxSelectorDefinition = {
 
 type IntelxQueryTerm = {
   term: string;
-  kind: 'selector' | 'at_domain_tld' | 'email_selector';
+  kind: 'selector' | 'domain_selector' | 'email_selector';
   selectorNormalized: string | null;
   linkedAssetNormalized: string | null;
 };
@@ -314,7 +313,7 @@ const intelxAllowedSelectorTypes = new Set([
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function isIntelxConfigured(): boolean {
-  return Boolean(INTELX_API_KEY && INTELX_API_URL);
+  return Boolean(INTELX_API_KEY && INTELX_API_URL && INTELX_USER_AGENT);
 }
 
 function severityFromIntelxScore(score: number | null): 'info' | 'low' | 'medium' | 'high' | 'critical' {
@@ -354,13 +353,8 @@ function intelxFindingTypeFromRecord(record: Record<string, unknown>, selector: 
   return 'intelx_exposure_signal';
 }
 
-function normalizeIntelxRecordKey(selector: string, record: Record<string, unknown>): string {
-  const systemId = normalizeText(String(record?.systemid || ''));
-  const storageId = normalizeText(String(record?.storageid || ''));
-  if (systemId) return `${selector}|systemid:${systemId}`;
-  if (storageId) return `${selector}|storageid:${storageId}`;
-  const fallback = normalizeText(String(record?.name || record?.description || '')).slice(0, 120);
-  return `${selector}|fallback:${fallback || crypto.randomUUID()}`;
+async function normalizeIntelxRecordKey(selector: string, record: Record<string, unknown>): Promise<string> {
+  return await intelXRecordFingerprint(selector, record, { preferSystemId: true });
 }
 
 function collectIntelxSelectors(
@@ -404,9 +398,9 @@ function normalizeScopeDomain(value: string): string {
   return normalizeText(value).toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/\.$/, '');
 }
 
-function buildAtDomainTldTerms(scopeDomains: string[]): string[] {
+function buildDomainTerms(scopeDomains: string[]): string[] {
   const normalizedDomains = [...new Set(scopeDomains.map((entry) => normalizeScopeDomain(entry)).filter(isDomainLike))];
-  return normalizedDomains.map((domain) => `@${domain}`);
+  return normalizedDomains;
 }
 
 function buildIntelxQueryTerms(
@@ -416,18 +410,18 @@ function buildIntelxQueryTerms(
   const terms: IntelxQueryTerm[] = [];
   const dedupe = new Set<string>();
 
-  const atDomainTerms = buildAtDomainTldTerms(scopeDomains);
-  for (const atTerm of atDomainTerms) {
-    const clean = normalizeText(atTerm).toLowerCase();
+  const domainTerms = buildDomainTerms(scopeDomains);
+  for (const domainTerm of domainTerms) {
+    const clean = normalizeText(domainTerm).toLowerCase();
     if (!clean) continue;
-    const key = `at_domain_tld:${clean}`;
+    const key = `domain_selector:${clean}`;
     if (dedupe.has(key)) continue;
     dedupe.add(key);
     terms.push({
       term: clean,
-      kind: 'at_domain_tld',
+      kind: 'domain_selector',
       selectorNormalized: null,
-      linkedAssetNormalized: clean.replace(/^@/, ''),
+      linkedAssetNormalized: clean,
     });
   }
 
@@ -866,64 +860,6 @@ const INTELX_SERVER_TIMEOUT_S = Math.max(
   Math.ceil((INTELX_MAX_POLL_ROUNDS * INTELX_REQUEST_INTERVAL_MS) / 1000),
 );
 
-async function intelxSubmitSearch(term: string): Promise<string | null> {
-  const payload = {
-    term,
-    buckets: [],
-    lookuplevel: 0,
-    maxresults: INTELX_MAX_RESULTS_PER_SELECTOR,
-    timeout: INTELX_SERVER_TIMEOUT_S,
-    datefrom: '',
-    dateto: '',
-    sort: 2,
-    media: 0,
-    terminate: [],
-  };
-
-  return intelxFetchWithBackoff(async () => {
-    const response = await fetch(`${INTELX_API_URL}/intelligent/search`, {
-      method: 'POST',
-      headers: {
-        'X-Key': INTELX_API_KEY,
-        'Content-Type': 'application/json',
-        'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`DarkRisk360 intelligence search submit failed (${response.status}): ${errorText.slice(0, 180)}`);
-    }
-
-    const data = (await response.json()) as IntelxSearchResponse;
-    if (Number(data?.status) === 1) return null;
-    return normalizeText(String(data?.id || '')) || null;
-  });
-}
-
-async function intelxFetchSearchResult(searchId: string): Promise<IntelxSearchResponse> {
-  const url = new URL(`${INTELX_API_URL}/intelligent/search/result`);
-  url.searchParams.set('id', searchId);
-  url.searchParams.set('limit', String(INTELX_MAX_RESULTS_PER_SELECTOR));
-
-  return intelxFetchWithBackoff(async () => {
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        'X-Key': INTELX_API_KEY,
-        'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
-      },
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`DarkRisk360 intelligence search result failed (${response.status}): ${errorText.slice(0, 180)}`);
-    }
-    return (await response.json()) as IntelxSearchResponse;
-  });
-}
-
 async function intelxTerminateSearch(searchId: string): Promise<void> {
   const url = new URL(`${INTELX_API_URL}/intelligent/search/terminate`);
   url.searchParams.set('id', searchId);
@@ -931,41 +867,24 @@ async function intelxTerminateSearch(searchId: string): Promise<void> {
     method: 'GET',
     headers: {
       'X-Key': INTELX_API_KEY,
-      'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
+      'User-Agent': INTELX_USER_AGENT,
     },
   }).catch(() => undefined);
 }
 
-async function runIntelxSearch(selector: string): Promise<Array<Record<string, unknown>>> {
-  const searchId = await intelxSubmitSearch(selector);
-  if (!searchId) return [];
-
-  const collected: Array<Record<string, unknown>> = [];
-  const seen = new Set<string>();
-
-  try {
-    for (let round = 0; round < INTELX_MAX_POLL_ROUNDS; round += 1) {
-      await wait(INTELX_REQUEST_INTERVAL_MS);
-      const result = await intelxFetchSearchResult(searchId);
-      const status = Number(result?.status ?? 3);
-      const records = Array.isArray(result?.records) ? result.records : [];
-
-      for (const record of records) {
-        const dedupeKey = normalizeIntelxRecordKey(selector, record);
-        if (seen.has(dedupeKey)) continue;
-        seen.add(dedupeKey);
-        collected.push(record);
-      }
-
-      if (status === 1 || status === 2) break;
-      if (status === 0 && records.length === 0) break;
-    }
-  } finally {
-    await wait(250);
-    await intelxTerminateSearch(searchId);
-  }
-
-  return collected.slice(0, INTELX_MAX_RESULTS_PER_SELECTOR);
+async function runIntelxSearch(selector: string): Promise<{
+  records: Array<Record<string, unknown>>;
+  count: number;
+  atLeast: boolean;
+}> {
+  const adapter = new IntelXSearchAdapter({
+    apiKey: INTELX_API_KEY,
+    userAgent: INTELX_USER_AGENT,
+    maxResults: INTELX_MAX_RESULTS_PER_SELECTOR,
+    maxPollRounds: INTELX_MAX_POLL_ROUNDS,
+  });
+  const result = await adapter.search(selector);
+  return { records: result.records, count: result.count, atLeast: result.atLeast };
 }
 
 async function intelxSubmitPhonebookSearch(term: string): Promise<string | null> {
@@ -975,7 +894,7 @@ async function intelxSubmitPhonebookSearch(term: string): Promise<string | null>
       headers: {
         'X-Key': INTELX_API_KEY,
         'Content-Type': 'application/json',
-        'User-Agent': 'HICONSOLE-DarkRisk360/1.0',
+        'User-Agent': INTELX_USER_AGENT,
       },
       body: JSON.stringify({
         term,
@@ -1001,7 +920,7 @@ async function intelxFetchPhonebookResult(searchId: string): Promise<IntelxSearc
   return intelxFetchWithBackoff(async () => {
     const response = await fetch(url.toString(), {
       method: 'GET',
-      headers: { 'X-Key': INTELX_API_KEY, 'User-Agent': 'HICONSOLE-DarkRisk360/1.0' },
+      headers: { 'X-Key': INTELX_API_KEY, 'User-Agent': INTELX_USER_AGENT },
     });
     if (!response.ok) {
       const errorText = await response.text();
@@ -1025,7 +944,7 @@ async function runIntelxPhonebookSearch(selector: string): Promise<Array<Record<
       const status = Number(result?.status ?? 3);
       const records = Array.isArray(result?.records) ? result.records : [];
       for (const record of records) {
-        const dedupeKey = normalizeIntelxRecordKey(selector, record);
+        const dedupeKey = await normalizeIntelxRecordKey(selector, record);
         if (seen.has(dedupeKey)) continue;
         seen.add(dedupeKey);
         collected.push(record);
@@ -1215,10 +1134,10 @@ serve(async (req: Request) => {
     const requestedCustomerId = normalizeText(body?.customer_id);
     const requestedScanJobId = normalizeText(body?.scan_job_id);
     const triggerType = normalizeText(body?.trigger_type) || 'manual';
-    const includeDtiExtended = body?.include_dti_extended === undefined
-      ? !triggerType.startsWith('cron_weekly')
-      : Boolean(body?.include_dti_extended);
-    const manualIdentityEmails = parseIdentityEmailSelectors(body?.identity_emails);
+    // Legacy fallback is Standard-only. Extended Identity is exclusively queued
+    // through orchestrator-v2 and cannot be selected by frontend payload flags.
+    const includeDtiExtended = false;
+    const manualIdentityEmails: string[] = [];
 
     const customerId = requestedCustomerId || caller?.organizationId || '';
     if (!customerId) return jsonResponse({ error: 'customer_id is required' }, 400);
@@ -1812,10 +1731,9 @@ serve(async (req: Request) => {
       selectorByNormalized.set(String(row.normalized_value), String(row.id));
     }
 
-    const intelxQueryTerms = ensureIdentityEmailQueryTerms(
-      buildIntelxQueryTerms(intelxSelectorDefinitions, scopeDomains),
-      manualIdentityEmails,
-      intelxSelectorDefinitions,
+    const intelxQueryTerms = buildIntelxQueryTerms(
+      intelxSelectorDefinitions.filter((selector) => selector.type === 'ipv4' || selector.type === 'ipv6'),
+      scopeDomains,
     );
     const identityEmailSelectorsUsed = new Set(
       [
@@ -1851,7 +1769,7 @@ serve(async (req: Request) => {
     let intelxFindingsCreated = 0;
     let intelxAlertsCreated = 0;
     let intelxSearchesRun = 0;
-    let intelxAtDomainQueries = 0;
+    let intelxDomainQueries = 0;
     let intelxPhonebookSearchesRun = 0;
     let intelxDeepFetchesRun = 0;
     let intelxDeepFetchWarnings = 0;
@@ -2069,7 +1987,7 @@ serve(async (req: Request) => {
       }
     }
 
-    if (includeDtiExtended && isIntelxConfigured()) {
+    if (isIntelxConfigured()) {
       for (const queryTerm of intelxQueryTerms) {
         if (Date.now() >= runDeadlineTs) {
           intelxWarnings.push('Run budget raggiunto: ciclo IntelX interrotto in modo controllato.');
@@ -2098,9 +2016,10 @@ serve(async (req: Request) => {
 
         try {
           await wait(INTELX_REQUEST_INTERVAL_MS);
-          const records = await runIntelxSearch(queryTerm.term);
+          const searchResult = await runIntelxSearch(queryTerm.term);
+          const records = searchResult.records;
           intelxSearchesRun += 1;
-          if (queryTerm.kind === 'at_domain_tld') intelxAtDomainQueries += 1;
+          if (queryTerm.kind === 'domain_selector') intelxDomainQueries += 1;
 
           if (records.length === 0) {
             if (sourceRun?.id) {
@@ -2124,6 +2043,31 @@ serve(async (req: Request) => {
             continue;
           }
 
+          // Standard stores only count/trend projection. Search records are
+          // deliberately not persisted as leak details or password evidence.
+          if (sourceRun?.id) {
+            await finalizeDtiSourceRun(
+              adminClient,
+              sourceRun.id,
+              sourceRun.started_at || sourceRunStartedAt,
+              'completed',
+              searchResult.count,
+              searchResult.atLeast ? `Almeno ${searchResult.count} risultati` : null,
+              null,
+              {
+                stage: 'intelx_search_count_only',
+                query_term: queryTerm.term,
+                query_kind: queryTerm.kind,
+                records_count: searchResult.count,
+                at_least: searchResult.atLeast,
+                detail_persisted: false,
+              },
+            );
+          }
+          intelxRecordsProcessedTotal += searchResult.count;
+          dtiSourceRunsCompleted += 1;
+          continue;
+
           let runWarnings: string[] = [];
           let runSensitiveHits = 0;
           let runRecordsProcessed = 0;
@@ -2137,7 +2081,7 @@ serve(async (req: Request) => {
           }
 
           const selectorId = queryTerm.selectorNormalized
-            ? selectorByNormalized.get(queryTerm.selectorNormalized) || null
+            ? selectorByNormalized.get(String(queryTerm.selectorNormalized)) || null
             : null;
           const linkedAssetKey = normalizeAssetValue(queryTerm.linkedAssetNormalized || queryTerm.term.replace(/^@/, ''));
           const assetRef = linkedAssetKey ? assetByNormalized.get(linkedAssetKey) : undefined;
@@ -2154,7 +2098,7 @@ serve(async (req: Request) => {
             }
             intelxRecordsProcessedTotal += 1;
             runRecordsProcessed += 1;
-            const sourceRecordKey = normalizeIntelxRecordKey(queryTerm.term, record);
+            const sourceRecordKey = await normalizeIntelxRecordKey(queryTerm.term, record);
             const title = normalizeText(String(record?.name || '')) || `DarkRisk360 signal on ${queryTerm.term}`;
             const description = normalizeText(String(record?.description || '')) || `Segnale exposure rilevato su query ${queryTerm.term}.`;
             const observedAtCandidate = normalizeText(String(record?.date || record?.added || ''));
@@ -2196,7 +2140,7 @@ serve(async (req: Request) => {
               deepMetadata = deepRes.metadata || {};
               if (deepWarning) {
                 intelxDeepFetchWarnings += 1;
-                runWarnings.push(deepWarning);
+                runWarnings.push(String(deepWarning));
               }
             }
 
@@ -2442,11 +2386,12 @@ serve(async (req: Request) => {
           }
 
           const runStatus: DtiSourceRunStatus = runWarnings.length > 0 ? 'partial' : 'completed';
-          if (sourceRun?.id) {
+          const sourceRunId = normalizeText(String(sourceRun?.id || ''));
+          if (sourceRunId) {
             await finalizeDtiSourceRun(
               adminClient,
-              sourceRun.id,
-              sourceRun.started_at || sourceRunStartedAt,
+              sourceRunId,
+              sourceRun?.started_at || sourceRunStartedAt,
               runStatus,
               runRecordsProcessed,
               runWarnings[0] || null,
@@ -2490,7 +2435,7 @@ serve(async (req: Request) => {
     // Phonebook searches — extended tier only
     if (includeDtiExtended && isIntelxConfigured() && entitlement.tier === 'extended') {
       const phonebookTerms = intelxQueryTerms.filter(
-        (qt) => qt.kind === 'at_domain_tld' || qt.kind === 'selector' || qt.kind === 'email_selector',
+        (qt) => qt.kind === 'domain_selector' || qt.kind === 'selector' || qt.kind === 'email_selector',
       ).slice(0, Math.min(10, INTELX_MAX_QUERY_TERMS_PER_RUN));
 
       for (const queryTerm of phonebookTerms) {
@@ -2853,7 +2798,8 @@ serve(async (req: Request) => {
             email_queries_run: identityEmailQueriesRun,
             strict_password_hits: strictPasswordHits,
             metadata_only_hits: metadataOnlyHits,
-            at_domain_tld_queries: intelxAtDomainQueries,
+            domain_queries: intelxDomainQueries,
+            at_domain_tld_queries: 0,
             phonebook_searches_run: intelxPhonebookSearchesRun,
             deep_fetches_run: intelxDeepFetchesRun,
             deep_fetch_warnings: intelxDeepFetchWarnings,
@@ -2989,7 +2935,8 @@ serve(async (req: Request) => {
             email_queries_run: identityEmailQueriesRun,
             strict_password_hits: strictPasswordHits,
             metadata_only_hits: metadataOnlyHits,
-            at_domain_tld_queries: intelxAtDomainQueries,
+            domain_queries: intelxDomainQueries,
+            at_domain_tld_queries: 0,
             phonebook_searches_run: intelxPhonebookSearchesRun,
             deep_fetches_run: intelxDeepFetchesRun,
             deep_fetch_warnings: intelxDeepFetchWarnings,
@@ -3056,7 +3003,8 @@ serve(async (req: Request) => {
           email_queries_run: identityEmailQueriesRun,
           strict_password_hits: strictPasswordHits,
           metadata_only_hits: metadataOnlyHits,
-          at_domain_tld_queries: intelxAtDomainQueries,
+          domain_queries: intelxDomainQueries,
+          at_domain_tld_queries: 0,
           deep_fetches_run: intelxDeepFetchesRun,
           deep_fetch_warnings: intelxDeepFetchWarnings,
           source_records_created: intelxRecordsCreated,

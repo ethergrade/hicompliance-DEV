@@ -6,6 +6,10 @@ import {
   makeSupabaseClients,
 } from '../_shared/surface-scan-utils.ts';
 import { maskPotentialSecrets, normalizeText } from '../_shared/darkrisk-utils.ts';
+import {
+  canViewExtendedSensitiveData,
+  resolveDarkRiskCapabilities,
+} from '../_shared/darkrisk-access-policy.ts';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -13,6 +17,7 @@ function jsonResponse(body: unknown, status = 200): Response {
     headers: {
       ...corsHeaders,
       'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
     },
   });
 }
@@ -63,30 +68,21 @@ serve(async (req: Request) => {
       return jsonResponse({ ok: false, error: 'evidence_id not in selected customer scope' }, 403);
     }
 
-    const isAnalyst = caller.canManageAllOrganizations || caller.isAdminLike;
-    if (!isAnalyst) {
-      await adminClient.from('darkrisk_audit_log' as any).insert({
-        organization_id: customerId,
-        tenant_id: customerId,
-        actor_id: authData.user.id,
-        action: 'darkrisk_raw_evidence_reveal_denied',
-        entity_type: 'darkrisk_evidence',
-        entity_id: evidenceId,
-        reason: reason.slice(0, 240),
-        metadata: {
-          denial_reason: 'insufficient_role',
-        },
-      });
-      return jsonResponse({ ok: false, error: 'Raw evidence reveal is allowed only for analyst/admin roles' }, 403);
-    }
+    const [entitlementRes, grantsRes] = await Promise.all([
+      adminClient
+        .from('darkrisk_entitlements' as any)
+        .select('enabled, tier, enable_raw_evidence')
+        .eq('organization_id', customerId)
+        .maybeSingle(),
+      adminClient
+        .from('darkrisk_capability_grants' as any)
+        .select('capability, enabled')
+        .eq('organization_id', customerId)
+        .eq('enabled', true),
+    ]);
 
-    const entitlementRes = await adminClient
-      .from('darkrisk_entitlements' as any)
-      .select('enabled, tier, enable_raw_evidence')
-      .eq('organization_id', customerId)
-      .maybeSingle();
-
-    if (entitlementRes.error) throw entitlementRes.error;
+    if (entitlementRes.error && String((entitlementRes.error as any)?.code || '') !== '42P01') throw entitlementRes.error;
+    if (grantsRes.error && String((grantsRes.error as any)?.code || '') !== '42P01') throw grantsRes.error;
 
     const entitlement = entitlementRes.data as {
       enabled?: boolean;
@@ -94,12 +90,13 @@ serve(async (req: Request) => {
       enable_raw_evidence?: boolean;
     } | null;
 
-    if (!entitlement?.enabled) {
-      return jsonResponse({ ok: false, error: 'DarkRisk360 not enabled for customer' }, 403);
-    }
-
-    const tier = String(entitlement.tier || 'standard').toLowerCase();
-    if (tier !== 'extended' || entitlement.enable_raw_evidence !== true) {
+    const tier = String(entitlement?.tier || 'standard').toLowerCase();
+    const capabilities = resolveDarkRiskCapabilities({
+      grants: (grantsRes.data || []) as Array<{ capability?: string | null; enabled?: boolean | null }>,
+      legacyEnabled: Boolean(entitlement?.enabled),
+      legacyTier: tier,
+    });
+    if (!canViewExtendedSensitiveData(caller, customerId, capabilities)) {
       await adminClient.from('darkrisk_audit_log' as any).insert({
         organization_id: customerId,
         tenant_id: customerId,
@@ -111,10 +108,10 @@ serve(async (req: Request) => {
         metadata: {
           denial_reason: 'tier_or_entitlement_disabled',
           tier,
-          enable_raw_evidence: Boolean(entitlement.enable_raw_evidence),
+          enable_raw_evidence: Boolean(entitlement?.enable_raw_evidence),
         },
       });
-      return jsonResponse({ ok: false, error: 'Raw evidence is disabled for this customer tier' }, 403);
+      return jsonResponse({ ok: false, error: 'Extended evidence access is disabled for this user or customer' }, 403);
     }
 
     const rawRefRes = await adminClient

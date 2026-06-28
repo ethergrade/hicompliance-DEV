@@ -177,8 +177,6 @@ export const darkRiskApi = {
 		payload?: {
 			notes?: string;
 			trigger_type?: string;
-			include_dti_extended?: boolean;
-			identity_emails?: string[];
 			[k: string]: unknown;
 		},
 		groupId?: string | null,

@@ -20,6 +20,7 @@ export interface OrganizationFlags {
 	hicompliance_enabled: boolean;
 	surface_scan360_enabled: boolean;
 	dark_risk360_enabled: boolean;
+	dark_risk_extended_enabled: boolean;
 	hipatch_enabled: boolean;
 }
 
@@ -32,7 +33,12 @@ export function deriveOrganizationFlags(
 	return {
 		hicompliance_enabled: isActive("hicompliance"),
 		surface_scan360_enabled: isActive("surfacescan"),
-		dark_risk360_enabled: isActive("darkrisk"),
+		dark_risk360_enabled: isActive("darkrisk") || isActive("hicompliance"),
+		dark_risk_extended_enabled: services.some((service) => {
+			if (service.service_type !== "darkrisk" || service.status !== "active") return false;
+			const settings = service.settings ?? {};
+			return settings.extended_identity === true || settings.extended_enabled === true || settings.tier === "extended";
+		}),
 		hipatch_enabled: isActive("hipatch"),
 	};
 }

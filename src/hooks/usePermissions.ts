@@ -34,6 +34,14 @@ const ROUTE_CAPABILITIES: Record<string, RouteCapabilities> = {
     view: ['surfacescan.assets.view', 'surfacescan.cve.view'],
     export: ['surfacescan.assets.export', 'surfacescan.cve.export'],
   },
+  '/dark-risk': {
+    view: ['darkrisk.view', 'darkrisk.standard.view'],
+    export: ['darkrisk.export', 'darkrisk.standard.export'],
+  },
+  '/dark-risk-esteso': {
+    view: ['darkrisk.view', 'darkrisk.extended.view', 'darkrisk.identity.view'],
+    export: ['darkrisk.export', 'darkrisk.extended.export', 'darkrisk.identity.export'],
+  },
   '/admin/clients': { view: ['companies.manage'] },
   '/admin/companies': { view: ['companies.manage'] },
   '/admin/role-settings': { view: ['users.manage'] },

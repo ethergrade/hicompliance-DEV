@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import {
 	LayoutDashboard,
 	Shield,
+	ShieldAlert,
 	ShieldCheck,
 	Users,
 	Settings,
@@ -57,6 +58,8 @@ import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { useUserRoles } from "@/hooks/useUserRoles";
 import { useRolePermissions } from "@/hooks/useRolePermissions";
 import { usePermissions } from "@/hooks/usePermissions";
+
+const DARKRISK_EXTENDED_UI_V2_ENABLED = String(import.meta.env.VITE_DARKRISK_EXTENDED_UI_V2 ?? "true") !== "false";
 import { useClientContext } from "@/contexts/ClientContext";
 import { useHydrateOrganizationServices } from "@/hooks/useHydrateOrganizationServices";
 import { useOrganizationStore } from "@/stores/organizationStore";
@@ -82,6 +85,7 @@ const hiComplianceModules = [
 const hiComplianceServices = [
 	{ title: "SurfaceScan360", href: "/surface-scan", icon: Globe },
 	{ title: "DarkRisk360", href: "/dark-risk", icon: Eye },
+	{ title: "DarkRisk360 Esteso", href: "/dark-risk-esteso", icon: ShieldAlert },
 ];
 
 const incidentMainItems = [
@@ -165,6 +169,7 @@ export const AppSidebar: React.FC = () => {
 		: !!orgFlags?.hicompliance_enabled;
 	const surfaceScanOn = !!orgFlags?.surface_scan360_enabled;
 	const darkRiskOn = !!orgFlags?.dark_risk360_enabled;
+	const darkRiskExtendedOn = DARKRISK_EXTENDED_UI_V2_ENABLED && !!orgFlags?.dark_risk_extended_enabled;
 	const hipatchOn = !!orgFlags?.hipatch_enabled;
 	const { canViewRoute, hasCapability } = usePermissions();
 
@@ -174,6 +179,7 @@ export const AppSidebar: React.FC = () => {
 		if (href === "/surface-scan" || href === "/surface-scan/exposure")
 			return surfaceScanOn;
 		if (href === "/dark-risk") return darkRiskOn;
+		if (href === "/dark-risk-esteso") return darkRiskOn && darkRiskExtendedOn;
 		if (href === "/dashboard/service/hipatch") return hipatchOn;
 		// HiCompliance core modules
 		if (

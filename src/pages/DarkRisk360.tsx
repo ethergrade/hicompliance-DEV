@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
 	AlertTriangle,
@@ -285,24 +284,6 @@ const roadmapBadgeVariant = (
 	return "outline";
 };
 
-const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
-
-const parseEmailSelectors = (input: string): string[] => {
-	return Array.from(
-		new Set(
-			String(input || "")
-				.split(/[\n,;\s]+/)
-				.map((token) =>
-					String(token || "")
-						.trim()
-						.toLowerCase(),
-				)
-				.filter(Boolean)
-				.filter((token) => emailRegex.test(token)),
-		),
-	).slice(0, 80);
-};
-
 const normalizeHost = (value: string): string => {
 	const text = String(value || "")
 		.trim()
@@ -407,8 +388,6 @@ const DarkRisk360: React.FC = () => {
 	const [assetTypeFilter, setAssetTypeFilter] = useState<
 		"all" | "domain" | "subdomain" | "ip" | "url" | "email" | "candidate"
 	>("all");
-	const [identityEmailsInput, setIdentityEmailsInput] = useState("");
-	const [identityScanning, setIdentityScanning] = useState(false);
 	const [exportingReportId, setExportingReportId] = useState<string | null>(
 		null,
 	);
@@ -1183,7 +1162,6 @@ const DarkRisk360: React.FC = () => {
 
 	const handleSyncSurfaceScan = async (options?: {
 		triggerType?: string;
-		includeDtiExtended?: boolean;
 		successMessage?: string;
 	}) => {
 		if (!organizationId) {
@@ -1197,7 +1175,6 @@ const DarkRisk360: React.FC = () => {
 				organizationId,
 				{
 					trigger_type: options?.triggerType || "manual",
-					include_dti_extended: options?.includeDtiExtended ?? true,
 				},
 				groupId,
 			);
@@ -1220,69 +1197,6 @@ const DarkRisk360: React.FC = () => {
 			);
 		} finally {
 			setSyncingScan(false);
-		}
-	};
-
-	const handleIdentityLeakScan = async () => {
-		if (!organizationId) {
-			toast.error("Nessun cliente selezionato");
-			return;
-		}
-
-		const parsedEmails = parseEmailSelectors(identityEmailsInput);
-		if (parsedEmails.length === 0) {
-			toast.error("Inserisci almeno una email valida (es. user@dominio.it)");
-			return;
-		}
-
-		setIdentityScanning(true);
-		try {
-			const selectorRows = parsedEmails.map((email) => ({
-				organization_id: organizationId,
-				tenant_id: organizationId,
-				selector_type: "email",
-				value: email,
-				normalized_value: email,
-				source: "manual",
-				status: "approved",
-				metadata: {
-					added_from: "darkrisk_ui_identity",
-					added_at: new Date().toISOString(),
-				},
-			}));
-
-			// Backend missing: no selector upsert endpoint (selectors are created server-side during scan)
-			// Selector rows are constructed client-side and passed via identity_emails in the scan-run payload
-			const { error: selectorError } = { error: null as unknown };
-			if (selectorError) throw selectorError;
-
-			await darkRiskApi.createScanRun(
-				organizationId,
-				{
-					trigger_type: "identity_email_manual",
-					identity_emails: parsedEmails,
-				},
-				groupId,
-			);
-
-			toast.success(`Analisi identity avviata su ${parsedEmails.length} email`);
-			setIdentityEmailsInput("");
-			void Promise.all([
-				refetch(),
-				refetchIdentitySelectors(),
-				queryClient.invalidateQueries({
-					queryKey: ["darkrisk360-findings", organizationId],
-				}),
-				queryClient.invalidateQueries({
-					queryKey: ["darkrisk360-assets", organizationId],
-				}),
-			]);
-		} catch (scanError: unknown) {
-			toast.error(
-				`Errore analisi identity: ${String(scanError?.message || "errore sconosciuto")}`,
-			);
-		} finally {
-			setIdentityScanning(false);
 		}
 	};
 
@@ -1317,8 +1231,7 @@ const DarkRisk360: React.FC = () => {
 				toast.success(`Scope aggiornato: ${successCount} regole aggiunte`);
 				await handleSyncSurfaceScan({
 					triggerType: "scope_batch_manual",
-					includeDtiExtended: true,
-					successMessage: "Scope salvato e sincronizzazione DTI estesa avviata",
+					successMessage: "Scope salvato e sincronizzazione avviata",
 				});
 				void Promise.all([
 					refetch(),
@@ -1768,44 +1681,10 @@ const DarkRisk360: React.FC = () => {
 							<TabsContent value="overview" className="space-y-4">
 								{!isReadOnlyClient && (
 									<Card className="border-border">
-										<CardHeader className="pb-3">
-											<CardTitle>Identity Leak Check (Email)</CardTitle>
-										</CardHeader>
+										<CardHeader className="pb-3"><CardTitle>DarkRisk360 Esteso</CardTitle></CardHeader>
 										<CardContent className="space-y-3">
-											<p className="text-sm text-muted-foreground">
-												Inserisci email aziendali da monitorare per leak e
-												compromissioni identity. Le email vengono incluse
-												automaticamente nei cicli DarkRisk360 successivi.
-											</p>
-											<Textarea
-												value={identityEmailsInput}
-												onChange={(event) =>
-													setIdentityEmailsInput(event.target.value)
-												}
-												placeholder="es. soc@azienda.it, admin@azienda.it"
-												className="min-h-[84px]"
-											/>
-											<div className="flex items-center gap-2 flex-wrap">
-												<Button
-													onClick={() => void handleIdentityLeakScan()}
-													disabled={identityScanning || !organizationId}
-													className="bg-primary text-primary-foreground"
-												>
-													{identityScanning
-														? "Analisi in corso..."
-														: "Avvia controllo identity"}
-												</Button>
-												<Button
-													variant="outline"
-													size="sm"
-													onClick={() => setActiveTab("identity")}
-												>
-													Vai a Identity
-												</Button>
-												<Badge variant="outline">
-													Email monitorate: {identityEmailSelectors.length}
-												</Badge>
-											</div>
+											<p className="text-sm text-muted-foreground">Le ricerche Identity usano esclusivamente domini e IP dello scope condiviso. Gli indirizzi email non sono input configurabili dal frontend.</p>
+											<Button onClick={() => navigate("/dark-risk-esteso")}>Apri DarkRisk360 Esteso</Button>
 										</CardContent>
 									</Card>
 								)}
@@ -2420,34 +2299,15 @@ const DarkRisk360: React.FC = () => {
 
 												<div className="rounded-lg border border-border/70 bg-muted/20 p-3 space-y-3">
 													<div className="flex items-center justify-between gap-3 flex-wrap">
-														<p className="text-sm font-medium">
-															Controllo mirato leak email
-														</p>
+														<p className="text-sm font-medium">Scansione Identity spot</p>
 														<Badge variant="outline">
-															Analisi identity continua
+															Scope domini/IP
 														</Badge>
 													</div>
-													<Textarea
-														value={identityEmailsInput}
-														onChange={(event) =>
-															setIdentityEmailsInput(event.target.value)
-														}
-														placeholder="Inserisci email (una per riga o CSV), es. ceo@azienda.it, it@azienda.it"
-														className="min-h-[92px]"
-													/>
 													<div className="flex items-center gap-2 flex-wrap">
-														<Button
-															onClick={() => void handleIdentityLeakScan()}
-															disabled={identityScanning || !organizationId}
-															className="bg-primary text-primary-foreground"
-														>
-															{identityScanning
-																? "Analisi in corso..."
-																: "Avvia controllo leak identity"}
-														</Button>
+														<Button onClick={() => navigate("/dark-risk-esteso")}>Apri modulo Esteso</Button>
 														<p className="text-xs text-muted-foreground">
-															I selector email approvati entrano automaticamente
-															nei cicli successivi.
+															Il provider e il bucket sono determinati esclusivamente dal backend.
 														</p>
 													</div>
 												</div>
