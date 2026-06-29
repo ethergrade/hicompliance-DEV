@@ -21,7 +21,7 @@ export default function ExtendedDarkRiskPage() {
 	const { organizationId, selectedOrganization } = useClientOrganization();
 	const { isSuperAdmin } = useUserRoles();
 	const { userProfile } = useAuth();
-	const { extendedEnabled } = useDarkRiskEntitlements(organizationId);
+	const { extendedEnabled, isLoading: entitlementsLoading } = useDarkRiskEntitlements(organizationId);
 	const canOperate = isSuperAdmin || userProfile?.user_type === "admin";
 	const queryClient = useQueryClient();
 	const [activeRunId, setActiveRunId] = useState<string | null>(null);
@@ -74,7 +74,9 @@ export default function ExtendedDarkRiskPage() {
 					<div className="flex gap-2"><Button variant="outline" asChild><Link to="/dark-risk">Torna a Standard</Link></Button>{canOperate && extendedEnabled ? <Button onClick={() => startRun.mutate()} disabled={startRun.isPending || !scopeQuery.data?.targets.length}><Play className="mr-2 h-4 w-4" />{startRun.isPending ? "Avvio…" : "Avvia scansione spot"}</Button> : null}</div>
 				</header>
 
-				{!extendedEnabled ? (
+				{entitlementsLoading ? (
+					<Card><CardContent className="p-8 text-center"><ShieldAlert className="mx-auto h-8 w-8 text-muted-foreground" /><h2 className="mt-3 font-semibold">Verifica attivazione DarkRisk360 Esteso…</h2><p className="mt-2 text-sm text-muted-foreground">Sto allineando l’entitlement del cliente con HiCompliance e i servizi disponibili.</p></CardContent></Card>
+				) : !extendedEnabled ? (
 					<Card><CardContent className="p-8 text-center"><ShieldAlert className="mx-auto h-8 w-8 text-muted-foreground" /><h2 className="mt-3 font-semibold">DarkRisk360 Esteso non attivo</h2><p className="mt-2 text-sm text-muted-foreground">Attiva il modulo Esteso per accedere alle scansioni Identity spot.</p></CardContent></Card>
 				) : (
 					<>

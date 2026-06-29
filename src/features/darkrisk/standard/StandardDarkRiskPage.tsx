@@ -22,7 +22,7 @@ export default function StandardDarkRiskPage() {
 	const { organizationId, selectedOrganization } = useClientOrganization();
 	const { isSuperAdmin } = useUserRoles();
 	const { userProfile } = useAuth();
-	const { standardEnabled, extendedEnabled } = useDarkRiskEntitlements(organizationId);
+	const { standardEnabled, extendedEnabled, isLoading: entitlementsLoading } = useDarkRiskEntitlements(organizationId);
 	const canManage = isSuperAdmin || userProfile?.user_type === "admin";
 	const queryClient = useQueryClient();
 
@@ -74,7 +74,9 @@ export default function StandardDarkRiskPage() {
 					</div>
 				</header>
 
-				{!standardEnabled ? (
+				{entitlementsLoading ? (
+					<Card><CardContent className="p-8 text-center"><h2 className="font-semibold">Verifica attivazione DarkRisk360…</h2><p className="mt-2 text-sm text-muted-foreground">Sto allineando l’entitlement del cliente con HiCompliance e i servizi disponibili.</p></CardContent></Card>
+				) : !standardEnabled ? (
 					<Card><CardContent className="p-8 text-center"><h2 className="font-semibold">DarkRisk360 non attivo</h2><p className="mt-2 text-sm text-muted-foreground">Il modulo viene incluso con HiCompliance oppure può essere attivato standalone.</p></CardContent></Card>
 				) : (
 					<>

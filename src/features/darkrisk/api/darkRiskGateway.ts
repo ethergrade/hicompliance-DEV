@@ -1,21 +1,47 @@
 import type { DarkRiskReport, DarkRiskRun, DarkRiskScope, ExtendedRunResult, StandardOverview } from "../domain/contracts";
 import { parseExtendedResults, parseReports, parseRun, parseScope, parseStandardOverview } from "../domain/schemas";
+import { supabase } from "@/integrations/supabase/client";
+import { resolveDarkRiskEntitlements, type DarkRiskEntitlementHints, type DarkRiskEntitlements } from "../shared/entitlementResolver";
 import { darkRiskHttp } from "./http";
 
-export interface DarkRiskEntitlements {
-	standardEnabled: boolean;
-	extendedEnabled: boolean;
-}
-
 export const darkRiskGateway = {
-	async getEntitlements(companyId: string): Promise<DarkRiskEntitlements> {
-		const data = await darkRiskHttp<Record<string, unknown>>(`/companies/${companyId}/darkrisk/overview`);
-		const grants = data.entitlements && typeof data.entitlements === "object"
-			? data.entitlements as Record<string, unknown>
-			: data;
+	async getOrganizationEntitlementHints(companyId: string): Promise<DarkRiskEntitlementHints> {
+		const { data, error } = await supabase
+			.from("organizations")
+			.select("hicompliance_enabled, dark_risk360_enabled, darkrisk_esteso_enabled")
+			.eq("id", companyId)
+			.maybeSingle();
+
+		if (error) {
+			throw error;
+		}
+
 		return {
-			standardEnabled: data.enabled === true || grants.standard_monitor === true || grants.standard_enabled === true || grants.hicompliance === true || grants.extended_identity === true || data.tier === "extended",
-			extendedEnabled: grants.extended_identity === true || grants.extended_enabled === true || data.tier === "extended",
+			hicomplianceEnabled: data?.hicompliance_enabled === true,
+			darkRisk360Enabled: data?.dark_risk360_enabled === true,
+			darkRiskExtendedEnabled: data?.darkrisk_esteso_enabled === true,
+		};
+	},
+	async getEntitlements(companyId: string): Promise<DarkRiskEntitlements> {
+		const [apiResult, hintsResult] = await Promise.allSettled([
+			darkRiskHttp<Record<string, unknown>>(`/companies/${companyId}/darkrisk/overview`),
+			darkRiskGateway.getOrganizationEntitlementHints(companyId),
+		]);
+
+		const data = apiResult.status === "fulfilled" ? apiResult.value : null;
+		const hints = hintsResult.status === "fulfilled" ? hintsResult.value : null;
+		const grants = data?.entitlements && typeof data.entitlements === "object"
+			? data.entitlements as Record<string, unknown>
+			: data ?? {};
+
+		return {
+			...resolveDarkRiskEntitlements(
+				{
+					standardEnabled: data?.enabled === true || grants.standard_monitor === true || grants.standard_enabled === true || grants.hicompliance === true || grants.extended_identity === true || data?.tier === "extended",
+					extendedEnabled: grants.extended_identity === true || grants.extended_enabled === true || data?.tier === "extended",
+				},
+				hints,
+			),
 		};
 	},
 	async getScope(companyId: string): Promise<DarkRiskScope> {

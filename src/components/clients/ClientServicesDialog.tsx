@@ -163,6 +163,8 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['org-feature-flags', organizationId] });
+      queryClient.invalidateQueries({ queryKey: ['sidebar-org-flags', organizationId] });
+      queryClient.invalidateQueries({ queryKey: ['darkrisk-v2', organizationId] });
       toast.success('Configurazione aggiornata');
     },
     onError: (err: Error) => toast.error(`Errore: ${err.message}`),
@@ -238,6 +240,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['darkrisk-esteso-profile', organizationId] });
+      queryClient.invalidateQueries({ queryKey: ['darkrisk-v2', organizationId] });
       toast.success('Profilo DARKRISK_ESTESO aggiornato');
     },
     onError: (err: Error) => toast.error(`Errore profilo DARKRISK_ESTESO: ${err.message}`),
