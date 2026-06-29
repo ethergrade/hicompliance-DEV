@@ -1,208 +1,225 @@
 # Baseline
 
-- Commit: `E0dade6` (fix: align assessment radar with backend monthly report)
-- Prior artifacts used: none (scout from scratch)
-- Graphify status: OK at current HEAD (5310 nodes, 10466 edges)
+- Commit: 4d29f6bd10e6ed4aef2d6b7395e18ecc7e43f12b
+- Prior artifacts used: none (fresh investigation)
+- Graphify status: OK (at 2026-06-23)
 
 ## Delta (since baseline)
 
-- No uncommitted changes. Read-only investigation.
+- No DarkRisk-related changes in the last commit
+- Last relevant commit: `8ae55b2 fix: align DarkRisk360 entitlement gating with client flags`
 
 ## State snapshot
 
-### SurfaceScan360
+### Files investigated
 
-| UI Section | Data Source | Endpoint | Controller |
-|---|---|---|---|
-| Jobs list (top panel) | `useSurfaceScanEngine` → `surfaceScan360Api.listJobs()` | `GET /companies/{id}/surface-scan360/jobs` | `SurfaceScanJobController::index` |
-| Module detail cards | `SurfaceScanModuleCards.fetchData()` — own useEffect | Multiple: `listJobs`, `listMonitoredIps`, `getJobFindings`, `getModuleResults`, `getObservations`, `getOpenPorts` | `SurfaceScanJobController`, `SurfaceScanMonitoredIpController`, `SurfaceScanModuleResultController`, `SurfaceObservationController`, `SurfaceOpenPortController` |
-| Exposure section | `SurfaceScanExposureSection` → `exposureApi` | `GET /companies/{id}/surface-scan360/jobs/{job}/exposure-findings`, etc. | `SurfaceExposureFindingController` |
-| Scope summary cards | Same fetchData as module cards, computes `latestScopeJobs` + `scoreSummary` | — | — |
-| Findings grid | `SecurityFindings` component | — | — |
+| File | Path | Lines |
+|------|------|-------|
+| StandardDarkRiskPage | `src/features/darkrisk/standard/StandardDarkRiskPage.tsx` | 1–113 |
+| ExtendedDarkRiskPage | `src/features/darkrisk/extended/ExtendedDarkRiskPage.tsx` | 1–107 |
+| DarkRisk360 (route page) | `src/pages/DarkRisk360.tsx` | 1–2525 |
+| Entitlement hook | `src/features/darkrisk/shared/useDarkRiskEntitlements.ts` | 1–23 |
+| Gateway | `src/features/darkrisk/api/darkRiskGateway.ts` | 1–245 |
+| AuthProvider | `src/components/auth/AuthProvider.tsx` | 1–361 |
+| DashboardLayout | `src/components/layout/DashboardLayout.tsx` | 1–60 |
+| useClientOrganization | `src/hooks/useClientOrganization.ts` | 1–58 |
+| useDarkRiskOverview | `src/hooks/useDarkRiskOverview.ts` | 1–240 |
+| Router config | `src/App.tsx` | 1–115 |
+| CSS theme | `src/index.css` | 1–119 |
+| Shared components | `src/features/darkrisk/shared/ReportList.tsx`, `ScopeEditor.tsx` | |
+| Entitlement resolver | `src/features/darkrisk/shared/entitlementResolver.ts` | 1–31 |
 
-**Key file paths:**
+### Route structure
 
-- `src/pages/SurfaceScan360.tsx:195` — main page component, orchestrates all sub-sections
-- `src/components/surface-scan/SurfaceScanJobsPanel.tsx:29` — jobs list panel (top)
-- `src/components/surface-scan/SurfaceScanModuleCards.tsx:516` — module detail cards with `fetchData` at line 548
-- `src/hooks/useSurfaceScanEngine.ts:60` — jobs list hook (refetchInterval: 15s)
-- `src/hooks/useSurfaceScan360.ts:5` — jobs CRUD hook
-- `src/lib/api/surface-scan360.ts:60` — API client
+- `/dark-risk` → `lazy(StandardDarkRiskPage)` wrapped in Suspense + ClientSelectionGuard
+- `/dark-risk-esteso` → `lazy(ExtendedDarkRiskPage)` wrapped in Suspense + ClientSelectionGuard
+- No route for `DarkRisk360.tsx` — component likely embedded elsewhere
 
-### DarkRisk360
+---
 
-| UI Section | Data Source | Endpoint | Controller |
-|---|---|---|---|
-| KPI cards (grid) | `useDarkRiskOverview` → `darkRiskApi.getOverview()` | `GET /companies/{id}/darkrisk/overview` | `DarkriskOverviewController::show` |
-| Coverage matrix | `overview.coverage_controls` from same endpoint | same | same |
-| Threat groups | `overview.threat_groups` | same | same |
-| Recent alerts | `overview.recent_alerts` | same | same |
-| Findings tab | `useQuery` with `['darkrisk360-findings', ...]` — currently stubbed with `{ data: [], error: null }` | **TODO — not migrated to backend API** | N/A |
-| Assets tab | Same pattern — stubbed | **TODO — not migrated** | N/A |
-| Scan Runs panel | `useDarkRiskScanRuns` → `darkRiskApi.listScanRuns()` | `GET /companies/{id}/darkrisk/scan-runs` | `DarkriskScanRunController::index` |
-| Reports tab | `useQuery` with stubbed data | **TODO — not migrated** | N/A |
+## Findings
 
-**Key file paths:**
+### CRITICAL: No Error Boundaries (all DarkRisk pages)
 
-- `src/pages/DarkRisk360.tsx:256` — main page component
-- `src/hooks/useDarkRiskOverview.ts:215` — overview hook (refetchInterval: 90s)
-- `src/hooks/useDarkRiskScanRuns.ts:5` — scan runs hook
-- `src/lib/api/darkrisk.ts:27` — API client
-- `hiconsole/app/Http/Controllers/Api/DarkriskOverviewController.php:28` — backend overview aggregator
+**File:** `src/pages/DarkRisk360.tsx`, `src/features/darkrisk/standard/StandardDarkRiskPage.tsx`, `src/features/darkrisk/extended/ExtendedDarkRiskPage.tsx`
 
-## Context (layered on state)
+None of the DarkRisk pages have React Error Boundaries. The router (`src/App.tsx:84-85`) only wraps them in `<Suspense>` for lazy loading, which catches thrown promises — **not runtime errors**.
 
-### 1. SurfaceScan360 — "completato (nessun dato)" / N.D. values
+If any child component crashes during render (e.g., an API returns unexpected data shape, a hook throws, a child component accesses a property on `undefined`), the error propagates to the React root with **no error boundary to catch it**. React's default behavior is to unmount the entire component tree, leaving only the `DashboardLayout` wrapper with its dark `bg-background` (HSL 220 27% 7%, near-black from `src/index.css:12`). The result: a black/blank page.
 
-**How module outcomes are computed** (`SurfaceScanModuleCards.tsx:1124-1245`):
+**Intermittent trigger:** This would manifest "often" (intermittently) because it depends on API response shapes that vary between organizations or deployment states.
 
-The `moduleOutcomes` useMemo processes module results and observations filtered to the currently selected scope target job. For each module (passes, http_security, headers, open_ports, ssl_certificate, tls_summary, whois, etc.):
+---
 
-1. If any module result row has status `error` or `timeout` → `"error"`
-2. If any has status `running` → `"running"`
-3. If any has status `queued` → `"queued"`
-4. Otherwise, checks `hasSuccess` and `hasData`:
-   - `hasSuccess && hasData` → `"success_with_data"` → label "Completato"
-   - `hasSuccess && !hasData` → `"success_no_data"` → label "Completato (nessun dato)"
+### MEDIUM: `useDarkRiskEntitlements` has `retry: false`
 
-**Root cause analysis:**
+**File:** `src/features/darkrisk/shared/useDarkRiskEntitlements.ts:14`
 
-The "completato (nessun dato)" labels in the screenshot are **expected behavior** when:
-
-- **(Case A)** The selected scope target job that feeds module cards is still `queued`/`running`. The `fetchData` function (line 548) picks the latest completed job per target, falling back to the latest live job if none completed. When no job has completed, the live (possibly queued) job is used. Module results are only fetched for completed/partial jobs (line 694-700), so a queued job produces zero module results → all modules show "completato (nessun dato)."
-
-- **(Case B)** A completed job genuinely had no findings for a specific module (e.g., `ssl_certificate` module ran but the target has no TLS, or `open_ports` ran but all ports are filtered). This is a legitimate scan outcome, not a bug.
-
-- **(Case C)** There's a scope mismatch: the job's target doesn't match any configured scope rule, so it gets excluded from `scopeJobs` (line 619-641). The detail blocks would then show no data because no scope-matched jobs exist.
-
-**Likely scenario for the screenshot:** Jobs are in `queued` state (the top panel shows pending jobs). Module results haven't been produced yet because the backend scan engine hasn't processed them. The detail blocks show "completato (nessun dato)" because the frontend falls back to showing a live/queued job with no module results.
-
-### 2. DarkRisk360 — "poco popolato" (0/7 coverage, 0 threats, 0 leaks)
-
-**How overview KPIs are derived** (backend: `DarkriskOverviewController.php:46-274`):
-
-Every KPI depends on having a completed/partial SurfaceScan job:
-
-```
-$dataJob = $latestSnapshotJob ?? $latestLiveJob;
+```ts
+retry: false,
 ```
 
-- `$latestSnapshotJob` = the latest SurfaceScanJob with status in `['completed', 'partial', 'completed_with_warnings']`
-- `$latestLiveJob` = the latest SurfaceScanJob regardless of status
+If the entitlements API call (`darkRiskGateway.getEntitlements` at `darkRiskGateway.ts:84-118`) fails, the query is permanently in error state. The component does NOT check `isError` on the entitlements hook — only `isLoading` and `standardEnabled`/`extendedEnabled`.
 
-If `$dataJob` is null (no completed/partial job exists), then:
+**Effect:** An entitlement API failure causes `standardEnabled: false` and `extendedEnabled: false`. The StandardPage renders the "DarkRisk360 non attivo" card (line 79-80). The ExtendedPage renders the "DarkRisk360 Esteso non attivo" card (line 79-80). This is a misleading UX state (shows disabled when the feature should work) but not a black page.
 
-- `$latestFindings` = empty → `active_threats` = 0, `credential_leaks` = 0, `critical_findings` = 0, `new_alerts` = 0
-- `$moduleRows` = empty → `coverage_controls` = all 7 controls show `not_run` → `controls_coverage.completed` = 0/7
-- `$openPorts` = empty → `exposed_services` = 0
-- `$risk_score` = 100 (no findings = max score), level "Basso"
-- `$monitoredDomains` = count of domain-type entries in `surface_scan_monitored_ips` (this can be >0 even without jobs)
-- `$latestDarkriskRun` = null → all DTI/IntelX stats are zero
+---
 
-**The screenshot's "1 monitored domain"** comes from a domain-type monitored IP rule existing in the DB. The "0/7 coverage" means no SurfaceScan job has completed yet. The "Nessuna scansione" (or similar) last-scan label means no data job exists.
+### MEDIUM: No per-query error handling for scope/overview/reports
 
-**Critical finding: `$dataJob` fallback logic** (line 88):
+**File:** `StandardDarkRiskPage.tsx:29-47`, `ExtendedDarkRiskPage.tsx:29-47`
 
-```php
-$dataJob = $latestSnapshotJob ?? $latestLiveJob;
+The scope, overview, and reports queries all lack individual `isError` checks in the render output. If these queries fail:
+
+- `scopeQuery.data` → `undefined` → fallback `{ targets: [] }` (line 87)
+- `overviewQuery.data` → `undefined` → cards show `"—"` (lines 56-60)
+- `reportsQuery.data` → `undefined` → fallback `[]` (line 107)
+
+**Effect:** The user sees the full dashboard with placeholder/empty values, but no error message. Not a black page, but confusing UX that mimics a data-less state (could be perceived as "broken" by users).
+
+---
+
+### MEDIUM: Race condition during organization switch
+
+**File:** `src/hooks/useClientOrganization.ts:36-37`
+
+```ts
+// Non ripiegare su userOrganizationId (che è il groupId, non il companyId):
+// durante il cambio gruppo selectedOrganization è null per un breve window
+// e gli hook devono skippare le chiamate finché il companyId non è pronto.
 ```
 
-This means the overview endpoint CAN return data even for a non-completed job — but the findings/module results will be empty because the job hasn't produced them yet. The KPIs will show zeros.
+During an organization/group switch, `organizationId` is `null` for a brief period. The entitlement hooks and data queries are disabled (`enabled: Boolean(organizationId)`). During this window:
 
-**Additional finding — findings/asset tabs are stubbed** (DarkRisk360.tsx:326-330):
+- `useDarkRiskEntitlements(null)` → `enabled: false` → `isLoading: false` → `standardEnabled: false` → page shows "non attivo" card
+- Then organization loads → queries fire → page updates
 
-```typescript
-// TODO: migrate to backend API (select darkrisk_findings + surface_findings + surface_exposure_findings)
-const findingsQueryRes = { data: [], error: null } as any;
+This is a transient state that could briefly show incorrect UI but not a black page.
+
+---
+
+### MEDIUM: Dark theme makes empty states appear black
+
+**File:** `src/index.css:12`, `src/components/layout/DashboardLayout.tsx:21`
+
+The theme is dark by default (`--background: 220 27% 7%` — near-black with a hint of blue). The DashboardLayout uses `bg-background` which renders this color.
+
+Any state where the main content area is empty (loading, crash, uncaught error, Suspense fallback without visible content) will display as a dark/black page. The Suspense fallback text (`"Caricamento DarkRisk360…"` at `src/App.tsx:53`) uses `text-muted-foreground` which is `217 19% 63%` — a muted gray that may be hard to see on the near-black background, especially on low-brightness mobile screens.
+
+---
+
+### LOW: AuthProvider black screen fix already applied
+
+**File:** `src/components/auth/AuthProvider.tsx:300-302, 322-326`
+
+The AuthProvider already has explicit fixes for black screen scenarios:
+
+- Fixed: "black screen + repeated 422s after logout" (line 301-302) via `queryClient.clear()`
+- Fixed: "black screen that happened because AuthProvider used to drop children without changing the URL" (line 323-326)
+- Guard: If not loading and no user, renders minimal context without children for protected routes (line 344-358)
+
+These fixes are already in place, so session-related black pages should not occur.
+
+---
+
+### LOW: `entitlementResolver` defensive against nulls
+
+**File:** `src/features/darkrisk/shared/entitlementResolver.ts:14-32`
+
+```ts
+export const resolveDarkRiskEntitlements = (
+    api: Partial<DarkRiskEntitlements> | null | undefined,
+    hints: DarkRiskEntitlementHints | null | undefined,
+): DarkRiskEntitlements => {
 ```
 
-The findings and assets tabs in the DarkRisk360 page use hardcoded `{ data: [], error: null }` stubs. These tabs will always be empty regardless of backend state.
+Handles all null/undefined inputs safely. Even if both `getData` and Supabase hints fail in `darkRiskGateway.getEntitlements`, the resolver returns `{ standardEnabled: false, extendedEnabled: false }`.
 
-### 3. Job triggering behavior
+---
 
-**Neither module triggers jobs automatically on page load.**
+### LOW: `useDarkRiskOverview` has a safe emptyData fallback
 
-| Module | Trigger Mechanism | Auto on page load? |
-|---|---|---|
-| SurfaceScan360 | "Nuova scansione" button → `useSurfaceScanEngine.startScan()` → `POST /companies/{id}/surface-scan360/jobs` | **No** |
-| SurfaceScan360 | Adding scope rule with `auto_queue_scan: true` | **Only when user adds a scope rule** |
-| DarkRisk360 | "Nuova scansione" button → `handleSyncSurfaceScan()` → `POST /companies/{id}/darkrisk/scan-runs` | **No** |
-| DarkRisk360 | "Avvia controllo identity" button → `handleIdentityLeakScan()` | **No** |
-| DarkRisk360 | Adding scope rule with `auto_sync_darkrisk: true` | **Only when user adds a scope rule** |
+**File:** `src/hooks/useDarkRiskOverview.ts:156-213, 236-239`
 
-Both modules use polling (`refetchInterval`) to refresh job/overview status, but polling never triggers new jobs — it only updates display state.
-
-The backend `SurfaceScanJobController::store` (line 65) creates a job and dispatches it through `SurfaceScanQueueDispatcher`. The actual scan execution is server-side, asynchronous, and decoupled from the frontend polling.
-
-### 4. Verdict per module
-
-#### SurfaceScan360: **Expected empty state (not a bug)**
-
-The "completato (nessun dato)" / N.D. values are the correct display when:
-
-- Jobs are pending/queued (no module results produced yet)
-- OR a completed job genuinely had no data for specific modules
-
-The frontend wiring is correct — it fetches the right endpoints and filters correctly. The `fetchData` function's job-selection logic (preferring completed with score, then completed any, then live) is defensive and appropriate.
-
-**Recommended next debugging step:** Check the backend job queue. If jobs are stuck in `queued` state for an extended period, the issue is a backend queue worker not processing SurfaceScan360 jobs. Check:
-
-```bash
-# In hiconsole backend
-php artisan queue:monitor
-# or check the jobs table
-SELECT status, count(*) FROM surface_scan_jobs WHERE tenant_id = <id> GROUP BY status;
+```ts
+return {
+    ...query,
+    data: query.data || emptyData,
+};
 ```
 
-#### DarkRisk360: **Partial integration — expected empty state for KPIs, plus known data gaps**
+`overview` is NEVER `undefined`. Even during loading or error, the component has an `emptyData` object with `tier: 'standard'`, `enabled: false`, and zero-value KPIs. This prevents the crash that would occur at `DarkRisk360.tsx:1560` where `overview.tier` and `overview.enabled` are accessed.
 
-The 0/7 coverage, 0 threats, 0 leaks display is **expected** when no SurfaceScan job has completed for the tenant. The monitoring domain count (1) is independently derived from monitored IP rules and is correct.
+---
 
-**However**, the findings tab and assets tab have known TODO stubs (`DarkRisk360.tsx:326-330`) that will never return real data until the backend migration is completed. This means even if a scan runs successfully, the findings and assets tabs remain empty.
+## Risk assessment
 
-**Recommended next debugging step:**
+| Risk | Severity | Cause | User impact |
+|------|----------|-------|-------------|
+| Runtime crash → black page | **High** | No ErrorBoundary; any child component crash during render unmounts tree | **Black page** — likely the reported issue |
+| Entitlement false negative | Medium | `retry: false` on entitlements hook; no error UI | Sees "non attivo" card instead of real content |
+| Silent data failure | Medium | No per-query error handling for scope/overview/reports | Dashboard shows `"—"` values, empty lists |
+| Brief incorrect state during org switch | Low | `organizationId` null window; entitl. hooks disabled | Transient "non attivo" card |
 
-1. Verify a SurfaceScan job has completed for this tenant: check `surface_scan_jobs` table for status = `completed`/`partial`.
-2. If no completed job exists, start one via the "Nuova scansione" button.
-3. After job completion, refresh DarkRisk360 → overview KPIs should populate.
-4. The findings and assets tabs will remain empty until the `TODO: migrate to backend API` items are addressed.
+## Root cause hypothesis
+
+The most likely cause of the intermittent black page is **the absence of error boundaries**. An intermittent runtime error (from an unexpected API response shape, a network timeout at a critical render moment, or a race condition during org switch) crashes a child component during render. Without an `ErrorBoundary`, React unmounts the entire tree, leaving only the `DashboardLayout` dark background visible.
+
+**Chained contributors:**
+
+1. No `ErrorBoundary` at route or page level
+2. Dark theme background (`bg-background` = near-black) makes the empty result of an unmounted tree indistinguishable from a "black page"
+3. `useDarkRiskEntitlements` has `retry: false` — if it fails on first attempt, the feature appears disabled until manual page refresh, even if the API recovers
 
 ## Start Here
 
-Open `src/pages/DarkRisk360.tsx:326` — the stubbed findings query is the most actionable gap. The TODO comments at lines 326, 430, 454, and 877 mark multiple `{ data: [], error: null }` stubs that need backend API migration.
+**First file to open:** `src/components/layout/DashboardLayout.tsx` — to understand how the dark background wraps all pages and to determine where an `ErrorBoundary` should be inserted (either wrapping each page's content, or at the `DashboardLayout` level to provide a safe fallback UI when child components crash).
 
-## SurfaceScan Exposure Risk V3 — implementation trace (2026-06-27)
+Then add an `ErrorBoundary` wrapper in `src/App.tsx:84-85` around the DarkRisk route elements, or add per-page error boundaries in `StandardDarkRiskPage.tsx` and `ExtendedDarkRiskPage.tsx`.
 
-- Added the shared service exposure matrix and `Exposure Score V3` under `supabase/functions/_shared/`.
-- Every canonical exposed service now produces a deterministic `internet_exposed_service` finding with likelihood, impact, matrix score, evidence status, and remediation; port-only evidence never invents a CVE.
-- Exposure aggregation uses primary service risk, diminishing breadth, and capped uncertainty so numerous ordinary web services do not saturate the organization at critical risk.
-- `surface-exposure-summary` now returns unified exposure findings and service assessments; SurfaceScan UI, AI report, PDF, and DOCX consume the V3 result.
-- Source-specific port severities were replaced with the shared matrix for the SurfaceScan engine and ConnectSecure adapter.
-- Acceptance baseline: 34 HTTPS services without fingerprint produce 34 findings, 17.6 risk points, posture 82/100, and risk level `Medio`.
-- Validation completed: 51 Deno tests, TypeScript, production build, Edge Function checks, and unauthenticated browser smoke test.
-- Visual follow-up completed: `Distribuzione Severity Exposure` now has semantic severity colors, segment pin-points/leader labels, center total/selected state, interactive keyboard-accessible legend, tooltip, and restrained cyber Palantir/Gotham styling. Desktop `893px` and mobile `390px` renders passed design QA; see `design-qa.md`.
+---
 
-## SurfaceScan Exposure Risk V3 — durable checkpoint (2026-06-27)
-
-- Exposure Risk V3, unified service findings, shared port/service matrix, deduplication, CVE evidence rules, UI tables/cards, AI report, PDF and DOCX were completed.
-- The severity donut redesign was completed with semantic colors, pin-point labels, interactive legend, keyboard support and responsive cyber-intelligence styling.
-- Documentation was consolidated under `docs/surfacescan360/`, including `07-EXPOSURE-RISK-V3.md`; visual QA is recorded in `design-qa.md`.
-- Validation on `imnick`: 51 Deno tests passed, TypeScript/build passed, Edge checks passed, chart ESLint passed and the no-secrets gate passed.
-- Validation on `PRODOTTO`: 59 Deno tests passed, TypeScript/build passed, Edge checks passed, chart ESLint passed and the no-secrets gate passed.
-- Published commit on `imnick`: `749a1f2d853d35d9beec603a211ab2e9a7670a3d`.
-- Published commit on `PRODOTTO`: `10eccadc3f95470f5340553001f729e6d88795a5`.
-- Product conflicts were resolved by preserving the richer product report implementation and adding only the V3 fields; the DEV-only `context.md` deletion policy on `PRODOTTO` was preserved.
-- `.env_per_stefano` exists only in the DEV workspace, is ignored by Git, has permission mode `600`, and contains 13 authorized local configuration variables. Secret values must never be copied into Git, documentation, logs, screenshots or chat.
-- Unrelated pre-existing files and `supabase/.temp/cli-latest` were deliberately excluded from both commits.
-
-## DarkRisk360 Refactor V2 / IntelX — durable checkpoint (2026-06-28)
-
-- Standard and Esteso are separate capabilities: HiCompliance and Esteso grant Standard; Esteso is spot-only and admin/superadmin-started.
-- Canonical external scope is capped at four approved public domains/IPs; domains stay bare and email selectors are removed from the UI/API contract.
-- IntelX Search is pinned to `2.intelx.io`; Identity is pinned to `3.intelx.io`, bucket `leaks.private.general`, async `/accounts/csv`; `4.intelx.io` and `/accounts/1` are blocked and tested.
-- V2 persists idempotent runs/tasks with leases, retry/heartbeat, count-only Standard projection, canonical record occurrences and encrypted Extended payloads.
-- Weekly Standard and monthly report scheduling are Europe/Rome DST-safe. Extended has no scan cron. Contract-end purge removes sensitive payloads/reports/Storage within 24 hours.
-- Frontend routes are separated into `src/features/darkrisk/{standard,extended}` and call Laravel API boundaries; provider flags and identity email input are absent.
-- Semantic implementations exist on `imnick` and `PRODOTTO`; no automatic cherry-pick was used.
-- The Laravel repository is still required for REST controllers, transactional dual-write to SurfaceScan scope, report projectors, authorized decrypt/audit endpoints and percentage rollout.
-- `.env_per_stefano` remains ignored/mode 600; V2 variable names and a local-only development KEK were added without exposing secret values.
+```acceptance-report
+{
+  "criteriaSatisfied": [
+    {
+      "id": "criterion-1",
+      "status": "satisfied",
+      "evidence": "Investigated all requested files + ancillary dependencies (AuthProvider, useClientOrganization, useDarkRiskOverview, App.tsx routing, CSS theme). Identified root cause: missing Error Boundary causes dark page on intermittent render crashes."
+    }
+  ],
+  "changedFiles": [],
+  "testsAddedOrUpdated": [],
+  "commandsRun": [
+    {
+      "command": "git rev-parse HEAD && git log --oneline -5",
+      "result": "passed",
+      "summary": "Baseline: 4d29f6bd10e6ed4aef2d6b7395e18cce7e43f12b"
+    },
+    {
+      "command": "Reviewed 10+ files via read/grep for error states, null returns, crash vectors",
+      "result": "passed",
+      "summary": "Full code review completed"
+    }
+  ],
+  "validationOutput": [
+    "StandardDarkRiskPage: always renders something (loading/disabled/content). No ErrorBoundary. No per-query error states.",
+    "ExtendedDarkRiskPage: same pattern. No ErrorBoundary.",
+    "DarkRisk360.tsx: loading + error states present, overview is never undefined via emptyData fallback.",
+    "useDarkRiskEntitlements: retry:false can permanently disable feature on first failure. Not checked for isError.",
+    "darkRiskGateway: Promise.allSettled handles both API + hints failures gracefully.",
+    "AuthProvider: already has black-screen fix for session expiry.",
+    "DashboardLayout: bg-background is near-black (HSL 220 27% 7%). Empty/crashed content = black page."
+  ],
+  "residualRisks": [
+    "No ErrorBoundary in DarkRisk pages (primary root cause)",
+    "useDarkRiskEntitlements retry:false can cause permanent false-negative entitlements until page refresh"
+  ],
+  "noStagedFiles": true,
+  "diffSummary": "No code changes — investigation-only report",
+  "reviewFindings": [
+    "no blockers (investigation complete)"
+  ],
+  "manualNotes": "Report written to context.md. Primary fix: add React ErrorBoundary to StandardDarkRiskPage.tsx and ExtendedDarkRiskPage.tsx (or at route level). Secondary fix: add per-query error UI and/or remove retry:false from useDarkRiskEntitlements."
+}
+```

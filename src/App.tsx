@@ -46,6 +46,7 @@ import NucleiScan360 from "./pages/NucleiScan360";
 import SamlCallback from "./pages/SamlCallback";
 import EntraRedirect from "./pages/EntraRedirect";
 import NotFound from "./pages/NotFound";
+import { ErrorBoundary } from "./components/shared/ErrorFallback";
 
 const StandardDarkRiskPage = lazy(() => import("./features/darkrisk/standard/StandardDarkRiskPage"));
 const ExtendedDarkRiskPage = lazy(() => import("./features/darkrisk/extended/ExtendedDarkRiskPage"));
@@ -81,8 +82,8 @@ const App = () => (
 							<Route path="/dashboard/service/:serviceCode" element={<ClientSelectionGuard><ServiceDashboard /></ClientSelectionGuard>} />
 							<Route path="/surface-scan" element={<ClientSelectionGuard><SurfaceScan360 /></ClientSelectionGuard>} />
 							<Route path="/surface-scan/exposure" element={<Navigate to="/surface-scan" replace />} />
-							<Route path="/dark-risk" element={<ClientSelectionGuard><Suspense fallback={darkRiskFallback}><StandardDarkRiskPage /></Suspense></ClientSelectionGuard>} />
-							<Route path="/dark-risk-esteso" element={<ClientSelectionGuard><Suspense fallback={darkRiskFallback}><ExtendedDarkRiskPage /></Suspense></ClientSelectionGuard>} />
+							<Route path="/dark-risk" element={<ClientSelectionGuard><Suspense fallback={darkRiskFallback}><ErrorBoundary><StandardDarkRiskPage /></ErrorBoundary></Suspense></ClientSelectionGuard>} />
+							<Route path="/dark-risk-esteso" element={<ClientSelectionGuard><Suspense fallback={darkRiskFallback}><ErrorBoundary><ExtendedDarkRiskPage /></ErrorBoundary></Suspense></ClientSelectionGuard>} />
 							<Route path="/assessment" element={<ClientSelectionGuard><Assessment /></ClientSelectionGuard>} />
 							<Route path="/remediation" element={<ClientSelectionGuard><Remediation /></ClientSelectionGuard>} />
 							<Route path="/analytics" element={<ClientSelectionGuard><Analytics /></ClientSelectionGuard>} />

@@ -16,17 +16,26 @@ import {
 	parseStandardOverview,
 } from "../domain/schemas";
 import { supabase } from "@/integrations/supabase/client";
-import { resolveDarkRiskEntitlements, type DarkRiskEntitlementHints, type DarkRiskEntitlements } from "../shared/entitlementResolver";
+import {
+	resolveDarkRiskEntitlements,
+	type DarkRiskEntitlementHints,
+	type DarkRiskEntitlements,
+} from "../shared/entitlementResolver";
 
-const V2_ENABLED = String(import.meta.env.VITE_DARKRISK_ORCHESTRATOR_V2 ?? "true") !== "false";
+const V2_ENABLED =
+	String(import.meta.env.VITE_DARKRISK_ORCHESTRATOR_V2 ?? "true") !== "false";
 
 const requestOptions = (groupId?: string | null) =>
 	groupId ? { headers: { "X-Group-Id": groupId } } : undefined;
 
 const canUseLegacyFallback = (error: unknown): boolean =>
-	!V2_ENABLED || (error instanceof ApiError && [404, 405, 501].includes(error.status));
+	!V2_ENABLED ||
+	(error instanceof ApiError && [404, 405, 501].includes(error.status));
 
-const withLegacyFallback = async <T>(primary: () => Promise<T>, legacy: () => Promise<T>): Promise<T> => {
+const withLegacyFallback = async <T>(
+	primary: () => Promise<T>,
+	legacy: () => Promise<T>,
+): Promise<T> => {
 	if (!V2_ENABLED) return legacy();
 	try {
 		return await primary();
@@ -36,7 +45,11 @@ const withLegacyFallback = async <T>(primary: () => Promise<T>, legacy: () => Pr
 	}
 };
 
-const getData = async (path: string, groupId?: string | null, params?: Record<string, string | number>) => {
+const getData = async (
+	path: string,
+	groupId?: string | null,
+	params?: Record<string, string | number>,
+) => {
 	const response = await complianceApiClient.get<ApiResponse<unknown>>(
 		path,
 		params,
@@ -46,10 +59,14 @@ const getData = async (path: string, groupId?: string | null, params?: Record<st
 };
 
 export const darkRiskGateway = {
-	async getOrganizationEntitlementHints(companyId: string): Promise<DarkRiskEntitlementHints> {
+	async getOrganizationEntitlementHints(
+		companyId: string,
+	): Promise<DarkRiskEntitlementHints> {
 		const { data, error } = await supabase
 			.from("organizations")
-			.select("hicompliance_enabled, dark_risk360_enabled, darkrisk_esteso_enabled")
+			.select(
+				"hicompliance_enabled, dark_risk360_enabled, darkrisk_esteso_enabled",
+			)
 			.eq("id", companyId)
 			.maybeSingle();
 
@@ -70,27 +87,47 @@ export const darkRiskGateway = {
 			darkRiskGateway.getOrganizationEntitlementHints(companyId),
 		]);
 
-		const data = apiResult.status === "fulfilled" ? (apiResult.value as Record<string, unknown>) : null;
+		const data =
+			apiResult.status === "fulfilled"
+				? (apiResult.value as Record<string, unknown>)
+				: null;
 		const hints = hintsResult.status === "fulfilled" ? hintsResult.value : null;
-		const grants = data?.entitlements && typeof data.entitlements === "object"
-			? (data.entitlements as Record<string, unknown>)
-			: (data ?? {});
+		const grants =
+			data?.entitlements && typeof data.entitlements === "object"
+				? (data.entitlements as Record<string, unknown>)
+				: (data ?? {});
 
 		return {
 			...resolveDarkRiskEntitlements(
 				{
-					standardEnabled: data?.enabled === true || grants.standard_monitor === true || grants.standard_enabled === true || grants.hicompliance === true || grants.extended_identity === true || data?.tier === "extended",
-					extendedEnabled: grants.extended_identity === true || grants.extended_enabled === true || data?.tier === "extended",
+					standardEnabled:
+						data?.enabled === true ||
+						grants.standard_monitor === true ||
+						grants.standard_enabled === true ||
+						grants.hicompliance === true ||
+						grants.extended_identity === true ||
+						data?.tier === "extended",
+					extendedEnabled:
+						grants.extended_identity === true ||
+						grants.extended_enabled === true ||
+						data?.tier === "extended",
 				},
 				hints,
 			),
 		};
 	},
 
-	async getScope(companyId: string, groupId?: string | null): Promise<DarkRiskScope> {
+	async getScope(
+		companyId: string,
+		groupId?: string | null,
+	): Promise<DarkRiskScope> {
 		return withLegacyFallback(
-			async () => parseScope(await getData(`/companies/${companyId}/external-scope`, groupId)),
-			async () => parseScope(await legacyDarkRiskApi.listTargets(companyId, groupId)),
+			async () =>
+				parseScope(
+					await getData(`/companies/${companyId}/external-scope`, groupId),
+				),
+			async () =>
+				parseScope(await legacyDarkRiskApi.listTargets(companyId, groupId)),
 		);
 	},
 
@@ -103,14 +140,23 @@ export const darkRiskGateway = {
 			async () => {
 				const response = await complianceApiClient.put<ApiResponse<unknown>>(
 					`/companies/${companyId}/external-scope`,
-					{ targets: scope.targets.map(({ type, value }) => ({ type, value })) },
+					{
+						targets: scope.targets.map(({ type, value }) => ({ type, value })),
+					},
 					requestOptions(groupId),
 				);
 				return parseScope(response.data);
 			},
 			async () => {
-				const existing = await legacyDarkRiskApi.listTargets(companyId, groupId);
-				await Promise.all(existing.map((target) => legacyDarkRiskApi.deleteTarget(companyId, target.id, groupId)));
+				const existing = await legacyDarkRiskApi.listTargets(
+					companyId,
+					groupId,
+				);
+				await Promise.all(
+					existing.map((target) =>
+						legacyDarkRiskApi.deleteTarget(companyId, target.id, groupId),
+					),
+				);
 				if (scope.targets.length > 0) {
 					await legacyDarkRiskApi.createTargetsBatch(
 						companyId,
@@ -123,30 +169,77 @@ export const darkRiskGateway = {
 		);
 	},
 
-	async getStandardOverview(companyId: string, groupId?: string | null): Promise<StandardOverview> {
-		return parseStandardOverview(await getData(`/companies/${companyId}/darkrisk/overview`, groupId));
+	async getStandardOverview(
+		companyId: string,
+		groupId?: string | null,
+	): Promise<StandardOverview> {
+		return parseStandardOverview(
+			await getData(`/companies/${companyId}/darkrisk/overview`, groupId),
+		);
 	},
 
-	async createStandardRun(companyId: string, groupId?: string | null): Promise<DarkRiskRun> {
-		const data = await getData(`/companies/${companyId}/darkrisk/scan-runs`, groupId, { trigger_source: "manual" });
+	async createStandardRun(
+		companyId: string,
+		groupId?: string | null,
+	): Promise<DarkRiskRun> {
+		const data = await getData(
+			`/companies/${companyId}/darkrisk/scan-runs`,
+			groupId,
+			{ trigger_source: "manual" },
+		);
 		return parseRun(data, "standard");
 	},
 
-	async getStandardRun(companyId: string, runId: string, groupId?: string | null): Promise<DarkRiskRun> {
-		return parseRun(await getData(`/companies/${companyId}/darkrisk/scan-runs/${runId}`, groupId), "standard");
+	async getStandardRun(
+		companyId: string,
+		runId: string,
+		groupId?: string | null,
+	): Promise<DarkRiskRun> {
+		return parseRun(
+			await getData(
+				`/companies/${companyId}/darkrisk/scan-runs/${runId}`,
+				groupId,
+			),
+			"standard",
+		);
 	},
 
-	async getReports(companyId: string, mode: "standard" | "extended", groupId?: string | null): Promise<DarkRiskReport[]> {
+	async getReports(
+		companyId: string,
+		mode: "standard" | "extended",
+		groupId?: string | null,
+	): Promise<DarkRiskReport[]> {
 		const endpoint = mode === "extended" ? `reports?mode=extended` : `reports`;
-		return parseReports(await getData(`/companies/${companyId}/darkrisk/${endpoint}`, groupId));
+		return parseReports(
+			await getData(`/companies/${companyId}/darkrisk/${endpoint}`, groupId),
+		);
 	},
 
-	async getExtendedResult(companyId: string, runId: string, groupId?: string | null): Promise<ExtendedRunResult> {
-		return parseExtendedResults(await getData(`/companies/${companyId}/darkrisk/extended-runs/${runId}/result`, groupId));
+	async getExtendedResult(
+		companyId: string,
+		runId: string,
+		groupId?: string | null,
+	): Promise<ExtendedRunResult> {
+		return parseExtendedResults(
+			await getData(
+				`/companies/${companyId}/darkrisk/extended-runs/${runId}/result`,
+				groupId,
+			),
+		);
 	},
 
-	async getExtendedScans(companyId: string, groupId?: string | null): Promise<DarkRiskRun[]> {
-		const items = await getData(`/companies/${companyId}/darkrisk/extended-runs`, groupId);
-		return Array.isArray(items) ? items.map((item: unknown) => parseRun(item as Record<string, unknown>, "extended")) : [];
+	async getExtendedScans(
+		companyId: string,
+		groupId?: string | null,
+	): Promise<DarkRiskRun[]> {
+		const items = await getData(
+			`/companies/${companyId}/darkrisk/extended-runs`,
+			groupId,
+		);
+		return Array.isArray(items)
+			? items.map((item: unknown) =>
+					parseRun(item as Record<string, unknown>, "extended"),
+				)
+			: [];
 	},
 };

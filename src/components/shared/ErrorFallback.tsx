@@ -49,7 +49,7 @@ interface ErrorBoundaryProps {
   message?: string;
 }
 
-export class SurfaceScanErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
@@ -60,7 +60,7 @@ export class SurfaceScanErrorBoundary extends React.Component<ErrorBoundaryProps
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('[SurfaceScanErrorBoundary] Caught render error:', error.message, errorInfo.componentStack);
+    console.error('[ErrorBoundary] Caught render error:', error.message, errorInfo.componentStack);
   }
 
   render() {
