@@ -1,23 +1,21 @@
-import { useOrganizationStore } from "@/stores/organizationStore";
+import { useQuery } from "@tanstack/react-query";
+import { darkRiskGateway } from "../api/darkRiskGateway";
+import { darkRiskQueryKeys } from "../api/queryKeys";
 
 const EXTENDED_UI_V2_ENABLED = String(import.meta.env.VITE_DARKRISK_EXTENDED_UI_V2 ?? "true") !== "false";
 
-export const useDarkRiskEntitlements = () => {
-	const services = useOrganizationStore((state) => state.tenantServices);
-	const hiCompliance = services.some(
-		(service) => service.service_type === "hicompliance" && service.status === "active",
-	);
-	const darkRisk = services.find(
-		(service) => service.service_type === "darkrisk" && service.status === "active",
-	);
-	const settings = darkRisk?.settings ?? {};
-	const extended =
-		settings.extended_identity === true ||
-		settings.extended_enabled === true ||
-		settings.tier === "extended";
-
+export const useDarkRiskEntitlements = (companyId: string | null) => {
+	const query = useQuery({
+		queryKey: darkRiskQueryKeys.entitlements(companyId),
+		queryFn: () => darkRiskGateway.getEntitlements(companyId!),
+		enabled: Boolean(companyId),
+		staleTime: 60_000,
+		retry: false,
+	});
 	return {
-		standardEnabled: hiCompliance || Boolean(darkRisk) || extended,
-		extendedEnabled: EXTENDED_UI_V2_ENABLED && extended,
+		standardEnabled: query.data?.standardEnabled ?? false,
+		extendedEnabled: EXTENDED_UI_V2_ENABLED && (query.data?.extendedEnabled ?? false),
+		isLoading: query.isLoading,
+		isError: query.isError,
 	};
 };

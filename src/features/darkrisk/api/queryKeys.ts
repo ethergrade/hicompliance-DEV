@@ -1,5 +1,6 @@
 export const darkRiskQueryKeys = {
 	root: (companyId: string | null) => ["darkrisk-v2", companyId] as const,
+	entitlements: (companyId: string | null) => [...darkRiskQueryKeys.root(companyId), "entitlements"] as const,
 	scope: (companyId: string | null) => [...darkRiskQueryKeys.root(companyId), "scope"] as const,
 	overview: (companyId: string | null) => [...darkRiskQueryKeys.root(companyId), "standard-overview"] as const,
 	reports: (companyId: string | null, mode: "standard" | "extended") =>

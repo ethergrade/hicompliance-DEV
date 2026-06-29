@@ -280,7 +280,9 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     },
     onSuccess: () => {
       refetchServices();
-      queryClient.invalidateQueries({ queryKey: ['sidebar-org-flags'] });
+      queryClient.invalidateQueries({ queryKey: ['org-feature-flags', organizationId] });
+      queryClient.invalidateQueries({ queryKey: ['sidebar-org-flags', organizationId] });
+      queryClient.invalidateQueries({ queryKey: ['darkrisk-v2', organizationId] });
       queryClient.invalidateQueries({ queryKey: ['org-services-hydrate', organizationId, groupId] });
       // Also refresh the dashboard's `useServiceIntegrations` so the service tile
       // appears/disappears in realtime when toggled (no manual refresh required).
@@ -314,9 +316,11 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
     },
     onSuccess: () => {
       refetchServices();
+      queryClient.invalidateQueries({ queryKey: ['darkrisk-esteso-profile', organizationId] });
+      queryClient.invalidateQueries({ queryKey: ['darkrisk-v2', organizationId] });
       queryClient.invalidateQueries({ queryKey: ['org-services-hydrate', organizationId, groupId] });
       queryClient.invalidateQueries({ queryKey: ['service-integrations', organizationId, groupId] });
-      toast.success('Moduli DarkRisk360 aggiornati');
+      toast.success('Profilo DARKRISK_ESTESO aggiornato');
     },
     onError: (err: Error) => toast.error(`Errore moduli DarkRisk360: ${getErrorDetail(err)}`),
   });

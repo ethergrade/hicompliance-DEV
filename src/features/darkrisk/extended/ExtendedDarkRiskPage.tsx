@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { useUserRoles } from "@/hooks/useUserRoles";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { darkRiskGateway } from "../api/darkRiskGateway";
 import { darkRiskQueryKeys } from "../api/queryKeys";
 import { ReportList } from "../shared/ReportList";
@@ -17,39 +18,40 @@ import { ScopeEditor } from "../shared/ScopeEditor";
 import { useDarkRiskEntitlements } from "../shared/useDarkRiskEntitlements";
 
 export default function ExtendedDarkRiskPage() {
-	const { organizationId, groupId, selectedOrganization } = useClientOrganization();
-	const { roles, isSuperAdmin } = useUserRoles();
-	const { extendedEnabled } = useDarkRiskEntitlements();
-	const canOperate = isSuperAdmin || roles.includes("admin");
+	const { organizationId, selectedOrganization } = useClientOrganization();
+	const { isSuperAdmin } = useUserRoles();
+	const { userProfile } = useAuth();
+	const { extendedEnabled, isLoading: entitlementsLoading } = useDarkRiskEntitlements(organizationId);
+	const canOperate = isSuperAdmin || userProfile?.user_type === "admin";
 	const queryClient = useQueryClient();
 	const [activeRunId, setActiveRunId] = useState<string | null>(null);
 
 	const scopeQuery = useQuery({
 		queryKey: darkRiskQueryKeys.scope(organizationId),
-		queryFn: () => darkRiskGateway.getScope(organizationId!, groupId),
+		queryFn: () => darkRiskGateway.getScope(organizationId!),
 		enabled: Boolean(organizationId && extendedEnabled),
 		staleTime: 60_000,
 	});
 	const reportsQuery = useQuery({
 		queryKey: darkRiskQueryKeys.reports(organizationId, "extended"),
-		queryFn: () => darkRiskGateway.getReports(organizationId!, "extended", groupId),
+		queryFn: () => darkRiskGateway.getReports(organizationId!, "extended"),
 		enabled: Boolean(organizationId && extendedEnabled),
 		staleTime: 30_000,
 	});
 	const resultsQuery = useQuery({
 		queryKey: darkRiskQueryKeys.extendedResult(organizationId, activeRunId),
-		queryFn: () => darkRiskGateway.getExtendedResults(organizationId!, activeRunId!, groupId),
+		queryFn: () => darkRiskGateway.getExtendedResults(organizationId!, activeRunId!),
 		enabled: Boolean(organizationId && activeRunId && extendedEnabled),
 		staleTime: 0,
 		gcTime: 0,
 		refetchInterval: (query) => ["queued", "running"].includes(query.state.data?.run?.status ?? "") ? 5_000 : false,
 	});
 	const saveScope = useMutation({
-		mutationFn: (scope: Parameters<typeof darkRiskGateway.updateScope>[1]) => darkRiskGateway.updateScope(organizationId!, scope, groupId),
+		mutationFn: (scope: Parameters<typeof darkRiskGateway.updateScope>[1]) => darkRiskGateway.updateScope(organizationId!, scope),
 		onSuccess: (scope) => queryClient.setQueryData(darkRiskQueryKeys.scope(organizationId), scope),
 	});
 	const startRun = useMutation({
-		mutationFn: () => darkRiskGateway.createExtendedRun(organizationId!, groupId),
+		mutationFn: () => darkRiskGateway.createExtendedRun(organizationId!),
 		onSuccess: (run) => {
 			setActiveRunId(run.id);
 			toast.success("Scansione DarkRisk360 Esteso accodata");
@@ -72,7 +74,9 @@ export default function ExtendedDarkRiskPage() {
 					<div className="flex gap-2"><Button variant="outline" asChild><Link to="/dark-risk">Torna a Standard</Link></Button>{canOperate && extendedEnabled ? <Button onClick={() => startRun.mutate()} disabled={startRun.isPending || !scopeQuery.data?.targets.length}><Play className="mr-2 h-4 w-4" />{startRun.isPending ? "Avvio…" : "Avvia scansione spot"}</Button> : null}</div>
 				</header>
 
-				{!extendedEnabled ? (
+				{entitlementsLoading ? (
+					<Card><CardContent className="p-8 text-center"><ShieldAlert className="mx-auto h-8 w-8 text-muted-foreground" /><h2 className="mt-3 font-semibold">Verifica attivazione DarkRisk360 Esteso…</h2><p className="mt-2 text-sm text-muted-foreground">Sto allineando l’entitlement del cliente con HiCompliance e i servizi disponibili.</p></CardContent></Card>
+				) : !extendedEnabled ? (
 					<Card><CardContent className="p-8 text-center"><ShieldAlert className="mx-auto h-8 w-8 text-muted-foreground" /><h2 className="mt-3 font-semibold">DarkRisk360 Esteso non attivo</h2><p className="mt-2 text-sm text-muted-foreground">Attiva il modulo Esteso per accedere alle scansioni Identity spot.</p></CardContent></Card>
 				) : (
 					<>

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { useUserRoles } from "@/hooks/useUserRoles";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { darkRiskGateway } from "../api/darkRiskGateway";
 import { darkRiskQueryKeys } from "../api/queryKeys";
 import { ReportList } from "../shared/ReportList";
@@ -18,34 +19,35 @@ const formatDate = (value: string | null) => value
 	: "Mai eseguita";
 
 export default function StandardDarkRiskPage() {
-	const { organizationId, groupId, selectedOrganization } = useClientOrganization();
-	const { roles, isSuperAdmin } = useUserRoles();
-	const { standardEnabled, extendedEnabled } = useDarkRiskEntitlements();
-	const canManage = isSuperAdmin || roles.includes("admin");
+	const { organizationId, selectedOrganization } = useClientOrganization();
+	const { isSuperAdmin } = useUserRoles();
+	const { userProfile } = useAuth();
+	const { standardEnabled, extendedEnabled, isLoading: entitlementsLoading } = useDarkRiskEntitlements(organizationId);
+	const canManage = isSuperAdmin || userProfile?.user_type === "admin";
 	const queryClient = useQueryClient();
 
 	const scopeQuery = useQuery({
 		queryKey: darkRiskQueryKeys.scope(organizationId),
-		queryFn: () => darkRiskGateway.getScope(organizationId!, groupId),
+		queryFn: () => darkRiskGateway.getScope(organizationId!),
 		enabled: Boolean(organizationId && standardEnabled),
 		staleTime: 60_000,
 	});
 	const overviewQuery = useQuery({
 		queryKey: darkRiskQueryKeys.overview(organizationId),
-		queryFn: () => darkRiskGateway.getStandardOverview(organizationId!, groupId),
+		queryFn: () => darkRiskGateway.getStandardOverview(organizationId!),
 		enabled: Boolean(organizationId && standardEnabled),
 		staleTime: 60_000,
 		refetchInterval: 90_000,
 	});
 	const reportsQuery = useQuery({
 		queryKey: darkRiskQueryKeys.reports(organizationId, "standard"),
-		queryFn: () => darkRiskGateway.getReports(organizationId!, "standard", groupId),
+		queryFn: () => darkRiskGateway.getReports(organizationId!, "standard"),
 		enabled: Boolean(organizationId && standardEnabled),
 		staleTime: 60_000,
 	});
 	const saveScope = useMutation({
 		mutationFn: (scope: Parameters<typeof darkRiskGateway.updateScope>[1]) =>
-			darkRiskGateway.updateScope(organizationId!, scope, groupId),
+			darkRiskGateway.updateScope(organizationId!, scope),
 		onSuccess: (scope) => queryClient.setQueryData(darkRiskQueryKeys.scope(organizationId), scope),
 	});
 
@@ -72,7 +74,9 @@ export default function StandardDarkRiskPage() {
 					</div>
 				</header>
 
-				{!standardEnabled ? (
+				{entitlementsLoading ? (
+					<Card><CardContent className="p-8 text-center"><h2 className="font-semibold">Verifica attivazione DarkRisk360…</h2><p className="mt-2 text-sm text-muted-foreground">Sto allineando l’entitlement del cliente con HiCompliance e i servizi disponibili.</p></CardContent></Card>
+				) : !standardEnabled ? (
 					<Card><CardContent className="p-8 text-center"><h2 className="font-semibold">DarkRisk360 non attivo</h2><p className="mt-2 text-sm text-muted-foreground">Il modulo viene incluso con HiCompliance oppure può essere attivato standalone.</p></CardContent></Card>
 				) : (
 					<>
