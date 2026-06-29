@@ -22,7 +22,7 @@ export default function StandardDarkRiskPage() {
 	const { organizationId, selectedOrganization } = useClientOrganization();
 	const { isSuperAdmin } = useUserRoles();
 	const { userProfile } = useAuth();
-	const { standardEnabled, extendedEnabled, isLoading: entitlementsLoading } = useDarkRiskEntitlements(organizationId);
+	const { standardEnabled, extendedEnabled, isLoading: entitlementsLoading, isError: isEntitlementError } = useDarkRiskEntitlements(organizationId);
 	const canManage = isSuperAdmin || userProfile?.user_type === "admin";
 	const queryClient = useQueryClient();
 
@@ -74,11 +74,13 @@ export default function StandardDarkRiskPage() {
 					</div>
 				</header>
 
-				{entitlementsLoading ? (
-					<Card><CardContent className="p-8 text-center"><h2 className="font-semibold">Verifica attivazione DarkRisk360…</h2><p className="mt-2 text-sm text-muted-foreground">Sto allineando l’entitlement del cliente con HiCompliance e i servizi disponibili.</p></CardContent></Card>
-				) : !standardEnabled ? (
-					<Card><CardContent className="p-8 text-center"><h2 className="font-semibold">DarkRisk360 non attivo</h2><p className="mt-2 text-sm text-muted-foreground">Il modulo viene incluso con HiCompliance oppure può essere attivato standalone.</p></CardContent></Card>
-				) : (
+			{entitlementsLoading ? (
+				<Card><CardContent className="p-8 text-center"><h2 className="font-semibold">Verifica attivazione DarkRisk360…</h2><p className="mt-2 text-sm text-muted-foreground">Sto allineando l’entitlement del cliente con HiCompliance e i servizi disponibili.</p></CardContent></Card>
+			) : isEntitlementError ? (
+				<Card><CardContent className="p-8 text-center"><h2 className="font-semibold">Errore verifica attivazione</h2><p className="mt-2 text-sm text-muted-foreground">Impossibile verificare lo stato del servizio. Il backend o il database potrebbero non rispondere.</p><Button variant="outline" className="mt-4" onClick={() => void queryClient.invalidateQueries({ queryKey: darkRiskQueryKeys.entitlements(organizationId) })}>Riprova</Button></CardContent></Card>
+			) : !standardEnabled ? (
+				<Card><CardContent className="p-8 text-center"><h2 className="font-semibold">DarkRisk360 non attivo</h2><p className="mt-2 text-sm text-muted-foreground">Il modulo viene incluso con HiCompliance oppure può essere attivato standalone.</p></CardContent></Card>
+			) : (
 					<>
 						<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
 							{cards.map(({ label, value, icon: Icon }) => <Card key={label} className="border-cyan-500/10"><CardContent className="flex items-center gap-4 p-5"><div className="rounded-md bg-cyan-500/10 p-2 text-cyan-400"><Icon className="h-5 w-5" /></div><div><p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-semibold">{value}</p></div></CardContent></Card>)}

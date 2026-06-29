@@ -21,7 +21,7 @@ export default function ExtendedDarkRiskPage() {
 	const { organizationId, selectedOrganization } = useClientOrganization();
 	const { isSuperAdmin } = useUserRoles();
 	const { userProfile } = useAuth();
-	const { extendedEnabled, isLoading: entitlementsLoading } = useDarkRiskEntitlements(organizationId);
+	const { extendedEnabled, isLoading: entitlementsLoading, isError: isEntitlementError } = useDarkRiskEntitlements(organizationId);
 	const canOperate = isSuperAdmin || userProfile?.user_type === "admin";
 	const queryClient = useQueryClient();
 	const [activeRunId, setActiveRunId] = useState<string | null>(null);
@@ -76,6 +76,8 @@ export default function ExtendedDarkRiskPage() {
 
 				{entitlementsLoading ? (
 					<Card><CardContent className="p-8 text-center"><ShieldAlert className="mx-auto h-8 w-8 text-muted-foreground" /><h2 className="mt-3 font-semibold">Verifica attivazione DarkRisk360 Esteso…</h2><p className="mt-2 text-sm text-muted-foreground">Sto allineando l’entitlement del cliente con HiCompliance e i servizi disponibili.</p></CardContent></Card>
+				) : isEntitlementError ? (
+					<Card><CardContent className="p-8 text-center"><ShieldAlert className="mx-auto h-8 w-8 text-muted-foreground" /><h2 className="mt-3 font-semibold">Errore verifica attivazione</h2><p className="mt-2 text-sm text-muted-foreground">Impossibile verificare lo stato del servizio.</p><Button variant="outline" className="mt-4" onClick={() => void queryClient.invalidateQueries({ queryKey: darkRiskQueryKeys.entitlements(organizationId) })}>Riprova</Button></CardContent></Card>
 				) : !extendedEnabled ? (
 					<Card><CardContent className="p-8 text-center"><ShieldAlert className="mx-auto h-8 w-8 text-muted-foreground" /><h2 className="mt-3 font-semibold">DarkRisk360 Esteso non attivo</h2><p className="mt-2 text-sm text-muted-foreground">Attiva il modulo Esteso per accedere alle scansioni Identity spot.</p></CardContent></Card>
 				) : (
