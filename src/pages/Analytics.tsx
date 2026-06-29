@@ -240,9 +240,9 @@ const Analytics: React.FC = () => {
   const assessmentComplianceData = useMemo(() => {
     if (radarCategories && radarCategories.length > 0) {
       return radarCategories.map(cat => ({
-        category: cat.category ?? 'N/D',
-        compliance: cat.compliance ?? 0,
-        target: Math.min((cat.compliance ?? 0) + 15, 100),
+        category: cat.name ?? 'N/D',
+        compliance: cat.completion_percent ?? 0,
+        target: Math.min((cat.completion_percent ?? 0) + 15, 100),
       }));
     }
     return getAssessmentData(chartsTimeRange);

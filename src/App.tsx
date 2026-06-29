@@ -48,10 +48,18 @@ import EntraRedirect from "./pages/EntraRedirect";
 import NotFound from "./pages/NotFound";
 import { ErrorBoundary } from "./components/shared/ErrorFallback";
 
-const StandardDarkRiskPage = lazy(() => import("./features/darkrisk/standard/StandardDarkRiskPage"));
-const ExtendedDarkRiskPage = lazy(() => import("./features/darkrisk/extended/ExtendedDarkRiskPage"));
+const StandardDarkRiskPage = lazy(
+	() => import("./features/darkrisk/standard/StandardDarkRiskPage"),
+);
+const ExtendedDarkRiskPage = lazy(
+	() => import("./features/darkrisk/extended/ExtendedDarkRiskPage"),
+);
 
-const darkRiskFallback = <div className="p-8 text-sm text-muted-foreground">Caricamento DarkRisk360…</div>;
+const darkRiskFallback = (
+	<div className="p-8 text-sm text-muted-foreground">
+		Caricamento DarkRisk360…
+	</div>
+);
 
 const queryClient = new QueryClient();
 
@@ -69,7 +77,10 @@ const App = () => (
 							<Route path="/hiconsole" element={<HiConsoleLanding />} />
 							<Route path="/auth" element={<LoginPage />} />
 							<Route path="/auth/mfa-setup" element={<MfaSetup />} />
-							<Route path="/auth/forgot-password" element={<ForgotPassword />} />
+							<Route
+								path="/auth/forgot-password"
+								element={<ForgotPassword />}
+							/>
 							<Route path="/auth/reset-password" element={<ResetPassword />} />
 							<Route path="/reset-password" element={<ResetPassword />} />
 							<Route path="/saml-callback" element={<SamlCallback />} />
@@ -77,32 +88,207 @@ const App = () => (
 							<Route path="/entra" element={<EntraRedirect />} />
 							<Route path="/admin/nuclei-scan360" element={<NucleiScan360 />} />
 							<Route path="/admin/clients" element={<ClientSelection />} />
-							<Route path="/dashboard" element={<ClientSelectionGuard><Dashboard /></ClientSelectionGuard>} />
-							<Route path="/cyber-news" element={<ClientSelectionGuard><CyberNews /></ClientSelectionGuard>} />
-							<Route path="/dashboard/service/:serviceCode" element={<ClientSelectionGuard><ServiceDashboard /></ClientSelectionGuard>} />
-							<Route path="/surface-scan" element={<ClientSelectionGuard><SurfaceScan360 /></ClientSelectionGuard>} />
-							<Route path="/surface-scan/exposure" element={<Navigate to="/surface-scan" replace />} />
-							<Route path="/dark-risk" element={<ClientSelectionGuard><Suspense fallback={darkRiskFallback}><ErrorBoundary><StandardDarkRiskPage /></ErrorBoundary></Suspense></ClientSelectionGuard>} />
-							<Route path="/dark-risk-esteso" element={<ClientSelectionGuard><Suspense fallback={darkRiskFallback}><ErrorBoundary><ExtendedDarkRiskPage /></ErrorBoundary></Suspense></ClientSelectionGuard>} />
-							<Route path="/assessment" element={<ClientSelectionGuard><Assessment /></ClientSelectionGuard>} />
-							<Route path="/remediation" element={<ClientSelectionGuard><Remediation /></ClientSelectionGuard>} />
-							<Route path="/analytics" element={<ClientSelectionGuard><Analytics /></ClientSelectionGuard>} />
-							<Route path="/threats" element={<ClientSelectionGuard><Threats /></ClientSelectionGuard>} />
-							<Route path="/reports" element={<ClientSelectionGuard><Reports /></ClientSelectionGuard>} />
-							<Route path="/documents" element={<ClientSelectionGuard><Documents /></ClientSelectionGuard>} />
-							<Route path="/asset-inventory" element={<ClientSelectionGuard><AssetInventory /></ClientSelectionGuard>} />
-							<Route path="/incident-response" element={<ClientSelectionGuard><IncidentResponse /></ClientSelectionGuard>} />
-							<Route path="/compliance-events" element={<ClientSelectionGuard><ComplianceEvents /></ClientSelectionGuard>} />
-							<Route path="/threat-management" element={<ClientSelectionGuard><ThreatManagement /></ClientSelectionGuard>} />
-							<Route path="/settings/users" element={<ClientSelectionGuard><Users /></ClientSelectionGuard>} />
-							<Route path="/settings/integrations" element={<ClientSelectionGuard><Integrations /></ClientSelectionGuard>} />
-							<Route path="/settings/alerts" element={<ClientSelectionGuard><Settings /></ClientSelectionGuard>} />
-							<Route path="/impostazioni/surface-scan" element={<ClientSelectionGuard><SurfaceScanImpostazioni /></ClientSelectionGuard>} />
-							<Route path="/admin/role-settings" element={<ClientSelectionGuard><RoleSettings /></ClientSelectionGuard>} />
+							<Route
+								path="/dashboard"
+								element={
+									<ClientSelectionGuard>
+										<Dashboard />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/cyber-news"
+								element={
+									<ClientSelectionGuard>
+										<CyberNews />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/dashboard/service/:serviceCode"
+								element={
+									<ClientSelectionGuard>
+										<ServiceDashboard />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/surface-scan"
+								element={
+									<ClientSelectionGuard>
+										<SurfaceScan360 />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/surface-scan/exposure"
+								element={<Navigate to="/surface-scan" replace />}
+							/>
+							<Route
+								path="/dark-risk"
+								element={
+									<ClientSelectionGuard>
+										<Suspense fallback={darkRiskFallback}>
+											<ErrorBoundary>
+												<StandardDarkRiskPage />
+											</ErrorBoundary>
+										</Suspense>
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/dark-risk-esteso"
+								element={
+									<ClientSelectionGuard>
+										<Suspense fallback={darkRiskFallback}>
+											<ErrorBoundary>
+												<ExtendedDarkRiskPage />
+											</ErrorBoundary>
+										</Suspense>
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/assessment"
+								element={
+									<ClientSelectionGuard>
+										<Assessment />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/remediation"
+								element={
+									<ClientSelectionGuard>
+										<Remediation />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/analytics"
+								element={
+									<ClientSelectionGuard>
+										<Analytics />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/threats"
+								element={
+									<ClientSelectionGuard>
+										<Threats />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/reports"
+								element={
+									<ClientSelectionGuard>
+										<Reports />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/documents"
+								element={
+									<ClientSelectionGuard>
+										<Documents />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/asset-inventory"
+								element={
+									<ClientSelectionGuard>
+										<AssetInventory />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/incident-response"
+								element={
+									<ClientSelectionGuard>
+										<IncidentResponse />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/compliance-events"
+								element={
+									<ClientSelectionGuard>
+										<ComplianceEvents />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/threat-management"
+								element={
+									<ClientSelectionGuard>
+										<ThreatManagement />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/settings/users"
+								element={
+									<ClientSelectionGuard>
+										<Users />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/settings/integrations"
+								element={
+									<ClientSelectionGuard>
+										<Integrations />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/settings/alerts"
+								element={
+									<ClientSelectionGuard>
+										<Settings />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/impostazioni/surface-scan"
+								element={
+									<ClientSelectionGuard>
+										<SurfaceScanImpostazioni />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/admin/role-settings"
+								element={
+									<ClientSelectionGuard>
+										<RoleSettings />
+									</ClientSelectionGuard>
+								}
+							/>
 							<Route path="/admin/companies" element={<AdminCompanies />} />
-							<Route path="/admin/elevated-users" element={<AdminElevatedUsers />} />
-							<Route path="/test/assessment-gantt" element={<ClientSelectionGuard><AssessmentGanttTest /></ClientSelectionGuard>} />
-							<Route path="/consistenze" element={<ClientSelectionGuard><Consistenze /></ClientSelectionGuard>} />
+							<Route
+								path="/admin/elevated-users"
+								element={<AdminElevatedUsers />}
+							/>
+							<Route
+								path="/test/assessment-gantt"
+								element={
+									<ClientSelectionGuard>
+										<AssessmentGanttTest />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/consistenze"
+								element={
+									<ClientSelectionGuard>
+										<Consistenze />
+									</ClientSelectionGuard>
+								}
+							/>
 							{/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
 							<Route path="*" element={<NotFound />} />
 						</Routes>
