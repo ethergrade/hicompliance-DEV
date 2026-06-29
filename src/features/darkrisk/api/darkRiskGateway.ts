@@ -59,31 +59,16 @@ const getData = async (
 export const darkRiskGateway = {
 	async getEntitlements(companyId: string): Promise<DarkRiskEntitlements> {
 		const data = (await getData(
-			`/companies/${companyId}/darkrisk/overview`,
+			`/companies/${companyId}/darkrisk/entitlement`,
 		)) as Record<string, unknown>;
-		const grants =
-			data?.entitlements && typeof data.entitlements === "object"
-				? (data.entitlements as Record<string, unknown>)
-				: data;
+		const enabled = data?.enabled === true;
+		const tier = typeof data?.tier === "string" ? data.tier.toLowerCase() : null;
 
 		return {
 			...resolveDarkRiskEntitlements(
 				{
-					standardEnabled:
-						data?.enabled === true ||
-						grants.standard_monitor === true ||
-						grants.standard_enabled === true ||
-						grants.hicompliance === true ||
-						grants.hicompliance_enabled === true ||
-						grants.dark_risk360_enabled === true ||
-						grants.darkrisk_esteso_enabled === true ||
-						grants.extended_identity === true ||
-						data?.tier === "extended",
-					extendedEnabled:
-						grants.extended_identity === true ||
-						grants.extended_enabled === true ||
-						grants.darkrisk_esteso_enabled === true ||
-						data?.tier === "extended",
+					standardEnabled: enabled,
+					extendedEnabled: enabled && tier === "extended",
 				},
 				null,
 			),
