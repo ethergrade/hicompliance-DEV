@@ -37,7 +37,7 @@ import {
 	PopoverTrigger,
 } from "@/components/ui/popover";
 import { GanttChart, GanttTask } from "@/components/remediation/GanttChart";
-import { format, addDays, differenceInDays, parseISO } from "date-fns";
+import { format, addDays, addMonths, subMonths, differenceInDays, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
 import {
 	AlertTriangle,
@@ -299,8 +299,12 @@ const PRIORITY_IT_TO_DB: Record<string, string> = {
 	bassa: "low",
 };
 
-const GANTT_START = new Date("2026-01-01");
-const GANTT_END = new Date("2026-12-31");
+// Gantt defaults: da 1 mese prima di oggi a 12 mesi dopo
+// Le date sono ricomputate a ogni mount del componente
+const GANTT_START = new Date();
+const GANTT_END = new Date();
+GANTT_START.setMonth(GANTT_START.getMonth() - 1);
+GANTT_END.setMonth(GANTT_END.getMonth() + 12);
 
 /* ─── Component ─── */
 const Remediation: React.FC = () => {
@@ -352,7 +356,7 @@ const Remediation: React.FC = () => {
 		(task: RemediationTask, orgId: string): DbTask => ({
 			id: task.id,
 			task: task.task,
-			category: task.category || 'Altro',
+			category: task.category || "Altro",
 			start_date: task.start_date,
 			end_date: task.end_date,
 			progress: typeof task.progress === "number" ? task.progress : 0,
@@ -402,7 +406,6 @@ const Remediation: React.FC = () => {
 		}
 	}, [orgId, groupId, apiTaskToDbTask]);
 
- 
 	useEffect(() => {
 		loadTasks();
 	}, [loadTasks]);

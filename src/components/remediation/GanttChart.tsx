@@ -217,7 +217,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
         <div className="overflow-x-auto select-none" ref={scrollRef} onPointerMove={onPointerMove} onPointerUp={handlePointerUp}>
           <div style={{ minWidth: `${timelineMinWidth}px` }}>
             <div className="grid grid-cols-[18rem_minmax(0,1fr)] border-b border-border bg-muted/50 sticky top-0 z-10">
-              <div className={`${SIDEBAR_WIDTH_CLASS} shrink-0 px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider`}>
+              <div className={`${SIDEBAR_WIDTH_CLASS} shrink-0 sticky left-0 z-20 bg-card px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider`}>
                 Attività
               </div>
               <div
@@ -252,12 +252,12 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                         isDragging && 'bg-muted/30',
                       )}
                     >
-                      <div className={cn(`${SIDEBAR_WIDTH_CLASS} shrink-0 px-4 py-3 flex items-center gap-2 border-l-2`, priorityBorder[task.priority] || 'border-l-border')}>
+                      <div className={cn(`${SIDEBAR_WIDTH_CLASS} shrink-0 sticky left-0 z-10 bg-background px-4 py-3 flex items-center gap-2 border-l-2`, priorityBorder[task.priority] || 'border-l-border')}>
                         <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />
                         <div className="flex-1 min-w-0">
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <p className="text-xs font-medium truncate leading-tight cursor-default">{task.task}</p>
+                              <p className="text-xs font-medium line-clamp-2 leading-tight cursor-default">{task.task}</p>
                             </TooltipTrigger>
                             <TooltipContent side="top" className="max-w-xs">
                               <p>{task.task}</p>

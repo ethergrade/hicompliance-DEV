@@ -1,178 +1,169 @@
-# Investigation: Trello #76 — "Verifica Remediation, alcune senza category"
+# Baseline
 
-## Baseline
+- Commit: (current HEAD)
+- Prior artifacts used: none (fresh scout)
+- Graphify status: STALE (last at 2026-06-23)
 
-- Commit: `git rev-parse HEAD` to verify
-- Project: hicompliance-DEV (React frontend) + ../hiconsole (Laravel backend)
-- Prior artifacts: Trello #55 (v2 remediation), Trello #71 (assessment dependency visibility)
+## Delta (since baseline)
 
----
+- N/A — fresh investigation
 
-## 1. How Remediation Items Are Created/Displayed
+## State snapshot
 
-### Frontend: `src/pages/Remediation.tsx`
+### File structure
 
-- **Data model**: `interface DbTask` (line 65-81) has `category: string` (non-nullable). API response mapped via `apiTaskToDbTask` (line 351-370).
-- **Display**: `ganttData` (line 416-439) maps `DbTask[]` → `GanttTask[]`, passing `category` directly (line 426).
-- **Loading**: `loadTasks` (line 375-403) calls `remediationTasksApi.list()`, maps each via `apiTaskToDbTask`. Category is passed through as-is (line 355).
-- **Deleted tasks tab**: Shows `Categoria: {t.category}` (line 1612). Null would display as blank or "null".
+```
+src/components/remediation/GanttChart.tsx   — 387 lines
+src/pages/Remediation.tsx                   — 1672 lines
+src/hooks/useGanttResize.ts                 — 104 lines
+```
 
-### Backend: `RemediationTaskController.php`
+### GanttChart.tsx — Layout architecture
 
-- `index()` (line 22-47): Loads tasks by `tenant_id`, ordered by `display_order`. Category is returned as-is from the resource.
-- `store()` (line 49-59): Creates via `StoreRemediationTaskRequest` which has `'category' => ['required', 'string', 'max:100']`.
+**Single scroll container (root cause of #1):**
 
-### Database: `remediation_tasks` table
+- Line 217: `<div className="overflow-x-auto select-none" ref={scrollRef} ...>` — this wraps **both** sidebar and timeline.
+- Line 219: header row — `grid grid-cols-[18rem_minmax(0,1fr)]`
+- Line 220: sidebar header — `<div className="w-72 shrink-0 px-4 py-3 text-xs font-semibold ...">` — `shrink-0` prevents compression but doesn't pin.
+- Line 223–236: timeline header — month labels in `grid flex-1` with `minWidth: timelineMinWidth` and `gridTemplateColumns: monthGridTemplate`.
+- Line 248–254: each task row — same `grid grid-cols-[18rem_minmax(0,1fr)] min-h-14` structure.
+- Line 255: task sidebar cell — `<div className="w-72 shrink-0 px-4 py-3 flex items-center gap-2 border-l-2 ...">`.
+- Line 300: task timeline cell — `<div className="relative" style={{ minWidth: ${timelineMinWidth}px }}>`.
 
-- `category` column (migration `2026_05_27_200004_create_remediation_tables.php`, line 16): `$table->string('category')` — **NOT nullable, no default**.
+**Key insight:** Because both columns are children of the single `overflow-x-auto` container (line 217), horizontal scrolling moves everything — sidebar included. The sidebar is **not** a separate element from the timeline.
 
----
+**Sidebar content:**
 
-## 2. Category Field: Origin and Nullability
+- Line 260: task label — `<p className="text-xs font-medium truncate leading-tight cursor-default">{task.task}</p>`
+- Line 266: assignee — `<p className="text-[10px] text-muted-foreground truncate mt-1">{task.assignee}</p>`
 
-### Backend (`hiconsole`)
+**Timeline bars:**
 
-| Layer | file:line | category definition | Can be null? |
-|---|---|---|---|
-| DB migration | `2026_05_27_200004_create_remediation_tables.php:16` | `$table->string('category')` | ❌ Not nullable |
-| Model `$fillable` | `app/Models/RemediationTask.php:17` | `'category'` | Included |
-| Store validation | `app/Http/Requests/StoreRemediationTaskRequest.php:18` | `['required', 'string', 'max:100']` | ❌ Required |
-| Update validation | `app/Http/Requests/UpdateRemediationTaskRequest.php:18` | `['sometimes', 'string', 'max:100']` | ✔ Optional |
-| Resource | `app/Http/Resources/RemediationTaskResource.php:17` | `$this->category` | Passes DB value |
+- Lines 317–376: `<TooltipProvider>` wrapping each bar.
+- Line 330–334: bar `style={{ left: bar.left, width: bar.width, backgroundColor: task.color, minWidth: 28 }}`.
+- Line 332: `backgroundColor: task.color || 'hsl(var(--primary))'`.
+- Lines 338–343: progress overlay `<div style={{ width: ${task.progress}% }} className="bg-white/20 rounded-full pointer-events-none" />`.
+- Line 360–363: bar label `<div className="absolute inset-0 flex items-center justify-between px-2 text-[10px] text-white font-semibold pointer-events-none select-none overflow-hidden">` with duration and progress %.
 
-### Frontend (`src/types/api.ts`) — **DUPLICATE INTERFACES**
+**Priority border colors** (lines 47–52):
 
-Two `RemediationTask` and `StoreRemediationTaskRequest` interfaces exist in the same file:
+- `Critica` → `border-l-red-500`
+- `Alta` → `border-l-orange-500`
+- `Media` → `border-l-yellow-500`
+- `Bassa` → `border-l-green-500`
 
-| Interface | line | category type |
-|---|---|---|
-| `RemediationTask` (v2, first) | 369 | `category: string` |
-| `RemediationTask` (second) | 822 | `category?: string \| null` |
-| `StoreRemediationTaskRequest` (v2, first) | 391 | `category: string` |
-| `StoreRemediationTaskRequest` (second) | 841 | `category?: string \| null` |
+**Drag state:**
 
-**Risk**: TypeScript builds without errors (declaration merge maybe masking). At runtime, if API returns null/empty category, frontend passes it through unguarded.
+- `liveDates` (line 70): tracks in-flight date changes during drag.
+- `activeDragId` (line 71): which task is being dragged.
+- `zoomIndex` (line 72): zoom level into `ZOOM_LEVELS = [800, 1100, 1600, 2400, 3600]`.
+- Lines 76–81: `useGanttDrag` hook (resize/resposition).
+- Lines 122–149: `handleBarPointerDown` / `handlePointerUp`.
+- Lines 162–189: window-level `pointermove`/`pointerup` listeners during active drag.
 
----
+**Today indicator** (lines 156–160): `todayOffset` computed as `(days_from_today_to_start / totalDays) * 100`. Rendered as a vertical line on line 310–314. Returns `null` if today is outside the Gantt range.
 
-## 3. Remediation Creation Flows That Might Skip Category
+**Scroll controls** (lines 151, 207–212): `scroll = (dir) => scrollRef.current?.scrollBy({ left: dir * 300, behavior: 'smooth' })`. Left/right chevron buttons in the card header.
 
-### Flow A: Manual creation via UI dialog
+### Remediation.tsx — Gantt integration
 
-- **File**: `src/pages/Remediation.tsx`, lines 900-938
-- **State**: `newRemediation.category` initializes as `""` (line 330)
-- **No validation**: The "Crea Remediation" button calls `handleCreateRemediation` (line 678) which immediately sends the API request.
-- **Category mapping** (line 710-712):
+**Hardcoded date range (root cause of #3):**
 
-  ```typescript
-  category: CATEGORY_KEY_TO_LABEL[newRemediation.category] || newRemediation.category,
+- Line 302: `const GANTT_START = new Date("2026-01-01")`
+- Line 303: `const GANTT_END = new Date("2026-12-31")`
+- These are module-level constants, not state, not dependent on `selectedTimeframe` (line 323).
+- Used on line 416–417: `ganttData` mapping where `totalDays` and `daysFromStart` are computed against `GANTT_START`.
+
+**Task mapping** (lines 415–438): `activeTasks.map(...)` → `GanttTask[]`. Computes `startOffset` and `width` as percentages.
+
+**Props passed to `<GanttChart>`** via lines 415–438 + render section:
+
+- `tasks={ganttData}`
+- `ganttStartDate={GANTT_START}`
+- `ganttEndDate={GANTT_END}`
+- `onDateChange`, `onEditTask`, `onToggleVisibility`, `onDeleteTask`, `onReorderTasks`, `onProgressChange`
+- `canEdit`, `canUpdateProgress`
+
+**Other state:**
+
+- `selectedTimeframe` (line 323): stored in user preferences, defaults to `"90days"`. Not wired to Gantt range — appears unused for the Gantt.
+- `loadTasks` (line 375): fetches from `remediationTasksApi.list(orgId, groupId)`.
+- `updateTask` (line 444): optimistic update + PUT per task.
+
+## Context (layered on state)
+
+### Requirement #1: Pinned sidebar
+
+**Root cause:** Single `overflow-x-auto` container wraps both sidebar and timeline columns. The sidebar's `shrink-0` prevents compression but doesn't pin it against horizontal scroll.
+
+**Fix approach (minimal):** Use `position: sticky` on the sidebar cells within the same grid, inside the scroll container.
+
+**Specific changes:**
+
+- Line 220 (sidebar header cell): add `sticky left-0 z-20 bg-card` so it sticks to the left edge of the scrolling container.
+- Line 255 (task row sidebar cell): add `sticky left-0 z-10 bg-background` (or `bg-card` / `bg-white`) to pin each row's sidebar cell.
+- The sticky cells need an explicit background to prevent content showing through as they overlap the scroll area.
+
+**Why this works:** `sticky` in a scrolling container positions relative to the nearest scroll parent (`overflow-x-auto`). The grid ensures the sidebar column stays at `left: 0` of the scroll viewport.
+
+### Requirement #2: 2-line label wrapping
+
+**Root cause:** Line 260 uses Tailwind `truncate` → `overflow: hidden; text-overflow: ellipsis; white-space: nowrap`. This forces single-line display with ellipsis.
+
+**Fix approach:** Replace `truncate` with `line-clamp-2` (Tailwind 3.3+ built-in).
+
+**Specific changes:**
+
+- Line 260: change `truncate` to `line-clamp-2` in the `<p>` tag. Remove `truncate`, add `line-clamp-2`. The `leading-tight` stays.
+- Line 266 (assignee): keep `truncate` — single-line for the smaller assignee text is appropriate.
+- The `min-h-14` (56px) on each row (line 251) is sufficient height for 2 lines of `text-xs` (~30px) + assignee line (~16px) = ~46px. No row height change needed.
+
+### Requirement #3: Default view from today()
+
+**Root cause:** Lines 302–303 hardcode `GANTT_START` and `GANTT_END` as `new Date("2026-01-01")` and `new Date("2026-12-31")`. No mechanism to dynamically center the view around today.
+
+**Fix approach (minimal):** Compute `GANTT_START` and `GANTT_END` relative to `new Date()` instead of hardcoded dates. Optionally add a `useEffect` to scroll to today on mount.
+
+**Specific changes:**
+
+- Lines 302–303: Replace with dynamic dates:
+
+  ```tsx
+  const GANTT_START = new Date(); // or subMonths(new Date(), 1) for 1-month context
+  const GANTT_END = addMonths(new Date(), 12); // 12-month horizon
   ```
 
-  - If category is `""`: `CATEGORY_KEY_TO_LABEL[""]` → `undefined` → `""` is sent to backend
-  - **But**: Backend Store validation requires `category` → would return 422. However, if the user selects ANY option, category is a valid key string.
-- **Verdict**: Manual creation itself may not be the source, but there's NO client-side validation preventing submission with empty category.
+  Or use `subMonths(GANTT_START, 1)` for a small buffer before today so the admin can see what just started.
 
-### Flow B: Assessment auto-creation via `RemediationGanttService`
+- Import `subMonths`, `addMonths` from `date-fns` (already imported in Remediation.tsx line 40).
+- The `todayOffset` line (GanttChart.tsx lines 156–160) already handles today dynamically. With `GANTT_START = today`, `todayOffset` will be `0` (today is at the left edge).
+- No scroll-to-today `useEffect` needed if today is at position 0.
+- Admin can scroll back/forward using the existing `scroll()` function (line 151) + scrollbar.
+- Consider adding a "Jump to Today" button for convenience.
 
-- **File**: `hiconsole/app/Services/RemediationGanttService.php`
-- **`buildGanttItems()`** (line 198-257): Category comes from `$question->category?->name ?? 'Altro'` (line 228). **Always has a fallback value** → safe.
-- **`insertTasks()`** (line 315-359): Inserts `$event['category']` (line 331) directly into DB. Category is always populated from buildGanttItems.
-- **`importFromCustomGantt()`** (line 122-185): Extracts category from task name: `$category = ''; if (str_contains($name, ':')) { ... }` (line 145-149). **If task name has no colon, `$category` stays empty string `''`**. Then inserted at line 157 as `'category' => $category`. DB column is `string` (not nullable), so MySQL would store this as empty string, not null.
-- **Verdict**: `importFromCustomGantt()` is a potential source of empty categories when legacy task names don't contain a colon separator.
+**Risks for #3:**
 
-### Flow C: Direct DB updates (migrations / seeders / admin)
+- If demo/seed data uses 2026 dates (lines 84–283), those tasks may not fall within a dynamic range starting from today (June 2026). The demo data spans Jan–Dec 2026 — some tasks (Jan–May) would be partially before `GANTT_START`. The `getBarStyle` function (GanttChart.tsx line 101–120) already clamps: lines 106–108 normalize start/end against `ganttStartDate`/`ganttEndDate`. So tasks starting before today will render truncated at the left edge. This is tolerable behavior.
+- The header title (line 197: `Timeline {ganttStartDate.getFullYear()}`) will show the current year, which is appropriate.
 
-- Only the migration creates the column (non-nullable). Seeders create `remediation_templates` and `remediation_solutions`, not tasks. No other path writes tasks.
+### Bar color/style summary
 
----
+- Line 332: `backgroundColor: task.color || 'hsl(var(--primary))'` — uses the `color` field from DB directly.
+- Lines 338–343: progress overlay as white/20 bar.
+- Lines 346–358: left/right resize handles with `w-3 cursor-ew-resize`.
+- Lines 47–52: priority-based left border via `priorityBorder` record.
 
-## 4. Frontend Filtering/Grouping by Category — Breakage with null/empty
+### Files likely needing changes
 
-### GanttChart (`src/components/remediation/GanttChart.tsx`)
-
-- **Interface `GanttTask`** (line 11-26): `category: string` — non-nullable. Used only for display in tooltip/sidebar. No category-based filtering in the chart itself.
-- Category is NOT used for grouping in Gantt. It's displayed in the sidebar list where it was previously rendered.
-
-### Remediation page (`src/pages/Remediation.tsx`)
-
-- **`activeTasks`** (line 411-413): Filters `!t.is_deleted`. No category filter.
-- **`ganttData`** (line 416-439): Maps `category: t.category` directly. No null guard.
-- **Deleted tasks tab** (line 1612): `Categoria: {t.category}` — would show "Categoria: " if null/undefined, or "Categoria: null" if JS string-coerces null.
-- **Edit form** (line 1198): `<Select value={editTaskData.category}>` — if category is empty/null, the Select has no matching option, which displays blank/placeholder.
-- **No category-based grouping, filtering, or rendering** that would crash with null/undefined. The category is displayed only as a label.
-
-### Assessment page (`src/pages/Assessment.tsx`)
-
-- **`getCategoryCounts`** (line 558-571): Counts by category name. Not affected by remediation task categories directly.
-- **Overall progress** (line 828-833): Uses `cat.completed` and `cat.questions` from assessment categories, not remediation tasks. Separate concern.
-
----
-
-## 5. Assessment Completion Issue
-
-### How total_questions is calculated
-
-**Backend** (`AssessmentSnapshotController::store`, line 42-67):
-
-```php
-$responses = AssessmentResponse::where('tenant_id', $company->id)->with('question.category')->get();
-$totalQuestions = $responses->count();
-$totalAnswered = $responses->where('status', '!=', 'not_applicable')->count();
-```
-
-- Counts **ALL existing response records** including those for questions hidden by dependencies.
-- Does NOT filter dependency-gated questions.
-
-**Frontend** (`Assessment.tsx`, line 652-678):
-
-```typescript
-const visibleQuestions = cat.questions.filter(q => isQuestionVisible(q, responses, allCategories));
-const total = visibleQuestions.length;
-const status = answered === 0 ? 'not_started' : answered === total ? 'completed' : 'in_progress';
-```
-
-- Counts only **visible** questions after applying `isQuestionVisible` (line 401-414).
-- A question is hidden if its `dependency` parent's status is not `pianificato_in_corso` or `completato`.
-
-**The Discrepancy**: If a category has 10 questions, 3 are dependency-gated (hidden because parent is `non_iniziato`), the frontend shows `7 total`. The backend counts all 10 responses. The user sees 7/7 (100%) but the snapshot shows 7/10 (70%). The system says "more to answer" but the user can't see the hidden questions.
-
-**This is the root cause of the "assessment not completed" symptom.**
-
-### Trello #71 referenced in code
-
-Line 656-657: `// Trello #71: count only VISIBLE questions. Hidden dependency-children must not inflate 'total'`
-This fix was applied to the FRONTEND only. The backend snapshot calculation was NOT updated to match. The backend at line 67 of `AssessmentSnapshotController.php` still counts all responses regardless of dependency visibility.
-
----
-
-## 6. Summary of Findings
-
-### Remediation "senza category"
-
-| # | Location | Issue | Severity |
-|---|---|---|---|
-| A | `RemediationGanttService::importFromCustomGantt()` (hiconsole:145-149) | Category extraction from task name fails if no colon → empty string saved | ⚠️ Medium — only affects legacy migrations |
-| B | `src/pages/Remediation.tsx:710-712` | No client-side validation for category in create form. Empty string can be sent to API | ⚠️ Low — backend validation catches it with 422 |
-| C | `src/pages/Remediation.tsx:355, 426, 1612` | Null/empty category passes through UI unguarded. Display shows blank for category | ⚠️ Low — cosmetic |
-| D | `src/types/api.ts:369 vs 822` | Two conflicting `RemediationTask` and `StoreRemediationTaskRequest` interfaces | ⚠️ Medium — type confusion risk |
-
-### Assessment completion "mancano risposte"
-
-| # | Location | Issue | Severity |
-|---|---|---|---|
-| E | `AssessmentSnapshotController.php:67` vs `Assessment.tsx:658-659` | Backend counts all responses; frontend counts only visible (dependency-filtered) questions | 🔴 **Critical** — mismatch makes it appear incomplete |
-
-### Primary Investigation Finding
-
-The **most likely source** of remediation tasks without a category is `importFromCustomGantt()` in `RemediationGanttService.php:145-149` — when legacy task names don't contain a colon (`:`), category is set to empty string. For the "assessment not completed" issue, the root cause is the **backend/frontend mismatch** in counting dependency-gated questions in the snapshot calculation.
-
----
+| File | Lines | Change |
+|------|-------|--------|
+| `src/components/remediation/GanttChart.tsx` | 220 | Add sticky to sidebar header |
+| `src/components/remediation/GanttChart.tsx` | 255 | Add sticky to sidebar task cell, add bg color |
+| `src/components/remediation/GanttChart.tsx` | 260 | Replace `truncate` with `line-clamp-2` |
+| `src/pages/Remediation.tsx` | 302–303 | Make GANTT_START/GANTT_END dynamic from today |
+| `src/pages/Remediation.tsx` | 40 | Ensure `addMonths` (or `subMonths`) imported |
 
 ## Start Here
 
-For investigating further, open these files in order:
-
-1. **`../hiconsole/app/Services/RemediationGanttService.php`** (line 122-185) — `importFromCustomGantt()` is the most likely source of empty categories
-2. **`src/pages/Remediation.tsx`** (line 703-728) — `handleCreateRemediation` payload construction, verify category handling
-3. **`../hiconsole/app/Http/Controllers/Api/AssessmentSnapshotController.php`** (line 42-67) — snapshot total_answered/total_questions calculation that doesn't filter dependency-gated questions
-4. **`src/types/api.ts`** (lines 369, 391, 822, 841) — duplicate interface definitions that need cleanup
+**File:** `src/components/remediation/GanttChart.tsx` lines 217–260
+This is the layout core: the single scroll container, the sidebar cells that need sticky positioning, and the label that needs line-clamping. Read from line 190 (return) to understand the full render tree, then apply the sidebar sticky fix first (req #1) since it has the most structural impact — the other two are isolated one-liner changes.
