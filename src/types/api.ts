@@ -76,6 +76,8 @@ export interface LoginUser {
 	mfa_recommended?: boolean;
 	/** Role string from backend (e.g. 'admin', 'sales', 'client') */
 	user_type?: string;
+	/** Authentication method from /auth/me */
+	auth_method?: 'native' | 'microsoft';
 }
 
 export interface LoginData {

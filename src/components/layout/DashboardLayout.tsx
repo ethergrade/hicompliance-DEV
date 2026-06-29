@@ -34,7 +34,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             </div>
           )}
 
-          {user?.mfa_recommended && (
+          {user?.mfa_recommended && user?.auth_method !== 'microsoft' && (
             <div className="flex items-center gap-3 px-4 py-2 text-sm bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-b border-yellow-500/25">
               <ShieldAlert className="w-4 h-4 shrink-0" />
               <span>
