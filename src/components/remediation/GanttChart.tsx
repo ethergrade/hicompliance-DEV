@@ -80,7 +80,6 @@ const MONTHS_IT = [
 	"Nov",
 	"Dic",
 ];
-const TIMELINE_MIN_WIDTH = 1100;
 const ZOOM_LEVELS = [800, 1100, 1600, 2400, 3600];
 const SIDEBAR_WIDTH_CLASS = "w-72";
 
@@ -327,11 +326,14 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 					onPointerUp={handlePointerUp}
 				>
 					<div style={{ minWidth: `${timelineMinWidth}px` }}>
-						<div className="grid grid-cols-[18rem_minmax(0,1fr)] border-b border-border bg-muted/50 sticky top-0 z-10">
+						<div className="grid grid-cols-[18rem_8rem_minmax(0,1fr)] border-b border-border bg-muted/50 sticky top-0 z-10">
 							<div
 								className={`${SIDEBAR_WIDTH_CLASS} shrink-0 sticky left-0 z-20 bg-card px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider`}
 							>
 								Attività
+							</div>
+							<div className="w-32 shrink-0 sticky left-72 z-20 bg-card px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+								Categoria
 							</div>
 							<div
 								className="grid flex-1"
@@ -366,7 +368,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 										<div
 											key={task.id}
 											className={cn(
-												"grid grid-cols-[18rem_minmax(0,1fr)] min-h-14 border-b border-border/30 group hover:bg-muted/20 transition-colors",
+												"grid grid-cols-[18rem_8rem_minmax(0,1fr)] min-h-14 border-b border-border/30 group hover:bg-muted/20 transition-colors",
 												isDragging && "bg-muted/30",
 											)}
 										>
@@ -437,6 +439,9 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 														</span>
 													</div>
 												)}
+											</div>
+											<div className="px-3 py-3 flex items-center text-xs text-muted-foreground bg-background min-w-0">
+												<span className="truncate">{task.category || "—"}</span>
 											</div>
 
 											<div
