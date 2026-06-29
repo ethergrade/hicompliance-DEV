@@ -187,7 +187,6 @@ export const surfaceScan360Api = {
 		return extractArray<unknown>(res.data);
 	},
 
-	// Monitored IPs (replaces Supabase surface_scan_monitored_ips query)
 	async listMonitoredIps(
 		companyId: string,
 		groupId?: string | null,
@@ -244,7 +243,6 @@ export const surfaceScan360Api = {
 		return res.data;
 	},
 
-	// Observations (replaces Supabase surface_observations query)
 	async getObservations(
 		companyId: string,
 		params?: {
@@ -262,7 +260,6 @@ export const surfaceScan360Api = {
 		);
 		return extractArray<unknown>(res.data);
 	},
-	// Module results (replaces Supabase surface_scan_module_results query)
 	async getModuleResults(
 		companyId: string,
 		params?: { job_ids?: string; status?: string; page?: number },
@@ -276,7 +273,6 @@ export const surfaceScan360Api = {
 		return extractArray<unknown>(res.data);
 	},
 
-	// Web technologies (replaces Supabase surface_web_technologies query)
 	async getTechnologies(
 		companyId: string,
 		params?: { job_ids?: string; page?: number },
@@ -290,7 +286,6 @@ export const surfaceScan360Api = {
 		return extractArray<unknown>(res.data);
 	},
 
-	// Open ports (replaces Supabase surface_open_ports query)
 	async getOpenPorts(
 		companyId: string,
 		params?: { job_ids?: string; exposure_level?: string; per_page?: number; page?: number },
@@ -316,7 +311,6 @@ export const surfaceScan360Api = {
 		return res.data;
 	},
 
-	// Assets (replaces Supabase surface_assets query)
 	async getAssets(
 		companyId: string,
 		params?: { job_id?: string; job_ids?: string; asset_type?: string; all?: boolean; per_page?: number; page?: number },
@@ -330,7 +324,6 @@ export const surfaceScan360Api = {
 		return extractArray<unknown>(res.data);
 	},
 
-	// Findings — endpoint generico (replaces Supabase surface_findings query)
 	async getFindings(
 		companyId: string,
 		params?: { job_ids?: string; severity?: string; status?: string; active_only?: boolean; finding_type?: string; cisa_kev?: boolean; per_page?: number; page?: number },

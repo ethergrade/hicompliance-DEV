@@ -19,7 +19,6 @@ import { Plus, Pencil, Trash2, User, RotateCcw, Settings2 } from 'lucide-react';
 import { useDarkRiskAlerts } from '@/hooks/useDarkRiskAlerts';
 import { AlertConfigDialog } from '@/components/dark-risk/AlertConfigDialog';
 import { AlertTypes } from '@/hooks/useDarkRiskAlerts';
-import { supabase } from '@/integrations/supabase/client';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useResetAllPreferences } from '@/hooks/useUserPreferences';
 import { useClientContext } from '@/contexts/ClientContext';

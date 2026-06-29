@@ -32,7 +32,6 @@ import {
   IocType,
   useSurfaceScanIocFreshList,
 } from '@/hooks/useSurfaceScanIocFreshList';
-import { supabase } from '@/integrations/supabase/client';
 import { useUserRoles } from '@/hooks/useUserRoles';
 
 const alertTypeLabels: Record<keyof SurfaceScanAlertTypes, string> = {

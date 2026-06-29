@@ -15,10 +15,8 @@ import {
 	parseScope,
 	parseStandardOverview,
 } from "../domain/schemas";
-import { supabase } from "@/integrations/supabase/client";
 import {
 	resolveDarkRiskEntitlements,
-	type DarkRiskEntitlementHints,
 	type DarkRiskEntitlements,
 } from "../shared/entitlementResolver";
 
@@ -59,43 +57,14 @@ const getData = async (
 };
 
 export const darkRiskGateway = {
-	async getOrganizationEntitlementHints(
-		companyId: string,
-	): Promise<DarkRiskEntitlementHints> {
-		const { data, error } = await supabase
-			.from("organizations")
-			.select(
-				"hicompliance_enabled, dark_risk360_enabled, darkrisk_esteso_enabled",
-			)
-			.eq("id", companyId)
-			.maybeSingle();
-
-		if (error) {
-			throw error;
-		}
-
-		return {
-			hicomplianceEnabled: data?.hicompliance_enabled === true,
-			darkRisk360Enabled: data?.dark_risk360_enabled === true,
-			darkRiskExtendedEnabled: data?.darkrisk_esteso_enabled === true,
-		};
-	},
-
 	async getEntitlements(companyId: string): Promise<DarkRiskEntitlements> {
-		const [apiResult, hintsResult] = await Promise.allSettled([
-			getData(`/companies/${companyId}/darkrisk/overview`),
-			darkRiskGateway.getOrganizationEntitlementHints(companyId),
-		]);
-
-		const data =
-			apiResult.status === "fulfilled"
-				? (apiResult.value as Record<string, unknown>)
-				: null;
-		const hints = hintsResult.status === "fulfilled" ? hintsResult.value : null;
+		const data = (await getData(
+			`/companies/${companyId}/darkrisk/overview`,
+		)) as Record<string, unknown>;
 		const grants =
 			data?.entitlements && typeof data.entitlements === "object"
 				? (data.entitlements as Record<string, unknown>)
-				: (data ?? {});
+				: data;
 
 		return {
 			...resolveDarkRiskEntitlements(
@@ -105,14 +74,18 @@ export const darkRiskGateway = {
 						grants.standard_monitor === true ||
 						grants.standard_enabled === true ||
 						grants.hicompliance === true ||
+						grants.hicompliance_enabled === true ||
+						grants.dark_risk360_enabled === true ||
+						grants.darkrisk_esteso_enabled === true ||
 						grants.extended_identity === true ||
 						data?.tier === "extended",
 					extendedEnabled:
 						grants.extended_identity === true ||
 						grants.extended_enabled === true ||
+						grants.darkrisk_esteso_enabled === true ||
 						data?.tier === "extended",
 				},
-				hints,
+				null,
 			),
 		};
 	},

@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Playbook, calculatePlaybookProgress } from '@/types/playbook';
-import { supabase } from '@/integrations/supabase/client';
 import { savePlaybookWithVersion } from '@/lib/playbookMigration';
 import { Packer } from 'docx';
 
@@ -21,7 +20,6 @@ const autoSaveDocxToDocuments = async (_playbook: Playbook): Promise<boolean> =>
 };
 
 
-// Sync playbook to Supabase
 // TODO: migrate to backend API (stub)
 const syncToDatabase = async (_playbook: Playbook): Promise<{ isNewCompletion: boolean }> => {
   console.warn('[migrate-stub] syncToDatabase disabled');

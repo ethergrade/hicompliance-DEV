@@ -82,7 +82,6 @@ export const useSubdomainDump = () => {
 		}
 	}, [organizationId, groupId]);
 
-	// Settings → ancora Supabase (mancano endpoint GET/PUT /subdomain-dumps/settings nel backend)
 	const fetchSettings = useCallback(async () => {
 		if (!organizationId) return;
 		// TODO: migrate to backend API (organizations subdomain_dump settings)

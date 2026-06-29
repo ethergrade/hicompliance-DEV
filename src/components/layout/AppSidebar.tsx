@@ -67,7 +67,6 @@ import { useOrganizationStore } from "@/stores/organizationStore";
 const navigation = [
 	{ title: "Home", href: "/", icon: Home },
 	{ title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-	// { title: 'AI CISO', href: '/ai-ciso', icon: Bot, superAdminOnly: true }, // HIDDEN: supabase-only (ai_ciso_conversations), no backend API
 	{ title: "CyberNews", href: "/cyber-news", icon: Newspaper },
 	{ title: "Minacce", href: "/threats", icon: AlertTriangle },
 	{ title: "Report", href: "/reports", icon: FileText },
@@ -111,7 +110,6 @@ const adminNavigation = [
 		href: "/admin/companies",
 		icon: Building,
 	},
-	// { title: 'Reportistica Aggregata', href: '/admin/reporting', icon: PieChart }, // HIDDEN: supabase-only, no backend API
 	{
 		title: "Utenti Elevated",
 		href: "/admin/elevated-users",
@@ -475,7 +473,6 @@ export const AppSidebar: React.FC = () => {
 											</SidebarMenuItem>
 										);
 									})}
-								{/* AI CISO Assistant — HIDDEN: supabase-only (ai_ciso_conversations), no backend API */}
 							</SidebarMenu>
 						</SidebarGroupContent>
 					</SidebarGroup>

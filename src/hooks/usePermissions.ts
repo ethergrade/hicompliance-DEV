@@ -52,7 +52,6 @@ const ROUTE_CAPABILITIES: Record<string, RouteCapabilities> = {
 /**
  * Capability-driven route gating.
  * Stefano's 2026-06-05 backend change moved fine-grained permissions from the
- * old Supabase RPC map to dotted capability keys returned by /auth/me.
  * Routes without an explicit capability mapping remain allowed by default.
  */
 export function usePermissions() {

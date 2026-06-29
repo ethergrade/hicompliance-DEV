@@ -11,7 +11,6 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
-import { supabase } from "@/integrations/supabase/client";
 import { tenantsApi } from "@/lib/api";
 import { useUserRoles } from "@/hooks/useUserRoles";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
@@ -99,7 +98,6 @@ const AdminReporting: React.FC = () => {
 				code: t.ms_tenant_id || String(t.id),
 			}));
 
-			// TODO: migrate to backend API (4 supabase counts)
 			// Stub: all 4 arrays empty — admin reporting will show zero counts
 			const users: any[] = [];
 			const services: any[] = [];

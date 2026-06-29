@@ -52,7 +52,6 @@ export const SurfaceScanTrendline: React.FC<{ isAdmin?: boolean }> = ({ isAdmin 
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
             <Calendar className="inline w-3 h-3 mr-1" />
-            Cron automatico ogni lunedì alle 04:00 UTC · snapshot salvati su Supabase
           </p>
         </div>
         <div className="flex items-center gap-2">

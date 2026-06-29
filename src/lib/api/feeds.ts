@@ -31,7 +31,6 @@ function feedsHeaders(groupId: string | null) {
 export const feedsApi = {
 	/**
 	 * Fetch cyber security news/feeds from the backend.
-	 * Replaces the fetch-acn-feeds Supabase Edge Function.
 	 */
 	list(groupId?: string | null): Promise<FeedsResponse> {
 		return apiClient

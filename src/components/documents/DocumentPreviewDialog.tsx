@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/integrations/supabase/client';
 import { Download, ExternalLink, FileText, Loader2 } from 'lucide-react';
 
 interface DocumentPreviewDialogProps {
@@ -45,7 +44,6 @@ const DocumentPreviewDialog: React.FC<DocumentPreviewDialogProps> = ({
       setSignedUrl(null);
       setTextContent(null);
       try {
-        // TODO: migrate to backend API (signed URL from Supabase Storage)
         if (cancelled) return;
         throw new Error('Anteprima non disponibile: storage backend non migrato');
       } catch (e: any) {

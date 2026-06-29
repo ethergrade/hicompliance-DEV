@@ -31,12 +31,10 @@ import SurfaceScanImpostazioni from "./pages/SurfaceScanImpostazioni";
 import ComplianceEvents from "./pages/ComplianceEvents";
 import ClientSelection from "./pages/ClientSelection";
 import CyberNews from "./pages/CyberNews";
-// HIDDEN: supabase-only, no backend API
 // import AdminReporting from "./pages/AdminReporting";
 import Consistenze from "./pages/Consistenze";
 import AdminCompanies from "./pages/AdminCompanies";
 import AssessmentGanttTest from "./pages/AssessmentGanttTest";
-// HIDDEN: supabase-only (ai_ciso_conversations), no backend model
 // import AICiso from "./pages/AICiso";
 import HiConsoleLanding from "./pages/HiConsoleLanding";
 import MfaSetup from "./pages/MfaSetup";
