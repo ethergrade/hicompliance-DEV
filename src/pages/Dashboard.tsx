@@ -327,7 +327,7 @@ const normalizeCode = (code: string) =>
                 </p>
               </div>
               <div className="flex items-center gap-4">
-                {isSuperAdmin && activeOrgId && (
+                {canManageIntegrationSettings && activeOrgId && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -335,16 +335,6 @@ const normalizeCode = (code: string) =>
                   >
                     <Settings className="w-4 h-4 mr-1" />
                     Gestione Moduli Cliente
-                  </Button>
-                )}
-                {canManageIntegrationSettings && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setModulesDialogOpen(true)}
-                  >
-                    <Settings className="w-4 h-4 mr-1" />
-                    Impostazioni
                   </Button>
                 )}
                 <div className="text-right">
@@ -373,11 +363,11 @@ const normalizeCode = (code: string) =>
                 <p className="text-sm text-muted-foreground mb-3">
                   Nessun servizio HiSolution collegato per questo cliente.
                 </p>
-                {(isSuperAdmin || canManageIntegrationSettings) && (
+                {canManageIntegrationSettings && activeOrgId && (
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => activeOrgId && setModulesDialogOpen(true)}
+                    onClick={() => setModulesDialogOpen(true)}
                   >
                     <Settings className="w-4 h-4 mr-1" />
                     Configura servizi
