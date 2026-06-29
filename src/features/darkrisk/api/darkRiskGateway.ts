@@ -2,6 +2,7 @@ import type { DarkRiskReport, DarkRiskRun, DarkRiskScope, ExtendedRunResult, Sta
 import { parseExtendedResults, parseReports, parseRun, parseScope, parseStandardOverview } from "../domain/schemas";
 import { supabase } from "@/integrations/supabase/client";
 import { resolveDarkRiskEntitlements, type DarkRiskEntitlementHints, type DarkRiskEntitlements } from "../shared/entitlementResolver";
+import { getSharedDarkRiskScope, shouldUseSharedDarkRiskScope, updateSharedDarkRiskScope } from "../shared/scopeBridge";
 import { darkRiskHttp } from "./http";
 
 export const darkRiskGateway = {
@@ -45,9 +46,15 @@ export const darkRiskGateway = {
 		};
 	},
 	async getScope(companyId: string): Promise<DarkRiskScope> {
+		if (await shouldUseSharedDarkRiskScope(companyId)) {
+			return getSharedDarkRiskScope(companyId);
+		}
 		return parseScope(await darkRiskHttp(`/companies/${companyId}/external-scope`));
 	},
 	async updateScope(companyId: string, scope: DarkRiskScope): Promise<DarkRiskScope> {
+		if (await shouldUseSharedDarkRiskScope(companyId)) {
+			return updateSharedDarkRiskScope(companyId, scope);
+		}
 		return parseScope(await darkRiskHttp(`/companies/${companyId}/external-scope`, {
 			method: "PUT",
 			body: { targets: scope.targets.map(({ type, value }) => ({ type, value })) },
