@@ -352,7 +352,7 @@ const Remediation: React.FC = () => {
 		(task: RemediationTask, orgId: string): DbTask => ({
 			id: task.id,
 			task: task.task,
-			category: task.category,
+			category: task.category || 'Altro',
 			start_date: task.start_date,
 			end_date: task.end_date,
 			progress: typeof task.progress === "number" ? task.progress : 0,
