@@ -18,9 +18,11 @@ import {
   Globe, Shield, Bell, ShieldAlert, CheckCircle2, XCircle,
   Loader2, Play, RefreshCw, Trash2, Plus, User, Pencil,
 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { usersApi } from '@/lib/api/users';
+import { connectSecureApi } from '@/lib/api/connectsecure';
+import { cveEnrichmentApi } from '@/lib/api/cve-enrichment';
 import { useSurfaceScanAlerts, SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
 import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceScanAlertConfigDialog';
 import {
@@ -51,7 +53,7 @@ const SurfaceScanImpostazioni: React.FC = () => {
   const { isSuperAdmin } = useUserRoles();
   const { userProfile } = useAuth();
   const isAdmin = userProfile?.user_type === 'admin' || isSuperAdmin;
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
 
   const [activeTab, setActiveTab] = useState('scanner');
 
@@ -94,48 +96,28 @@ const SurfaceScanImpostazioni: React.FC = () => {
     if (!isAdmin || alerts.length === 0) return;
     const fetchNames = async () => {
       const ids = [...new Set(alerts.map((a) => a.user_id))];
-      const { data } = await supabase.from('users').select('auth_user_id, full_name, email').in('auth_user_id', ids);
-      if (data) {
-        const m: Record<string, string> = {};
-        data.forEach((u) => { m[u.auth_user_id] = `${u.full_name} (${u.email})`; });
-        setUserNames(m);
-      }
+      const users = await usersApi.batchByIds(ids, groupId);
+      const m: Record<string, string> = {};
+      users.forEach((u) => { m[u.id] = `${u.name} (${u.email})`; });
+      setUserNames(m);
     };
     fetchNames();
-  }, [alerts, isAdmin]);
+  }, [alerts, isAdmin, groupId]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
-  const callEdge = useCallback(async (fn: string, body: object) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${fn}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
-        body: JSON.stringify(body),
-      },
-    );
-    return res.json();
-  }, []);
-
-  const connectSecureErrorMessage = (payload: any, fallback = 'Scan fallito') => {
-    if (payload?.error === 'auth_failed_config_diagnostic') {
-      return 'Secret ConnectSecure non valido o non aggiornato in Supabase';
-    }
-    return payload?.message || payload?.error || fallback;
-  };
-
   const loadCveStats = useCallback(async () => {
+    if (!organizationId) return;
     setCveStatsLoading(true);
-    const [{ count: queued }, { count: failed }, { count: ok }] = await Promise.all([
-      supabase.from('cve_enrichment_queue').select('id', { count: 'exact', head: true }).eq('status', 'queued'),
-      supabase.from('cve_enrichment_queue').select('id', { count: 'exact', head: true }).eq('status', 'failed'),
-      supabase.from('cve_intel_cache').select('id', { count: 'exact', head: true }).eq('fetch_status', 'ok'),
-    ]);
-    setCveStats({ queued: queued ?? 0, failed: failed ?? 0, ok: ok ?? 0 });
-    setCveStatsLoading(false);
-  }, []);
+    try {
+      const stats = await cveEnrichmentApi.getStats(organizationId, groupId);
+      setCveStats({ queued: stats.queued, failed: stats.failed, ok: stats.ok });
+    } catch {
+      // stats non critici
+    } finally {
+      setCveStatsLoading(false);
+    }
+  }, [organizationId, groupId]);
 
   useEffect(() => { loadCveStats(); }, [loadCveStats]);
 
@@ -143,22 +125,13 @@ const SurfaceScanImpostazioni: React.FC = () => {
     setSweepingAll(true);
     setSweepResult(null);
     try {
-      const json = await callEdge('connectsecure-scan', { action: 'weekly_all' });
-      if (json.ok) {
-        const authFailures = Array.isArray(json.results)
-          ? json.results.filter((row: any) => row?.error === 'auth_failed_config_diagnostic').length
-          : 0;
-        if (authFailures > 0) {
-          const msg = `Secret ConnectSecure non valido o non aggiornato in Supabase — ${authFailures} org non avviate`;
-          setSweepResult(msg);
-          toast.error(msg);
-          return;
-        }
-        const msg = `Attack Surface Mapper avviato in background — ${json.orgs_swept ?? 0} org processate`;
+      const result = await connectSecureApi.sweepAll(groupId);
+      if (result.ok) {
+        const msg = `Attack Surface Mapper avviato — ${result.orgs_swept ?? 0} org processate`;
         setSweepResult(msg);
         toast.success(msg);
       } else {
-        const msg = connectSecureErrorMessage(json, 'Sweep fallito');
+        const msg = 'Sweep fallito';
         setSweepResult(`Errore: ${msg}`);
         toast.error(msg);
       }
@@ -174,10 +147,10 @@ const SurfaceScanImpostazioni: React.FC = () => {
     setScanningOrg(true);
     setScanOrgResult(null);
     try {
-      const json = await callEdge('connectsecure-scan', { action: 'scan', organization_id: organizationId });
-      setScanOrgResult(json.ok
-        ? { ok: true, msg: `Attack Surface Mapper avviato in background — ${json.triggered ?? 0} domini accodati` }
-        : { ok: false, msg: connectSecureErrorMessage(json) });
+      const result = await connectSecureApi.scan(organizationId, groupId, 'scan');
+      setScanOrgResult(result.ok
+        ? { ok: true, msg: `Attack Surface Mapper avviato — ${result.triggered ?? 0} domini accodati` }
+        : { ok: false, msg: result.error || 'Scan fallito' });
     } catch (err) {
       setScanOrgResult({ ok: false, msg: String(err) });
     } finally {
@@ -186,11 +159,12 @@ const SurfaceScanImpostazioni: React.FC = () => {
   };
 
   const handleEnrich = async () => {
+    if (!organizationId) return;
     setEnriching(true);
     setEnrichResult(null);
     try {
-      const json = await callEdge('cve-enrichment', { action: 'retrigger_all', max_per_run: 50 });
-      const msg = `Accodati ${json.enqueued ?? 0} CVE — processati subito ${json.processed_count ?? 0}`;
+      const result = await cveEnrichmentApi.retrigger(organizationId, groupId);
+      const msg = `Accodati ${result.enqueued ?? 0} CVE — processati subito ${result.processed_count ?? 0}`;
       setEnrichResult(msg);
       toast.success(msg + '. Il drain automatico continuerà ogni 5 minuti.');
       await loadCveStats();
@@ -246,15 +220,16 @@ const SurfaceScanImpostazioni: React.FC = () => {
                   ConnectSecure — Attack Surface Mapper
                 </CardTitle>
                 <CardDescription>
-                  Le credenziali sono lette dai secrets Supabase; gli scan puntuali e schedulati rigenerano il token automaticamente.
+                  Le credenziali ConnectSecure sono configurate per ogni organizzazione tramite il pannello qui sotto.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="rounded-lg border border-border/50 p-3 bg-muted/30 text-xs text-muted-foreground space-y-1">
-                  <p className="font-medium text-foreground/60">Secrets richiesti (via CLI):</p>
-                  <code className="block">supabase secrets set CS_POD_HOST=pod401.myconnectsecure.com</code>
-                  <code className="block">supabase secrets set CS_COMPANY_ID=12345</code>
-                  <code className="block">supabase secrets set CS_CLIENT_AUTH_TOKEN='&lt;Client-Auth-Token base64 oppure tenant+client:secret&gt;'</code>
+                  <p className="font-medium text-foreground/60">Variabili d'ambiente richieste (server Laravel):</p>
+                  <code className="block">CS_POD_HOST=pod401.myconnectsecure.com</code>
+                  <code className="block">CS_COMPANY_ID=12345</code>
+                  <code className="block">CS_CLIENT_AUTH_TOKEN=&lt;Client-Auth-Token base64&gt;</code>
+                  <p className="mt-1">Le credenziali per-org sovrascrivono le variabili globali se configurate tramite API.</p>
                 </div>
               </CardContent>
             </Card>
@@ -321,7 +296,7 @@ const SurfaceScanImpostazioni: React.FC = () => {
                 </div>
                 <CardDescription>
                   Arricchisce tutti i CVE presenti in surface_findings con dati NVD, EPSS e CISA KEV.
-                  Richiede la secret <code className="text-xs">NVD_API_KEY</code> configurata su Supabase.
+                  Richiede la variabile d'ambiente <code className="text-xs">NVD_API_KEY</code> configurata sul server Laravel.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
@@ -357,7 +332,7 @@ const SurfaceScanImpostazioni: React.FC = () => {
                   </Button>
                   <p className="text-xs text-muted-foreground">
                     Accoda tutti i CVE da surface_findings non ancora arricchiti, poi drena i primi 50.
-                    Il drain automatico (pg_cron ogni 5 min) processa il resto. Il processo completo può richiedere 1–4 ore.
+                    Il drain automatico (ogni 5 min) processa il resto. Il processo completo può richiedere 1–4 ore.
                   </p>
                 </div>
 
@@ -368,8 +343,8 @@ const SurfaceScanImpostazioni: React.FC = () => {
                 )}
 
                 <div className="rounded-lg border border-border/50 p-3 bg-muted/30 text-xs text-muted-foreground space-y-1">
-                  <p className="font-medium text-foreground/60">Secret richiesta:</p>
-                  <code className="block">supabase secrets set NVD_API_KEY=&lt;tua-chiave-NVD&gt;</code>
+                  <p className="font-medium text-foreground/60">Variabile d'ambiente richiesta:</p>
+                  <code className="block">NVD_API_KEY=&lt;tua-chiave-NVD&gt;</code>
                   <p className="mt-1">Senza la key: 6.5s/CVE (rate limit anonimo). Con la key: 250ms/CVE → ~600 CVE/ora.</p>
                 </div>
               </CardContent>

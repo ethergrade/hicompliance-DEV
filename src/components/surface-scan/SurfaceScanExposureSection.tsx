@@ -5,7 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronRight, Loader2, Play, RefreshCw } from 'lucide-react';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
-import { supabase } from '@/integrations/supabase/client';
+import { connectSecureApi } from '@/lib/api/connectsecure';
+import { surfaceScan360Api } from '@/lib/api/surface-scan360';
 import {
   fetchExposureJobs,
   fetchExposureSummary,
@@ -174,7 +175,7 @@ const dedupeFindingsRows = (rows: ExposureFindingRow[]): ExposureFindingRow[] =>
 };
 
 export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProps> = ({ isAdmin }) => {
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
   const [loading, setLoading] = useState(false);
   const [startingScan, setStartingScan] = useState(false);
   const [jobs, setJobs] = useState<any[]>([]);
@@ -293,24 +294,19 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
     setLoading(true);
     try {
       const [jobsResult, summaryResult, scopeDomainsResult] = await Promise.allSettled([
-        fetchExposureJobs(organizationId, 50),
+        fetchExposureJobs(organizationId, 50, groupId),
         fetchExposureSummary({
           customerId: organizationId,
           scopeMode: 'scope_latest_per_target',
+          groupId,
         }),
-        supabase
-          .from('surface_scan_monitored_ips' as any)
-          .select('entry_type, input_value')
-          .eq('organization_id', organizationId)
-          .order('input_value', { ascending: true }),
+        surfaceScan360Api.listMonitoredIps(organizationId, groupId),
       ]);
 
       const jobsData = jobsResult.status === 'fulfilled' ? jobsResult.value : [];
       const summaryData = summaryResult.status === 'fulfilled' ? summaryResult.value : null;
-      const scopeDomainsRes = scopeDomainsResult.status === 'fulfilled' ? scopeDomainsResult.value : null;
-      if (scopeDomainsRes && (scopeDomainsRes as any).error) throw (scopeDomainsRes as any).error;
 
-      const monitoredRules = ((scopeDomainsRes as any)?.data || []) as Array<{ entry_type: string; input_value: string }>;
+      const monitoredRules = (scopeDomainsResult.status === 'fulfilled' ? scopeDomainsResult.value : []) as Array<{ entry_type: string; input_value: string }>;
       const normalizedScopeDomains = Array.from(
         new Set(
           monitoredRules
@@ -351,8 +347,8 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       }
 
       const [portsRes, techRes] = await Promise.allSettled([
-        fetchOpenPortsByJobIds(effectiveJobIds),
-        fetchTechnologiesByJobIds(effectiveJobIds),
+        fetchOpenPortsByJobIds(organizationId, effectiveJobIds, groupId, jobsData),
+        fetchTechnologiesByJobIds(organizationId, effectiveJobIds, groupId),
       ]);
       const assessmentByEndpoint = new Map(
         (summaryData?.service_assessments || []).map((assessment) => [serviceEndpointKey(assessment), assessment]),
@@ -378,7 +374,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
     } finally {
       setLoading(false);
     }
-  }, [organizationId]);
+  }, [organizationId, groupId]);
 
   useEffect(() => {
     void refreshData();
@@ -389,13 +385,10 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
       if (!organizationId) return null;
       setStartingScan(true);
       try {
-        const { data, error } = await supabase.functions.invoke('connectsecure-scan', {
-          body: { action: 'scan', organization_id: organizationId },
-        });
-        if (error) throw error;
-        if ((data as any)?.error) throw new Error(String((data as any).error));
+        const data = await connectSecureApi.scan(organizationId, groupId, 'scan');
+        if (!data.ok) throw new Error(data.error || 'Scan fallito');
 
-        const enqueued = Number((data as any)?.enqueued || 0);
+        const enqueued = Number(data.triggered ?? 0);
         const detail = enqueued > 0
           ? `${enqueued} domini accodati`
           : 'Nessun nuovo dominio accodato';

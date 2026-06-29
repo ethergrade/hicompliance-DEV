@@ -17,7 +17,8 @@ import type { SurfaceScanJob } from '@/hooks/useSurfaceScanEngine';
 import { useSurfaceScanReportRepository } from '@/hooks/useSurfaceScanReportRepository';
 import { generateSurfaceScan360Pdf, type SurfaceScan360Report } from '@/lib/surfaceScan360PdfReport';
 import { generateSurfaceScan360Docx } from '@/lib/surfaceScan360DocxReport';
-import { supabase } from '@/integrations/supabase/client';
+import { surfaceScan360Api } from '@/lib/api/surface-scan360';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 interface SurfaceScanReportRepositoryProps {
   scanJobs: SurfaceScanJob[];
@@ -49,54 +50,42 @@ const riskBadgeClass = (riskLevel?: string) => {
 };
 
 export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryProps> = ({ scanJobs, organizationId, canManage = true }) => {
+  const { groupId } = useClientOrganization();
   const [monthlyReports, setMonthlyReports] = useState<MonthlyReport[]>([]);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
   const [generatingMonthly, setGeneratingMonthly] = useState(false);
 
-  useEffect(() => {
+  const loadMonthlyReports = async () => {
     if (!organizationId) return;
     setMonthlyLoading(true);
-    supabase
-      .from('surface_scan_monthly_reports')
-      .select('id, month_key, month_start, created_at, payload')
-      .eq('organization_id', organizationId)
-      .order('month_key', { ascending: false })
-      .then(({ data }) => {
-        setMonthlyReports((data as MonthlyReport[]) || []);
-        setMonthlyLoading(false);
-      });
-  }, [organizationId]);
+    try {
+      const data = await surfaceScan360Api.getMonthlyReports(organizationId, groupId);
+      setMonthlyReports(data as MonthlyReport[]);
+    } catch {
+      // errore non bloccante
+    } finally {
+      setMonthlyLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadMonthlyReports();
+  }, [organizationId, groupId]);
 
   const handleGenerateMonthly = async (monthKey?: string) => {
     if (!organizationId) return;
     setGeneratingMonthly(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/surfacescan360-monthly-report`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session?.access_token}`,
-          },
-          body: JSON.stringify({ organization_id: organizationId, month_key: monthKey, triggered_by: 'manual' }),
-        },
+      const result = await surfaceScan360Api.generateMonthlyReport(
+        organizationId,
+        { month_key: monthKey, trigger_source: 'manual' },
+        groupId,
       );
-      const json = await res.json();
-      if (json.ok) {
-        toast.success(`Report mensile generato per ${json.month_key}`);
-        const { data } = await supabase
-          .from('surface_scan_monthly_reports')
-          .select('id, month_key, month_start, created_at, payload')
-          .eq('organization_id', organizationId)
-          .order('month_key', { ascending: false });
-        setMonthlyReports((data as MonthlyReport[]) || []);
-      } else {
-        toast.error('Generazione fallita: ' + (json.results?.[0]?.error || json.error || 'errore sconosciuto'));
-      }
+      const r = result as { month_key?: string };
+      toast.success(`Report mensile generato${r.month_key ? ` per ${r.month_key}` : ''}`);
+      await loadMonthlyReports();
     } catch (err) {
-      toast.error('Errore: ' + String(err));
+      toast.error('Generazione fallita: ' + String(err));
     } finally {
       setGeneratingMonthly(false);
     }

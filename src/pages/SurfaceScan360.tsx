@@ -59,7 +59,7 @@ import { useSurfaceScanDiscoveredAssets } from '@/hooks/useSurfaceScanDiscovered
 import { useSurfaceScanFindings } from '@/hooks/useSurfaceScanFindings';
 import { triggerManualSurfaceScan } from '@/hooks/useSurfaceScanHistory';
 import { isIpInRange, parseMonitoredScopeMixedEntries } from '@/lib/ipRange';
-import { supabase } from '@/integrations/supabase/client';
+import { surfaceScan360Api } from '@/lib/api/surface-scan360';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useSubdomainDump } from '@/hooks/useSubdomainDump';
 import { SubdomainDumpPanel } from '@/components/surface-scan/SubdomainDumpPanel';
@@ -68,7 +68,6 @@ import {
   isIpWithinScopeRules,
   splitMonitoredScopeRules,
 } from '@/lib/surfaceScopeGuard';
-import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 const IPV4_REGEX =
   /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
@@ -202,6 +201,7 @@ const hostingLabel = (context: string | null): string => {
 
 interface ReverseAssetRow {
   asset_value: string;
+  ip?: string | null;
   raw: { ip?: string } | null;
 }
 
@@ -264,7 +264,7 @@ const SurfaceScan360: React.FC = () => {
   const [activeSection, setActiveSection] = useState('overview');
 
   const assetsPerPage = 15;
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
 
   const { alerts, createAlert } = useSurfaceScanAlerts();
   const activeAlertsCount = alerts.filter((a) => a.is_active).length;
@@ -486,176 +486,122 @@ const SurfaceScan360: React.FC = () => {
   }, [subdomainDump.history, scopeDomains]);
 
   React.useEffect(() => {
+    let cancelled = false;
+
     const loadReverseDnsMap = async () => {
       if (!organizationId) {
         setReverseDnsMap({});
         return;
       }
-
-      const { data, error } = await supabase
-        .from('surface_assets' as any)
-        .select('asset_value, raw')
-        .eq('organization_id', organizationId)
-        .eq('asset_type', 'reverse_dns_hostname')
-        .order('last_seen', { ascending: false })
-        .limit(1500);
-
-      if (error) {
+      try {
+        const data = await surfaceScan360Api.getAssets(
+          organizationId,
+          { all: true, asset_type: 'reverse_dns_hostname', per_page: 1500 },
+          groupId,
+        );
+        if (cancelled) return;
+        const map: Record<string, string[]> = {};
+        for (const row of (data || []) as ReverseAssetRow[]) {
+          const ip = String(row?.ip || (row?.raw as any)?.ip || '').trim().toLowerCase();
+          const host = String(row?.asset_value || '').trim().toLowerCase();
+          if (!ip || !host) continue;
+          if (!map[ip]) map[ip] = [];
+          if (!map[ip].includes(host)) map[ip].push(host);
+        }
+        setReverseDnsMap(map);
+      } catch (error) {
         console.error('Error loading reverse DNS assets:', error);
-        return;
       }
-
-      const map: Record<string, string[]> = {};
-      for (const row of (data || []) as ReverseAssetRow[]) {
-        const ip = String(row?.raw?.ip || '').trim().toLowerCase();
-        const host = String(row?.asset_value || '').trim().toLowerCase();
-        if (!ip || !host) continue;
-        if (!map[ip]) map[ip] = [];
-        if (!map[ip].includes(host)) map[ip].push(host);
-      }
-
-      setReverseDnsMap(map);
     };
 
     void loadReverseDnsMap();
-    if (!organizationId) return;
-    const reverseDnsChannel = supabase
-      .channel(`surface-reverse-dns-${organizationId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'surface_assets',
-          filter: `organization_id=eq.${organizationId}`,
-        },
-        (payload: RealtimePostgresChangesPayload<Record<string, any>>) => {
-          const next = payload.new as Record<string, any> | null;
-          const old = payload.old as Record<string, any> | null;
-          const nextType = String(next?.asset_type || '');
-          const oldType = String(old?.asset_type || '');
-          if (nextType === 'reverse_dns_hostname' || oldType === 'reverse_dns_hostname') {
-            void loadReverseDnsMap();
-          }
-        },
-      )
-      .subscribe();
+    // FIXME: polling disabilitato su richiesta — riattivare aggiungendo:
+    // const interval = setInterval(() => { void loadReverseDnsMap(); }, 15_000);
+    // e nel return: clearInterval(interval);
 
-    return () => {
-      supabase.removeChannel(reverseDnsChannel);
-    };
-  }, [organizationId]);
+    return () => { cancelled = true; };
+  }, [organizationId, groupId]);
 
   React.useEffect(() => {
+    let cancelled = false;
+
     const loadDomainIpMap = async () => {
       if (!organizationId) {
         setDomainIpMap({});
         return;
       }
+      try {
+        const [assetsRaw, findingsRaw] = await Promise.allSettled([
+          surfaceScan360Api.getAssets(
+            organizationId,
+            { all: true, asset_type: 'domain,subdomain,ip,ipv4,reverse_dns_hostname', per_page: 1500 },
+            groupId,
+          ),
+          surfaceScan360Api.getFindings(
+            organizationId,
+            { finding_type: 'open_port_exposed,service_fingerprint_exposed,sensitive_port_exposed', per_page: 1000 },
+            groupId,
+          ),
+        ]);
+        if (cancelled) return;
 
-      const scopeFilter = `customer_id.eq.${organizationId},organization_id.eq.${organizationId}`;
-      const [assetsRes, findingsRes] = await Promise.all([
-        supabase
-          .from('surface_assets' as any)
-          .select('asset_type, asset_value, hostname, root_domain, ip, source, raw')
-          .or(scopeFilter)
-          .in('asset_type', ['domain', 'subdomain', 'ip', 'ipv4', 'reverse_dns_hostname'])
-          .order('last_seen', { ascending: false })
-          .limit(1500),
-        supabase
-          .from('surface_findings' as any)
-          .select('affected_asset, affected_url, ip, evidence')
-          .or(scopeFilter)
-          .in('finding_type', ['open_port_exposed', 'service_fingerprint_exposed', 'sensitive_port_exposed'])
-          .order('last_seen_at', { ascending: false })
-          .limit(1000),
-      ]);
+        const map: Record<string, { ips: string[]; sources: string[] }> = {};
+        const add = (domainValue: unknown, ipValue: unknown, sourceValue?: unknown) => {
+          const domain = normalizeDomainKey(domainValue);
+          const ip = normalizeIpCandidate(ipValue);
+          if (!domain || !ip) return;
+          if (!map[domain]) map[domain] = { ips: [], sources: [] };
+          if (!map[domain].ips.includes(ip)) map[domain].ips.push(ip);
+          const source = String(sourceValue || '').trim().toLowerCase();
+          if (source && !map[domain].sources.includes(source)) map[domain].sources.push(source);
+        };
 
-      if (assetsRes.error) {
-        console.error('Error loading SurfaceScan domain/IP assets:', assetsRes.error);
+        for (const row of ((assetsRaw.status === 'fulfilled' ? assetsRaw.value : []) as DomainIpRelationRow[])) {
+          const raw = (row.raw as Record<string, unknown>) || {};
+          const assetType = String(row.asset_type || '').toLowerCase();
+          const ip = normalizeIpCandidate(row.ip || raw.ip || (assetType === 'ip' || assetType === 'ipv4' ? row.asset_value : ''));
+          const domainCandidates = [
+            row.hostname,
+            row.root_domain,
+            raw.scope_target_host,
+            raw.root_domain,
+            raw.domain,
+            raw.hostname,
+            raw.target,
+            assetType === 'domain' || assetType === 'subdomain' || assetType === 'reverse_dns_hostname' ? row.asset_value : '',
+          ];
+          for (const domain of domainCandidates) add(domain, ip, row.source || raw.source);
+        }
+
+        for (const row of ((findingsRaw.status === 'fulfilled' ? findingsRaw.value : []) as DomainIpFindingRow[])) {
+          const evidence = (row.evidence as Record<string, unknown>) || {};
+          const ip = normalizeIpCandidate(row.ip || evidence.ip);
+          const domainCandidates = [
+            evidence.scope_target_host,
+            evidence.root_domain,
+            evidence.domain,
+            evidence.hostname,
+            evidence.host,
+            evidence.target,
+            row.affected_url,
+            row.affected_asset,
+          ];
+          for (const domain of domainCandidates) add(domain, ip, evidence.source);
+        }
+
+        setDomainIpMap(map);
+      } catch (error) {
+        console.error('Error loading SurfaceScan domain/IP map:', error);
       }
-      if (findingsRes.error) {
-        console.error('Error loading SurfaceScan domain/IP findings:', findingsRes.error);
-      }
-
-      const map: Record<string, { ips: string[]; sources: string[] }> = {};
-      const add = (domainValue: unknown, ipValue: unknown, sourceValue?: unknown) => {
-        const domain = normalizeDomainKey(domainValue);
-        const ip = normalizeIpCandidate(ipValue);
-        if (!domain || !ip) return;
-        if (!map[domain]) map[domain] = { ips: [], sources: [] };
-        if (!map[domain].ips.includes(ip)) map[domain].ips.push(ip);
-        const source = String(sourceValue || '').trim().toLowerCase();
-        if (source && !map[domain].sources.includes(source)) map[domain].sources.push(source);
-      };
-
-      for (const row of (assetsRes.data || []) as DomainIpRelationRow[]) {
-        const raw = row.raw || {};
-        const assetType = String(row.asset_type || '').toLowerCase();
-        const ip = normalizeIpCandidate(row.ip || raw.ip || (assetType === 'ip' || assetType === 'ipv4' ? row.asset_value : ''));
-        const domainCandidates = [
-          row.hostname,
-          row.root_domain,
-          raw.scope_target_host,
-          raw.root_domain,
-          raw.domain,
-          raw.hostname,
-          raw.target,
-          assetType === 'domain' || assetType === 'subdomain' || assetType === 'reverse_dns_hostname' ? row.asset_value : '',
-        ];
-        for (const domain of domainCandidates) add(domain, ip, row.source || raw.source);
-      }
-
-      for (const row of (findingsRes.data || []) as DomainIpFindingRow[]) {
-        const evidence = row.evidence || {};
-        const ip = normalizeIpCandidate(row.ip || evidence.ip);
-        const domainCandidates = [
-          evidence.scope_target_host,
-          evidence.root_domain,
-          evidence.domain,
-          evidence.hostname,
-          evidence.host,
-          evidence.target,
-          row.affected_url,
-          row.affected_asset,
-        ];
-        for (const domain of domainCandidates) add(domain, ip, evidence.source);
-      }
-
-      setDomainIpMap(map);
     };
 
     void loadDomainIpMap();
-    if (!organizationId) return;
+    // FIXME: polling disabilitato su richiesta — riattivare aggiungendo:
+    // const interval = setInterval(() => { void loadDomainIpMap(); }, 15_000);
+    // e nel return: clearInterval(interval);
 
-    const domainIpChannel = supabase
-      .channel(`surface-domain-ip-${organizationId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'surface_assets',
-          filter: `organization_id=eq.${organizationId}`,
-        },
-        () => { void loadDomainIpMap(); },
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'surface_findings',
-          filter: `organization_id=eq.${organizationId}`,
-        },
-        () => { void loadDomainIpMap(); },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(domainIpChannel);
-    };
-  }, [organizationId]);
+    return () => { cancelled = true; };
+  }, [organizationId, groupId]);
 
   const latestJobByHost = useMemo(() => {
     const map = new Map<string, (typeof scanJobs)[number]>();

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { surfaceScan360Api, type SurfaceScanJob } from '@/lib/api/surface-scan360';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
-import { supabase } from '@/integrations/supabase/client';
 import {
   classifySurfaceHostForScope,
   isIpWithinScopeRules,
@@ -140,15 +139,11 @@ export const useSurfaceScanDiscoveredAssets = (): UseSurfaceScanDiscoveredAssets
     queryKey: ['surface-scan-discovered-assets-table', organizationId, groupId],
     queryFn: async () => {
       if (!organizationId) return [] as AssetRow[];
-      const scopeFilter = `customer_id.eq.${organizationId},organization_id.eq.${organizationId}`;
-      const { data, error } = await supabase
-        .from('surface_assets' as any)
-        .select('asset_type, asset_value, hostname, root_domain, source, ip, raw')
-        .or(scopeFilter)
-        .in('asset_type', ['subdomain', 'reverse_dns_hostname', 'domain', 'ip', 'ipv4', 'ipv6'])
-        .order('last_seen', { ascending: false })
-        .limit(1500);
-      if (error) throw error;
+      const data = await surfaceScan360Api.getAssets(organizationId, {
+        all: true,
+        asset_type: 'subdomain,reverse_dns_hostname,domain,ip,ipv4,ipv6',
+        per_page: 1500,
+      }, groupId);
       return (data || []) as AssetRow[];
     },
     enabled: !!organizationId && !clientLoading,

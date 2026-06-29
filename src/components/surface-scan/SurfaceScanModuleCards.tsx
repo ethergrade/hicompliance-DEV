@@ -25,7 +25,7 @@ import {
   ShieldCheck,
   XCircle,
 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { surfaceScan360Api } from '@/lib/api/surface-scan360';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useSurfaceScanDiscoveredAssets } from '@/hooks/useSurfaceScanDiscoveredAssets';
 import {
@@ -559,7 +559,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
   onAddSubdomainToScope,
   onScanSubdomain,
 }) => {
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
   const { subdomains: discoveredSubdomains } = useSurfaceScanDiscoveredAssets();
   const [loading, setLoading] = useState(false);
   const [latestScan, setLatestScan] = useState<LatestScanRow | null>(null);
@@ -581,52 +581,17 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
   useEffect(() => {
     if (!organizationId) return;
 
-    const fetchRowsByJobIds = async <T,>(
-      table: string,
-      select: string,
-      jobIds: string[],
-      opts?: { orderBy?: string; ascending?: boolean; limit?: number },
-    ): Promise<T[]> => {
-      const all: T[] = [];
-      for (const group of chunk(jobIds, 40)) {
-        let query: any = supabase.from(table as any).select(select).in('scan_job_id', group);
-        if (opts?.orderBy) {
-          query = query.order(opts.orderBy, { ascending: Boolean(opts.ascending) });
-        }
-        if (opts?.limit) {
-          query = query.limit(opts.limit);
-        }
-        const { data, error } = await query;
-        if (error) throw error;
-        all.push(...((data || []) as T[]));
-      }
-      return all;
-    };
-
     const fetchData = async () => {
       setLoading(true);
       try {
-        const scopeFilter = `customer_id.eq.${organizationId},organization_id.eq.${organizationId}`;
-        const [scopeRes, jobsRes] = await Promise.all([
-          supabase
-            .from('surface_scan_monitored_ips' as any)
-            .select('entry_type, input_value, ip_start, ip_end')
-            .eq('organization_id', organizationId),
-          supabase
-            .from('surface_scan_jobs' as any)
-            .select('id, raw_target, normalized_target, scan_profile, status, created_at, completed_at, error_message, summary')
-            .or(scopeFilter)
-            .in('status', ['completed', 'partial', 'queued', 'pending', 'running', 'failed'])
-            .order('created_at', { ascending: false })
-            .limit(500),
+        const [scopeRulesRaw, jobsRaw] = await Promise.all([
+          surfaceScan360Api.listMonitoredIps(organizationId, groupId),
+          surfaceScan360Api.listJobs(organizationId, { per_page: 500 }, groupId),
         ]);
 
-        if (scopeRes.error) throw scopeRes.error;
-        if (jobsRes.error) throw jobsRes.error;
-
-        const scopeRules = (scopeRes.data || []) as SurfaceMonitoredScopeRule[];
+        const scopeRules = scopeRulesRaw as SurfaceMonitoredScopeRule[];
         const { scopeDomains, ipScopeRules } = splitMonitoredScopeRules(scopeRules);
-        const jobs = (jobsRes.data || []) as LatestScanRow[];
+        const jobs = jobsRaw as LatestScanRow[];
 
         const configuredTargetsMap = new Map<string, ConfiguredScopeTarget>();
         for (const rule of scopeRules) {
@@ -727,49 +692,24 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
 
         const jobIds = scopeJobs.map((job) => String(job.id));
 
+        const jobIdsParam = jobIds.join(',');
         const [moduleRows, observationRows, findingRows, exposureRows, assetRows] = await Promise.all([
-          fetchRowsByJobIds<ModuleResultRow>(
-            'surface_scan_module_results',
-            'scan_job_id, module_key, module_label, status, severity, duration_ms, completed_at, error_message, normalized, raw, source',
-            jobIds,
-            { orderBy: 'completed_at', ascending: false },
-          ),
-          fetchRowsByJobIds<ObservationRow>(
-            'surface_observations',
-            'scan_job_id, module, observation_type, value, created_at',
-            jobIds,
-            { orderBy: 'created_at', ascending: false },
-          ),
-          fetchRowsByJobIds<FindingRow>(
-            'surface_findings',
-            'scan_job_id, module, finding_type, title, remediation, severity, affected_asset, affected_url, ip, evidence, status, created_at',
-            jobIds,
-            { orderBy: 'created_at', ascending: false },
-          ),
-          fetchRowsByJobIds<ExposureOpenPortRow>(
-            'surface_open_ports',
-            'scan_job_id, host, ip, port, protocol, state, service_name, service_product, service_version, exposure_level, is_web, is_tls, source, raw, remediation_hint, first_seen_at, last_seen_at',
-            jobIds,
-            { orderBy: 'last_seen_at', ascending: false },
-          ),
-          fetchRowsByJobIds<SurfaceAssetRow>(
-            'surface_assets',
-            'scan_job_id, asset_type, asset_value, hostname, root_domain, ip, source, confidence, raw',
-            jobIds,
-            { orderBy: 'last_seen', ascending: false },
-          ),
+          surfaceScan360Api.getModuleResults(organizationId, { job_ids: jobIdsParam }, groupId),
+          surfaceScan360Api.getObservations(organizationId, { job_ids: jobIdsParam }, groupId),
+          surfaceScan360Api.getFindings(organizationId, { job_ids: jobIdsParam, severity: 'critical,high', active_only: true }, groupId),
+          surfaceScan360Api.getOpenPorts(organizationId, { job_ids: jobIdsParam }, groupId),
+          surfaceScan360Api.getAssets(organizationId, { job_ids: jobIdsParam }, groupId),
         ]);
 
-        const prioritizedFindings = findingRows
-          .filter((entry) => !['resolved', 'suppressed', 'false_positive', 'accepted_risk'].includes(String(entry.status || '').toLowerCase()))
-          .filter((entry) => ['critical', 'high'].includes(String(entry.severity || '').toLowerCase()))
+        // Findings già filtrati lato backend (critical/high, active_only)
+        const prioritizedFindings = (findingRows as FindingRow[])
           .sort((a, b) => (severityRank[b.severity] || 0) - (severityRank[a.severity] || 0));
 
-        setModuleResults(moduleRows);
-        setObservations(observationRows);
+        setModuleResults(moduleRows as ModuleResultRow[]);
+        setObservations(observationRows as ObservationRow[]);
         setRiskFindings(prioritizedFindings);
-        setExposureOpenPorts(exposureRows);
-        setSurfaceAssets(assetRows);
+        setExposureOpenPorts(exposureRows as ExposureOpenPortRow[]);
+        setSurfaceAssets(assetRows as SurfaceAssetRow[]);
       } catch (error) {
         console.error('Error loading SurfaceScan module cards:', error);
         setLatestScan(null);
@@ -787,7 +727,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
     };
 
     void fetchData();
-  }, [organizationId]);
+  }, [organizationId, groupId]);
 
   const scopeTargetRows = useMemo<ScopeTargetRow[]>(() => {
     const scannedRows = latestScopeJobs.map((job) => {

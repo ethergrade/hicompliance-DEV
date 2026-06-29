@@ -4,12 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { supabase } from '@/integrations/supabase/client';
+import { connectSecureApi } from '@/lib/api/connectsecure';
+import { cveEnrichmentApi } from '@/lib/api/cve-enrichment';
 import { CheckCircle2, Loader2, XCircle, Play, Globe, RefreshCw, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface ConnectSecureConfigPanelProps {
   organizationId: string;
+  groupId?: string | null;
 }
 
 interface CsConfig {
@@ -31,7 +33,7 @@ const DEFAULT_CONFIG: CsConfig = {
   enabled: true,
 };
 
-export const ConnectSecureConfigPanel: React.FC<ConnectSecureConfigPanelProps> = ({ organizationId }) => {
+export const ConnectSecureConfigPanel: React.FC<ConnectSecureConfigPanelProps> = ({ organizationId, groupId }) => {
   const [config, setConfig]     = useState<CsConfig>(DEFAULT_CONFIG);
   const [saving, setSaving]     = useState(false);
   const [testing, setTesting]   = useState(false);
@@ -49,74 +51,56 @@ export const ConnectSecureConfigPanel: React.FC<ConnectSecureConfigPanelProps> =
   const [cveResult, setCveResult]         = useState<string | null>(null);
 
   useEffect(() => {
-    supabase
-      .from('connectsecure_config')
-      .select('pod_host, client_auth_token, company_id, enabled')
-      .eq('organization_id', organizationId)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data) {
-          setConfig({
-            pod_host:           data.pod_host || DEFAULT_CONFIG.pod_host,
-            client_auth_token:  data.client_auth_token || '',
-            company_id:         String(data.company_id || ''),
-            enabled:            data.enabled ?? true,
-          });
-        }
+    connectSecureApi.getConfig(organizationId, groupId).then((data) => {
+      setConfig({
+        pod_host:           String(data.pod_host ?? DEFAULT_CONFIG.pod_host),
+        client_auth_token:  String(data.client_auth_token ?? ''),
+        company_id:         String(data.company_id ?? ''),
+        enabled:            Boolean(data.enabled ?? true),
       });
+    });
     loadCveStats();
-  }, [organizationId]);
+  }, [organizationId, groupId]);
 
   const loadCveStats = useCallback(async () => {
     setCveStatsLoading(true);
-    const [{ count: queued }, { count: failed }] = await Promise.all([
-      supabase.from('cve_enrichment_queue').select('id', { count: 'exact', head: true }).eq('status', 'queued'),
-      supabase.from('cve_enrichment_queue').select('id', { count: 'exact', head: true }).eq('status', 'failed'),
-    ]);
-    setCveStats({ queued: queued ?? 0, failed: failed ?? 0 });
-    setCveStatsLoading(false);
-  }, []);
+    try {
+      const stats = await cveEnrichmentApi.getStats(organizationId, groupId);
+      setCveStats({ queued: stats.queued, failed: stats.failed });
+    } catch {
+      // stats non critici
+    } finally {
+      setCveStatsLoading(false);
+    }
+  }, [organizationId, groupId]);
 
   const handleSave = async () => {
     setSaving(true);
     setSaved(false);
-    const { error } = await supabase.from('connectsecure_config').upsert({
-      organization_id:    organizationId,
-      pod_host:           config.pod_host.trim(),
-      client_auth_token:  config.client_auth_token.trim(),
-      company_id:         parseInt(config.company_id, 10) || 0,
-      enabled:            config.enabled,
-      updated_at:         new Date().toISOString(),
-    }, { onConflict: 'organization_id' });
-    setSaving(false);
-    if (!error) setSaved(true);
-  };
-
-  const callEdgeFunction = async (fn: string, body: object) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${fn}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session?.access_token}`,
-        },
-        body: JSON.stringify(body),
-      },
-    );
-    return res.json();
+    try {
+      await connectSecureApi.updateConfig(organizationId, groupId, {
+        pod_host:           config.pod_host.trim(),
+        company_id:         config.company_id.trim(),
+        client_auth_token:  config.client_auth_token.trim(),
+        enabled:            config.enabled,
+      });
+      setSaved(true);
+    } catch (err) {
+      toast.error('Salvataggio fallito: ' + String(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleTestAuth = async () => {
     setTesting(true);
     setTestResult(null);
     try {
-      const json = await callEdgeFunction('connectsecure-scan', { action: 'test_auth', organization_id: organizationId });
-      if (json.ok) {
-        setTestResult({ ok: true, message: `Connessione OK — user_id: ${json.user_id}` });
+      const result = await connectSecureApi.scan(organizationId, groupId, 'test_auth');
+      if (result.ok) {
+        setTestResult({ ok: true, message: `Connessione OK${result.user_id ? ` — user_id: ${result.user_id}` : ''}` });
       } else {
-        setTestResult({ ok: false, message: json.error || 'Connessione fallita' });
+        setTestResult({ ok: false, message: result.error || 'Connessione fallita' });
       }
     } catch (err) {
       setTestResult({ ok: false, message: String(err) });
@@ -129,11 +113,11 @@ export const ConnectSecureConfigPanel: React.FC<ConnectSecureConfigPanelProps> =
     setScanningOrg(true);
     setScanOrgResult(null);
     try {
-      const json = await callEdgeFunction('connectsecure-scan', { action: 'scan', organization_id: organizationId });
-      if (json.ok) {
-        setScanOrgResult({ ok: true, message: `BFS completato — ${json.totalScanned ?? json.domainsVisited ?? 0} domini scansionati` });
+      const result = await connectSecureApi.scan(organizationId, groupId, 'scan');
+      if (result.ok) {
+        setScanOrgResult({ ok: true, message: `BFS avviato — ${result.triggered ?? 0} domini accodati` });
       } else {
-        setScanOrgResult({ ok: false, message: json.error || 'Scan fallito' });
+        setScanOrgResult({ ok: false, message: result.error || 'Scan fallito' });
       }
     } catch (err) {
       setScanOrgResult({ ok: false, message: String(err) });
@@ -146,13 +130,13 @@ export const ConnectSecureConfigPanel: React.FC<ConnectSecureConfigPanelProps> =
     setSweepingAll(true);
     setSweepResult(null);
     try {
-      const json = await callEdgeFunction('connectsecure-scan', { action: 'weekly_all' });
-      if (json.ok) {
-        setSweepResult(`Sweep completato — ${json.orgs_swept ?? 0} org processate`);
-        toast.success(`BFS globale completato: ${json.orgs_swept ?? 0} organizzazioni`);
+      const result = await connectSecureApi.sweepAll(groupId);
+      if (result.ok) {
+        setSweepResult(`Sweep completato — ${result.orgs_swept ?? 0} org processate`);
+        toast.success(`BFS globale completato: ${result.orgs_swept ?? 0} organizzazioni`);
       } else {
-        setSweepResult(`Errore: ${json.error || 'unknown'}`);
-        toast.error('Sweep fallito: ' + (json.error || 'unknown'));
+        setSweepResult('Sweep fallito');
+        toast.error('Sweep fallito');
       }
     } catch (err) {
       setSweepResult(`Errore: ${String(err)}`);
@@ -166,8 +150,8 @@ export const ConnectSecureConfigPanel: React.FC<ConnectSecureConfigPanelProps> =
     setTriggeringCve(true);
     setCveResult(null);
     try {
-      const json = await callEdgeFunction('cve-enrichment', { action: 'retrigger_all', max_per_run: 50 });
-      const msg = `Accodati ${json.enqueued ?? 0} CVE — processati subito ${json.processed_count ?? 0}`;
+      const result = await cveEnrichmentApi.retrigger(organizationId, groupId);
+      const msg = `Accodati ${result.enqueued ?? 0} CVE — processati subito ${result.processed_count ?? 0}`;
       setCveResult(msg);
       toast.success(msg + '. Il drain automatico continuerà ogni 5 minuti.');
       await loadCveStats();

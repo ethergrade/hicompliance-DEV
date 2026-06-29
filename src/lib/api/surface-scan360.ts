@@ -55,13 +55,14 @@ export interface SurfaceScanAiReport {
 	title: string;
 	created_at: string;
 	ai_summary: { risk_score: number; risk_level: string } | null;
+	payload?: any;
 }
 
 export const surfaceScan360Api = {
 	// Jobs
 	async listJobs(
 		companyId: string,
-		params?: { status?: string; page?: number },
+		params?: { status?: string; page?: number; per_page?: number },
 		groupId?: string | null,
 	): Promise<SurfaceScanJob[]> {
 		const res = await complianceApiClient.get<ApiResponse<SurfaceScanJob[]>>(
@@ -292,7 +293,7 @@ export const surfaceScan360Api = {
 	// Open ports (replaces Supabase surface_open_ports query)
 	async getOpenPorts(
 		companyId: string,
-		params?: { job_ids?: string; exposure_level?: string; page?: number },
+		params?: { job_ids?: string; exposure_level?: string; per_page?: number; page?: number },
 		groupId?: string | null,
 	): Promise<unknown[]> {
 		const res = await complianceApiClient.get<ApiResponse<unknown[]>>(
@@ -313,5 +314,97 @@ export const surfaceScan360Api = {
 			groupId ? groupHeader(groupId) : undefined,
 		);
 		return res.data;
+	},
+
+	// Assets (replaces Supabase surface_assets query)
+	async getAssets(
+		companyId: string,
+		params?: { job_id?: string; job_ids?: string; asset_type?: string; all?: boolean; per_page?: number; page?: number },
+		groupId?: string | null,
+	): Promise<unknown[]> {
+		const res = await complianceApiClient.get<ApiResponse<unknown[]>>(
+			`/companies/${companyId}/surface-scan360/assets`,
+			params,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return extractArray<unknown>(res.data);
+	},
+
+	// Findings — endpoint generico (replaces Supabase surface_findings query)
+	async getFindings(
+		companyId: string,
+		params?: { job_ids?: string; severity?: string; status?: string; active_only?: boolean; finding_type?: string; cisa_kev?: boolean; per_page?: number; page?: number },
+		groupId?: string | null,
+	): Promise<unknown[]> {
+		const res = await complianceApiClient.get<ApiResponse<unknown[]>>(
+			`/companies/${companyId}/surface-scan360/findings`,
+			params as Record<string, unknown>,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return extractArray<unknown>(res.data);
+	},
+
+	// Monthly Reports
+	async getMonthlyReports(
+		companyId: string,
+		groupId?: string | null,
+	): Promise<unknown[]> {
+		const res = await complianceApiClient.get<ApiResponse<unknown[]>>(
+			`/companies/${companyId}/surface-scan360/monthly-report`,
+			undefined,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return extractArray<unknown>(res.data);
+	},
+
+	async generateMonthlyReport(
+		companyId: string,
+		payload?: { month_key?: string; force_regenerate?: boolean; trigger_source?: string },
+		groupId?: string | null,
+	): Promise<unknown> {
+		const res = await complianceApiClient.post<ApiResponse<unknown>>(
+			`/companies/${companyId}/surface-scan360/monthly-report`,
+			payload ?? {},
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return res.data;
+	},
+
+	// Delete AI report
+	async deleteAiReport(
+		companyId: string,
+		reportId: string,
+		groupId?: string | null,
+	): Promise<void> {
+		await complianceApiClient.delete(
+			`/companies/${companyId}/surface-scan360/ai-report/${reportId}`,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+	},
+
+	async getAlerts(
+		companyId: string,
+		params?: { severity?: string; status?: string; page?: number },
+		groupId?: string | null,
+	): Promise<unknown[]> {
+		const res = await complianceApiClient.get<ApiResponse<unknown[]>>(
+			`/companies/${companyId}/surface-scan360/findings/alerts`,
+			params,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return extractArray<unknown>(res.data);
+	},
+
+	async getCisaKev(
+		companyId: string,
+		params?: { severity?: string; status?: string; page?: number },
+		groupId?: string | null,
+	): Promise<unknown[]> {
+		const res = await complianceApiClient.get<ApiResponse<unknown[]>>(
+			`/companies/${companyId}/surface-scan360/findings/cisa-kev`,
+			params,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return extractArray<unknown>(res.data);
 	},
 };

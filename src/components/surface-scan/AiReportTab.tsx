@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, FileText, Download, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
+import { surfaceScan360Api } from '@/lib/api/surface-scan360';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { generateSurfaceScan360Pdf } from '@/lib/surfaceScan360PdfReport';
 import { generateSurfaceScan360Docx } from '@/lib/surfaceScan360DocxReport';
@@ -115,7 +115,7 @@ export const AiReportTab: React.FC = () => {
   const [cvePage, setCvePage] = useState(0);
   const [intelPage, setIntelPage] = useState(0);
   const [obsPage, setObsPage] = useState(0);
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
 
   const generate = async () => {
     if (!organizationId) {
@@ -125,12 +125,13 @@ export const AiReportTab: React.FC = () => {
     setLoading(true);
     setAssetPage(0); setFindingPage(0); setCvePage(0); setIntelPage(0); setObsPage(0);
     try {
-      const { data, error } = await supabase.functions.invoke('surfacescan360-ai-report', {
-        body: { organization_id: organizationId },
-      });
-      if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
-      setReport(sanitizeSurfaceScanReport((data as any).report as AiReport));
+      const result = await surfaceScan360Api.createAiReport(
+        organizationId,
+        { scope_mode: 'organization_scope', trigger_source: 'manual' },
+        groupId,
+      );
+      if (!result.payload) throw new Error('Payload report non disponibile');
+      setReport(sanitizeSurfaceScanReport(result.payload as AiReport));
       toast.success('Report AI generato');
     } catch (e: any) {
       toast.error('Errore generazione report: ' + (e.message || 'unknown'));

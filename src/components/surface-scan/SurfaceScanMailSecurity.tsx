@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { supabase } from '@/integrations/supabase/client';
+import { surfaceScan360Api } from '@/lib/api/surface-scan360';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { publicSourceLabel } from '@/lib/surfaceSourceLabels';
 
@@ -45,7 +45,7 @@ const booleanOrNull = (value: unknown): boolean | null => {
 };
 
 export const SurfaceScanMailSecurity: React.FC = () => {
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
   const [rows, setRows] = useState<MailSecRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -56,32 +56,23 @@ export const SurfaceScanMailSecurity: React.FC = () => {
     const load = async () => {
       setLoading(true);
 
-      // Fetch mail_config observations for this org
-      const { data: obs } = await supabase
-        .from('surface_observations')
-        .select('module, observation_type, value, title, scan_job_id, created_at')
-        .eq('organization_id', organizationId)
-        .in('module', ['mail_config', 'connectsecure'])
-        .in('observation_type', ['mail_config_summary', 'mail_security_summary'])
-        .order('created_at', { ascending: false })
-        .limit(80);
+      const [obsRaw, allJobsRaw] = await Promise.allSettled([
+        surfaceScan360Api.getObservations(organizationId, {
+          module: 'mail_config,connectsecure',
+          observation_type: 'mail_config_summary,mail_security_summary',
+        }, groupId),
+        surfaceScan360Api.listJobs(organizationId, { per_page: 500 }, groupId),
+      ]);
 
-      if (!obs || obs.length === 0) {
+      const obs = (obsRaw.status === 'fulfilled' ? obsRaw.value : []) as any[];
+      if (obs.length === 0) {
         if (!cancelled) { setRows([]); setLoading(false); }
         return;
       }
 
-      // Get target domains from scan jobs
-      const jobIds = [...new Set(obs.map((o: any) => String(o.scan_job_id || '')).filter(Boolean))];
-      const { data: jobs } = jobIds.length > 0
-        ? await supabase
-            .from('surface_scan_jobs')
-            .select('id, normalized_target')
-            .in('id', jobIds)
-        : { data: [] };
-
+      const allJobs = (allJobsRaw.status === 'fulfilled' ? allJobsRaw.value : []) as any[];
       const jobDomainMap = new Map<string, string>(
-        (jobs || []).map((j: any) => [String(j.id), String(j.normalized_target || '')])
+        allJobs.map((j: any) => [String(j.id), String(j.normalized_target || '')])
       );
 
       // Dedupe by domain (take most recent per domain)
@@ -140,7 +131,7 @@ export const SurfaceScanMailSecurity: React.FC = () => {
 
     load();
     return () => { cancelled = true; };
-  }, [organizationId]);
+  }, [organizationId, groupId]);
 
   if (loading) {
     return (

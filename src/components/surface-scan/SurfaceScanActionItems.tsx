@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Loader2 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { surfaceScan360Api } from '@/lib/api/surface-scan360';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import {
   isUnverifiedStorageBucketFinding,
@@ -27,7 +27,7 @@ const severityStyle: Record<string, string> = {
 };
 
 export const SurfaceScanActionItems: React.FC = () => {
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
   const [items, setItems] = useState<ActionItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -38,18 +38,23 @@ export const SurfaceScanActionItems: React.FC = () => {
     const load = async () => {
       setLoading(true);
 
-      const { data: findings } = await supabase
-        .from('surface_findings')
-        .select('id, title, description, severity, affected_asset, finding_type, cvss, cve, cisa_kev, remediation, evidence')
-        .eq('organization_id', organizationId)
-        .eq('status', 'open')
-        .in('severity', ['critical', 'high'])
-        .order('cisa_kev', { ascending: false })
-        .order('cvss', { ascending: false, nullsFirst: false })
-        .order('severity', { ascending: true })
-        .limit(10);
+      const raw = await surfaceScan360Api.getFindings(organizationId, {
+        status: 'open',
+        severity: 'critical,high',
+        per_page: 50,
+      }, groupId).catch(() => []);
 
-      if (!cancelled && findings) {
+      // Sort client-side: cisa_kev DESC, cvss DESC, severity ASC
+      const findings = [...(raw as any[])].sort((a, b) => {
+        if (Boolean(b.cisa_kev) !== Boolean(a.cisa_kev)) return Boolean(b.cisa_kev) ? 1 : -1;
+        const aScore = Number(a.cvss ?? -1);
+        const bScore = Number(b.cvss ?? -1);
+        if (bScore !== aScore) return bScore - aScore;
+        const order: Record<string, number> = { critical: 0, high: 1 };
+        return (order[a.severity] ?? 2) - (order[b.severity] ?? 2);
+      });
+
+      if (!cancelled) {
         const actionableFindings = findings
           .map((finding: any) => presentStorageBucketFinding(finding))
           .filter((finding: any) => !isUnverifiedStorageBucketFinding(finding));
@@ -78,7 +83,7 @@ export const SurfaceScanActionItems: React.FC = () => {
 
     load();
     return () => { cancelled = true; };
-  }, [organizationId]);
+  }, [organizationId, groupId]);
 
   if (loading) {
     return (

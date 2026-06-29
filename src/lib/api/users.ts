@@ -56,4 +56,20 @@ export const usersApi = {
     const opts = groupId ? groupHeader(groupId) : undefined;
     await apiClient.delete(`/users/${id}`, opts);
   },
+
+  async batchByIds(ids: string[], groupId?: string | null): Promise<UserResource[]> {
+    if (ids.length === 0) return [];
+    const opts = groupId ? groupHeader(groupId) : undefined;
+    const params = ids.reduce<Record<string, string>>((acc, id, i) => {
+      acc[`ids[${i}]`] = id;
+      return acc;
+    }, {});
+    const res = await apiClient.get<ApiResponse<UserResource[]>>("/users", params, opts);
+    const data = res.data;
+    if (Array.isArray(data)) return data;
+    if (data && typeof data === "object" && "data" in data && Array.isArray((data as { data?: UserResource[] }).data)) {
+      return (data as { data: UserResource[] }).data;
+    }
+    return [];
+  },
 };

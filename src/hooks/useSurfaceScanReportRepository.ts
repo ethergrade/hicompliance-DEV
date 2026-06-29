@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
 import { surfaceScan360Api } from '@/lib/api/surface-scan360';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import type { SurfaceScanJob } from '@/hooks/useSurfaceScanEngine';
@@ -169,13 +168,7 @@ export const useSurfaceScanReportRepository = (
 
       setDeletingReportId(id);
       try {
-        // TODO: migrate to backend API (delete surface_scan_ai_reports — no backend endpoint yet)
-        // Stub: simulate success without actual delete
-        if (options?.silent) {
-          // silently noop
-        } else {
-          // show toast as if success
-        }
+        await surfaceScan360Api.deleteAiReport(organizationId, id, groupId);
 
         setReports((prev) => prev.filter((row) => row.id !== id));
         if (!options?.silent) {

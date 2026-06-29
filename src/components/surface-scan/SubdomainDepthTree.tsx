@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { ChevronRight, ChevronDown, Globe2, Loader2 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { connectSecureApi } from '@/lib/api/connectsecure';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 interface SubdomainNode {
   domain: string;
@@ -89,22 +90,21 @@ const TreeNodeRow: React.FC<{ node: TreeNode; indent: number }> = ({ node, inden
 };
 
 export const SubdomainDepthTree: React.FC<SubdomainDepthTreeProps> = ({ organizationId }) => {
+  const { groupId } = useClientOrganization();
   const [registryRows, setRegistryRows] = useState<SubdomainNode[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!organizationId) return;
     setLoading(true);
-    supabase
-      .from('connectsecure_domain_registry')
-      .select('domain, depth, parent_domain, cs_domain_id, last_scanned_at')
-      .eq('organization_id', organizationId)
-      .order('depth', { ascending: true })
-      .then(({ data }) => {
-        setRegistryRows((data as SubdomainNode[]) || []);
+    connectSecureApi.getDomains(organizationId, groupId)
+      .then((data) => {
+        const sorted = [...(data as SubdomainNode[])].sort((a, b) => a.depth - b.depth);
+        setRegistryRows(sorted);
         setLoading(false);
-      });
-  }, [organizationId]);
+      })
+      .catch(() => setLoading(false));
+  }, [organizationId, groupId]);
 
   const tree = useMemo(() => buildTree(registryRows), [registryRows]);
 

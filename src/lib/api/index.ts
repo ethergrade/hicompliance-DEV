@@ -40,3 +40,6 @@ export { hilogReportsApi } from "./hilog-reports";
 export { shodanApi } from "./shodan";
 export { subdomainDumpApi } from "./subdomain-dump";
 export { demoRequestApi } from "./demo-request";
+export { connectSecureApi } from "./connectsecure";
+export { cveEnrichmentApi } from "./cve-enrichment";
+export type { CveEnrichmentStats } from "./cve-enrichment";

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { surfaceScan360Api, type SurfaceScanJob } from '@/lib/api/surface-scan360';
-import { supabase } from '@/integrations/supabase/client';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import {
   classifySurfaceHostForScope,
@@ -485,14 +484,7 @@ export const useSurfaceScanFindings = () => {
     queryKey: ['surface-scan-findings-direct', organizationId, groupId],
     queryFn: async () => {
       if (!organizationId) return [] as SurfaceFindingRow[];
-      const scopeFilter = `customer_id.eq.${organizationId},organization_id.eq.${organizationId}`;
-      const { data, error } = await supabase
-        .from('surface_findings' as any)
-        .select('id, scan_job_id, provider, module, finding_type, title, description, severity, affected_asset, affected_url, ip, port, protocol, cve, cwe, cvss, epss, cisa_kev, remediation, evidence, attribution_confidence, status, created_at, first_seen_at, last_seen_at, occurrence_count')
-        .or(scopeFilter)
-        .order('created_at', { ascending: false })
-        .limit(1000);
-      if (error) throw error;
+      const data = await surfaceScan360Api.getFindings(organizationId, { per_page: 500 }, groupId);
       return ((data || []) as Record<string, any>[]).map(mapApiFinding).filter((row): row is SurfaceFindingRow => Boolean(row));
     },
     enabled: !!organizationId && !clientLoading,
@@ -504,15 +496,7 @@ export const useSurfaceScanFindings = () => {
     queryKey: ['surface-scan-findings-open-ports', organizationId, groupId],
     queryFn: async () => {
       if (!organizationId) return [] as SurfaceOpenPortRow[];
-      const scopeFilter = `customer_id.eq.${organizationId},organization_id.eq.${organizationId}`;
-      const { data, error } = await supabase
-        .from('surface_open_ports' as any)
-        .select('id, scan_job_id, host, ip, port, protocol, source, state, service_name, service_product, service_version, exposure_level, is_web, is_tls, remediation_hint, first_seen_at, last_seen_at, raw')
-        .or(scopeFilter)
-        .eq('state', 'open')
-        .order('last_seen_at', { ascending: false })
-        .limit(1000);
-      if (error) throw error;
+      const data = await surfaceScan360Api.getOpenPorts(organizationId, { per_page: 500 }, groupId);
       return (data || []) as SurfaceOpenPortRow[];
     },
     enabled: !!organizationId && !clientLoading,
@@ -551,21 +535,7 @@ export const useSurfaceScanFindings = () => {
           hostname: String(job.hostname || ''),
         });
       }
-      const missing = jobTargetIds.filter((id) => !map.has(id));
-      if (missing.length > 0) {
-        const { data, error } = await supabase
-          .from('surface_scan_jobs' as any)
-          .select('id, raw_target, normalized_target, hostname')
-          .in('id', missing);
-        if (error) throw error;
-        for (const row of (data || []) as Record<string, any>[]) {
-          map.set(String(row.id || ''), {
-            raw_target: String(row.raw_target || ''),
-            normalized_target: String(row.normalized_target || ''),
-            hostname: String(row.hostname || ''),
-          });
-        }
-      }
+      // Job targets non in lista vengono ignorati (jobsQuery carica già tutti i job)
       return map;
     },
     enabled: !!organizationId && jobTargetIds.length > 0,

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useAuth } from '@/components/auth/AuthProvider';

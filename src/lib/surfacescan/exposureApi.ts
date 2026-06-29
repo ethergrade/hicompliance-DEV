@@ -1,4 +1,4 @@
-import { supabase } from '@/integrations/supabase/client';
+import { surfaceScan360Api, type SurfaceScanJob } from '@/lib/api/surface-scan360';
 
 const IPV4_RX = /\b(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}\b/;
 const IPV6_RX = /\b(?:[a-f0-9]{1,4}:){2,}[a-f0-9:]{1,}\b/i;
@@ -258,140 +258,82 @@ export type ExposureFindingRow = {
   evidence_status?: ServiceExposureAssessment['evidence_status'];
 };
 
-type EdgeFunctionPayload = {
-  error?: string;
-  message?: string;
-  code?: string;
-};
-
-const toEdgeFunctionError = async (error: any): Promise<Error> => {
-  const fallbackMessage =
-    String(error?.message || 'Edge Function request failed').trim() || 'Edge Function request failed';
-  const response = error?.context;
-
-  if (response && typeof response.clone === 'function') {
-    try {
-      const payload = (await response.clone().json()) as EdgeFunctionPayload;
-      const detailedMessage = String(payload?.error || payload?.message || '').trim();
-      if (detailedMessage) {
-        const enriched = new Error(detailedMessage);
-        (enriched as any).code = payload?.code;
-        (enriched as any).cause = error;
-        return enriched;
-      }
-    } catch {
-      // fall through to text body parsing
-    }
-
-    try {
-      const text = String(await response.clone().text()).trim();
-      if (text) {
-        const enriched = new Error(text);
-        (enriched as any).cause = error;
-        return enriched;
-      }
-    } catch {
-      // ignore unreadable body
-    }
-  }
-
-  return error instanceof Error ? error : new Error(fallbackMessage);
-};
-
-async function invokeFunctionJson<T>(name: string, body: unknown): Promise<T> {
-  const { data, error } = await supabase.functions.invoke(name, { body });
-  if (error) throw await toEdgeFunctionError(error);
-  if ((data as any)?.error) {
-    const enriched = new Error(String((data as any).error || 'Edge Function request failed'));
-    (enriched as any).code = (data as any)?.code;
-    throw enriched;
-  }
-  return data as T;
-}
-
 export async function fetchExposureSummary(params: {
   customerId: string;
   jobId?: string;
   scopeMode?: 'single_job' | 'scope_latest_per_target';
+  groupId?: string | null;
 }): Promise<ExposureSummary> {
-  return await invokeFunctionJson<ExposureSummary>('surface-exposure-summary', {
-    customer_id: params.customerId,
-    job_id: params.jobId || undefined,
-    scope_mode: params.scopeMode || (params.jobId ? 'single_job' : 'scope_latest_per_target'),
-  });
+  const data = await surfaceScan360Api.getExposureSummary(
+    params.customerId,
+    {
+      job_id: params.jobId,
+      scope_mode: params.scopeMode || (params.jobId ? 'single_job' : 'scope_latest_per_target'),
+    },
+    params.groupId,
+  );
+  return data as ExposureSummary;
 }
 
-export async function fetchExposureJobs(customerId: string, limit = 20): Promise<any[]> {
-  const scopeFilter = `customer_id.eq.${customerId},organization_id.eq.${customerId}`;
-  const { data, error } = await supabase
-    .from('surface_scan_jobs' as any)
-    .select('id, created_at, completed_at, status, scan_name, scan_type, scan_profile, summary, config')
-    .or(scopeFilter)
-    .in('scan_type', ['exposure_port_technology', 'connectsecure_asm'])
-    .order('created_at', { ascending: false })
-    .limit(limit);
-
-  if (error) throw error;
-  return (data || []) as any[];
+export async function fetchExposureJobs(
+  customerId: string,
+  limit = 20,
+  groupId?: string | null,
+): Promise<any[]> {
+  return surfaceScan360Api.listJobs(customerId, { per_page: limit }, groupId);
 }
 
-export async function fetchOpenPorts(jobId: string): Promise<ExposureOpenPortRow[]> {
-  return fetchOpenPortsByJobIds([jobId]);
+export async function fetchOpenPorts(
+  companyId: string,
+  jobId: string,
+  groupId?: string | null,
+  existingJobs?: SurfaceScanJob[],
+): Promise<ExposureOpenPortRow[]> {
+  return fetchOpenPortsByJobIds(companyId, [jobId], groupId, existingJobs);
 }
 
-export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<ExposureOpenPortRow[]> {
+export async function fetchOpenPortsByJobIds(
+  companyId: string,
+  jobIds: string[],
+  groupId?: string | null,
+  existingJobs?: SurfaceScanJob[],
+): Promise<ExposureOpenPortRow[]> {
   const uniqueJobIds = [...new Set((jobIds || []).map((entry) => String(entry || '').trim()).filter(Boolean))];
   if (uniqueJobIds.length === 0) return [];
 
-  const { data, error } = await supabase
-    .from('surface_open_ports' as any)
-    .select('id, scan_job_id, target_id, host, ip, port, protocol, source, state, service_name, service_product, service_version, is_web, is_tls, exposure_level, remediation_hint, first_seen_at, last_seen_at, raw')
-    .in('scan_job_id', uniqueJobIds)
-    .order('exposure_level', { ascending: false })
-    .order('host', { ascending: true })
-    .order('port', { ascending: true });
+  const jobIdsParam = uniqueJobIds.join(',');
 
-  if (error) throw error;
-
-  const rows = (data || []) as Array<ExposureOpenPortRow & { target_id?: string | null }>;
-  const targetIds = [...new Set(rows.map((row) => String(row.target_id || '').trim()).filter(Boolean))];
-  const targetMap = new Map<string, { target_value: string; target_type: string }>();
-
-  if (targetIds.length > 0) {
-    const { data: targets, error: targetsError } = await supabase
-      .from('surface_scan_targets' as any)
-      .select('id, target_value, target_type')
-      .in('id', targetIds);
-    if (targetsError) throw targetsError;
-    for (const row of (targets || []) as Array<Record<string, unknown>>) {
-      targetMap.set(String(row.id || ''), {
-        target_value: String(row.target_value || ''),
-        target_type: String(row.target_type || ''),
-      });
-    }
-  }
-
+  // Build job target map from already-loaded jobs (avoids redundant API call)
   const jobTargetMap = new Map<string, { raw_target: string; normalized_target: string; hostname: string }>();
-  const { data: jobs, error: jobsError } = await supabase
-    .from('surface_scan_jobs' as any)
-    .select('id, raw_target, normalized_target, hostname')
-    .in('id', uniqueJobIds);
-  if (jobsError) throw jobsError;
-  for (const row of (jobs || []) as Array<Record<string, unknown>>) {
-    jobTargetMap.set(String(row.id || ''), {
-      raw_target: String(row.raw_target || ''),
-      normalized_target: String(row.normalized_target || ''),
-      hostname: String(row.hostname || ''),
+  for (const job of (existingJobs || [])) {
+    jobTargetMap.set(String(job.id), {
+      raw_target: String(job.raw_target || ''),
+      normalized_target: String(job.normalized_target || ''),
+      hostname: String(job.hostname || ''),
     });
   }
 
+  const [portsRaw, findingsRaw, observationsRaw] = await Promise.allSettled([
+    surfaceScan360Api.getOpenPorts(companyId, { job_ids: jobIdsParam, per_page: 1000 }, groupId),
+    surfaceScan360Api.getFindings(companyId, {
+      job_ids: jobIdsParam,
+      finding_type: 'open_port_exposed,service_fingerprint_exposed,sensitive_port_exposed',
+      per_page: 500,
+    }, groupId),
+    surfaceScan360Api.getObservations(companyId, {
+      job_ids: jobIdsParam,
+      module: 'open_ports',
+      observation_type: 'open_ports,open_ports_summary',
+    }, groupId),
+  ]);
+
+  const rows = (portsRaw.status === 'fulfilled' ? portsRaw.value : []) as Array<ExposureOpenPortRow & { target_id?: string | null }>;
+
   const normalizedExposureRows = rows.map((row) => {
-    const target = targetMap.get(String((row as any).target_id || ''));
     const jobTarget = jobTargetMap.get(String(row.scan_job_id || ''));
     const jobTargetHost = jobTarget
       ? hostFromTarget(jobTarget.hostname || jobTarget.normalized_target || jobTarget.raw_target || '')
       : '';
-    const targetHost = target ? hostFromTarget(target.target_value) : jobTargetHost;
     const rawScopeHost = normalizeHost(String(
       (row as any)?.raw?.scope_target_host
       || (row as any)?.raw?.root_domain
@@ -401,44 +343,26 @@ export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<Exposure
 
     const rawHost = String(row.host || '').trim();
     const rawIp = String(row.ip || '').trim();
+    const inferredIp = extractIp(rawIp) || extractIp(rawHost);
+    let normalizedHostValue = normalizeHost(rawHost);
 
-    const inferredIp = extractIp(rawIp) || extractIp(rawHost) || extractIp(target?.target_value || '');
-    let normalizedHost = normalizeHost(rawHost);
-
-    if (rawScopeHost && !isIpLike(rawScopeHost)) normalizedHost = rawScopeHost;
-    if (!normalizedHost && targetHost) normalizedHost = targetHost;
-    if (normalizedHost && isIpLike(normalizedHost) && targetHost && !isIpLike(targetHost)) {
-      normalizedHost = targetHost;
+    if (rawScopeHost && !isIpLike(rawScopeHost)) normalizedHostValue = rawScopeHost;
+    if (!normalizedHostValue && jobTargetHost) normalizedHostValue = jobTargetHost;
+    if (normalizedHostValue && isIpLike(normalizedHostValue) && jobTargetHost && !isIpLike(jobTargetHost)) {
+      normalizedHostValue = jobTargetHost;
     }
-    if (!normalizedHost && inferredIp) normalizedHost = inferredIp;
+    if (!normalizedHostValue && inferredIp) normalizedHostValue = inferredIp;
 
     return {
       ...row,
-      host: normalizedHost || '-',
+      host: normalizedHostValue || '-',
       ip: inferredIp || null,
     } as ExposureOpenPortRow;
   });
 
-  const [classicFindingsRes, classicObservationsRes] = await Promise.all([
-    supabase
-      .from('surface_findings' as any)
-      .select('id, scan_job_id, affected_asset, affected_url, ip, port, protocol, severity, title, evidence, created_at, finding_type')
-      .in('scan_job_id', uniqueJobIds)
-      .in('finding_type', ['open_port_exposed', 'service_fingerprint_exposed', 'sensitive_port_exposed']),
-    supabase
-      .from('surface_observations' as any)
-      .select('id, scan_job_id, value, created_at')
-      .in('scan_job_id', uniqueJobIds)
-      .eq('module', 'open_ports')
-      .in('observation_type', ['open_ports', 'open_ports_summary']),
-  ]);
-
-  if (classicFindingsRes.error) throw classicFindingsRes.error;
-  if (classicObservationsRes.error) throw classicObservationsRes.error;
-
   const fallbackRows: ExposureOpenPortRow[] = [];
 
-  for (const finding of (classicFindingsRes.data || []) as Array<Record<string, unknown>>) {
+  for (const finding of ((findingsRaw.status === 'fulfilled' ? findingsRaw.value : []) as Record<string, any>[])) {
     const scanJobId = String(finding?.scan_job_id || '');
     const jobTarget = jobTargetMap.get(scanJobId);
     const jobTargetHost = jobTarget
@@ -488,11 +412,11 @@ export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<Exposure
       remediation_hint: null,
       first_seen_at: createdAt,
       last_seen_at: createdAt,
-      raw: evidence,
+      raw: evidence as Record<string, unknown>,
     });
   }
 
-  for (const observation of (classicObservationsRes.data || []) as Array<Record<string, unknown>>) {
+  for (const observation of ((observationsRaw.status === 'fulfilled' ? observationsRaw.value : []) as Record<string, any>[])) {
     const scanJobId = String(observation?.scan_job_id || '');
     const jobTarget = jobTargetMap.get(scanJobId);
     const jobTargetHost = jobTarget
@@ -595,38 +519,50 @@ export async function fetchOpenPortsByJobIds(jobIds: string[]): Promise<Exposure
   return sortPortRows(Array.from(dedupe.values()));
 }
 
-export async function fetchTechnologies(jobId: string): Promise<ExposureTechnologyRow[]> {
-  return fetchTechnologiesByJobIds([jobId]);
+export async function fetchTechnologies(
+  companyId: string,
+  jobId: string,
+  groupId?: string | null,
+  existingJobs?: SurfaceScanJob[],
+): Promise<ExposureTechnologyRow[]> {
+  return fetchTechnologiesByJobIds(companyId, [jobId], groupId, existingJobs);
 }
 
-export async function fetchTechnologiesByJobIds(jobIds: string[]): Promise<ExposureTechnologyRow[]> {
+export async function fetchTechnologiesByJobIds(
+  companyId: string,
+  jobIds: string[],
+  groupId?: string | null,
+  _existingJobs?: SurfaceScanJob[],
+): Promise<ExposureTechnologyRow[]> {
   const uniqueJobIds = [...new Set((jobIds || []).map((entry) => String(entry || '').trim()).filter(Boolean))];
   if (uniqueJobIds.length === 0) return [];
-
-  const { data, error } = await supabase
-    .from('surface_web_technologies' as any)
-    .select('id, scan_job_id, url, host, port, technology_name, technology_version, category, confidence, created_at')
-    .in('scan_job_id', uniqueJobIds)
-    .order('technology_name', { ascending: true });
-
-  if (error) throw error;
+  const data = await surfaceScan360Api.getTechnologies(companyId, { job_ids: uniqueJobIds.join(',') }, groupId);
   return (data || []) as ExposureTechnologyRow[];
 }
 
-export async function fetchExposureFindings(jobId: string): Promise<ExposureFindingRow[]> {
-  return fetchExposureFindingsByJobIds([jobId]);
+export async function fetchExposureFindings(
+  companyId: string,
+  jobId: string,
+  groupId?: string | null,
+): Promise<ExposureFindingRow[]> {
+  return fetchExposureFindingsByJobIds(companyId, [jobId], groupId);
 }
 
-export async function fetchExposureFindingsByJobIds(jobIds: string[]): Promise<ExposureFindingRow[]> {
+export async function fetchExposureFindingsByJobIds(
+  companyId: string,
+  jobIds: string[],
+  groupId?: string | null,
+): Promise<ExposureFindingRow[]> {
   const uniqueJobIds = [...new Set((jobIds || []).map((entry) => String(entry || '').trim()).filter(Boolean))];
   if (uniqueJobIds.length === 0) return [];
-
-  const { data, error } = await supabase
-    .from('surface_exposure_findings' as any)
-    .select('id, scan_job_id, finding_type, title, severity, cvss, cve_ids, affected_host, affected_port, affected_url, description, evidence, recommendation, source, status, created_at')
-    .in('scan_job_id', uniqueJobIds)
-    .order('created_at', { ascending: false });
-
-  if (error) throw error;
-  return (data || []) as ExposureFindingRow[];
+  const results = await Promise.allSettled(
+    uniqueJobIds.map((jobId) => surfaceScan360Api.getExposureFindings(companyId, jobId, {}, groupId)),
+  );
+  const allRows: ExposureFindingRow[] = [];
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      allRows.push(...(result.value as ExposureFindingRow[]));
+    }
+  }
+  return allRows;
 }
