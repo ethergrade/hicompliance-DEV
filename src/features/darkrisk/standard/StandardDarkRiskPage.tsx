@@ -30,7 +30,7 @@ const formatDate = (value: string | null) =>
 		: "Mai eseguita";
 
 export default function StandardDarkRiskPage() {
-	const { organizationId, selectedOrganization } = useClientOrganization();
+	const { organizationId, groupId, selectedOrganization } = useClientOrganization();
 	const { isSuperAdmin } = useUserRoles();
 	const { userProfile } = useAuth();
 	const {
@@ -38,32 +38,32 @@ export default function StandardDarkRiskPage() {
 		extendedEnabled,
 		isLoading: entitlementsLoading,
 		isError: isEntitlementError,
-	} = useDarkRiskEntitlements(organizationId);
+	} = useDarkRiskEntitlements(organizationId, groupId);
 	const canManage = isSuperAdmin || userProfile?.user_type === "admin";
 	const queryClient = useQueryClient();
 
 	const scopeQuery = useQuery({
 		queryKey: darkRiskQueryKeys.scope(organizationId),
-		queryFn: () => darkRiskGateway.getScope(organizationId!),
+		queryFn: () => darkRiskGateway.getScope(organizationId!, groupId),
 		enabled: Boolean(organizationId && standardEnabled),
 		staleTime: 60_000,
 	});
 	const overviewQuery = useQuery({
 		queryKey: darkRiskQueryKeys.overview(organizationId),
-		queryFn: () => darkRiskGateway.getStandardOverview(organizationId!),
+		queryFn: () => darkRiskGateway.getStandardOverview(organizationId!, groupId),
 		enabled: Boolean(organizationId && standardEnabled),
 		staleTime: 60_000,
 		refetchInterval: 90_000,
 	});
 	const reportsQuery = useQuery({
 		queryKey: darkRiskQueryKeys.reports(organizationId, "standard"),
-		queryFn: () => darkRiskGateway.getReports(organizationId!, "standard"),
+		queryFn: () => darkRiskGateway.getReports(organizationId!, "standard", groupId),
 		enabled: Boolean(organizationId && standardEnabled),
 		staleTime: 60_000,
 	});
 	const saveScope = useMutation({
 		mutationFn: (scope: Parameters<typeof darkRiskGateway.updateScope>[1]) =>
-			darkRiskGateway.updateScope(organizationId!, scope),
+			darkRiskGateway.updateScope(organizationId!, scope, groupId),
 		onSuccess: (scope) =>
 			queryClient.setQueryData(darkRiskQueryKeys.scope(organizationId), scope),
 	});

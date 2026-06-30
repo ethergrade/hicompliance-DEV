@@ -57,9 +57,13 @@ const getData = async (
 };
 
 export const darkRiskGateway = {
-	async getEntitlements(companyId: string): Promise<DarkRiskEntitlements> {
+	async getEntitlements(
+		companyId: string,
+		groupId?: string | null,
+	): Promise<DarkRiskEntitlements> {
 		const data = (await getData(
 			`/companies/${companyId}/darkrisk/entitlement`,
+			groupId,
 		)) as Record<string, unknown>;
 		const enabled = data?.enabled === true;
 		const tier = typeof data?.tier === "string" ? data.tier.toLowerCase() : null;
@@ -199,5 +203,17 @@ export const darkRiskGateway = {
 					parseRun(item as Record<string, unknown>, "extended"),
 				)
 			: [];
+	},
+
+	async createExtendedRun(
+		companyId: string,
+		groupId?: string | null,
+	): Promise<DarkRiskRun> {
+		const response = await complianceApiClient.post<ApiResponse<unknown>>(
+			`/companies/${companyId}/darkrisk/extended-runs`,
+			undefined,
+			requestOptions(groupId),
+		);
+		return parseRun(response.data as Record<string, unknown>, "extended");
 	},
 };

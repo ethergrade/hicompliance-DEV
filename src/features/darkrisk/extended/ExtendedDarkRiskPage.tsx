@@ -25,34 +25,34 @@ import { ScopeEditor } from "../shared/ScopeEditor";
 import { useDarkRiskEntitlements } from "../shared/useDarkRiskEntitlements";
 
 export default function ExtendedDarkRiskPage() {
-	const { organizationId, selectedOrganization } = useClientOrganization();
+	const { organizationId, groupId, selectedOrganization } = useClientOrganization();
 	const { isSuperAdmin } = useUserRoles();
 	const { userProfile } = useAuth();
 	const {
 		extendedEnabled,
 		isLoading: entitlementsLoading,
 		isError: isEntitlementError,
-	} = useDarkRiskEntitlements(organizationId);
+	} = useDarkRiskEntitlements(organizationId, groupId);
 	const canOperate = isSuperAdmin || userProfile?.user_type === "admin";
 	const queryClient = useQueryClient();
 	const [activeRunId, setActiveRunId] = useState<string | null>(null);
 
 	const scopeQuery = useQuery({
 		queryKey: darkRiskQueryKeys.scope(organizationId),
-		queryFn: () => darkRiskGateway.getScope(organizationId!),
+		queryFn: () => darkRiskGateway.getScope(organizationId!, groupId),
 		enabled: Boolean(organizationId && extendedEnabled),
 		staleTime: 60_000,
 	});
 	const reportsQuery = useQuery({
 		queryKey: darkRiskQueryKeys.reports(organizationId, "extended"),
-		queryFn: () => darkRiskGateway.getReports(organizationId!, "extended"),
+		queryFn: () => darkRiskGateway.getReports(organizationId!, "extended", groupId),
 		enabled: Boolean(organizationId && extendedEnabled),
 		staleTime: 30_000,
 	});
 	const resultsQuery = useQuery({
 		queryKey: darkRiskQueryKeys.extendedResult(organizationId, activeRunId),
 		queryFn: () =>
-			darkRiskGateway.getExtendedResults(organizationId!, activeRunId!),
+			darkRiskGateway.getExtendedResult(organizationId!, activeRunId!, groupId),
 		enabled: Boolean(organizationId && activeRunId && extendedEnabled),
 		staleTime: 0,
 		gcTime: 0,
@@ -63,12 +63,12 @@ export default function ExtendedDarkRiskPage() {
 	});
 	const saveScope = useMutation({
 		mutationFn: (scope: Parameters<typeof darkRiskGateway.updateScope>[1]) =>
-			darkRiskGateway.updateScope(organizationId!, scope),
+			darkRiskGateway.updateScope(organizationId!, scope, groupId),
 		onSuccess: (scope) =>
 			queryClient.setQueryData(darkRiskQueryKeys.scope(organizationId), scope),
 	});
 	const startRun = useMutation({
-		mutationFn: () => darkRiskGateway.createExtendedRun(organizationId!),
+		mutationFn: () => darkRiskGateway.createExtendedRun(organizationId!, groupId),
 		onSuccess: (run) => {
 			setActiveRunId(run.id);
 			toast.success("Scansione DarkRisk360 Esteso accodata");
