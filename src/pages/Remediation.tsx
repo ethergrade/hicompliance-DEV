@@ -7,6 +7,7 @@ import type {
 } from "@/types/api";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useUserRoles } from "@/hooks/useUserRoles";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -317,9 +318,10 @@ GANTT_END.setMonth(GANTT_END.getMonth() + 12);
 const Remediation: React.FC = () => {
 	const { organizationId: orgId, groupId } = useClientOrganization();
 	const { capabilities } = useAuth();
-	const canEdit = capabilities?.["hicompliance.remediation_tasks.edit"] ?? true;
-	const canUpdateProgress =
-		capabilities?.["hicompliance.remediation_tasks.view"] ?? false;
+	const { hasRole } = useUserRoles();
+	const isRestrictedRole = hasRole('customer') || hasRole('editor');
+	const canEdit = capabilities?.["hicompliance.remediation_tasks.edit"] ?? !isRestrictedRole;
+	const canUpdateProgress = capabilities?.["hicompliance.remediation_tasks.view"] ?? isRestrictedRole;
 
 	const defaultPrefs = useMemo(
 		() => ({ selectedTimeframe: "90days", defaultView: "gantt" }),

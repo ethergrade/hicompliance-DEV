@@ -668,51 +668,52 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 			});
 		};
 		return (
-			<div className="rounded-md border p-2.5">
-				<div className="flex items-center gap-2 mb-2">
-					<Calendar className="w-3.5 h-3.5 text-muted-foreground" />
-					<p className="text-xs font-medium text-muted-foreground">
-						Dettagli contratto
-					</p>
-				</div>
-				<div className="grid grid-cols-3 gap-2">
-					<div>
-						<Label className="text-[10px] text-muted-foreground">
-							Inizio contratto
-						</Label>
-						<ContractDateInput
-							value={cs.contract_start}
-							onSave={(v) => handleSave("contract_start", v)}
-							disabled={contractUpdateMutation.isPending}
-						/>
-					</div>
-					<div>
-						<Label className="text-[10px] text-muted-foreground">Durata</Label>
-						<Select
-							value={cs.duration || undefined}
-							onValueChange={(v) => handleSave("duration", v)}
-							disabled={contractUpdateMutation.isPending}
-						>
-							<SelectTrigger className="h-7 text-xs">
-								<SelectValue placeholder="—" />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="2">2 anni</SelectItem>
-								<SelectItem value="3">3 anni</SelectItem>
-								<SelectItem value="4">4 anni</SelectItem>
-								<SelectItem value="5">5 anni</SelectItem>
-							</SelectContent>
-						</Select>
-					</div>
-					<div>
-						<Label className="text-[10px] text-muted-foreground">
-							Fine contratto
-						</Label>
-						<Input className="h-7 text-xs" value={cs.endDate} disabled />
-					</div>
-				</div>
-			</div>
-		);
+      <div className="rounded-md border p-2.5">
+        <div className="flex items-center gap-2 mb-2">
+          <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+          <p className="text-xs font-medium text-muted-foreground">
+            Dettagli contratto
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <div>
+            <Label className="text-[10px] text-muted-foreground">
+              Inizio contratto
+            </Label>
+            <ContractDateInput
+              value={cs.contract_start}
+              onSave={(v) => handleSave("contract_start", v)}
+              disabled={contractUpdateMutation.isPending}
+            />
+          </div>
+          <div>
+            <Label className="text-[10px] text-muted-foreground">Durata</Label>
+            <Select
+              value={cs.duration || undefined}
+              onValueChange={(v) => handleSave("duration", v)}
+              disabled={contractUpdateMutation.isPending}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue placeholder="—" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">1 anno</SelectItem>
+                <SelectItem value="2">2 anni</SelectItem>
+                <SelectItem value="3">3 anni</SelectItem>
+                <SelectItem value="4">4 anni</SelectItem>
+                <SelectItem value="5">5 anni</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-[10px] text-muted-foreground">
+              Fine contratto
+            </Label>
+            <Input className="h-7 text-xs" value={cs.endDate} disabled />
+          </div>
+        </div>
+      </div>
+    );
 	};
 
 	const handleConnect = () => {
