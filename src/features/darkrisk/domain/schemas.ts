@@ -44,7 +44,7 @@ export const parseScope = (value: unknown): DarkRiskScope => {
 			: [];
 	const targets = rawTargets.flatMap((raw, index) => {
 		const item = objectValue(raw);
-		const candidate = stringValue(item.value || item.scope || item.selector).replace(/^@+/, "");
+		const candidate = stringValue(item.target || item.value || item.scope || item.selector).replace(/^@+/, "");
 		try {
 			const normalized = normalizeScopeValue(candidate);
 			return [{
