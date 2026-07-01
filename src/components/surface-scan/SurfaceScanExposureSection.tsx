@@ -354,7 +354,7 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
         (summaryData?.service_assessments || []).map((assessment) => [serviceEndpointKey(assessment), assessment]),
       );
       const normalizedPorts = portsRes.status === 'fulfilled' ? dedupeOpenPortsRows(portsRes.value) : [];
-      setOpenPorts(normalizedPorts.map((row) => {
+      const finalOpenPorts = normalizedPorts.map((row) => {
         const assessment = assessmentByEndpoint.get(serviceEndpointKey(row));
         if (!assessment) return row;
         return {
@@ -363,9 +363,28 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
           remediation_hint: assessment.remediation,
           risk_assessment: assessment,
         };
-      }));
+      });
+      setOpenPorts(finalOpenPorts);
       setTechnologies(techRes.status === 'fulfilled' ? dedupeTechnologiesRows(techRes.value) : []);
-      setFindings(dedupeFindingsRows(summaryData?.exposure_findings || []));
+      const finalFindings = dedupeFindingsRows(summaryData?.exposure_findings || []);
+      setFindings(finalFindings);
+
+      // Patch KPI summary fields with live-computed values when the backend returns 0
+      if (summaryData) {
+        const uniqueHosts = new Set(
+          finalOpenPorts.map((p) => String(p.host || '').toLowerCase()).filter((h) => h && h !== '-'),
+        );
+        const criticalHighCount = finalFindings
+          .filter((f) => ['critical', 'high'].includes(String(f.severity || '').toLowerCase()))
+          .length;
+        setSummary({
+          ...summaryData,
+          open_ports_total: summaryData.open_ports_total || finalOpenPorts.length,
+          hosts_with_open_ports: summaryData.hosts_with_open_ports || uniqueHosts.size,
+          targets_total: summaryData.targets_total || (summaryData.target_snapshots?.length ?? uniqueHosts.size),
+          critical_exposures: summaryData.critical_exposures || criticalHighCount,
+        });
+      }
     } catch (error: any) {
       console.error('Exposure refresh error:', error);
       toast.error('Impossibile caricare dati exposure', {
