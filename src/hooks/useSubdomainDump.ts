@@ -8,10 +8,6 @@ import { useClientOrganization } from "@/hooks/useClientOrganization";
 
 export type { SubdomainDump, SubdomainResult };
 
-type OrgSettingsRow = {
-	subdomain_dump_depth?: number;
-	subdomain_dump_enabled?: boolean;
-};
 
 function getErrorMessage(e: unknown): string {
 	return e instanceof Error ? e.message : "Errore dump";
@@ -90,6 +86,7 @@ export const useSubdomainDump = () => {
 	}, [organizationId]);
 
 	useEffect(() => {
+		setHistory([]);
 		fetchHistory();
 		fetchSettings();
 	}, [fetchHistory, fetchSettings]);
