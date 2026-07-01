@@ -97,13 +97,17 @@ export const SubdomainDepthTree: React.FC<SubdomainDepthTreeProps> = ({ organiza
   useEffect(() => {
     if (!organizationId) return;
     setLoading(true);
+    setRegistryRows([]);
     connectSecureApi.getDomains(organizationId, groupId)
       .then((data) => {
-        const sorted = [...(data as SubdomainNode[])].sort((a, b) => a.depth - b.depth);
+        const sorted = [...((data as SubdomainNode[]) || [])].sort((a, b) => a.depth - b.depth);
         setRegistryRows(sorted);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => {
+        setRegistryRows([]);
+        setLoading(false);
+      });
   }, [organizationId, groupId]);
 
   const tree = useMemo(() => buildTree(registryRows), [registryRows]);
