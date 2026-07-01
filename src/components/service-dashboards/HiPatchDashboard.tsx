@@ -175,7 +175,11 @@ export const HiPatchDashboard: React.FC = () => {
             <h2 className="text-2xl font-bold">Riepilogo</h2>
             {summary.last_updated && (
               <span className="text-xs text-muted-foreground">
-                Ultimo aggiornamento: {summary.last_updated.replace('_', ' ')}
+                Ultimo aggiornamento: {(() => {
+                  const iso = summary.last_updated.replace('_', 'T').replace(/-(\d{2})-(\d{2})$/, ':$1:$2');
+                  const d = new Date(iso + 'Z');
+                  return isNaN(d.getTime()) ? summary.last_updated.replace('_', ' ') : d.toLocaleString('it-IT', { timeZone: 'Europe/Rome' });
+                })()}
               </span>
             )}
           </div>
