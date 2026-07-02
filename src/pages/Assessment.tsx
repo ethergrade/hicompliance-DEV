@@ -922,7 +922,7 @@ const Assessment: React.FC = () => {
             )}
             <Button 
               className="bg-primary text-primary-foreground"
-              onClick={() => generateAssessmentPDF({ responses, companyName: orgProfile.legal_name || undefined })}
+              onClick={() => generateAssessmentPDF({ responses, companyName: orgProfile.legal_name || undefined, categories: v2Categories.length > 0 ? v2Categories : undefined })}
             >
               <FileText className="w-4 h-4 mr-2" />
               Genera Report PDF
