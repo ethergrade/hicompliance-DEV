@@ -33,6 +33,13 @@ import {
 	ZoomIn,
 	ZoomOut,
 } from "lucide-react";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 export interface GanttTask {
@@ -81,7 +88,6 @@ const MONTHS_IT = [
 	"Dic",
 ];
 const ZOOM_LEVELS = [800, 1100, 1600, 2400, 3600];
-const SIDEBAR_WIDTH_CLASS = "w-72";
 
 const priorityBorder: Record<string, string> = {
 	Critica: "border-l-red-500",
@@ -90,15 +96,21 @@ const priorityBorder: Record<string, string> = {
 	Bassa: "border-l-green-500",
 };
 
+const MIN_SIDEBAR = 160; // 10rem in px
+const MIN_CAT = 96; // 6rem in px
+
+function pxToRem(px: number): string {
+	return `${(px / 16).toFixed(1)}rem`;
+}
+
 export const GanttChart: React.FC<GanttChartProps> = ({
 	tasks,
 	ganttStartDate,
 	ganttEndDate,
 	onDateChange,
 	onEditTask,
-	onToggleVisibility: _onToggleVisibility,
 	onDeleteTask,
-	onReorderTasks: _onReorderTasks,
+	onReorderTasks,
 	onProgressChange,
 	canEdit = true,
 	canUpdateProgress = false,
@@ -106,6 +118,53 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const timelineRef = useRef<HTMLDivElement>(null);
 
+	// Column resize state
+	const [sidebarPx, setSidebarPx] = useState(288); // 18rem
+	const [catPx, setCatPx] = useState(128); // 8rem
+
+	// Category filter
+	const [selectedCategory, setSelectedCategory] = useState<string>("");
+	const categories = useMemo(
+		() => [...new Set(tasks.map((t) => t.category))].filter(Boolean).sort(),
+		[tasks],
+	);
+
+	// Resize handler
+	const resizeRef = useRef<{ side: "sidebar" | "cat"; startX: number; startW: number } | null>(null);
+	const handleResizerDown = useCallback(
+		(e: React.PointerEvent, side: "sidebar" | "cat") => {
+			e.preventDefault();
+			(e.target as HTMLElement).setPointerCapture(e.pointerId);
+			const startW = side === "sidebar" ? sidebarPx : catPx;
+			resizeRef.current = { side, startX: e.clientX, startW };
+		},
+		[sidebarPx, catPx],
+	);
+	const handleResizerMove = useCallback((e: { clientX: number }) => {
+		const r = resizeRef.current;
+		if (!r) return;
+		const delta = e.clientX - r.startX;
+		const newW = r.startW + delta;
+		if (r.side === "sidebar") {
+			setSidebarPx(Math.max(MIN_SIDEBAR, newW));
+		} else {
+			setCatPx(Math.max(MIN_CAT, newW));
+		}
+	}, []);
+
+	useEffect(() => {
+		if (!resizeRef.current) return;
+		const onMove = (e: PointerEvent) => handleResizerMove(e);
+		const onUp = () => {
+			resizeRef.current = null;
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
+		return () => {
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+		};
+	}, [handleResizerMove]);
 	const [liveDates, setLiveDates] = useState<
 		Record<string, { s: string; e: string }>
 	>({});
@@ -150,6 +209,10 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 		() => tasks.filter((task) => !task.isHidden),
 		[tasks],
 	);
+	const displayedTasks = useMemo(() => {
+		if (!selectedCategory) return visibleTasks;
+		return visibleTasks.filter((t) => t.category === selectedCategory);
+	}, [visibleTasks, selectedCategory]);
 	const monthGridTemplate = useMemo(
 		() => months.map((month) => `${month.days}fr`).join(" "),
 		[months],
@@ -318,6 +381,26 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 					</div>
 				</div>
 			</CardHeader>
+
+			{/* Category filter */}
+			{categories.length > 1 && (
+				<div className="px-4 pb-3">
+					<Select value={selectedCategory} onValueChange={setSelectedCategory}>
+						<SelectTrigger className="w-[200px] h-8 text-xs">
+							<SelectValue placeholder="Tutte le categorie" />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="">Tutte le categorie</SelectItem>
+							{categories.map((cat) => (
+								<SelectItem key={cat} value={cat}>
+									{cat}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				</div>
+			)}
+
 			<CardContent className="p-0">
 				<div
 					className="overflow-x-auto select-none"
@@ -326,13 +409,26 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 					onPointerUp={handlePointerUp}
 				>
 					<div style={{ minWidth: `${timelineMinWidth}px` }}>
-						<div className="grid grid-cols-[18rem_8rem_minmax(0,1fr)] border-b border-border bg-muted/50 sticky top-0 z-10">
+						<div
+							className="grid border-b border-border bg-muted/50 sticky top-0 z-10"
+							style={{
+								gridTemplateColumns: `${pxToRem(sidebarPx)} ${pxToRem(catPx)} minmax(0,1fr)`,
+							}}
+						>
 							<div
-								className={`${SIDEBAR_WIDTH_CLASS} shrink-0 sticky left-0 z-20 bg-card px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider`}
+								className="shrink-0 sticky left-0 z-20 bg-card px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider"
+								style={{ width: pxToRem(sidebarPx) }}
 							>
 								Attività
 							</div>
-							<div className="w-32 shrink-0 sticky left-72 z-20 bg-card px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+							<div
+								className="w-1.5 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 shrink-0 z-30 transition-colors"
+								onPointerDown={(e) => handleResizerDown(e, "sidebar")}
+							/>
+							<div
+								className="shrink-0 sticky z-20 bg-card px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider"
+																style={{ width: pxToRem(catPx), left: `calc(${pxToRem(sidebarPx)} + 0.375rem)` }}
+							>
 								Categoria
 							</div>
 							<div
@@ -354,13 +450,13 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 							</div>
 						</div>
 
-						{visibleTasks.length === 0 ? (
+						{displayedTasks.length === 0 ? (
 							<div className="px-4 py-12 text-sm text-muted-foreground">
 								Nessuna attività disponibile nella timeline corrente.
 							</div>
 						) : (
 							<div>
-								{visibleTasks.map((task) => {
+								{displayedTasks.map((task, idx) => {
 									const bar = getBarStyle(task);
 									const isDragging = activeDragId === task.id;
 
@@ -368,17 +464,41 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 										<div
 											key={task.id}
 											className={cn(
-												"grid grid-cols-[18rem_8rem_minmax(0,1fr)] min-h-14 border-b border-border/30 group hover:bg-muted/20 transition-colors",
+												"grid min-h-14 border-b border-border/30 group hover:bg-muted/20 transition-colors",
 												isDragging && "bg-muted/30",
 											)}
+											style={{
+												gridTemplateColumns: `${pxToRem(sidebarPx)} ${pxToRem(catPx)} minmax(0,1fr)`,
+											}}
 										>
 											<div
 												className={cn(
-													`${SIDEBAR_WIDTH_CLASS} shrink-0 sticky left-0 z-10 bg-background px-4 py-3 flex items-center gap-2 border-l-2`,
+													"shrink-0 sticky left-0 z-10 bg-background px-4 py-3 flex items-center gap-2 border-l-2",
 													priorityBorder[task.priority] || "border-l-border",
 												)}
+												style={{ width: pxToRem(sidebarPx) }}
 											>
-												<GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />
+												<span
+													draggable
+													onDragStart={(e) => {
+														e.dataTransfer.setData("text/plain", task.id);
+														e.dataTransfer.effectAllowed = "move";
+													}}
+													onDragOver={(e) => {
+														e.preventDefault();
+														e.dataTransfer.dropEffect = "move";
+													}}
+													onDrop={(e) => {
+														e.preventDefault();
+														const draggedId = e.dataTransfer.getData("text/plain");
+														if (draggedId && draggedId !== task.id) {
+															onReorderTasks(draggedId, idx);
+														}
+													}}
+													className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
+												>
+													<GripVertical className="h-3.5 w-3.5 text-muted-foreground/40" />
+												</span>
 												<div className="flex-1 min-w-0">
 													<Tooltip>
 														<TooltipTrigger asChild>

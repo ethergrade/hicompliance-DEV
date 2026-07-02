@@ -62,7 +62,8 @@ export const darkRiskGateway = {
 			`/companies/${companyId}/darkrisk/entitlement`,
 		)) as Record<string, unknown>;
 		const enabled = data?.enabled === true;
-		const tier = typeof data?.tier === "string" ? data.tier.toLowerCase() : null;
+		const tier =
+			typeof data?.tier === "string" ? data.tier.toLowerCase() : null;
 
 		return {
 			...resolveDarkRiskEntitlements(
