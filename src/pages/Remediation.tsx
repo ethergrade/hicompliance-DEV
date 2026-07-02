@@ -318,8 +318,7 @@ const Remediation: React.FC = () => {
 	const { organizationId: orgId, groupId } = useClientOrganization();
 	const { capabilities } = useAuth();
 	const canEdit = capabilities?.["hicompliance.remediation_tasks.edit"] ?? true;
-	const canUpdateProgress =
-		capabilities?.["hicompliance.remediation_tasks.view"] ?? false;
+	const canUpdateProgress = capabilities?.["hicompliance.remediation_tasks.view"] ?? false;
 
 	const defaultPrefs = useMemo(
 		() => ({ selectedTimeframe: "90days", defaultView: "gantt" }),

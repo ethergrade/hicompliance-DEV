@@ -307,8 +307,8 @@ export const AssessmentAiPanel: React.FC<Props> = ({ companyId, snapshotId, grou
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs text-muted-foreground mr-1">Rielabora:</span>
                     {([
-                      { target: 'shodan', label: 'Shodan' },
-                      { target: 'intelx', label: 'IntelX' },
+                      { target: 'shodan', label: 'SurfaceScan360' },
+                      { target: 'intelx', label: 'DarkRisk360' },
                       { target: 'openai', label: 'OpenAI' },
                       { target: 'all', label: 'Tutti' },
                     ] as const).map((item) => {

@@ -5,10 +5,13 @@ import { darkRiskQueryKeys } from "../api/queryKeys";
 const EXTENDED_UI_V2_ENABLED =
 	String(import.meta.env.VITE_DARKRISK_EXTENDED_UI_V2 ?? "true") !== "false";
 
-export const useDarkRiskEntitlements = (companyId: string | null) => {
+export const useDarkRiskEntitlements = (
+	companyId: string | null,
+	groupId?: string | null,
+) => {
 	const query = useQuery({
 		queryKey: darkRiskQueryKeys.entitlements(companyId),
-		queryFn: () => darkRiskGateway.getEntitlements(companyId!),
+		queryFn: () => darkRiskGateway.getEntitlements(companyId!, groupId),
 		enabled: Boolean(companyId),
 		staleTime: 60_000,
 		retry: false,

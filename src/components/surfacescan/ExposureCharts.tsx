@@ -190,7 +190,7 @@ export const ExposureCharts: React.FC<ExposureChartsProps> = ({
   return (
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
       {topPortsData.length > 0 && (
-        <Card className="border-border xl:col-span-2 overflow-hidden">
+        <Card className="border-border xl:col-span-3 overflow-hidden">
           <CardHeader className="pb-3">
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>

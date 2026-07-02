@@ -36,8 +36,6 @@ import { useServiceIntegrations } from '@/hooks/useServiceIntegrations';
 import { NIS2_LABELS } from '@/types/organization';
 import { useUserPreferences } from '@/hooks/useUserPreferences';
 import { assessmentV2Api, assessmentApi } from '@/lib/api';
-import { useDashboardMetrics } from '@/hooks/useDashboardMetrics';
-import { useAssessmentTrends } from '@/hooks/useAssessmentTrends';
 import { loadV2AssessmentData, mapToV2Status, mapToUiStatus } from '@/lib/assessmentV2Mapper';
 import { calculateCategoryScore, getRiskFromScore, CATEGORY_DESCRIPTIONS, ASSESSMENT_CATEGORIES } from '@/data/assessmentQuestions';
 import type { AssessmentCategory as UICategory } from '@/data/assessmentQuestions';
@@ -214,10 +212,6 @@ const Assessment: React.FC = () => {
   const categoriesLoaded = useRef(false);
   const guidedOrgRef = useRef<string | null>(null);
 
-  // Resolve assessmentId for backend radar data (report-monthly), matching Dashboard
-  const tenantGroupId = selectedOrganization?.group_id ?? null;
-  const { assessmentId: dashboardAssessmentId } = useDashboardMetrics(orgId, tenantGroupId);
-  const { radarCategories: backendRadarCategories } = useAssessmentTrends(dashboardAssessmentId, tenantGroupId);
 
   // Load v2 categories + questions from API
   useEffect(() => {
@@ -678,33 +672,20 @@ const Assessment: React.FC = () => {
   }, [getCategoryCounts, responses]);
 
   const radarData = useMemo(() => {
-    // Prefer backend-calculated radar data (report-monthly) for consistency with Dashboard.
-    // Falls back to client-computed weighted scores when backend data is unavailable
-    // (e.g. no v1 assessment yet, or API still loading).
-    if (backendRadarCategories && backendRadarCategories.length > 0) {
-      return backendRadarCategories.map((rc) => ({
-        category: rc.name.length > 14 ? `${rc.name.substring(0, 12)}…` : rc.name,
-        fullName: rc.name,
-        compliance: rc.completion_percent,
-        target: 90,
-      }));
-    }
-    return assessmentCategories.filter(cat => !cat.isNotApplicable).map((cat) => {
-      const compliance = Number.isFinite(cat.score) ? cat.score : 0;
-      const target = 90;
-
-      return {
-        category: cat.name.length > 14 ? `${cat.name.substring(0, 12)}…` : cat.name,
-        fullName: cat.name,
-        compliance,
-        target,
-      };
-    });
-  }, [backendRadarCategories, assessmentCategories]);
+    // Always use live client-computed scores so the radar matches the category list on the right.
+    // The backend report-monthly (backendRadarCategories) uses a different formula and is a
+    // periodic snapshot — using it caused visible mismatches with the per-category scores.
+    return assessmentCategories.filter(cat => !cat.isNotApplicable).map((cat) => ({
+      category: cat.name.length > 14 ? `${cat.name.substring(0, 12)}…` : cat.name,
+      fullName: cat.name,
+      compliance: Number.isFinite(cat.score) ? cat.score : 0,
+      target: 90,
+    }));
+  }, [assessmentCategories]);
 
   const hasRadarResponses = useMemo(
-    () => assessmentCategories.some((cat) => cat.completed > 0) || (backendRadarCategories && backendRadarCategories.length > 0),
-    [assessmentCategories, backendRadarCategories]
+    () => assessmentCategories.some((cat) => cat.completed > 0),
+    [assessmentCategories]
   );
 
 
@@ -922,7 +903,7 @@ const Assessment: React.FC = () => {
             )}
             <Button 
               className="bg-primary text-primary-foreground"
-              onClick={() => generateAssessmentPDF({ responses, companyName: orgProfile.legal_name || undefined })}
+              onClick={() => generateAssessmentPDF({ responses, companyName: orgProfile.legal_name || undefined, categories: v2Categories.length > 0 ? v2Categories : undefined })}
             >
               <FileText className="w-4 h-4 mr-2" />
               Genera Report PDF

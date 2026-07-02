@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import {
   ASSESSMENT_CATEGORIES,
+  AssessmentCategory,
   AssessmentResponse,
   calculateCategoryScore,
   getRiskFromScore,
@@ -11,9 +12,33 @@ import {
 interface AssessmentReportData {
   responses: Record<number, AssessmentResponse>;
   companyName?: string;
+  /** v2Categories from the backend — used instead of the static ASSESSMENT_CATEGORIES
+   *  so question counts and visibility logic match the view exactly. */
+  categories?: AssessmentCategory[];
 }
 
-export const generateAssessmentPDF = ({ responses, companyName }: AssessmentReportData) => {
+// Mirror of Assessment.tsx isQuestionVisible — questions with a dependency are hidden
+// unless their parent is answered with 'pianificato_in_corso' or 'completato'.
+function isQuestionVisible(
+  q: { id: number; dependency?: string },
+  responses: Record<number, AssessmentResponse>,
+  allCategoryQuestions: { id: number }[],
+): boolean {
+  const dep = q.dependency;
+  if (!dep) return true;
+  const depIdx = parseInt(dep, 10);
+  if (isNaN(depIdx) || depIdx < 1 || depIdx === q.id) return true;
+  const parentQ = allCategoryQuestions.find(pq => pq.id === depIdx);
+  if (!parentQ) return true;
+  const parentStatus = responses[parentQ.id] ?? null;
+  return parentStatus === 'pianificato_in_corso' || parentStatus === 'completato';
+}
+
+export const generateAssessmentPDF = ({ responses, companyName, categories }: AssessmentReportData) => {
+  // Use backend categories when available — matches the view's question set exactly
+  const effectiveCats = categories && categories.length > 0 ? categories : ASSESSMENT_CATEGORIES;
+  const allCatQuestions = effectiveCats.flatMap(c => c.questions);
+
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 18;
@@ -41,25 +66,42 @@ export const generateAssessmentPDF = ({ responses, companyName }: AssessmentRepo
   y = 58;
 
   // ── GLOBAL SUMMARY ──
-  const totalQuestions = ASSESSMENT_CATEGORIES.reduce((s, c) => s + c.questions.length, 0);
-  const totalAnswered = Object.keys(responses).filter(k => responses[Number(k)] !== null).length;
-  const globalProgress = Math.round((totalAnswered / totalQuestions) * 100);
+  // Count only visible questions (same logic as the Assessment view)
+  const totalQuestions = effectiveCats.reduce(
+    (s, c) => s + c.questions.filter(q => isQuestionVisible(q, responses, allCatQuestions)).length,
+    0,
+  );
+  const totalAnswered = effectiveCats.reduce((s, c) => {
+    return s + c.questions.filter(q => {
+      if (!isQuestionVisible(q, responses, allCatQuestions)) return false;
+      const r = responses[q.id];
+      return !!r;
+    }).length;
+  }, 0);
+  const globalProgress = totalQuestions > 0 ? Math.round((totalAnswered / totalQuestions) * 100) : 0;
 
-  // Compute per-category data
-  const catData = ASSESSMENT_CATEGORIES.map(cat => {
+  // Compute per-category data using only visible questions
+  const catData = effectiveCats.map(cat => {
+    const visibleQs = cat.questions.filter(q => isQuestionVisible(q, responses, allCatQuestions));
     const score = calculateCategoryScore(cat.questions, responses);
     const risk = getRiskFromScore(score);
     const counts = { completato: 0, pianificato_in_corso: 0, non_iniziato: 0, non_applicabile: 0, unanswered: 0 };
-    cat.questions.forEach(q => {
+    visibleQs.forEach(q => {
       const r = responses[q.id];
       if (r && r in counts) counts[r as keyof typeof counts]++;
       else counts.unanswered++;
     });
     const answered = counts.completato + counts.pianificato_in_corso + counts.non_iniziato + counts.non_applicabile;
-    return { name: cat.name, score, risk, counts, answered, total: cat.questions.length };
+    // Mirror Assessment.tsx: a category is N/A when all visible answers are non_applicabile
+    const isNotApplicable = counts.non_applicabile > 0
+      && counts.completato === 0
+      && counts.pianificato_in_corso === 0
+      && counts.non_iniziato === 0;
+    return { name: cat.name, score, risk, counts, answered, total: visibleQs.length, isNotApplicable };
   });
 
-  const catsWithAnswers = catData.filter(c => c.answered > 0);
+  // Mirror Assessment.tsx overallScore: exclude isNotApplicable categories
+  const catsWithAnswers = catData.filter(c => c.answered > 0 && !c.isNotApplicable);
   const overallScore = catsWithAnswers.length > 0
     ? Math.round(catsWithAnswers.reduce((a, c) => a + c.score, 0) / catsWithAnswers.length)
     : 0;
@@ -157,7 +199,7 @@ export const generateAssessmentPDF = ({ responses, companyName }: AssessmentRepo
   doc.text('Dettaglio Risposte per Categoria', margin, y);
   y += 10;
 
-  ASSESSMENT_CATEGORIES.forEach(cat => {
+  effectiveCats.forEach(cat => {
     checkPage(20);
 
     // Category title bar
@@ -170,8 +212,9 @@ export const generateAssessmentPDF = ({ responses, companyName }: AssessmentRepo
     doc.text(`${cat.name}  —  Punteggio: ${catInfo.score}/100  |  Rischio: ${catInfo.risk.label}`, margin + 3, y + 7);
     y += 14;
 
-    // Questions
-    cat.questions.forEach((q, qi) => {
+    // Questions — only visible ones (mirrors the view's dependency logic)
+    const visibleCatQs = cat.questions.filter(q => isQuestionVisible(q, responses, allCatQuestions));
+    visibleCatQs.forEach((q, qi) => {
       checkPage(12);
       const response = responses[q.id];
       const responseLabel = response ? (RESPONSE_LABELS[response] || '—') : 'Nessuna risposta';
