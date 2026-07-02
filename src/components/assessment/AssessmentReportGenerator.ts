@@ -13,6 +13,23 @@ interface AssessmentReportData {
   companyName?: string;
 }
 
+// Mirror of Assessment.tsx isQuestionVisible — questions with a dependency are hidden
+// unless their parent is answered with 'pianificato_in_corso' or 'completato'.
+const allQuestions = ASSESSMENT_CATEGORIES.flatMap(c => c.questions);
+function isQuestionVisible(
+  q: { id: number; dependency?: string },
+  responses: Record<number, AssessmentResponse>,
+): boolean {
+  const dep = q.dependency;
+  if (!dep) return true;
+  const depIdx = parseInt(dep, 10);
+  if (isNaN(depIdx) || depIdx < 1 || depIdx === q.id) return true;
+  const parentQ = allQuestions.find(pq => pq.id === depIdx);
+  if (!parentQ) return true;
+  const parentStatus = responses[parentQ.id] ?? null;
+  return parentStatus === 'pianificato_in_corso' || parentStatus === 'completato';
+}
+
 export const generateAssessmentPDF = ({ responses, companyName }: AssessmentReportData) => {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -41,22 +58,33 @@ export const generateAssessmentPDF = ({ responses, companyName }: AssessmentRepo
   y = 58;
 
   // ── GLOBAL SUMMARY ──
-  const totalQuestions = ASSESSMENT_CATEGORIES.reduce((s, c) => s + c.questions.length, 0);
-  const totalAnswered = Object.keys(responses).filter(k => responses[Number(k)] !== null).length;
-  const globalProgress = Math.round((totalAnswered / totalQuestions) * 100);
+  // Count only visible questions (same logic as the Assessment view)
+  const totalQuestions = ASSESSMENT_CATEGORIES.reduce(
+    (s, c) => s + c.questions.filter(q => isQuestionVisible(q, responses)).length,
+    0,
+  );
+  const totalAnswered = ASSESSMENT_CATEGORIES.reduce((s, c) => {
+    return s + c.questions.filter(q => {
+      if (!isQuestionVisible(q, responses)) return false;
+      const r = responses[q.id];
+      return !!r;
+    }).length;
+  }, 0);
+  const globalProgress = totalQuestions > 0 ? Math.round((totalAnswered / totalQuestions) * 100) : 0;
 
-  // Compute per-category data
+  // Compute per-category data using only visible questions
   const catData = ASSESSMENT_CATEGORIES.map(cat => {
+    const visibleQs = cat.questions.filter(q => isQuestionVisible(q, responses));
     const score = calculateCategoryScore(cat.questions, responses);
     const risk = getRiskFromScore(score);
     const counts = { completato: 0, pianificato_in_corso: 0, non_iniziato: 0, non_applicabile: 0, unanswered: 0 };
-    cat.questions.forEach(q => {
+    visibleQs.forEach(q => {
       const r = responses[q.id];
       if (r && r in counts) counts[r as keyof typeof counts]++;
       else counts.unanswered++;
     });
     const answered = counts.completato + counts.pianificato_in_corso + counts.non_iniziato + counts.non_applicabile;
-    return { name: cat.name, score, risk, counts, answered, total: cat.questions.length };
+    return { name: cat.name, score, risk, counts, answered, total: visibleQs.length };
   });
 
   const catsWithAnswers = catData.filter(c => c.answered > 0);
@@ -170,8 +198,9 @@ export const generateAssessmentPDF = ({ responses, companyName }: AssessmentRepo
     doc.text(`${cat.name}  —  Punteggio: ${catInfo.score}/100  |  Rischio: ${catInfo.risk.label}`, margin + 3, y + 7);
     y += 14;
 
-    // Questions
-    cat.questions.forEach((q, qi) => {
+    // Questions — only visible ones (mirrors the view's dependency logic)
+    const visibleCatQs = cat.questions.filter(q => isQuestionVisible(q, responses));
+    visibleCatQs.forEach((q, qi) => {
       checkPage(12);
       const response = responses[q.id];
       const responseLabel = response ? (RESPONSE_LABELS[response] || '—') : 'Nessuna risposta';
