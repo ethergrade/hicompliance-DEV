@@ -402,6 +402,7 @@ const ClientSelection: React.FC = () => {
 			<ClientAssetSheet
 				organizationId={editingOrgId}
 				organizationName={editingOrgName}
+				groupId={organizations.find((o) => o.id === editingOrgId)?.group_id}
 				open={assetOpen}
 				onOpenChange={setAssetOpen}
 			/>

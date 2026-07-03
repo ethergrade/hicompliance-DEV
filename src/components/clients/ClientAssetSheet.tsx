@@ -13,6 +13,7 @@ import type { AssetInventoryResource } from '@/types/api';
 interface ClientAssetSheetProps {
   organizationId: string | null;
   organizationName?: string;
+  groupId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -101,7 +102,7 @@ const resourceToForm = (data: AssetInventoryResource): AssetData => ({
 });
 
 const ClientAssetSheet: React.FC<ClientAssetSheetProps> = ({
-  organizationId, organizationName, open, onOpenChange,
+  organizationId, organizationName, groupId, open, onOpenChange,
 }) => {
   const [form, setForm] = useState<AssetData>(INITIAL);
   const [loading, setLoading] = useState(false);
@@ -123,7 +124,7 @@ const ClientAssetSheet: React.FC<ClientAssetSheetProps> = ({
     if (!organizationId) return;
     setLoading(true);
     try {
-      const data = await assetInventoryApi.getByOrganization(organizationId);
+      const data = await assetInventoryApi.getByOrganization(organizationId, groupId);
       if (data) {
         setRecordId(data.id);
         setForm(resourceToForm(data));
@@ -156,7 +157,7 @@ const ClientAssetSheet: React.FC<ClientAssetSheetProps> = ({
       const payload = { organization_id: organizationId, ...f, total_network_devices_count: tn, va_total_ips_count: ti };
 
       // PUT upsert — backend usa updateOrCreate, funziona sia per create che update
-      const result = await assetInventoryApi.update(organizationId, payload);
+      const result = await assetInventoryApi.update(organizationId, payload, groupId);
       if (result.id) setRecordId(result.id);
       setSaveStatus('saved');
     } catch {
