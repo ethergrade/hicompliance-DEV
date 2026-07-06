@@ -63,6 +63,8 @@ import { surfaceScan360Api } from '@/lib/api/surface-scan360';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useSubdomainDump } from '@/hooks/useSubdomainDump';
 import { SubdomainDumpPanel } from '@/components/surface-scan/SubdomainDumpPanel';
+import ExternalEndpointsPanel from '@/components/surface-scan/ExternalEndpointsPanel';
+import ExternalScanIntelligenceSection from '@/components/surface-scan/ExternalScanIntelligenceSection';
 import {
   classifySurfaceHostForScope,
   isIpWithinScopeRules,
@@ -1040,8 +1042,9 @@ const SurfaceScan360: React.FC = () => {
           </div>
         )}
 
-        <div ref={findingsSectionRef} className="scroll-mt-24">
+        <div ref={findingsSectionRef} className="scroll-mt-24 space-y-6">
           <SecurityFindings />
+          <ExternalScanIntelligenceSection />
         </div>
 
         <div ref={scopeSectionRef} className="scroll-mt-24 space-y-6">
@@ -1155,6 +1158,8 @@ const SurfaceScan360: React.FC = () => {
             </CardContent>
           </Card>
         )}
+
+        {organizationId && !clientReadOnly && <ExternalEndpointsPanel />}
 
         </div>
 

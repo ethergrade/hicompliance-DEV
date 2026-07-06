@@ -35,6 +35,7 @@ test_roles.js
 .pi/
 graphify-out/
 .env*
+.env.development
 
 # Local developer handoff credentials (never commit)
 .env_per_stefano

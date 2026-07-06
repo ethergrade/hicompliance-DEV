@@ -6,7 +6,11 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const targetUrl = env.VITE_API_BASE_URL || 'https://hiapi.websoupcloud.it';
   const isWebsoup = targetUrl.includes('websoupcloud');
-  
+  // websoup e il Laravel locale (apiPrefix='') servono le route SENZA prefisso /api,
+  // quindi va tolto in fase di proxy; la produzione hiconsole.hisolution.it/api lo mantiene.
+  const isLocal = /localhost|127\.0\.0\.1/.test(targetUrl);
+  const stripApiPrefix = isWebsoup || isLocal;
+
   return {
     server: {
       host: "::",
@@ -16,7 +20,7 @@ export default defineConfig(({ mode }) => {
           target: targetUrl,
           changeOrigin: true,
           secure: false,
-          rewrite: (path) => isWebsoup ? path.replace(/^\/api/, '') : path
+          rewrite: (path) => stripApiPrefix ? path.replace(/^\/api/, '') : path
         },
         '/sanctum': {
           target: targetUrl,

@@ -382,6 +382,29 @@ export async function generateSurfaceScan360Docx(
 			asText((entry.affected_assets || []).join(", "), "-"),
 		]);
 
+	// External Scan (Sprint 4)
+	const externalEndpointRows = (report.external_endpoints || []).map((ep) => [
+		asText(ep.name),
+		asText(ep.address_type),
+		asText(ep.address_value),
+		asText(ep.scan_profile),
+		asText(ep.last_grade, "-"),
+		`${ep.counts?.critical || 0}C / ${ep.counts?.high || 0}H / ${ep.counts?.total || 0}`,
+	]);
+	const epssRows = (report.epss_buckets || [])
+		.filter((b) => b.cve_count > 0)
+		.map((b) => [asText(b.label), asText(b.sla), String(b.cve_count), String(b.kev_count ?? 0)]);
+	const remediationRows = (report.remediation_actions || [])
+		.filter((r) => r.workflow_status === "open")
+		.slice(0, 60)
+		.map((r) => [
+			asText(r.severity, "-"),
+			asText(r.product || r.title),
+			asText(r.remediation_action || r.fix, "-"),
+			String(r.affected_assets_count ?? 0),
+			r.epss_max != null ? `${(r.epss_max * 100).toFixed(0)}%` : "-",
+		]);
+
 	const doc = new Document({
 		sections: [
 			{
@@ -439,6 +462,39 @@ export async function generateSurfaceScan360Docx(
 							? recommendationRows
 							: [["#1", "Nessuna priorità disponibile", "low", "-", "-"]],
 					),
+
+					...(externalEndpointRows.length > 0
+						? [
+								heading("8. External Endpoints"),
+								...(report.external_scan_partial
+									? [paragraph("Partial scan: ultimi dati validi disponibili.")]
+									: []),
+								buildSimpleTable(
+									["Nome", "Tipo", "Target", "Profilo", "Grade", "Findings"],
+									externalEndpointRows,
+								),
+							]
+						: []),
+
+					...(epssRows.length > 0
+						? [
+								heading("9. EPSS Categorization"),
+								buildSimpleTable(
+									["Bucket EPSS", "SLA remediation", "CVE", "KEV"],
+									epssRows,
+								),
+							]
+						: []),
+
+					...(remediationRows.length > 0
+						? [
+								heading("10. Remediation Plan"),
+								buildSimpleTable(
+									["Priorità", "Prodotto", "Azione", "Asset", "Max EPSS"],
+									remediationRows,
+								),
+							]
+						: []),
 				],
 			},
 		],

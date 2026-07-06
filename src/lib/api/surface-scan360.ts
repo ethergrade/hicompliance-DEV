@@ -58,6 +58,119 @@ export interface SurfaceScanAiReport {
 	payload?: any;
 }
 
+export type ExternalEndpointAddressType = "static_ip" | "domain" | "ip_range";
+export type ExternalEndpointScanProfile = "quick" | "detailed" | "deep";
+
+export interface SurfaceExternalEndpoint {
+	id: string;
+	name: string;
+	address_type: ExternalEndpointAddressType;
+	address_value: string;
+	normalized_target: string;
+	scan_profile: ExternalEndpointScanProfile;
+	enabled: boolean;
+	schedule: string;
+	last_scan_at: string | null;
+	next_scan_at: string | null;
+	last_status: string | null;
+	last_grade: string | null;
+	counts: {
+		total: number;
+		critical: number;
+		high: number;
+		medium: number;
+		low: number;
+	};
+	created_at?: string;
+	updated_at?: string;
+	// Solo per admin: riferimenti tecnici remoti (mai mostrati al cliente).
+	remote?: {
+		company_id: string | null;
+		discovery_setting_id: string | null;
+		custom_profile_id: string | null;
+	};
+}
+
+export interface UpsertExternalEndpointPayload {
+	name: string;
+	address_type: ExternalEndpointAddressType;
+	address_value: string;
+	scan_profile?: ExternalEndpointScanProfile;
+	enabled?: boolean;
+}
+
+export interface VulnerabilityMatch {
+	id: string;
+	cve_id: string;
+	match_status: "confirmed" | "candidate" | "unknown" | "rejected";
+	severity: string | null;
+	asset_host: string | null;
+	service_key: string | null;
+	cvss: number | null;
+	epss: number | null;
+	epss_percentile: number | null;
+	epss_bucket: string;
+	kev: boolean;
+	source: string | null;
+	description: string | null;
+	canonical: boolean;
+	created_at?: string;
+}
+
+export interface EpssBucketAgg {
+	bucket: string;
+	label: string;
+	sla: string;
+	sla_days: number | null;
+	cve_count: number;
+	asset_count: number;
+	max_severity: string;
+}
+
+export type RemediationWorkflowStatus =
+	| "open"
+	| "remediated"
+	| "suppressed"
+	| "auto_suppressed";
+
+export interface RemediationAction {
+	id: string;
+	workflow_status: RemediationWorkflowStatus;
+	product: string | null;
+	title: string;
+	fix: string | null;
+	fix_script: unknown[];
+	url: string | null;
+	remediation_action: string | null;
+	severity: string | null;
+	epss_max: number | null;
+	epss_bucket: string | null;
+	is_patchable: boolean | null;
+	counts: {
+		critical: number;
+		high: number;
+		medium: number;
+		low: number;
+		total: number;
+	};
+	affected_assets_count: number;
+	affected_asset_ids: string[];
+	affected_cves: string[];
+	first_seen_at: string | null;
+	last_seen_at: string | null;
+}
+
+export interface VulnerabilityIntelligenceFilters {
+	job_ids?: string;
+	match_status?: string;
+	severity?: string;
+	epss_bucket?: string;
+	kev_only?: boolean;
+	source?: string;
+	cve?: string;
+	asset?: string;
+}
+
 export const surfaceScan360Api = {
 	// Jobs
 	async listJobs(
@@ -228,6 +341,133 @@ export const surfaceScan360Api = {
 			`/companies/${companyId}/surface-scan360/monitored-ips/${monitoredIpId}`,
 			groupId ? groupHeader(groupId) : undefined,
 		);
+	},
+
+	// ── External Endpoints (External Scan) ──────────────────────────────────
+	async listExternalEndpoints(
+		companyId: string,
+		groupId?: string | null,
+	): Promise<SurfaceExternalEndpoint[]> {
+		const res = await complianceApiClient.get<
+			ApiResponse<SurfaceExternalEndpoint[]>
+		>(
+			`/companies/${companyId}/surface-scan360/external-endpoints`,
+			undefined,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return extractArray<SurfaceExternalEndpoint>(res.data || []);
+	},
+
+	async createExternalEndpoint(
+		companyId: string,
+		payload: UpsertExternalEndpointPayload,
+		groupId?: string | null,
+	): Promise<SurfaceExternalEndpoint> {
+		const res = await complianceApiClient.post<
+			ApiResponse<SurfaceExternalEndpoint>
+		>(
+			`/companies/${companyId}/surface-scan360/external-endpoints`,
+			payload,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return res.data;
+	},
+
+	async updateExternalEndpoint(
+		companyId: string,
+		endpointId: string,
+		payload: Partial<UpsertExternalEndpointPayload>,
+		groupId?: string | null,
+	): Promise<SurfaceExternalEndpoint> {
+		const res = await complianceApiClient.put<
+			ApiResponse<SurfaceExternalEndpoint>
+		>(
+			`/companies/${companyId}/surface-scan360/external-endpoints/${endpointId}`,
+			payload,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return res.data;
+	},
+
+	async deleteExternalEndpoint(
+		companyId: string,
+		endpointId: string,
+		groupId?: string | null,
+	): Promise<void> {
+		await complianceApiClient.delete(
+			`/companies/${companyId}/surface-scan360/external-endpoints/${endpointId}`,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+	},
+
+	async runExternalEndpoint(
+		companyId: string,
+		endpointId: string,
+		groupId?: string | null,
+	): Promise<{ scan_job_id: string; status: string }> {
+		const res = await complianceApiClient.post<
+			ApiResponse<{ scan_job_id: string; status: string }>
+		>(
+			`/companies/${companyId}/surface-scan360/external-endpoints/${endpointId}/run`,
+			{},
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return res.data;
+	},
+
+	// ── Vulnerability Intelligence / EPSS / Remediation ─────────────────────
+	async getVulnerabilityIntelligence(
+		companyId: string,
+		filters: VulnerabilityIntelligenceFilters = {},
+		groupId?: string | null,
+	): Promise<VulnerabilityMatch[]> {
+		const params: Record<string, string> = {};
+		for (const [k, v] of Object.entries(filters)) {
+			if (v === undefined || v === "" || v === false) continue;
+			params[k] = v === true ? "1" : String(v);
+		}
+		const res = await complianceApiClient.get<ApiResponse<VulnerabilityMatch[]>>(
+			`/companies/${companyId}/surface-scan360/vulnerability-intelligence`,
+			params,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return extractArray<VulnerabilityMatch>(res.data || []);
+	},
+
+	async getEpssBuckets(
+		companyId: string,
+		filters: Pick<VulnerabilityIntelligenceFilters, "job_ids"> = {},
+		groupId?: string | null,
+	): Promise<EpssBucketAgg[]> {
+		const params: Record<string, string> = {};
+		if (filters.job_ids) params.job_ids = filters.job_ids;
+		const res = await complianceApiClient.get<ApiResponse<EpssBucketAgg[]>>(
+			`/companies/${companyId}/surface-scan360/epss-buckets`,
+			params,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return extractArray<EpssBucketAgg>(res.data || []);
+	},
+
+	async getRemediationActions(
+		companyId: string,
+		filters: {
+			workflow_status?: string;
+			severity?: string;
+			epss_bucket?: string;
+		} = {},
+		groupId?: string | null,
+	): Promise<RemediationAction[]> {
+		const params: Record<string, string> = {};
+		for (const [k, v] of Object.entries(filters)) {
+			if (v) params[k] = String(v);
+		}
+		const res = await complianceApiClient.get<ApiResponse<RemediationAction[]>>(
+			`/companies/${companyId}/surface-scan360/remediation-actions`,
+			params,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return extractArray<RemediationAction>(res.data || []);
 	},
 
 	async getExposureSummary(

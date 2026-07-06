@@ -72,6 +72,36 @@ export interface SurfaceScan360Report {
 	monitored_scope?: unknown[];
 	subdomain_dumps?: unknown[];
 	remediation_tasks?: RemediationTask[];
+	// External Scan (Sprint 4): endpoint configurati, remediation aggregate, EPSS buckets.
+	external_endpoints?: Array<{
+		name: string;
+		address_type: string;
+		address_value: string;
+		scan_profile: string;
+		last_status?: string | null;
+		last_grade?: string | null;
+		counts?: { total?: number; critical?: number; high?: number; medium?: number; low?: number };
+	}>;
+	remediation_actions?: Array<{
+		workflow_status: string;
+		product?: string | null;
+		title: string;
+		remediation_action?: string | null;
+		fix?: string | null;
+		severity?: string | null;
+		epss_max?: number | null;
+		is_patchable?: boolean | null;
+		counts?: { critical?: number; high?: number; medium?: number; low?: number; total?: number };
+		affected_assets_count?: number;
+	}>;
+	epss_buckets?: Array<{
+		bucket: string;
+		label: string;
+		sla: string;
+		cve_count: number;
+		kev_count?: number;
+	}>;
+	external_scan_partial?: boolean;
 	kev_generation?: { created: number; total_kev: number; existing: number };
 	ai: {
 		executive_summary?: string;
@@ -1670,6 +1700,83 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
 		if (aiData.compliance_notes) {
 			sectionTitle(10, "Note di compliance");
 			text(redactReportWords(aiData.compliance_notes));
+		}
+	}
+
+	// ===== 11. External Endpoints =====
+	const externalEndpoints = report.external_endpoints || [];
+	if (externalEndpoints.length > 0) {
+		sectionTitle(11, "External Endpoints");
+		if (report.external_scan_partial) {
+			text("Partial scan: vengono mostrati gli ultimi dati validi disponibili.", {
+				size: 9,
+				color: MUTED,
+			});
+		}
+		const rows = externalEndpoints.map((ep) => [
+			redactReportWords(String(ep.name || "-")),
+			String(ep.address_type || "-"),
+			String(ep.address_value || "-"),
+			String(ep.scan_profile || "-"),
+			String(ep.last_grade || "-"),
+			`${ep.counts?.critical || 0}C / ${ep.counts?.high || 0}H / ${ep.counts?.total || 0} tot`,
+		]);
+		drawTable(
+			["Nome", "Tipo", "Target", "Profilo", "Grade", "Findings"],
+			rows,
+			[90, 60, 140, 60, 50, 120],
+		);
+	}
+
+	// ===== 12. EPSS Categorization =====
+	const epssBuckets = report.epss_buckets || [];
+	if (epssBuckets.some((b) => b.cve_count > 0)) {
+		sectionTitle(12, "EPSS Categorization");
+		const rows = epssBuckets.map((b) => [
+			String(b.label),
+			String(b.sla),
+			String(b.cve_count),
+			String(b.kev_count ?? 0),
+		]);
+		drawTable(
+			["Bucket EPSS", "SLA remediation", "CVE", "KEV"],
+			rows,
+			[90, 220, 90, 90],
+		);
+	}
+
+	// ===== 13. Remediation Plan =====
+	const remediationActions = report.remediation_actions || [];
+	const openRemediation = remediationActions.filter(
+		(r) => r.workflow_status === "open",
+	);
+	if (openRemediation.length > 0) {
+		sectionTitle(13, "Remediation Plan");
+		const rows = openRemediation
+			.slice(0, 60)
+			.map((r) => [
+				String(r.severity || "-"),
+				redactReportWords(String(r.product || r.title || "-")),
+				redactReportWords(String(r.remediation_action || r.fix || "-")),
+				String(r.affected_assets_count ?? 0),
+				r.epss_max != null ? `${(r.epss_max * 100).toFixed(0)}%` : "-",
+				`${r.counts?.critical || 0}/${r.counts?.high || 0}/${r.counts?.medium || 0}/${r.counts?.low || 0}`,
+			]);
+		drawTable(
+			["Priorità", "Prodotto", "Azione", "Asset", "Max EPSS", "C/H/M/L"],
+			rows,
+			[60, 130, 160, 45, 60, 75],
+		);
+
+		// Appendice: remediated / suppressed / auto_suppressed
+		const appendix = remediationActions.filter(
+			(r) => r.workflow_status !== "open",
+		);
+		if (appendix.length > 0) {
+			text(
+				`Appendice: ${appendix.length} azioni in stato remediated/suppressed (non contano nel rischio corrente).`,
+				{ size: 9, color: MUTED },
+			);
 		}
 	}
 

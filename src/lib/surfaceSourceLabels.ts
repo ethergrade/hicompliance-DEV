@@ -1,4 +1,9 @@
 const SOURCE_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
+  // Etichette neutre lato cliente (spec §9.2). L'External Scan resta identificabile
+  // come "External scan" senza citare il provider.
+  { pattern: /connectsecure[_-]?external[_-]?scan|external[_-]?(exposure[_-]?)?scan/i, label: 'External scan' },
+  { pattern: /connectsecure[_-]?asm|attack[_-]?surface/i, label: 'External scan' },
+  { pattern: /internal[_-]?http[_-]?tls|http[_-]?tls/i, label: 'Web check' },
   { pattern: /\b(connectsecure|cybercns)\b/i, label: 'Scanner esterno' },
   { pattern: /\bshodan\b/i, label: 'OSINT' },
   { pattern: /\burlscan\b/i, label: 'OSINT' },
@@ -23,6 +28,10 @@ const INTERNAL_SOURCE_TOKENS: RegExp[] = [
   /\bhttpx\b/gi,
   /\bwappalyzer\b/gi,
   /\bsurface[_-\s]?scan(?:360)?[_-\s]?engine\b/gi,
+  // Provider/pod ConnectSecure: mai in chiaro nei report (spec §10.3).
+  /\bpod\d+\b/gi,
+  /\bmyconnectsecure(?:\.com)?\b/gi,
+  /\bcyber[_-]?cns\b/gi,
   /\b[a-z0-9]+(?:_[a-z0-9]+){2,}\b/gi,
 ];
 
