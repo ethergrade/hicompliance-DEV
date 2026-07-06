@@ -123,7 +123,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 	const [catPx, setCatPx] = useState(128); // 8rem
 
 	// Category filter
-	const [selectedCategory, setSelectedCategory] = useState<string>("");
+	const [selectedCategory, setSelectedCategory] = useState<string>("all");
 	const categories = useMemo(
 		() => [...new Set(tasks.map((t) => t.category))].filter(Boolean).sort(),
 		[tasks],
@@ -210,7 +210,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 		[tasks],
 	);
 	const displayedTasks = useMemo(() => {
-		if (!selectedCategory) return visibleTasks;
+		if (!selectedCategory || selectedCategory === "all") return visibleTasks;
 		return visibleTasks.filter((t) => t.category === selectedCategory);
 	}, [visibleTasks, selectedCategory]);
 	const monthGridTemplate = useMemo(
@@ -390,7 +390,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 							<SelectValue placeholder="Tutte le categorie" />
 						</SelectTrigger>
 						<SelectContent>
-							<SelectItem value="">Tutte le categorie</SelectItem>
+							<SelectItem value="all">Tutte le categorie</SelectItem>
 							{categories.map((cat) => (
 								<SelectItem key={cat} value={cat}>
 									{cat}
