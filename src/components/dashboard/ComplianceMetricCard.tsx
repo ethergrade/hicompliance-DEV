@@ -39,13 +39,13 @@ export const ComplianceMetricCard: React.FC<ComplianceMetricCardProps> = ({
 }) => {
   const navigate = useNavigate();
 
-  const compliance = completionScore !== undefined
-    ? { percentage: completionScore, label: percentToLabel(completionScore), status: percentToStatus(completionScore) }
-    : { percentage: 78, label: 'Buono' as const, status: 'good' as const };
+  // No hardcoded fallback: show the real score (0 when absent) so we never
+  // display an invented value that disagrees with the /assessment page.
+  const pct = completionScore ?? 0;
+  const compliance = { percentage: pct, label: percentToLabel(pct), status: percentToStatus(pct) };
 
-  const risk = riskScore !== undefined
-    ? { percentage: riskScore, label: scoreToRiskLabel(riskScore), status: scoreToRiskStatus(riskScore) }
-    : { percentage: 28, label: 'Basso' as const, status: 'good' as const };
+  const riskPct = riskScore ?? (100 - pct);
+  const risk = { percentage: riskPct, label: scoreToRiskLabel(riskPct), status: scoreToRiskStatus(riskPct) };
 
   const renderGauge = (percentage: number, status: string) => {
     const dashArray = `${(percentage / 100) * CIRCUMFERENCE} ${CIRCUMFERENCE}`;

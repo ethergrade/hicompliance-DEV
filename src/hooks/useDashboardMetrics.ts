@@ -1,5 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { assessmentApi } from '@/lib/api';
+import { assessmentV2Api } from '@/lib/api/assessment-v2';
+import { loadV2AssessmentData, mapToUiStatus } from '@/lib/assessmentV2Mapper';
+import { computeOverallScore } from '@/lib/assessment/scoring';
+import type { AssessmentResponse } from '@/data/assessmentQuestions';
 
 interface DashboardMetrics {
   completionScore: number;
@@ -9,8 +13,12 @@ interface DashboardMetrics {
 }
 
 /**
- * Fetch per-tenant assessment summary for the dashboard widgets.
- * Refetches automatically when organizationId/groupId change.
+ * Per-tenant assessment score for the dashboard widgets.
+ *
+ * The compliance score is computed from the SAME v2 data and the SAME shared
+ * scoring util (computeOverallScore) used by the /assessment page, so the two
+ * screens always match. The legacy v1 assessmentId is still resolved because
+ * the dashboard "Analisi e Trend" section depends on it (reportMonthly).
  */
 export function useDashboardMetrics(
   organizationId?: string | null,
@@ -23,22 +31,31 @@ export function useDashboardMetrics(
         return { completionScore: 0, riskScore: 0, assessmentId: null };
       }
 
-      // List assessments for the group, find the one matching this organization
+      // Resolve the legacy v1 assessment id (needed by useAssessmentTrends).
       const assessments = await assessmentApi.list(groupId);
-      const match = assessments.find(a => a.tenant_id === organizationId);
+      const assessmentId =
+        assessments.find((a) => a.tenant_id === organizationId)?.id ?? null;
 
-      if (!match) {
-        return { completionScore: 0, riskScore: 0, assessmentId: null };
-      }
+      // Compute the compliance score from v2 data using the same shared util
+      // as the /assessment page so the numbers are identical.
+      const { categories, indexToUuid } = await loadV2AssessmentData(groupId);
+      const items = await assessmentV2Api.responses(organizationId, groupId);
 
-      // Fetch the report to get the summary scores
-      const report = await assessmentApi.report(match.id, groupId);
+      const uuidToIndex: Record<string, number> = {};
+      Object.entries(indexToUuid).forEach(([idx, uuid]) => {
+        uuidToIndex[uuid] = Number(idx);
+      });
 
-      return {
-        completionScore: report.summary?.completion_score ?? 0,
-        riskScore: report.summary?.risk_score ?? 0,
-        assessmentId: match.id,
-      };
+      const responses: Record<number, AssessmentResponse> = {};
+      items.forEach((it) => {
+        const idx = uuidToIndex[it.question_id];
+        if (idx) responses[idx] = mapToUiStatus(it.status);
+      });
+
+      const completionScore = computeOverallScore(categories, responses);
+      const riskScore = 100 - completionScore;
+
+      return { completionScore, riskScore, assessmentId };
     },
     enabled: !!organizationId && !!groupId,
     staleTime: 60_000, // 1 min before refetch

@@ -39,6 +39,7 @@ import { assessmentV2Api, assessmentApi } from '@/lib/api';
 import { loadV2AssessmentData, mapToV2Status, mapToUiStatus } from '@/lib/assessmentV2Mapper';
 import { calculateCategoryScore, getRiskFromScore, CATEGORY_DESCRIPTIONS, ASSESSMENT_CATEGORIES } from '@/data/assessmentQuestions';
 import type { AssessmentCategory as UICategory } from '@/data/assessmentQuestions';
+import { computeOverallScore } from '@/lib/assessment/scoring';
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { generateAssessmentPDF } from '@/components/assessment/AssessmentReportGenerator';
 import GapAnalysisSection from '@/components/assessment/GapAnalysisSection';
@@ -735,11 +736,11 @@ const Assessment: React.FC = () => {
     }
   };
 
-  const overallScore = useMemo(() => {
-    const catsWithAnswers = assessmentCategories.filter(c => c.completed > 0 && !c.isNotApplicable);
-    if (catsWithAnswers.length === 0) return 0;
-    return Math.round(catsWithAnswers.reduce((acc, cat) => acc + cat.score, 0) / catsWithAnswers.length);
-  }, [assessmentCategories]);
+  // Shared scoring util — same computation reused by the dashboard so the two never drift.
+  const overallScore = useMemo(
+    () => computeOverallScore(v2Categories.length > 0 ? v2Categories : [], responses),
+    [v2Categories, responses]
+  );
 
   const overallRisk = useMemo(() => getRiskFromScore(overallScore), [overallScore]);
 
