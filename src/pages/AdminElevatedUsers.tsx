@@ -63,6 +63,7 @@ import {
 	Edit,
 	Trash2,
 	KeyRound,
+	Mail,
 	Shield,
 	Search,
 	X,
@@ -238,7 +239,9 @@ const AdminElevatedUsers: React.FC = () => {
 				{
 					name: data.name,
 					email: data.email,
-					password: data.password,
+					// Password opzionale: se vuota si omette → il backend invia il
+					// link per impostare la password via email.
+					...(data.password ? { password: data.password } : {}),
 					role: data.role,
 				},
 				groupIdForCreate,
@@ -266,6 +269,26 @@ const AdminElevatedUsers: React.FC = () => {
 					error instanceof Error
 						? error.message
 						: "Errore durante la creazione",
+				variant: "destructive",
+			});
+		},
+	});
+
+	// Invia link impostazione password
+	const sendResetLinkMutation = useMutation({
+		mutationFn: (userId: string | number) =>
+			usersApi.sendResetLink(userId, selectedGroupId),
+		onSuccess: () => {
+			toast({
+				title: "Link inviato",
+				description: "Email con il link per impostare la password inviata.",
+			});
+		},
+		onError: (error) => {
+			toast({
+				title: "Errore",
+				description:
+					error instanceof Error ? error.message : "Errore durante l'invio",
 				variant: "destructive",
 			});
 		},
@@ -588,6 +611,15 @@ const AdminElevatedUsers: React.FC = () => {
 														<Button
 															variant="outline"
 															size="sm"
+															onClick={() => sendResetLinkMutation.mutate(user.id)}
+															disabled={sendResetLinkMutation.isPending}
+															title="Invia link impostazione password"
+														>
+															<Mail className="w-4 h-4" />
+														</Button>
+														<Button
+															variant="outline"
+															size="sm"
 															className="text-destructive hover:text-destructive"
 															onClick={() => openDeleteDialog(user)}
 															title="Elimina utente"
@@ -677,20 +709,19 @@ const AdminElevatedUsers: React.FC = () => {
 									control={createForm.control}
 									name="password"
 									rules={{
-										required: "Password è richiesta",
-										minLength: {
-											value: 8,
-											message: "La password deve essere di almeno 8 caratteri",
-										},
+										validate: (value: string) =>
+											!value ||
+											value.length >= 8 ||
+											"La password deve essere di almeno 8 caratteri",
 									}}
 									render={({ field }) => (
 										<FormItem>
-											<FormLabel>Password</FormLabel>
+											<FormLabel>Password (opzionale)</FormLabel>
 											<FormControl>
 												<Input
 													{...field}
 													type="password"
-													placeholder="••••••••"
+													placeholder="Vuoto = invia link via email"
 												/>
 											</FormControl>
 											<FormMessage />
@@ -701,7 +732,6 @@ const AdminElevatedUsers: React.FC = () => {
 									control={createForm.control}
 									name="password_confirmation"
 									rules={{
-										required: "Conferma password è richiesta",
 										validate: (value: string) =>
 											value === createForm.watch("password") ||
 											"Le password non coincidono",

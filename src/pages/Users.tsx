@@ -19,7 +19,7 @@ import { ApiError } from "@/lib/api-client";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { useUserRoles } from "@/hooks/useUserRoles";
 import type { TenantResource, UserResource } from "@/types/api";
-import { User, Plus, Edit, Trash2, UserCheck, UserX, Building2, Search, X } from "lucide-react";
+import { User, Plus, Edit, Trash2, UserCheck, UserX, Building2, Search, X, KeyRound } from "lucide-react";
 
 interface UserFormData {
   email: string;
@@ -213,7 +213,9 @@ const Users = () => {
       const user = await usersApi.create({
         name: data.name,
         email: data.email,
-        password: data.password,
+        // Password opzionale: se vuota si omette, così il backend invia
+        // automaticamente il link per impostare la password.
+        ...(data.password ? { password: data.password } : {}),
         role: data.role,
       }, groupId);
       // Assign tenants immediately for restricted roles
@@ -276,6 +278,16 @@ const Users = () => {
       setIsDeleteDialogOpen(false);
       setUserToDelete(null);
       toast({ title: "Successo", description: "Utente eliminato con successo" });
+    },
+    onError: (error) => {
+      toast({ title: "Errore", description: getErrorMessage(error), variant: "destructive" });
+    },
+  });
+
+  const sendResetLinkMutation = useMutation({
+    mutationFn: (userId: string | number) => usersApi.sendResetLink(userId, groupId),
+    onSuccess: () => {
+      toast({ title: "Link inviato", description: "Email con il link per impostare la password inviata." });
     },
     onError: (error) => {
       toast({ title: "Errore", description: getErrorMessage(error), variant: "destructive" });
@@ -400,9 +412,9 @@ const Users = () => {
                       rules={{ validate: (value: string) => !value || value.length >= 8 || "Password deve essere di almeno 8 caratteri" }}
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Password</FormLabel>
+                          <FormLabel>Password (opzionale)</FormLabel>
                           <FormControl>
-                            <Input {...field} type="password" placeholder="••••••••" />
+                            <Input {...field} type="password" placeholder="Lascia vuoto per inviare il link via email" />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -587,6 +599,17 @@ const Users = () => {
                             {canAssignTenants && (
                               <Button variant="outline" size="sm" onClick={() => openTenantDialog(user)} title="Assegna tenant">
                                 <Building2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                            {isAdmin && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => sendResetLinkMutation.mutate(user.id)}
+                                disabled={sendResetLinkMutation.isPending}
+                                title="Invia link impostazione password"
+                              >
+                                <KeyRound className="w-4 h-4" />
                               </Button>
                             )}
                             <Button variant="outline" size="sm" onClick={() => openDialog(user)}>

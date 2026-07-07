@@ -57,6 +57,12 @@ export const usersApi = {
     await apiClient.delete(`/users/${id}`, opts);
   },
 
+  /** Reinvia all'utente il link per impostare/reimpostare la password. */
+  async sendResetLink(id: string | number, groupId?: string | null): Promise<void> {
+    const opts = groupId ? groupHeader(groupId) : undefined;
+    await apiClient.post(`/users/${id}/send-reset-link`, {}, opts);
+  },
+
   async batchByIds(ids: string[], groupId?: string | null): Promise<UserResource[]> {
     if (ids.length === 0) return [];
     const opts = groupId ? groupHeader(groupId) : undefined;
