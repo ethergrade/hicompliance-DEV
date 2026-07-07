@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { remediationTasksApi } from "@/lib/api";
 import type {
 	RemediationTask,
@@ -8,6 +8,8 @@ import type {
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { useRemediationCatalog } from "@/hooks/useRemediationCatalog";
 import { ProductCombobox } from "@/components/remediation/ProductCombobox";
+import { RemediationPlanTable } from "@/components/remediation/RemediationPlanTable";
+import { exportRemediationPlanPdf } from "@/lib/report/exportRemediationPlanPdf";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -331,7 +333,34 @@ GANTT_END.setMonth(GANTT_END.getMonth() + 12);
 
 /* ─── Component ─── */
 const Remediation: React.FC = () => {
-	const { organizationId: orgId, groupId } = useClientOrganization();
+	const { organizationId: orgId, groupId, selectedOrganization } =
+		useClientOrganization();
+	const planRef = useRef<HTMLDivElement>(null);
+	const [exportingPlan, setExportingPlan] = useState(false);
+	const planCompanyName =
+		(selectedOrganization as { legal_name?: string; name?: string } | null)
+			?.legal_name ||
+		(selectedOrganization as { legal_name?: string; name?: string } | null)?.name ||
+		"Cliente";
+
+	const handleExportPlan = useCallback(async () => {
+		if (!planRef.current) return;
+		setExportingPlan(true);
+		try {
+			await exportRemediationPlanPdf({
+				companyName: planCompanyName,
+				element: planRef.current,
+			});
+		} catch {
+			toast({
+				title: "Errore",
+				description: "Impossibile esportare il piano.",
+				variant: "destructive",
+			});
+		} finally {
+			setExportingPlan(false);
+		}
+	}, [planCompanyName]);
 	const { capabilities } = useAuth();
 	const canEdit = capabilities?.["hicompliance.remediation_tasks.edit"] ?? true;
 	const canUpdateProgress = capabilities?.["hicompliance.remediation_tasks.view"] ?? false;
@@ -1462,15 +1491,27 @@ const Remediation: React.FC = () => {
 							</DialogContent>
 						</Dialog>
 
-						<Button variant="outline">
+						<Button
+							variant="outline"
+							onClick={handleExportPlan}
+							disabled={exportingPlan}
+						>
 							<FileText className="w-4 h-4 mr-2" />
-							Esporta Piano
+							{exportingPlan ? "Esportazione…" : "Esporta Piano"}
 						</Button>
 						<Button className="bg-primary text-primary-foreground">
 							<CalendarDays className="w-4 h-4 mr-2" />
 							Pianifica Revisione
 						</Button>
 					</div>
+				</div>
+
+				{/* Sorgente offscreen per l'export PDF del Piano di Remediation */}
+				<div
+					style={{ position: "fixed", left: -10000, top: 0, pointerEvents: "none" }}
+					aria-hidden
+				>
+					<RemediationPlanTable ref={planRef} tasks={activeTasks} />
 				</div>
 
 				{/* Executive Summary Metrics */}
