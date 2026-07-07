@@ -7,10 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
 	DARKRISK_SCOPE_LIMIT,
+	DARKRISK_SCOPE_LIMIT_SUPERADMIN,
 	type DarkRiskScope,
 	type DarkRiskScopeTarget,
 } from "../domain/contracts";
 import { normalizeScopeTargets, normalizeScopeValue } from "../domain/scope";
+import { useUserRoles } from "@/hooks/useUserRoles";
 
 interface ScopeEditorProps {
 	scope: DarkRiskScope;
@@ -23,13 +25,17 @@ interface ScopeEditorProps {
 export const ScopeEditor = ({ scope, canManage, isLoading, isSaving, onSave }: ScopeEditorProps) => {
 	const [targets, setTargets] = useState<DarkRiskScopeTarget[]>(scope.targets);
 	const [candidate, setCandidate] = useState("");
+	const { isSuperAdmin } = useUserRoles();
+	const limit = isSuperAdmin
+		? DARKRISK_SCOPE_LIMIT_SUPERADMIN
+		: DARKRISK_SCOPE_LIMIT;
 
 	useEffect(() => setTargets(scope.targets), [scope.targets]);
 
 	const addTarget = () => {
 		try {
-			if (targets.length >= DARKRISK_SCOPE_LIMIT) {
-				throw new Error(`Hai raggiunto il limite di ${DARKRISK_SCOPE_LIMIT} target`);
+			if (targets.length >= limit) {
+				throw new Error(`Hai raggiunto il limite di ${limit} target`);
 			}
 			const normalized = normalizeScopeValue(candidate);
 			if (targets.some((target) => target.type === normalized.type && target.value === normalized.value)) {
@@ -47,7 +53,7 @@ export const ScopeEditor = ({ scope, canManage, isLoading, isSaving, onSave }: S
 
 	const save = async () => {
 		try {
-			await onSave({ targets: normalizeScopeTargets(targets.map((target) => target.value)) });
+			await onSave({ targets: normalizeScopeTargets(targets.map((target) => target.value), limit) });
 			toast.success("Scope DarkRisk360 aggiornato");
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : "Impossibile aggiornare lo scope");
@@ -59,7 +65,7 @@ export const ScopeEditor = ({ scope, canManage, isLoading, isSaving, onSave }: S
 			<CardHeader className="pb-3">
 				<div className="flex items-center justify-between gap-3">
 					<CardTitle className="text-base">Scope esterno condiviso</CardTitle>
-					<Badge variant="outline">{targets.length}/{DARKRISK_SCOPE_LIMIT} target</Badge>
+					<Badge variant="outline">{targets.length}/{limit} target</Badge>
 				</div>
 				<p className="text-xs text-muted-foreground">
 					Domini senza @ e IPv4 pubblici. Lo stesso scope alimenta SurfaceScan360 e i moduli DarkRisk attivi.
@@ -89,7 +95,7 @@ export const ScopeEditor = ({ scope, canManage, isLoading, isSaving, onSave }: S
 							placeholder="azienda.it oppure 203.40.9.1"
 							autoComplete="off"
 						/>
-						<Button type="button" variant="outline" onClick={addTarget} disabled={!candidate.trim() || targets.length >= DARKRISK_SCOPE_LIMIT}>
+						<Button type="button" variant="outline" onClick={addTarget} disabled={!candidate.trim() || targets.length >= limit}>
 							<Plus className="mr-2 h-4 w-4" /> Aggiungi
 						</Button>
 						<Button type="button" onClick={save} disabled={isSaving}>

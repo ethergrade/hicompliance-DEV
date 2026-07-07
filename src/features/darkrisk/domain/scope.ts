@@ -37,7 +37,10 @@ export const normalizeScopeValue = (
 	return { type: "domain", value };
 };
 
-export const normalizeScopeTargets = (values: string[]): DarkRiskScopeTarget[] => {
+export const normalizeScopeTargets = (
+	values: string[],
+	limit: number = DARKRISK_SCOPE_LIMIT,
+): DarkRiskScopeTarget[] => {
 	const unique = new Map<string, DarkRiskScopeTarget>();
 	for (const rawValue of values) {
 		const normalized = normalizeScopeValue(rawValue);
@@ -47,8 +50,8 @@ export const normalizeScopeTargets = (values: string[]): DarkRiskScopeTarget[] =
 			enabled: true,
 		});
 	}
-	if (unique.size > DARKRISK_SCOPE_LIMIT) {
-		throw new Error(`Lo scope può contenere al massimo ${DARKRISK_SCOPE_LIMIT} target complessivi`);
+	if (unique.size > limit) {
+		throw new Error(`Lo scope può contenere al massimo ${limit} target complessivi`);
 	}
 	return [...unique.values()];
 };

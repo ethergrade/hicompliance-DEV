@@ -1,4 +1,6 @@
 export const DARKRISK_SCOPE_LIMIT = 4;
+/** Limite elevato consentito ai super-admin (allineato al backend). */
+export const DARKRISK_SCOPE_LIMIT_SUPERADMIN = 20;
 
 export type DarkRiskScopeType = "domain" | "ip";
 
