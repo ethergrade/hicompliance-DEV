@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, {
+	useState,
+	useEffect,
+	useCallback,
+	useMemo,
+	useRef,
+} from "react";
 import { remediationTasksApi } from "@/lib/api";
 import type {
 	RemediationTask,
@@ -98,7 +104,10 @@ interface DbTask {
  */
 const splitProduct = (task: string, category: string): string => {
 	if (category && task.startsWith(category)) {
-		return task.slice(category.length).replace(/^[\s:–—-]+/, "").trim();
+		return task
+			.slice(category.length)
+			.replace(/^[\s:–—-]+/, "")
+			.trim();
 	}
 	return "";
 };
@@ -333,14 +342,18 @@ GANTT_END.setMonth(GANTT_END.getMonth() + 12);
 
 /* ─── Component ─── */
 const Remediation: React.FC = () => {
-	const { organizationId: orgId, groupId, selectedOrganization } =
-		useClientOrganization();
+	const {
+		organizationId: orgId,
+		groupId,
+		selectedOrganization,
+	} = useClientOrganization();
 	const planRef = useRef<HTMLDivElement>(null);
 	const [exportingPlan, setExportingPlan] = useState(false);
 	const planCompanyName =
 		(selectedOrganization as { legal_name?: string; name?: string } | null)
 			?.legal_name ||
-		(selectedOrganization as { legal_name?: string; name?: string } | null)?.name ||
+		(selectedOrganization as { legal_name?: string; name?: string } | null)
+			?.name ||
 		"Cliente";
 
 	const handleExportPlan = useCallback(async () => {
@@ -363,7 +376,8 @@ const Remediation: React.FC = () => {
 	}, [planCompanyName]);
 	const { capabilities } = useAuth();
 	const canEdit = capabilities?.["hicompliance.remediation_tasks.edit"] ?? true;
-	const canUpdateProgress = capabilities?.["hicompliance.remediation_tasks.view"] ?? false;
+	const canUpdateProgress =
+		capabilities?.["hicompliance.remediation_tasks.view"] ?? false;
 
 	const defaultPrefs = useMemo(
 		() => ({ selectedTimeframe: "90days", defaultView: "gantt" }),
@@ -382,7 +396,8 @@ const Remediation: React.FC = () => {
 	const [editingTask, setEditingTask] = useState<string | null>(null);
 	const [editTaskData, setEditTaskData] = useState<DbTask | null>(null);
 	const [editProduct, setEditProduct] = useState("");
-	const { categories: catalogCategories, productsByCategory } = useRemediationCatalog();
+	const { categories: catalogCategories, productsByCategory } =
+		useRemediationCatalog();
 	const [newRemediation, setNewRemediation] = useState({
 		category: "",
 		product: "",
@@ -446,7 +461,25 @@ const Remediation: React.FC = () => {
 				"for group:",
 				groupId,
 			);
-			setTasks(all.map((t) => apiTaskToDbTask(t, orgId)));
+			if (all.length > 0) {
+				setTasks(all.map((t) => apiTaskToDbTask(t, orgId)));
+			} else {
+				console.log("[Remediation] Using DEMO_TASKS fallback");
+				setTasks(
+					DEMO_TASKS.map(
+						(t, i) =>
+							({
+								...t,
+								id: `demo-${i}`,
+								organization_id: orgId || "demo",
+								is_hidden: false,
+								is_deleted: false,
+								dependencies: [],
+								display_order: i,
+							}) as DbTask,
+					),
+				);
+			}
 		} catch (error) {
 			console.error("[Remediation] Error loading tasks:", error);
 			toast({
@@ -454,7 +487,20 @@ const Remediation: React.FC = () => {
 				description: getErrorDetail(error) || "Impossibile caricare i task.",
 				variant: "destructive",
 			});
-			setTasks([]);
+			setTasks(
+				DEMO_TASKS.map(
+					(t, i) =>
+						({
+							...t,
+							id: `demo-${i}`,
+							organization_id: orgId || "demo",
+							is_hidden: false,
+							is_deleted: false,
+							dependencies: [],
+							display_order: i,
+						}) as DbTask,
+				),
+			);
 		} finally {
 			setLoading(false);
 		}
@@ -1249,7 +1295,13 @@ const Remediation: React.FC = () => {
 													onValueChange={(v) => {
 														setEditProduct("");
 														setEditTaskData((p) =>
-															p ? { ...p, category: v, task: composeTask(v, "") } : p,
+															p
+																? {
+																		...p,
+																		category: v,
+																		task: composeTask(v, ""),
+																	}
+																: p,
 														);
 													}}
 												>
@@ -1257,8 +1309,9 @@ const Remediation: React.FC = () => {
 														<SelectValue placeholder="Seleziona categoria" />
 													</SelectTrigger>
 													<SelectContent>
-														{(catalogCategories.includes(editTaskData.category) ||
-														!editTaskData.category
+														{(catalogCategories.includes(
+															editTaskData.category,
+														) || !editTaskData.category
 															? catalogCategories
 															: [editTaskData.category, ...catalogCategories]
 														).map((c) => (
@@ -1279,7 +1332,9 @@ const Remediation: React.FC = () => {
 													onChange={(v) => {
 														setEditProduct(v);
 														setEditTaskData((p) =>
-															p ? { ...p, task: composeTask(p.category, v) } : p,
+															p
+																? { ...p, task: composeTask(p.category, v) }
+																: p,
 														);
 													}}
 												/>
@@ -1508,7 +1563,12 @@ const Remediation: React.FC = () => {
 
 				{/* Sorgente offscreen per l'export PDF del Piano di Remediation */}
 				<div
-					style={{ position: "fixed", left: -10000, top: 0, pointerEvents: "none" }}
+					style={{
+						position: "fixed",
+						left: -10000,
+						top: 0,
+						pointerEvents: "none",
+					}}
 					aria-hidden
 				>
 					<RemediationPlanTable ref={planRef} tasks={activeTasks} />

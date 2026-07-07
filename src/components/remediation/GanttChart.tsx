@@ -96,9 +96,6 @@ const priorityBorder: Record<string, string> = {
 	Bassa: "border-l-green-500",
 };
 
-const MIN_SIDEBAR = 160; // 10rem in px
-const MIN_CAT = 96; // 6rem in px
-
 function pxToRem(px: number): string {
 	return `${(px / 16).toFixed(1)}rem`;
 }
@@ -118,9 +115,8 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const timelineRef = useRef<HTMLDivElement>(null);
 
-	// Column resize state
-	const [sidebarPx, setSidebarPx] = useState(288); // 18rem
-	const [catPx, setCatPx] = useState(128); // 8rem
+	const sidebarPx = 288; // 18rem
+	const catPx = 128; // 8rem
 
 	// Category filter
 	const [selectedCategory, setSelectedCategory] = useState<string>("all");
@@ -129,42 +125,6 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 		[tasks],
 	);
 
-	// Resize handler
-	const resizeRef = useRef<{ side: "sidebar" | "cat"; startX: number; startW: number } | null>(null);
-	const handleResizerDown = useCallback(
-		(e: React.PointerEvent, side: "sidebar" | "cat") => {
-			e.preventDefault();
-			(e.target as HTMLElement).setPointerCapture(e.pointerId);
-			const startW = side === "sidebar" ? sidebarPx : catPx;
-			resizeRef.current = { side, startX: e.clientX, startW };
-		},
-		[sidebarPx, catPx],
-	);
-	const handleResizerMove = useCallback((e: { clientX: number }) => {
-		const r = resizeRef.current;
-		if (!r) return;
-		const delta = e.clientX - r.startX;
-		const newW = r.startW + delta;
-		if (r.side === "sidebar") {
-			setSidebarPx(Math.max(MIN_SIDEBAR, newW));
-		} else {
-			setCatPx(Math.max(MIN_CAT, newW));
-		}
-	}, []);
-
-	useEffect(() => {
-		if (!resizeRef.current) return;
-		const onMove = (e: PointerEvent) => handleResizerMove(e);
-		const onUp = () => {
-			resizeRef.current = null;
-		};
-		window.addEventListener("pointermove", onMove);
-		window.addEventListener("pointerup", onUp);
-		return () => {
-			window.removeEventListener("pointermove", onMove);
-			window.removeEventListener("pointerup", onUp);
-		};
-	}, [handleResizerMove]);
 	const [liveDates, setLiveDates] = useState<
 		Record<string, { s: string; e: string }>
 	>({});
@@ -183,14 +143,16 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 		getTimelineWidth,
 	});
 
+	const timelineEndDate = useMemo(() => endOfMonth(ganttEndDate), [ganttEndDate]);
+
 	const months = useMemo(() => {
 		const result: { label: string; days: number }[] = [];
 		let cur = startOfMonth(ganttStartDate);
-		while (cur <= ganttEndDate) {
+		while (cur <= timelineEndDate) {
 			const next = addMonths(cur, 1);
 			const monthStart = cur < ganttStartDate ? ganttStartDate : cur;
 			const monthEnd =
-				endOfMonth(cur) > ganttEndDate ? ganttEndDate : endOfMonth(cur);
+				endOfMonth(cur) > timelineEndDate ? timelineEndDate : endOfMonth(cur);
 			const days = Math.max(
 				1,
 				differenceInCalendarDays(monthEnd, monthStart) + 1,
@@ -199,11 +161,11 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 			cur = next;
 		}
 		return result;
-	}, [ganttStartDate, ganttEndDate]);
+	}, [ganttStartDate, timelineEndDate]);
 
 	const totalDays = Math.max(
 		1,
-		differenceInCalendarDays(ganttEndDate, ganttStartDate) + 1,
+		differenceInCalendarDays(timelineEndDate, ganttStartDate) + 1,
 	);
 	const visibleTasks = useMemo(
 		() => tasks.filter((task) => !task.isHidden),
@@ -225,7 +187,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 			const rawEnd = parseISO(live ? live.e : task.endDate);
 			const start = rawStart < ganttStartDate ? ganttStartDate : rawStart;
 			const normalizedEnd = rawEnd < rawStart ? rawStart : rawEnd;
-			const end = normalizedEnd > ganttEndDate ? ganttEndDate : normalizedEnd;
+			const end = normalizedEnd > timelineEndDate ? timelineEndDate : normalizedEnd;
 			const daysFromStart = Math.max(
 				0,
 				differenceInCalendarDays(start, ganttStartDate),
@@ -245,7 +207,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 				duration,
 			};
 		},
-		[liveDates, ganttStartDate, totalDays],
+		[liveDates, ganttStartDate, timelineEndDate, totalDays],
 	);
 
 	const handleBarPointerDown = useCallback(
@@ -295,10 +257,11 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 	const canZoomIn = zoomIndex < ZOOM_LEVELS.length - 1;
 
 	const todayOffset = useMemo(() => {
-		const d = differenceInCalendarDays(new Date(), ganttStartDate);
-		if (d < 0 || d > totalDays) return null;
+		const now = new Date();
+		const d = differenceInCalendarDays(now, ganttStartDate);
+		if (d < 0 || now > timelineEndDate) return null;
 		return (d / totalDays) * 100;
-	}, [ganttStartDate, totalDays]);
+	}, [ganttStartDate, timelineEndDate, totalDays]);
 
 	useEffect(() => {
 		if (!activeDragId) return;
@@ -403,12 +366,12 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 
 			<CardContent className="p-0">
 				<div
-					className="overflow-x-auto select-none"
+					className="overflow-auto select-none max-w-full"
 					ref={scrollRef}
 					onPointerMove={onPointerMove}
 					onPointerUp={handlePointerUp}
 				>
-					<div style={{ minWidth: `${timelineMinWidth}px` }}>
+					<div style={{ minWidth: `${sidebarPx + catPx + timelineMinWidth}px` }}>
 						<div
 							className="grid border-b border-border bg-muted/50 sticky top-0 z-10"
 							style={{
@@ -422,17 +385,16 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 								Attività
 							</div>
 							<div
-								className="w-1.5 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 shrink-0 z-30 transition-colors"
-								onPointerDown={(e) => handleResizerDown(e, "sidebar")}
-							/>
-							<div
 								className="shrink-0 sticky z-20 bg-card px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider"
-																style={{ width: pxToRem(catPx), left: `calc(${pxToRem(sidebarPx)} + 0.375rem)` }}
+								style={{
+									width: pxToRem(catPx),
+									left: pxToRem(sidebarPx),
+								}}
 							>
 								Categoria
 							</div>
 							<div
-								className="grid flex-1"
+								className="grid flex-1 overflow-hidden"
 								ref={timelineRef}
 								style={{
 									minWidth: `${timelineMinWidth}px`,
@@ -473,7 +435,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 										>
 											<div
 												className={cn(
-													"shrink-0 sticky left-0 z-10 bg-background px-4 py-3 flex items-center gap-2 border-l-2",
+													"shrink-0 sticky left-0 z-30 bg-background px-4 py-3 flex items-center gap-2 border-l-2 shadow-[6px_0_10px_-10px_rgba(0,0,0,0.7)]",
 													priorityBorder[task.priority] || "border-l-border",
 												)}
 												style={{ width: pxToRem(sidebarPx) }}
@@ -490,7 +452,8 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 													}}
 													onDrop={(e) => {
 														e.preventDefault();
-														const draggedId = e.dataTransfer.getData("text/plain");
+														const draggedId =
+															e.dataTransfer.getData("text/plain");
 														if (draggedId && draggedId !== task.id) {
 															onReorderTasks(draggedId, idx);
 														}
@@ -560,12 +523,18 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 													</div>
 												)}
 											</div>
-											<div className="px-3 py-3 flex items-center text-xs text-muted-foreground bg-background min-w-0">
+											<div
+												className="sticky z-30 px-3 py-3 flex items-center text-xs text-muted-foreground bg-background min-w-0 shadow-[6px_0_10px_-10px_rgba(0,0,0,0.7)]"
+												style={{
+													width: pxToRem(catPx),
+													left: pxToRem(sidebarPx),
+												}}
+											>
 												<span className="truncate">{task.category || "—"}</span>
 											</div>
 
 											<div
-												className="relative"
+												className="relative z-0"
 												style={{ minWidth: `${timelineMinWidth}px` }}
 											>
 												<div
