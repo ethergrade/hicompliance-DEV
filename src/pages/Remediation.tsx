@@ -6,6 +6,8 @@ import type {
 	UpdateRemediationTaskRequest,
 } from "@/types/api";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
+import { useRemediationCatalog } from "@/hooks/useRemediationCatalog";
+import { ProductCombobox } from "@/components/remediation/ProductCombobox";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -86,6 +88,20 @@ interface DbTask {
 	dependencies: string[] | null;
 	organization_id: string | null;
 }
+
+/**
+ * Task remediation salvato come "Categoria - Prodotto" (retrocompatibilità col
+ * vecchio custom gantt). Il prodotto è tutto ciò che segue il prefisso categoria,
+ * col separatore " - " oppure ": " (es. "…accessi: Zero Trust - HiZTNA").
+ */
+const splitProduct = (task: string, category: string): string => {
+	if (category && task.startsWith(category)) {
+		return task.slice(category.length).replace(/^[\s:–—-]+/, "").trim();
+	}
+	return "";
+};
+const composeTask = (category: string, product: string): string =>
+	product.trim() ? `${category} - ${product.trim()}` : category;
 
 /* ─── Demo seed data ─── */
 const DEMO_TASKS = [
@@ -336,8 +352,11 @@ const Remediation: React.FC = () => {
 	const [loading, setLoading] = useState(true);
 	const [editingTask, setEditingTask] = useState<string | null>(null);
 	const [editTaskData, setEditTaskData] = useState<DbTask | null>(null);
+	const [editProduct, setEditProduct] = useState("");
+	const { categories: catalogCategories, productsByCategory } = useRemediationCatalog();
 	const [newRemediation, setNewRemediation] = useState({
 		category: "",
+		product: "",
 		priority: "",
 		description: "",
 		estimatedDays: "",
@@ -540,6 +559,7 @@ const Remediation: React.FC = () => {
 
 	const handleEditTask = useCallback((action: GanttTask) => {
 		setEditingTask(action.id);
+		setEditProduct(splitProduct(action.task, action.category));
 		setEditTaskData({
 			task: action.task,
 			category: action.category,
@@ -746,6 +766,7 @@ const Remediation: React.FC = () => {
 			});
 			setNewRemediation({
 				category: "",
+				product: "",
 				priority: "",
 				description: "",
 				estimatedDays: "",
@@ -913,57 +934,61 @@ const Remediation: React.FC = () => {
 											<Select
 												value={newRemediation.category}
 												onValueChange={(v) =>
-													setNewRemediation((p) => ({ ...p, category: v }))
+													setNewRemediation((p) => ({
+														...p,
+														category: v,
+														product: "",
+														description: composeTask(v, ""),
+													}))
 												}
 											>
 												<SelectTrigger>
 													<SelectValue placeholder="Seleziona categoria" />
 												</SelectTrigger>
 												<SelectContent>
-													<SelectItem value="identity_management">
-														Gestione delle identità
-													</SelectItem>
-													<SelectItem value="software_development">
-														Sviluppo software
-													</SelectItem>
-													<SelectItem value="supplier_management">
-														Gestione fornitori
-													</SelectItem>
-													<SelectItem value="maintenance">
-														Manutenzione continua
-													</SelectItem>
-													<SelectItem value="governance">Governance</SelectItem>
-													<SelectItem value="encryption">
-														Crittografia
-													</SelectItem>
-													<SelectItem value="incident_management">
-														Gestione incidenti
-													</SelectItem>
-													<SelectItem value="risk_management">
-														Gestione del rischio
-													</SelectItem>
+													{catalogCategories.map((c) => (
+														<SelectItem key={c} value={c}>
+															{c}
+														</SelectItem>
+													))}
 												</SelectContent>
 											</Select>
 										</div>
 										<div className="space-y-2">
-											<Label>Priorità</Label>
-											<Select
-												value={newRemediation.priority}
-												onValueChange={(v) =>
-													setNewRemediation((p) => ({ ...p, priority: v }))
+											<Label>Prodotto</Label>
+											<ProductCombobox
+												value={newRemediation.product}
+												options={
+													productsByCategory[newRemediation.category] ?? []
 												}
-											>
-												<SelectTrigger>
-													<SelectValue placeholder="Seleziona priorità" />
-												</SelectTrigger>
-												<SelectContent>
-													<SelectItem value="critica">Critica</SelectItem>
-													<SelectItem value="alta">Alta</SelectItem>
-													<SelectItem value="media">Media</SelectItem>
-													<SelectItem value="bassa">Bassa</SelectItem>
-												</SelectContent>
-											</Select>
+												onChange={(v) =>
+													setNewRemediation((p) => ({
+														...p,
+														product: v,
+														description: composeTask(p.category, v),
+													}))
+												}
+											/>
 										</div>
+									</div>
+									<div className="space-y-2">
+										<Label>Priorità</Label>
+										<Select
+											value={newRemediation.priority}
+											onValueChange={(v) =>
+												setNewRemediation((p) => ({ ...p, priority: v }))
+											}
+										>
+											<SelectTrigger>
+												<SelectValue placeholder="Seleziona priorità" />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="critica">Critica</SelectItem>
+												<SelectItem value="alta">Alta</SelectItem>
+												<SelectItem value="media">Media</SelectItem>
+												<SelectItem value="bassa">Bassa</SelectItem>
+											</SelectContent>
+										</Select>
 									</div>
 									<div className="space-y-2">
 										<Label>Descrizione Remediation</Label>
@@ -1187,6 +1212,69 @@ const Remediation: React.FC = () => {
 								</DialogHeader>
 								{editTaskData && (
 									<div className="space-y-4 py-4">
+										<div className="grid grid-cols-2 gap-4">
+											<div className="space-y-2">
+												<Label>Categoria</Label>
+												<Select
+													value={editTaskData.category}
+													onValueChange={(v) => {
+														setEditProduct("");
+														setEditTaskData((p) =>
+															p ? { ...p, category: v, task: composeTask(v, "") } : p,
+														);
+													}}
+												>
+													<SelectTrigger>
+														<SelectValue placeholder="Seleziona categoria" />
+													</SelectTrigger>
+													<SelectContent>
+														{(catalogCategories.includes(editTaskData.category) ||
+														!editTaskData.category
+															? catalogCategories
+															: [editTaskData.category, ...catalogCategories]
+														).map((c) => (
+															<SelectItem key={c} value={c}>
+																{c}
+															</SelectItem>
+														))}
+													</SelectContent>
+												</Select>
+											</div>
+											<div className="space-y-2">
+												<Label>Prodotto</Label>
+												<ProductCombobox
+													value={editProduct}
+													options={
+														productsByCategory[editTaskData.category] ?? []
+													}
+													onChange={(v) => {
+														setEditProduct(v);
+														setEditTaskData((p) =>
+															p ? { ...p, task: composeTask(p.category, v) } : p,
+														);
+													}}
+												/>
+											</div>
+										</div>
+										<div className="space-y-2">
+											<Label>Priorità</Label>
+											<Select
+												value={editTaskData.priority}
+												onValueChange={(v) =>
+													setEditTaskData((p) => ({ ...p, priority: v }))
+												}
+											>
+												<SelectTrigger>
+													<SelectValue />
+												</SelectTrigger>
+												<SelectContent>
+													<SelectItem value="Critica">Critica</SelectItem>
+													<SelectItem value="Alta">Alta</SelectItem>
+													<SelectItem value="Media">Media</SelectItem>
+													<SelectItem value="Bassa">Bassa</SelectItem>
+												</SelectContent>
+											</Select>
+										</div>
 										<div className="space-y-2">
 											<Label>Descrizione Attività</Label>
 											<Textarea
@@ -1199,75 +1287,6 @@ const Remediation: React.FC = () => {
 												}
 												rows={3}
 											/>
-										</div>
-										<div className="grid grid-cols-2 gap-4">
-											<div className="space-y-2">
-												<Label>Categoria</Label>
-												<Select
-													value={editTaskData.category}
-													onValueChange={(v) =>
-														setEditTaskData((p) => ({ ...p, category: v }))
-													}
-												>
-													<SelectTrigger>
-														<SelectValue />
-													</SelectTrigger>
-													<SelectContent>
-														<SelectItem value="Gestione delle identità">
-															Gestione delle identità
-														</SelectItem>
-														<SelectItem value="Sviluppo software">
-															Sviluppo software
-														</SelectItem>
-														<SelectItem value="Gestione fornitori">
-															Gestione fornitori
-														</SelectItem>
-														<SelectItem value="Business Continuity">
-															Business Continuity
-														</SelectItem>
-														<SelectItem value="Incident Management">
-															Incident Management
-														</SelectItem>
-														<SelectItem value="Network Security">
-															Network Security
-														</SelectItem>
-														<SelectItem value="Crittografia">
-															Crittografia
-														</SelectItem>
-														<SelectItem value="Manutenzione">
-															Manutenzione
-														</SelectItem>
-														<SelectItem value="HR & Formazione">
-															HR & Formazione
-														</SelectItem>
-														<SelectItem value="Certificazioni">
-															Certificazioni
-														</SelectItem>
-														<SelectItem value="Governance">
-															Governance
-														</SelectItem>
-													</SelectContent>
-												</Select>
-											</div>
-											<div className="space-y-2">
-												<Label>Priorità</Label>
-												<Select
-													value={editTaskData.priority}
-													onValueChange={(v) =>
-														setEditTaskData((p) => ({ ...p, priority: v }))
-													}
-												>
-													<SelectTrigger>
-														<SelectValue />
-													</SelectTrigger>
-													<SelectContent>
-														<SelectItem value="Critica">Critica</SelectItem>
-														<SelectItem value="Alta">Alta</SelectItem>
-														<SelectItem value="Media">Media</SelectItem>
-														<SelectItem value="Bassa">Bassa</SelectItem>
-													</SelectContent>
-												</Select>
-											</div>
 										</div>
 										<div className="grid grid-cols-2 gap-4">
 											<div className="space-y-2">
