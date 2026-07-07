@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import {
 	Card,
 	CardContent,
@@ -14,35 +14,11 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-	AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Play, Trash2, Globe } from "lucide-react";
+import { Loader2, Play, Globe } from "lucide-react";
 import { useSurfaceExternalEndpoints } from "@/hooks/useSurfaceExternalEndpoints";
-import type {
-	ExternalEndpointAddressType,
-	ExternalEndpointScanProfile,
-} from "@/lib/api/surface-scan360";
+import type { ExternalEndpointAddressType } from "@/lib/api/surface-scan360";
 
 const ADDRESS_TYPE_LABELS: Record<ExternalEndpointAddressType, string> = {
 	static_ip: "Static IP",
