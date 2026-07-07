@@ -143,10 +143,18 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 		getTimelineWidth,
 	});
 
-	const timelineEndDate = useMemo(() => endOfMonth(ganttEndDate), [ganttEndDate]);
+	const timelineEndDate = useMemo(
+		() => endOfMonth(ganttEndDate),
+		[ganttEndDate],
+	);
 
 	const months = useMemo(() => {
-		const result: { label: string; days: number }[] = [];
+		const result: {
+			label: string;
+			year: number;
+			isYearStart: boolean;
+			days: number;
+		}[] = [];
 		let cur = startOfMonth(ganttStartDate);
 		while (cur <= timelineEndDate) {
 			const next = addMonths(cur, 1);
@@ -157,7 +165,12 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 				1,
 				differenceInCalendarDays(monthEnd, monthStart) + 1,
 			);
-			result.push({ label: MONTHS_IT[cur.getMonth()], days });
+			result.push({
+				label: MONTHS_IT[cur.getMonth()],
+				year: cur.getFullYear(),
+				isYearStart: cur.getMonth() === 0 || result.length === 0,
+				days,
+			});
 			cur = next;
 		}
 		return result;
@@ -187,7 +200,8 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 			const rawEnd = parseISO(live ? live.e : task.endDate);
 			const start = rawStart < ganttStartDate ? ganttStartDate : rawStart;
 			const normalizedEnd = rawEnd < rawStart ? rawStart : rawEnd;
-			const end = normalizedEnd > timelineEndDate ? timelineEndDate : normalizedEnd;
+			const end =
+				normalizedEnd > timelineEndDate ? timelineEndDate : normalizedEnd;
 			const daysFromStart = Math.max(
 				0,
 				differenceInCalendarDays(start, ganttStartDate),
@@ -250,9 +264,12 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 		[onPointerUp, activeDragId, liveDates, onDateChange],
 	);
 
-	const scroll = (dir: number) =>
+	const scroll = (dir: -1 | 1) => {
 		scrollRef.current?.scrollBy({ left: dir * 300, behavior: "smooth" });
-	const timelineMinWidth = ZOOM_LEVELS[zoomIndex];
+	};
+	const timelineMinWidth = Math.round(
+		ZOOM_LEVELS[zoomIndex] * Math.max(1, months.length / 14),
+	);
 	const canZoomOut = zoomIndex > 0;
 	const canZoomIn = zoomIndex < ZOOM_LEVELS.length - 1;
 
@@ -299,7 +316,8 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 				<div className="flex items-center justify-between">
 					<CardTitle className="flex items-center gap-2 text-base">
 						<Calendar className="w-5 h-5" />
-						GANTT Operativo — Timeline {ganttStartDate.getFullYear()}
+						GANTT Operativo — Timeline {ganttStartDate.getFullYear()}–
+						{timelineEndDate.getFullYear()}
 					</CardTitle>
 					<div className="flex items-center gap-1">
 						<Button
@@ -366,12 +384,14 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 
 			<CardContent className="p-0">
 				<div
-					className="overflow-auto select-none max-w-full"
+					className="overflow-auto select-none max-w-full [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
 					ref={scrollRef}
 					onPointerMove={onPointerMove}
 					onPointerUp={handlePointerUp}
 				>
-					<div style={{ minWidth: `${sidebarPx + catPx + timelineMinWidth}px` }}>
+					<div
+						style={{ minWidth: `${sidebarPx + catPx + timelineMinWidth}px` }}
+					>
 						<div
 							className="grid border-b border-border bg-muted/50 sticky top-0 z-10"
 							style={{
@@ -404,9 +424,19 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 								{months.map((m, i) => (
 									<div
 										key={`${m.label}-${i}`}
-										className="border-l border-border/40 text-center text-[11px] font-medium text-muted-foreground py-3"
+										className={cn(
+											"border-l text-center text-[11px] font-medium py-2",
+											m.isYearStart
+												? "border-l-primary/60 bg-primary/5 text-foreground"
+												: "border-border/40 text-muted-foreground",
+										)}
 									>
-										{m.label}
+										<div>{m.label}</div>
+										{m.isYearStart && (
+											<div className="mt-0.5 text-[10px] font-semibold text-primary">
+												{m.year}
+											</div>
+										)}
 									</div>
 								))}
 							</div>
@@ -544,7 +574,12 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 													{months.map((m, i) => (
 														<div
 															key={`grid-${m.label}-${i}`}
-															className="border-l border-border/25"
+															className={cn(
+																"border-l",
+																m.isYearStart
+																	? "border-l-primary/50 bg-primary/5"
+																	: "border-border/25",
+															)}
 														/>
 													))}
 												</div>

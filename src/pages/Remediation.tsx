@@ -1,9 +1,4 @@
-import React, {
-	useState,
-	useEffect,
-	useCallback,
-	useRef,
-} from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { remediationTasksApi } from "@/lib/api";
 import type {
 	RemediationTask,
@@ -45,12 +40,7 @@ import {
 	PopoverTrigger,
 } from "@/components/ui/popover";
 import { GanttChart, GanttTask } from "@/components/remediation/GanttChart";
-import {
-	format,
-	addDays,
-	differenceInDays,
-	parseISO,
-} from "date-fns";
+import { format, addDays, differenceInDays, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
 import {
 	AlertTriangle,
@@ -118,6 +108,15 @@ const splitProduct = (task: string, category: string): string => {
 const composeTask = (category: string, product: string): string =>
 	product.trim() ? `${category} - ${product.trim()}` : category;
 
+
+const createGanttWindow = () => {
+	const start = new Date();
+	const end = new Date();
+	start.setMonth(start.getMonth() - 1);
+	end.setMonth(end.getMonth() + 30);
+	return { start, end };
+};
+
 const PRIORITY_DB_TO_IT: Record<string, string> = {
 	critical: "Critica",
 	high: "Alta",
@@ -134,13 +133,6 @@ const PRIORITY_IT_TO_DB: Record<string, string> = {
 	media: "medium",
 	bassa: "low",
 };
-
-// Gantt defaults: da 1 mese prima di oggi a 12 mesi dopo
-// Le date sono ricomputate a ogni mount del componente
-const GANTT_START = new Date();
-const GANTT_END = new Date();
-GANTT_START.setMonth(GANTT_START.getMonth() - 1);
-GANTT_END.setMonth(GANTT_END.getMonth() + 12);
 
 /* ─── Component ─── */
 const Remediation: React.FC = () => {
@@ -180,7 +172,7 @@ const Remediation: React.FC = () => {
 	const canEdit = capabilities?.["hicompliance.remediation_tasks.edit"] ?? true;
 	const canUpdateProgress =
 		capabilities?.["hicompliance.remediation_tasks.view"] ?? false;
-
+	const [ganttWindow] = useState(createGanttWindow);
 
 	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 	const [tasks, setTasks] = useState<DbTask[]>([]);
@@ -201,7 +193,6 @@ const Remediation: React.FC = () => {
 		complexity: "medium",
 		startDate: "",
 	});
-
 
 	/* ─── Mappers v2 (RemediationTask ↔ DbTask) ─── */
 	const apiTaskToDbTask = useCallback(
@@ -269,8 +260,11 @@ const Remediation: React.FC = () => {
 	const deletedTasksList = tasks.filter((t) => t.is_deleted);
 
 	const ganttData: GanttTask[] = activeTasks.map((t) => {
-		const totalDays = differenceInDays(GANTT_END, GANTT_START);
-		const daysFromStart = differenceInDays(parseISO(t.start_date), GANTT_START);
+		const totalDays = differenceInDays(ganttWindow.end, ganttWindow.start);
+		const daysFromStart = differenceInDays(
+			parseISO(t.start_date),
+			ganttWindow.start,
+		);
 		const duration = differenceInDays(
 			parseISO(t.end_date),
 			parseISO(t.start_date),
@@ -618,7 +612,6 @@ const Remediation: React.FC = () => {
 			});
 		}
 	};
-
 
 	const criticalTasks = activeTasks.filter((t) => t.priority === "critical");
 	const highPriorityTasks = activeTasks.filter((t) => t.priority === "high");
@@ -1371,8 +1364,8 @@ const Remediation: React.FC = () => {
 						) : (
 							<GanttChart
 								tasks={ganttData}
-								ganttStartDate={GANTT_START}
-								ganttEndDate={GANTT_END}
+								ganttStartDate={ganttWindow.start}
+								ganttEndDate={ganttWindow.end}
 								onDateChange={handleDateChange}
 								onEditTask={handleEditTask}
 								onToggleVisibility={handleToggleVisibility}
