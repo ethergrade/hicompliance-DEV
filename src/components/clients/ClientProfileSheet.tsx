@@ -716,7 +716,14 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
   const darkriskService = tenantServices.find(
     (s) => s.service_type === "darkrisk" && (s.status === "active" || !s.status),
   );
-  const showNetworkFields = !!hicomplianceService;
+  // I campi di rete (domini/IP primari + scope esteso) sono lo scope condiviso
+  // di HiCompliance, SurfaceScan360 e DarkRisk360: vanno mostrati se è attivo
+  // uno qualsiasi dei tre, non solo HiCompliance.
+  const showNetworkFields = !!(
+    hicomplianceService ||
+    surfacescanService ||
+    darkriskService
+  );
   const isExtendedLicense =
     hicomplianceService?.settings?.license === "extended" ||
     !!(surfacescanService?.settings as any)?.extended_range ||
