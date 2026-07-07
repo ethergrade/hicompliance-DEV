@@ -2,7 +2,6 @@ import React, {
 	useState,
 	useEffect,
 	useCallback,
-	useMemo,
 	useRef,
 } from "react";
 import { remediationTasksApi } from "@/lib/api";
@@ -21,7 +20,6 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
 	Dialog,
@@ -50,8 +48,6 @@ import { GanttChart, GanttTask } from "@/components/remediation/GanttChart";
 import {
 	format,
 	addDays,
-	addMonths,
-	subMonths,
 	differenceInDays,
 	parseISO,
 } from "date-fns";
@@ -63,10 +59,8 @@ import {
 	Clock,
 	FileText,
 	TrendingUp,
-	Users,
 	Target,
 	Wrench,
-	BarChart3,
 	CalendarDays,
 	Plus,
 	Calculator,
@@ -75,7 +69,6 @@ import {
 	Settings,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import { useUserPreferences } from "@/hooks/useUserPreferences";
 import { getErrorDetail } from "@/lib/api-client";
 
 /* ─── Types ─── */
@@ -97,6 +90,17 @@ interface DbTask {
 	organization_id: string | null;
 }
 
+interface EditTaskData {
+	task: string;
+	category: string;
+	assignee: string | null;
+	priority: string;
+	progress: number;
+	budget: number | null;
+	startDate: string;
+	endDate: string;
+}
+
 /**
  * Task remediation salvato come "Categoria - Prodotto" (retrocompatibilità col
  * vecchio custom gantt). Il prodotto è tutto ciò che segue il prefisso categoria,
@@ -113,208 +117,6 @@ const splitProduct = (task: string, category: string): string => {
 };
 const composeTask = (category: string, product: string): string =>
 	product.trim() ? `${category} - ${product.trim()}` : category;
-
-/* ─── Demo seed data ─── */
-const DEMO_TASKS = [
-	{
-		task: "Implementazione IAM centralizzato",
-		category: "Gestione delle identità",
-		start_date: "2026-01-15",
-		end_date: "2026-03-01",
-		progress: 65,
-		assignee: "IT Security Team",
-		priority: "critical",
-		color: "#DC2626",
-		budget: 16500,
-	},
-	{
-		task: "Audit accessi privilegiati",
-		category: "Gestione delle identità",
-		start_date: "2026-01-20",
-		end_date: "2026-02-15",
-		progress: 100,
-		assignee: "Security Auditor",
-		priority: "critical",
-		color: "#DC2626",
-		budget: 8000,
-	},
-	{
-		task: "Implementazione SAST/DAST",
-		category: "Sviluppo software",
-		start_date: "2026-02-01",
-		end_date: "2026-04-01",
-		progress: 40,
-		assignee: "DevSecOps Team",
-		priority: "high",
-		color: "#EA580C",
-		budget: 18000,
-	},
-	{
-		task: "Training sviluppatori Secure Coding",
-		category: "Sviluppo software",
-		start_date: "2026-01-25",
-		end_date: "2026-02-25",
-		progress: 100,
-		assignee: "HR & Security",
-		priority: "high",
-		color: "#EA580C",
-		budget: 7500,
-	},
-	{
-		task: "Assessment fornitori critici",
-		category: "Gestione fornitori",
-		start_date: "2026-02-15",
-		end_date: "2026-03-15",
-		progress: 80,
-		assignee: "Procurement Team",
-		priority: "medium",
-		color: "#EAB308",
-		budget: 4500,
-	},
-	{
-		task: "Implementazione procedure backup",
-		category: "Business Continuity",
-		start_date: "2026-03-01",
-		end_date: "2026-04-15",
-		progress: 25,
-		assignee: "Operations Team",
-		priority: "high",
-		color: "#EA580C",
-		budget: 6000,
-	},
-	{
-		task: "Implementazione Incident Response Plan",
-		category: "Incident Management",
-		start_date: "2026-02-10",
-		end_date: "2026-03-20",
-		progress: 50,
-		assignee: "IT Security Team",
-		priority: "high",
-		color: "#EA580C",
-		budget: 8000,
-	},
-	{
-		task: "Deployment MFA aziendale",
-		category: "Gestione delle identità",
-		start_date: "2026-03-15",
-		end_date: "2026-05-01",
-		progress: 10,
-		assignee: "IT Security Team",
-		priority: "critical",
-		color: "#DC2626",
-		budget: 12000,
-	},
-	{
-		task: "Penetration Test infrastruttura",
-		category: "Network Security",
-		start_date: "2026-04-01",
-		end_date: "2026-05-15",
-		progress: 0,
-		assignee: "Security Auditor",
-		priority: "high",
-		color: "#EA580C",
-		budget: 15000,
-	},
-	{
-		task: "Revisione policy crittografia",
-		category: "Crittografia",
-		start_date: "2026-04-15",
-		end_date: "2026-06-01",
-		progress: 0,
-		assignee: "Compliance Team",
-		priority: "medium",
-		color: "#EAB308",
-		budget: 5000,
-	},
-	{
-		task: "Implementazione SIEM / SOC",
-		category: "Network Security",
-		start_date: "2026-05-01",
-		end_date: "2026-08-01",
-		progress: 0,
-		assignee: "IT Security Team",
-		priority: "critical",
-		color: "#DC2626",
-		budget: 45000,
-	},
-	{
-		task: "Hardening server e endpoint",
-		category: "Manutenzione",
-		start_date: "2026-05-15",
-		end_date: "2026-07-15",
-		progress: 0,
-		assignee: "Operations Team",
-		priority: "high",
-		color: "#EA580C",
-		budget: 9000,
-	},
-	{
-		task: "Awareness training dipendenti Q3",
-		category: "HR & Formazione",
-		start_date: "2026-07-01",
-		end_date: "2026-08-15",
-		progress: 0,
-		assignee: "HR & Training",
-		priority: "medium",
-		color: "#EAB308",
-		budget: 6500,
-	},
-	{
-		task: "Disaster Recovery test annuale",
-		category: "Business Continuity",
-		start_date: "2026-09-01",
-		end_date: "2026-10-15",
-		progress: 0,
-		assignee: "Operations Team",
-		priority: "high",
-		color: "#EA580C",
-		budget: 8000,
-	},
-	{
-		task: "Certificazione ISO 27001 — audit fase 1",
-		category: "Certificazioni",
-		start_date: "2026-09-15",
-		end_date: "2026-11-30",
-		progress: 0,
-		assignee: "Compliance Team",
-		priority: "critical",
-		color: "#DC2626",
-		budget: 25000,
-	},
-	{
-		task: "Revisione contratti fornitori IT",
-		category: "Gestione fornitori",
-		start_date: "2026-06-01",
-		end_date: "2026-07-15",
-		progress: 0,
-		assignee: "Procurement Team",
-		priority: "low",
-		color: "#22C55E",
-		budget: 3000,
-	},
-	{
-		task: "Tabletop exercise — simulazione incidente",
-		category: "Incident Management",
-		start_date: "2026-10-01",
-		end_date: "2026-11-01",
-		progress: 0,
-		assignee: "IT Security Team",
-		priority: "high",
-		color: "#EA580C",
-		budget: 4000,
-	},
-	{
-		task: "NIS2 gap remediation finale",
-		category: "Governance",
-		start_date: "2026-11-01",
-		end_date: "2026-12-15",
-		progress: 0,
-		assignee: "Compliance Team",
-		priority: "critical",
-		color: "#DC2626",
-		budget: 20000,
-	},
-];
 
 const PRIORITY_DB_TO_IT: Record<string, string> = {
 	critical: "Critica",
@@ -379,22 +181,12 @@ const Remediation: React.FC = () => {
 	const canUpdateProgress =
 		capabilities?.["hicompliance.remediation_tasks.view"] ?? false;
 
-	const defaultPrefs = useMemo(
-		() => ({ selectedTimeframe: "90days", defaultView: "gantt" }),
-		[],
-	);
-	const { preferences, updatePreferences } = useUserPreferences({
-		preferenceKey: "remediation_filters",
-		defaultPreferences: defaultPrefs,
-		groupId,
-	});
 
-	const [selectedTimeframe, setSelectedTimeframeState] = useState("90days");
 	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 	const [tasks, setTasks] = useState<DbTask[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [editingTask, setEditingTask] = useState<string | null>(null);
-	const [editTaskData, setEditTaskData] = useState<DbTask | null>(null);
+	const [editTaskData, setEditTaskData] = useState<EditTaskData | null>(null);
 	const [editProduct, setEditProduct] = useState("");
 	const { categories: catalogCategories, productsByCategory } =
 		useRemediationCatalog();
@@ -410,15 +202,6 @@ const Remediation: React.FC = () => {
 		startDate: "",
 	});
 
-	useEffect(() => {
-		if (preferences.selectedTimeframe)
-			setSelectedTimeframeState(preferences.selectedTimeframe as string);
-	}, [preferences.selectedTimeframe]);
-
-	const setSelectedTimeframe = (value: string) => {
-		setSelectedTimeframeState(value);
-		updatePreferences({ selectedTimeframe: value });
-	};
 
 	/* ─── Mappers v2 (RemediationTask ↔ DbTask) ─── */
 	const apiTaskToDbTask = useCallback(
@@ -461,25 +244,7 @@ const Remediation: React.FC = () => {
 				"for group:",
 				groupId,
 			);
-			if (all.length > 0) {
-				setTasks(all.map((t) => apiTaskToDbTask(t, orgId)));
-			} else {
-				console.log("[Remediation] Using DEMO_TASKS fallback");
-				setTasks(
-					DEMO_TASKS.map(
-						(t, i) =>
-							({
-								...t,
-								id: `demo-${i}`,
-								organization_id: orgId || "demo",
-								is_hidden: false,
-								is_deleted: false,
-								dependencies: [],
-								display_order: i,
-							}) as DbTask,
-					),
-				);
-			}
+			setTasks(all.map((t) => apiTaskToDbTask(t, orgId)));
 		} catch (error) {
 			console.error("[Remediation] Error loading tasks:", error);
 			toast({
@@ -487,20 +252,7 @@ const Remediation: React.FC = () => {
 				description: getErrorDetail(error) || "Impossibile caricare i task.",
 				variant: "destructive",
 			});
-			setTasks(
-				DEMO_TASKS.map(
-					(t, i) =>
-						({
-							...t,
-							id: `demo-${i}`,
-							organization_id: orgId || "demo",
-							is_hidden: false,
-							is_deleted: false,
-							dependencies: [],
-							display_order: i,
-						}) as DbTask,
-				),
-			);
+			setTasks([]);
 		} finally {
 			setLoading(false);
 		}
@@ -572,7 +324,12 @@ const Remediation: React.FC = () => {
 				console.error("[Remediation] Error updating task:", err);
 				const detail = getErrorDetail(err);
 				// 404 → task was deleted elsewhere; refetch silently
-				if (err?.status === 404) {
+				if (
+					typeof err === "object" &&
+					err !== null &&
+					"status" in err &&
+					(err as { status?: number }).status === 404
+				) {
 					await loadTasks();
 					return;
 				}
@@ -862,82 +619,9 @@ const Remediation: React.FC = () => {
 		}
 	};
 
-	/* ─── Static data ─── */
-	const criticalCategories = [
-		{
-			name: "Gestione delle identità Gestione degli accessi",
-			riskLevel: "Alto",
-			priority: "Critica",
-			completed: 5,
-			total: 28,
-			status: "not_started",
-			estimatedDays: 45,
-			assignedTeam: "IT Security",
-			budget: "€16,500",
-		},
-		{
-			name: "Sviluppo software",
-			riskLevel: "Alto",
-			priority: "Alta",
-			completed: 1,
-			total: 23,
-			status: "planned_in_progress",
-			estimatedDays: 60,
-			assignedTeam: "Development",
-			budget: "€18,000",
-		},
-		{
-			name: "Gestione fornitori e acquisti",
-			riskLevel: "Medio",
-			priority: "Media",
-			completed: 1,
-			total: 19,
-			status: "planned_in_progress",
-			estimatedDays: 30,
-			assignedTeam: "Procurement",
-			budget: "€4,500",
-		},
-		{
-			name: "Manutenzione e miglioramento continuo",
-			riskLevel: "Medio",
-			priority: "Media",
-			completed: 1,
-			total: 17,
-			status: "planned_in_progress",
-			estimatedDays: 35,
-			assignedTeam: "Operations",
-			budget: "€4,500",
-		},
-	];
-
-	const getRiskColor = (level: string) => {
-		switch (level) {
-			case "Alto":
-				return "text-red-500";
-			case "Medio":
-				return "text-yellow-500";
-			case "Basso":
-				return "text-green-500";
-			default:
-				return "text-gray-500";
-		}
-	};
-	const getPriorityColor = (priority: string) => {
-		switch (priority) {
-			case "Critica":
-				return "destructive";
-			case "Alta":
-				return "default";
-			case "Media":
-				return "secondary";
-			default:
-				return "outline";
-		}
-	};
 
 	const criticalTasks = activeTasks.filter((t) => t.priority === "critical");
 	const highPriorityTasks = activeTasks.filter((t) => t.priority === "high");
-	const completedTasks = activeTasks.filter((t) => t.progress >= 100);
 	const totalProgress =
 		activeTasks.length > 0
 			? Math.round(
