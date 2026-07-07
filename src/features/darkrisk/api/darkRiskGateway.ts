@@ -104,7 +104,9 @@ export const darkRiskGateway = {
 				const response = await complianceApiClient.put<ApiResponse<unknown>>(
 					`/companies/${companyId}/external-scope`,
 					{
-						targets: scope.targets.map(({ type, value }) => ({ type, value })),
+						// Il backend accetta un array di stringhe (domini/IP) e rileva
+						// il target_type da sé; inviare {type,value} dà 422.
+						targets: scope.targets.map(({ value }) => value),
 					},
 					requestOptions(groupId),
 				);
