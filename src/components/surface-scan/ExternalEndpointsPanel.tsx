@@ -50,39 +50,9 @@ const ADDRESS_TYPE_LABELS: Record<ExternalEndpointAddressType, string> = {
 	ip_range: "IP Range",
 };
 
-const emptyForm = {
-	name: "",
-	address_type: "domain" as ExternalEndpointAddressType,
-	address_value: "",
-	scan_profile: "quick" as ExternalEndpointScanProfile,
-	enabled: true,
-};
-
 const ExternalEndpointsPanel: React.FC = () => {
-	const {
-		endpoints,
-		loading,
-		saving,
-		isAdmin,
-		canDeep,
-		createEndpoint,
-		deleteEndpoint,
-		runEndpoint,
-	} = useSurfaceExternalEndpoints();
-
-	const [form, setForm] = useState({ ...emptyForm });
-
-	const handleCreate = async () => {
-		if (!form.name.trim() || !form.address_value.trim()) return;
-		const ok = await createEndpoint({
-			name: form.name.trim(),
-			address_type: form.address_type,
-			address_value: form.address_value.trim(),
-			scan_profile: form.scan_profile,
-			enabled: form.enabled,
-		});
-		if (ok) setForm({ ...emptyForm });
-	};
+	const { endpoints, loading, saving, isAdmin, runEndpoint } =
+		useSurfaceExternalEndpoints();
 
 	const statusVariant = (status: string | null) => {
 		switch (status) {
@@ -106,101 +76,17 @@ const ExternalEndpointsPanel: React.FC = () => {
 					External Endpoints
 				</CardTitle>
 				<CardDescription>
-					Configura gli endpoint esterni (domini, IP pubblici, range) da
-					sottoporre a External Exposure Scan.
+					Endpoint sottoposti a External Exposure Scan. Sono derivati
+					automaticamente dallo scope monitorato (domini e IP): per
+					aggiungerli o rimuoverli, modifica lo scope in “Scope”.
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-6">
-				{isAdmin && (
-					<div className="grid gap-3 rounded-lg border p-4 md:grid-cols-2">
-						<div className="space-y-1">
-							<Label>Nome *</Label>
-							<Input
-								value={form.name}
-								onChange={(e) => setForm({ ...form, name: e.target.value })}
-								placeholder="Es. Sito corporate"
-							/>
-						</div>
-						<div className="space-y-1">
-							<Label>Tipo indirizzo *</Label>
-							<Select
-								value={form.address_type}
-								onValueChange={(v) =>
-									setForm({
-										...form,
-										address_type: v as ExternalEndpointAddressType,
-									})
-								}
-							>
-								<SelectTrigger>
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="domain">Domain</SelectItem>
-									<SelectItem value="static_ip">Static IP</SelectItem>
-									<SelectItem value="ip_range">IP Range</SelectItem>
-								</SelectContent>
-							</Select>
-						</div>
-						<div className="space-y-1">
-							<Label>Target *</Label>
-							<Input
-								value={form.address_value}
-								onChange={(e) =>
-									setForm({ ...form, address_value: e.target.value })
-								}
-								placeholder={
-									form.address_type === "ip_range"
-										? "8.8.8.0/24"
-										: form.address_type === "static_ip"
-											? "8.8.8.8"
-											: "example.com"
-								}
-							/>
-						</div>
-						<div className="space-y-1">
-							<Label>Profilo scan *</Label>
-							<Select
-								value={form.scan_profile}
-								onValueChange={(v) =>
-									setForm({
-										...form,
-										scan_profile: v as ExternalEndpointScanProfile,
-									})
-								}
-							>
-								<SelectTrigger>
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="quick">Quick Scan</SelectItem>
-									<SelectItem value="detailed">
-										Detailed Scan (top ~3500 porte IANA)
-									</SelectItem>
-									{canDeep && (
-										<SelectItem value="deep">Deep Scan</SelectItem>
-									)}
-								</SelectContent>
-							</Select>
-						</div>
-						<div className="flex items-center gap-2">
-							<Switch
-								checked={form.enabled}
-								onCheckedChange={(c) => setForm({ ...form, enabled: c })}
-							/>
-							<Label>Abilitato</Label>
-						</div>
-						<div className="flex items-end justify-end">
-							<Button onClick={handleCreate} disabled={saving}>
-								{saving ? (
-									<Loader2 className="w-4 h-4 animate-spin" />
-								) : (
-									"Aggiungi endpoint"
-								)}
-							</Button>
-						</div>
-					</div>
-				)}
+				<div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+					Gli endpoint External sono <strong>generati automaticamente</strong> dallo
+					scope monitorato (domini e IP pubblici del cliente) e scansionati dal cron
+					settimanale. Non vanno inseriti manualmente qui.
+				</div>
 
 				{loading ? (
 					<div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -256,41 +142,10 @@ const ExternalEndpointsPanel: React.FC = () => {
 													variant="ghost"
 													disabled={saving || !ep.enabled}
 													onClick={() => runEndpoint(ep.id)}
-													title="Run now"
+													title="Esegui ora"
 												>
 													<Play className="w-4 h-4" />
 												</Button>
-												<AlertDialog>
-													<AlertDialogTrigger asChild>
-														<Button
-															size="sm"
-															variant="ghost"
-															disabled={saving}
-															title="Elimina"
-														>
-															<Trash2 className="w-4 h-4 text-destructive" />
-														</Button>
-													</AlertDialogTrigger>
-													<AlertDialogContent>
-														<AlertDialogHeader>
-															<AlertDialogTitle>
-																Eliminare l'endpoint?
-															</AlertDialogTitle>
-															<AlertDialogDescription>
-																"{ep.name}" ({ep.address_value}) verrà rimosso.
-																L'azione non è reversibile.
-															</AlertDialogDescription>
-														</AlertDialogHeader>
-														<AlertDialogFooter>
-															<AlertDialogCancel>Annulla</AlertDialogCancel>
-															<AlertDialogAction
-																onClick={() => deleteEndpoint(ep.id)}
-															>
-																Elimina
-															</AlertDialogAction>
-														</AlertDialogFooter>
-													</AlertDialogContent>
-												</AlertDialog>
 											</div>
 										</TableCell>
 									)}
