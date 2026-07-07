@@ -15,6 +15,7 @@ import ServiceDashboard from "./pages/ServiceDashboard";
 import SurfaceScan360 from "./pages/SurfaceScan360";
 import Assessment from "./pages/Assessment";
 import Remediation from "./pages/Remediation";
+import ReportPreview from "./pages/ReportPreview";
 import Analytics from "./pages/Analytics";
 import Threats from "./pages/Threats";
 import Reports from "./pages/Reports";
@@ -159,6 +160,15 @@ const App = () => (
 								element={
 									<ClientSelectionGuard>
 										<Remediation />
+									</ClientSelectionGuard>
+								}
+							/>
+							{/* Route nascosta (non nel menu): anteprima/debug report cliente completo */}
+							<Route
+								path="/report"
+								element={
+									<ClientSelectionGuard>
+										<ReportPreview />
 									</ClientSelectionGuard>
 								}
 							/>

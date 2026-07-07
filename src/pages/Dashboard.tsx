@@ -14,6 +14,7 @@ import { useUserRoles } from "@/hooks/useUserRoles";
 import { useDashboardMetrics } from "@/hooks/useDashboardMetrics";
 import { useAssessmentTrends } from "@/hooks/useAssessmentTrends";
 import { AssessmentRadarChart } from "@/components/assessment/AssessmentRadarChart";
+import { useAssessmentRadar } from "@/hooks/useAssessmentRadar";
 import ClientServicesDialog from "@/components/clients/ClientServicesDialog";
 import { Shield, BarChart3, Unlink, Settings } from "lucide-react";
 
@@ -49,8 +50,11 @@ const Dashboard: React.FC = () => {
 		activeOrgId,
 		activeGroupId,
 	);
-	const { radarCategories, vulnerabilities, deltaHosts, deltaCves } =
+	const { vulnerabilities, deltaHosts, deltaCves } =
 		useAssessmentTrends(assessmentId, activeGroupId);
+	// Radar allineato alla vista Assessment (score live dalle risposte, non il
+	// report mensile backend che usa una formula diversa → causava disallineamenti).
+	const { data: liveRadar } = useAssessmentRadar(activeOrgId, activeGroupId);
 
 	// Catalogo servizi — chiavi normalizzate (lowercase, no underscore/punteggiatura)
 	// per confronto case-insensitive con i service_type del backend.
@@ -416,19 +420,11 @@ const Dashboard: React.FC = () => {
 						</p>
 					</CardHeader>
 					<CardContent>
-						{radarCategories.length > 0 ? (
+						{(liveRadar?.length ?? 0) > 0 ? (
 							<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-								{/* Radar chart */}
+								{/* Radar chart — score live (stessa formula della vista Assessment) */}
 								<div className="lg:col-span-2">
-									<AssessmentRadarChart
-										data={radarCategories.map((c) => ({
-											category:
-												c.name.length > 18 ? c.name.slice(0, 16) + "…" : c.name,
-											fullName: c.name,
-											compliance: c.completion_percent,
-											target: 90,
-										}))}
-									/>
+									<AssessmentRadarChart data={liveRadar ?? []} />
 								</div>
 								{/* Delta + vulnerabilità */}
 								<div className="space-y-4">

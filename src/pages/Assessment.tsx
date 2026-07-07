@@ -41,7 +41,8 @@ import { calculateCategoryScore, getRiskFromScore, CATEGORY_DESCRIPTIONS, ASSESS
 import type { AssessmentCategory as UICategory } from '@/data/assessmentQuestions';
 import { computeOverallScore } from '@/lib/assessment/scoring';
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { generateAssessmentPDF } from '@/components/assessment/AssessmentReportGenerator';
+import FullReportView, { type FullReportReadyPayload } from '@/components/report/FullReportView';
+import { exportFullReportPdf } from '@/lib/report/exportFullReportPdf';
 import GapAnalysisSection from '@/components/assessment/GapAnalysisSection';
 import { AssessmentRadarChart } from '@/components/assessment/AssessmentRadarChart';
 import { moduleVisibility } from '@/config/moduleVisibility';
@@ -201,6 +202,7 @@ const Assessment: React.FC = () => {
   const [guidedCategoryIndex, setGuidedCategoryIndex] = useState(0);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [generatingFullReport, setGeneratingFullReport] = useState(false);
   const assessmentIdRef = useRef<string | number | null>(null);
   const loadedOrgRef = useRef<string | null>(null);
   const [v2Categories, setV2Categories] = useState<UICategory[]>([]);
@@ -569,6 +571,23 @@ const Assessment: React.FC = () => {
 
   // Organization profile for NIS2 classification
   const { formData: orgProfile, loading: profileLoading } = useOrganizationProfile();
+
+  // Report completo: monta FullReportView offscreen, attende onReady, esporta, smonta.
+  const handleFullReportReady = useCallback(async (payload: FullReportReadyPayload) => {
+    try {
+      await exportFullReportPdf({
+        companyName: orgProfile?.legal_name || 'Cliente',
+        assessment: payload.assessment,
+        blocks: payload.blocks,
+      });
+      toast.success('Report completo scaricato');
+    } catch (e) {
+      console.error('Full report export error:', e);
+      toast.error('Impossibile generare il report completo');
+    } finally {
+      setGeneratingFullReport(false);
+    }
+  }, [orgProfile]);
   const { groupId } = useClientOrganization();
 
   // Tenant services: rileva se HiCompliance è attivo per il cliente selezionato
@@ -902,15 +921,27 @@ const Assessment: React.FC = () => {
                 Gestisci Consistenze
               </Button>
             )}
-            <Button 
+            <Button
               className="bg-primary text-primary-foreground"
-              onClick={() => generateAssessmentPDF({ responses, companyName: orgProfile.legal_name || undefined, categories: v2Categories.length > 0 ? v2Categories : undefined })}
+              disabled={generatingFullReport}
+              onClick={() => setGeneratingFullReport(true)}
             >
-              <FileText className="w-4 h-4 mr-2" />
-              Genera Report PDF
+              {generatingFullReport ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <FileText className="w-4 h-4 mr-2" />
+              )}
+              {generatingFullReport ? 'Generazione…' : 'Genera Report PDF'}
             </Button>
           </div>
         </div>
+
+        {/* Report completo: vista renderizzata offscreen solo durante la generazione */}
+        {generatingFullReport && (
+          <div style={{ position: 'fixed', left: -10000, top: 0, width: 900, pointerEvents: 'none' }} aria-hidden>
+            <FullReportView onReady={handleFullReportReady} />
+          </div>
+        )}
 
         {/* Organization Profile Banner */}
         {!profileLoading && (

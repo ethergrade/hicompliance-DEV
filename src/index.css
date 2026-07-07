@@ -108,6 +108,90 @@ All colors MUST be HSL.
   }
 }
 
+/* Report cliente: forza il tema chiaro (sfondo bianco uniforme) per la vista
+   report e per la cattura PDF, sovrascrivendo i token del tema scuro di default. */
+.report-light {
+  --background: 0 0% 100%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 222 47% 11%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 40%;
+  --accent: 210 40% 96%;
+  --accent-foreground: 222 47% 11%;
+  --border: 214 32% 88%;
+  --input: 214 32% 88%;
+  --sidebar-background: 0 0% 100%;
+  --sidebar-foreground: 222 47% 11%;
+  background-color: #ffffff;
+  color: hsl(222 47% 11%);
+  /* Font web-safe con file reale (non il font di sistema San Francisco):
+     html2canvas misura correttamente gli spazi solo con font "veri", quindi
+     evita la sovrapposizione del testo nella cattura PDF. Nessun download. */
+  font-family: Arial, Helvetica, "Liberation Sans", sans-serif;
+}
+
+.report-light * {
+  font-family: Arial, Helvetica, "Liberation Sans", sans-serif;
+}
+
+/* Report statico: nasconde i controlli interattivi dei componenti riusati
+   (filtri, ricerche, switch, dropdown, bottoni azione, tab-bar). */
+.report-print button,
+.report-print [role="button"],
+.report-print a[role="button"],
+.report-print input,
+.report-print select,
+.report-print textarea,
+.report-print [role="switch"],
+.report-print [role="checkbox"],
+.report-print [role="combobox"],
+.report-print [role="tablist"],
+.report-print [role="tab"],
+.report-print [data-radix-select-trigger],
+.report-print [cmdk-input] {
+  display: none !important;
+}
+
+/* html2canvas 1.4.1 non centra verticalmente il testo nelle pillole
+   (inline-flex): invece di combatterlo, nel report rendiamo i badge come
+   semplice testo colorato, senza sfondo/bordo. NB: non tocchiamo `display`,
+   così i controlli nascosti (es. Switch, anch'essi inline-flex.rounded-full)
+   restano `display:none`. */
+.report-print .inline-flex.rounded-full {
+  background: transparent !important;
+  border-color: transparent !important;
+  padding: 0 !important;
+  line-height: 1.4 !important;
+  font-weight: 700;
+}
+.report-print .inline-flex.rounded-full.bg-destructive {
+  color: hsl(var(--destructive)) !important;
+}
+.report-print .inline-flex.rounded-full.bg-secondary {
+  color: #b45309 !important; /* medium → ambra */
+}
+
+/* html2canvas ritaglia il contenuto ai container con overflow non-visible e non
+   applica bene il troncamento: nel report mostriamo tutto senza clipping. */
+.report-print .overflow-auto,
+.report-print .overflow-hidden,
+.report-print .overflow-x-auto,
+.report-print .overflow-y-auto,
+.report-print .overflow-x-scroll,
+.report-print .overflow-y-scroll {
+  overflow: visible !important;
+}
+.report-print .truncate {
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
+}
+
 @layer base {
   * {
     @apply border-border;

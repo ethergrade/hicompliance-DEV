@@ -15,6 +15,11 @@ interface AssessmentReportData {
   /** v2Categories from the backend — used instead of the static ASSESSMENT_CATEGORIES
    *  so question counts and visibility logic match the view exactly. */
   categories?: AssessmentCategory[];
+  /** Se fornito, compone dentro questo doc invece di crearne uno nuovo
+   *  (usato dal report completo per unire assessment + altre sezioni). */
+  doc?: jsPDF;
+  /** Default true: applica footer e salva/scarica. Impostare false in composizione. */
+  save?: boolean;
 }
 
 // Mirror of Assessment.tsx isQuestionVisible — questions with a dependency are hidden
@@ -34,12 +39,13 @@ function isQuestionVisible(
   return parentStatus === 'pianificato_in_corso' || parentStatus === 'completato';
 }
 
-export const generateAssessmentPDF = ({ responses, companyName, categories }: AssessmentReportData) => {
+export const generateAssessmentPDF = ({ responses, companyName, categories, doc: providedDoc, save = true }: AssessmentReportData) => {
   // Use backend categories when available — matches the view's question set exactly
   const effectiveCats = categories && categories.length > 0 ? categories : ASSESSMENT_CATEGORIES;
   const allCatQuestions = effectiveCats.flatMap(c => c.questions);
 
-  const doc = new jsPDF();
+  // In composizione si riceve un doc esterno (il generatore inizia sulla pagina corrente).
+  const doc = providedDoc ?? new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 18;
   const maxWidth = pageWidth - margin * 2;
@@ -252,6 +258,11 @@ export const generateAssessmentPDF = ({ responses, companyName, categories }: As
     y += 6;
   });
 
+  // In composizione (save=false) footer e salvataggio li gestisce l'orchestratore.
+  if (!save) {
+    return doc;
+  }
+
   // ── FOOTER on all pages ──
   const totalPages = doc.getNumberOfPages();
   for (let i = 1; i <= totalPages; i++) {
@@ -265,4 +276,5 @@ export const generateAssessmentPDF = ({ responses, companyName, categories }: As
   }
 
   doc.save(`Assessment_Report_${new Date().toISOString().slice(0, 10)}.pdf`);
+  return doc;
 };
