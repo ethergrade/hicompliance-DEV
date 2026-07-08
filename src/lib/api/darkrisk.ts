@@ -18,17 +18,6 @@ const extractArray = <T>(data: unknown): T[] => {
 	return [];
 };
 
-export interface DarkRiskTarget {
-	id: string;
-	tenant_id: string;
-	group_id: string;
-	scope: string;
-	label?: string;
-	enabled: boolean;
-	created_at?: string;
-	updated_at?: string;
-}
-
 export interface DarkRiskNotificationConfig {
 	alert_on_new_findings: boolean;
 	alert_severity_threshold: string;
@@ -38,83 +27,6 @@ export interface DarkRiskNotificationConfig {
 }
 
 export const darkRiskApi = {
-	// Targets
-	async listTargets(
-		companyId: string,
-		groupId?: string | null,
-	): Promise<DarkRiskTarget[]> {
-		const res = await complianceApiClient.get<ApiResponse<DarkRiskTarget[]>>(
-			`/companies/${companyId}/darkrisk/targets`,
-			undefined,
-			groupId ? groupHeader(groupId) : undefined,
-		);
-		return res.data;
-	},
-
-	async createTargetsBatch(
-		companyId: string,
-		payload: { scope: string[]; label?: string },
-		groupId?: string | null,
-	): Promise<DarkRiskTarget[]> {
-		const res = await complianceApiClient.post<ApiResponse<DarkRiskTarget[]>>(
-			`/companies/${companyId}/darkrisk/targets/batch`,
-			payload,
-			groupId ? groupHeader(groupId) : undefined,
-		);
-		return res.data;
-	},
-
-	async previewTargets(
-		companyId: string,
-		payload: { scope: string[] },
-		groupId?: string | null,
-	): Promise<DarkRiskTarget[]> {
-		const res = await complianceApiClient.post<ApiResponse<DarkRiskTarget[]>>(
-			`/companies/${companyId}/darkrisk/targets/preview`,
-			payload,
-			groupId ? groupHeader(groupId) : undefined,
-		);
-		return res.data;
-	},
-
-	async updateTarget(
-		companyId: string,
-		targetId: string,
-		payload: { label?: string; enabled?: boolean },
-		groupId?: string | null,
-	): Promise<DarkRiskTarget> {
-		const res = await complianceApiClient.put<ApiResponse<DarkRiskTarget>>(
-			`/companies/${companyId}/darkrisk/targets/${targetId}`,
-			payload,
-			groupId ? groupHeader(groupId) : undefined,
-		);
-		return res.data;
-	},
-
-	async deleteTarget(
-		companyId: string,
-		targetId: string,
-		groupId?: string | null,
-	): Promise<void> {
-		await complianceApiClient.delete<ApiResponse<void>>(
-			`/companies/${companyId}/darkrisk/targets/${targetId}`,
-			groupId ? groupHeader(groupId) : undefined,
-		);
-	},
-
-	async toggleTarget(
-		companyId: string,
-		targetId: string,
-		groupId?: string | null,
-	): Promise<DarkRiskTarget> {
-		const res = await complianceApiClient.patch<ApiResponse<DarkRiskTarget>>(
-			`/companies/${companyId}/darkrisk/targets/${targetId}/toggle`,
-			{},
-			groupId ? groupHeader(groupId) : undefined,
-		);
-		return res.data;
-	},
-
 	// Notification config
 	async getNotificationConfig(
 		companyId: string,

@@ -176,8 +176,6 @@ export interface TenantResource {
 	contract_start?: string | null;
 	contract_duration?: number | null;
 	last_scan_at?: string | null;
-	ips_list?: IpRange[] | null;
-	domains_list?: DomainEntry[] | null;
 	is_multiple?: boolean;
 	extra?: TenantDashboardExtra | null;
 	created_at?: string | null;
@@ -196,14 +194,6 @@ export interface TenantResource {
 	ciso_substitute?: string | null;
 }
 
-export interface IpRange {
-	start_ip: string;
-	end_ip: string;
-}
-
-export interface DomainEntry {
-	domain: string;
-}
 
 // ─── Tenant Dashboard Extra ──────────────────────────────────────────────────
 
@@ -272,8 +262,6 @@ export interface UpdateTenantRequest {
 	last_scan_at?: string | null;
 	is_multiple?: boolean;
 	extra?: TenantDashboardExtra | null;
-	ips_list?: IpRange[] | null;
-	domains_list?: DomainEntry[] | null;
 	// Anagrafica / Organization Profile fields
 	legal_name?: string | null;
 	fiscal_code?: string | null;

@@ -30,14 +30,12 @@ import {
   X,
 } from "lucide-react";
 import { tenantsApi, tenantServicesApi } from "@/lib/api";
+import { useCompanyScope } from "@/hooks/useCompanyScope";
 import {
   parseMonitoredIpInput,
   parseMonitoredScopeMixedEntries,
 } from "@/lib/ipRange";
-import type {
-  ParsedMonitoredIpInput,
-  MonitoredIpEntryType,
-} from "@/lib/ipRange";
+import type { ParsedMonitoredIpInput } from "@/lib/ipRange";
 import type {
   TenantResource,
   UpdateTenantRequest,
@@ -177,28 +175,9 @@ const resourceToForm = (data: TenantResource): ProfileFormData => ({
   customer_sectors: data.customer_sectors ?? [],
   implemented_technologies: data.implemented_technologies ?? [],
   extra: data.extra || null,
-  scopeEntries: (() => {
-    const domains = data.extra?.hicompliance_scope_domains || [];
-    const ips = data.extra?.hicompliance_scope_ips || [];
-    const domainEntries: ParsedMonitoredIpInput[] = domains.map((d) => ({
-      entryType: "domain" as MonitoredIpEntryType,
-      inputValue: d,
-      ipStart: "",
-      ipEnd: "",
-    }));
-    const ipEntries: ParsedMonitoredIpInput[] = ips.map((r) => {
-      const start = r.start_ip || "";
-      const end = r.end_ip || start;
-      const sameIp = start === end;
-      return {
-        entryType: (sameIp ? "single" : "range") as MonitoredIpEntryType,
-        inputValue: sameIp ? start : `${start}-${end}`,
-        ipStart: start,
-        ipEnd: end,
-      };
-    });
-    return [...domainEntries, ...ipEntries];
-  })(),
+  // Lo scope esteso è ora gestito dall'endpoint dedicato /companies/{id}/scope
+  // (hook useCompanyScope), non più da extra.hicompliance_scope_*.
+  scopeEntries: [],
 });
 
 const formToPayload = (data: ProfileFormData): UpdateTenantRequest => ({
@@ -238,21 +217,10 @@ const formToPayload = (data: ProfileFormData): UpdateTenantRequest => ({
   })(),
   customer_sectors: data.customer_sectors,
   implemented_technologies: data.implemented_technologies,
-  extra: {
-    ...(data.extra || {}),
-    hicompliance_scope_domains: data.scopeEntries
-      .filter((e) => e.entryType === "domain" && e.inputValue.trim())
-      .map((e) => e.inputValue.trim()),
-    hicompliance_scope_ips: data.scopeEntries
-      .filter(
-        (e) => e.entryType !== "domain" && (e.ipStart || e.inputValue).trim(),
-      )
-      .map((e) => {
-        const start = e.ipStart || e.inputValue.split("-")[0].trim();
-        const end = e.ipEnd || start;
-        return { start_ip: start, end_ip: end };
-      }),
-  } as TenantDashboardExtra,
+  // extra.hicompliance_scope_* NON viene più scritto qui: lo scope esteso è
+  // gestito dall'endpoint dedicato /scope. Il salvataggio anagrafica non deve
+  // toccare le entry (altrimenti le cancellerebbe).
+  extra: (data.extra || undefined) as TenantDashboardExtra | undefined,
 });
 
 const NIS2_OPTIONS = [
@@ -455,7 +423,13 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
     [],
   );
   const [newScopeInput, setNewScopeInput] = useState("");
-  const [scopeSaving, setScopeSaving] = useState(false);
+  // Scope esteso dichiarato via endpoint dedicato /companies/{id}/scope (SSOT).
+  const {
+    entries: scopeEntries,
+    addEntry: addScopeEntry,
+    removeEntry: removeScopeEntry,
+    saving: scopeSaving,
+  } = useCompanyScope(organizationId, groupId);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const validate = (data: ProfileFormData): Record<string, string> => {
@@ -591,7 +565,7 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
     }
   };
 
-  const handleAddScopeEntries = () => {
+  const handleAddScopeEntries = async () => {
     const raw = newScopeInput.trim();
     if (!raw) {
       toast.error("Inserisci almeno un dominio/IP/range/CIDR");
@@ -599,45 +573,48 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
     }
     const tokens = parseMonitoredScopeMixedEntries(raw);
     if (tokens.length === 0) return;
-    const parsed: ParsedMonitoredIpInput[] = [];
+
+    // Validazione lato client, poi persistenza via endpoint dedicato /scope.
+    const valid: string[] = [];
     const failed: string[] = [];
     for (const t of tokens) {
       try {
-        parsed.push(parseMonitoredIpInput(t));
-      } catch (err) {
+        parseMonitoredIpInput(t);
+        valid.push(t);
+      } catch {
         failed.push(t);
       }
     }
-    if (parsed.length === 0) {
+    if (valid.length === 0) {
       toast.error("Nessuna entry valida");
       return;
     }
-    setForm((prev) => {
-      const next = { ...prev, scopeEntries: [...prev.scopeEntries, ...parsed] };
-      scheduleSave(next);
-      return next;
-    });
-    setNewScopeInput("");
-    if (failed.length > 0) {
-      toast.warning(
-        `Aggiunti ${parsed.length}, ignorati ${failed.length} non validi`,
-      );
-    } else {
-      toast.success(
-        `${parsed.length} ${parsed.length === 1 ? "regola aggiunta" : "regole aggiunte"}`,
-      );
+
+    try {
+      for (const value of valid) {
+        await addScopeEntry(value);
+      }
+      setNewScopeInput("");
+      if (failed.length > 0) {
+        toast.warning(
+          `Aggiunti ${valid.length}, ignorati ${failed.length} non validi`,
+        );
+      } else {
+        toast.success(
+          `${valid.length} ${valid.length === 1 ? "regola aggiunta" : "regole aggiunte"}`,
+        );
+      }
+    } catch {
+      toast.error("Impossibile salvare lo scope");
     }
   };
 
-  const handleRemoveScopeEntry = (index: number) => {
-    setForm((prev) => {
-      const next = {
-        ...prev,
-        scopeEntries: prev.scopeEntries.filter((_, i) => i !== index),
-      };
-      scheduleSave(next);
-      return next;
-    });
+  const handleRemoveScopeEntry = async (entryId: string) => {
+    try {
+      await removeScopeEntry(entryId);
+    } catch {
+      toast.error("Impossibile rimuovere la regola");
+    }
   };
 
   const handleManualSave = async () => {
@@ -969,17 +946,17 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
                         </div>
                         <div className="rounded-lg border border-border">
                           <div className="px-3 py-2 border-b border-border bg-muted/30 text-xs text-muted-foreground">
-                            Regole attive: {form.scopeEntries.length}
+                            Regole attive: {scopeEntries.length}
                           </div>
-                          {form.scopeEntries.length === 0 ? (
+                          {scopeEntries.length === 0 ? (
                             <div className="p-4 text-sm text-muted-foreground">
                               Nessuna regola configurata.
                             </div>
                           ) : (
                             <div className="divide-y divide-border">
-                              {form.scopeEntries.map((entry, idx) => (
+                              {scopeEntries.map((entry) => (
                                 <div
-                                  key={`${entry.entryType}-${entry.inputValue}-${idx}`}
+                                  key={entry.id}
                                   className="flex items-center justify-between px-3 py-2"
                                 >
                                   <div className="flex items-center gap-2 min-w-0">
@@ -987,17 +964,26 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
                                       variant="outline"
                                       className="uppercase shrink-0"
                                     >
-                                      {entry.entryType}
+                                      {entry.kind}
                                     </Badge>
                                     <span className="text-sm font-medium truncate">
-                                      {entry.inputValue}
+                                      {entry.input_value}
                                     </span>
+                                    {entry.origin !== "anagrafica" && (
+                                      <Badge
+                                        variant="secondary"
+                                        className="shrink-0 text-[10px]"
+                                      >
+                                        {entry.origin}
+                                      </Badge>
+                                    )}
                                   </div>
                                   <Button
                                     variant="ghost"
                                     size="icon"
                                     className="h-8 w-8 text-destructive shrink-0"
-                                    onClick={() => handleRemoveScopeEntry(idx)}
+                                    disabled={scopeSaving}
+                                    onClick={() => handleRemoveScopeEntry(entry.id)}
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </Button>
