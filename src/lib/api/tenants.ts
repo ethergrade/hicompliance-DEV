@@ -73,9 +73,10 @@ export const companiesApi = {
     return res.data;
   },
 
-  /** Delete a company */
-  async delete(id: string, groupId: string): Promise<void> {
-    await apiClient.delete(`/companies/${id}`, groupHeader(groupId));
+  /** Delete a company (asincrona lato server) */
+  async delete(id: string, groupId?: string | null): Promise<void> {
+    // Header di gruppo solo se valorizzato: evita di inviare "X-Group-Id: undefined".
+    await apiClient.delete(`/companies/${id}`, groupId ? groupHeader(groupId) : undefined);
   },
 };
 

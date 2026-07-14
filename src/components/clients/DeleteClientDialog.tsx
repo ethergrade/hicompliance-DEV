@@ -11,10 +11,11 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   organization: { id: string; name: string } | null;
-  onDeleted: () => void;
+  groupId?: string | null;
+  onDeleted: (id: string) => void;
 }
 
-const DeleteClientDialog: React.FC<Props> = ({ open, onOpenChange, organization, onDeleted }) => {
+const DeleteClientDialog: React.FC<Props> = ({ open, onOpenChange, organization, groupId, onDeleted }) => {
   const [confirm, setConfirm] = useState('');
   const [deleting, setDeleting] = useState(false);
 
@@ -22,9 +23,11 @@ const DeleteClientDialog: React.FC<Props> = ({ open, onOpenChange, organization,
     if (!organization) return;
     setDeleting(true);
     try {
-      await tenantsApi.delete(organization.id);
-      toast.success(`Cliente "${organization.name}" eliminato`);
-      onDeleted();
+      await tenantsApi.delete(organization.id, groupId ?? undefined);
+      // La cancellazione è asincrona (gira in background): confermiamo l'avvio e
+      // togliamo subito la riga dalla lista (rimozione ottimistica).
+      toast.success(`Eliminazione di "${organization.name}" avviata — verrà rimosso a breve`);
+      onDeleted(organization.id);
       onOpenChange(false);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Errore nell'eliminazione";
@@ -42,6 +45,7 @@ const DeleteClientDialog: React.FC<Props> = ({ open, onOpenChange, organization,
           <AlertDialogTitle>Elimina Cliente</AlertDialogTitle>
           <AlertDialogDescription>
             Questa azione e' irreversibile. Tutti i dati associati a <strong>{organization?.name}</strong> verranno eliminati.
+            L'eliminazione avviene in background e puo' richiedere qualche minuto.
             <br /><br />
             Digita <strong>{organization?.name}</strong> per confermare:
           </AlertDialogDescription>

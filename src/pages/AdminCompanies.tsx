@@ -517,7 +517,8 @@ const AdminCompanies: React.FC = () => {
 					if (!open) setDeletingOrg(null);
 				}}
 				organization={deletingOrg}
-				onDeleted={handleSaved}
+				groupId={selectedGroup?.id ?? null}
+				onDeleted={(id) => setTenants((prev) => prev.filter((t) => t.id !== id))}
 			/>
 		</DashboardLayout>
 	);
