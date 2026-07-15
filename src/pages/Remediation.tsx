@@ -7,7 +7,10 @@ import type {
 } from "@/types/api";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { useRemediationCatalog } from "@/hooks/useRemediationCatalog";
-import { ProductCombobox } from "@/components/remediation/ProductCombobox";
+import {
+	RemediationTaskForm,
+	type RemediationTaskFormData,
+} from "@/components/remediation/RemediationTaskForm";
 import { RemediationPlanTable } from "@/components/remediation/RemediationPlanTable";
 import { exportRemediationPlanPdf } from "@/lib/report/exportRemediationPlanPdf";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -23,25 +26,8 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
-import { Calendar as CalendarComponent } from "@/components/ui/calendar";
-import {
-	Popover,
-	PopoverContent,
-	PopoverTrigger,
-} from "@/components/ui/popover";
 import { GanttChart, GanttTask } from "@/components/remediation/GanttChart";
 import { format, addDays, differenceInDays, parseISO } from "date-fns";
-import { cn } from "@/lib/utils";
 import {
 	AlertTriangle,
 	Calendar,
@@ -54,7 +40,6 @@ import {
 	CalendarDays,
 	Plus,
 	Calculator,
-	Euro,
 	Trash2,
 	Settings,
 } from "lucide-react";
@@ -78,17 +63,6 @@ interface DbTask {
 	is_deleted: boolean | null;
 	dependencies: string[] | null;
 	organization_id: string | null;
-}
-
-interface EditTaskData {
-	task: string;
-	category: string;
-	assignee: string | null;
-	priority: string;
-	progress: number;
-	budget: number | null;
-	startDate: string;
-	endDate: string;
 }
 
 /**
@@ -132,6 +106,27 @@ const PRIORITY_IT_TO_DB: Record<string, string> = {
 	alta: "high",
 	media: "medium",
 	bassa: "low",
+};
+
+const PRIORITY_COLORS: Record<string, string> = {
+	Critica: "#DC2626",
+	Alta: "#EA580C",
+	Media: "#EAB308",
+	Bassa: "#22C55E",
+};
+
+const EMPTY_FORM: RemediationTaskFormData = {
+	category: "",
+	product: "",
+	priority: "",
+	description: "",
+	assignee: "",
+	complexity: "medium",
+	estimatedDays: "",
+	budget: "",
+	startDate: "",
+	endDate: "",
+	progress: 0,
 };
 
 /* ─── Component ─── */
@@ -178,21 +173,12 @@ const Remediation: React.FC = () => {
 	const [tasks, setTasks] = useState<DbTask[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [editingTask, setEditingTask] = useState<string | null>(null);
-	const [editTaskData, setEditTaskData] = useState<EditTaskData | null>(null);
-	const [editProduct, setEditProduct] = useState("");
+	const [editTaskData, setEditTaskData] =
+		useState<RemediationTaskFormData | null>(null);
 	const { categories: catalogCategories, productsByCategory } =
 		useRemediationCatalog();
-	const [newRemediation, setNewRemediation] = useState({
-		category: "",
-		product: "",
-		priority: "",
-		description: "",
-		estimatedDays: "",
-		estimatedBudget: "",
-		assignedTeam: "",
-		complexity: "medium",
-		startDate: "",
-	});
+	const [newRemediation, setNewRemediation] =
+		useState<RemediationTaskFormData>(EMPTY_FORM);
 
 	/* ─── Mappers v2 (RemediationTask ↔ DbTask) ─── */
 	const apiTaskToDbTask = useCallback(
@@ -384,17 +370,24 @@ const Remediation: React.FC = () => {
 	);
 
 	const handleEditTask = useCallback((action: GanttTask) => {
+		const days = Math.max(
+			1,
+			differenceInDays(parseISO(action.endDate), parseISO(action.startDate)),
+		);
 		setEditingTask(action.id);
-		setEditProduct(splitProduct(action.task, action.category));
 		setEditTaskData({
-			task: action.task,
 			category: action.category,
-			assignee: action.assignee,
+			product: splitProduct(action.task, action.category),
+			// action.priority è già "Critica"/"Alta"/… (mappato in ganttData)
 			priority: action.priority,
-			progress: action.progress,
-			budget: action.budget || 0,
+			description: action.task,
+			assignee: action.assignee || "",
+			complexity: "medium",
+			estimatedDays: String(days),
+			budget: String(action.budget || 0),
 			startDate: action.startDate,
 			endDate: action.endDate,
+			progress: action.progress,
 		});
 	}, []);
 
@@ -402,11 +395,11 @@ const Remediation: React.FC = () => {
 		if (!editingTask || !editTaskData) return;
 		try {
 			await updateTask(editingTask, {
-				task: editTaskData.task,
+				task: editTaskData.description,
 				category: editTaskData.category,
 				assignee: editTaskData.assignee,
 				priority: PRIORITY_IT_TO_DB[editTaskData.priority] || "medium",
-				progress: editTaskData.progress,
+				progress: Number(editTaskData.progress) || 0,
 				budget: Number(editTaskData.budget) || 0,
 				start_date: editTaskData.startDate,
 				end_date: editTaskData.endDate,
@@ -519,17 +512,6 @@ const Remediation: React.FC = () => {
 		incident_management: "Gestione incidenti",
 		risk_management: "Gestione del rischio",
 	};
-	// Map team short key to full display name the backend uses.
-	const TEAM_KEY_TO_LABEL: Record<string, string> = {
-		"IT Security": "IT Security Team",
-		Development: "Development Team",
-		DevSecOps: "DevSecOps Team",
-		Procurement: "Procurement Team",
-		Operations: "Operations Team",
-		Compliance: "Compliance Team",
-		HR: "HR & Training",
-	};
-
 	const handleCreateRemediation = async () => {
 		if (!orgId) {
 			toast({
@@ -544,21 +526,14 @@ const Remediation: React.FC = () => {
 			Number(newRemediation.estimatedDays) ||
 			calculateDays(newRemediation.complexity, newRemediation.category);
 		const estimatedBudget =
-			Number(newRemediation.estimatedBudget) ||
+			Number(newRemediation.budget) ||
 			calculateBudget(estimatedDays, newRemediation.complexity);
 		const startDate =
 			newRemediation.startDate || format(new Date(), "yyyy-MM-dd");
-		const endDate = format(
-			addDays(new Date(startDate), estimatedDays),
-			"yyyy-MM-dd",
-		);
-
-		const priorityColors: Record<string, string> = {
-			critica: "#DC2626",
-			alta: "#EA580C",
-			media: "#EAB308",
-			bassa: "#22C55E",
-		};
+		// Data fine esplicita se indicata, altrimenti inizio + giorni stimati.
+		const endDate =
+			newRemediation.endDate ||
+			format(addDays(new Date(startDate), estimatedDays), "yyyy-MM-dd");
 
 		const payload: StoreRemediationTaskRequest = {
 			task: newRemediation.description,
@@ -569,11 +544,9 @@ const Remediation: React.FC = () => {
 			end_date: endDate,
 			priority: (PRIORITY_IT_TO_DB[newRemediation.priority] ||
 				"medium") as StoreRemediationTaskRequest["priority"],
-			color: priorityColors[newRemediation.priority] || "#3b82f6",
-			progress: 0,
-			assignee:
-				TEAM_KEY_TO_LABEL[newRemediation.assignedTeam] ||
-				newRemediation.assignedTeam,
+			color: PRIORITY_COLORS[newRemediation.priority] || "#3b82f6",
+			progress: Number(newRemediation.progress) || 0,
+			assignee: newRemediation.assignee,
 			budget: estimatedBudget,
 			display_order: activeTasks.length,
 			is_deleted: false,
@@ -590,17 +563,7 @@ const Remediation: React.FC = () => {
 				title: "Remediation creata",
 				description: "Il task è stato salvato.",
 			});
-			setNewRemediation({
-				category: "",
-				product: "",
-				priority: "",
-				description: "",
-				estimatedDays: "",
-				estimatedBudget: "",
-				assignedTeam: "",
-				complexity: "medium",
-				startDate: "",
-			});
+			setNewRemediation(EMPTY_FORM);
 			setIsCreateModalOpen(false);
 		} catch (err) {
 			console.error("[Remediation] Error creating task:", err);
@@ -679,268 +642,27 @@ const Remediation: React.FC = () => {
 										Crea Nuova Remediation
 									</DialogTitle>
 								</DialogHeader>
-								<div className="space-y-6 py-4">
-									<div className="grid grid-cols-2 gap-4">
-										<div className="space-y-2">
-											<Label>Categoria Assessment</Label>
-											<Select
-												value={newRemediation.category}
-												onValueChange={(v) =>
-													setNewRemediation((p) => ({
-														...p,
-														category: v,
-														product: "",
-														description: composeTask(v, ""),
-													}))
-												}
-											>
-												<SelectTrigger>
-													<SelectValue placeholder="Seleziona categoria" />
-												</SelectTrigger>
-												<SelectContent>
-													{catalogCategories.map((c) => (
-														<SelectItem key={c} value={c}>
-															{c}
-														</SelectItem>
-													))}
-												</SelectContent>
-											</Select>
-										</div>
-										<div className="space-y-2">
-											<Label>Prodotto</Label>
-											<ProductCombobox
-												value={newRemediation.product}
-												options={
-													productsByCategory[newRemediation.category] ?? []
-												}
-												onChange={(v) =>
-													setNewRemediation((p) => ({
-														...p,
-														product: v,
-														description: composeTask(p.category, v),
-													}))
-												}
-											/>
-										</div>
-									</div>
-									<div className="space-y-2">
-										<Label>Priorità</Label>
-										<Select
-											value={newRemediation.priority}
-											onValueChange={(v) =>
-												setNewRemediation((p) => ({ ...p, priority: v }))
-											}
-										>
-											<SelectTrigger>
-												<SelectValue placeholder="Seleziona priorità" />
-											</SelectTrigger>
-											<SelectContent>
-												<SelectItem value="critica">Critica</SelectItem>
-												<SelectItem value="alta">Alta</SelectItem>
-												<SelectItem value="media">Media</SelectItem>
-												<SelectItem value="bassa">Bassa</SelectItem>
-											</SelectContent>
-										</Select>
-									</div>
-									<div className="space-y-2">
-										<Label>Descrizione Remediation</Label>
-										<Textarea
-											value={newRemediation.description}
-											onChange={(e) =>
-												setNewRemediation((p) => ({
-													...p,
-													description: e.target.value,
-												}))
-											}
-											placeholder="Descrivi le azioni..."
-											rows={3}
-										/>
-									</div>
-									<div className="grid grid-cols-3 gap-4">
-										<div className="space-y-2">
-											<Label>Complessità</Label>
-											<Select
-												value={newRemediation.complexity}
-												onValueChange={(v) =>
-													setNewRemediation((p) => ({ ...p, complexity: v }))
-												}
-											>
-												<SelectTrigger>
-													<SelectValue />
-												</SelectTrigger>
-												<SelectContent>
-													<SelectItem value="low">Bassa (€300/gg)</SelectItem>
-													<SelectItem value="medium">
-														Media (€500/gg)
-													</SelectItem>
-													<SelectItem value="high">Alta (€800/gg)</SelectItem>
-												</SelectContent>
-											</Select>
-										</div>
-										<div className="space-y-2">
-											<Label>Giorni Stimati</Label>
-											<Input
-												type="number"
-												value={newRemediation.estimatedDays}
-												onChange={(e) =>
-													setNewRemediation((p) => ({
-														...p,
-														estimatedDays: e.target.value,
-													}))
-												}
-												placeholder={`Auto: ${calculateDays(newRemediation.complexity, newRemediation.category)}`}
-											/>
-										</div>
-										<div className="space-y-2">
-											<Label>Budget Stimato (€)</Label>
-											<Input
-												type="number"
-												value={newRemediation.estimatedBudget}
-												onChange={(e) =>
-													setNewRemediation((p) => ({
-														...p,
-														estimatedBudget: e.target.value,
-													}))
-												}
-												placeholder={`Auto: €${calculateBudget(Number(newRemediation.estimatedDays) || calculateDays(newRemediation.complexity, newRemediation.category), newRemediation.complexity).toLocaleString()}`}
-											/>
-										</div>
-									</div>
-									<div className="space-y-2">
-										<Label>Team Assegnato</Label>
-										<Select
-											value={newRemediation.assignedTeam}
-											onValueChange={(v) =>
-												setNewRemediation((p) => ({ ...p, assignedTeam: v }))
-											}
-										>
-											<SelectTrigger>
-												<SelectValue placeholder="Seleziona team" />
-											</SelectTrigger>
-											<SelectContent>
-												<SelectItem value="IT Security">
-													IT Security Team
-												</SelectItem>
-												<SelectItem value="Development">
-													Development Team
-												</SelectItem>
-												<SelectItem value="DevSecOps">
-													DevSecOps Team
-												</SelectItem>
-												<SelectItem value="Procurement">
-													Procurement Team
-												</SelectItem>
-												<SelectItem value="Operations">
-													Operations Team
-												</SelectItem>
-												<SelectItem value="Compliance">
-													Compliance Team
-												</SelectItem>
-												<SelectItem value="HR">HR & Training</SelectItem>
-											</SelectContent>
-										</Select>
-									</div>
-									<div className="space-y-2">
-										<Label>Data Inizio</Label>
-										<Popover>
-											<PopoverTrigger asChild>
-												<Button
-													variant="outline"
-													className={cn(
-														"w-full justify-start text-left font-normal",
-														!newRemediation.startDate &&
-															"text-muted-foreground",
-													)}
-												>
-													<Calendar className="mr-2 h-4 w-4" />
-													{newRemediation.startDate
-														? format(new Date(newRemediation.startDate), "PPP")
-														: "Seleziona data (default: oggi)"}
-												</Button>
-											</PopoverTrigger>
-											<PopoverContent className="w-auto p-0" align="start">
-												<CalendarComponent
-													mode="single"
-													selected={
-														newRemediation.startDate
-															? new Date(newRemediation.startDate)
-															: undefined
-													}
-													onSelect={(date) =>
-														setNewRemediation((p) => ({
-															...p,
-															startDate: date ? format(date, "yyyy-MM-dd") : "",
-														}))
-													}
-												/>
-											</PopoverContent>
-										</Popover>
-									</div>
-									<Card className="bg-muted/50">
-										<CardContent className="p-4">
-											<h4 className="font-medium mb-3 flex items-center">
-												<Euro className="w-4 h-4 mr-2" />
-												Stima Automatica
-											</h4>
-											<div className="grid grid-cols-3 gap-4 text-sm">
-												<div>
-													<span className="text-muted-foreground">Giorni:</span>
-													<p className="font-medium">
-														{newRemediation.estimatedDays ||
-															calculateDays(
-																newRemediation.complexity,
-																newRemediation.category,
-															)}{" "}
-														giorni
-													</p>
-												</div>
-												<div>
-													<span className="text-muted-foreground">Budget:</span>
-													<p className="font-medium">
-														€
-														{(
-															Number(newRemediation.estimatedBudget) ||
-															calculateBudget(
-																Number(newRemediation.estimatedDays) ||
-																	calculateDays(
-																		newRemediation.complexity,
-																		newRemediation.category,
-																	),
-																newRemediation.complexity,
-															)
-														).toLocaleString()}
-													</p>
-												</div>
-												<div>
-													<span className="text-muted-foreground">
-														Tariffa/gg:
-													</span>
-													<p className="font-medium">
-														€
-														{newRemediation.complexity === "low"
-															? "300"
-															: newRemediation.complexity === "high"
-																? "800"
-																: "500"}
-													</p>
-												</div>
-											</div>
-										</CardContent>
-									</Card>
-									<div className="flex justify-end space-x-2">
-										<Button
-											variant="outline"
-											onClick={() => setIsCreateModalOpen(false)}
-										>
-											Annulla
-										</Button>
-										<Button
-											onClick={handleCreateRemediation}
-											className="bg-green-600 hover:bg-green-700"
-										>
-											Crea Remediation
-										</Button>
-									</div>
+								<RemediationTaskForm
+									value={newRemediation}
+									onChange={(fn) => setNewRemediation(fn)}
+									categories={catalogCategories}
+									productsByCategory={productsByCategory}
+									calculateDays={calculateDays}
+									calculateBudget={calculateBudget}
+								/>
+								<div className="flex justify-end space-x-2 pt-2">
+									<Button
+										variant="outline"
+										onClick={() => setIsCreateModalOpen(false)}
+									>
+										Annulla
+									</Button>
+									<Button
+										onClick={handleCreateRemediation}
+										className="bg-green-600 hover:bg-green-700"
+									>
+										Crea Remediation
+									</Button>
 								</div>
 							</DialogContent>
 						</Dialog>
@@ -963,244 +685,17 @@ const Remediation: React.FC = () => {
 									</DialogTitle>
 								</DialogHeader>
 								{editTaskData && (
-									<div className="space-y-4 py-4">
-										<div className="grid grid-cols-2 gap-4">
-											<div className="space-y-2">
-												<Label>Categoria</Label>
-												<Select
-													value={editTaskData.category}
-													onValueChange={(v) => {
-														setEditProduct("");
-														setEditTaskData((p) =>
-															p
-																? {
-																		...p,
-																		category: v,
-																		task: composeTask(v, ""),
-																	}
-																: p,
-														);
-													}}
-												>
-													<SelectTrigger>
-														<SelectValue placeholder="Seleziona categoria" />
-													</SelectTrigger>
-													<SelectContent>
-														{(catalogCategories.includes(
-															editTaskData.category,
-														) || !editTaskData.category
-															? catalogCategories
-															: [editTaskData.category, ...catalogCategories]
-														).map((c) => (
-															<SelectItem key={c} value={c}>
-																{c}
-															</SelectItem>
-														))}
-													</SelectContent>
-												</Select>
-											</div>
-											<div className="space-y-2">
-												<Label>Prodotto</Label>
-												<ProductCombobox
-													value={editProduct}
-													options={
-														productsByCategory[editTaskData.category] ?? []
-													}
-													onChange={(v) => {
-														setEditProduct(v);
-														setEditTaskData((p) =>
-															p
-																? { ...p, task: composeTask(p.category, v) }
-																: p,
-														);
-													}}
-												/>
-											</div>
-										</div>
-										<div className="space-y-2">
-											<Label>Priorità</Label>
-											<Select
-												value={editTaskData.priority}
-												onValueChange={(v) =>
-													setEditTaskData((p) => ({ ...p, priority: v }))
-												}
-											>
-												<SelectTrigger>
-													<SelectValue />
-												</SelectTrigger>
-												<SelectContent>
-													<SelectItem value="Critica">Critica</SelectItem>
-													<SelectItem value="Alta">Alta</SelectItem>
-													<SelectItem value="Media">Media</SelectItem>
-													<SelectItem value="Bassa">Bassa</SelectItem>
-												</SelectContent>
-											</Select>
-										</div>
-										<div className="space-y-2">
-											<Label>Descrizione Attività</Label>
-											<Textarea
-												value={editTaskData.task}
-												onChange={(e) =>
-													setEditTaskData((p) => ({
-														...p,
-														task: e.target.value,
-													}))
-												}
-												rows={3}
-											/>
-										</div>
-										<div className="grid grid-cols-2 gap-4">
-											<div className="space-y-2">
-												<Label>Team Assegnato</Label>
-												<Select
-													value={editTaskData.assignee}
-													onValueChange={(v) =>
-														setEditTaskData((p) => ({ ...p, assignee: v }))
-													}
-												>
-													<SelectTrigger>
-														<SelectValue />
-													</SelectTrigger>
-													<SelectContent>
-														<SelectItem value="IT Security Team">
-															IT Security Team
-														</SelectItem>
-														<SelectItem value="Security Auditor">
-															Security Auditor
-														</SelectItem>
-														<SelectItem value="DevSecOps Team">
-															DevSecOps Team
-														</SelectItem>
-														<SelectItem value="HR & Security">
-															HR & Security
-														</SelectItem>
-														<SelectItem value="Procurement Team">
-															Procurement Team
-														</SelectItem>
-														<SelectItem value="Operations Team">
-															Operations Team
-														</SelectItem>
-														<SelectItem value="Compliance Team">
-															Compliance Team
-														</SelectItem>
-														<SelectItem value="HR & Training">
-															HR & Training
-														</SelectItem>
-													</SelectContent>
-												</Select>
-											</div>
-											<div className="space-y-2">
-												<Label>Progresso (%)</Label>
-												<Input
-													type="number"
-													min="0"
-													max="100"
-													value={editTaskData.progress}
-													onChange={(e) =>
-														setEditTaskData((p) => ({
-															...p,
-															progress: Number(e.target.value),
-														}))
-													}
-												/>
-											</div>
-										</div>
-										<div className="space-y-2">
-											<Label>Budget Allocato (€)</Label>
-											<Input
-												type="number"
-												min="0"
-												step="100"
-												value={editTaskData.budget || 0}
-												onChange={(e) =>
-													setEditTaskData((p) => ({
-														...p,
-														budget: Number(e.target.value),
-													}))
-												}
-											/>
-										</div>
-										<div className="grid grid-cols-2 gap-4">
-											<div className="space-y-2">
-												<Label>Data Inizio</Label>
-												<Popover>
-													<PopoverTrigger asChild>
-														<Button
-															variant="outline"
-															className={cn(
-																"w-full justify-start text-left font-normal",
-																!editTaskData.startDate &&
-																	"text-muted-foreground",
-															)}
-														>
-															<Calendar className="mr-2 h-4 w-4" />
-															{editTaskData.startDate
-																? format(
-																		new Date(editTaskData.startDate),
-																		"PPP",
-																	)
-																: "Seleziona data"}
-														</Button>
-													</PopoverTrigger>
-													<PopoverContent className="w-auto p-0" align="start">
-														<CalendarComponent
-															mode="single"
-															selected={
-																editTaskData.startDate
-																	? new Date(editTaskData.startDate)
-																	: undefined
-															}
-															onSelect={(date) =>
-																setEditTaskData((p) => ({
-																	...p,
-																	startDate: date
-																		? format(date, "yyyy-MM-dd")
-																		: "",
-																}))
-															}
-														/>
-													</PopoverContent>
-												</Popover>
-											</div>
-											<div className="space-y-2">
-												<Label>Data Fine</Label>
-												<Popover>
-													<PopoverTrigger asChild>
-														<Button
-															variant="outline"
-															className={cn(
-																"w-full justify-start text-left font-normal",
-																!editTaskData.endDate &&
-																	"text-muted-foreground",
-															)}
-														>
-															<Calendar className="mr-2 h-4 w-4" />
-															{editTaskData.endDate
-																? format(new Date(editTaskData.endDate), "PPP")
-																: "Seleziona data"}
-														</Button>
-													</PopoverTrigger>
-													<PopoverContent className="w-auto p-0" align="start">
-														<CalendarComponent
-															mode="single"
-															selected={
-																editTaskData.endDate
-																	? new Date(editTaskData.endDate)
-																	: undefined
-															}
-															onSelect={(date) =>
-																setEditTaskData((p) => ({
-																	...p,
-																	endDate: date
-																		? format(date, "yyyy-MM-dd")
-																		: "",
-																}))
-															}
-														/>
-													</PopoverContent>
-												</Popover>
-											</div>
-										</div>
+									<>
+										<RemediationTaskForm
+											value={editTaskData}
+											onChange={(fn) =>
+												setEditTaskData((prev) => (prev ? fn(prev) : prev))
+											}
+											categories={catalogCategories}
+											productsByCategory={productsByCategory}
+											calculateDays={calculateDays}
+											calculateBudget={calculateBudget}
+										/>
 										<div className="flex justify-end space-x-2 pt-4">
 											<Button
 												variant="outline"
@@ -1211,14 +706,11 @@ const Remediation: React.FC = () => {
 											>
 												Annulla
 											</Button>
-											<Button
-												onClick={handleSaveEditedTask}
-												className="bg-primary"
-											>
+											<Button onClick={handleSaveEditedTask} className="bg-primary">
 												Salva Modifiche
 											</Button>
 										</div>
-									</div>
+									</>
 								)}
 							</DialogContent>
 						</Dialog>
