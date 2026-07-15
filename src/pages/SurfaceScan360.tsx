@@ -1191,7 +1191,7 @@ const SurfaceScan360: React.FC = () => {
           </CardContent>
         </Card>
 
-        <SurfaceScanTrendline isAdmin={isAdminUser} />
+        <SurfaceScanTrendline />
 
         {!clientReadOnly && (
         <Card className="border-border">

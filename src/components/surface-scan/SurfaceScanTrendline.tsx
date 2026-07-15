@@ -1,35 +1,12 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip, Legend } from 'recharts';
-import { TrendingUp, Calendar, PlayCircle, Loader2 } from 'lucide-react';
-import { useSurfaceScanHistory, triggerManualSurfaceScan } from '@/hooks/useSurfaceScanHistory';
-import { useClientOrganization } from '@/hooks/useClientOrganization';
-import { toast } from 'sonner';
-import { useQueryClient } from '@tanstack/react-query';
+import { TrendingUp, Calendar } from 'lucide-react';
+import { useSurfaceScanHistory } from '@/hooks/useSurfaceScanHistory';
 
-export const SurfaceScanTrendline: React.FC<{ isAdmin?: boolean }> = ({ isAdmin = false }) => {
+export const SurfaceScanTrendline: React.FC = () => {
   const { data: history, isLoading } = useSurfaceScanHistory(12);
-  const { organizationId } = useClientOrganization();
-  const qc = useQueryClient();
-  const [running, setRunning] = React.useState(false);
-
-  const handleManualScan = async () => {
-    if (!organizationId) return;
-    setRunning(true);
-    try {
-      const res = await triggerManualSurfaceScan(organizationId);
-      toast.success('Scansione completata', {
-        description: `${res?.results?.[0]?.total_assets ?? 0} asset analizzati`,
-      });
-      await qc.invalidateQueries({ queryKey: ['surface-scan-history'] });
-    } catch (e: any) {
-      toast.error('Errore scansione', { description: e?.message ?? 'Riprova più tardi' });
-    } finally {
-      setRunning(false);
-    }
-  };
 
   const chartData = (history ?? []).map((s) => ({
     date: new Date(s.scanned_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'short' }),
@@ -54,19 +31,11 @@ export const SurfaceScanTrendline: React.FC<{ isAdmin?: boolean }> = ({ isAdmin 
             <Calendar className="inline w-3 h-3 mr-1" />
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {lastSnap && (
-            <Badge variant="outline" className="text-xs">
-              Ultima: {new Date(lastSnap.scanned_at).toLocaleString('it-IT')}
-            </Badge>
-          )}
-          {isAdmin && (
-            <Button size="sm" variant="outline" onClick={handleManualScan} disabled={running || !organizationId}>
-              {running ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <PlayCircle className="w-4 h-4 mr-2" />}
-              Esegui ora
-            </Button>
-          )}
-        </div>
+        {lastSnap && (
+          <Badge variant="outline" className="text-xs">
+            Ultima: {new Date(lastSnap.scanned_at).toLocaleString('it-IT')}
+          </Badge>
+        )}
       </CardHeader>
       <CardContent>
         {isLoading ? (

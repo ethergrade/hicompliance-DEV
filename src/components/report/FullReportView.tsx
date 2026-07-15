@@ -414,7 +414,7 @@ const FullReportView: React.FC<FullReportViewProps> = ({ onReady }) => {
 			<section ref={refs.surface} className="p-8 bg-white space-y-6">
 				<h2 className="text-lg font-bold">SurfaceScan360 — Esposizione</h2>
 				<SurfaceScanMailSecurity />
-				<SurfaceScanTrendline isAdmin={false} />
+				<SurfaceScanTrendline />
 				<SecurityFindings />
 				<ExternalScanIntelligenceSection />
 			</section>
@@ -424,10 +424,10 @@ const FullReportView: React.FC<FullReportViewProps> = ({ onReady }) => {
 				<h2 className="text-lg font-bold">DarkRisk360 — Panoramica</h2>
 				<div className="grid grid-cols-4 gap-3">
 					{[
-						["Minacce attive", darkRisk?.kpis.active_threats.value ?? 0],
-						["Credenziali esposte", darkRisk?.kpis.credential_leaks.value ?? 0],
-						["Risk score", darkRisk?.kpis.risk_score.value ?? 0],
-						["Findings critici", darkRisk?.kpis.critical_findings.value ?? 0],
+						["Leak rilevati", darkRisk?.weekly_snapshot?.total_records ?? 0],
+						["Nuovi nel periodo", darkRisk?.weekly_snapshot?.new_this_week ?? 0],
+						["Indice di rischio", `${darkRisk?.kpis.risk_score.value ?? 0}/100`],
+						["Target monitorati", darkRisk?.kpis.monitored_domains.value ?? 0],
 					].map(([label, value]) => (
 						<div key={label as string} className="border border-slate-200 rounded-md p-3">
 							<div className="text-xs text-slate-500">{label}</div>

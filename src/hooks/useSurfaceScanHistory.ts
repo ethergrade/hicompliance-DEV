@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { surfaceScan360Api, type SurfaceScanJob } from '@/lib/api/surface-scan360';
+import { surfaceScan360Api, type SurfaceScanHistoryEntry } from '@/lib/api/surface-scan360';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { toast } from 'sonner';
 
@@ -38,20 +38,6 @@ const toEpss = (avgScore: number) => {
   return Math.round(((100 - s) / 10) * 10) / 10;
 };
 
-const mapJobToHistoryRow = (job: SurfaceScanJob): SurfaceScanHistoryRow => ({
-  id: job.id,
-  scanned_at: job.completed_at || job.started_at || job.id, // fallback to ID if no date
-  total_assets: job.summary?.total_assets ?? 0,
-  critical_count: job.summary?.critical_count ?? 0,
-  warning_count: job.summary?.warning_count ?? 0,
-  safe_count: job.summary?.safe_count ?? 0,
-  avg_score: job.summary?.overall_score ?? 0,
-  high_cves: job.summary?.high_cves ?? 0,
-  medium_cves: job.summary?.medium_cves ?? 0,
-  low_cves: job.summary?.low_cves ?? 0,
-  triggered_by: null,
-});
-
 /**
  * Trigger a manual SurfaceScan (creates a new job via the backend API).
  * Creates a domain_exposure scan for the organization's monitored scope.
@@ -74,29 +60,26 @@ export const useSurfaceScanHistory = (limit: number = 12) => {
   const [isExporting, setIsExporting] = useState(false);
 
   const {
-    data: jobs = [],
+    data: historyRows = [],
     isLoading,
     error: queryError,
     refetch,
   } = useQuery({
     queryKey: ['surface-scan-history', organizationId, limit, groupId],
     queryFn: async () => {
-      if (!organizationId) return [] as SurfaceScanJob[];
-      const result = await surfaceScan360Api.listJobs(
-        organizationId,
-        { page: 1 },
-        groupId,
-      );
-      return (result || []).slice(0, limit);
+      if (!organizationId) return [] as SurfaceScanHistoryEntry[];
+      return surfaceScan360Api.listHistory(organizationId, limit, groupId);
     },
     enabled: !!organizationId,
     refetchInterval: 30_000, // polling replaces Realtime subscription
     staleTime: 15_000,
   });
 
-  const rows: SurfaceScanHistoryRow[] = useMemo(() => {
-    return jobs.map(mapJobToHistoryRow);
-  }, [jobs]);
+  // La history API restituisce già le righe nella forma attesa (surface_scan_history).
+  const rows: SurfaceScanHistoryRow[] = useMemo(
+    () => historyRows as SurfaceScanHistoryRow[],
+    [historyRows],
+  );
 
   const error = queryError ? String((queryError as any)?.message || 'Errore caricamento storico') : null;
 

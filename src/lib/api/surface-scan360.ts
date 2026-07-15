@@ -49,6 +49,20 @@ export interface SurfaceScanJob {
 	} | null;
 }
 
+export interface SurfaceScanHistoryEntry {
+	id: string;
+	scanned_at: string;
+	total_assets: number;
+	critical_count: number;
+	warning_count: number;
+	safe_count: number;
+	avg_score: number;
+	high_cves: number;
+	medium_cves: number;
+	low_cves: number;
+	triggered_by: string | null;
+}
+
 export interface SurfaceScanAiReport {
 	id: string;
 	scan_job_id: string;
@@ -184,6 +198,26 @@ export const surfaceScan360Api = {
 			groupId ? groupHeader(groupId) : undefined,
 		);
 		return extractArray<SurfaceScanJob>(res.data);
+	},
+
+	/**
+	 * Storico settimanale aggregato (tabella surface_scan_history), popolato dal
+	 * cron settimanale. Fonte della trendline: NON usare listJobs, il cui summary
+	 * non contiene i conteggi (total_assets/critical_count/cve…).
+	 */
+	async listHistory(
+		companyId: string,
+		limit: number = 12,
+		groupId?: string | null,
+	): Promise<SurfaceScanHistoryEntry[]> {
+		const res = await complianceApiClient.get<
+			ApiResponse<SurfaceScanHistoryEntry[]>
+		>(
+			`/companies/${companyId}/surface-scan360/history`,
+			{ limit },
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return extractArray<SurfaceScanHistoryEntry>(res.data);
 	},
 
 	async createJob(
@@ -601,6 +635,29 @@ export const surfaceScan360Api = {
 			groupId ? groupHeader(groupId) : undefined,
 		);
 		return res.data;
+	},
+
+	/**
+	 * Scarica il PDF di un report mensile (fetch autenticato: l'endpoint è protetto
+	 * da Bearer, quindi un <a href> semplice non basta).
+	 */
+	async downloadMonthlyReport(
+		companyId: string,
+		reportId: string,
+		groupId?: string | null,
+	): Promise<void> {
+		const blob = await complianceApiClient.getBlob(
+			`/companies/${companyId}/surface-scan360/monthly-report/${reportId}/download`,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		const url = URL.createObjectURL(blob);
+		const anchor = document.createElement("a");
+		anchor.href = url;
+		anchor.download = `surfacescan360-monthly-${reportId}.pdf`;
+		document.body.appendChild(anchor);
+		anchor.click();
+		anchor.remove();
+		URL.revokeObjectURL(url);
 	},
 
 	// Delete AI report
