@@ -32,6 +32,49 @@ const getServiceIcon = (code: string) => {
 	}
 };
 
+// Catalogo servizi — chiavi normalizzate (lowercase, no underscore/punteggiatura)
+// per confronto case-insensitive con i service_type del backend.
+const SERVICE_CATALOG: Record<string, { name: string; icon: string }> = {
+	hicompliance: { name: "HiCompliance", icon: "shield" },
+	surfacescan: { name: "SurfaceScan360", icon: "chart" },
+	darkrisk: { name: "DarkRisk360", icon: "shield" },
+	hipatch: { name: "HiPatch", icon: "shield" },
+	hifirewall: { name: "HiFirewall", icon: "shield" },
+	hiendpoint: { name: "HiEndpoint", icon: "shield" },
+	himail: { name: "HiMail", icon: "shield" },
+	hidetect: { name: "HiDetect", icon: "shield" },
+	hilog: { name: "HiLog", icon: "shield" },
+	himobile: { name: "HiMobile", icon: "shield" },
+	hitrack: { name: "HiTrack", icon: "shield" },
+};
+
+// Ordine di visualizzazione richiesto dai servizi HiSolution nella dashboard.
+// Trello #74: 1) HiCompliance 2) Surface 3) dark 4) Firewall 5) endpoint
+// 6) mobile 7) log 8) patch 9) hitrack.
+const SERVICE_DISPLAY_ORDER: Record<string, number> = {
+	hicompliance: 1,
+	surfacescan: 2,
+	darkrisk: 3,
+	hifirewall: 4,
+	hiendpoint: 5,
+	himobile: 6,
+	hilog: 7,
+	hipatch: 8,
+	hitrack: 9,
+};
+
+// Route canonica per codice servizio. I servizi con pagina dedicata NON usano
+// /dashboard/service/... : surfacescan → pagina reale (non il mock di test);
+// darkrisk → pagina dedicata (altrimenti /dashboard/service/darkrisk cade nel
+// default dello switch e redirige ad /assessment).
+const SERVICE_ROUTES: Record<string, string> = {
+	surfacescan: "/surface-scan",
+	darkrisk: "/dark-risk",
+};
+
+const normalizeCode = (code: string) =>
+	code.toLowerCase().replace(/[^a-z0-9]/g, "");
+
 const Dashboard: React.FC = () => {
 	const navigate = useNavigate();
 	const { user } = useAuth();
@@ -56,67 +99,39 @@ const Dashboard: React.FC = () => {
 	// report mensile backend che usa una formula diversa → causava disallineamenti).
 	const { data: liveRadar } = useAssessmentRadar(activeOrgId, activeGroupId);
 
-	// Catalogo servizi — chiavi normalizzate (lowercase, no underscore/punteggiatura)
-	// per confronto case-insensitive con i service_type del backend.
-	const SERVICE_CATALOG: Record<string, { name: string; icon: string }> = {
-		hicompliance: { name: "HiCompliance", icon: "shield" },
-		surfacescan: { name: "SurfaceScan360", icon: "chart" },
-		darkrisk: { name: "DarkRisk360", icon: "shield" },
-		hipatch: { name: "HiPatch", icon: "shield" },
-		hifirewall: { name: "HiFirewall", icon: "shield" },
-		hiendpoint: { name: "HiEndpoint", icon: "shield" },
-		himail: { name: "HiMail", icon: "shield" },
-		hidetect: { name: "HiDetect", icon: "shield" },
-		hilog: { name: "HiLog", icon: "shield" },
-		himobile: { name: "HiMobile", icon: "shield" },
-		hitrack: { name: "HiTrack", icon: "shield" },
-	};
-
-	// Ordine di visualizzazione richiesto dai servizi HiSolution nella dashboard.
-	// Trello #74: 1) HiCompliance 2) Surface 3) dark 4) Firewall 5) endpoint
-	// 6) mobile 7) log 8) patch 9) hitrack.
-	const SERVICE_DISPLAY_ORDER: Record<string, number> = {
-		hicompliance: 1,
-		surfacescan: 2,
-		darkrisk: 3,
-		hifirewall: 4,
-		hiendpoint: 5,
-		himobile: 6,
-		hilog: 7,
-		hipatch: 8,
-		hitrack: 9,
-	};
-
-	const normalizeCode = (code: string) =>
-		code.toLowerCase().replace(/[^a-z0-9]/g, "");
-
 	// Mostra SOLO i servizi HiSolution attivi per questo tenant.
 	const hiSolutionServices = useMemo(() => {
-		return integrations
-			.filter((i) => i.is_active && i.service_code)
-			.map((i) => {
-				const key = normalizeCode(i.service_code!);
-				const meta = SERVICE_CATALOG[key];
-				if (!meta) return null;
-				return {
-					id: i.service_code!,
-					status: "active" as const,
-					health_score: null as number | null,
-					services: {
-						name: meta.name,
-						code: i.service_code!,
-						id: i.service_code!,
-					},
-				};
-			})
-			.filter(Boolean) as typeof hiSolutionServices;
+		// Deduplica per codice normalizzato: il backend può restituire più
+		// integration per lo stesso servizio (es. "hipatch" + "hi_patch"),
+		// che altrimenti generano due tile identiche. Una sola per servizio.
+		const byCode = new Map<
+			string,
+			{
+				id: string;
+				status: "active";
+				health_score: number | null;
+				services: { name: string; code: string; id: string };
+			}
+		>();
+
+		for (const i of integrations) {
+			if (!i.is_active || !i.service_code) continue;
+			const key = normalizeCode(i.service_code);
+			const meta = SERVICE_CATALOG[key];
+			if (!meta || byCode.has(key)) continue;
+			byCode.set(key, {
+				id: key,
+				status: "active",
+				health_score: null,
+				// code normalizzato: la navigazione usa una route canonica per codice.
+				services: { name: meta.name, code: key, id: key },
+			});
+		}
 
 		// Ordina per SERVICE_DISPLAY_ORDER; i servizi sconosciuti vanno in coda.
-		return hiSolutionServices.slice().sort((a, b) => {
-			const aKey = normalizeCode(a.services.code);
-			const bKey = normalizeCode(b.services.code);
-			const aOrder = SERVICE_DISPLAY_ORDER[aKey] ?? 999;
-			const bOrder = SERVICE_DISPLAY_ORDER[bKey] ?? 999;
+		return Array.from(byCode.values()).sort((a, b) => {
+			const aOrder = SERVICE_DISPLAY_ORDER[a.services.code] ?? 999;
+			const bOrder = SERVICE_DISPLAY_ORDER[b.services.code] ?? 999;
 			return aOrder - bOrder;
 		});
 	}, [integrations]);
@@ -129,16 +144,13 @@ const Dashboard: React.FC = () => {
 	const connectedServicesCount = hiSolutionServices.length;
 
 	const handleServiceClick = (service: { code: string; name: string }) => {
-		// HiCompliance è il container dei servizi hisolution, non ha una pagina
-		// dashboard dedicata → resta sulla dashboard generale.
-		if (
-			service.code.toLowerCase().includes("compliance") ||
-			service.name.toLowerCase().includes("compliance")
-		) {
+		const key = normalizeCode(service.code);
+		// HiCompliance è il container dei servizi hisolution, non ha pagina dedicata.
+		if (key === "hicompliance" || service.name.toLowerCase().includes("compliance")) {
 			navigate("/dashboard");
 			return;
 		}
-		navigate(`/dashboard/service/${service.code}`);
+		navigate(SERVICE_ROUTES[key] ?? `/dashboard/service/${key}`);
 	};
 
 	const renderServiceCard = (
