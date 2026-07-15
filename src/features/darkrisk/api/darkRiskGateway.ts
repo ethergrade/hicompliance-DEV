@@ -131,6 +131,29 @@ export const darkRiskGateway = {
 		);
 	},
 
+	/**
+	 * Scarica il PDF di uno snapshot report tramite fetch autenticato (il download
+	 * endpoint è protetto da Bearer, quindi un <a href> semplice non basta).
+	 */
+	async downloadReport(
+		companyId: string,
+		snapshotId: string,
+		groupId?: string | null,
+	): Promise<void> {
+		const blob = await complianceApiClient.getBlob(
+			`/companies/${companyId}/darkrisk/report-snapshots/${snapshotId}/download`,
+			requestOptions(groupId),
+		);
+		const url = URL.createObjectURL(blob);
+		const anchor = document.createElement("a");
+		anchor.href = url;
+		anchor.download = `darkrisk360-report-${snapshotId}.pdf`;
+		document.body.appendChild(anchor);
+		anchor.click();
+		anchor.remove();
+		URL.revokeObjectURL(url);
+	},
+
 	async getExtendedResult(
 		companyId: string,
 		runId: string,

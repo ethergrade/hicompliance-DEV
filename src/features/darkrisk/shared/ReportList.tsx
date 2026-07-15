@@ -9,13 +9,14 @@ interface ReportListProps {
 	reports: DarkRiskReport[];
 	isLoading?: boolean;
 	onSelectRun?: (runId: string) => void;
+	onDownload?: (report: DarkRiskReport) => void;
 }
 
 const formatDate = (value: string | null) => value
 	? new Intl.DateTimeFormat("it-IT", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
 	: "—";
 
-export const ReportList = ({ title, reports, isLoading, onSelectRun }: ReportListProps) => (
+export const ReportList = ({ title, reports, isLoading, onSelectRun, onDownload }: ReportListProps) => (
 	<Card>
 		<CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader>
 		<CardContent className="space-y-2">
@@ -30,7 +31,11 @@ export const ReportList = ({ title, reports, isLoading, onSelectRun }: ReportLis
 					<Badge variant="outline">{report.status}</Badge>
 					{onSelectRun && report.runId ? <Button size="sm" variant="outline" onClick={() => onSelectRun(report.runId!)}>Apri risultati</Button> : null}
 					{report.downloadUrl ? (
-						<Button size="sm" asChild><a href={report.downloadUrl} rel="noreferrer"><Download className="mr-2 h-4 w-4" />Scarica</a></Button>
+						onDownload ? (
+							<Button size="sm" onClick={() => onDownload(report)}><Download className="mr-2 h-4 w-4" />Scarica</Button>
+						) : (
+							<Button size="sm" asChild><a href={report.downloadUrl} rel="noreferrer"><Download className="mr-2 h-4 w-4" />Scarica</a></Button>
+						)
 					) : null}
 				</div>
 			))}

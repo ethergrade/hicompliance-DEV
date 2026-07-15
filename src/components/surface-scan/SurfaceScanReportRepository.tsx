@@ -91,6 +91,15 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
     }
   };
 
+  const handleDownloadMonthly = async (report: MonthlyReport) => {
+    if (!organizationId) return;
+    try {
+      await surfaceScan360Api.downloadMonthlyReport(organizationId, report.id, groupId);
+    } catch {
+      toast.error('Download del report non riuscito');
+    }
+  };
+
   const {
     reports,
     loading,
@@ -343,7 +352,7 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
                     <TableHead>Findings</TableHead>
                     <TableHead>Breach</TableHead>
                     <TableHead>Generato</TableHead>
-                    {canManage && <TableHead>Azioni</TableHead>}
+                    <TableHead>Azioni</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -384,13 +393,18 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
                             : <span className="text-muted-foreground">—</span>}
                         </TableCell>
                         <TableCell className="text-sm">{new Date(r.created_at).toLocaleString('it-IT')}</TableCell>
-                        {canManage && (
-                          <TableCell>
-                            <Button size="sm" variant="ghost" onClick={() => handleGenerateMonthly(r.month_key)} disabled={generatingMonthly}>
-                              Rigenera
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="outline" onClick={() => handleDownloadMonthly(r)}>
+                              <Download className="w-4 h-4 mr-1" />PDF
                             </Button>
-                          </TableCell>
-                        )}
+                            {canManage && (
+                              <Button size="sm" variant="ghost" onClick={() => handleGenerateMonthly(r.month_key)} disabled={generatingMonthly}>
+                                Rigenera
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
                       </TableRow>
                     );
                   })}

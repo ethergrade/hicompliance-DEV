@@ -37,6 +37,15 @@ export default function ExtendedDarkRiskPage() {
 	const queryClient = useQueryClient();
 	const [activeRunId, setActiveRunId] = useState<string | null>(null);
 
+	const handleDownloadReport = async (report: { id: string }) => {
+		if (!organizationId) return;
+		try {
+			await darkRiskGateway.downloadReport(organizationId, report.id, groupId);
+		} catch {
+			toast.error("Impossibile scaricare il report.");
+		}
+	};
+
 	const scopeQuery = useQuery({
 		queryKey: darkRiskQueryKeys.scope(organizationId),
 		queryFn: () => darkRiskGateway.getScope(organizationId!, groupId),
@@ -294,6 +303,7 @@ export default function ExtendedDarkRiskPage() {
 							reports={reportsQuery.data ?? []}
 							isLoading={reportsQuery.isLoading}
 							onSelectRun={setActiveRunId}
+							onDownload={handleDownloadReport}
 						/>
 					</>
 				)}

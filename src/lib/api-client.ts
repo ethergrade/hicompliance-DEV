@@ -263,6 +263,38 @@ async function request<T>(
 	return json as T;
 }
 
+/**
+ * GET autenticato che restituisce un Blob (es. download PDF).
+ * Non fa il parsing JSON: usa il Bearer token come le altre chiamate.
+ */
+async function requestBlob(
+	path: string,
+	options: { headers?: Record<string, string> } = {},
+	baseUrl: string = API_BASE_URL,
+): Promise<Blob> {
+	const url = `${baseUrl}${path}`;
+	guardTokenExpiry();
+
+	const token = getToken();
+	const reqHeaders: Record<string, string> = { ...(options.headers ?? {}) };
+	if (token) {
+		reqHeaders.Authorization = `Bearer ${token}`;
+	}
+
+	const response = await fetch(url, { method: "GET", headers: reqHeaders });
+
+	if (!response.ok) {
+		const contentType = response.headers.get("content-type") ?? "";
+		const isJson = contentType.includes("application/json");
+		const body = isJson
+			? await response.json()
+			: { success: false, message: await response.text() };
+		throw new ApiError(response.status, body as ApiErrorResponse);
+	}
+
+	return response.blob();
+}
+
 // ─── HTTP method helpers ────────────────────────────────────────────────────
 
 type ApiClientOptions = {
@@ -318,6 +350,10 @@ function createApiClient(baseUrl: string) {
 				{ method: "DELETE", headers: opts?.headers },
 				baseUrl,
 			);
+		},
+
+		getBlob(path: string, opts?: ApiClientOptions): Promise<Blob> {
+			return requestBlob(path, { headers: opts?.headers }, baseUrl);
 		},
 	};
 }

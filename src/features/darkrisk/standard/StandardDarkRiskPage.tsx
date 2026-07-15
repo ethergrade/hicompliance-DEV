@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { useUserRoles } from "@/hooks/useUserRoles";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { toast } from "sonner";
 import { darkRiskGateway } from "../api/darkRiskGateway";
 import { darkRiskQueryKeys } from "../api/queryKeys";
 import { ReportList } from "../shared/ReportList";
@@ -69,6 +70,15 @@ export default function StandardDarkRiskPage() {
 	});
 
 	const overview = overviewQuery.data;
+
+	const handleDownloadReport = async (report: { id: string }) => {
+		if (!organizationId) return;
+		try {
+			await darkRiskGateway.downloadReport(organizationId, report.id, groupId);
+		} catch {
+			toast.error("Impossibile scaricare il report.");
+		}
+	};
 	const cards = [
 		{
 			label: "Leak rilevati",
@@ -276,6 +286,7 @@ export default function StandardDarkRiskPage() {
 							title="Report mensili"
 							reports={reportsQuery.data ?? []}
 							isLoading={reportsQuery.isLoading}
+							onDownload={handleDownloadReport}
 						/>
 					</>
 				)}
