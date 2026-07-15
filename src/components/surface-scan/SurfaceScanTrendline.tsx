@@ -10,7 +10,7 @@ export const SurfaceScanTrendline: React.FC = () => {
 
   const chartData = (history ?? []).map((s) => ({
     date: new Date(s.scanned_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'short' }),
-    score: s.avg_score,
+    score: Number(s.avg_score),
     critici: s.critical_count,
     attenzione: s.warning_count,
     sicuri: s.safe_count,
@@ -49,7 +49,7 @@ export const SurfaceScanTrendline: React.FC = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
               <div className="rounded-lg border p-3">
                 <p className="text-xs text-muted-foreground">Score medio</p>
-                <p className="text-2xl font-bold">{lastSnap?.avg_score?.toFixed(1) ?? '-'}</p>
+                <p className="text-2xl font-bold">{lastSnap?.avg_score != null ? Number(lastSnap.avg_score).toFixed(1) : '-'}</p>
               </div>
               <div className="rounded-lg border p-3">
                 <p className="text-xs text-muted-foreground">Asset analizzati</p>
