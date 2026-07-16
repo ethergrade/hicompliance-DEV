@@ -106,7 +106,7 @@
         "npm:@radix-ui/react-toggle-group@^1.1.0",
         "npm:@radix-ui/react-toggle@^1.1.0",
         "npm:@radix-ui/react-tooltip@^1.1.4",
-        "npm:@supabase/supabase-js@^2.50.3",
+        "npm:@supabase/supabase-js@^2.110.6",
         "npm:@tailwindcss/typography@~0.5.15",
         "npm:@tanstack/react-query@^5.56.2",
         "npm:@types/file-saver@^2.0.7",
@@ -130,13 +130,12 @@
         "npm:html2canvas@^1.4.1",
         "npm:input-otp@^1.2.4",
         "npm:jspdf@^4.1.0",
-        "npm:lovable-tagger@^1.1.7",
         "npm:lucide-react@0.462",
         "npm:next-themes@0.3",
         "npm:pizzip@^3.2.0",
         "npm:playwright@^1.55.0",
         "npm:postcss@^8.4.47",
-        "npm:react-day-picker@^8.10.1",
+        "npm:react-day-picker@^10.0.1",
         "npm:react-dom@^18.3.1",
         "npm:react-hook-form@^7.53.0",
         "npm:react-markdown@^10.1.0",
@@ -152,8 +151,10 @@
         "npm:typescript@^5.5.3",
         "npm:vaul@~0.9.3",
         "npm:vite@^5.4.1",
+        "npm:vitest@^4.1.10",
         "npm:xlsx@~0.18.5",
-        "npm:zod@^3.23.8"
+        "npm:zod@^3.23.8",
+        "npm:zustand@^5.0.14"
       ]
     }
   }

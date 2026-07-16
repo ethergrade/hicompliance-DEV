@@ -1,0 +1,45 @@
+{
+  "module": "hitrack",
+  "base_branch": "merge-imnick-IMNICK",
+  "implementation_branch": "feature/hitrack-domotz-integration",
+  "initial_sha": "d67059cac64975069bb96e97f9de8e929e794537",
+  "local_only": true,
+  "migrations": [
+    "20260716120000_hitrack_domotz_integration.sql"
+  ],
+  "edge_functions": [
+    "hitrack-discovery",
+    "hitrack-scheduler",
+    "hitrack-worker",
+    "hitrack-sync-now",
+    "hitrack-retention"
+  ],
+  "frontend_entries": [
+    "src/components/service-dashboards/HiTrackDashboard.tsx",
+    "src/hooks/useHiTrackDashboard.ts",
+    "src/lib/hitrack/client.ts"
+  ],
+  "required_env": [
+    "VITE_SUPABASE_URL",
+    "VITE_SUPABASE_ANON_KEY",
+    "DOMOTZ_API_BASE_URL",
+    "DOMOTZ_API_KEY",
+    "HITRACK_CRON_INTERNAL_SECRET"
+  ],
+  "staging_deploy_order": [
+    "apply migration",
+    "deploy shared code and edge functions",
+    "configure staging environment variables",
+    "enable cron hitrack-scheduler-15min",
+    "run hitrack-discovery for candidate matching",
+    "create collector mapping rows",
+    "run hitrack-sync-now",
+    "verify dashboard, coverage and freshness"
+  ],
+  "not_verified": [
+    "remote migration execution",
+    "remote function deployment",
+    "browser Supabase JWT runtime",
+    "remote pg_cron activation"
+  ]
+}

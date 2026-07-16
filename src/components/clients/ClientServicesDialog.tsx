@@ -38,6 +38,7 @@ import {
 	Eye,
 	Radar,
 	Calendar,
+	Database,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -73,6 +74,7 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
 	hilog: <Server className="w-4 h-4" />,
 	hidetect: <SearchIcon className="w-4 h-4" />,
 	himobile: <Smartphone className="w-4 h-4" />,
+	hitrack: <Activity className="w-4 h-4" />,
 };
 
 /** Derive feature flags from tenant-services list */
@@ -92,6 +94,9 @@ function deriveFlags(services: TenantServiceResource[]) {
 	const hp = services.find(
 		(s) => s.service_type === "hipatch" && (s.status === "active" || !s.status),
 	);
+	const htk = services.find(
+		(s) => s.service_type === "hitrack" && (s.status === "active" || !s.status),
+	);
 	return {
 		hicompliance_enabled: !!hc,
 		hicompliance_license:
@@ -101,6 +106,7 @@ function deriveFlags(services: TenantServiceResource[]) {
 		surface_scan360_enabled: !!ht,
 		dark_risk360_enabled: !!dr || !!hc,
 		hipatch_enabled: !!hp,
+		hitrack_enabled: !!htk,
 	};
 }
 
@@ -299,6 +305,11 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 				const hp = ts.find((s) => s.service_type === "hipatch");
 				if (hp) await tenantServicesApi.delete(hp.id, groupId);
 			}
+			// HiTrack toggle OFF
+			if (patch.hitrack_enabled === false) {
+				const ht = ts.find((s) => s.service_type === "hitrack");
+				if (ht) await tenantServicesApi.delete(ht.id, groupId);
+			}
 
 			// Create new services
 			// HiCompliance toggle ON
@@ -407,6 +418,31 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 							service_type: "hipatch",
 							status: "active",
 							settings: {
+								...(defaultStart ? { contract_start: defaultStart } : {}),
+							},
+						},
+						groupId,
+					);
+				}
+			}
+			// HiTrack toggle ON — configurazione runtime su Supabase/Domotz, non credenziali browser
+			if (patch.hitrack_enabled === true) {
+				const ht = ts.find((s) => s.service_type === "hitrack");
+				if (!ht) {
+					const hcSettings =
+						(ts.find((s) => s.service_type === "hicompliance")
+							?.settings as any) || {};
+					const defaultStart = hcSettings.contract_start || "";
+					await tenantServicesApi.create(
+						{
+							tenant_id: organizationId,
+							service_type: "hitrack",
+							status: "active",
+							settings: {
+								collector_match_mode: "organization_alias",
+								collector_aliases: [],
+								sync_interval_minutes: 15,
+								data_source: "domotz_public_api",
 								...(defaultStart ? { contract_start: defaultStart } : {}),
 							},
 						},
@@ -1094,6 +1130,63 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 							{orgFlags?.hipatch_enabled && (
 								<div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
 									{renderContractRow("hipatch")}
+								</div>
+							)}
+
+							<div className="flex items-center justify-between rounded-md border p-3">
+								<div className="flex items-center gap-3">
+									<div
+										className={`p-1.5 rounded-md ${orgFlags?.hitrack_enabled ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}
+									>
+										<Activity className="w-4 h-4" />
+									</div>
+									<div>
+										<p className="text-sm font-medium">HiTrack</p>
+										<p className="text-xs text-muted-foreground">
+											Servizio gestito HiSolution connesso con Domotz
+										</p>
+									</div>
+								</div>
+								<Switch
+									checked={!!orgFlags?.hitrack_enabled}
+									disabled={updateFlagsMutation.isPending}
+									onCheckedChange={(v) => {
+										updateFlagsMutation.mutate({ hitrack_enabled: v });
+									}}
+								/>
+							</div>
+
+							{orgFlags?.hitrack_enabled && (
+								<div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
+									{renderContractRow("hitrack")}
+									<div className="flex items-center justify-between rounded-md border p-2.5">
+										<div className="flex items-center gap-3">
+											<Activity className="w-4 h-4 text-muted-foreground" />
+											<div>
+												<p className="text-sm font-medium">Sincronizzazione runtime</p>
+												<p className="text-xs text-muted-foreground">
+													Discovery collector + ingest metriche Domotz ogni 15 minuti
+												</p>
+											</div>
+										</div>
+										<Badge variant="outline" className="text-xs">
+											15 minuti
+										</Badge>
+									</div>
+									<div className="flex items-center justify-between rounded-md border p-2.5">
+										<div className="flex items-center gap-3">
+											<Database className="w-4 h-4 text-muted-foreground" />
+											<div>
+												<p className="text-sm font-medium">Data Coverage</p>
+												<p className="text-xs text-muted-foreground">
+													RAM e dischi sono mostrati solo quando la Public API espone metriche quantitative verificate
+												</p>
+											</div>
+										</div>
+										<Badge variant="outline" className="text-xs">
+											Domotz Public API
+										</Badge>
+									</div>
 								</div>
 							)}
 						</div>
