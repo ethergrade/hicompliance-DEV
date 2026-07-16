@@ -17,6 +17,7 @@ import { AssessmentRadarChart } from "@/components/assessment/AssessmentRadarCha
 import { useAssessmentRadar } from "@/hooks/useAssessmentRadar";
 import ClientServicesDialog from "@/components/clients/ClientServicesDialog";
 import { Shield, BarChart3, Unlink, Settings } from "lucide-react";
+import { useHiTrackDashboard } from "@/hooks/useHiTrackDashboard";
 
 const getServiceIcon = (code: string) => {
 	const key = code.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -85,6 +86,7 @@ const Dashboard: React.FC = () => {
 	const activeGroupId = selectedOrganization?.group_id ?? null;
 	const { integrations } = useServiceIntegrations();
 	const { isSuperAdmin, isSales } = useUserRoles();
+	const { data: hiTrackDashboard } = useHiTrackDashboard();
 	const canManageIntegrationSettings = isSuperAdmin || isSales;
 	const [modulesDialogOpen, setModulesDialogOpen] = useState(false);
 
@@ -142,6 +144,17 @@ const Dashboard: React.FC = () => {
 	const isModuleEnabledForDashboard = (_serviceCode: string) => true;
 
 	const connectedServicesCount = hiSolutionServices.length;
+
+	const resolveServiceHealthScore = (
+		serviceCode: string,
+		fallbackScore: number | null,
+	) => {
+		const key = normalizeCode(serviceCode);
+		if (key === "hitrack") {
+			return Math.round(hiTrackDashboard?.overview.healthScore ?? fallbackScore ?? 0);
+		}
+		return fallbackScore ?? 0;
+	};
 
 	const handleServiceClick = (service: { code: string; name: string }) => {
 		const key = normalizeCode(service.code);
@@ -369,7 +382,10 @@ const Dashboard: React.FC = () => {
 									const service = orgService.services;
 									return renderServiceCard(
 										service,
-										orgService.health_score ?? 0,
+										resolveServiceHealthScore(
+											service.code,
+											orgService.health_score,
+										),
 										index,
 									);
 								})}

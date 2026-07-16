@@ -82,3 +82,18 @@ verify_jwt = false
 
 [functions.darkrisk-dti-esteso-report]
 verify_jwt = false
+
+[functions.hitrack-discovery]
+verify_jwt = false
+
+[functions.hitrack-scheduler]
+verify_jwt = false
+
+[functions.hitrack-worker]
+verify_jwt = false
+
+[functions.hitrack-sync-now]
+verify_jwt = false
+
+[functions.hitrack-retention]
+verify_jwt = false

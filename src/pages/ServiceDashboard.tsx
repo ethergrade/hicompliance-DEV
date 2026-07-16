@@ -6,9 +6,9 @@ import { HiFirewallDashboard } from "@/components/service-dashboards/HiFirewallD
 import { HiEndpointDashboard } from "@/components/service-dashboards/HiEndpointDashboard";
 import { HiMailDashboard } from "@/components/service-dashboards/HiMailDashboard";
 import { HiLogDashboard } from "@/components/service-dashboards/HiLogDashboard";
-import { SurfaceScanDashboard } from "@/components/service-dashboards/SurfaceScanDashboard";
 import { HiDetectDashboard } from "@/components/service-dashboards/HiDetectDashboard";
 import { HiMobileDashboard } from "@/components/service-dashboards/HiMobileDashboard";
+import { HiTrackDashboard } from "@/components/service-dashboards/HiTrackDashboard";
 import {
 	Breadcrumb,
 	BreadcrumbItem,
@@ -26,6 +26,9 @@ const serviceNameMap: Record<string, string> = {
 	himail: "HiMail",
 	hilog: "HiLog",
 	surfacescan: "SurfaceScan360",
+	hitrack: "HiTrack",
+	hi_track: "HiTrack",
+	"hi-track": "HiTrack",
 	hidetect: "HiDetect",
 	himobile: "HiMobile",
 };
@@ -48,7 +51,11 @@ const ServiceDashboard: React.FC = () => {
 			case "hilog":
 				return <HiLogDashboard />;
 			case "surfacescan":
-				return <SurfaceScanDashboard />;
+				return <Navigate to="/surface-scan" replace />;
+			case "hitrack":
+			case "hi_track":
+			case "hi-track":
+				return <HiTrackDashboard />;
 			case "hidetect":
 				return <HiDetectDashboard />;
 			case "himobile":
