@@ -124,7 +124,7 @@ export const useAICiso = () => {
         message: userPrompt,
         conversationHistory: messages,
       });
-      const aiMsg: Message = { role: \'assistant\', content: data.response };
+      const aiMsg: Message = { role: 'assistant', content: data.response };
       const finalMessages = [...updatedMessages, aiMsg];
       setMessages(finalMessages);
       await saveConversation(finalMessages);

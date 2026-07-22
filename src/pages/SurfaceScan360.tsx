@@ -54,6 +54,7 @@ import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceS
 import { useSurfaceScanAlerts, SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
 import { useSurfaceScanMonitoredIps } from '@/hooks/useSurfaceScanMonitoredIps';
 import { useUserRoles } from '@/hooks/useUserRoles';
+import { useCapabilities } from '@/hooks/useCapabilities';
 import { useSurfaceScanEngine, type SurfaceScanProfile } from '@/hooks/useSurfaceScanEngine';
 import { useSurfaceScanDiscoveredAssets } from '@/hooks/useSurfaceScanDiscoveredAssets';
 import { useSurfaceScanFindings } from '@/hooks/useSurfaceScanFindings';
@@ -295,22 +296,26 @@ const SurfaceScan360: React.FC = () => {
     removeRule: removeMonitoredIpRule,
   } = useSurfaceScanMonitoredIps();
 
-  const { isSales, isSuperAdmin } = useUserRoles();
-  // Default-deny: clients (and any non-operator) get a restricted read-only UI.
-  // Operators (admin/super_admin via isAdminUser, or sales) keep seeing everything.
-  const clientReadOnly = !isAdminUser && !isSuperAdmin && !isSales;
+  const { isSuperAdmin } = useUserRoles();
+  const { hasCapability } = useCapabilities();
+  // La visibilità delle sezioni segue la matrice capability del backend
+  // (role_module_permissions), non una whitelist di ruoli hardcoded: altrimenti
+  // ruoli come `customer`/`viewer`, che hanno surfacescan.assets.view lato API,
+  // non vedono sezioni che il backend gli restituisce senza problemi.
+  const canViewSurfaceScan = hasCapability('surfacescan.assets.view');
+  const canManageSurfaceScan = hasCapability('surfacescan.assets.edit');
 
   const sectionNavItems = useMemo(() => [
     { key: 'overview', label: 'Overview', icon: Globe, ref: overviewSectionRef },
-    { key: 'scope', label: 'Scope', icon: Settings, ref: scopeSectionRef, hidden: clientReadOnly },
-    { key: 'exposure', label: 'Exposure', icon: Server, ref: exposureSectionRef, hidden: clientReadOnly },
-    { key: 'connectsecure', label: 'Servizi esposti', icon: Network, ref: connectSecureSectionRef, hidden: clientReadOnly },
-    { key: 'subdomains', label: 'Subdomains', icon: Layers, ref: subdomainsSectionRef, hidden: clientReadOnly },
+    { key: 'scope', label: 'Scope', icon: Settings, ref: scopeSectionRef, hidden: !canManageSurfaceScan },
+    { key: 'exposure', label: 'Exposure', icon: Server, ref: exposureSectionRef, hidden: !canViewSurfaceScan },
+    { key: 'connectsecure', label: 'Servizi esposti', icon: Network, ref: connectSecureSectionRef, hidden: !canViewSurfaceScan },
+    { key: 'subdomains', label: 'Subdomains', icon: Layers, ref: subdomainsSectionRef, hidden: !canViewSurfaceScan },
     { key: 'findings', label: 'Findings', icon: Shield, ref: findingsSectionRef },
     { key: 'email', label: 'Email/TLS', icon: Mail, ref: emailSectionRef },
     { key: 'reports', label: 'Reports', icon: FileText, ref: reportsSectionRef },
-    { key: 'live', label: 'Live', icon: Activity, ref: liveSectionRef, hidden: clientReadOnly },
-  ].filter((item) => !item.hidden), [clientReadOnly]);
+    { key: 'live', label: 'Live', icon: Activity, ref: liveSectionRef, hidden: !canViewSurfaceScan },
+  ].filter((item) => !item.hidden), [canViewSurfaceScan, canManageSurfaceScan]);
 
   React.useEffect(() => {
     if (sectionNavItems.length === 0) return;
@@ -1025,13 +1030,13 @@ const SurfaceScan360: React.FC = () => {
           <SurfaceScanActionItems />
         </div>
 
-        {!clientReadOnly && (
+        {canViewSurfaceScan && (
           <div ref={exposureSectionRef} className="scroll-mt-24">
             <SurfaceScanExposureSection isAdmin={isAdmin} />
           </div>
         )}
 
-        {!clientReadOnly && (
+        {canViewSurfaceScan && (
           <div ref={connectSecureSectionRef} className="scroll-mt-24">
             <SurfaceScanModuleCards
               isAdminView={isAdminUser}
@@ -1159,7 +1164,7 @@ const SurfaceScan360: React.FC = () => {
           </Card>
         )}
 
-        {organizationId && !clientReadOnly && <ExternalEndpointsPanel />}
+        {organizationId && canManageSurfaceScan && <ExternalEndpointsPanel />}
 
         </div>
 
@@ -1193,7 +1198,7 @@ const SurfaceScan360: React.FC = () => {
 
         <SurfaceScanTrendline />
 
-        {!clientReadOnly && (
+        {canViewSurfaceScan && (
         <Card className="border-border">
           <CardHeader>
             <div className="flex items-start justify-between gap-3">
@@ -1570,10 +1575,10 @@ const SurfaceScan360: React.FC = () => {
         )}
 
         <div ref={reportsSectionRef} className="scroll-mt-24">
-          <SurfaceScanReportRepository scanJobs={scanJobs} organizationId={organizationId ?? undefined} canManage={!clientReadOnly} />
+          <SurfaceScanReportRepository scanJobs={scanJobs} organizationId={organizationId ?? undefined} canManage={canManageSurfaceScan} />
         </div>
 
-        {!clientReadOnly && (
+        {canViewSurfaceScan && (
         <div ref={liveSectionRef} className="scroll-mt-24 space-y-6">
         {monitoredLiveIps.length > 0 && (
         <Card className="border-border">
