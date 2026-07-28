@@ -1,6 +1,7 @@
 import { complianceApiClient } from "@/lib/api-client";
 import type { ApiResponse } from "@/types/api";
 import type {
+	CredentialLeakPage,
 	DarkRiskReport,
 	DarkRiskRun,
 	DarkRiskScope,
@@ -8,11 +9,13 @@ import type {
 	StandardOverview,
 } from "../domain/contracts";
 import {
+	parseCredentialLeaks,
 	parseExtendedResults,
 	parseReports,
 	parseRun,
 	parseScope,
 	parseStandardOverview,
+	unwrapApiData,
 } from "../domain/schemas";
 import {
 	resolveDarkRiskEntitlements,
@@ -92,6 +95,61 @@ export const darkRiskGateway = {
 		return parseStandardOverview(
 			await getData(`/companies/${companyId}/darkrisk/overview`, groupId),
 		);
+	},
+
+	/**
+	 * Credenziali esposte, solo profilo Esteso.
+	 *
+	 * Un 403 non è un errore da propagare: significa che il cliente non ha il
+	 * tier Esteso o non ha un grant attivo, condizione normale che la pagina
+	 * rende come sezione non disponibile invece che come schermata in errore.
+	 */
+	async getCredentialLeaks(
+		companyId: string,
+		groupId?: string | null,
+		filters?: Record<string, string | number>,
+	): Promise<CredentialLeakPage> {
+		try {
+			return parseCredentialLeaks(
+				await getData(
+					`/companies/${companyId}/darkrisk/credential-leaks`,
+					groupId,
+					filters,
+				),
+			);
+		} catch (error) {
+			const status = (error as { status?: number; response?: { status?: number } })?.status
+				?? (error as { response?: { status?: number } })?.response?.status;
+			if (status === 403) {
+				return { records: [], total: 0, currentPage: 1, lastPage: 1, forbidden: true };
+			}
+			throw error;
+		}
+	},
+
+	/**
+	 * Sblocca l'evidenza in chiaro di una credenziale.
+	 *
+	 * Il backend richiede una motivazione di almeno 8 caratteri, ammette solo
+	 * admin e super-admin, registra l'accesso su darkrisk_audit_log e restituisce
+	 * un URL firmato a scadenza: il valore non transita mai nel payload JSON.
+	 */
+	async revealEvidence(
+		companyId: string,
+		evidenceId: string,
+		reason: string,
+		groupId?: string | null,
+	): Promise<{ downloadUrl: string | null; canDownload: boolean }> {
+		const response = await complianceApiClient.post<ApiResponse<unknown>>(
+			`/companies/${companyId}/darkrisk/evidence/${evidenceId}/reveal`,
+			{ reason },
+			requestOptions(groupId),
+		);
+		const data = (unwrapApiData(response.data) ?? {}) as Record<string, unknown>;
+		return {
+			downloadUrl: typeof data.download_url === "string" ? data.download_url : null,
+			canDownload: data.can_download === true,
+		};
 	},
 
 	async createStandardRun(

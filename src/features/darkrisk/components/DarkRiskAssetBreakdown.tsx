@@ -19,8 +19,8 @@ const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#8b5cf6','#ec
 
 interface AssetData {
   total: number;
-  by_source: Record<string, number>;
-  by_filetype: Record<string, number>;
+  bySource: Record<string, number>;
+  byFiletype: Record<string, number>;
 }
 
 interface Props {
@@ -49,7 +49,7 @@ function MiniPie({ data }: { data: Record<string, number> }) {
 
 function AssetCard({ asset, data }: { asset: string; data: AssetData }) {
   const [open, setOpen] = useState(false);
-  const topSources = Object.entries(data.by_source).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const topSources = Object.entries(data.bySource).sort((a, b) => b[1] - a[1]).slice(0, 3);
 
   return (
     <div className="border border-border rounded-lg overflow-hidden">
@@ -79,9 +79,9 @@ function AssetCard({ asset, data }: { asset: string; data: AssetData }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-2">Sorgenti</p>
-              <MiniPie data={data.by_source} />
+              <MiniPie data={data.bySource} />
               <div className="mt-1 space-y-0.5">
-                {Object.entries(data.by_source).sort((a, b) => b[1] - a[1]).map(([k, v], i) => (
+                {Object.entries(data.bySource).sort((a, b) => b[1] - a[1]).map(([k, v], i) => (
                   <div key={k} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-1.5">
                       <div className="h-2 w-2 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
@@ -94,9 +94,9 @@ function AssetCard({ asset, data }: { asset: string; data: AssetData }) {
             </div>
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-2">Tipo file</p>
-              <MiniPie data={data.by_filetype} />
+              <MiniPie data={data.byFiletype} />
               <div className="mt-1 space-y-0.5">
-                {Object.entries(data.by_filetype).sort((a, b) => b[1] - a[1]).map(([k, v], i) => (
+                {Object.entries(data.byFiletype).sort((a, b) => b[1] - a[1]).map(([k, v], i) => (
                   <div key={k} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-1.5">
                       <div className="h-2 w-2 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />

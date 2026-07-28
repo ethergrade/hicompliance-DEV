@@ -10,4 +10,6 @@ export const darkRiskQueryKeys = {
 		[...darkRiskQueryKeys.root(companyId), "reports", mode] as const,
 	extendedResult: (companyId: string | null, runId: string | null) =>
 		[...darkRiskQueryKeys.root(companyId), "extended-result", runId] as const,
+	credentialLeaks: (companyId: string | null) =>
+		[...darkRiskQueryKeys.root(companyId), "credential-leaks"] as const,
 };

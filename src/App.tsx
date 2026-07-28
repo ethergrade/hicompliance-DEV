@@ -60,11 +60,6 @@ const darkRiskFallback = (
 	</div>
 );
 
-// Anteprima pubblica (dati mock) della versione "ricca" di DarkRisk360 — rotta nascosta.
-const DarkRiskRichPreview = lazy(
-	() => import("./pages/darkrisk-preview/DarkRiskRichPreview"),
-);
-
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -90,14 +85,6 @@ const App = () => (
 							<Route path="/saml-callback" element={<SamlCallback />} />
 							<Route path="/login" element={<SamlCallback />} />
 							<Route path="/entra" element={<EntraRedirect />} />
-							<Route
-								path="/anteprima-darkrisk-9f3a2c"
-								element={
-									<Suspense fallback={darkRiskFallback}>
-										<DarkRiskRichPreview />
-									</Suspense>
-								}
-							/>
 							<Route path="/admin/nuclei-scan360" element={<NucleiScan360 />} />
 							<Route path="/admin/clients" element={<ClientSelection />} />
 							<Route

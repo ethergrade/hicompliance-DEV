@@ -20,6 +20,12 @@ import { useUserRoles } from "@/hooks/useUserRoles";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { darkRiskGateway } from "../api/darkRiskGateway";
 import { darkRiskQueryKeys } from "../api/queryKeys";
+import { DarkRiskAssetBreakdown } from "../components/DarkRiskAssetBreakdown";
+import { DarkRiskCalendarHeatmap } from "../components/DarkRiskCalendarHeatmap";
+import { DarkRiskCredentialLeaks } from "../components/DarkRiskCredentialLeaks";
+import { DarkRiskFiletypePieChart } from "../components/DarkRiskFiletypePieChart";
+import { DarkRiskSourcePieChart } from "../components/DarkRiskSourcePieChart";
+import type { CredentialLeak } from "../domain/contracts";
 import { ReportList } from "../shared/ReportList";
 import { ScopeEditor } from "../shared/ScopeEditor";
 import { useDarkRiskEntitlements } from "../shared/useDarkRiskEntitlements";
@@ -70,6 +76,23 @@ export default function ExtendedDarkRiskPage() {
 				? 5_000
 				: false,
 	});
+	// Stessa sorgente della pagina Standard: lo snapshot settimanale alimenta i
+	// grafici aggregati, che restano identici nei due profili.
+	const overviewQuery = useQuery({
+		queryKey: darkRiskQueryKeys.overview(organizationId),
+		queryFn: () => darkRiskGateway.getStandardOverview(organizationId!, groupId),
+		enabled: Boolean(organizationId && extendedEnabled),
+		staleTime: 60_000,
+	});
+	// Credenziali storicizzate, indipendenti dal run spot: l'endpoint risponde
+	// 403 se manca il grant extended_identity, e il gateway lo traduce in
+	// `forbidden` invece di propagare un errore.
+	const credentialLeaksQuery = useQuery({
+		queryKey: darkRiskQueryKeys.credentialLeaks(organizationId),
+		queryFn: () => darkRiskGateway.getCredentialLeaks(organizationId!, groupId),
+		enabled: Boolean(organizationId && extendedEnabled),
+		staleTime: 60_000,
+	});
 	const saveScope = useMutation({
 		mutationFn: (scope: Parameters<typeof darkRiskGateway.updateScope>[1]) =>
 			darkRiskGateway.updateScope(organizationId!, scope, groupId),
@@ -94,6 +117,43 @@ export default function ExtendedDarkRiskPage() {
 	});
 
 	const records = resultsQuery.data?.records ?? [];
+	const snapshot = overviewQuery.data?.snapshot ?? null;
+	const credentialLeaks = credentialLeaksQuery.data;
+
+	/**
+	 * Lo sblocco richiede una motivazione perché finisce nel log di audit
+	 * insieme all'utente: senza, l'accesso al dato in chiaro non è tracciabile.
+	 * Il valore non viene mostrato in pagina, si apre l'URL firmato restituito.
+	 */
+	const handleReveal = async (record: CredentialLeak) => {
+		if (!organizationId || !record.evidenceId) return;
+		const reason = window.prompt(
+			`Motivazione per lo sblocco dell'evidenza di ${record.selector} (minimo 8 caratteri).\nL'accesso verrà registrato.`,
+		);
+		if (reason === null) return;
+		if (reason.trim().length < 8) {
+			toast.error("La motivazione deve contenere almeno 8 caratteri.");
+			return;
+		}
+		try {
+			const { downloadUrl, canDownload } = await darkRiskGateway.revealEvidence(
+				organizationId,
+				record.evidenceId,
+				reason.trim(),
+				groupId,
+			);
+			if (canDownload && downloadUrl) {
+				window.open(downloadUrl, "_blank", "noopener,noreferrer");
+				toast.success("Evidenza sbloccata: l'accesso è stato registrato.");
+			} else {
+				toast.warning("Sblocco autorizzato ma nessun file disponibile per questa evidenza.");
+			}
+		} catch (error) {
+			toast.error(
+				error instanceof Error ? error.message : "Impossibile sbloccare l'evidenza.",
+			);
+		}
+	};
 
 	return (
 		<DashboardLayout>
@@ -193,6 +253,50 @@ export default function ExtendedDarkRiskPage() {
 							isSaving={saveScope.isPending}
 							onSave={(scope) => saveScope.mutateAsync(scope)}
 						/>
+
+						{/*
+						  Credenziali storicizzate: sopravvivono al singolo run spot e
+						  restano consultabili finché il grant Identity è attivo.
+						*/}
+						{credentialLeaks?.forbidden ? (
+							<Card>
+								<CardContent className="p-6 text-center text-sm text-muted-foreground">
+									Nessuna autorizzazione Identity attiva: le credenziali esposte non
+									sono consultabili. Serve un grant <code>extended_identity</code>{" "}
+									valido.
+								</CardContent>
+							</Card>
+						) : (
+							<DarkRiskCredentialLeaks
+								records={credentialLeaks?.records ?? []}
+								total={credentialLeaks?.total}
+								onReveal={canOperate ? handleReveal : undefined}
+							/>
+						)}
+
+						{/* Analisi aggregata: gli stessi grafici della pagina Standard. */}
+						{snapshot ? (
+							<>
+								<div className="grid gap-6 lg:grid-cols-2">
+									<DarkRiskSourcePieChart
+										data={snapshot.resultsBySource}
+										title="Risultati per sorgente"
+									/>
+									<DarkRiskFiletypePieChart
+										data={snapshot.resultsByFiletype}
+										title="Risultati per tipo di file"
+									/>
+								</div>
+								<DarkRiskCalendarHeatmap
+									data={snapshot.resultsByDay}
+									title="Evidenze per data di leak"
+								/>
+								{Object.keys(snapshot.resultsByAsset).length ? (
+									<DarkRiskAssetBreakdown data={snapshot.resultsByAsset} />
+								) : null}
+							</>
+						) : null}
+
 						<Card>
 							<CardHeader>
 								<div className="flex items-center justify-between">

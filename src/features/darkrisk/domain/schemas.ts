@@ -1,9 +1,11 @@
 import { z } from "zod";
 import type {
+	CredentialLeakPage,
 	DarkRiskReport,
 	DarkRiskRun,
 	DarkRiskRunStatus,
 	DarkRiskScope,
+	DarkRiskWeeklySnapshot,
 	ExtendedLeakRecord,
 	ExtendedRunResult,
 	StandardOverview,
@@ -29,9 +31,101 @@ const nullableString = (value: unknown): string | null => {
 	return parsed || null;
 };
 
+/** Mappa "chiave → conteggio" dai campi jsonb dello snapshot, scartando i valori non numerici. */
+const countMap = (value: unknown): Record<string, number> => {
+	const entries = Object.entries(objectValue(value))
+		.map(([key, raw]) => [key, numberValue(raw, Number.NaN)] as const)
+		.filter(([, count]) => Number.isFinite(count));
+	return Object.fromEntries(entries);
+};
+
 export const unwrapApiData = (value: unknown): unknown => {
 	const object = objectValue(value);
 	return "data" in object ? object.data : value;
+};
+
+/**
+ * `weekly_snapshot` è null finché non esiste una scansione completata, e anche
+ * a snapshot presente i singoli campi jsonb possono essere null: ognuno va
+ * difeso separatamente, non basta controllare l'oggetto che li contiene.
+ */
+export const parseWeeklySnapshot = (value: unknown): DarkRiskWeeklySnapshot | null => {
+	const item = objectValue(value);
+	if (!item.week_key) return null;
+
+	const delta = objectValue(item.delta_vs_prev);
+	const byAsset = Object.entries(objectValue(item.results_by_asset)).reduce<
+		DarkRiskWeeklySnapshot["resultsByAsset"]
+	>((acc, [asset, raw]) => {
+		const row = objectValue(raw);
+		acc[asset] = {
+			total: numberValue(row.total),
+			bySource: countMap(row.by_source),
+			byFiletype: countMap(row.by_filetype),
+		};
+		return acc;
+	}, {});
+
+	return {
+		weekKey: stringValue(item.week_key),
+		weekStartDate: nullableString(item.week_start_date),
+		tier: stringValue(item.tier, "standard"),
+		totalRecords: numberValue(item.total_records),
+		newRecordsThisWeek: numberValue(item.new_records_this_week),
+		riskIndex: numberValue(item.risk_index),
+		resultsBySource: countMap(item.results_by_source),
+		resultsByFiletype: countMap(item.results_by_filetype),
+		resultsByDay: countMap(item.results_by_day),
+		resultsByAsset: byAsset,
+		severityDistribution: countMap(item.severity_distribution),
+		deltaVsPrev: {
+			totalRecords: delta.total_records === undefined ? null : numberValue(delta.total_records),
+			riskIndex: delta.risk_index === undefined ? null : numberValue(delta.risk_index),
+			newBuckets: Array.isArray(delta.new_buckets)
+				? delta.new_buckets.map((bucket) => stringValue(bucket)).filter(Boolean)
+				: [],
+			severityDelta: countMap(delta.severity_delta),
+		},
+		computedAt: nullableString(item.computed_at),
+	};
+};
+
+/**
+ * Risposta paginata di `darkrisk/credential-leaks`.
+ *
+ * La password in chiaro non fa parte del contratto: l'endpoint restituisce solo
+ * `masked_value`, e lo smascheramento passa dal reveal audiato sull'evidenza.
+ */
+export const parseCredentialLeaks = (value: unknown): CredentialLeakPage => {
+	const envelope = objectValue(unwrapApiData(value));
+	const rows = Array.isArray(envelope.data) ? envelope.data : [];
+
+	return {
+		records: rows.map((row) => {
+			const item = objectValue(row);
+			return {
+				id: stringValue(item.id),
+				selector: stringValue(item.selector_value),
+				assetScope: nullableString(item.asset_scope),
+				maskedValue: stringValue(item.masked_value),
+				passwordType: nullableString(item.password_type),
+				bucketCanonical: nullableString(item.bucket_canonical),
+				bucketDisplay: nullableString(item.bucket_display),
+				sourceShort: nullableString(item.source_short ?? item.source_label),
+				sourceLong: nullableString(item.source_long),
+				collectionName: nullableString(item.collection_name),
+				confidence: stringValue(item.confidence, "medium"),
+				evidenceDate: nullableString(item.evidence_date),
+				createdAt: nullableString(item.created_at),
+				evidenceId: nullableString(item.evidence_id),
+				findingId: nullableString(item.finding_id),
+			};
+		}),
+		total: numberValue(envelope.total, rows.length),
+		currentPage: numberValue(envelope.current_page, 1),
+		lastPage: numberValue(envelope.last_page, 1),
+		forbidden: false,
+	};
 };
 
 export const parseScope = (value: unknown): DarkRiskScope => {
@@ -106,6 +200,12 @@ export const parseStandardOverview = (value: unknown): StandardOverview => {
 				newLeaks: numberValue(point.new_leaks || point.new_this_week),
 			};
 		}),
+		snapshot: parseWeeklySnapshot(item.weekly_snapshot),
+		// Contatore aggregato: è l'unico dato sulle credenziali che lo Standard
+		// può mostrare, il dettaglio sta dietro l'endpoint riservato all'Esteso.
+		credentialLeaks: numberValue(
+			objectValue(objectValue(item.dti).sensitive_totals).passwords ?? credentials.value,
+		),
 	};
 };
 

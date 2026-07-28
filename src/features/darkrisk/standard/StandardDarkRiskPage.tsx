@@ -3,6 +3,7 @@ import {
 	CalendarClock,
 	DatabaseZap,
 	Gauge,
+	KeyRound,
 	RefreshCw,
 	Target,
 } from "lucide-react";
@@ -18,6 +19,10 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { toast } from "sonner";
 import { darkRiskGateway } from "../api/darkRiskGateway";
 import { darkRiskQueryKeys } from "../api/queryKeys";
+import { DarkRiskAssetBreakdown } from "../components/DarkRiskAssetBreakdown";
+import { DarkRiskCalendarHeatmap } from "../components/DarkRiskCalendarHeatmap";
+import { DarkRiskFiletypePieChart } from "../components/DarkRiskFiletypePieChart";
+import { DarkRiskSourcePieChart } from "../components/DarkRiskSourcePieChart";
 import { ReportList } from "../shared/ReportList";
 import { ScopeEditor } from "../shared/ScopeEditor";
 import { useDarkRiskEntitlements } from "../shared/useDarkRiskEntitlements";
@@ -103,7 +108,18 @@ export default function StandardDarkRiskPage() {
 				overview?.monitoredTargets ?? scopeQuery.data?.targets.length ?? "—",
 			icon: Target,
 		},
+		{
+			// Solo il conteggio: account e password sono riservati al profilo Esteso.
+			label: "Credenziali esposte",
+			value: overview?.credentialLeaks ?? "—",
+			icon: KeyRound,
+		},
 	];
+
+	const snapshot = overview?.snapshot ?? null;
+	const severityEntries = Object.entries(snapshot?.severityDistribution ?? {}).filter(
+		([, count]) => count > 0,
+	);
 
 	return (
 		<DashboardLayout>
@@ -188,7 +204,7 @@ export default function StandardDarkRiskPage() {
 					</Card>
 				) : (
 					<>
-						<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+						<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
 							{cards.map(({ label, value, icon: Icon }) => (
 								<Card key={label} className="border-cyan-500/10">
 									<CardContent className="flex items-center gap-4 p-5">
@@ -282,6 +298,60 @@ export default function StandardDarkRiskPage() {
 								</div>
 							</CardContent>
 						</Card>
+						{/*
+						  Analisi aggregata dallo snapshot settimanale. Tutto quello
+						  che compare qui è conteggio e distribuzione: nessun account,
+						  nessuna riga di leak, nessuna password.
+						*/}
+						{snapshot ? (
+							<>
+								<div className="grid gap-6 lg:grid-cols-2">
+									<DarkRiskSourcePieChart
+										data={snapshot.resultsBySource}
+										title="Risultati per sorgente"
+									/>
+									<DarkRiskFiletypePieChart
+										data={snapshot.resultsByFiletype}
+										title="Risultati per tipo di file"
+									/>
+								</div>
+
+								{severityEntries.length ? (
+									<Card>
+										<CardHeader>
+											<CardTitle className="text-base">Severità aggregate</CardTitle>
+										</CardHeader>
+										<CardContent className="flex flex-wrap gap-2">
+											{severityEntries.map(([severity, count]) => (
+												<Badge key={severity} variant="outline" className="capitalize">
+													{severity}: {count}
+												</Badge>
+											))}
+										</CardContent>
+									</Card>
+								) : null}
+
+								<DarkRiskCalendarHeatmap
+									data={snapshot.resultsByDay}
+									title="Evidenze per data di leak"
+								/>
+
+								{Object.keys(snapshot.resultsByAsset).length ? (
+									<DarkRiskAssetBreakdown data={snapshot.resultsByAsset} />
+								) : null}
+							</>
+						) : (
+							<Card>
+								<CardContent className="p-8 text-center">
+									<h2 className="font-semibold">Analisi non ancora disponibile</h2>
+									<p className="mt-2 text-sm text-muted-foreground">
+										I grafici aggregati compaiono dopo la prima scansione settimanale
+										completata.
+									</p>
+								</CardContent>
+							</Card>
+						)}
+
 						<ReportList
 							title="Report mensili"
 							reports={reportsQuery.data ?? []}
