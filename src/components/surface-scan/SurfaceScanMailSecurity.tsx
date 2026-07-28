@@ -180,7 +180,7 @@ export const SurfaceScanMailSecurity: React.FC = () => {
                 <div className="flex flex-col items-center gap-1">
                   <StatusIcon val={row.spf} />
                   {row.spfRecord && (
-                    <span className="max-w-[260px] truncate font-mono text-[11px] text-muted-foreground" title={row.spfRecord}>
+                    <span className="max-w-[260px] whitespace-normal break-all text-left font-mono text-[11px] leading-snug text-muted-foreground" title={row.spfRecord}>
                       {row.spfRecord}
                     </span>
                   )}
@@ -193,7 +193,7 @@ export const SurfaceScanMailSecurity: React.FC = () => {
                 <div className="flex flex-col items-center gap-1">
                   <StatusIcon val={row.dmarc} />
                   {row.dmarcRecord && (
-                    <span className="max-w-[260px] truncate font-mono text-[11px] text-muted-foreground" title={row.dmarcRecord}>
+                    <span className="max-w-[260px] whitespace-normal break-all text-left font-mono text-[11px] leading-snug text-muted-foreground" title={row.dmarcRecord}>
                       {row.dmarcRecord}
                     </span>
                   )}
