@@ -18,7 +18,9 @@ export const useIRPDocument = () => {
 
       const mappedContacts: EmergencyContact[] = (contactsData || []).map(contact => ({
         id: contact.id,
-        name: contact.name,
+        // La risorsa espone nome e cognome separati: leggere `name` produceva
+        // contatti senza nome nel documento IRP generato.
+        name: `${contact.first_name ?? ''} ${contact.last_name ?? ''}`.trim(),
         role: contact.role || '',
         job_title: contact.job_title || contact.role || '',
         irp_role: contact.irp_role || '',
@@ -26,7 +28,8 @@ export const useIRPDocument = () => {
         email: contact.email,
         category: contact.category,
         responsibilities: contact.responsibilities || '',
-        escalationLevel: contact.escalation_level || 3,
+        // Il backend non espone un livello di escalation: resta il default.
+        escalationLevel: 3,
       }));
 
       setContacts(mappedContacts);

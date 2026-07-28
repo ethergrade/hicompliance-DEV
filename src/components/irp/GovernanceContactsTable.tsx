@@ -29,6 +29,21 @@ const exampleContacts = [
   { name: 'Paolo Biondi', job_title: 'Referente CSIRT', irp_role: 'Referente CSIRT', phone: '3333425678', email: 'pb@azienda.com', responsibilities: 'Notifica CSIRT Italia, gestione pre-alert/alert/report, coordinamento ACN' },
 ];
 
+/**
+ * I contatti di esempio hanno il nome completo in un solo campo, mentre l'API
+ * richiede nome e cognome separati. Si divide sul primo spazio: il resto è
+ * cognome, così i cognomi composti restano interi.
+ */
+const splitFullName = (fullName: string): { first_name: string; last_name: string } => {
+  const parts = fullName.trim().split(/\s+/);
+  return {
+    first_name: parts[0] ?? '',
+    // Con un nome di una sola parola il cognome resterebbe vuoto e il backend
+    // rifiuterebbe la richiesta: si ripete il valore per non perdere il dato.
+    last_name: parts.slice(1).join(' ') || (parts[0] ?? ''),
+  };
+};
+
 export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = ({ onDataChange }) => {
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,7 +76,8 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
 
       const mappedContacts: EmergencyContact[] = (data || []).map(contact => ({
         id: contact.id,
-        name: contact.name,
+        // La risorsa espone nome e cognome separati; qui serve la forma estesa.
+        name: `${contact.first_name ?? ''} ${contact.last_name ?? ''}`.trim(),
         role: contact.role || '',
         job_title: contact.job_title || contact.role || '',
         irp_role: contact.irp_role || '',
@@ -130,7 +146,7 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
     setAddingExampleIndex(index);
     try {
       await irpApi.createContact(organizationId, {
-        name: exampleContact.name,
+        ...splitFullName(exampleContact.name),
         role: exampleContact.job_title,
         job_title: exampleContact.job_title,
         irp_role: exampleContact.irp_role,
@@ -165,7 +181,7 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
     try {
       for (const contact of exampleContacts) {
         await irpApi.createContact(organizationId, {
-          name: contact.name,
+          ...splitFullName(contact.name),
           role: contact.job_title,
           job_title: contact.job_title,
           irp_role: contact.irp_role,

@@ -117,9 +117,11 @@ export const IRPContactForm: React.FC<IRPContactFormProps> = ({
         }
       }
 
-      const fullName = `${formData.firstName} ${formData.lastName}`.trim();
+      // Il backend richiede nome e cognome separati: concatenarli in `name`
+      // faceva fallire la validazione con "Il campo nome è richiesto".
       const contactData = {
-        name: fullName,
+        first_name: formData.firstName.trim(),
+        last_name: formData.lastName.trim(),
         role: formData.jobTitle,
         job_title: formData.jobTitle,
         irp_role: formData.irpRole,

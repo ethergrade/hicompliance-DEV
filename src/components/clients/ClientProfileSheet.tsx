@@ -29,7 +29,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { tenantsApi, tenantServicesApi } from "@/lib/api";
+import { companyProfileApi, tenantsApi, tenantServicesApi } from "@/lib/api";
 import { useCompanyScope } from "@/hooks/useCompanyScope";
 import {
   parseMonitoredIpInput,
@@ -37,7 +37,9 @@ import {
 } from "@/lib/ipRange";
 import type { ParsedMonitoredIpInput } from "@/lib/ipRange";
 import type {
+  CompanyProfileResource,
   TenantResource,
+  UpdateCompanyProfileRequest,
   UpdateTenantRequest,
   TenantServiceResource,
   TenantDashboardExtra,
@@ -131,18 +133,27 @@ const INITIAL: ProfileFormData = {
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
-const resourceToForm = (data: TenantResource): ProfileFormData => ({
-  legal_name: data.legal_name || data.name || "",
-  vat_number: data.vat_number || "",
-  fiscal_code: data.fiscal_code || "",
-  legal_address: data.legal_address || "",
-  operational_address: data.operational_address || "",
-  pec: data.pec || "",
-  phone: data.phone || "",
-  email: data.email || "",
-  business_sector: data.business_sector || data.industry || "",
+/**
+ * Il form unisce due risorse: i campi tecnici stanno su `tenants`, mentre
+ * ragione sociale, codice fiscale, sedi, PEC, email e sostituto CISO vivono su
+ * `company_profiles` e arrivano da GET /companies/{id}/profile. Il tenant non
+ * li restituisce: leggerli da lì lasciava i campi sempre vuoti.
+ */
+const resourceToForm = (
+  data: TenantResource,
+  profile: CompanyProfileResource | null,
+): ProfileFormData => ({
+  legal_name: profile?.legal_name || data.name || "",
+  vat_number: data.vat_number || profile?.vat_number || "",
+  fiscal_code: profile?.fiscal_code || "",
+  legal_address: profile?.legal_address || "",
+  operational_address: profile?.operational_address || "",
+  pec: profile?.pec || "",
+  phone: data.phone || profile?.phone || "",
+  email: profile?.email || "",
+  business_sector: data.industry || profile?.business_sector || "",
   nis2_classification: (data.nis2_classification as string) || "nessuna",
-  ciso_substitute: data.ciso_substitute || "",
+  ciso_substitute: profile?.ciso_substitute || "",
   primary_domain: data.primary_domain || "",
   primary_subnet: data.primary_subnet || "",
   secondary_domain: data.secondary_domain || "",
@@ -180,19 +191,30 @@ const resourceToForm = (data: TenantResource): ProfileFormData => ({
   scopeEntries: [],
 });
 
-const formToPayload = (data: ProfileFormData): UpdateTenantRequest => ({
+/**
+ * Campi anagrafici estesi: hanno il loro endpoint e la loro tabella.
+ *
+ * `nis2_classification` non viene inviato qui di proposito — il profilo accetta
+ * solo none|essential|important, mentre il form usa il vocabolario italiano che
+ * il tenant memorizza già. Duplicarlo su due tabelle con due vocabolari diversi
+ * significherebbe avere due verità.
+ */
+const formToProfilePayload = (data: ProfileFormData): UpdateCompanyProfileRequest => ({
   legal_name: data.legal_name || null,
-  vat_number: data.vat_number || null,
   fiscal_code: data.fiscal_code || null,
   legal_address: data.legal_address || null,
   operational_address: data.operational_address || null,
   pec: data.pec || null,
-  phone: data.phone || null,
   email: data.email || null,
+  ciso_substitute: data.ciso_substitute || null,
+});
+
+const formToPayload = (data: ProfileFormData): UpdateTenantRequest => ({
+  vat_number: data.vat_number || null,
+  phone: data.phone || null,
   // business_sector is not a backend field; map it to industry as fallback
   industry: data.industry || data.business_sector || null,
   nis2_classification: (data.nis2_classification as any) || null,
-  ciso_substitute: data.ciso_substitute || null,
   primary_domain: data.primary_domain || null,
   primary_subnet: data.primary_subnet || null,
   secondary_domain: data.secondary_domain || null,
@@ -456,9 +478,12 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
             .listByOrganization(organizationId, groupId)
             .catch(() => [] as TenantServiceResource[])
         : Promise.resolve([] as TenantServiceResource[]),
-    ]).then(([tenant, services]) => {
+      // Il profilo può non esistere ancora: in quel caso l'endpoint risponde
+      // con data null e i campi anagrafici restano vuoti, non è un errore.
+      companyProfileApi.get(organizationId, groupId).catch(() => null),
+    ]).then(([tenant, services, profile]) => {
       if (!cancelled) {
-        if (tenant) setForm(resourceToForm(tenant));
+        if (tenant) setForm(resourceToForm(tenant, profile));
         else setSaveStatus("error");
         setTenantServices(services);
         setLoading(false);
@@ -488,11 +513,16 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
         }
         setSaveStatus("saving");
         try {
-          await tenantsApi.update(
-            organizationId,
-            formToPayload(data),
-            groupId || "",
-          );
+          // Due risorse distinte, quindi due chiamate. In parallelo: sono
+          // indipendenti e un fallimento dell'una non invalida l'altra.
+          await Promise.all([
+            tenantsApi.update(organizationId, formToPayload(data), groupId || ""),
+            companyProfileApi.update(
+              organizationId,
+              formToProfilePayload(data),
+              groupId || "",
+            ),
+          ]);
           setFieldErrors({});
           setSaveStatus("saved");
           setTimeout(() => setSaveStatus("idle"), 2000);
@@ -630,11 +660,14 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
 
     setSaveStatus("saving");
     try {
-      await tenantsApi.update(
-        organizationId,
-        formToPayload(form),
-        groupId || "",
-      );
+      await Promise.all([
+        tenantsApi.update(organizationId, formToPayload(form), groupId || ""),
+        companyProfileApi.update(
+          organizationId,
+          formToProfilePayload(form),
+          groupId || "",
+        ),
+      ]);
       setFieldErrors({});
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);

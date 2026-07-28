@@ -1,9 +1,11 @@
 import { apiClient } from "@/lib/api-client";
 import type {
   ApiResponse,
+  CompanyProfileResource,
   PaginatedResponse,
   TenantResource,
   StoreTenantRequest,
+  UpdateCompanyProfileRequest,
   UpdateTenantRequest,
 } from "@/types/api";
 
@@ -77,6 +79,39 @@ export const companiesApi = {
   async delete(id: string, groupId?: string | null): Promise<void> {
     // Header di gruppo solo se valorizzato: evita di inviare "X-Group-Id: undefined".
     await apiClient.delete(`/companies/${id}`, groupId ? groupHeader(groupId) : undefined);
+  },
+};
+
+/**
+ * Profilo anagrafico esteso (tabella company_profiles).
+ *
+ * Ragione sociale, codice fiscale, sedi, PEC e sostituto CISO non stanno su
+ * `tenants` e non sono accettati da `PUT /companies/{id}`: hanno un endpoint
+ * dedicato. Inviarli insieme agli altri campi li faceva scartare in silenzio.
+ */
+export const companyProfileApi = {
+  /** Restituisce null quando il profilo non è ancora stato creato. */
+  async get(companyId: string, groupId?: string | null): Promise<CompanyProfileResource | null> {
+    const res = await apiClient.get<ApiResponse<CompanyProfileResource | null>>(
+      `/companies/${companyId}/profile`,
+      undefined,
+      groupId ? groupHeader(groupId) : undefined
+    );
+    return res.data ?? null;
+  },
+
+  /** Upsert: il backend crea il profilo se non esiste. */
+  async update(
+    companyId: string,
+    payload: UpdateCompanyProfileRequest,
+    groupId?: string | null
+  ): Promise<CompanyProfileResource> {
+    const res = await apiClient.put<ApiResponse<CompanyProfileResource>>(
+      `/companies/${companyId}/profile`,
+      payload,
+      groupId ? groupHeader(groupId) : undefined
+    );
+    return res.data;
   },
 };
 

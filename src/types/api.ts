@@ -262,18 +262,50 @@ export interface UpdateTenantRequest {
 	last_scan_at?: string | null;
 	is_multiple?: boolean;
 	extra?: TenantDashboardExtra | null;
-	// Anagrafica / Organization Profile fields
-	legal_name?: string | null;
-	fiscal_code?: string | null;
-	legal_address?: string | null;
-	operational_address?: string | null;
-	pec?: string | null;
-	email?: string | null;
+	// Ragione sociale, codice fiscale, sedi, PEC, email e sostituto CISO NON
+	// stanno qui: vivono su company_profiles e vanno inviati a
+	// PUT /companies/{id}/profile. Elencarli in questo payload li faceva
+	// scartare in silenzio dalla validazione lato server.
 	nis2_classification?:
 		| "soggetto_essenziale"
 		| "soggetto_importante"
 		| "nessuna"
 		| null;
+}
+
+// ─── Company profile (tabella company_profiles) ─────────────────────────────
+
+export interface CompanyProfileResource {
+	id: string;
+	tenant_id: string;
+	group_id: string;
+	legal_name: string | null;
+	fiscal_code: string | null;
+	vat_number: string | null;
+	legal_address: string | null;
+	operational_address: string | null;
+	pec: string | null;
+	phone: string | null;
+	email: string | null;
+	business_sector: string | null;
+	nis2_classification: string | null;
+	ciso_substitute: string | null;
+	created_at?: string | null;
+	updated_at?: string | null;
+}
+
+export interface UpdateCompanyProfileRequest {
+	legal_name?: string | null;
+	fiscal_code?: string | null;
+	vat_number?: string | null;
+	legal_address?: string | null;
+	operational_address?: string | null;
+	pec?: string | null;
+	phone?: string | null;
+	email?: string | null;
+	business_sector?: string | null;
+	/** Su questo endpoint il backend accetta solo none|essential|important. */
+	nis2_classification?: "none" | "essential" | "important";
 	ciso_substitute?: string | null;
 }
 

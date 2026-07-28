@@ -1,7 +1,7 @@
 export { apiClient } from "@/lib/api-client";
 export { authApi } from "./auth";
 export { groupsApi } from "./groups";
-export { companiesApi, tenantsApi } from "./tenants";
+export { companiesApi, companyProfileApi, tenantsApi } from "./tenants";
 export { usersApi } from "./users";
 export { assessmentApi } from "./assessment";
 export { configApi } from "./config";
