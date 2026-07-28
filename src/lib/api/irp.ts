@@ -174,16 +174,31 @@ export const irpApi = {
     );
     const url = res.download_url;
     if (!url) throw new Error('Nessun link di download ricevuto dal server');
-    // Open the signed URL directly in a new tab — the URL is pre-signed
-    // and valid for 2 minutes, so the browser can fetch it without a Bearer token.
-    const opened = window.open(url, '_blank', 'noopener,noreferrer');
-    if (!opened) {
-      // Popup blocked — fall back to programmatic anchor download
+
+    // La URL firmata è MONOUSO: il backend cancella il file appena l'ha servito
+    // (deleteFileAfterSend). Aprirla con window.open faceva navigare una scheda
+    // nuova che, completato il download, ripeteva la richiesta e trovava il file
+    // già rimosso — da cui il 404 mostrato all'utente.
+    //
+    // Si scarica quindi con una sola richiesta, costruendo il file in memoria:
+    // nessuna scheda aperta e nessun secondo accesso alla URL.
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Download non riuscito (HTTP ${response.status})`);
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    try {
       const a = document.createElement('a');
-      a.href = url;
+      a.href = objectUrl;
       a.download = `IRP_${companyName.replace(/\s+/g, '_')}.docx`;
-      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
       a.click();
+      a.remove();
+    } finally {
+      // Rilascio differito: revocarlo subito annullerebbe il download in corso.
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
     }
   },
 
