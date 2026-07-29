@@ -14,13 +14,13 @@ export const useIRPDocument = () => {
   // Load emergency contacts from API
   const loadEmergencyContacts = async (orgId: string) => {
     try {
-      const contactsData = await irpApi.contacts(orgId, groupId);
+      // emergency_contacts: il documento IRP mostra ruolo IRP e responsabilità,
+      // che sulla rubrica non esistono.
+      const contactsData = await irpApi.emergencyContacts(orgId, groupId);
 
       const mappedContacts: EmergencyContact[] = (contactsData || []).map(contact => ({
         id: contact.id,
-        // La risorsa espone nome e cognome separati: leggere `name` produceva
-        // contatti senza nome nel documento IRP generato.
-        name: `${contact.first_name ?? ''} ${contact.last_name ?? ''}`.trim(),
+        name: contact.name,
         role: contact.role || '',
         job_title: contact.job_title || contact.role || '',
         irp_role: contact.irp_role || '',

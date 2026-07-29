@@ -29,21 +29,6 @@ const exampleContacts = [
   { name: 'Paolo Biondi', job_title: 'Referente CSIRT', irp_role: 'Referente CSIRT', phone: '3333425678', email: 'pb@azienda.com', responsibilities: 'Notifica CSIRT Italia, gestione pre-alert/alert/report, coordinamento ACN' },
 ];
 
-/**
- * I contatti di esempio hanno il nome completo in un solo campo, mentre l'API
- * richiede nome e cognome separati. Si divide sul primo spazio: il resto è
- * cognome, così i cognomi composti restano interi.
- */
-const splitFullName = (fullName: string): { first_name: string; last_name: string } => {
-  const parts = fullName.trim().split(/\s+/);
-  return {
-    first_name: parts[0] ?? '',
-    // Con un nome di una sola parola il cognome resterebbe vuoto e il backend
-    // rifiuterebbe la richiesta: si ripete il valore per non perdere il dato.
-    last_name: parts.slice(1).join(' ') || (parts[0] ?? ''),
-  };
-};
-
 export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = ({ onDataChange }) => {
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,12 +57,13 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
   const fetchContacts = async () => {
     if (!organizationId || !groupId) { setLoading(false); return; }
     try {
-      const data = await irpApi.contacts(organizationId, groupId);
+      // emergency_contacts, non la rubrica: è la tabella che ha ruolo IRP,
+      // responsabilità e categoria, cioè i campi che questa schermata gestisce.
+      const data = await irpApi.emergencyContacts(organizationId, groupId);
 
       const mappedContacts: EmergencyContact[] = (data || []).map(contact => ({
         id: contact.id,
-        // La risorsa espone nome e cognome separati; qui serve la forma estesa.
-        name: `${contact.first_name ?? ''} ${contact.last_name ?? ''}`.trim(),
+        name: contact.name,
         role: contact.role || '',
         job_title: contact.job_title || contact.role || '',
         irp_role: contact.irp_role || '',
@@ -107,7 +93,7 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
   const handleDeleteContact = async (contactId: string) => {
     if (!organizationId) return;
     try {
-      await irpApi.deleteContact(organizationId, contactId, groupId);
+      await irpApi.deleteEmergencyContact(organizationId, contactId, groupId);
 
       toast({
         title: "Successo",
@@ -145,8 +131,8 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
     if (!organizationId) return;
     setAddingExampleIndex(index);
     try {
-      await irpApi.createContact(organizationId, {
-        ...splitFullName(exampleContact.name),
+      await irpApi.createEmergencyContact(organizationId, {
+        name: exampleContact.name,
         role: exampleContact.job_title,
         job_title: exampleContact.job_title,
         irp_role: exampleContact.irp_role,
@@ -180,8 +166,8 @@ export const GovernanceContactsTable: React.FC<GovernanceContactsTableProps> = (
     setAddingAllExamples(true);
     try {
       for (const contact of exampleContacts) {
-        await irpApi.createContact(organizationId, {
-          ...splitFullName(contact.name),
+        await irpApi.createEmergencyContact(organizationId, {
+          name: contact.name,
           role: contact.job_title,
           job_title: contact.job_title,
           irp_role: contact.irp_role,

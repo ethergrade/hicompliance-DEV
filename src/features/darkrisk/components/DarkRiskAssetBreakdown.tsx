@@ -40,7 +40,9 @@ function MiniPie({ data }: { data: Record<string, number> }) {
         </Pie>
         <Tooltip
           formatter={(v: number, n: string) => [`${v} (${((v / total) * 100).toFixed(1)}%)`, n]}
-          contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '6px', fontSize: '11px' }}
+          contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '6px', fontSize: '11px', color: 'hsl(var(--card-foreground))' }}
+          itemStyle={{ color: 'hsl(var(--card-foreground))' }}
+          labelStyle={{ color: 'hsl(var(--card-foreground))' }}
         />
       </PieChart>
     </ResponsiveContainer>

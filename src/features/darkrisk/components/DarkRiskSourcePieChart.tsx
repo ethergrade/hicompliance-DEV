@@ -93,7 +93,11 @@ export function DarkRiskSourcePieChart({ data, title = 'Results per Data Source'
                 `${value} (${((value / total) * 100).toFixed(2)}%)`,
                 name,
               ]}
-              contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '6px', fontSize: '12px' }}
+              // Senza un colore esplicito recharts usa il nero di default, che
+              // sullo sfondo scuro della card risulta illeggibile.
+              contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '6px', fontSize: '12px', color: 'hsl(var(--card-foreground))' }}
+              itemStyle={{ color: 'hsl(var(--card-foreground))' }}
+              labelStyle={{ color: 'hsl(var(--card-foreground))' }}
             />
             <Legend
               iconSize={10}

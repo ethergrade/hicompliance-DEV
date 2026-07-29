@@ -117,11 +117,12 @@ export const IRPContactForm: React.FC<IRPContactFormProps> = ({
         }
       }
 
-      // Il backend richiede nome e cognome separati: concatenarli in `name`
-      // faceva fallire la validazione con "Il campo nome è richiesto".
+      // I contatti IRP vivono su `emergency_contacts`, che ha un unico campo
+      // `name` più irp_role, responsibilities e category. La rubrica
+      // (`contact_directory`) è un'altra tabella e non ha quelle colonne:
+      // scrivere lì il contatto faceva perdere ruolo IRP e responsabilità.
       const contactData = {
-        first_name: formData.firstName.trim(),
-        last_name: formData.lastName.trim(),
+        name: `${formData.firstName} ${formData.lastName}`.trim(),
         role: formData.jobTitle,
         job_title: formData.jobTitle,
         irp_role: formData.irpRole,
@@ -133,14 +134,14 @@ export const IRPContactForm: React.FC<IRPContactFormProps> = ({
       };
 
       if (editContact) {
-        await irpApi.updateContact(organizationId, editContact.id, contactData, groupId);
+        await irpApi.updateEmergencyContact(organizationId, editContact.id, contactData, groupId);
 
         toast({
           title: "Successo",
           description: "Contatto aggiornato con successo"
         });
       } else {
-        await irpApi.createContact(organizationId, contactData, groupId);
+        await irpApi.createEmergencyContact(organizationId, contactData, groupId);
 
         toast({
           title: "Successo",

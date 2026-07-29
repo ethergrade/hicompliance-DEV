@@ -88,7 +88,9 @@ export function DarkRiskFiletypePieChart({ data, title = 'Results per File Type'
                 `${value} (${((value / total) * 100).toFixed(2)}%)`,
                 name,
               ]}
-              contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '6px', fontSize: '12px' }}
+              contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '6px', fontSize: '12px', color: 'hsl(var(--card-foreground))' }}
+              itemStyle={{ color: 'hsl(var(--card-foreground))' }}
+              labelStyle={{ color: 'hsl(var(--card-foreground))' }}
             />
             <Legend
               iconSize={10}
