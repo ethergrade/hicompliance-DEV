@@ -7,6 +7,10 @@ import { SurfaceScanTrendline } from "@/components/surface-scan/SurfaceScanTrend
 import SecurityFindings from "@/components/surface-scan/SecurityFindings";
 import ExternalScanIntelligenceSection from "@/components/surface-scan/ExternalScanIntelligenceSection";
 import { DarkRiskWeeklyTrend } from "@/components/dark-risk/DarkRiskWeeklyTrend";
+import { DarkRiskAssetBreakdown } from "@/features/darkrisk/components/DarkRiskAssetBreakdown";
+import { DarkRiskCalendarHeatmap } from "@/features/darkrisk/components/DarkRiskCalendarHeatmap";
+import { DarkRiskFiletypePieChart } from "@/features/darkrisk/components/DarkRiskFiletypePieChart";
+import { DarkRiskSourcePieChart } from "@/features/darkrisk/components/DarkRiskSourcePieChart";
 import { useDarkRiskOverview } from "@/hooks/useDarkRiskOverview";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { useFullReportData } from "@/hooks/useFullReportData";
@@ -99,6 +103,37 @@ const InfoRow: React.FC<{ label: string; value: React.ReactNode }> = ({ label, v
 const FullReportView: React.FC<FullReportViewProps> = ({ onReady }) => {
 	const { assessment, remediation, consistenze, elaborazioneDate, aiCategoryAdvice, isLoading } = useFullReportData();
 	const { data: darkRisk } = useDarkRiskOverview();
+
+	const snapshot = darkRisk?.weekly_snapshot ?? null;
+
+	// I campi jsonb possono essere null anche a snapshot presente: ogni grafico
+	// va reso solo se ha davvero dei dati, altrimenti nel PDF resta un riquadro
+	// vuoto senza spiegazione.
+	const hasSourceChart = Object.keys(snapshot?.results_by_source ?? {}).length > 0;
+	const hasFiletypeChart = Object.keys(snapshot?.results_by_filetype ?? {}).length > 0;
+	const hasDayChart = Object.keys(snapshot?.results_by_day ?? {}).length > 0;
+
+	const severityRows = Object.entries(snapshot?.severity_distribution ?? {}).filter(
+		([, count]) => Number(count) > 0,
+	);
+
+	// L'API espone by_source/by_filetype in snake_case, il componente li vuole
+	// in camelCase: conversione qui, così il componente resta condiviso con le
+	// pagine DarkRisk senza adattatori duplicati.
+	const assetBreakdown = (() => {
+		const raw = snapshot?.results_by_asset;
+		if (!raw || Object.keys(raw).length === 0) return null;
+		return Object.fromEntries(
+			Object.entries(raw).map(([asset, value]) => [
+				asset,
+				{
+					total: Number(value?.total ?? 0),
+					bySource: value?.by_source ?? {},
+					byFiletype: value?.by_filetype ?? {},
+				},
+			]),
+		);
+	})();
 	const { selectedOrganization } = useClientOrganization();
 	const org = (selectedOrganization ?? null) as unknown as OrgAnag | null;
 	const isFetching = useIsFetching();
@@ -424,8 +459,11 @@ const FullReportView: React.FC<FullReportViewProps> = ({ onReady }) => {
 				<h2 className="text-lg font-bold">DarkRisk360 — Panoramica</h2>
 				<div className="grid grid-cols-4 gap-3">
 					{[
-						["Leak rilevati", darkRisk?.weekly_snapshot?.total_records ?? 0],
-						["Nuovi nel periodo", darkRisk?.weekly_snapshot?.new_this_week ?? 0],
+						["Leak rilevati", snapshot?.total_records ?? 0],
+						// Il campo sullo snapshot è new_records_this_week: leggere
+						// new_this_week (che esiste solo come alias top-level)
+						// mostrava sempre 0.
+						["Nuovi nel periodo", snapshot?.new_records_this_week ?? 0],
 						["Indice di rischio", `${darkRisk?.kpis.risk_score.value ?? 0}/100`],
 						["Target monitorati", darkRisk?.kpis.monitored_domains.value ?? 0],
 					].map(([label, value]) => (
@@ -435,7 +473,56 @@ const FullReportView: React.FC<FullReportViewProps> = ({ onReady }) => {
 						</div>
 					))}
 				</div>
+
 				<DarkRiskWeeklyTrend />
+
+				{/* Distribuzione per severità: dato aggregato, nessun contenuto sensibile. */}
+				{severityRows.length > 0 && (
+					<div>
+						<h3 className="text-sm font-semibold text-slate-700 mb-2">Severità delle evidenze</h3>
+						<div className="flex flex-wrap gap-2">
+							{severityRows.map(([severity, count]) => (
+								<span
+									key={severity}
+									className="border border-slate-200 rounded px-2 py-1 text-xs capitalize"
+								>
+									{severity}: <strong>{count}</strong>
+								</span>
+							))}
+						</div>
+					</div>
+				)}
+
+				{hasSourceChart && (
+					<div className="grid grid-cols-2 gap-6">
+						<DarkRiskSourcePieChart
+							data={snapshot!.results_by_source!}
+							title="Risultati per sorgente"
+						/>
+						{hasFiletypeChart && (
+							<DarkRiskFiletypePieChart
+								data={snapshot!.results_by_filetype!}
+								title="Risultati per tipo di file"
+							/>
+						)}
+					</div>
+				)}
+
+				{hasDayChart && (
+					<DarkRiskCalendarHeatmap
+						data={snapshot!.results_by_day!}
+						title="Evidenze per data di leak"
+					/>
+				)}
+
+				{assetBreakdown && <DarkRiskAssetBreakdown data={assetBreakdown} />}
+
+				{!snapshot && (
+					<p className="text-sm text-slate-500">
+						Nessuna scansione DarkRisk360 completata: l'analisi aggregata sarà disponibile
+						dopo la prima esecuzione settimanale.
+					</p>
+				)}
 			</section>
 		</div>
 	);

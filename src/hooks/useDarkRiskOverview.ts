@@ -65,8 +65,17 @@ export type DarkRiskOverviewResponse = {
   weekly_snapshot: {
     week_key: string;
     total_records: number;
-    new_this_week: number;
+    /** Nome reale della colonna sullo snapshot. `new_this_week` non esiste. */
+    new_records_this_week: number;
     risk_index: number;
+    /** Aggregati jsonb che alimentano i grafici del report e delle pagine. */
+    results_by_source?: Record<string, number> | null;
+    results_by_filetype?: Record<string, number> | null;
+    results_by_day?: Record<string, number> | null;
+    results_by_asset?: Record<
+      string,
+      { total: number; by_source?: Record<string, number>; by_filetype?: Record<string, number> }
+    > | null;
     delta_vs_prev: {
       total_records: number;
       new_this_week: number;

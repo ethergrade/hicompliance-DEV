@@ -192,6 +192,30 @@ All colors MUST be HSL.
   white-space: normal !important;
 }
 
+/* Annullare l'overflow non basta: senza scroll la tabella non viene più
+   ritagliata dal contenitore, ma deborda fuori dal box catturato — largo 900px
+   fissi — e html2canvas taglia comunque le ultime colonne. Va quindi costretta
+   a stare nella larghezza della pagina.
+
+   table-layout: fixed è ciò che lo garantisce: con il layout automatico una
+   tabella con molte colonne resta più larga del contenitore anche mandando il
+   testo a capo. Le larghezze dichiarate sulle singole colonne (es. w-14)
+   continuano a essere rispettate. */
+.report-print table {
+  width: 100% !important;
+  max-width: 100% !important;
+  table-layout: fixed;
+}
+.report-print th,
+.report-print td {
+  /* Neutralizza i min-width delle celle (es. min-w-[40rem] in SecurityFindings),
+     che da soli renderebbero la tabella più larga della pagina. */
+  min-width: 0 !important;
+  white-space: normal !important;
+  /* Spezza URL e hostname lunghi invece di allargare la colonna. */
+  overflow-wrap: anywhere;
+}
+
 @layer base {
   * {
     @apply border-border;
