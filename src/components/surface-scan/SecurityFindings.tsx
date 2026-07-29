@@ -233,9 +233,14 @@ interface SecurityFindingsProps {
   /**
    * Resa per documento statico (report PDF).
    *
-   * Espande tutte le righe e disattiva la paginazione: nella cattura il
-   * contenuto collassato non viene renderizzato affatto — non è nascosto via
-   * CSS — e le pagine successive alla prima sarebbero irraggiungibili.
+   * Disattiva la paginazione, perché nel report non c'è modo di cambiare
+   * pagina e si stamperebbero solo i primi 15 asset senza dirlo a chi legge.
+   *
+   * Non espande invece il dettaglio delle righe: è una griglia densa a molte
+   * colonne, pensata per uno schermo largo e scrollabile. Su A4 diventa
+   * illeggibile, e con tutte le righe aperte il blocco supera l'altezza
+   * massima del canvas, costringendo a una cattura a bassa risoluzione che
+   * sfoca l'intera sezione.
    */
   printMode?: boolean;
 }
@@ -494,7 +499,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ printMode = false }
 
               {!loading &&
                 paginatedAssets.map((assetGroup) => {
-                  const isOpen = printMode || Boolean(openAssets[assetGroup.assetKey]);
+                  const isOpen = Boolean(openAssets[assetGroup.assetKey]);
 
                   return (
                     <React.Fragment key={assetGroup.assetKey}>

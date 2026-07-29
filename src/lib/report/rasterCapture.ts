@@ -28,6 +28,16 @@ export const RASTER_DEFAULTS = {
    * un canvas vuoto senza errori: la scala viene ridotta per restare sotto.
    */
   maxCanvasPixels: 40_000_000,
+  /**
+   * Tetto al singolo lato del canvas, che è un limite distinto da quello sui
+   * pixel totali: un blocco largo 900 px e alto 40.000 sta sotto i 40 MP e
+   * supera comunque l'altezza massima, e il browser fallisce con
+   * "Canvas exceeds max size" invece di degradare.
+   *
+   * 16.384 è il valore prudente che copre anche Safari; Chrome e Firefox
+   * arrivano più in alto.
+   */
+  maxCanvasDimension: 16_384,
 };
 
 export type RasterOptions = typeof RASTER_DEFAULTS;
@@ -65,6 +75,14 @@ export function computeCaptureScale(
   const projectedPixels = cssWidth * scale * cssHeight * scale;
   if (projectedPixels > options.maxCanvasPixels) {
     scale = Math.max(0.5, scale * Math.sqrt(options.maxCanvasPixels / projectedPixels));
+  }
+
+  // Vincolo sul singolo lato: qui non c'è un pavimento alto, perché un canvas
+  // troppo grande non degrada — fallisce e basta, e un report sgranato è
+  // comunque preferibile a un report che non si genera.
+  const longestSide = Math.max(cssWidth, cssHeight);
+  if (longestSide * scale > options.maxCanvasDimension) {
+    scale = Math.max(0.2, options.maxCanvasDimension / longestSide);
   }
 
   return scale;

@@ -138,13 +138,22 @@ const FullReportView: React.FC<FullReportViewProps> = ({ onReady }) => {
 	const org = (selectedOrganization ?? null) as unknown as OrgAnag | null;
 	const isFetching = useIsFetching();
 
+	// Un blocco = un canvas. Con i contenuti espansi una sezione intera supera
+	// l'altezza massima del canvas del browser, quindi le due sezioni pesanti
+	// sono spezzate per componente: canvas più piccoli, e nessuna perdita di
+	// risoluzione dovuta al ridimensionamento di sicurezza.
 	const refs = {
 		intro: useRef<HTMLDivElement>(null),
 		nis2: useRef<HTMLDivElement>(null),
 		categorySummary: useRef<HTMLDivElement>(null),
 		remediation: useRef<HTMLDivElement>(null),
-		surface: useRef<HTMLDivElement>(null),
-		darkrisk: useRef<HTMLDivElement>(null),
+		surfaceMail: useRef<HTMLDivElement>(null),
+		surfaceTrend: useRef<HTMLDivElement>(null),
+		surfaceFindings: useRef<HTMLDivElement>(null),
+		surfaceExternal: useRef<HTMLDivElement>(null),
+		darkriskOverview: useRef<HTMLDivElement>(null),
+		darkriskCharts: useRef<HTMLDivElement>(null),
+		darkriskAssets: useRef<HTMLDivElement>(null),
 	};
 	const [firedReady, setFiredReady] = useState(false);
 
@@ -162,8 +171,13 @@ const FullReportView: React.FC<FullReportViewProps> = ({ onReady }) => {
 				push(refs.nis2, "Valutazione conformità NIS2");
 				push(refs.categorySummary, "Riepilogo e Consigli per Categoria");
 				push(refs.remediation, "Piano di Remediation");
-				push(refs.surface, "SurfaceScan360 — Esposizione");
-				push(refs.darkrisk, "DarkRisk360 — Panoramica");
+				push(refs.surfaceMail, "SurfaceScan360 — Sicurezza email");
+				push(refs.surfaceTrend, "SurfaceScan360 — Andamento scansioni");
+				push(refs.surfaceFindings, "SurfaceScan360 — Findings e vulnerabilità");
+				push(refs.surfaceExternal, "SurfaceScan360 — Intelligence esterna");
+				push(refs.darkriskOverview, "DarkRisk360 — Panoramica");
+				push(refs.darkriskCharts, "DarkRisk360 — Analisi aggregata");
+				push(refs.darkriskAssets, "DarkRisk360 — Dettaglio per asset");
 
 				onReady({
 					blocks,
@@ -175,7 +189,11 @@ const FullReportView: React.FC<FullReportViewProps> = ({ onReady }) => {
 			});
 		}, 600);
 		return () => window.clearTimeout(t);
-	}, [onReady, firedReady, isLoading, isFetching, assessment, refs.intro, refs.nis2, refs.categorySummary, refs.remediation, refs.surface, refs.darkrisk]);
+		// I ref sono stabili per tutta la vita del componente: elencarli fra le
+		// dipendenze non serve, e tenerli allineati a mano è solo un'occasione
+		// per dimenticarne uno.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [onReady, firedReady, isLoading, isFetching, assessment]);
 
 	const companyName = org?.legal_name || org?.name || "Cliente";
 	// I campi possono arrivare come array, stringa JSON (es. '["XDR","MFA"]'),
@@ -445,17 +463,25 @@ const FullReportView: React.FC<FullReportViewProps> = ({ onReady }) => {
 				</table>
 			</section>
 
-			{/* ── SurfaceScan360 (contenuti cliente) ── */}
-			<section ref={refs.surface} className="p-8 bg-white space-y-6">
+			{/* ── SurfaceScan360 (contenuti cliente) ──
+			     Un blocco per componente: con i findings espansi una sezione
+			     unica supererebbe l'altezza massima del canvas. */}
+			<section ref={refs.surfaceMail} className="p-8 bg-white space-y-6">
 				<h2 className="text-lg font-bold">SurfaceScan360 — Esposizione</h2>
 				<SurfaceScanMailSecurity />
+			</section>
+			<section ref={refs.surfaceTrend} className="p-8 bg-white space-y-6">
 				<SurfaceScanTrendline />
+			</section>
+			<section ref={refs.surfaceFindings} className="p-8 bg-white space-y-6">
 				<SecurityFindings printMode />
+			</section>
+			<section ref={refs.surfaceExternal} className="p-8 bg-white space-y-6">
 				<ExternalScanIntelligenceSection />
 			</section>
 
 			{/* ── DarkRisk360 (contenuti cliente) ── */}
-			<section ref={refs.darkrisk} className="p-8 bg-white space-y-6">
+			<section ref={refs.darkriskOverview} className="p-8 bg-white space-y-6">
 				<h2 className="text-lg font-bold">DarkRisk360 — Panoramica</h2>
 				<div className="grid grid-cols-4 gap-3">
 					{[
@@ -493,30 +519,6 @@ const FullReportView: React.FC<FullReportViewProps> = ({ onReady }) => {
 					</div>
 				)}
 
-				{hasSourceChart && (
-					<div className="grid grid-cols-2 gap-6">
-						<DarkRiskSourcePieChart
-							data={snapshot!.results_by_source!}
-							title="Risultati per sorgente"
-						/>
-						{hasFiletypeChart && (
-							<DarkRiskFiletypePieChart
-								data={snapshot!.results_by_filetype!}
-								title="Risultati per tipo di file"
-							/>
-						)}
-					</div>
-				)}
-
-				{hasDayChart && (
-					<DarkRiskCalendarHeatmap
-						data={snapshot!.results_by_day!}
-						title="Evidenze per data di leak"
-					/>
-				)}
-
-				{assetBreakdown && <DarkRiskAssetBreakdown data={assetBreakdown} defaultOpen />}
-
 				{!snapshot && (
 					<p className="text-sm text-slate-500">
 						Nessuna scansione DarkRisk360 completata: l'analisi aggregata sarà disponibile
@@ -524,6 +526,38 @@ const FullReportView: React.FC<FullReportViewProps> = ({ onReady }) => {
 					</p>
 				)}
 			</section>
+
+			{(hasSourceChart || hasDayChart) && (
+				<section ref={refs.darkriskCharts} className="p-8 bg-white space-y-6">
+					{hasSourceChart && (
+						<div className="grid grid-cols-2 gap-6">
+							<DarkRiskSourcePieChart
+								data={snapshot!.results_by_source!}
+								title="Risultati per sorgente"
+							/>
+							{hasFiletypeChart && (
+								<DarkRiskFiletypePieChart
+									data={snapshot!.results_by_filetype!}
+									title="Risultati per tipo di file"
+								/>
+							)}
+						</div>
+					)}
+
+					{hasDayChart && (
+						<DarkRiskCalendarHeatmap
+							data={snapshot!.results_by_day!}
+							title="Evidenze per data di leak"
+						/>
+					)}
+				</section>
+			)}
+
+			{assetBreakdown && (
+				<section ref={refs.darkriskAssets} className="p-8 bg-white space-y-6">
+					<DarkRiskAssetBreakdown data={assetBreakdown} defaultOpen />
+				</section>
+			)}
 		</div>
 	);
 };

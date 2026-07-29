@@ -51,9 +51,16 @@ export const SurfaceScanTrendline: React.FC = () => {
                 <p className="text-xs text-muted-foreground">Score medio</p>
                 <p className="text-2xl font-bold">{lastSnap?.avg_score != null ? Number(lastSnap.avg_score).toFixed(1) : '-'}</p>
               </div>
+              {/* "Asset analizzati" mostrava total_assets, che conta solo gli
+                  host con porte aperte o finding: un host raggiunto e risultato
+                  pulito non compariva, e l'ultima scansione poteva riportare
+                  zero pur avendo analizzato undici host. */}
               <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground">Asset analizzati</p>
-                <p className="text-2xl font-bold">{lastSnap?.total_assets}</p>
+                <p className="text-xs text-muted-foreground">Host analizzati</p>
+                <p className="text-2xl font-bold">{lastSnap?.hosts_scanned ?? 0}</p>
+                <p className="text-xs text-muted-foreground">
+                  di cui esposti: {lastSnap?.total_assets ?? 0}
+                </p>
               </div>
               <div className="rounded-lg border p-3">
                 <p className="text-xs text-muted-foreground">Critici</p>

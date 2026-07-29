@@ -49,18 +49,29 @@ export interface SurfaceScanJob {
 	} | null;
 }
 
+/**
+ * Punto della trendline: è l'aggregato di una giornata di scansione, non una
+ * singola esecuzione. Il motore v3 crea un job per ogni target e scrive una
+ * riga di storico per job, quindi il backend raggruppa per giorno prima di
+ * rispondere — altrimenti una scansione da undici host produrrebbe undici
+ * punti con la stessa data.
+ */
 export interface SurfaceScanHistoryEntry {
-	id: string;
 	scanned_at: string;
+	/** Host con porte aperte o finding. */
 	total_assets: number;
+	/** Host effettivamente analizzati nella giornata. */
+	hosts_scanned: number;
 	critical_count: number;
 	warning_count: number;
 	safe_count: number;
+	/** Media pesata sugli asset dei job della giornata. */
 	avg_score: number;
 	high_cves: number;
 	medium_cves: number;
 	low_cves: number;
-	triggered_by: string | null;
+	/** Quante scansioni sono confluite nel punto. */
+	scans_count: number;
 }
 
 export interface SurfaceScanAiReport {

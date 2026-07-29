@@ -197,14 +197,15 @@ All colors MUST be HSL.
    fissi — e html2canvas taglia comunque le ultime colonne. Va quindi costretta
    a stare nella larghezza della pagina.
 
-   table-layout: fixed è ciò che lo garantisce: con il layout automatico una
-   tabella con molte colonne resta più larga del contenitore anche mandando il
-   testo a capo. Le larghezze dichiarate sulle singole colonne (es. w-14)
-   continuano a essere rispettate. */
+   NB: qui non si usa `table-layout: fixed`. Garantirebbe l'adattamento, ma
+   distribuisce lo spazio in parti uguali e sulle tabelle annidate a molte
+   colonne riduce le celle a strisce in cui il testo va a capo una lettera per
+   riga. Bastano il vincolo di larghezza e l'azzeramento dei min-width: con il
+   layout automatico le colonne si comprimono da sole, perché il contenuto può
+   andare a capo. */
 .report-print table {
   width: 100% !important;
   max-width: 100% !important;
-  table-layout: fixed;
 }
 .report-print th,
 .report-print td {

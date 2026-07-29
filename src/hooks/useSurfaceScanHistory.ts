@@ -4,10 +4,19 @@ import { surfaceScan360Api, type SurfaceScanHistoryEntry } from '@/lib/api/surfa
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { toast } from 'sonner';
 
+/**
+ * Punto della trendline, aggregato per giornata di scansione dal backend.
+ *
+ * Non è più una riga di `surface_scan_history`: quella tabella ha un record per
+ * job, e il motore v3 crea un job per target, quindi le righe grezze davano un
+ * punto per host anziché per scansione.
+ */
 export interface SurfaceScanHistoryRow {
-  id: string;
   scanned_at: string;
+  /** Host con porte aperte o finding. */
   total_assets: number;
+  /** Host effettivamente analizzati nella giornata. */
+  hosts_scanned: number;
   critical_count: number;
   warning_count: number;
   safe_count: number;
@@ -15,7 +24,8 @@ export interface SurfaceScanHistoryRow {
   high_cves: number;
   medium_cves: number;
   low_cves: number;
-  triggered_by: string | null;
+  /** Quante scansioni sono confluite nel punto. */
+  scans_count: number;
 }
 
 export interface WeeklyPoint {
