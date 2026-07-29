@@ -25,6 +25,13 @@ interface AssetData {
 
 interface Props {
   data: Record<string, AssetData>;
+  /**
+   * Apre tutte le schede alla prima resa.
+   *
+   * Serve al report PDF: il contenuto collassato non è nascosto via CSS, non
+   * viene proprio renderizzato, quindi nella cattura la sezione risultava vuota.
+   */
+  defaultOpen?: boolean;
 }
 
 function MiniPie({ data }: { data: Record<string, number> }) {
@@ -49,8 +56,8 @@ function MiniPie({ data }: { data: Record<string, number> }) {
   );
 }
 
-function AssetCard({ asset, data }: { asset: string; data: AssetData }) {
-  const [open, setOpen] = useState(false);
+function AssetCard({ asset, data, defaultOpen = false }: { asset: string; data: AssetData; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
   const topSources = Object.entries(data.bySource).sort((a, b) => b[1] - a[1]).slice(0, 3);
 
   return (
@@ -116,7 +123,7 @@ function AssetCard({ asset, data }: { asset: string; data: AssetData }) {
   );
 }
 
-export function DarkRiskAssetBreakdown({ data }: Props) {
+export function DarkRiskAssetBreakdown({ data, defaultOpen = false }: Props) {
   const sorted = Object.entries(data).sort((a, b) => b[1].total - a[1].total);
   if (!sorted.length) return null;
 
@@ -133,7 +140,7 @@ export function DarkRiskAssetBreakdown({ data }: Props) {
       </CardHeader>
       <CardContent className="space-y-2 pt-0">
         {sorted.map(([asset, assetData]) => (
-          <AssetCard key={asset} asset={asset} data={assetData} />
+          <AssetCard key={asset} asset={asset} data={assetData} defaultOpen={defaultOpen} />
         ))}
       </CardContent>
     </Card>

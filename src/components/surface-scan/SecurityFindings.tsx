@@ -229,7 +229,18 @@ const cvssTooltipText = (
   return `CVSS ${displayCvss.toFixed(1)} derivato dal finding.`;
 };
 
-const SecurityFindings: React.FC = () => {
+interface SecurityFindingsProps {
+  /**
+   * Resa per documento statico (report PDF).
+   *
+   * Espande tutte le righe e disattiva la paginazione: nella cattura il
+   * contenuto collassato non viene renderizzato affatto — non è nascosto via
+   * CSS — e le pagine successive alla prima sarebbero irraggiungibili.
+   */
+  printMode?: boolean;
+}
+
+const SecurityFindings: React.FC<SecurityFindingsProps> = ({ printMode = false }) => {
   const { findings, loading, counts } = useSurfaceScanFindings();
   const { hostMeta } = useSurfaceScanDiscoveredAssets();
   const [searchTerm, setSearchTerm] = useState('');
@@ -345,7 +356,11 @@ const SecurityFindings: React.FC = () => {
   );
 
   const totalPages = Math.max(1, Math.ceil(groupedAssets.length / itemsPerPage));
-  const paginatedAssets = groupedAssets.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  // Nel report non c'è modo di cambiare pagina: impaginare significherebbe
+  // stampare solo i primi 15 asset senza che il lettore lo sappia.
+  const paginatedAssets = printMode
+    ? groupedAssets
+    : groupedAssets.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const toggleAsset = (assetKey: string) => {
     setOpenAssets((prev) => ({ ...prev, [assetKey]: !prev[assetKey] }));
@@ -479,7 +494,7 @@ const SecurityFindings: React.FC = () => {
 
               {!loading &&
                 paginatedAssets.map((assetGroup) => {
-                  const isOpen = Boolean(openAssets[assetGroup.assetKey]);
+                  const isOpen = printMode || Boolean(openAssets[assetGroup.assetKey]);
 
                   return (
                     <React.Fragment key={assetGroup.assetKey}>

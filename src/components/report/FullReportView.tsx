@@ -450,7 +450,7 @@ const FullReportView: React.FC<FullReportViewProps> = ({ onReady }) => {
 				<h2 className="text-lg font-bold">SurfaceScan360 — Esposizione</h2>
 				<SurfaceScanMailSecurity />
 				<SurfaceScanTrendline />
-				<SecurityFindings />
+				<SecurityFindings printMode />
 				<ExternalScanIntelligenceSection />
 			</section>
 
@@ -515,7 +515,7 @@ const FullReportView: React.FC<FullReportViewProps> = ({ onReady }) => {
 					/>
 				)}
 
-				{assetBreakdown && <DarkRiskAssetBreakdown data={assetBreakdown} />}
+				{assetBreakdown && <DarkRiskAssetBreakdown data={assetBreakdown} defaultOpen />}
 
 				{!snapshot && (
 					<p className="text-sm text-slate-500">
