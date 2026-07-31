@@ -56,8 +56,8 @@ const firewallHealth = (): ServiceHealth => {
   const medium = 2;
 
   const coverage = 0.7 * activeRuleRatio + 0.3 * pct(threatsBlocked, threatsBlocked + critical + high);
-  const hygiene = 100 - pct(critical + high + medium, Math.max(1, blockedConnections / 100));
-  const penalty = critical * 5 + high * 2.5 + medium * 1;
+  const hygiene = 100 - pct(critical + high + medium, Math.max(1, threatsBlocked));
+  const penalty = Math.min(20, critical * 4 + high * 2 + medium * 1);
 
   return compose('hi_firewall', coverage, hygiene, penalty, critical + high, [
     `${activeRules} regole attive`,
@@ -121,8 +121,8 @@ const logHealth = (): ServiceHealth => {
   const hosts = hiLogOverview?.hostsWindows ?? 0;
 
   const coverage = hosts > 0 ? 100 : 0;
-  const hygiene = 100 - pct(critical * 3 + high * 2 + medium, Math.max(1, events.length) * 3) * 100 / 100;
-  const penalty = Math.min(30, critical * 1.5 + high * 0.7);
+  const hygiene = 100 - pct(critical + high, Math.max(1, events.length)) * 0.8;
+  const penalty = Math.min(20, critical * 0.5 + high * 0.2);
 
   return compose('hi_log', coverage, hygiene, penalty, critical + high, [
     `${hosts} host in raccolta log`,
