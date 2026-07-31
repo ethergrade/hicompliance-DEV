@@ -58,20 +58,30 @@ const Dashboard: React.FC = () => {
 
   // Mostra TUTTI i servizi HiSolution con dashboard mock funzionanti.
   // Lo stato "connected" riflette le integration realmente configurate.
+  // L'health score e' calcolato dalle metriche dei singoli servizi (vedi lib/serviceHealth).
   const hiSolutionServices = useMemo(() => {
     return Object.entries(SERVICE_CATALOG).map(([code, name]) => {
       const connected = isServiceConnected(code);
+      const health = getServiceHealth(code);
       return {
         id: code,
         status: connected ? ('active' as const) : ('mock' as const),
-        health_score: null as number | null,
+        health_score: health.healthScore,
+        issues: health.issues,
+        drivers: health.drivers,
         services: { name, code, id: code },
       };
     });
   }, [integrations]);
 
+  const serviceCodes = useMemo(() => Object.keys(SERVICE_CATALOG), []);
+  const averageHealth = useMemo(() => getAverageHealth(serviceCodes), [serviceCodes]);
+  const trueRiskScore = useMemo(() => getTrueRiskFromHealth(serviceCodes), [serviceCodes]);
 
-  const totalIssues = 0;
+  const totalIssues = useMemo(
+    () => hiSolutionServices.reduce((acc, s) => acc + (s.issues ?? 0), 0),
+    [hiSolutionServices],
+  );
 
   // Tutte le tile sono cliccabili: in assenza di integration mostriamo dashboard mock funzionante
   const isModuleEnabledForDashboard = (_serviceCode: string) => true;
