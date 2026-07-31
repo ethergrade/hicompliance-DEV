@@ -88,8 +88,8 @@ const Dashboard: React.FC = () => {
   const isModuleEnabledForDashboard = (_serviceCode: string) => true;
 
   const connectedServicesCount = hiSolutionServices.length;
-  const alertServicesCount = 0;
-  const operativeServicesCount = connectedServicesCount;
+  const alertServicesCount = hiSolutionServices.filter((s) => (s.health_score ?? 0) < 60).length;
+  const operativeServicesCount = connectedServicesCount - alertServicesCount;
 
   const handleServiceClick = (service: { code: string }) => {
     navigate(`/dashboard/service/${service.code}`);
