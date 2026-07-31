@@ -95,10 +95,16 @@ const Dashboard: React.FC = () => {
     navigate(`/dashboard/service/${service.code}`);
   };
 
-  const renderServiceCard = (service: { name: string; code: string; id?: string }, healthScore: number, index: number) => {
+  const renderServiceCard = (
+    service: { name: string; code: string; id?: string },
+    healthScore: number,
+    index: number,
+    serviceIssues?: number,
+    drivers?: string[],
+  ) => {
     const moduleEnabled = isModuleEnabledForDashboard(service.code);
     const isGood = healthScore >= 80;
-    const issues = isGood ? 0 : Math.ceil((100 - healthScore) / 20);
+    const issues = serviceIssues ?? (isGood ? 0 : Math.ceil((100 - healthScore) / 20));
 
     return (
       <div
