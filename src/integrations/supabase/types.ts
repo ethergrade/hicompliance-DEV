@@ -3427,15 +3427,160 @@ export type Database = {
         }
         Relationships: []
       }
+      nuclei_scan360_cve_matches: {
+        Row: {
+          asset_host: string | null
+          confidence: string
+          cpe: string | null
+          created_at: string
+          customer_id: string
+          cve_id: string
+          cvss_score: number | null
+          cvss_vector: string | null
+          cvss_version: string | null
+          description: string | null
+          details: Json
+          epss_percentile: number | null
+          epss_score: number | null
+          finding_id: string | null
+          id: string
+          job_id: string
+          kev_known_exploited: boolean
+          last_modified_at: string | null
+          match_status: string
+          matched_at: string | null
+          nvd_status: string | null
+          organization_id: string
+          port_id: string | null
+          published_at: string | null
+          severity: string | null
+          source: string
+          template_id: string | null
+        }
+        Insert: {
+          asset_host?: string | null
+          confidence?: string
+          cpe?: string | null
+          created_at?: string
+          customer_id: string
+          cve_id: string
+          cvss_score?: number | null
+          cvss_vector?: string | null
+          cvss_version?: string | null
+          description?: string | null
+          details?: Json
+          epss_percentile?: number | null
+          epss_score?: number | null
+          finding_id?: string | null
+          id?: string
+          job_id: string
+          kev_known_exploited?: boolean
+          last_modified_at?: string | null
+          match_status?: string
+          matched_at?: string | null
+          nvd_status?: string | null
+          organization_id: string
+          port_id?: string | null
+          published_at?: string | null
+          severity?: string | null
+          source?: string
+          template_id?: string | null
+        }
+        Update: {
+          asset_host?: string | null
+          confidence?: string
+          cpe?: string | null
+          created_at?: string
+          customer_id?: string
+          cve_id?: string
+          cvss_score?: number | null
+          cvss_vector?: string | null
+          cvss_version?: string | null
+          description?: string | null
+          details?: Json
+          epss_percentile?: number | null
+          epss_score?: number | null
+          finding_id?: string | null
+          id?: string
+          job_id?: string
+          kev_known_exploited?: boolean
+          last_modified_at?: string | null
+          match_status?: string
+          matched_at?: string | null
+          nvd_status?: string | null
+          organization_id?: string
+          port_id?: string | null
+          published_at?: string | null
+          severity?: string | null
+          source?: string
+          template_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nuclei_scan360_cve_matches_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_cve_matches_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_cve_matches_finding_id_fkey"
+            columns: ["finding_id"]
+            isOneToOne: false
+            referencedRelation: "nuclei_scan360_findings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_cve_matches_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "nuclei_scan360_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_cve_matches_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_cve_matches_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_cve_matches_port_id_fkey"
+            columns: ["port_id"]
+            isOneToOne: false
+            referencedRelation: "nuclei_scan360_open_ports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       nuclei_scan360_findings: {
         Row: {
           asset_host: string | null
           category: string | null
           created_at: string
           customer_id: string
+          cve_details: Json
+          cve_ids: string[]
+          cvss_score: number | null
+          epss_score: number | null
           extracted_results: Json
           id: string
           job_id: string
+          kev_known_exploited: boolean
           matched_at: string | null
           matcher_name: string | null
           name: string | null
@@ -3451,9 +3596,14 @@ export type Database = {
           category?: string | null
           created_at?: string
           customer_id: string
+          cve_details?: Json
+          cve_ids?: string[]
+          cvss_score?: number | null
+          epss_score?: number | null
           extracted_results?: Json
           id?: string
           job_id: string
+          kev_known_exploited?: boolean
           matched_at?: string | null
           matcher_name?: string | null
           name?: string | null
@@ -3469,9 +3619,14 @@ export type Database = {
           category?: string | null
           created_at?: string
           customer_id?: string
+          cve_details?: Json
+          cve_ids?: string[]
+          cvss_score?: number | null
+          epss_score?: number | null
           extracted_results?: Json
           id?: string
           job_id?: string
+          kev_known_exploited?: boolean
           matched_at?: string | null
           matcher_name?: string | null
           name?: string | null
@@ -3531,25 +3686,51 @@ export type Database = {
           customer_id: string
           duration_ms: number | null
           findings_count: number
+          fingerprint_duration_ms: number | null
+          fingerprint_status: string | null
           id: string
           last_error: string | null
           max_findings: number
+          next_run_at: string | null
+          nikto_completed_at: string | null
+          nikto_duration_ms: number | null
+          nikto_findings_count: number
+          nikto_started_at: string | null
+          nikto_status: string | null
+          nikto_version: string | null
+          nmap_completed_at: string | null
+          nmap_duration_ms: number | null
+          nmap_profile: string
+          nmap_started_at: string | null
+          nmap_status: string | null
+          nmap_target: string | null
+          nmap_version: string | null
+          nmap_warnings: Json
           normalized_target_url: string
           nuclei_version: string | null
+          open_port_count: number
           organization_id: string
           profile: string
           rate_limit: number
+          raw_nikto_result: Json
+          raw_nmap_result: Json
           raw_result: Json
+          raw_technology_result: Json
           resolved_target_url: string | null
           source: string
+          stage: string
           started_at: string | null
           status: string
           summary: Json
           target_host: string | null
+          target_input: string | null
+          target_kind: string | null
           target_url: string
+          technology_count: number
           templates_executed_count: number | null
           templates_loaded_count: number | null
           timeout_seconds: number
+          unified_verdict: Json
           updated_at: string
           warnings: Json
         }
@@ -3563,25 +3744,51 @@ export type Database = {
           customer_id: string
           duration_ms?: number | null
           findings_count?: number
+          fingerprint_duration_ms?: number | null
+          fingerprint_status?: string | null
           id?: string
           last_error?: string | null
           max_findings?: number
+          next_run_at?: string | null
+          nikto_completed_at?: string | null
+          nikto_duration_ms?: number | null
+          nikto_findings_count?: number
+          nikto_started_at?: string | null
+          nikto_status?: string | null
+          nikto_version?: string | null
+          nmap_completed_at?: string | null
+          nmap_duration_ms?: number | null
+          nmap_profile?: string
+          nmap_started_at?: string | null
+          nmap_status?: string | null
+          nmap_target?: string | null
+          nmap_version?: string | null
+          nmap_warnings?: Json
           normalized_target_url: string
           nuclei_version?: string | null
+          open_port_count?: number
           organization_id: string
           profile: string
           rate_limit?: number
+          raw_nikto_result?: Json
+          raw_nmap_result?: Json
           raw_result?: Json
+          raw_technology_result?: Json
           resolved_target_url?: string | null
           source?: string
+          stage?: string
           started_at?: string | null
           status?: string
           summary?: Json
           target_host?: string | null
+          target_input?: string | null
+          target_kind?: string | null
           target_url: string
+          technology_count?: number
           templates_executed_count?: number | null
           templates_loaded_count?: number | null
           timeout_seconds?: number
+          unified_verdict?: Json
           updated_at?: string
           warnings?: Json
         }
@@ -3595,25 +3802,51 @@ export type Database = {
           customer_id?: string
           duration_ms?: number | null
           findings_count?: number
+          fingerprint_duration_ms?: number | null
+          fingerprint_status?: string | null
           id?: string
           last_error?: string | null
           max_findings?: number
+          next_run_at?: string | null
+          nikto_completed_at?: string | null
+          nikto_duration_ms?: number | null
+          nikto_findings_count?: number
+          nikto_started_at?: string | null
+          nikto_status?: string | null
+          nikto_version?: string | null
+          nmap_completed_at?: string | null
+          nmap_duration_ms?: number | null
+          nmap_profile?: string
+          nmap_started_at?: string | null
+          nmap_status?: string | null
+          nmap_target?: string | null
+          nmap_version?: string | null
+          nmap_warnings?: Json
           normalized_target_url?: string
           nuclei_version?: string | null
+          open_port_count?: number
           organization_id?: string
           profile?: string
           rate_limit?: number
+          raw_nikto_result?: Json
+          raw_nmap_result?: Json
           raw_result?: Json
+          raw_technology_result?: Json
           resolved_target_url?: string | null
           source?: string
+          stage?: string
           started_at?: string | null
           status?: string
           summary?: Json
           target_host?: string | null
+          target_input?: string | null
+          target_kind?: string | null
           target_url?: string
+          technology_count?: number
           templates_executed_count?: number | null
           templates_loaded_count?: number | null
           timeout_seconds?: number
+          unified_verdict?: Json
           updated_at?: string
           warnings?: Json
         }
@@ -3645,6 +3878,311 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_sales_remediation_dashboard"
             referencedColumns: ["organization_id"]
+          },
+        ]
+      }
+      nuclei_scan360_nikto_findings: {
+        Row: {
+          asset_host: string | null
+          category: string
+          created_at: string
+          customer_id: string
+          id: string
+          job_id: string
+          message: string
+          method: string | null
+          nikto_id: string | null
+          organization_id: string
+          port: number | null
+          port_id: string | null
+          raw_finding: Json
+          references: string[]
+          severity: string
+          target_url: string | null
+          tls: boolean
+          uri: string | null
+        }
+        Insert: {
+          asset_host?: string | null
+          category?: string
+          created_at?: string
+          customer_id: string
+          id?: string
+          job_id: string
+          message: string
+          method?: string | null
+          nikto_id?: string | null
+          organization_id: string
+          port?: number | null
+          port_id?: string | null
+          raw_finding?: Json
+          references?: string[]
+          severity?: string
+          target_url?: string | null
+          tls?: boolean
+          uri?: string | null
+        }
+        Update: {
+          asset_host?: string | null
+          category?: string
+          created_at?: string
+          customer_id?: string
+          id?: string
+          job_id?: string
+          message?: string
+          method?: string | null
+          nikto_id?: string | null
+          organization_id?: string
+          port?: number | null
+          port_id?: string | null
+          raw_finding?: Json
+          references?: string[]
+          severity?: string
+          target_url?: string | null
+          tls?: boolean
+          uri?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nuclei_scan360_nikto_findings_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_nikto_findings_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_nikto_findings_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "nuclei_scan360_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_nikto_findings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_nikto_findings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_nikto_findings_port_id_fkey"
+            columns: ["port_id"]
+            isOneToOne: false
+            referencedRelation: "nuclei_scan360_open_ports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      nuclei_scan360_open_ports: {
+        Row: {
+          cpe: string[]
+          created_at: string
+          customer_id: string
+          extrainfo: string | null
+          host: string | null
+          hostname: string | null
+          id: string
+          job_id: string
+          organization_id: string
+          port: number
+          product: string | null
+          protocol: string
+          raw_port: Json
+          service: string | null
+          state: string
+          url_candidates: string[]
+          version: string | null
+        }
+        Insert: {
+          cpe?: string[]
+          created_at?: string
+          customer_id: string
+          extrainfo?: string | null
+          host?: string | null
+          hostname?: string | null
+          id?: string
+          job_id: string
+          organization_id: string
+          port: number
+          product?: string | null
+          protocol?: string
+          raw_port?: Json
+          service?: string | null
+          state?: string
+          url_candidates?: string[]
+          version?: string | null
+        }
+        Update: {
+          cpe?: string[]
+          created_at?: string
+          customer_id?: string
+          extrainfo?: string | null
+          host?: string | null
+          hostname?: string | null
+          id?: string
+          job_id?: string
+          organization_id?: string
+          port?: number
+          product?: string | null
+          protocol?: string
+          raw_port?: Json
+          service?: string | null
+          state?: string
+          url_candidates?: string[]
+          version?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nuclei_scan360_open_ports_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_open_ports_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_open_ports_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "nuclei_scan360_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_open_ports_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_open_ports_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+        ]
+      }
+      nuclei_scan360_technologies: {
+        Row: {
+          asset_host: string | null
+          category: string | null
+          confidence: string
+          cpe_candidates: string[]
+          created_at: string
+          customer_id: string
+          evidence: Json
+          id: string
+          job_id: string
+          name: string
+          organization_id: string
+          port: number | null
+          port_id: string | null
+          raw_technology: Json
+          source: string
+          url: string | null
+          version: string | null
+        }
+        Insert: {
+          asset_host?: string | null
+          category?: string | null
+          confidence?: string
+          cpe_candidates?: string[]
+          created_at?: string
+          customer_id: string
+          evidence?: Json
+          id?: string
+          job_id: string
+          name: string
+          organization_id: string
+          port?: number | null
+          port_id?: string | null
+          raw_technology?: Json
+          source?: string
+          url?: string | null
+          version?: string | null
+        }
+        Update: {
+          asset_host?: string | null
+          category?: string | null
+          confidence?: string
+          cpe_candidates?: string[]
+          created_at?: string
+          customer_id?: string
+          evidence?: Json
+          id?: string
+          job_id?: string
+          name?: string
+          organization_id?: string
+          port?: number | null
+          port_id?: string | null
+          raw_technology?: Json
+          source?: string
+          url?: string | null
+          version?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nuclei_scan360_technologies_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_technologies_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_technologies_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "nuclei_scan360_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_technologies_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_technologies_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "nuclei_scan360_technologies_port_id_fkey"
+            columns: ["port_id"]
+            isOneToOne: false
+            referencedRelation: "nuclei_scan360_open_ports"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -3913,7 +4451,7 @@ export type Database = {
           id: string
           irp_extended: boolean
           name: string
-          surface_scan_auto_validation: boolean
+          pentest_tools_auto_validation: boolean
           sales_owner_user_id: string | null
           services_pause_reason: string | null
           services_paused: boolean
@@ -3939,7 +4477,7 @@ export type Database = {
           id?: string
           irp_extended?: boolean
           name: string
-          surface_scan_auto_validation?: boolean
+          pentest_tools_auto_validation?: boolean
           sales_owner_user_id?: string | null
           services_pause_reason?: string | null
           services_paused?: boolean
@@ -3965,7 +4503,7 @@ export type Database = {
           id?: string
           irp_extended?: boolean
           name?: string
-          surface_scan_auto_validation?: boolean
+          pentest_tools_auto_validation?: boolean
           sales_owner_user_id?: string | null
           services_pause_reason?: string | null
           services_paused?: boolean
@@ -3980,7 +4518,7 @@ export type Database = {
         }
         Relationships: []
       }
-      external_exposure_scan_tasks: {
+      pentest_tools_scans: {
         Row: {
           created_at: string
           customer_id: string
@@ -4058,14 +4596,14 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "external_exposure_scan_tasks_scan_job_id_fkey"
+            foreignKeyName: "pentest_tools_scans_scan_job_id_fkey"
             columns: ["scan_job_id"]
             isOneToOne: false
             referencedRelation: "surface_scan_jobs"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "external_exposure_scan_tasks_target_id_fkey"
+            foreignKeyName: "pentest_tools_scans_target_id_fkey"
             columns: ["target_id"]
             isOneToOne: false
             referencedRelation: "surface_scan_targets"
@@ -4801,7 +5339,7 @@ export type Database = {
             foreignKeyName: "surface_exposure_findings_source_scan_id_fkey"
             columns: ["source_scan_id"]
             isOneToOne: false
-            referencedRelation: "external_exposure_scan_tasks"
+            referencedRelation: "pentest_tools_scans"
             referencedColumns: ["id"]
           },
           {
@@ -5467,7 +6005,7 @@ export type Database = {
             foreignKeyName: "surface_open_ports_source_scan_id_fkey"
             columns: ["source_scan_id"]
             isOneToOne: false
-            referencedRelation: "external_exposure_scan_tasks"
+            referencedRelation: "pentest_tools_scans"
             referencedColumns: ["id"]
           },
           {
@@ -5976,6 +6514,105 @@ export type Database = {
         }
         Relationships: []
       }
+      surface_scan_monthly_reports: {
+        Row: {
+          created_at: string
+          id: string
+          month_key: string
+          month_start: string
+          organization_id: string
+          payload: Json
+          pdf_url: string | null
+          triggered_by: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          month_key: string
+          month_start: string
+          organization_id: string
+          payload?: Json
+          pdf_url?: string | null
+          triggered_by?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          month_key?: string
+          month_start?: string
+          organization_id?: string
+          payload?: Json
+          pdf_url?: string | null
+          triggered_by?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_scan_monthly_reports_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_scan_monthly_reports_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+        ]
+      }
+      surface_scan_report_refresh_queue: {
+        Row: {
+          attempt_count: number
+          last_error: string | null
+          locked_at: string | null
+          not_before: string
+          organization_id: string
+          requested_at: string
+          trigger_source: string
+          updated_at: string
+        }
+        Insert: {
+          attempt_count?: number
+          last_error?: string | null
+          locked_at?: string | null
+          not_before?: string
+          organization_id: string
+          requested_at?: string
+          trigger_source?: string
+          updated_at?: string
+        }
+        Update: {
+          attempt_count?: number
+          last_error?: string | null
+          locked_at?: string | null
+          not_before?: string
+          organization_id?: string
+          requested_at?: string
+          trigger_source?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_scan_report_refresh_queue_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_scan_report_refresh_queue_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+        ]
+      }
       surface_scan_targets: {
         Row: {
           created_at: string
@@ -6026,230 +6663,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "surface_scan_jobs"
             referencedColumns: ["id"]
-          },
-        ]
-      }
-      surface_ssl_results: {
-        Row: {
-          certificate_issuer: string | null
-          certificate_not_after: string | null
-          certificate_not_before: string | null
-          certificate_subject: string | null
-          created_at: string
-          customer_id: string
-          grade: string | null
-          host: string
-          id: string
-          organization_id: string | null
-          port: number
-          raw: Json
-          scan_job_id: string | null
-          source_scan_id: string | null
-          target_id: string | null
-          tenant_id: string | null
-          url: string
-          weak_ciphers: string[] | null
-          weak_protocols: string[] | null
-        }
-        Insert: {
-          certificate_issuer?: string | null
-          certificate_not_after?: string | null
-          certificate_not_before?: string | null
-          certificate_subject?: string | null
-          created_at?: string
-          customer_id: string
-          grade?: string | null
-          host: string
-          id?: string
-          organization_id?: string | null
-          port: number
-          raw?: Json
-          scan_job_id?: string | null
-          source_scan_id?: string | null
-          target_id?: string | null
-          tenant_id?: string | null
-          url: string
-          weak_ciphers?: string[] | null
-          weak_protocols?: string[] | null
-        }
-        Update: {
-          certificate_issuer?: string | null
-          certificate_not_after?: string | null
-          certificate_not_before?: string | null
-          certificate_subject?: string | null
-          created_at?: string
-          customer_id?: string
-          grade?: string | null
-          host?: string
-          id?: string
-          organization_id?: string | null
-          port?: number
-          raw?: Json
-          scan_job_id?: string | null
-          source_scan_id?: string | null
-          target_id?: string | null
-          tenant_id?: string | null
-          url?: string
-          weak_ciphers?: string[] | null
-          weak_protocols?: string[] | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "surface_ssl_results_scan_job_id_fkey"
-            columns: ["scan_job_id"]
-            isOneToOne: false
-            referencedRelation: "surface_scan_jobs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "surface_ssl_results_source_scan_id_fkey"
-            columns: ["source_scan_id"]
-            isOneToOne: false
-            referencedRelation: "external_exposure_scan_tasks"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "surface_ssl_results_target_id_fkey"
-            columns: ["target_id"]
-            isOneToOne: false
-            referencedRelation: "surface_scan_targets"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      surface_web_technologies: {
-        Row: {
-          category: string | null
-          confidence: number | null
-          created_at: string
-          customer_id: string
-          host: string
-          id: string
-          organization_id: string | null
-          port: number | null
-          raw: Json
-          scan_job_id: string | null
-          source: string
-          source_provider: string
-          source_scan_id: string | null
-          target_id: string | null
-          technology_name: string
-          technology_version: string | null
-          tenant_id: string | null
-          url: string
-        }
-        Insert: {
-          category?: string | null
-          confidence?: number | null
-          created_at?: string
-          customer_id: string
-          host: string
-          id?: string
-          organization_id?: string | null
-          port?: number | null
-          raw?: Json
-          scan_job_id?: string | null
-          source?: string
-          source_provider?: string
-          source_scan_id?: string | null
-          target_id?: string | null
-          technology_name: string
-          technology_version?: string | null
-          tenant_id?: string | null
-          url: string
-        }
-        Update: {
-          category?: string | null
-          confidence?: number | null
-          created_at?: string
-          customer_id?: string
-          host?: string
-          id?: string
-          organization_id?: string | null
-          port?: number | null
-          raw?: Json
-          scan_job_id?: string | null
-          source?: string
-          source_provider?: string
-          source_scan_id?: string | null
-          target_id?: string | null
-          technology_name?: string
-          technology_version?: string | null
-          tenant_id?: string | null
-          url?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "surface_web_technologies_scan_job_id_fkey"
-            columns: ["scan_job_id"]
-            isOneToOne: false
-            referencedRelation: "surface_scan_jobs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "surface_web_technologies_source_scan_id_fkey"
-            columns: ["source_scan_id"]
-            isOneToOne: false
-            referencedRelation: "external_exposure_scan_tasks"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "surface_web_technologies_target_id_fkey"
-            columns: ["target_id"]
-            isOneToOne: false
-            referencedRelation: "surface_scan_targets"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      surface_scan_monthly_reports: {
-        Row: {
-          created_at: string
-          id: string
-          month_key: string
-          month_start: string
-          organization_id: string
-          payload: Json
-          pdf_url: string | null
-          triggered_by: string
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          month_key: string
-          month_start: string
-          organization_id: string
-          payload?: Json
-          pdf_url?: string | null
-          triggered_by?: string
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          month_key?: string
-          month_start?: string
-          organization_id?: string
-          payload?: Json
-          pdf_url?: string | null
-          triggered_by?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "surface_scan_monthly_reports_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "surface_scan_monthly_reports_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "v_sales_remediation_dashboard"
-            referencedColumns: ["organization_id"]
           },
         ]
       }
@@ -6308,7 +6721,43 @@ export type Database = {
           status?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "surface_service_fingerprint_queue_open_port_id_fkey"
+            columns: ["open_port_id"]
+            isOneToOne: true
+            referencedRelation: "surface_open_ports"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_service_fingerprint_queue_open_port_id_fkey"
+            columns: ["open_port_id"]
+            isOneToOne: true
+            referencedRelation: "surface_open_ports_latest"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_service_fingerprint_queue_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_service_fingerprint_queue_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "surface_service_fingerprint_queue_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       surface_service_vulnerability_matches: {
         Row: {
@@ -6395,7 +6844,216 @@ export type Database = {
           service_version?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "surface_service_vulnerability_matches_open_port_id_fkey"
+            columns: ["open_port_id"]
+            isOneToOne: false
+            referencedRelation: "surface_open_ports"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_service_vulnerability_matches_open_port_id_fkey"
+            columns: ["open_port_id"]
+            isOneToOne: false
+            referencedRelation: "surface_open_ports_latest"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_service_vulnerability_matches_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_service_vulnerability_matches_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "surface_service_vulnerability_matches_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      surface_ssl_results: {
+        Row: {
+          certificate_issuer: string | null
+          certificate_not_after: string | null
+          certificate_not_before: string | null
+          certificate_subject: string | null
+          created_at: string
+          customer_id: string
+          grade: string | null
+          host: string
+          id: string
+          organization_id: string | null
+          port: number
+          raw: Json
+          scan_job_id: string | null
+          source_scan_id: string | null
+          target_id: string | null
+          tenant_id: string | null
+          url: string
+          weak_ciphers: string[] | null
+          weak_protocols: string[] | null
+        }
+        Insert: {
+          certificate_issuer?: string | null
+          certificate_not_after?: string | null
+          certificate_not_before?: string | null
+          certificate_subject?: string | null
+          created_at?: string
+          customer_id: string
+          grade?: string | null
+          host: string
+          id?: string
+          organization_id?: string | null
+          port: number
+          raw?: Json
+          scan_job_id?: string | null
+          source_scan_id?: string | null
+          target_id?: string | null
+          tenant_id?: string | null
+          url: string
+          weak_ciphers?: string[] | null
+          weak_protocols?: string[] | null
+        }
+        Update: {
+          certificate_issuer?: string | null
+          certificate_not_after?: string | null
+          certificate_not_before?: string | null
+          certificate_subject?: string | null
+          created_at?: string
+          customer_id?: string
+          grade?: string | null
+          host?: string
+          id?: string
+          organization_id?: string | null
+          port?: number
+          raw?: Json
+          scan_job_id?: string | null
+          source_scan_id?: string | null
+          target_id?: string | null
+          tenant_id?: string | null
+          url?: string
+          weak_ciphers?: string[] | null
+          weak_protocols?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_ssl_results_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_ssl_results_source_scan_id_fkey"
+            columns: ["source_scan_id"]
+            isOneToOne: false
+            referencedRelation: "pentest_tools_scans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_ssl_results_target_id_fkey"
+            columns: ["target_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_targets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      surface_web_technologies: {
+        Row: {
+          category: string | null
+          confidence: number | null
+          created_at: string
+          customer_id: string
+          host: string
+          id: string
+          organization_id: string | null
+          port: number | null
+          raw: Json
+          scan_job_id: string | null
+          source: string
+          source_provider: string
+          source_scan_id: string | null
+          target_id: string | null
+          technology_name: string
+          technology_version: string | null
+          tenant_id: string | null
+          url: string
+        }
+        Insert: {
+          category?: string | null
+          confidence?: number | null
+          created_at?: string
+          customer_id: string
+          host: string
+          id?: string
+          organization_id?: string | null
+          port?: number | null
+          raw?: Json
+          scan_job_id?: string | null
+          source?: string
+          source_provider?: string
+          source_scan_id?: string | null
+          target_id?: string | null
+          technology_name: string
+          technology_version?: string | null
+          tenant_id?: string | null
+          url: string
+        }
+        Update: {
+          category?: string | null
+          confidence?: number | null
+          created_at?: string
+          customer_id?: string
+          host?: string
+          id?: string
+          organization_id?: string | null
+          port?: number | null
+          raw?: Json
+          scan_job_id?: string | null
+          source?: string
+          source_provider?: string
+          source_scan_id?: string | null
+          target_id?: string | null
+          technology_name?: string
+          technology_version?: string | null
+          tenant_id?: string | null
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "surface_web_technologies_scan_job_id_fkey"
+            columns: ["scan_job_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_web_technologies_source_scan_id_fkey"
+            columns: ["source_scan_id"]
+            isOneToOne: false
+            referencedRelation: "pentest_tools_scans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "surface_web_technologies_target_id_fkey"
+            columns: ["target_id"]
+            isOneToOne: false
+            referencedRelation: "surface_scan_targets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_preferences: {
         Row: {
@@ -6580,7 +7238,7 @@ export type Database = {
             foreignKeyName: "surface_open_ports_source_scan_id_fkey"
             columns: ["source_scan_id"]
             isOneToOne: false
-            referencedRelation: "external_exposure_scan_tasks"
+            referencedRelation: "pentest_tools_scans"
             referencedColumns: ["id"]
           },
           {
@@ -6624,6 +7282,25 @@ export type Database = {
         Args: { _user_id: string }
         Returns: boolean
       }
+      claim_surface_scan_report_refresh: {
+        Args: never
+        Returns: {
+          attempt_count: number
+          last_error: string | null
+          locked_at: string | null
+          not_before: string
+          organization_id: string
+          requested_at: string
+          trigger_source: string
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "surface_scan_report_refresh_queue"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       darkrisk_apply_retention: { Args: { _org_id?: string }; Returns: Json }
       darkrisk_is_analyst: {
         Args: { _organization_id: string; _user_id: string }
@@ -6633,6 +7310,7 @@ export type Database = {
         Args: { _org_id: string }
         Returns: Json
       }
+      enqueue_all_surface_cves: { Args: never; Returns: number }
       enqueue_cve_enrichment: {
         Args: { _cves: string[]; _org_id: string; _source: string }
         Returns: undefined
@@ -6664,6 +7342,10 @@ export type Database = {
         Returns: boolean
       }
       surface_scan_is_admin: { Args: { _user_id: string }; Returns: boolean }
+      surface_scan_validate_internal_secret: {
+        Args: { candidate: string }
+        Returns: boolean
+      }
     }
     Enums: {
       app_role: "super_admin" | "sales" | "client"

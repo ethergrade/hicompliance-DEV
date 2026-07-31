@@ -14,6 +14,7 @@ import { RiskScoreMetricCard } from '@/components/dashboard/RiskScoreMetricCard'
 import { useServiceIntegrations } from '@/hooks/useServiceIntegrations';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import ClientServicesDialog from '@/components/clients/ClientServicesDialog';
+import { getServiceHealth, getAverageHealth, getTrueRiskFromHealth } from '@/lib/serviceHealth';
 import { 
   Shield, Monitor, Mail, FileText, Download, 
   BarChart3, Laptop, Link2, Unlink, Smartphone, Settings
@@ -58,36 +59,52 @@ const Dashboard: React.FC = () => {
 
   // Mostra TUTTI i servizi HiSolution con dashboard mock funzionanti.
   // Lo stato "connected" riflette le integration realmente configurate.
+  // L'health score e' calcolato dalle metriche dei singoli servizi (vedi lib/serviceHealth).
   const hiSolutionServices = useMemo(() => {
     return Object.entries(SERVICE_CATALOG).map(([code, name]) => {
       const connected = isServiceConnected(code);
+      const health = getServiceHealth(code);
       return {
         id: code,
         status: connected ? ('active' as const) : ('mock' as const),
-        health_score: null as number | null,
+        health_score: health.healthScore,
+        issues: health.issues,
+        drivers: health.drivers,
         services: { name, code, id: code },
       };
     });
   }, [integrations]);
 
+  const serviceCodes = useMemo(() => Object.keys(SERVICE_CATALOG), []);
+  const averageHealth = useMemo(() => getAverageHealth(serviceCodes), [serviceCodes]);
+  const trueRiskScore = useMemo(() => getTrueRiskFromHealth(serviceCodes), [serviceCodes]);
 
-  const totalIssues = 0;
+  const totalIssues = useMemo(
+    () => hiSolutionServices.reduce((acc, s) => acc + (s.issues ?? 0), 0),
+    [hiSolutionServices],
+  );
 
   // Tutte le tile sono cliccabili: in assenza di integration mostriamo dashboard mock funzionante
   const isModuleEnabledForDashboard = (_serviceCode: string) => true;
 
   const connectedServicesCount = hiSolutionServices.length;
-  const alertServicesCount = 0;
-  const operativeServicesCount = connectedServicesCount;
+  const alertServicesCount = hiSolutionServices.filter((s) => (s.health_score ?? 0) < 60).length;
+  const operativeServicesCount = connectedServicesCount - alertServicesCount;
 
   const handleServiceClick = (service: { code: string }) => {
     navigate(`/dashboard/service/${service.code}`);
   };
 
-  const renderServiceCard = (service: { name: string; code: string; id?: string }, healthScore: number, index: number) => {
+  const renderServiceCard = (
+    service: { name: string; code: string; id?: string },
+    healthScore: number,
+    index: number,
+    serviceIssues?: number,
+    drivers?: string[],
+  ) => {
     const moduleEnabled = isModuleEnabledForDashboard(service.code);
     const isGood = healthScore >= 80;
-    const issues = isGood ? 0 : Math.ceil((100 - healthScore) / 20);
+    const issues = serviceIssues ?? (isGood ? 0 : Math.ceil((100 - healthScore) / 20));
 
     return (
       <div
@@ -141,6 +158,14 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
 
+          {drivers && drivers.length > 0 && (
+            <ul className="space-y-1 mb-1">
+              {drivers.map((d, i) => (
+                <li key={i} className="text-[11px] text-muted-foreground leading-snug">- {d}</li>
+              ))}
+            </ul>
+          )}
+
           {!moduleEnabled && (
             <p className="text-xs text-muted-foreground mt-3">
               Modulo non abilitato per questo cliente.
@@ -190,7 +215,7 @@ const Dashboard: React.FC = () => {
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <ComplianceMetricCard />
-          <RiskScoreMetricCard />
+          <RiskScoreMetricCard baseScore={trueRiskScore} />
           {/* Merged card: Servizi Monitorati + Issues Totali */}
           <Card className="relative overflow-hidden border-border shadow-cyber hover:shadow-glow transition-cyber animate-fade-in">
             <CardContent className="p-0 h-full">
@@ -200,7 +225,7 @@ const Dashboard: React.FC = () => {
                   <p className="text-sm font-medium text-muted-foreground">Servizi Monitorati</p>
                   <Badge variant="secondary" className="bg-cyber-green/20 text-cyber-green w-full justify-center">Buono</Badge>
                   <div className="text-4xl font-bold text-foreground">{hiSolutionServices.length}</div>
-                  <p className="text-sm text-muted-foreground">Servizi attivi</p>
+                  <p className="text-sm text-muted-foreground">Health medio {averageHealth}%</p>
                 </div>
                 {/* Issues Totali */}
                 <div className="flex flex-col items-center justify-center p-5 text-center space-y-3">
@@ -247,7 +272,7 @@ const Dashboard: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {hiSolutionServices.map((orgService, index) => {
                   const service = orgService.services;
-                  return renderServiceCard(service, orgService.health_score ?? 0, index);
+                  return renderServiceCard(service, orgService.health_score ?? 0, index, orgService.issues, orgService.drivers);
                 })}
               </div>
             ) : (

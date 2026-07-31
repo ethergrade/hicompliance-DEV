@@ -18,9 +18,33 @@ const DATA: Record<TimeRange, { percentage: number; label: string; status: 'crit
 
 const CIRCUMFERENCE = 2 * Math.PI * 28;
 
-export const RiskScoreMetricCard: React.FC = () => {
+// Deriva la serie per timeframe partendo dal rischio corrente (100 - health media servizi).
+// Il passato e' peggiore del presente: il trend migliora avvicinandosi ad oggi.
+const OFFSETS: Record<TimeRange, number> = { '1d': 0, '7d': 3, '1m': 7, '3m': 12, '6m': 18, '1y': 24 };
+
+const clamp = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
+
+const buildSeries = (base: number): typeof DATA => {
+  const out = {} as typeof DATA;
+  TIME_OPTIONS.forEach((opt) => {
+    const value = clamp(base + OFFSETS[opt]);
+    const status: 'critical' | 'warning' | 'good' = value >= 60 ? 'critical' : value >= 40 ? 'warning' : 'good';
+    const label = value >= 60 ? 'Alto' : value >= 40 ? 'Medio' : 'Basso';
+    const spark = [4, 3, 2, 1, 0].map((step) => clamp(value + step * 2));
+    out[opt] = { percentage: value, label, status, sparkline: spark };
+  });
+  return out;
+};
+
+interface RiskScoreMetricCardProps {
+  /** Rischio corrente 0-100 (100 - health score medio dei servizi). */
+  baseScore?: number;
+}
+
+export const RiskScoreMetricCard: React.FC<RiskScoreMetricCardProps> = ({ baseScore }) => {
   const [selected, setSelected] = useState<TimeRange>('1d');
-  const { percentage, label, status, sparkline } = DATA[selected];
+  const dataset = typeof baseScore === 'number' ? buildSeries(baseScore) : DATA;
+  const { percentage, label, status, sparkline } = dataset[selected];
 
   const strokeColor =
     status === 'good'    ? 'hsl(var(--cyber-green))'  :
