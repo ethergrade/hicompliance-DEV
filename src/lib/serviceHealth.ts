@@ -143,10 +143,10 @@ const patchHealth = (): ServiceHealth => {
   const swInstalled = 5;
   const swFailed = 1;
 
-  const coverage = 0.5 * pct(osInstalled - osFailed, osInstalled + osPending) +
-    0.5 * pct(swInstalled - swFailed, swInstalled + swRejected);
+  const coverage = 0.5 * pct(osInstalled, osInstalled + osPending) +
+    0.5 * pct(swInstalled, swInstalled + swRejected);
   const hygiene = 100 - pct(osFailed + swFailed, Math.max(1, osInstalled + swInstalled)) * 0.8;
-  const penalty = vulnHigh * 3 + vulnMedium * 1.5 + vulnLow * 0.5 + swRejected * 1.5;
+  const penalty = Math.min(25, vulnHigh * 2 + vulnMedium * 1 + vulnLow * 0.3 + swRejected * 0.8);
 
   return compose('hi_patch', coverage, hygiene, penalty, vulnHigh + osPending, [
     `${vulnHigh + vulnMedium + vulnLow} vulnerabilita' aperte`,
