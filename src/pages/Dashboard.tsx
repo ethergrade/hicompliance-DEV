@@ -14,6 +14,7 @@ import { RiskScoreMetricCard } from '@/components/dashboard/RiskScoreMetricCard'
 import { useServiceIntegrations } from '@/hooks/useServiceIntegrations';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import ClientServicesDialog from '@/components/clients/ClientServicesDialog';
+import { getServiceHealth, getAverageHealth, getTrueRiskFromHealth } from '@/lib/serviceHealth';
 import { 
   Shield, Monitor, Mail, FileText, Download, 
   BarChart3, Laptop, Link2, Unlink, Smartphone, Settings
