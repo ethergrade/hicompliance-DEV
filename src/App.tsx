@@ -26,6 +26,7 @@ import ThreatManagement from "./pages/ThreatManagement";
 import Integrations from "./pages/Integrations";
 import Users from "./pages/Users";
 import AdminElevatedUsers from "./pages/AdminElevatedUsers";
+import AdminSettings from "./pages/AdminSettings";
 import RoleSettings from "./pages/RoleSettings";
 import Settings from "./pages/Settings";
 import SurfaceScanImpostazioni from "./pages/SurfaceScanImpostazioni";
@@ -277,6 +278,9 @@ const App = () => (
 								}
 							/>
 							<Route path="/admin/companies" element={<AdminCompanies />} />
+							{/* Impostazioni di piattaforma: la pagina verifica il ruolo, e
+							    la scrittura è comunque protetta lato API. */}
+							<Route path="/admin/impostazioni" element={<AdminSettings />} />
 							<Route
 								path="/admin/elevated-users"
 								element={<AdminElevatedUsers />}

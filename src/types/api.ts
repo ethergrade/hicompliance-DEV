@@ -703,9 +703,40 @@ export interface AssessmentCategory {
 export interface AssessmentQuestion {
 	id: string;
 	category_id: string;
+	category_name?: string | null;
 	question_text: string;
+	description?: string | null;
 	order_index: number;
+	priority?: string | null;
+	priority_numeric?: number | null;
+	/** Alimenta l'ordinamento del piano di remediation; 0 esclude la domanda. */
+	gantt_priority?: number | null;
+	deadline?: string | null;
 	dependency?: string | null;
+	solution_1?: string | null;
+	solution_2?: string | null;
+	solution_3?: string | null;
+	updated_at?: string | null;
+	updated_by?: string | null;
+}
+
+/**
+ * Modifica dei contenuti di una domanda del catalogo (solo super-admin).
+ *
+ * Struttura, ordinamento e categoria non sono modificabili: `dependency`
+ * referenzia le domande per posizione, quindi riordinare scollegherebbe in
+ * silenzio le dipendenze, e spostare una domanda di categoria ne cambierebbe
+ * il punteggio retroattivamente su tutti i clienti.
+ */
+export interface UpdateAssessmentQuestionRequest {
+	question_text?: string;
+	description?: string | null;
+	priority?: "ALTA" | "MEDIA" | "BASSA" | null;
+	gantt_priority?: number | null;
+	deadline?: string | null;
+	solution_1?: string | null;
+	solution_2?: string | null;
+	solution_3?: string | null;
 }
 
 export interface AssessmentResponseItem {

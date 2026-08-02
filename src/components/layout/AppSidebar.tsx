@@ -32,6 +32,7 @@ import {
 	KeyRound,
 	Download,
 	Radar,
+	SlidersHorizontal,
 	Activity,
 } from "lucide-react";
 import { SheetTitle, SheetDescription } from "@/components/ui/sheet";
@@ -129,6 +130,12 @@ const adminNavigation = [
 		title: "NUCLEI-SCAN360",
 		href: "/admin/nuclei-scan360",
 		icon: Radar,
+		superAdminOnly: true,
+	},
+	{
+		title: "Impostazioni",
+		href: "/admin/impostazioni",
+		icon: SlidersHorizontal,
 		superAdminOnly: true,
 	},
 ];

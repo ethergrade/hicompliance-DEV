@@ -11,6 +11,7 @@ import type {
 	ReprocessSnapshotRequest,
 	BatchAssessmentResponseRequest,
 	RemediationTemplate,
+	UpdateAssessmentQuestionRequest,
 } from "@/types/api";
 
 const _h = (companyId: string, groupId?: string | null) => ({
@@ -35,6 +36,24 @@ export const assessmentV2Api = {
 		const res = await apiClient.get<ApiResponse<AssessmentQuestion[]>>(
 			"/assessments-v2/questions",
 			undefined,
+			opts,
+		);
+		return res.data;
+	},
+
+	/**
+	 * Modifica i contenuti di una domanda del catalogo. Riservata al
+	 * super-admin: il catalogo è globale e la modifica vale per tutti i clienti.
+	 */
+	async updateQuestion(
+		questionId: string,
+		payload: UpdateAssessmentQuestionRequest,
+		groupId?: string | null,
+	): Promise<AssessmentQuestion> {
+		const opts = groupId ? { headers: { "X-Group-Id": groupId } } : undefined;
+		const res = await apiClient.put<ApiResponse<AssessmentQuestion>>(
+			`/assessments-v2/questions/${questionId}`,
+			payload,
 			opts,
 		);
 		return res.data;
