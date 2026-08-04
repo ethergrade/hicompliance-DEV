@@ -777,6 +777,38 @@ export interface AssessmentSnapshot {
 	created_at: string;
 }
 
+/**
+ * Un ciclo di compilazione dell'assessment. Lo stato riguarda solo il
+ * questionario: quelli di elaborazione restano sullo snapshot, che nasce dopo
+ * la conferma.
+ */
+export interface AssessmentCampaign {
+	id: string;
+	label: string;
+	status: "draft" | "confirmed";
+	is_confirmed: boolean;
+	confirmed_at: string | null;
+	confirmed_by: string | null;
+	snapshot_id: string | null;
+	created_at: string;
+}
+
+/** Perché un assessment non è ancora confermabile. */
+export interface AssessmentReadiness {
+	answered: number;
+	visible_total: number;
+	percent: number;
+	profile_missing: string[];
+	is_ready: boolean;
+	blocking_reason: string | null;
+}
+
+export interface AssessmentCampaignsResponse {
+	campaigns: AssessmentCampaign[];
+	current: AssessmentCampaign | null;
+	readiness: AssessmentReadiness;
+}
+
 export type SnapshotJobStatus = "pending" | "running" | "done" | "failed";
 
 export interface AssessmentSnapshotStatus {

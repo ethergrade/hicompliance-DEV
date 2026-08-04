@@ -1,6 +1,8 @@
 import { apiClient } from "@/lib/api-client";
 import type {
 	ApiResponse,
+	AssessmentCampaign,
+	AssessmentCampaignsResponse,
 	AssessmentCategory,
 	AssessmentQuestion,
 	AssessmentResponseItem,
@@ -111,6 +113,54 @@ export const assessmentV2Api = {
 		const res = await apiClient.put<ApiResponse<AssessmentResponseItem>>(
 			`/companies/${companyId}/assessment-responses/${questionId}`,
 			payload,
+			_h(companyId, _g),
+		);
+		return res.data;
+	},
+
+	// ─── Cicli di assessment ────────────────────────────────────────────────────
+
+	/** Elenco dei cicli, quello corrente e lo stato di completezza. */
+	async campaigns(
+		companyId: string,
+		_g?: string | null,
+	): Promise<AssessmentCampaignsResponse> {
+		const res = await apiClient.get<ApiResponse<AssessmentCampaignsResponse>>(
+			`/companies/${companyId}/assessment-campaigns`,
+			undefined,
+			_h(companyId, _g),
+		);
+		return res.data;
+	},
+
+	/**
+	 * Apre un nuovo ciclo riportando le risposte del precedente, da rivedere.
+	 * Riservato agli admin.
+	 */
+	async createCampaign(
+		companyId: string,
+		_g?: string | null,
+	): Promise<AssessmentCampaign> {
+		const res = await apiClient.post<ApiResponse<AssessmentCampaign>>(
+			`/companies/${companyId}/assessment-campaigns`,
+			undefined,
+			_h(companyId, _g),
+		);
+		return res.data;
+	},
+
+	/**
+	 * Chiude il questionario. È l'unico innesco dell'elaborazione: da qui il cron
+	 * costruisce lo snapshot e accoda le scansioni.
+	 */
+	async confirmCampaign(
+		companyId: string,
+		campaignId: string,
+		_g?: string | null,
+	): Promise<AssessmentCampaign> {
+		const res = await apiClient.post<ApiResponse<AssessmentCampaign>>(
+			`/companies/${companyId}/assessment-campaigns/${campaignId}/confirm`,
+			undefined,
 			_h(companyId, _g),
 		);
 		return res.data;

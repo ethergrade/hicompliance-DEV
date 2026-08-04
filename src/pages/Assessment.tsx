@@ -31,6 +31,8 @@ import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { AssessmentAiPanel } from '@/components/assessment/AssessmentAiPanel';
+import { AssessmentCampaignBar } from '@/components/assessment/AssessmentCampaignBar';
+import { useAssessmentCampaign } from '@/hooks/useAssessmentCampaign';
 import type { AssessmentSnapshot } from '@/types/api';
 import { useServiceIntegrations } from '@/hooks/useServiceIntegrations';
 import { NIS2_LABELS } from '@/types/organization';
@@ -195,6 +197,21 @@ const Assessment: React.FC = () => {
   // make /api/companies/{groupId}/... calls 404 for customers that have a
   // group but no selected company. Skip API calls when orgId is null instead.
   const isReadOnlyView = canManageMultipleClients && isSales;
+
+  const {
+    current: campaign,
+    readiness,
+    working: campaignWorking,
+    isConfirmed,
+    createCampaign,
+    confirmCampaign,
+    reload: reloadCampaign,
+  } = useAssessmentCampaign();
+
+  // A questionario confermato le risposte sono chiuse. Si riusa il meccanismo di
+  // sola lettura già in uso per la revisione sales: la copia resta distinta, ma
+  // input, salvataggi e azioni di massa passano tutti da questo unico flag.
+  const isLocked = isReadOnlyView || isConfirmed;
 
   // Question responses state: { [questionId]: response }
   const [responses, setResponses] = useState<Record<number, AssessmentResponse>>({});
@@ -485,7 +502,7 @@ const Assessment: React.FC = () => {
   }, [orgId, user, indexToUuid, saveResponsesImmediate]);
 
   const setResponse = useCallback((questionId: number, value: AssessmentResponse) => {
-    if (isReadOnlyView) return;
+    if (isLocked) return;
 
     const shouldHideChildren = value !== 'pianificato_in_corso' && value !== 'completato';
 
@@ -503,14 +520,14 @@ const Assessment: React.FC = () => {
     setSaveStatus('saving');
 
     triggerAutoSave();
-  }, [isReadOnlyView, orgId, user, triggerAutoSave, getDescendants, v2Categories]);
+  }, [isLocked, orgId, user, triggerAutoSave, getDescendants, v2Categories]);
 
   // Trello #63: bulk-set status of all visible questions in a category.
   // Used by the "Tutte Completato" / "Tutte N/A" / "Tutte Pianificato" / "Reset"
   // shortcut buttons rendered under each category's question list.
   const bulkSetResponse = useCallback(
     (questionIds: number[], value: AssessmentResponse) => {
-      if (isReadOnlyView) return;
+      if (isLocked) return;
       if (questionIds.length === 0) return;
 
       setResponses(prev => {
@@ -531,7 +548,7 @@ const Assessment: React.FC = () => {
       setSaveStatus('saving');
       triggerAutoSave();
     },
-    [isReadOnlyView, orgId, user, triggerAutoSave, getDescendants, v2Categories]
+    [isLocked, orgId, user, triggerAutoSave, getDescendants, v2Categories]
   );
 
   // Flush pending saves before unload/page navigation
@@ -870,8 +887,26 @@ const Assessment: React.FC = () => {
     }
   }, [filteredAndSortedCategories, assessmentCategories, selectGuidedCategory]);
 
+  /**
+   * Prima di confermare si forza il salvataggio: le risposte hanno un debounce di
+   * tre secondi, e confermare con modifiche ancora in volo produrrebbe uno snapshot
+   * che non corrisponde a ciò che l'utente vede a schermo.
+   */
+  const handleConfirmCampaign = useCallback(async () => {
+    if (snapshotTimerRef.current) {
+      clearTimeout(snapshotTimerRef.current);
+      snapshotTimerRef.current = null;
+      await saveResponsesImmediate();
+    }
+    await confirmCampaign();
+  }, [confirmCampaign, saveResponsesImmediate]);
+
+  const handleCreateCampaign = useCallback(async () => {
+    await createCampaign();
+  }, [createCampaign]);
+
   const handleContinueOrFinish = useCallback((categoryName: string, hasNext: boolean) => {
-    if (isReadOnlyView) return;
+    if (isLocked) return;
 
     if (hasNext) {
       continueToNextCategory(categoryName);
@@ -883,7 +918,7 @@ const Assessment: React.FC = () => {
     snapshotTimerRef.current = null;
     saveResponsesImmediate();
     toast.success('Assessment completato! Le risposte sono state salvate.');
-  }, [isReadOnlyView, continueToNextCategory, saveResponsesImmediate]);
+  }, [isLocked, continueToNextCategory, saveResponsesImmediate]);
 
   return (
     <DashboardLayout>
@@ -1035,6 +1070,16 @@ const Assessment: React.FC = () => {
             </CardContent>
           </Card>
         )}
+
+        {/* Stato del ciclo e i due gesti del flusso: conferma e nuovo assessment. */}
+        <AssessmentCampaignBar
+          campaign={campaign}
+          readiness={readiness}
+          isAdmin={isAdmin}
+          working={campaignWorking}
+          onConfirm={handleConfirmCampaign}
+          onCreate={handleCreateCampaign}
+        />
 
         {isReadOnlyView && (
           <Card className="border-border bg-muted/20">
@@ -1490,12 +1535,12 @@ const Assessment: React.FC = () => {
                                         key={opt.value}
                                         type="button"
                                         onClick={() => setResponse(q.id, isActive ? null : opt.value as AssessmentResponse)}
-                                        disabled={isReadOnlyView}
+                                        disabled={isLocked}
                                         className={`px-2.5 py-1 rounded text-[11px] font-medium border transition-all duration-150 ${
                                           isActive 
                                             ? opt.activeClass 
                                             : 'border-border text-muted-foreground hover:bg-muted/60'
-                                        } ${isReadOnlyView ? 'cursor-default opacity-80' : ''}`}
+                                        } ${isLocked ? 'cursor-default opacity-80' : ''}`}
                                       >
                                         {opt.label}
                                       </button>
@@ -1506,7 +1551,7 @@ const Assessment: React.FC = () => {
                             );
                           })}
                         </div>
-                        {!isReadOnlyView && (
+                        {!isLocked && (
                           <div className="flex items-center justify-center gap-2 flex-wrap border-t border-border bg-muted/30 px-5 py-2.5">
                             <span className="text-[11px] uppercase tracking-wider text-muted-foreground mr-1">
                               Cambia stato:

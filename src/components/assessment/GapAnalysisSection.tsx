@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts';
-import { Save, TrendingUp, TrendingDown, Minus, History, ArrowRightLeft } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, History, ArrowRightLeft } from 'lucide-react';
 import { AssessmentSnapshot, CategorySnapshot, useAssessmentSnapshots } from '@/hooks/useAssessmentSnapshots';
 
 interface GapAnalysisSectionProps {
@@ -25,13 +25,13 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
   overallScore,
   overallProgress,
 }) => {
-  const { snapshots, loading, saving, saveSnapshot } = useAssessmentSnapshots();
+  // Lo snapshot non si crea più da qui: nasce dalla conferma del ciclo di
+  // assessment. Il pulsante che stava qui poteva legare uno snapshot a un ciclo
+  // ancora in compilazione, escludendolo per sempre dall'elaborazione automatica.
+  const { snapshots, loading } = useAssessmentSnapshots();
+  // Serve alle etichette di confronto: "2025 → 2026"
   const currentYear = new Date().getFullYear();
   const [compareYear, setCompareYear] = useState<string>('');
-
-  const handleSaveSnapshot = () => {
-    saveSnapshot();
-  };
 
   const selectedSnapshot = useMemo(() => {
     if (!compareYear) return null;
@@ -69,21 +69,9 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
               <div>
                 <CardTitle className="text-base">Storico & Gap Analysis</CardTitle>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Snapshot salvati automaticamente ad ogni risposta — confronta l'evoluzione
+                  Confronta l'evoluzione fra un assessment e l'altro
                 </p>
               </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleSaveSnapshot}
-                disabled={saving}
-                className="h-8 text-xs"
-              >
-                <Save className="w-3 h-3 mr-1" />
-                {saving ? 'Salvataggio...' : `Forza Snapshot ${currentYear}`}
-              </Button>
             </div>
           </div>
         </CardHeader>
