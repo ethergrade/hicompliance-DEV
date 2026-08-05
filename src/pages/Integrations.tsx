@@ -113,14 +113,6 @@ const Integrations = () => {
 		domotz_agent_id: "",
 	});
 
-	// Inizio e durata del contratto, comuni ai servizi configurabili da qui:
-	// stesse chiavi che il dialog dei servizi usa per gli altri moduli, e che il
-	// backend promuove a colonna per calcolare la scadenza.
-	const [contractFields, setContractFields] = useState({
-		contract_start: "",
-		duration: "",
-	});
-
 	const form = useForm<IntegrationFormData>({
 		defaultValues: {
 			service_id: "",
@@ -223,20 +215,16 @@ const Integrations = () => {
 				throw new Error("Nessuna organizzazione selezionata");
 
 			if (isTenantService) {
-				// Il contratto viaggia dentro settings: il backend promuove
-				// contract_start e duration a colonna, ed è da lì che si calcola
-				// se il servizio è ancora attivo.
-				const contratto = {
-					...(contractFields.contract_start
-						? { contract_start: contractFields.contract_start }
-						: {}),
-					...(contractFields.duration
-						? { duration: contractFields.duration }
-						: {}),
-				};
+				// Da qui si configura solo l'integrazione. Inizio e durata del
+				// contratto stanno nel pannello di attivazione servizi, e vivono
+				// nelle stesse settings: per questo si parte da quelle esistenti
+				// invece di riscriverle da zero, che le cancellerebbe.
+				const precedenti = ((isHipatch ? existingHipatch : existingHitrack)
+					?.settings ?? {}) as Record<string, unknown>;
 
 				const settings = isHipatch
 					? {
+							...precedenti,
 							connectsecure_company_id: hipatchFields.connectsecure_company_id,
 							connectsecure_client_auth_token:
 								hipatchFields.connectsecure_client_auth_token,
@@ -246,15 +234,12 @@ const Integrations = () => {
 								hipatchFields.ninjaone_organization_id_client,
 							ninjaone_organization_secret:
 								hipatchFields.ninjaone_organization_secret,
-							...contratto,
 						}
 					: {
-							// Le altre chiavi le scrive il dialog dei servizi; qui si
-							// dichiara solo il collector, che è ciò che manca al backend
-							// per sapere quale rete guardare.
-							...((existingHitrack?.settings as Record<string, unknown>) ?? {}),
+							...precedenti,
+							// L'unica cosa che manca al backend per sapere quale rete
+							// guardare: il resto lo scopre la sincronizzazione.
 							domotz_agent_id: Number(hitrackFields.domotz_agent_id) || null,
-							...contratto,
 						};
 
 				const esistente = isHipatch ? existingHipatch : existingHitrack;
@@ -429,23 +414,16 @@ const Integrations = () => {
 				});
 			}
 
-			const servizio =
-				integration.service_code === "hitrack"
-					? existingHitrack
-					: integration.service_code === "hipatch"
-						? existingHipatch
-						: null;
-			const s = (servizio?.settings ?? {}) as Record<string, unknown>;
+			const htSettings = (existingHitrack?.settings ?? {}) as Record<
+				string,
+				unknown
+			>;
 
 			setHitrackFields({
 				domotz_agent_id:
-					integration.service_code === "hitrack" && s.domotz_agent_id
-						? String(s.domotz_agent_id)
+					integration.service_code === "hitrack" && htSettings.domotz_agent_id
+						? String(htSettings.domotz_agent_id)
 						: "",
-			});
-			setContractFields({
-				contract_start: String(s.contract_start ?? ""),
-				duration: String(s.duration ?? ""),
 			});
 		} else {
 			setSelectedIntegration(null);
@@ -465,7 +443,6 @@ const Integrations = () => {
 				ninjaone_organization_secret: "",
 			});
 			setHitrackFields({ domotz_agent_id: "" });
-			setContractFields({ contract_start: "", duration: "" });
 		}
 		setIsDialogOpen(true);
 	};
@@ -799,48 +776,6 @@ const Integrations = () => {
 													</FormItem>
 												</>
 											)}
-											{/* Contratto: stesse chiavi degli altri servizi, da cui
-											    il backend ricava se il servizio è ancora attivo. */}
-											{isTenantService && (
-												<div className="grid grid-cols-2 gap-4">
-													<FormItem>
-														<FormLabel>Inizio contratto</FormLabel>
-														<FormControl>
-															<Input
-																type="date"
-																value={contractFields.contract_start}
-																onChange={(e) =>
-																	setContractFields((prev) => ({
-																		...prev,
-																		contract_start: e.target.value,
-																	}))
-																}
-															/>
-														</FormControl>
-													</FormItem>
-													<FormItem>
-														<FormLabel>Durata (anni)</FormLabel>
-														<FormControl>
-															<Input
-																type="number"
-																min={1}
-																value={contractFields.duration}
-																onChange={(e) =>
-																	setContractFields((prev) => ({
-																		...prev,
-																		duration: e.target.value,
-																	}))
-																}
-																placeholder="es. 3"
-															/>
-														</FormControl>
-														<p className="text-xs text-muted-foreground">
-															Senza durata il servizio non scade mai.
-														</p>
-													</FormItem>
-												</div>
-											)}
-
 											<FormField
 												control={form.control}
 												name="is_active"
@@ -1001,25 +936,6 @@ const Integrations = () => {
 											<p className="font-mono text-xs bg-muted p-1 rounded truncate">
 												{htSettings.domotz_agent_id ? (
 													String(htSettings.domotz_agent_id)
-												) : (
-													<span className="text-muted-foreground italic">
-														non impostato
-													</span>
-												)}
-											</p>
-										</div>
-										<div>
-											<Label className="text-xs text-muted-foreground">
-												Contratto
-											</Label>
-											<p className="font-mono text-xs bg-muted p-1 rounded truncate">
-												{htSettings.contract_start ? (
-													<>
-														{String(htSettings.contract_start)}
-														{htSettings.duration
-															? ` · ${htSettings.duration} anni`
-															: " · senza scadenza"}
-													</>
 												) : (
 													<span className="text-muted-foreground italic">
 														non impostato
