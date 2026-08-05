@@ -22,6 +22,7 @@ export interface OrganizationFlags {
 	dark_risk360_enabled: boolean;
 	dark_risk_extended_enabled: boolean;
 	hipatch_enabled: boolean;
+	hitrack_enabled: boolean;
 }
 
 /** Derive boolean flags from a list of tenant services. Pure, no side effects. */
@@ -40,6 +41,7 @@ export function deriveOrganizationFlags(
 			return settings.extended_identity === true || settings.extended_enabled === true || settings.tier === "extended";
 		}),
 		hipatch_enabled: isActive("hipatch"),
+		hitrack_enabled: isActive("hitrack"),
 	};
 }
 
