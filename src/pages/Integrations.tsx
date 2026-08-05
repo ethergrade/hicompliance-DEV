@@ -107,6 +107,20 @@ const Integrations = () => {
 		ninjaone_organization_secret: "",
 	});
 
+	// HiTrack: l'unica cosa da configurare è quale collector Domotz guardare.
+	// Il numero si trova con `hitrack:discover`, o sulla dashboard Domotz.
+	const [hitrackFields, setHitrackFields] = useState({
+		domotz_agent_id: "",
+	});
+
+	// Inizio e durata del contratto, comuni ai servizi configurabili da qui:
+	// stesse chiavi che il dialog dei servizi usa per gli altri moduli, e che il
+	// backend promuove a colonna per calcolare la scadenza.
+	const [contractFields, setContractFields] = useState({
+		contract_start: "",
+		duration: "",
+	});
+
 	const form = useForm<IntegrationFormData>({
 		defaultValues: {
 			service_id: "",
@@ -141,6 +155,10 @@ const Integrations = () => {
 	}, [watchedServiceId, services, selectedIntegration]);
 
 	const isHipatch = selectedServiceCode === "hipatch";
+	const isHitrack = selectedServiceCode === "hitrack";
+	// Entrambi vivono in tenant_services, non in organization_integrations: non
+	// hanno una chiave API propria, ma la configurazione di un servizio.
+	const isTenantService = isHipatch || isHitrack;
 
 	const { data: integrations = [] } = useQuery({
 		queryKey: ["organization-integrations", organizationId, groupId],
@@ -170,51 +188,90 @@ const Integrations = () => {
 	const existingHipatch =
 		hipatchServices.length > 0 ? hipatchServices[0] : null;
 
+	const { data: hitrackServices = [] } = useQuery({
+		queryKey: ["tenant-services-hitrack", organizationId, groupId],
+		enabled: !!organizationId,
+		queryFn: async () => {
+			if (!organizationId) return [];
+			const all = await tenantServicesApi.listByOrganization(
+				organizationId,
+				groupId,
+			);
+			return all.filter(
+				(s) => s.service_type === "hitrack" && s.tenant_id === organizationId,
+			);
+		},
+	});
+
+	const existingHitrack =
+		hitrackServices.length > 0 ? hitrackServices[0] : null;
+
 	// La card "Nessuna integrazione configurata" si mostra SOLO se non esiste
 	// nessuna integrazione (né attiva né inattiva). Se c'è almeno un record,
 	// le card sopra sono già visibili e quella vuota è ridondante.
 	const hasAnyIntegration = useMemo(() => {
-		return integrations.length > 0 || hipatchServices.length > 0;
-	}, [integrations, hipatchServices]);
+		return (
+			integrations.length > 0 ||
+			hipatchServices.length > 0 ||
+			hitrackServices.length > 0
+		);
+	}, [integrations, hipatchServices, hitrackServices]);
 
 	const createOrUpdateMutation = useMutation({
 		mutationFn: async (data: IntegrationFormData) => {
 			if (!organizationId)
 				throw new Error("Nessuna organizzazione selezionata");
 
-			if (isHipatch) {
-				// HiPatch → usa tenant-services API con settings
-				const settings = {
-					connectsecure_company_id: hipatchFields.connectsecure_company_id,
-					connectsecure_client_auth_token:
-						hipatchFields.connectsecure_client_auth_token,
-					connectsecure_pod: hipatchFields.connectsecure_pod,
-					ninjaone_organization_id: hipatchFields.ninjaone_organization_id,
-					ninjaone_organization_id_client:
-						hipatchFields.ninjaone_organization_id_client,
-					ninjaone_organization_secret:
-						hipatchFields.ninjaone_organization_secret,
+			if (isTenantService) {
+				// Il contratto viaggia dentro settings: il backend promuove
+				// contract_start e duration a colonna, ed è da lì che si calcola
+				// se il servizio è ancora attivo.
+				const contratto = {
+					...(contractFields.contract_start
+						? { contract_start: contractFields.contract_start }
+						: {}),
+					...(contractFields.duration
+						? { duration: contractFields.duration }
+						: {}),
 				};
 
-				if (existingHipatch) {
-					// Scenario 2: record esiste → PATCH
-					return tenantServicesApi.patch(
-						existingHipatch.id,
-						{ settings },
-						groupId,
-					);
-				} else {
-					// Scenario 1: record non esiste → POST
-					return tenantServicesApi.create(
-						{
-							tenant_id: organizationId,
-							service_type: "hipatch",
-							status: "active",
-							settings,
-						},
-						groupId,
-					);
+				const settings = isHipatch
+					? {
+							connectsecure_company_id: hipatchFields.connectsecure_company_id,
+							connectsecure_client_auth_token:
+								hipatchFields.connectsecure_client_auth_token,
+							connectsecure_pod: hipatchFields.connectsecure_pod,
+							ninjaone_organization_id: hipatchFields.ninjaone_organization_id,
+							ninjaone_organization_id_client:
+								hipatchFields.ninjaone_organization_id_client,
+							ninjaone_organization_secret:
+								hipatchFields.ninjaone_organization_secret,
+							...contratto,
+						}
+					: {
+							// Le altre chiavi le scrive il dialog dei servizi; qui si
+							// dichiara solo il collector, che è ciò che manca al backend
+							// per sapere quale rete guardare.
+							...((existingHitrack?.settings as Record<string, unknown>) ?? {}),
+							domotz_agent_id: Number(hitrackFields.domotz_agent_id) || null,
+							...contratto,
+						};
+
+				const esistente = isHipatch ? existingHipatch : existingHitrack;
+
+				if (esistente) {
+					return tenantServicesApi.patch(esistente.id, { settings }, groupId);
 				}
+
+				return tenantServicesApi.create(
+					{
+						tenant_id: organizationId,
+						service_type: isHipatch ? "hipatch" : "hitrack",
+						status: "active",
+						settings,
+					},
+					groupId,
+				);
 			}
 
 			const api_methods: Record<string, unknown> = JSON.parse(
@@ -246,6 +303,9 @@ const Integrations = () => {
 			queryClient.invalidateQueries({
 				queryKey: ["tenant-services-hipatch", organizationId, groupId],
 			});
+			queryClient.invalidateQueries({
+				queryKey: ["tenant-services-hitrack", organizationId, groupId],
+			});
 			setIsDialogOpen(false);
 			setSelectedIntegration(null);
 			form.reset();
@@ -272,6 +332,8 @@ const Integrations = () => {
 				throw new Error("Nessuna organizzazione selezionata");
 			if (isHipatch && existingHipatch) {
 				await tenantServicesApi.delete(existingHipatch.id, groupId);
+			} else if (isHitrack && existingHitrack) {
+				await tenantServicesApi.delete(existingHitrack.id, groupId);
 			} else {
 				await integrationsApi.delete(organizationId, integrationId, groupId);
 			}
@@ -282,6 +344,9 @@ const Integrations = () => {
 			});
 			queryClient.invalidateQueries({
 				queryKey: ["tenant-services-hipatch", organizationId, groupId],
+			});
+			queryClient.invalidateQueries({
+				queryKey: ["tenant-services-hitrack", organizationId, groupId],
 			});
 			toast({
 				title: "Successo",
@@ -310,6 +375,19 @@ const Integrations = () => {
 			is_active: existingHipatch?.status === "active",
 		} as IntegrationResource;
 		openDialog(integrationLike);
+	};
+
+	const openHitrackDialog = () => {
+		const htCatalog = services.find((s) => s.code === "hitrack");
+		openDialog({
+			id: existingHitrack?.id ?? "",
+			organization_id: organizationId ?? "",
+			service_id: htCatalog?.id ?? "hitrack",
+			service_code: "hitrack",
+			service_name: "hitrack",
+			api_url: "",
+			is_active: existingHitrack?.status === "active",
+		} as IntegrationResource);
 	};
 
 	const openDialog = (integration?: IntegrationResource) => {
@@ -350,6 +428,25 @@ const Integrations = () => {
 					ninjaone_organization_secret: "",
 				});
 			}
+
+			const servizio =
+				integration.service_code === "hitrack"
+					? existingHitrack
+					: integration.service_code === "hipatch"
+						? existingHipatch
+						: null;
+			const s = (servizio?.settings ?? {}) as Record<string, unknown>;
+
+			setHitrackFields({
+				domotz_agent_id:
+					integration.service_code === "hitrack" && s.domotz_agent_id
+						? String(s.domotz_agent_id)
+						: "",
+			});
+			setContractFields({
+				contract_start: String(s.contract_start ?? ""),
+				duration: String(s.duration ?? ""),
+			});
 		} else {
 			setSelectedIntegration(null);
 			form.reset({
@@ -367,6 +464,8 @@ const Integrations = () => {
 				ninjaone_organization_id_client: "",
 				ninjaone_organization_secret: "",
 			});
+			setHitrackFields({ domotz_agent_id: "" });
+			setContractFields({ contract_start: "", duration: "" });
 		}
 		setIsDialogOpen(true);
 	};
@@ -381,13 +480,14 @@ const Integrations = () => {
 	// dropdown until they are officially supported.
 	const availableServices = services.filter(
 		(service) =>
-			service.code === "hipatch" &&
+			(service.code === "hipatch" || service.code === "hitrack") &&
 			!integrations.some(
 				(integration) =>
 					integration.service_id === service.id ||
 					integration.service_code === service.code,
 			) &&
-			!(service.code === "hipatch" && existingHipatch),
+			!(service.code === "hipatch" && existingHipatch) &&
+			!(service.code === "hitrack" && existingHitrack),
 	);
 
 	const getServiceMeta = (
@@ -506,7 +606,7 @@ const Integrations = () => {
 												control={form.control}
 												name="api_url"
 												render={({ field }) =>
-													isHipatch ? null : (
+													isTenantService ? null : (
 														<FormItem>
 															<FormLabel>URL API</FormLabel>
 															<FormControl>
@@ -525,7 +625,7 @@ const Integrations = () => {
 												control={form.control}
 												name="api_key"
 												render={({ field }) =>
-													isHipatch ? null : (
+													isTenantService ? null : (
 														<FormItem>
 															<FormLabel>Chiave API</FormLabel>
 															<FormControl>
@@ -544,7 +644,7 @@ const Integrations = () => {
 												control={form.control}
 												name="api_methods"
 												render={({ field }) =>
-													isHipatch ? null : (
+													isTenantService ? null : (
 														<FormItem>
 															<FormLabel>
 																Metodi API (JSON array/object)
@@ -561,6 +661,34 @@ const Integrations = () => {
 													)
 												}
 											/>
+
+											{/* HiTrack: quale collector Domotz guardare */}
+											{isHitrack && (
+												<FormItem>
+													<FormLabel>Collector Domotz (agent ID)</FormLabel>
+													<FormControl>
+														<Input
+															value={hitrackFields.domotz_agent_id}
+															onChange={(e) =>
+																setHitrackFields({
+																	domotz_agent_id: e.target.value.replace(
+																		/\D/g,
+																		"",
+																	),
+																})
+															}
+															placeholder="es. 323061"
+															inputMode="numeric"
+														/>
+													</FormControl>
+													<p className="text-xs text-muted-foreground">
+														È la sonda installata nella rete del cliente. Il
+														numero si trova sulla dashboard Domotz, o con{" "}
+														<code>hitrack:discover</code>. Lo stesso collector
+														non può essere assegnato a due clienti.
+													</p>
+												</FormItem>
+											)}
 
 											{/* HiPatch-specific fields */}
 											{isHipatch && (
@@ -671,6 +799,48 @@ const Integrations = () => {
 													</FormItem>
 												</>
 											)}
+											{/* Contratto: stesse chiavi degli altri servizi, da cui
+											    il backend ricava se il servizio è ancora attivo. */}
+											{isTenantService && (
+												<div className="grid grid-cols-2 gap-4">
+													<FormItem>
+														<FormLabel>Inizio contratto</FormLabel>
+														<FormControl>
+															<Input
+																type="date"
+																value={contractFields.contract_start}
+																onChange={(e) =>
+																	setContractFields((prev) => ({
+																		...prev,
+																		contract_start: e.target.value,
+																	}))
+																}
+															/>
+														</FormControl>
+													</FormItem>
+													<FormItem>
+														<FormLabel>Durata (anni)</FormLabel>
+														<FormControl>
+															<Input
+																type="number"
+																min={1}
+																value={contractFields.duration}
+																onChange={(e) =>
+																	setContractFields((prev) => ({
+																		...prev,
+																		duration: e.target.value,
+																	}))
+																}
+																placeholder="es. 3"
+															/>
+														</FormControl>
+														<p className="text-xs text-muted-foreground">
+															Senza durata il servizio non scade mai.
+														</p>
+													</FormItem>
+												</div>
+											)}
+
 											<FormField
 												control={form.control}
 												name="is_active"
@@ -788,6 +958,82 @@ const Integrations = () => {
 											size="sm"
 											className="flex-1"
 											onClick={openHipatchDialog}
+										>
+											<Settings className="w-4 h-4 mr-2" /> Configura
+										</Button>
+									</div>
+								</CardContent>
+							</Card>
+						);
+					})}
+
+					{/* Anche HiTrack vive in tenant_services: il collector Domotz è la
+					    sola cosa da dichiarare, il resto lo scopre la sincronizzazione. */}
+					{hitrackServices.map((ht) => {
+						const htSettings = (ht.settings ?? {}) as Record<string, unknown>;
+						return (
+							<Card key={`hitrack-${ht.id}`} className="relative">
+								<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+									<CardTitle className="text-sm font-medium flex items-center gap-2">
+										<Shield className="w-4 h-4" />
+										HiTrack
+									</CardTitle>
+									<Badge
+										variant={ht.status === "active" ? "default" : "secondary"}
+									>
+										{ht.status === "active" ? "Attiva" : "Inattiva"}
+									</Badge>
+								</CardHeader>
+								<CardContent>
+									{selectedOrganization?.name && (
+										<p className="text-xs text-muted-foreground mb-2 font-medium">
+											{selectedOrganization.name}
+										</p>
+									)}
+									<CardDescription className="mb-3">
+										Configurazione servizio HiTrack (tenant-service)
+									</CardDescription>
+									<div className="space-y-2 text-sm">
+										<div>
+											<Label className="text-xs text-muted-foreground">
+												Collector Domotz (agent ID)
+											</Label>
+											<p className="font-mono text-xs bg-muted p-1 rounded truncate">
+												{htSettings.domotz_agent_id ? (
+													String(htSettings.domotz_agent_id)
+												) : (
+													<span className="text-muted-foreground italic">
+														non impostato
+													</span>
+												)}
+											</p>
+										</div>
+										<div>
+											<Label className="text-xs text-muted-foreground">
+												Contratto
+											</Label>
+											<p className="font-mono text-xs bg-muted p-1 rounded truncate">
+												{htSettings.contract_start ? (
+													<>
+														{String(htSettings.contract_start)}
+														{htSettings.duration
+															? ` · ${htSettings.duration} anni`
+															: " · senza scadenza"}
+													</>
+												) : (
+													<span className="text-muted-foreground italic">
+														non impostato
+													</span>
+												)}
+											</p>
+										</div>
+									</div>
+									<div className="flex gap-2 mt-4">
+										<Button
+											variant="outline"
+											size="sm"
+											className="flex-1"
+											onClick={openHitrackDialog}
 										>
 											<Settings className="w-4 h-4 mr-2" /> Configura
 										</Button>
