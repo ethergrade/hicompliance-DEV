@@ -425,7 +425,8 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 					);
 				}
 			}
-			// HiTrack toggle ON — configurazione runtime su Supabase/Domotz, non credenziali browser
+			// HiTrack toggle ON — qui si attiva solo il servizio: il collector Domotz
+			// si associa dal backend con hitrack:discover
 			if (patch.hitrack_enabled === true) {
 				const ht = ts.find((s) => s.service_type === "hitrack");
 				if (!ht) {

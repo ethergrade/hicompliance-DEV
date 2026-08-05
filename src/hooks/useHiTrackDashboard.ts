@@ -3,45 +3,46 @@ import { toast } from "sonner";
 import {
   fetchHiTrackCollectors,
   fetchHiTrackDashboard,
-  isHiTrackSupabaseConfigured,
   queueHiTrackSyncNow,
 } from "@/lib/hitrack/client";
 import { EMPTY_HITRACK_DASHBOARD } from "@/lib/hitrack/types";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 
+/**
+ * I dati arrivano dal backend Laravel. Non c'è più niente da configurare nel
+ * browser — prima il modulo restava spento se mancavano le chiavi Supabase — e
+ * l'unica condizione è avere un cliente selezionato.
+ */
 export function useHiTrackDashboard() {
-  const { organizationId } = useClientOrganization();
-  const configured = isHiTrackSupabaseConfigured();
+  const { organizationId, groupId } = useClientOrganization();
 
   const query = useQuery({
-    queryKey: ["hitrack-dashboard", organizationId],
-    queryFn: () => fetchHiTrackDashboard(organizationId!),
-    enabled: configured && !!organizationId,
+    queryKey: ["hitrack-dashboard", organizationId, groupId],
+    queryFn: () => fetchHiTrackDashboard(organizationId!, groupId),
+    enabled: !!organizationId,
     staleTime: 60_000,
     refetchInterval: 60_000,
   });
 
   return {
     ...query,
-    isConfigured: configured,
     data: query.data ?? EMPTY_HITRACK_DASHBOARD,
   };
 }
 
 export function useHiTrackCollectors() {
-  const { organizationId } = useClientOrganization();
-  const configured = isHiTrackSupabaseConfigured();
+  const { organizationId, groupId } = useClientOrganization();
 
   return useQuery({
-    queryKey: ["hitrack-collectors", organizationId],
-    queryFn: () => fetchHiTrackCollectors(organizationId!),
-    enabled: configured && !!organizationId,
+    queryKey: ["hitrack-collectors", organizationId, groupId],
+    queryFn: () => fetchHiTrackCollectors(organizationId!, groupId),
+    enabled: !!organizationId,
     staleTime: 60_000,
   });
 }
 
 export function useHiTrackSyncNow() {
-  const { organizationId } = useClientOrganization();
+  const { organizationId, groupId } = useClientOrganization();
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -49,7 +50,7 @@ export function useHiTrackSyncNow() {
       if (!organizationId) {
         throw new Error("Organizzazione non selezionata");
       }
-      return queueHiTrackSyncNow(organizationId, collectorIds);
+      return queueHiTrackSyncNow(organizationId, collectorIds, groupId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({

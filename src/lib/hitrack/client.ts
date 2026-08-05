@@ -1,92 +1,66 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { complianceApiClient } from "@/lib/api-client";
+import type { ApiResponse } from "@/types/api";
 import {
   EMPTY_HITRACK_DASHBOARD,
   type HiTrackCollector,
   type HiTrackDashboardPayload,
 } from "@/lib/hitrack/types";
 
-let cachedClient: SupabaseClient | null | undefined;
+/**
+ * HiTrack passa dal backend Laravel.
+ *
+ * Prima le tre chiamate andavano su Supabase — due RPC e una edge function — ma
+ * il browser autentica su Laravel e non ha mai avuto una sessione Supabase
+ * valida: è il motivo per cui la dashboard non era utilizzabile. Ora il payload
+ * arriva da `/companies/{id}/hitrack/*` nella stessa forma di prima, quindi
+ * `HiTrackDashboard.tsx`, `types.ts` e `formatters.ts` non cambiano.
+ */
 
-function getEnv(name: "VITE_SUPABASE_URL" | "VITE_SUPABASE_ANON_KEY") {
-  const value = String(import.meta.env[name] || "").trim();
-  return value.length > 0 ? value : null;
+const groupHeader = (groupId?: string | null) =>
+  groupId ? { headers: { "X-Group-Id": groupId } } : undefined;
+
+export async function fetchHiTrackDashboard(
+  organizationId: string,
+  groupId?: string | null,
+): Promise<HiTrackDashboardPayload> {
+  const res = await complianceApiClient.get<
+    ApiResponse<HiTrackDashboardPayload>
+  >(
+    `/companies/${organizationId}/hitrack/dashboard`,
+    undefined,
+    groupHeader(groupId),
+  );
+
+  // Lo stato vuoto resta la base: se un giorno il payload perdesse una sezione,
+  // i pannelli hanno comunque qualcosa da leggere invece di rompersi.
+  return { ...EMPTY_HITRACK_DASHBOARD, ...(res.data ?? {}) };
 }
 
-export function isHiTrackSupabaseConfigured() {
-  return Boolean(getEnv("VITE_SUPABASE_URL") && getEnv("VITE_SUPABASE_ANON_KEY"));
-}
+export async function fetchHiTrackCollectors(
+  organizationId: string,
+  groupId?: string | null,
+): Promise<HiTrackCollector[]> {
+  const res = await complianceApiClient.get<ApiResponse<HiTrackCollector[]>>(
+    `/companies/${organizationId}/hitrack/collectors`,
+    undefined,
+    groupHeader(groupId),
+  );
 
-export function getHiTrackSupabaseClient() {
-  if (cachedClient !== undefined) return cachedClient;
-
-  const url = getEnv("VITE_SUPABASE_URL");
-  const anonKey = getEnv("VITE_SUPABASE_ANON_KEY");
-  if (!url || !anonKey) {
-    cachedClient = null;
-    return cachedClient;
-  }
-
-  cachedClient = createClient(url, anonKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  });
-  return cachedClient;
-}
-
-export async function fetchHiTrackDashboard(organizationId: string) {
-  const client = getHiTrackSupabaseClient();
-  if (!client) return EMPTY_HITRACK_DASHBOARD;
-
-  const { data, error } = await client.rpc("hitrack_get_dashboard", {
-    _organization_id: organizationId,
-  });
-
-  if (error) {
-    throw error;
-  }
-
-  return {
-    ...EMPTY_HITRACK_DASHBOARD,
-    ...(data as Partial<HiTrackDashboardPayload> | null),
-  };
-}
-
-export async function fetchHiTrackCollectors(organizationId: string) {
-  const client = getHiTrackSupabaseClient();
-  if (!client) return [] as HiTrackCollector[];
-
-  const { data, error } = await client.rpc("hitrack_get_collectors", {
-    _organization_id: organizationId,
-  });
-
-  if (error) {
-    throw error;
-  }
-
-  return (data as HiTrackCollector[] | null) ?? [];
+  return res.data ?? [];
 }
 
 export async function queueHiTrackSyncNow(
   organizationId: string,
   collectorIds?: string[],
+  groupId?: string | null,
 ) {
-  const client = getHiTrackSupabaseClient();
-  if (!client) {
-    throw new Error("HiTrack Supabase client not configured");
-  }
+  const res = await complianceApiClient.post<
+    ApiResponse<{ queued: number; collectorIds: string[] }>
+  >(
+    `/companies/${organizationId}/hitrack/sync`,
+    { collector_ids: collectorIds ?? [] },
+    groupHeader(groupId),
+  );
 
-  const { data, error } = await client.functions.invoke("hitrack-sync-now", {
-    body: {
-      organization_id: organizationId,
-      collector_ids: collectorIds ?? [],
-    },
-  });
-
-  if (error) {
-    throw error;
-  }
-
-  return data;
+  return res.data;
 }

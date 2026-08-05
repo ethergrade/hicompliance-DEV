@@ -68,7 +68,7 @@ const Sparkline: React.FC<{ values: number[] }> = ({ values }) => {
 };
 
 export const HiTrackDashboard: React.FC = () => {
-  const { data, isConfigured, isLoading, isFetching } = useHiTrackDashboard();
+  const { data, isLoading, isFetching } = useHiTrackDashboard();
   const syncMutation = useHiTrackSyncNow();
   const [trendWindow, setTrendWindow] = useState<HiTrackTrendWindow>("24h");
 
@@ -77,21 +77,9 @@ export const HiTrackDashboard: React.FC = () => {
     return (data.overview.onlineDevices / data.overview.monitoredDevices) * 100;
   }, [data.overview.monitoredDevices, data.overview.onlineDevices]);
 
-  if (!isConfigured) {
-    return (
-      <Card className="border-border">
-        <CardContent className="space-y-2 p-6">
-          <p className="text-lg font-semibold">HiTrack</p>
-          <p className="text-sm text-muted-foreground">
-            Configurazione browser Supabase non presente. Il modulo locale e
-            le query RPC sono predisposti, ma la lettura runtime resta non
-            verificata finché `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`
-            non sono configurati.
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
+  // Il blocco «Supabase non configurato» che stava qui è caduto con la
+  // migrazione: i dati arrivano dal backend, non c'è più niente da configurare
+  // nel browser.
 
   return (
     <div className="space-y-6">
@@ -164,7 +152,7 @@ export const HiTrackDashboard: React.FC = () => {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => syncMutation.mutate()}
+              onClick={() => syncMutation.mutate(undefined)}
               disabled={syncMutation.isPending || isLoading}
             >
               <RefreshCw
