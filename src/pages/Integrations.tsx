@@ -198,16 +198,37 @@ const Integrations = () => {
 	const existingHitrack =
 		hitrackServices.length > 0 ? hitrackServices[0] : null;
 
+	// Una scheda qui rappresenta una *configurazione*, non l'esistenza del
+	// servizio: quella si vede e si cambia dal pannello di attivazione. Un
+	// servizio attivo ma senza chiavi non ha niente da mostrare, e resta
+	// proponibile fra le integrazioni da aggiungere.
+	const chiaviConfigurate = (
+		servizio: { settings?: unknown } | null,
+		chiavi: string[],
+	) => {
+		const s = (servizio?.settings ?? {}) as Record<string, unknown>;
+		return chiavi.some((k) => s[k] !== undefined && s[k] !== null && s[k] !== "");
+	};
+
+	const CHIAVI_HIPATCH = [
+		"connectsecure_company_id",
+		"connectsecure_client_auth_token",
+		"connectsecure_pod",
+		"ninjaone_organization_id",
+		"ninjaone_organization_id_client",
+		"ninjaone_organization_secret",
+	];
+	const CHIAVI_HITRACK = ["domotz_agent_id"];
+
+	const hipatchConfigurato = chiaviConfigurate(existingHipatch, CHIAVI_HIPATCH);
+	const hitrackConfigurato = chiaviConfigurate(existingHitrack, CHIAVI_HITRACK);
+
 	// La card "Nessuna integrazione configurata" si mostra SOLO se non esiste
 	// nessuna integrazione (né attiva né inattiva). Se c'è almeno un record,
 	// le card sopra sono già visibili e quella vuota è ridondante.
 	const hasAnyIntegration = useMemo(() => {
-		return (
-			integrations.length > 0 ||
-			hipatchServices.length > 0 ||
-			hitrackServices.length > 0
-		);
-	}, [integrations, hipatchServices, hitrackServices]);
+		return integrations.length > 0 || hipatchConfigurato || hitrackConfigurato;
+	}, [integrations, hipatchConfigurato, hitrackConfigurato]);
 
 	const createOrUpdateMutation = useMutation({
 		mutationFn: async (data: IntegrationFormData) => {
@@ -497,8 +518,10 @@ const Integrations = () => {
 					integration.service_id === service.id ||
 					integration.service_code === service.code,
 			) &&
-			!(service.code === "hipatch" && existingHipatch) &&
-			!(service.code === "hitrack" && existingHitrack),
+			// Il servizio può esistere senza configurazione: in quel caso resta
+			// proponibile, ed è il solo modo per configurarlo dopo una rimozione.
+			!(service.code === "hipatch" && hipatchConfigurato) &&
+			!(service.code === "hitrack" && hitrackConfigurato),
 	);
 
 	/**
@@ -906,7 +929,7 @@ const Integrations = () => {
 				<div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
 					{/* HiPatch integrations live in tenant_services (not organization_integrations).
               Render them here so users see + can edit/delete their saved hipatch config. */}
-					{hipatchServices.map((hp) => {
+					{(hipatchConfigurato ? hipatchServices : []).map((hp) => {
 						const hpSettings = (hp.settings ?? {}) as Record<string, unknown>;
 						const tokenSet = !!hpSettings.connectsecure_client_auth_token;
 						const podSet = !!hpSettings.connectsecure_pod;
@@ -997,7 +1020,7 @@ const Integrations = () => {
 
 					{/* Anche HiTrack vive in tenant_services: il collector Domotz è la
 					    sola cosa da dichiarare, il resto lo scopre la sincronizzazione. */}
-					{hitrackServices.map((ht) => {
+					{(hitrackConfigurato ? hitrackServices : []).map((ht) => {
 						const htSettings = (ht.settings ?? {}) as Record<string, unknown>;
 						return (
 							<Card key={`hitrack-${ht.id}`} className="relative">
