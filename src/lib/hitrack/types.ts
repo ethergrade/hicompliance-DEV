@@ -49,7 +49,10 @@ export interface HiTrackDiskMetric {
   id: string;
   collectorName: string;
   deviceName: string;
+  /** Nome leggibile del datastore («DS_01»), con ripiego sull'identificativo interno. */
   diskLabel: string;
+  /** L'identificativo interno di vCenter («datastore-1149»), per il riscontro tecnico. */
+  dimensionKey: string;
   ipAddress: string | null;
   status: string;
   statusType: "success" | "warning" | "error" | "muted";
@@ -65,6 +68,10 @@ export interface HiTrackRamMetric {
   id: string;
   collectorName: string;
   deviceName: string;
+  /** L'host ESXi cui la misura si riferisce: più host stanno dietro lo stesso vCenter. */
+  dimensionLabel: string | null;
+  /** L'identificativo interno («host-21»), quando il nome non è disponibile. */
+  dimensionKey: string;
   ipAddress: string | null;
   totalRamGiB: number | null;
   usagePercent: number | null;

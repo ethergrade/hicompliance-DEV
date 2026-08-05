@@ -313,9 +313,13 @@ export const HiTrackDashboard: React.FC = () => {
                 <div key={disk.id} className="rounded-xl border border-border p-4">
                   <div className="mb-3 flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-medium">{disk.deviceName}</p>
+                      {/* Il datastore è il soggetto della riga; il dispositivo da
+                          cui è misurato e l'id interno di vCenter restano sotto. */}
+                      <p className="font-medium">{disk.diskLabel}</p>
                       <p className="text-xs text-muted-foreground">
-                        {disk.collectorName} · {disk.diskLabel}
+                        {disk.deviceName}
+                        {disk.dimensionKey ? ` · ${disk.dimensionKey}` : ""} ·{" "}
+                        {disk.collectorName}
                       </p>
                     </div>
                     <Badge className={statusBadgeClassName[usageState]}>
@@ -365,8 +369,13 @@ export const HiTrackDashboard: React.FC = () => {
                 <div key={ram.id} className="rounded-xl border border-border p-4">
                   <div className="mb-3 flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-medium">{ram.deviceName}</p>
+                      {/* Su un vCenter ogni riga è un host ESXi: senza il suo nome
+                          le schede sarebbero tutte intitolate «Vcenter». */}
+                      <p className="font-medium">
+                        {ram.dimensionLabel || ram.deviceName}
+                      </p>
                       <p className="text-xs text-muted-foreground">
+                        {ram.dimensionLabel ? `${ram.deviceName} · ` : ""}
                         {ram.collectorName} · {ram.ipAddress || "IP non disponibile"}
                       </p>
                     </div>
