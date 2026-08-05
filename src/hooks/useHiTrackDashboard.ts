@@ -9,6 +9,7 @@ import { EMPTY_HITRACK_DASHBOARD } from "@/lib/hitrack/types";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { useOrganizationStore } from "@/stores/organizationStore";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useUserRoles } from "@/hooks/useUserRoles";
 
 /**
  * I dati arrivano dal backend Laravel: nel browser non c'è più niente da
@@ -24,12 +25,18 @@ import { usePermissions } from "@/hooks/usePermissions";
 function useHiTrackAbilitato() {
   const { organizationId, groupId } = useClientOrganization();
   const attivo = useOrganizationStore((s) => s.orgFlags?.hitrack_enabled);
-  const { hasCapability } = usePermissions();
+  const { hasCapability, bypass } = usePermissions();
+  const { isSuperAdmin } = useUserRoles();
+
+  // La stessa regola del menu: contratto attivo, o super-admin. Se divergessero,
+  // la voce comparirebbe su una pagina che non interroga niente.
+  const previsto = !!attivo || isSuperAdmin;
 
   return {
     organizationId,
     groupId,
-    abilitato: !!organizationId && !!attivo && hasCapability("hitrack.view"),
+    abilitato:
+      !!organizationId && previsto && (bypass || hasCapability("hitrack.view")),
   };
 }
 
