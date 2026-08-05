@@ -311,17 +311,51 @@ const Integrations = () => {
 		},
 	});
 
+	/**
+	 * Cosa si sta eliminando. Va dichiarato dal chiamante e non dedotto dal
+	 * servizio selezionato nel form: il pulsante sta su una scheda, e il form
+	 * potrebbe non essere nemmeno aperto.
+	 */
+	type BersaglioEliminazione =
+		| { tipo: "integrazione"; id: string }
+		| { tipo: "configurazione"; servizio: "hipatch" | "hitrack"; id: string };
+
 	const deleteIntegrationMutation = useMutation({
-		mutationFn: async (integrationId: string) => {
+		mutationFn: async (bersaglio: BersaglioEliminazione) => {
 			if (!organizationId)
 				throw new Error("Nessuna organizzazione selezionata");
-			if (isHipatch && existingHipatch) {
-				await tenantServicesApi.delete(existingHipatch.id, groupId);
-			} else if (isHitrack && existingHitrack) {
-				await tenantServicesApi.delete(existingHitrack.id, groupId);
-			} else {
-				await integrationsApi.delete(organizationId, integrationId, groupId);
+
+			if (bersaglio.tipo === "integrazione") {
+				await integrationsApi.delete(organizationId, bersaglio.id, groupId);
+				return;
 			}
+
+			// Qui non si disattiva il servizio — quello si fa dal pannello di
+			// attivazione, dove sta anche il contratto. Si tolgono le chiavi che
+			// questa pagina configura, lasciando intatto il resto delle settings.
+			const servizio =
+				bersaglio.servizio === "hipatch" ? existingHipatch : existingHitrack;
+			const precedenti = { ...((servizio?.settings ?? {}) as Record<string, unknown>) };
+
+			const daRimuovere =
+				bersaglio.servizio === "hipatch"
+					? [
+							"connectsecure_company_id",
+							"connectsecure_client_auth_token",
+							"connectsecure_pod",
+							"ninjaone_organization_id",
+							"ninjaone_organization_id_client",
+							"ninjaone_organization_secret",
+						]
+					: ["domotz_agent_id"];
+
+			for (const chiave of daRimuovere) delete precedenti[chiave];
+
+			await tenantServicesApi.patch(
+				bersaglio.id,
+				{ settings: precedenti },
+				groupId,
+			);
 		},
 		onSuccess: () => {
 			queryClient.invalidateQueries({
@@ -335,7 +369,7 @@ const Integrations = () => {
 			});
 			toast({
 				title: "Successo",
-				description: "Integrazione eliminata con successo",
+				description: "Configurazione rimossa",
 			});
 		},
 		onError: (error) => {
@@ -465,6 +499,59 @@ const Integrations = () => {
 			) &&
 			!(service.code === "hipatch" && existingHipatch) &&
 			!(service.code === "hitrack" && existingHitrack),
+	);
+
+	/**
+	 * Rimozione della configurazione di un servizio (HiPatch, HiTrack).
+	 *
+	 * Non elimina il servizio: quello si disattiva dal pannello di attivazione,
+	 * insieme al contratto. Qui si tolgono le chiavi che questa pagina imposta, e
+	 * il testo di conferma lo dice — perché «elimina» su una scheda di servizio si
+	 * legge facilmente come «disdici».
+	 */
+	const renderRimuoviConfigurazione = (
+		servizio: "hipatch" | "hitrack",
+		id: string,
+		nome: string,
+		conseguenza: string,
+	) => (
+		<AlertDialog>
+			<AlertDialogTrigger asChild>
+				<Button
+					variant="outline"
+					size="sm"
+					className="text-destructive hover:text-destructive hover:bg-destructive/10"
+				>
+					<Trash2 className="w-4 h-4" />
+				</Button>
+			</AlertDialogTrigger>
+			<AlertDialogContent>
+				<AlertDialogHeader>
+					<AlertDialogTitle>Rimuovi configurazione {nome}</AlertDialogTitle>
+					<AlertDialogDescription>
+						{conseguenza}
+						<br />
+						Il servizio resta attivo sul cliente: per disattivarlo si usa il
+						pannello di attivazione servizi.
+					</AlertDialogDescription>
+				</AlertDialogHeader>
+				<AlertDialogFooter>
+					<AlertDialogCancel>Annulla</AlertDialogCancel>
+					<AlertDialogAction
+						onClick={() =>
+							deleteIntegrationMutation.mutate({
+								tipo: "configurazione",
+								servizio,
+								id,
+							})
+						}
+						className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+					>
+						{deleteIntegrationMutation.isPending ? "Rimuovendo..." : "Rimuovi"}
+					</AlertDialogAction>
+				</AlertDialogFooter>
+			</AlertDialogContent>
+		</AlertDialog>
 	);
 
 	const getServiceMeta = (
@@ -896,6 +983,12 @@ const Integrations = () => {
 										>
 											<Settings className="w-4 h-4 mr-2" /> Configura
 										</Button>
+										{renderRimuoviConfigurazione(
+											"hipatch",
+											hp.id,
+											"HiPatch",
+											"Vengono rimosse le credenziali ConnectSecure e NinjaOne: senza, la sincronizzazione non ha più modo di leggere i dati del cliente.",
+										)}
 									</div>
 								</CardContent>
 							</Card>
@@ -953,6 +1046,12 @@ const Integrations = () => {
 										>
 											<Settings className="w-4 h-4 mr-2" /> Configura
 										</Button>
+										{renderRimuoviConfigurazione(
+											"hitrack",
+											ht.id,
+											"HiTrack",
+											"Viene tolto il collector Domotz: la sincronizzazione si ferma al giro successivo e i dati già raccolti restano.",
+										)}
 									</div>
 								</CardContent>
 							</Card>
@@ -1049,7 +1148,10 @@ const Integrations = () => {
 													<AlertDialogCancel>Annulla</AlertDialogCancel>
 													<AlertDialogAction
 														onClick={() =>
-															deleteIntegrationMutation.mutate(integration.id)
+															deleteIntegrationMutation.mutate({
+																tipo: "integrazione",
+																id: integration.id,
+															})
 														}
 														className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
 													>
