@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckCircle2, FilePlus2, Loader2, Lock, PencilLine } from 'lucide-react';
+import { CheckCircle2, FilePlus2, Loader2, Lock, PencilLine, Undo2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -14,6 +14,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import type { UnconfirmResult } from '@/hooks/useAssessmentCampaign';
 import type { AssessmentCampaign, AssessmentReadiness } from '@/types/api';
 
 interface AssessmentCampaignBarProps {
@@ -23,6 +24,7 @@ interface AssessmentCampaignBarProps {
   working: boolean;
   onConfirm: () => void;
   onCreate: () => void;
+  onUnconfirm: (force?: boolean) => Promise<UnconfirmResult>;
 }
 
 /**
@@ -39,9 +41,12 @@ export function AssessmentCampaignBar({
   working,
   onConfirm,
   onCreate,
+  onUnconfirm,
 }: AssessmentCampaignBarProps) {
   const [confermaAperta, setConfermaAperta] = useState(false);
   const [nuovoAperto, setNuovoAperto] = useState(false);
+  const [riaperturaAperta, setRiaperturaAperta] = useState(false);
+  const [forzatura, setForzatura] = useState<string | null>(null);
 
   // Nessun ciclo: si apre alla prima risposta salvata, non c'è nulla da mostrare.
   if (!campaign) return null;
@@ -56,6 +61,14 @@ export function AssessmentCampaignBar({
         year: 'numeric',
       })
     : null;
+
+  // Un report già presentato o pubblicato il backend non lo riapre al primo
+  // tentativo: rilancia con `needsForce` e il suo messaggio, che va mostrato
+  // com'è — dice esattamente cosa si sta per riscrivere sotto al cliente.
+  const riapri = async (force = false) => {
+    const esito = await onUnconfirm(force);
+    setForzatura(esito.needsForce ? (esito.message ?? 'Il report è già stato consegnato al cliente.') : null);
+  };
 
   return (
     <>
@@ -103,16 +116,22 @@ export function AssessmentCampaignBar({
             )}
 
             {confermato && isAdmin && (
-              <Button variant="outline" onClick={() => setNuovoAperto(true)} disabled={working}>
-                <FilePlus2 className="mr-2 h-4 w-4" />
-                Crea nuovo assessment
-              </Button>
+              <>
+                <Button variant="ghost" onClick={() => setRiaperturaAperta(true)} disabled={working}>
+                  <Undo2 className="mr-2 h-4 w-4" />
+                  Riapri per modificare
+                </Button>
+                <Button variant="outline" onClick={() => setNuovoAperto(true)} disabled={working}>
+                  <FilePlus2 className="mr-2 h-4 w-4" />
+                  Crea nuovo assessment
+                </Button>
+              </>
             )}
 
             {confermato && !isAdmin && (
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Lock className="h-3.5 w-3.5" />
-                Solo un amministratore può aprirne uno nuovo
+                Solo un amministratore può riaprirlo
               </span>
             )}
           </div>
@@ -163,6 +182,58 @@ export function AssessmentCampaignBar({
           <AlertDialogFooter>
             <AlertDialogCancel>Annulla</AlertDialogCancel>
             <AlertDialogAction onClick={onCreate}>Apri nuovo assessment</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Riapertura e nuovo ciclo si somigliano e fanno cose diverse: qui si dice
+          esplicitamente cosa si perde, altrimenti la scelta è a caso. */}
+      <AlertDialog open={riaperturaAperta} onOpenChange={setRiaperturaAperta}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Riaprire l'assessment per modificarlo?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  Le risposte di <strong>{campaign.label}</strong> tornano modificabili. Alla
+                  riconferma il report viene rifatto: analisi AI e piano di remediation generato
+                  vengono ricalcolati da zero.
+                </p>
+                <p>
+                  Le risposte confermate{dataConferma ? ` il ${dataConferma}` : ''} vengono
+                  sovrascritte e non restano da nessuna parte. Se ti servono ancora, chiudi qui e
+                  usa <strong>Crea nuovo assessment</strong>.
+                </p>
+                <p className="text-muted-foreground">
+                  Le attività di remediation aggiunte a mano non vengono toccate.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void riapri()}>Riapri l'assessment</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={forzatura !== null} onOpenChange={(aperto) => !aperto && setForzatura(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Questo report è già stato consegnato</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>{forzatura}</p>
+                <p>
+                  Se procedi, il cliente vedrà contenuti diversi da quelli che gli sono già stati
+                  mostrati.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void riapri(true)}>Riapri comunque</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

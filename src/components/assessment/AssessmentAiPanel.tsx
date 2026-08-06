@@ -17,6 +17,14 @@ interface Props {
   snapshotId: string;
   groupId?: string | null;
   openaiData?: unknown | null;
+  /**
+   * Ricarica lo snapshot nel padre dopo un salvataggio.
+   *
+   * `openaiData` arriva da lì ed è caricato una volta sola: senza questo, dopo
+   * aver salvato il pannello continua a mostrare il testo vecchio — e la
+   * modifica successiva ripartirebbe da quello, non da ciò che è sul server.
+   */
+  onSaved?: () => void | Promise<void>;
 }
 
 function parseArray(data: unknown): unknown[] | null {
@@ -158,7 +166,7 @@ const MarkdownEditor: React.FC<{
 
 // ─── Component principale ─────────────────────────────────────────────────────
 
-export const AssessmentAiPanel: React.FC<Props> = ({ companyId, snapshotId, groupId, openaiData }) => {
+export const AssessmentAiPanel: React.FC<Props> = ({ companyId, snapshotId, groupId, openaiData, onSaved }) => {
   const currentAiText = extractText(openaiData);
   const [status, setStatus] = useState<AssessmentSnapshotStatus | null>(null);
   const { isSuperAdmin, hasRole } = useUserRoles();
@@ -202,6 +210,9 @@ export const AssessmentAiPanel: React.FC<Props> = ({ companyId, snapshotId, grou
         { openai_data: rebuildBlocks(openaiData, draftText) },
         groupId
       );
+      // Si esce dall'editor solo dopo aver riletto lo snapshot: quel che resta a
+      // schermo è ciò che il server ha davvero salvato, non la bozza locale.
+      await onSaved?.();
       toast.success('Testo aggiornato con successo');
       setEditing(false);
     } catch (err) {

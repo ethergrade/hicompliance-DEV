@@ -129,6 +129,10 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 		Record<string, { s: string; e: string }>
 	>({});
 	const [activeDragId, setActiveDragId] = useState<string | null>(null);
+	// Riordino delle righe: stato separato da `activeDragId`, che riguarda il
+	// trascinamento delle barre sulla timeline ed è tutt'altro gesto.
+	const [rowDragId, setRowDragId] = useState<string | null>(null);
+	const [rowDragOverId, setRowDragOverId] = useState<string | null>(null);
 	const [zoomIndex, setZoomIndex] = useState(1);
 
 	const getTimelineWidth = useCallback(
@@ -448,16 +452,55 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 							</div>
 						) : (
 							<div>
-								{displayedTasks.map((task, idx) => {
+								{displayedTasks.map((task) => {
 									const bar = getBarStyle(task);
 									const isDragging = activeDragId === task.id;
+									const isRowDragged = rowDragId === task.id;
+									const isDropTarget =
+										rowDragOverId === task.id && rowDragId !== task.id;
 
 									return (
 										<div
 											key={task.id}
+											// La riga intera è la zona di rilascio. Finché lo erano solo
+											// i 14px della maniglia — per giunta invisibili fuori hover,
+											// e durante un drag nativo l'hover non si aggiorna — il drop
+											// non andava mai a segno e sembrava che il riordino non
+											// esistesse.
+											onDragOver={(e) => {
+												if (!canEdit || !rowDragId) return;
+												// Senza preventDefault il browser rifiuta il rilascio e
+												// onDrop non viene mai chiamato.
+												e.preventDefault();
+												e.dataTransfer.dropEffect = "move";
+												setRowDragOverId(task.id);
+											}}
+											onDragLeave={() =>
+												setRowDragOverId((id) => (id === task.id ? null : id))
+											}
+											onDrop={(e) => {
+												e.preventDefault();
+												const draggedId = e.dataTransfer.getData("text/plain");
+												setRowDragOverId(null);
+												setRowDragId(null);
+												if (!draggedId || draggedId === task.id) return;
+												// L'indice va calcolato sulla lista completa: quella
+												// mostrata è filtrata per categoria e visibilità, mentre
+												// il padre riordina l'elenco intero. Con un filtro attivo
+												// la riga finiva in una posizione diversa da quella su cui
+												// era stata rilasciata.
+												const targetIndex = tasks.findIndex(
+													(t) => t.id === task.id,
+												);
+												if (targetIndex !== -1) {
+													onReorderTasks(draggedId, targetIndex);
+												}
+											}}
 											className={cn(
 												"grid min-h-14 border-b border-border/30 group hover:bg-muted/20 transition-colors",
 												isDragging && "bg-muted/30",
+												isRowDragged && "opacity-40",
+												isDropTarget && "border-t-2 border-t-primary",
 											)}
 											style={{
 												gridTemplateColumns: `${pxToRem(sidebarPx)} ${pxToRem(catPx)} minmax(0,1fr)`,
@@ -470,28 +513,26 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 												)}
 												style={{ width: pxToRem(sidebarPx) }}
 											>
-												<span
-													draggable
-													onDragStart={(e) => {
-														e.dataTransfer.setData("text/plain", task.id);
-														e.dataTransfer.effectAllowed = "move";
-													}}
-													onDragOver={(e) => {
-														e.preventDefault();
-														e.dataTransfer.dropEffect = "move";
-													}}
-													onDrop={(e) => {
-														e.preventDefault();
-														const draggedId =
-															e.dataTransfer.getData("text/plain");
-														if (draggedId && draggedId !== task.id) {
-															onReorderTasks(draggedId, idx);
-														}
-													}}
-													className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
-												>
-													<GripVertical className="h-3.5 w-3.5 text-muted-foreground/40" />
-												</span>
+												{/* Senza canEdit il riordino non passerebbe comunque dal
+												    server: meglio non mostrare una maniglia che promette
+												    un'azione destinata a fallire. */}
+												{canEdit && (
+													<span
+														draggable
+														onDragStart={(e) => {
+															e.dataTransfer.setData("text/plain", task.id);
+															e.dataTransfer.effectAllowed = "move";
+															setRowDragId(task.id);
+														}}
+														onDragEnd={() => {
+															setRowDragId(null);
+															setRowDragOverId(null);
+														}}
+														className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
+													>
+														<GripVertical className="h-3.5 w-3.5 text-muted-foreground/40" />
+													</span>
+												)}
 												<div className="flex-1 min-w-0">
 													<Tooltip>
 														<TooltipTrigger asChild>

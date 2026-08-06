@@ -166,6 +166,27 @@ export const assessmentV2Api = {
 		return res.data;
 	},
 
+	/**
+	 * Annulla la conferma e riapre il questionario, azzerando l'elaborazione che
+	 * ne era uscita. Riservato agli admin.
+	 *
+	 * Con un report già presentato o pubblicato il backend rifiuta con 422 e
+	 * `errors.force`: va ripetuta con `force` dopo un assenso esplicito.
+	 */
+	async unconfirmCampaign(
+		companyId: string,
+		campaignId: string,
+		force = false,
+		_g?: string | null,
+	): Promise<AssessmentCampaign> {
+		const res = await apiClient.post<ApiResponse<AssessmentCampaign>>(
+			`/companies/${companyId}/assessment-campaigns/${campaignId}/unconfirm`,
+			force ? { force: true } : undefined,
+			_h(companyId, _g),
+		);
+		return res.data;
+	},
+
 	// ─── Snapshots ──────────────────────────────────────────────────────────────
 
 	/** Get all snapshots for a company */

@@ -789,6 +789,9 @@ export interface AssessmentCampaign {
 	is_confirmed: boolean;
 	confirmed_at: string | null;
 	confirmed_by: string | null;
+	/** Valorizzati quando un admin ha annullato una conferma data per errore. */
+	reopened_at: string | null;
+	reopened_by: string | null;
 	snapshot_id: string | null;
 	created_at: string;
 }

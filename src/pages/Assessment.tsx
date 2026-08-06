@@ -190,8 +190,12 @@ const Assessment: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { selectedOrganization, canManageMultipleClients } = useClientContext();
-  const { isSales, isSuperAdmin } = useUserRoles();
+  const { isSales, isSuperAdmin, hasRole } = useUserRoles();
   const isAdmin = user?.is_super_admin || isSuperAdmin;
+  // I gesti sul ciclo (riapri, nuovo assessment) sono di super-admin e admin di
+  // gruppo, come la policy lato API: `isAdmin` qui sopra copre i soli super-admin
+  // e lasciava il pulsante invisibile proprio a chi ne ha diritto.
+  const canManageCampaign = isSuperAdmin || hasRole('admin');
   const orgId = selectedOrganization?.id;
   // NB: do NOT fall back to the group id (userOrganizationId) here — it would
   // make /api/companies/{groupId}/... calls 404 for customers that have a
@@ -205,6 +209,7 @@ const Assessment: React.FC = () => {
     isConfirmed,
     createCampaign,
     confirmCampaign,
+    unconfirmCampaign,
     reload: reloadCampaign,
   } = useAssessmentCampaign();
 
@@ -338,18 +343,23 @@ const Assessment: React.FC = () => {
   }, [orgId, selectedOrganization?.group_id]);
 
   // Load latest snapshot for admin AI panel
-  useEffect(() => {
+  const loadLatestSnapshot = useCallback(async () => {
     if (!orgId || !isAdmin) return;
     const groupId = selectedOrganization?.group_id ?? null;
-    assessmentV2Api.snapshots(orgId, groupId)
-      .then(snaps => {
-        if (snaps.length > 0) {
-          const sorted = [...snaps].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-          setLatestSnapshot(sorted[0]);
-        }
-      })
-      .catch(() => { /* silently ignore — admin panel is non-critical */ });
+    try {
+      const snaps = await assessmentV2Api.snapshots(orgId, groupId);
+      if (snaps.length > 0) {
+        const sorted = [...snaps].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        setLatestSnapshot(sorted[0]);
+      }
+    } catch {
+      /* silently ignore — admin panel is non-critical */
+    }
   }, [orgId, isAdmin, selectedOrganization?.group_id]);
+
+  useEffect(() => {
+    void loadLatestSnapshot();
+  }, [loadLatestSnapshot]);
 
   // Load existing assessment responses from the v2 API
   useEffect(() => {
@@ -1071,14 +1081,15 @@ const Assessment: React.FC = () => {
           </Card>
         )}
 
-        {/* Stato del ciclo e i due gesti del flusso: conferma e nuovo assessment. */}
+        {/* Stato del ciclo e i gesti del flusso: conferma, riapertura, nuovo ciclo. */}
         <AssessmentCampaignBar
           campaign={campaign}
           readiness={readiness}
-          isAdmin={isAdmin}
+          isAdmin={canManageCampaign}
           working={campaignWorking}
           onConfirm={handleConfirmCampaign}
           onCreate={handleCreateCampaign}
+          onUnconfirm={unconfirmCampaign}
         />
 
         {isReadOnlyView && (
@@ -1656,6 +1667,7 @@ const Assessment: React.FC = () => {
             snapshotId={latestSnapshot.id}
             groupId={selectedOrganization?.group_id ?? null}
             openaiData={latestSnapshot.openai_data}
+            onSaved={loadLatestSnapshot}
           />
         )}
       </div>

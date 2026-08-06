@@ -88,6 +88,46 @@ export const useAssessmentCampaign = () => {
     }
   }, [orgId, groupId, current, load]);
 
+  /**
+   * Annulla la conferma e riapre il questionario.
+   *
+   * Se il report è già stato presentato o pubblicato il backend rifiuta con
+   * `errors.force`: qui non si ritenta da soli: si restituisce `needsForce` e la
+   * decisione torna all'utente, che deve vedere scritto cosa sta riscrivendo.
+   */
+  const unconfirmCampaign = useCallback(
+    async (force = false): Promise<UnconfirmResult> => {
+      if (!orgId || !groupId || !current) return { ok: false };
+      setWorking(true);
+      try {
+        await assessmentV2Api.unconfirmCampaign(orgId, current.id, force, groupId);
+        toast.success('Assessment riaperto: le risposte sono di nuovo modificabili.');
+        await load();
+        return { ok: true };
+      } catch (error: unknown) {
+        const err = error as {
+          status?: number;
+          message?: string;
+          errors?: Record<string, string[]> | null;
+        };
+
+        if (err.errors?.force) {
+          return { ok: false, needsForce: true, message: err.message };
+        }
+
+        toast.error(
+          err.status === 403
+            ? 'Solo un amministratore può riaprire un assessment confermato.'
+            : err.message || 'Impossibile riaprire l\'assessment.',
+        );
+        return { ok: false };
+      } finally {
+        setWorking(false);
+      }
+    },
+    [orgId, groupId, current, load],
+  );
+
   return {
     current,
     campaigns,
@@ -98,5 +138,13 @@ export const useAssessmentCampaign = () => {
     reload: load,
     createCampaign,
     confirmCampaign,
+    unconfirmCampaign,
   };
 };
+
+/** `needsForce` = il report è già stato consegnato al cliente, serve un assenso esplicito. */
+export interface UnconfirmResult {
+  ok: boolean;
+  needsForce?: boolean;
+  message?: string;
+}
