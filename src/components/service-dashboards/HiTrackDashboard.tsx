@@ -44,6 +44,65 @@ const usageBarClassName: Record<string, string> = {
   muted: "bg-muted",
 };
 
+const PER_PAGINA = 10;
+
+/**
+ * Le righe di dischi e RAM arrivano già ordinate per criticità dal backend.
+ * Qui si mostra una pagina per volta: su un impianto grande sono decine di
+ * schede, e una colonna lunga quanto tre schermate non si legge.
+ */
+function usePagina<T>(righe: T[]) {
+  const [pagina, setPagina] = useState(0);
+
+  const pagine = Math.max(1, Math.ceil(righe.length / PER_PAGINA));
+  // Un sync può accorciare l'elenco sotto i piedi: senza questo si resterebbe su
+  // una pagina che non esiste più, cioè su un pannello vuoto.
+  const corrente = Math.min(pagina, pagine - 1);
+  const da = corrente * PER_PAGINA;
+
+  return {
+    pagina: corrente,
+    pagine,
+    totale: righe.length,
+    da,
+    visibili: righe.slice(da, da + PER_PAGINA),
+    vai: setPagina,
+  };
+}
+
+const Paginatore: React.FC<{ stato: ReturnType<typeof usePagina<unknown>> }> = ({ stato }) => {
+  if (stato.totale <= PER_PAGINA) return null;
+
+  return (
+    <div className="flex items-center justify-between pt-1">
+      <p className="text-xs text-muted-foreground">
+        {stato.da + 1}–{Math.min(stato.da + PER_PAGINA, stato.totale)} di {stato.totale}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={stato.pagina === 0}
+          onClick={() => stato.vai(stato.pagina - 1)}
+        >
+          Precedenti
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          {stato.pagina + 1} / {stato.pagine}
+        </span>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={stato.pagina >= stato.pagine - 1}
+          onClick={() => stato.vai(stato.pagina + 1)}
+        >
+          Successivi
+        </Button>
+      </div>
+    </div>
+  );
+};
+
 const Sparkline: React.FC<{ values: number[] }> = ({ values }) => {
   const normalized = values.length > 0 ? values : [0];
   const max = Math.max(...normalized, 1);
@@ -71,6 +130,8 @@ export const HiTrackDashboard: React.FC = () => {
   const { data, isLoading, isFetching } = useHiTrackDashboard();
   const syncMutation = useHiTrackSyncNow();
   const [trendWindow, setTrendWindow] = useState<HiTrackTrendWindow>("24h");
+  const paginaDischi = usePagina(data.logicalDisks);
+  const paginaRam = usePagina(data.ramMonitoring);
 
   const onlineRatio = useMemo(() => {
     if (data.overview.monitoredDevices === 0) return 0;
@@ -174,8 +235,12 @@ export const HiTrackDashboard: React.FC = () => {
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <div>
                       <p className="font-medium">{collector.collectorName}</p>
+                      {/* L'identificativo dell'agent e la regola di matching sono
+                          dettagli della piattaforma di raccolta: al cliente non
+                          servono e dicono da chi arriva il dato. Restano visibili
+                          in configurazione, dove servono davvero. */}
                       <p className="text-xs text-muted-foreground">
-                        Agent {collector.domotzAgentId} · matching {collector.matchingRule || "automatico"}
+                        Copertura dati {formatPercent(collector.dataCoveragePercent)}
                       </p>
                     </div>
                     <Badge
@@ -303,11 +368,11 @@ export const HiTrackDashboard: React.FC = () => {
           <CardContent className="space-y-3">
             {data.logicalDisks.length === 0 && (
               <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-                Dato non disponibile. La registry locale resta estendibile e mostra
-                solo metriche disco verificate via Public API.
+                Nessun dato sui dischi per questa rete. Compaiono qui i dispositivi
+                che espongono capacità e occupazione in modo leggibile.
               </div>
             )}
-            {data.logicalDisks.map((disk) => {
+            {paginaDischi.visibili.map((disk) => {
               const usageState = classifyUsageStatus(disk.usagePercent);
               return (
                 <div key={disk.id} className="rounded-xl border border-border p-4">
@@ -349,6 +414,7 @@ export const HiTrackDashboard: React.FC = () => {
                 </div>
               );
             })}
+            <Paginatore stato={paginaDischi} />
           </CardContent>
         </Card>
 
@@ -359,11 +425,11 @@ export const HiTrackDashboard: React.FC = () => {
           <CardContent className="space-y-3">
             {data.ramMonitoring.length === 0 && (
               <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-                Dato non disponibile. Le metriche RAM attive sono mostrate solo
-                quando la Public API espone variabili quantitative verificate.
+                Nessun dato sulla memoria per questa rete. Compaiono qui i dispositivi
+                che espongono memoria totale e utilizzo.
               </div>
             )}
-            {data.ramMonitoring.map((ram) => {
+            {paginaRam.visibili.map((ram) => {
               const usageState = classifyUsageStatus(ram.usagePercent);
               return (
                 <div key={ram.id} className="rounded-xl border border-border p-4">
@@ -410,6 +476,7 @@ export const HiTrackDashboard: React.FC = () => {
                 </div>
               );
             })}
+            <Paginatore stato={paginaRam} />
           </CardContent>
         </Card>
       </div>
@@ -419,11 +486,10 @@ export const HiTrackDashboard: React.FC = () => {
           <CardContent className="flex items-start gap-3 p-4">
             <ShieldAlert className="mt-0.5 h-5 w-5 text-amber-300" />
             <div>
-              <p className="font-medium">Alert aperti su Domotz</p>
+              <p className="font-medium">Alert aperti</p>
               <p className="text-sm text-muted-foreground">
-                Il runtime considera la Public API come fonte di verità. Gli
-                alert aperti entrano nel calcolo del Health Score e vanno
-                rivisti nel collector associato.
+                Gli alert aperti sulla rete monitorata entrano nel calcolo dell'Health
+                Score e restano a peso finché non vengono chiusi.
               </p>
             </div>
           </CardContent>
