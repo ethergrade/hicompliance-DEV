@@ -1666,6 +1666,9 @@ const Assessment: React.FC = () => {
             companyId={orgId}
             snapshotId={latestSnapshot.id}
             groupId={selectedOrganization?.group_id ?? null}
+            analysis={latestSnapshot.analysis}
+            analysisState={latestSnapshot.analysis_state}
+            analysisViolations={latestSnapshot.analysis_violations}
             openaiData={latestSnapshot.openai_data}
             onSaved={loadLatestSnapshot}
           />

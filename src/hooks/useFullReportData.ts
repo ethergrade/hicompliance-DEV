@@ -241,12 +241,32 @@ export function useFullReportData(): FullReportData {
 
 	const latestSnapshot = snapshotQuery.data ?? null;
 
+	/**
+	 * I consigli per categoria, dalla struttura quando c'è.
+	 *
+	 * Gli snapshot mai rielaborati hanno ancora il markdown del vecchio flusso e
+	 * passano dal parser, che resta solo per loro: appena il ciclo viene riconfermato
+	 * il report legge il JSON e nessuno deve più indovinare dove finisce una sezione.
+	 */
+	function categoryAdvice(snapshot: typeof latestSnapshot): AiCategoryAdvice[] {
+		if (!snapshot) return [];
+
+		if (snapshot.analysis?.categories?.length) {
+			return snapshot.analysis.categories.map((c) => ({
+				category: c.category_name,
+				advice: c.advice,
+			}));
+		}
+
+		return parseAiCategoryAdvice(snapshot.openai_data);
+	}
+
 	return {
 		assessment: assessmentQuery.data ?? null,
 		remediation: remediationQuery.data ?? null,
 		consistenze: consistenzeQuery.data ?? null,
 		elaborazioneDate: latestSnapshot?.created_at ?? null,
-		aiCategoryAdvice: latestSnapshot ? parseAiCategoryAdvice(latestSnapshot.openai_data) : [],
+		aiCategoryAdvice: categoryAdvice(latestSnapshot),
 		isLoading:
 			assessmentQuery.isLoading ||
 			remediationQuery.isLoading ||

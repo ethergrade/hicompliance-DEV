@@ -771,11 +771,99 @@ export interface AssessmentSnapshot {
 	total_answered: number;
 	total_questions: number;
 	category_scores: Record<string, CategoryScore>;
+	analysis?: AssessmentAnalysis | null;
+	analysis_state?: AnalysisState;
+	analysis_violations?: AnalysisViolation[] | null;
+	analysis_model?: string | null;
+	analysis_generated_at?: string | null;
+	analysis_edited_at?: string | null;
+	/** Testo markdown del vecchio flusso. Non viene più scritto: resta per lo storico. */
 	openai_data?: unknown | null;
 	shodan_data?: unknown | null;
 	intelx_data?: unknown | null;
 	created_at: string;
 }
+
+/** `needs_review`: il validatore ha rilievi aperti, il report non è pubblicabile. */
+export type AnalysisState = "pending" | "ok" | "needs_review";
+
+export interface AnalysisViolation {
+	regola: string;
+	dettaglio: string;
+}
+
+export interface AnalysisStatusCounts {
+	completed: number;
+	planned_in_progress: number;
+	not_started: number;
+	not_applicable: number;
+}
+
+export interface AnalysisCategory {
+	category_id: string;
+	category_name: string;
+	score: number | null;
+	counts: AnalysisStatusCounts;
+	classification: "well_covered" | "targeted_improvement" | "remediation_needed" | "not_assessed";
+	state_summary: string;
+	advice: string;
+	evidence_question_ids: string[];
+	recommended_service_ids: string[];
+}
+
+export interface AnalysisImprovement {
+	title: string;
+	rationale: string;
+	category_ids: string[];
+	evidence_question_ids: string[];
+	service_ids: string[];
+}
+
+export interface AnalysisSwotItem {
+	text: string;
+	category_ids: string[];
+	evidence_question_ids: string[];
+}
+
+/**
+ * L'analisi strutturata, conforme a `docs/assessment-ai/assessment-analysis.schema.json`.
+ *
+ * Sostituisce il markdown che andava riconosciuto a colpi di espressioni regolari
+ * sulle intestazioni: qui ogni pezzo ha il suo campo e i consigli per categoria si
+ * leggono senza indovinare dove finisce una sezione.
+ */
+export interface AssessmentAnalysis {
+	analysis_status: "ok" | "blocked";
+	input_hash: string;
+	blocked_reasons: string[];
+	overall: {
+		headline: string;
+		executive_summary: string;
+		posture_score: number | null;
+		strength_category_ids: string[];
+		priority_category_ids: string[];
+	};
+	categories: AnalysisCategory[];
+	improvements: AnalysisImprovement[];
+	cyberswot: {
+		strengths: AnalysisSwotItem[];
+		weaknesses: AnalysisSwotItem[];
+		opportunities: AnalysisSwotItem[];
+		threats: AnalysisSwotItem[];
+	};
+	conclusion: string;
+}
+
+/**
+ * Correzione manuale: struttura parziale con i soli testi.
+ *
+ * Il backend accetta un'allowlist di campi di prosa e rifiuta tutto il resto —
+ * punteggi, conteggi, evidenze e servizi non si toccano a mano, perché sono ciò su
+ * cui il testo poggia.
+ */
+export type UpdateAnalysisRequest = {
+	analysis: Record<string, unknown>;
+};
 
 /**
  * Un ciclo di compilazione dell'assessment. Lo stato riguarda solo il
@@ -825,13 +913,10 @@ export interface AssessmentSnapshotStatus {
 	updated_at: string;
 }
 
+/** Forma dei blocchi del vecchio flusso Assistants. Serve solo a leggere lo storico. */
 export interface OpenAiTextBlock {
 	type: "text";
 	text: { value: string; annotations: unknown[] };
-}
-
-export interface UpdateSnapshotAiTextRequest {
-	openai_data: OpenAiTextBlock[];
 }
 
 // ─── Snapshot status / reprocess ───────────────────────────────────────────

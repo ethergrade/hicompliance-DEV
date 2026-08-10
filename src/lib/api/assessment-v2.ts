@@ -1,5 +1,6 @@
 import { apiClient } from "@/lib/api-client";
 import type {
+	AnalysisViolation,
 	ApiResponse,
 	AssessmentCampaign,
 	AssessmentCampaignsResponse,
@@ -8,7 +9,6 @@ import type {
 	AssessmentResponseItem,
 	AssessmentSnapshot,
 	AssessmentSnapshotStatus,
-	UpdateSnapshotAiTextRequest,
 	UpdateSnapshotStatusRequest,
 	ReprocessSnapshotRequest,
 	BatchAssessmentResponseRequest,
@@ -229,16 +229,24 @@ export const assessmentV2Api = {
 		return res.data;
 	},
 
-	/** Update AI-generated text for a snapshot (admin/superadmin only, only when openai=done) */
-	async updateSnapshotAiText(
+	/**
+	 * Corregge a mano i testi dell'analisi.
+	 *
+	 * Il corpo contiene la sola struttura parziale dei campi modificati. Il backend
+	 * rifiuta con 422 qualunque campo fuori dall'allowlist di prosa: punteggi,
+	 * evidenze e servizi non si toccano da qui.
+	 */
+	async updateSnapshotAnalysis(
 		companyId: string,
 		snapshotId: string,
-		payload: UpdateSnapshotAiTextRequest,
+		analysis: Record<string, unknown>,
 		_g?: string | null,
-	): Promise<AssessmentSnapshot> {
-		const res = await apiClient.patch<ApiResponse<AssessmentSnapshot>>(
-			`/companies/${companyId}/assessment-snapshots/${snapshotId}/ai-text`,
-			payload,
+	): Promise<{ snapshot: AssessmentSnapshot; violations: AnalysisViolation[] }> {
+		const res = await apiClient.patch<
+			ApiResponse<{ snapshot: AssessmentSnapshot; violations: AnalysisViolation[] }>
+		>(
+			`/companies/${companyId}/assessment-snapshots/${snapshotId}/analysis`,
+			{ analysis },
 			_h(companyId, _g),
 		);
 		return res.data;

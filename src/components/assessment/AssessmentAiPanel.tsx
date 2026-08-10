@@ -5,17 +5,28 @@ import { ApiError } from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bot, CheckCircle, Clock, Loader2, XCircle, Pencil, Save, X, RefreshCw, Send, RotateCw } from 'lucide-react';
+import { Bot, CheckCircle, Clock, Loader2, XCircle, RefreshCw, Send, RotateCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useUserRoles } from '@/hooks/useUserRoles';
-import type { AssessmentSnapshotStatus, SnapshotJobStatus, OpenAiTextBlock, ReprocessTarget } from '@/types/api';
+import { AnalysisEditor } from '@/components/assessment/AnalysisEditor';
+import type {
+  AnalysisState,
+  AnalysisViolation,
+  AssessmentAnalysis,
+  AssessmentSnapshotStatus,
+  ReprocessTarget,
+  SnapshotJobStatus,
+} from '@/types/api';
 
 interface Props {
   companyId: string;
   snapshotId: string;
   groupId?: string | null;
+  /** L'analisi strutturata dello snapshot. Assente sugli snapshot mai rielaborati. */
+  analysis?: AssessmentAnalysis | null;
+  analysisState?: AnalysisState;
+  analysisViolations?: AnalysisViolation[] | null;
+  /** Markdown del vecchio flusso, solo per lo storico. */
   openaiData?: unknown | null;
   /**
    * Ricarica lo snapshot nel padre dopo un salvataggio.
@@ -60,35 +71,6 @@ function extractText(data: unknown): string {
   return '';
 }
 
-function rebuildBlocks(data: unknown, newText: string): OpenAiTextBlock[] {
-  const arr = parseArray(data);
-
-  // Formato thread message: aggiorna content[0].text.value, mantieni tutto il resto
-  if (arr && arr.length > 0) {
-    const first = arr[0] as Record<string, unknown>;
-    if (Array.isArray(first?.content)) {
-      const newArr = arr.map((msg, mi) => {
-        if (mi !== 0) return msg;
-        const m = msg as Record<string, unknown>;
-        const newContent = (m.content as unknown[]).map((block, bi) => {
-          if (bi !== 0) return block;
-          const b = block as Record<string, unknown>;
-          const t = b.text as Record<string, unknown> | undefined;
-          return { ...b, text: { ...t, value: newText } };
-        });
-        return { ...m, content: newContent };
-      });
-      return newArr as unknown as OpenAiTextBlock[];
-    }
-
-    // Formato semplice
-    return (arr as OpenAiTextBlock[]).map((block, i) =>
-      i === 0 ? { ...block, text: { ...block.text, value: newText } } : block
-    );
-  }
-
-  return [{ type: 'text', text: { value: newText, annotations: [] } }];
-}
 
 const JOB_LABELS: Record<string, string> = {
   shodan: 'SurfaceScan360',
@@ -111,71 +93,27 @@ const StatusBadge: React.FC<{ status: SnapshotJobStatus }> = ({ status }) => {
   }
 };
 
-// ─── Markdown editor con preview ──────────────────────────────────────────────
-
-const MarkdownEditor: React.FC<{
-  value: string;
-  onChange: (v: string) => void;
-  onSave: () => void;
-  onCancel: () => void;
-  saving: boolean;
-}> = ({ value, onChange, onSave, onCancel, saving }) => (
-  <div className="space-y-3">
-    <Tabs defaultValue="edit">
-      <TabsList className="h-8">
-        <TabsTrigger value="edit" className="text-xs px-3">Modifica</TabsTrigger>
-        <TabsTrigger value="preview" className="text-xs px-3">Anteprima</TabsTrigger>
-      </TabsList>
-
-      <TabsContent value="edit" className="mt-2">
-        <Textarea
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          rows={20}
-          className="font-mono text-sm resize-y"
-          placeholder="Testo Markdown…"
-          autoFocus
-        />
-      </TabsContent>
-
-      <TabsContent value="preview" className="mt-2">
-        <div className="min-h-[480px] rounded-md border border-border bg-muted/30 px-4 py-3 overflow-y-auto prose prose-sm dark:prose-invert max-w-none">
-          {value.trim() ? (
-            <ReactMarkdown>{value}</ReactMarkdown>
-          ) : (
-            <p className="text-muted-foreground italic text-sm">Nessun contenuto da visualizzare.</p>
-          )}
-        </div>
-      </TabsContent>
-    </Tabs>
-
-    <div className="flex justify-end gap-2">
-      <Button variant="outline" size="sm" onClick={onCancel} disabled={saving}>
-        <X className="w-3.5 h-3.5 mr-1" />
-        Annulla
-      </Button>
-      <Button size="sm" onClick={onSave} disabled={saving}>
-        {saving
-          ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
-          : <Save className="w-3.5 h-3.5 mr-1" />}
-        Salva
-      </Button>
-    </div>
-  </div>
-);
 
 // ─── Component principale ─────────────────────────────────────────────────────
 
-export const AssessmentAiPanel: React.FC<Props> = ({ companyId, snapshotId, groupId, openaiData, onSaved }) => {
-  const currentAiText = extractText(openaiData);
+export const AssessmentAiPanel: React.FC<Props> = ({
+  companyId,
+  snapshotId,
+  groupId,
+  analysis,
+  analysisState,
+  analysisViolations,
+  openaiData,
+  onSaved,
+}) => {
+  const legacyText = extractText(openaiData);
   const [status, setStatus] = useState<AssessmentSnapshotStatus | null>(null);
   const { isSuperAdmin, hasRole } = useUserRoles();
   const [sending, setSending] = useState(false);
   const [reprocessingTarget, setReprocessingTarget] = useState<ReprocessTarget | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
-  const [editing, setEditing] = useState(false);
-  const [draftText, setDraftText] = useState('');
   const [saving, setSaving] = useState(false);
+  const [violations, setViolations] = useState<AnalysisViolation[]>(analysisViolations ?? []);
 
   const fetchStatus = useCallback(async () => {
     setLoadingStatus(true);
@@ -191,32 +129,34 @@ export const AssessmentAiPanel: React.FC<Props> = ({ companyId, snapshotId, grou
 
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
-  const handleEdit = () => {
-    setDraftText(currentAiText);
-    setEditing(true);
-  };
-
-  const handleCancel = () => {
-    setEditing(false);
-    setDraftText('');
-  };
-
-  const handleSave = async () => {
+  /**
+   * Salva un singolo testo.
+   *
+   * Manda solo il campo modificato: rispedire la struttura intera significherebbe
+   * rimandare anche punteggi ed evidenze, che l'allowlist del backend rifiuta.
+   * Restituisce `true` se è andata, così l'editor sa se può chiudersi.
+   */
+  const handleSaveField = async (patch: Record<string, unknown>): Promise<boolean> => {
     setSaving(true);
     try {
-      await assessmentV2Api.updateSnapshotAiText(
-        companyId,
-        snapshotId,
-        { openai_data: rebuildBlocks(openaiData, draftText) },
-        groupId
-      );
-      // Si esce dall'editor solo dopo aver riletto lo snapshot: quel che resta a
-      // schermo è ciò che il server ha davvero salvato, non la bozza locale.
+      const esito = await assessmentV2Api.updateSnapshotAnalysis(companyId, snapshotId, patch, groupId);
+      setViolations(esito.violations ?? []);
+
+      // Si ricarica prima di dichiarare fatto: a schermo resta ciò che il server ha
+      // davvero salvato, non la bozza locale.
       await onSaved?.();
-      toast.success('Testo aggiornato con successo');
-      setEditing(false);
+
+      toast.success(
+        esito.violations?.length
+          ? `Testo salvato. Restano ${esito.violations.length} rilievi da sistemare.`
+          : 'Testo salvato.',
+      );
+
+      return true;
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Errore nel salvataggio');
+
+      return false;
     } finally {
       setSaving(false);
     }
@@ -345,42 +285,47 @@ export const AssessmentAiPanel: React.FC<Props> = ({ companyId, snapshotId, grou
               </div>
             )}
 
-            {/* Editor / preview testo AI */}
-            {canEdit && (
-              <div className="space-y-3 pt-3 border-t border-border">
+            {/* Analisi strutturata, un editor per ogni testo */}
+            {analysis && (
+              <div className="space-y-3 border-t border-border pt-3">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium">Analisi assessment</p>
-                  {!editing && (
-                    <Button variant="outline" size="sm" className="gap-1.5" onClick={handleEdit}>
-                      <Pencil className="w-3.5 h-3.5" />
-                      Modifica
-                    </Button>
+                  {analysisState === 'needs_review' && (
+                    <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/30">
+                      Da rivedere
+                    </Badge>
                   )}
                 </div>
 
-                {editing ? (
-                  <MarkdownEditor
-                    value={draftText}
-                    onChange={setDraftText}
-                    onSave={handleSave}
-                    onCancel={handleCancel}
-                    saving={saving}
-                  />
-                ) : (
-                  <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 max-h-96 overflow-y-auto prose prose-sm dark:prose-invert max-w-none">
-                    {currentAiText?.trim() ? (
-                      <ReactMarkdown>{currentAiText}</ReactMarkdown>
-                    ) : (
-                      <p className="text-muted-foreground italic text-sm">Nessun testo disponibile.</p>
-                    )}
-                  </div>
-                )}
+                <AnalysisEditor
+                  analysis={analysis}
+                  violations={violations}
+                  canEdit={canEdit}
+                  saving={saving}
+                  onSave={handleSaveField}
+                />
               </div>
             )}
 
-            {!canEdit && (
-              <p className="text-sm text-muted-foreground italic">
-                Il testo sarà modificabile una volta completata l'analisi assessment.
+            {/* Storico: gli snapshot mai rielaborati hanno ancora il markdown del
+                vecchio flusso. Si leggono, non si modificano — la correzione per
+                campo esiste solo sulla struttura nuova. */}
+            {!analysis && legacyText.trim() && (
+              <div className="space-y-2 border-t border-border pt-3">
+                <p className="text-sm font-medium">Analisi assessment (formato precedente)</p>
+                <p className="text-xs text-muted-foreground">
+                  Prodotta dal flusso precedente e non modificabile. Rielabora l'assessment per
+                  ottenere la versione strutturata.
+                </p>
+                <div className="prose prose-sm dark:prose-invert max-h-96 max-w-none overflow-y-auto rounded-lg border border-border bg-muted/30 px-4 py-3">
+                  <ReactMarkdown>{legacyText}</ReactMarkdown>
+                </div>
+              </div>
+            )}
+
+            {!analysis && !legacyText.trim() && (
+              <p className="text-sm italic text-muted-foreground">
+                L'analisi comparirà qui una volta completata l'elaborazione.
               </p>
             )}
           </>
