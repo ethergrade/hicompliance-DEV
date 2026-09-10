@@ -91,12 +91,19 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({
 					: [];
 				setOrganizations(tenants);
 
-				// Restore from localStorage (already handled in useState init, but
-				// refresh with fresh API data here to ensure name/code are current)
+				// Il cliente selezionato è un oggetto intero congelato in localStorage:
+				// va riallineato a ogni fetch, altrimenti i campi modificati altrove
+				// (anagrafica, domini e subnet primari) restano quelli del momento in
+				// cui è stato scelto. La condizione guarda localStorage e non
+				// selectedOrganization, che è già valorizzato dallo stesso snapshot
+				// fin dall'init dello state e quindi non sarebbe mai falsy.
 				const stored = getStoredOrganization();
-				if (stored && !selectedOrganization) {
+				if (stored) {
 					const fresh = tenants.find((t) => t.id === stored.id);
-					if (fresh) setSelectedOrganizationState(fresh);
+					if (fresh) {
+						setSelectedOrganizationState(fresh);
+						localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
+					}
 				}
 				// No auto-selection: user must explicitly pick a client from /admin/clients
 			} else if (resolveGroupId) {
@@ -105,7 +112,9 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({
 				try {
 					const tenants = await tenantsApi.listAll(resolveGroupId);
 					setOrganizations(tenants);
-					if (tenants.length > 0 && !selectedOrganization) {
+					// Un solo tenant: è sempre quello, quindi si riallinea a ogni
+					// fetch invece di fermarsi alla prima selezione.
+					if (tenants.length > 0) {
 						setSelectedOrganizationState(tenants[0]);
 						localStorage.setItem(STORAGE_KEY, JSON.stringify(tenants[0]));
 					}

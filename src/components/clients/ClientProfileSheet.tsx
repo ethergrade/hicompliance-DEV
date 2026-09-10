@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { companyProfileApi, tenantsApi, tenantServicesApi } from "@/lib/api";
 import { useCompanyScope } from "@/hooks/useCompanyScope";
+import { useClientContext } from "@/contexts/ClientContext";
 import {
   parseMonitoredIpInput,
   parseMonitoredScopeMixedEntries,
@@ -453,6 +454,11 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
     saving: scopeSaving,
   } = useCompanyScope(organizationId, groupId);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Il contesto tiene una copia congelata del tenant (anche in localStorage):
+  // dopo un salvataggio va rinfrescata, o le altre schermate continuano a
+  // leggere i valori di prima della modifica.
+  const { fetchOrganizations } = useClientContext();
+  const savedSinceOpenRef = useRef(false);
 
   const validate = (data: ProfileFormData): Record<string, string> => {
     const errs: Record<string, string> = {};
@@ -524,6 +530,7 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
             ),
           ]);
           setFieldErrors({});
+          savedSinceOpenRef.current = true;
           setSaveStatus("saved");
           setTimeout(() => setSaveStatus("idle"), 2000);
         } catch (err: any) {
@@ -548,6 +555,15 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
   }, []);
+
+  // Alla chiusura del pannello, e solo se qualcosa è stato salvato davvero,
+  // ricarica i tenant del gruppo: un refetch per sessione di modifica, non uno
+  // per ogni salvataggio in debounce.
+  useEffect(() => {
+    if (open || !savedSinceOpenRef.current) return;
+    savedSinceOpenRef.current = false;
+    void fetchOrganizations();
+  }, [open, fetchOrganizations]);
 
   const updateField = (field: keyof ProfileFormData, value: string) => {
     setForm((prev) => {
@@ -669,6 +685,7 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
         ),
       ]);
       setFieldErrors({});
+      savedSinceOpenRef.current = true;
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch (err: any) {
