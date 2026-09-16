@@ -240,7 +240,7 @@ export default function ExtendedDarkRiskPage() {
 							<strong>Dati altamente sensibili.</strong> Account e password sono
 							mostrati in chiaro: trattali con riservatezza e non condividere
 							export o schermate al di fuori del cliente. Le credenziali provengono
-							dal bucket <code>leaks.private.general</code> di Intelligence X.
+							dal bucket <code>leaks.private.general</code>.
 						</div>
 						<ScopeEditor
 							scope={scopeQuery.data ?? { targets: [] }}
