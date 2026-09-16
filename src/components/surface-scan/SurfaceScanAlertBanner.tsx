@@ -111,11 +111,13 @@ export const SurfaceScanAlertBanner: React.FC = () => {
       </div>
       <div className="flex flex-wrap gap-2">
         {alerts.map((alert, i) => (
-          <div key={i} className="flex items-center gap-1.5">
+          <div key={i} className="flex flex-wrap items-center gap-1.5">
             <Badge className={`text-[11px] ${levelBadge[alert.level]}`}>
               {alert.level === 'critical' ? '🔴' : '🟡'} {alert.label}
             </Badge>
-            <span className="text-xs text-muted-foreground truncate max-w-xs">{alert.detail}</span>
+            {/* Niente troncamento: il dettaglio è la vulnerabilità e l'host,
+                cioè la cosa da leggere. Se non ci sta, va a capo. */}
+            <span className="text-xs text-muted-foreground break-words">{alert.detail}</span>
           </div>
         ))}
       </div>
