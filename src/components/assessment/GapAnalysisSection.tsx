@@ -232,6 +232,10 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
                         color: 'hsl(var(--foreground))',
                         fontSize: '12px',
                       }}
+                      // Il colore del contenitore non arriva alle righe: Recharts
+                      // le colora col colore della serie e, mancando (le barre
+                      // usano Cell), ripiega su nero. Nero su card scura.
+                      itemStyle={{ color: 'hsl(var(--foreground))' }}
                       formatter={(value: number, _: string, props: any) => {
                         const item = props.payload;
                         return [
