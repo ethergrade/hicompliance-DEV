@@ -28,27 +28,6 @@ interface SurfaceScanExposureSectionProps {
   isAdmin: boolean;
 }
 
-type AutoStartStatus = {
-  kind: 'running' | 'success' | 'error';
-  message: string;
-  detail?: string;
-  at: string;
-};
-
-const AUTO_START_COOLDOWN_MS = 12 * 60 * 60 * 1000;
-
-const hashAutoStartKey = (value: string): string => {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    hash = ((hash << 5) - hash) + value.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash).toString(36);
-};
-
-const autoStartStorageKey = (organizationId: string, scopeSignature: string): string =>
-  `surfacescan360:auto-exposure:${organizationId}:${hashAutoStartKey(scopeSignature)}`;
-
 const statusLabel = (status: string): string => {
   const key = String(status || '').toLowerCase();
   if (key === 'completed') return 'Completata';
@@ -187,12 +166,9 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
   const [isControlsCollapsed, setIsControlsCollapsed] = useState(true);
   const [isSectionCollapsed, setIsSectionCollapsed] = useState(false);
   const [targetSnapshots, setTargetSnapshots] = useState<ExposureSummary['target_snapshots']>([]);
-  const [autoStartStatus, setAutoStartStatus] = useState<AutoStartStatus | null>(null);
 
   const [scopeDomains, setScopeDomains] = useState<string[]>([]);
   const [scopePublicIps, setScopePublicIps] = useState<string[]>([]);
-  const autoStartInFlightKeyRef = useRef('');
-  const autoStartFailedKeyRef = useRef('');
   const assetListRef = useRef<HTMLDivElement>(null);
 
   const assetPortList = useMemo(() => {
@@ -399,55 +375,33 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
     void refreshData();
   }, [refreshData]);
 
-  const runBackgroundAsm = useCallback(
-    async (options?: { auto?: boolean; autoKey?: string }) => {
-      if (!organizationId) return null;
-      setStartingScan(true);
-      try {
-        const data = await connectSecureApi.scan(organizationId, groupId, 'scan');
-        if (!data.ok) throw new Error(data.error || 'Scan fallito');
+  // Solo su richiesta esplicita. L'avvio automatico che stava qui chiamava
+  // l'endpoint ConnectSecure a ogni apertura della pagina con scope vecchio o
+  // incompleto, e nessun cliente ha ConnectSecure configurato: il risultato era
+  // un riquadro d'errore permanente. Le scansioni le accoda il backend con il
+  // cron settimanale.
+  const runBackgroundAsm = useCallback(async () => {
+    if (!organizationId) return null;
+    setStartingScan(true);
+    try {
+      const data = await connectSecureApi.scan(organizationId, groupId, 'scan');
+      if (!data.ok) throw new Error(data.error || 'Scan fallito');
 
-        const enqueued = Number(data.triggered ?? 0);
-        const detail = enqueued > 0
-          ? `${enqueued} domini accodati`
-          : 'Nessun nuovo dominio accodato';
-
-        if (options?.auto) {
-          autoStartInFlightKeyRef.current = '';
-          autoStartFailedKeyRef.current = '';
-          setAutoStartStatus({
-            kind: 'success',
-            message: 'ASM scope accodato in background',
-            detail,
-            at: new Date().toISOString(),
-          });
-        } else {
-          toast.success('ASM avviato in background', { description: detail });
-        }
-        await refreshData();
-        return data;
-      } catch (error: any) {
-        if (options?.auto && options.autoKey) {
-          autoStartInFlightKeyRef.current = '';
-          autoStartFailedKeyRef.current = options.autoKey;
-          setAutoStartStatus({
-            kind: 'error',
-            message: 'ASM automatico non accodato',
-            detail: error?.message || 'Errore durante avvio',
-            at: new Date().toISOString(),
-          });
-          return null;
-        }
-        toast.error('Avvio scansione non riuscito', {
-          description: error?.message || 'Errore durante avvio',
-        });
-        throw error;
-      } finally {
-        setStartingScan(false);
-      }
-    },
-    [organizationId, refreshData],
-  );
+      const enqueued = Number(data.triggered ?? 0);
+      toast.success('ASM avviato in background', {
+        description: enqueued > 0 ? `${enqueued} domini accodati` : 'Nessun nuovo dominio accodato',
+      });
+      await refreshData();
+      return data;
+    } catch (error: any) {
+      toast.error('Avvio scansione non riuscito', {
+        description: error?.message || 'Errore durante avvio',
+      });
+      throw error;
+    } finally {
+      setStartingScan(false);
+    }
+  }, [organizationId, groupId, refreshData]);
 
   const handleStartScan = async () => {
     if (!organizationId) {
@@ -464,93 +418,6 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
 
     await runBackgroundAsm();
   };
-
-  useEffect(() => {
-    if (!isAdmin || !organizationId) return;
-    if (loading || startingScan) return;
-
-    const scopeHasTargets = scopeDomains.length > 0 || scopePublicIps.length > 0;
-    if (!scopeHasTargets) return;
-
-    const hasActiveJob = jobs.some((job) => {
-      const status = String(job?.status || '').toLowerCase();
-      return status === 'queued' || status === 'running' || status === 'waiting';
-    });
-    if (hasActiveJob) return;
-
-    const latestJobTs = toTimestamp(jobs[0]?.created_at);
-    const isStale = !latestJobTs || (Date.now() - latestJobTs) > 1000 * 60 * 60 * 12;
-    const hasFailedLatestTargets = targetSnapshots.some((snapshot) => {
-      const liveStatus = String(snapshot?.live?.status || '').toLowerCase();
-      return ['failed', 'stopped', 'aborted', 'timed out'].includes(liveStatus);
-    });
-    const scannedTargetKeys = new Set(
-      jobs
-        .map((job) => targetMatchKey(String(job?.normalized_target || job?.raw_target || '')))
-        .filter(Boolean),
-    );
-    const scopeTargetKeys = new Set([
-      ...scopeDomains.map(targetMatchKey),
-      ...scopePublicIps.map(targetMatchKey),
-    ]);
-    const missingScopeTargets = Array.from(scopeTargetKeys).filter((key) => !scannedTargetKeys.has(key));
-    const shouldAutoStart =
-      jobs.length === 0
-      || isStale
-      || missingScopeTargets.length > 0
-      || hasFailedLatestTargets;
-    if (!shouldAutoStart) return;
-
-    const scopeSignature = [
-      organizationId,
-      [...scopeDomains].sort().join(','),
-      [...scopePublicIps].sort().join(','),
-    ].join('::');
-    const autoStartKey = `scope:${hashAutoStartKey(scopeSignature)}`;
-    if (typeof window !== 'undefined') {
-      try {
-        const storageKey = autoStartStorageKey(organizationId, scopeSignature);
-        const lastAttempt = Number(window.localStorage.getItem(storageKey) || 0);
-        if (Number.isFinite(lastAttempt) && Date.now() - lastAttempt < AUTO_START_COOLDOWN_MS) return;
-        window.localStorage.setItem(storageKey, String(Date.now()));
-      } catch (storageError) {
-        console.warn('SurfaceScan auto-start cooldown unavailable:', storageError);
-      }
-    }
-
-    const autoStartReason = [
-      jobs
-        .slice(0, 8)
-        .map((job) => `${String(job?.id || '')}:${String(job?.status || '')}`)
-        .join('|'),
-      targetSnapshots
-        .map((snapshot) => `${String(snapshot?.target_key || '')}:${String(snapshot?.live?.status || '')}:${String(snapshot?.last_good?.job_id || '')}`)
-        .sort()
-        .join('|'),
-    ].join('::');
-
-    if (autoStartInFlightKeyRef.current === autoStartKey) return;
-    if (autoStartFailedKeyRef.current === autoStartKey) return;
-    autoStartInFlightKeyRef.current = autoStartKey;
-    setAutoStartStatus({
-      kind: 'running',
-      message: 'Auto-scan scope accodato in background',
-      detail: autoStartReason ? 'Cooldown anti-duplicazione attivo per questo scope.' : undefined,
-      at: new Date().toISOString(),
-    });
-
-    void runBackgroundAsm({ auto: true, autoKey: autoStartKey });
-  }, [
-    isAdmin,
-    organizationId,
-    loading,
-    startingScan,
-    scopeDomains,
-    scopePublicIps,
-    jobs,
-    targetSnapshots,
-    runBackgroundAsm,
-  ]);
 
   return (
     <Card className="border-border" id="surface-scan-exposure-unified">
@@ -588,24 +455,6 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
 
       {!isSectionCollapsed && (
         <CardContent className="space-y-5">
-          {autoStartStatus && (
-            <div className="rounded-lg border border-border bg-muted/20 p-3 text-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge
-                  variant={autoStartStatus.kind === 'error' ? 'destructive' : autoStartStatus.kind === 'running' ? 'secondary' : 'outline'}
-                >
-                  {autoStartStatus.kind === 'error' ? 'Auto-scan' : 'Background'}
-                </Badge>
-                <span className="font-medium text-foreground">{autoStartStatus.message}</span>
-                <span className="text-xs text-muted-foreground">
-                  {new Date(autoStartStatus.at).toLocaleString('it-IT')}
-                </span>
-              </div>
-              {autoStartStatus.detail && (
-                <p className="mt-1 text-xs text-muted-foreground">{autoStartStatus.detail}</p>
-              )}
-            </div>
-          )}
           <ExposureKpiCards
             summary={summary}
             onAssetsClick={assetPortList.length > 0 ? scrollToAssetList : undefined}
