@@ -396,6 +396,7 @@ export interface RemediationTask {
 	start_date: string;
 	end_date: string;
 	progress: number;
+	is_done: boolean;
 	assignee: string | null;
 	budget: number | null;
 	dependencies: string[] | null;
@@ -416,6 +417,7 @@ export interface StoreRemediationTaskRequest {
 	priority?: "low" | "medium" | "high" | "critical";
 	color?: string;
 	progress?: number;
+	is_done?: boolean;
 	assignee?: string | null;
 	budget?: number | null;
 	display_order?: number | null;
@@ -999,6 +1001,7 @@ export interface RemediationTask {
 	start_date?: string | null;
 	end_date?: string | null;
 	progress?: number;
+	is_done?: boolean;
 	assignee?: string | null;
 	budget?: string | null;
 	dependencies?: string[];
@@ -1027,6 +1030,7 @@ export interface UpdateRemediationTaskRequest
 	extends Partial<StoreRemediationTaskRequest> {
 	is_deleted?: boolean;
 	is_hidden?: boolean;
+	is_done?: boolean;
 }
 
 // ─── Risk Analysis ──────────────────────────────────────────────────────────

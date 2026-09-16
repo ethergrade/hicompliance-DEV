@@ -208,6 +208,7 @@ const Assessment: React.FC = () => {
     working: campaignWorking,
     isConfirmed,
     createCampaign,
+    renameCampaign,
     confirmCampaign,
     unconfirmCampaign,
     reload: reloadCampaign,
@@ -1090,6 +1091,7 @@ const Assessment: React.FC = () => {
           onConfirm={handleConfirmCampaign}
           onCreate={handleCreateCampaign}
           onUnconfirm={unconfirmCampaign}
+          onRename={renameCampaign}
         />
 
         {isReadOnlyView && (

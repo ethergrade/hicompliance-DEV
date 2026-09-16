@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, {
+	useState,
+	useEffect,
+	useCallback,
+	useMemo,
+	useRef,
+} from "react";
 import { remediationTasksApi } from "@/lib/api";
 import type {
 	RemediationTask,
@@ -27,7 +33,13 @@ import {
 	DialogTrigger,
 } from "@/components/ui/dialog";
 import { GanttChart, GanttTask } from "@/components/remediation/GanttChart";
-import { format, addDays, differenceInDays, parseISO } from "date-fns";
+import {
+	format,
+	addDays,
+	differenceInDays,
+	parseISO,
+	startOfMonth,
+} from "date-fns";
 import {
 	AlertTriangle,
 	Calendar,
@@ -54,6 +66,7 @@ interface DbTask {
 	start_date: string;
 	end_date: string;
 	progress: number;
+	is_done: boolean;
 	assignee: string | null;
 	priority: string;
 	color: string;
@@ -83,6 +96,11 @@ const composeTask = (category: string, product: string): string =>
 	product.trim() ? `${category} - ${product.trim()}` : category;
 
 
+/**
+ * Finestra base del gantt: da un mese fa a 30 mesi avanti. L'inizio viene poi
+ * esteso all'indietro fino alla prima attività (vedi `ganttWindow`), così le
+ * attività già iniziate restano raggiungibili scorrendo verso sinistra.
+ */
 const createGanttWindow = () => {
 	const start = new Date();
 	const end = new Date();
@@ -167,7 +185,7 @@ const Remediation: React.FC = () => {
 	const canEdit = capabilities?.["hicompliance.remediation_tasks.edit"] ?? true;
 	const canUpdateProgress =
 		capabilities?.["hicompliance.remediation_tasks.view"] ?? false;
-	const [ganttWindow] = useState(createGanttWindow);
+	const [baseGanttWindow] = useState(createGanttWindow);
 
 	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 	const [tasks, setTasks] = useState<DbTask[]>([]);
@@ -189,6 +207,7 @@ const Remediation: React.FC = () => {
 			start_date: task.start_date,
 			end_date: task.end_date,
 			progress: typeof task.progress === "number" ? task.progress : 0,
+			is_done: task.is_done === true,
 			assignee: task.assignee ?? null,
 			priority: task.priority,
 			color: task.color,
@@ -245,6 +264,20 @@ const Remediation: React.FC = () => {
 	);
 	const deletedTasksList = tasks.filter((t) => t.is_deleted);
 
+	// La timeline parte dal mese della prima attività, se precedente alla
+	// finestra base: il gantt si apre comunque su oggi (auto-scroll nel
+	// componente), ma da lì si può tornare indietro fino all'inizio reale.
+	const ganttWindow = useMemo(() => {
+		let start = baseGanttWindow.start;
+		for (const t of activeTasks) {
+			const s = parseISO(t.start_date);
+			if (!Number.isNaN(s.getTime()) && s < start) start = startOfMonth(s);
+		}
+		return { start, end: baseGanttWindow.end };
+		// activeTasks è ricalcolato a ogni render: le dipendenze reali sono tasks/orgId
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [tasks, orgId, baseGanttWindow]);
+
 	const ganttData: GanttTask[] = activeTasks.map((t) => {
 		const totalDays = differenceInDays(ganttWindow.end, ganttWindow.start);
 		const daysFromStart = differenceInDays(
@@ -262,6 +295,7 @@ const Remediation: React.FC = () => {
 			startDate: t.start_date,
 			endDate: t.end_date,
 			progress: t.progress,
+			isDone: t.is_done,
 			priority: PRIORITY_DB_TO_IT[t.priority] || "Media",
 			color: t.color,
 			assignee: t.assignee || "",
@@ -388,6 +422,7 @@ const Remediation: React.FC = () => {
 			startDate: action.startDate,
 			endDate: action.endDate,
 			progress: action.progress,
+			isDone: action.isDone ?? false,
 		});
 	}, []);
 
@@ -400,6 +435,7 @@ const Remediation: React.FC = () => {
 				assignee: editTaskData.assignee,
 				priority: PRIORITY_IT_TO_DB[editTaskData.priority] || "medium",
 				progress: Number(editTaskData.progress) || 0,
+				is_done: editTaskData.isDone ?? false,
 				budget: Number(editTaskData.budget) || 0,
 				start_date: editTaskData.startDate,
 				end_date: editTaskData.endDate,
@@ -478,6 +514,45 @@ const Remediation: React.FC = () => {
 					title: "Errore",
 					description:
 						getErrorDetail(err) || "Impossibile aggiornare il progresso.",
+					variant: "destructive",
+				});
+			}
+		},
+		[orgId, groupId, loadTasks],
+	);
+
+	const handleDoneChange = useCallback(
+		async (taskId: string, isDone: boolean) => {
+			if (!orgId) return;
+			// Il server porta il progresso a 100 quando si spunta "fatto":
+			// lo stato locale anticipa lo stesso esito e poi si allinea alla risposta.
+			setTasks((prev) =>
+				prev.map((t) =>
+					t.id === taskId
+						? { ...t, is_done: isDone, progress: isDone ? 100 : t.progress }
+						: t,
+				),
+			);
+			try {
+				const saved = await remediationTasksApi.updateDone(
+					orgId,
+					taskId,
+					isDone,
+					groupId,
+				);
+				setTasks((prev) =>
+					prev.map((t) =>
+						t.id === taskId
+							? { ...t, is_done: saved.is_done === true, progress: saved.progress ?? t.progress }
+							: t,
+					),
+				);
+			} catch (err) {
+				await loadTasks();
+				toast({
+					title: "Errore",
+					description:
+						getErrorDetail(err) || "Impossibile aggiornare lo stato.",
 					variant: "destructive",
 				});
 			}
@@ -864,6 +939,7 @@ const Remediation: React.FC = () => {
 								onDeleteTask={handleDeleteTask}
 								onReorderTasks={handleReorderTasks}
 								onProgressChange={handleProgressChange}
+								onDoneChange={handleDoneChange}
 								canEdit={canEdit}
 								canUpdateProgress={canUpdateProgress}
 							/>

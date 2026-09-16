@@ -17,6 +17,7 @@ import { it } from "date-fns/locale";
 import { useGanttDrag } from "@/hooks/useGanttResize";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
 	Tooltip,
 	TooltipContent,
@@ -49,6 +50,7 @@ export interface GanttTask {
 	startDate: string;
 	endDate: string;
 	progress: number;
+	isDone?: boolean;
 	priority: string;
 	color: string;
 	assignee: string;
@@ -69,6 +71,7 @@ interface GanttChartProps {
 	onDeleteTask: (taskId: string) => void;
 	onReorderTasks: (taskId: string, newIndex: number) => void;
 	onProgressChange?: (taskId: string, progress: number) => void;
+	onDoneChange?: (taskId: string, isDone: boolean) => void;
 	canEdit?: boolean;
 	canUpdateProgress?: boolean;
 }
@@ -109,9 +112,11 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 	onDeleteTask,
 	onReorderTasks,
 	onProgressChange,
+	onDoneChange,
 	canEdit = true,
 	canUpdateProgress = false,
 }) => {
+	const canMarkDone = Boolean(onDoneChange) && (canEdit || canUpdateProgress);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const timelineRef = useRef<HTMLDivElement>(null);
 
@@ -284,6 +289,30 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 		return (d / totalDays) * 100;
 	}, [ganttStartDate, timelineEndDate, totalDays]);
 
+	// Porta la linea "oggi" al bordo sinistro della timeline (le colonne
+	// Attività/Categoria sono sticky, quindi scrollLeft coincide con la
+	// posizione in px dentro la timeline). Un piccolo margine lascia visibili
+	// gli ultimi giorni, per capire a colpo d'occhio che c'è storia a sinistra.
+	const scrollToToday = useCallback(
+		(behavior: ScrollBehavior = "smooth") => {
+			const container = scrollRef.current;
+			const timeline = timelineRef.current;
+			if (!container || !timeline || todayOffset === null) return;
+			const todayPx = (todayOffset / 100) * timeline.offsetWidth;
+			container.scrollTo({ left: Math.max(0, todayPx - 24), behavior });
+		},
+		[todayOffset],
+	);
+
+	// All'apertura (e se la finestra si estende indietro per una nuova
+	// attività passata) la vista si posiziona su oggi: il passato resta
+	// raggiungibile scorrendo a sinistra, ma non è quello che si vede per primo.
+	useEffect(() => {
+		scrollToToday("auto");
+		// Solo quando cambia l'inizio della finestra, non a ogni ricalcolo dell'offset.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [ganttStartDate]);
+
 	useEffect(() => {
 		if (!activeDragId) return;
 
@@ -349,9 +378,20 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 						<div className="w-px h-5 bg-border mx-1" />
 						<Button
 							variant="outline"
+							size="sm"
+							onClick={() => scrollToToday()}
+							disabled={todayOffset === null}
+							className="h-7 px-2 text-xs"
+							title="Torna a oggi"
+						>
+							Oggi
+						</Button>
+						<Button
+							variant="outline"
 							size="icon"
 							onClick={() => scroll(-1)}
 							className="h-7 w-7"
+							title="Indietro nel tempo"
 						>
 							<ChevronLeft className="h-4 w-4" />
 						</Button>
@@ -447,7 +487,9 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 						</div>
 
 						{displayedTasks.length === 0 ? (
-							<div className="px-4 py-12 text-sm text-muted-foreground">
+							// Sticky: il contenitore parte scrollato su "oggi", e un blocco
+							// normale finirebbe fuori vista a sinistra insieme ai mesi passati.
+							<div className="sticky left-0 w-fit max-w-full px-4 py-12 text-sm text-muted-foreground">
 								Nessuna attività disponibile nella timeline corrente.
 							</div>
 						) : (
@@ -533,10 +575,28 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 														<GripVertical className="h-3.5 w-3.5 text-muted-foreground/40" />
 													</span>
 												)}
+												{/* Sempre visibile, non solo in hover: è uno stato, non un'azione
+												    nascosta. Chi non può modificare vede la spunta disabilitata. */}
+												<Checkbox
+													checked={task.isDone === true}
+													disabled={!canMarkDone}
+													onCheckedChange={(checked) =>
+														onDoneChange?.(task.id, checked === true)
+													}
+													onClick={(e) => e.stopPropagation()}
+													aria-label={task.isDone ? "Segna come da fare" : "Segna come fatto"}
+													title={task.isDone ? "Fatto" : "Segna come fatto"}
+													className="shrink-0 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+												/>
 												<div className="flex-1 min-w-0">
 													<Tooltip>
 														<TooltipTrigger asChild>
-															<p className="text-xs font-medium line-clamp-2 leading-tight cursor-default">
+															<p
+																className={cn(
+																	"text-xs font-medium line-clamp-2 leading-tight cursor-default",
+																	task.isDone && "line-through text-muted-foreground",
+																)}
+															>
 																{task.task}
 															</p>
 														</TooltipTrigger>
@@ -641,6 +701,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 																	canEdit
 																		? "cursor-grab active:cursor-grabbing"
 																		: "cursor-default",
+																	task.isDone && "opacity-50",
 																	isDragging
 																		? "ring-2 ring-primary/50 shadow-lg"
 																		: "hover:brightness-110 hover:shadow-md transition-shadow",
@@ -727,6 +788,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 															</p>
 															<p>
 																Progresso: {task.progress}% · {task.priority}
+																{task.isDone && " · Fatto"}
 															</p>
 														</TooltipContent>
 													</Tooltip>

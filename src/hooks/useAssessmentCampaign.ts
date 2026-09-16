@@ -70,6 +70,33 @@ export const useAssessmentCampaign = () => {
     }
   }, [orgId, groupId, load]);
 
+  /** Cambia l'etichetta del ciclo corrente. */
+  const renameCampaign = useCallback(
+    async (label: string): Promise<boolean> => {
+      const pulito = label.trim();
+      if (!orgId || !groupId || !current || !pulito || pulito === current.label) return false;
+      setWorking(true);
+      try {
+        await assessmentV2Api.renameCampaign(orgId, current.id, pulito, groupId);
+        toast.success('Assessment rinominato.');
+        await load();
+        return true;
+      } catch (error: unknown) {
+        const status = (error as { status?: number })?.status;
+        const message = (error as { message?: string })?.message;
+        toast.error(
+          status === 403
+            ? 'Solo un amministratore può rinominare un assessment.'
+            : message || 'Impossibile rinominare l\'assessment.',
+        );
+        return false;
+      } finally {
+        setWorking(false);
+      }
+    },
+    [orgId, groupId, current, load],
+  );
+
   /** Chiude il questionario e avvia l'elaborazione. */
   const confirmCampaign = useCallback(async (): Promise<boolean> => {
     if (!orgId || !groupId || !current) return false;
@@ -137,6 +164,7 @@ export const useAssessmentCampaign = () => {
     isConfirmed: current?.is_confirmed ?? false,
     reload: load,
     createCampaign,
+    renameCampaign,
     confirmCampaign,
     unconfirmCampaign,
   };

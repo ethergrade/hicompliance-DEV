@@ -64,6 +64,19 @@ export const remediationTasksApi = {
 		return res.data;
 	},
 
+	/**
+	 * Flag "fatto". Passa dallo stesso endpoint del progresso perché è l'unico
+	 * consentito anche al customer; lato server fatto ⇒ progresso 100.
+	 */
+	async updateDone(companyId: string, id: string, isDone: boolean, groupId?: string | null): Promise<RemediationTask> {
+		const res = await apiClient.patch<ApiResponse<RemediationTask>>(
+			`/companies/${companyId}/remediation-tasks/${id}/progress`,
+			{ is_done: isDone },
+			_h(groupId),
+		);
+		return res.data;
+	},
+
 	async delete(companyId: string, id: string, groupId?: string | null): Promise<void> {
 		await apiClient.delete(
 			`/companies/${companyId}/remediation-tasks/${id}`,

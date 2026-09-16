@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import { CheckCircle2, FilePlus2, Loader2, Lock, PencilLine, Undo2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Check, CheckCircle2, FilePlus2, Loader2, Lock, Pencil, PencilLine, Undo2, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,6 +26,7 @@ interface AssessmentCampaignBarProps {
   onConfirm: () => void;
   onCreate: () => void;
   onUnconfirm: (force?: boolean) => Promise<UnconfirmResult>;
+  onRename?: (label: string) => Promise<boolean>;
 }
 
 /**
@@ -42,6 +44,7 @@ export function AssessmentCampaignBar({
   onConfirm,
   onCreate,
   onUnconfirm,
+  onRename,
 }: AssessmentCampaignBarProps) {
   const [confermaAperta, setConfermaAperta] = useState(false);
   const [nuovoAperto, setNuovoAperto] = useState(false);
@@ -83,7 +86,12 @@ export function AssessmentCampaignBar({
 
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold">{campaign.label}</span>
+                <CampaignLabel
+                  label={campaign.label}
+                  canRename={isAdmin && Boolean(onRename)}
+                  working={working}
+                  onRename={onRename}
+                />
                 <Badge variant={confermato ? 'default' : 'secondary'} className="text-[11px]">
                   {confermato ? 'Confermato' : 'In compilazione'}
                 </Badge>
@@ -238,6 +246,99 @@ export function AssessmentCampaignBar({
         </AlertDialogContent>
       </AlertDialog>
     </>
+  );
+}
+
+/**
+ * Nome del ciclo, modificabile sul posto dagli admin. L'etichetta di default
+ * ("Assessment 2026") va bene per partire, ma è quella con cui il cliente
+ * ritrova il report: la matita accanto la rende un nome e non un'etichetta.
+ */
+function CampaignLabel({
+  label,
+  canRename,
+  working,
+  onRename,
+}: {
+  label: string;
+  canRename: boolean;
+  working: boolean;
+  onRename?: (label: string) => Promise<boolean>;
+}) {
+  const [inModifica, setInModifica] = useState(false);
+  const [bozza, setBozza] = useState(label);
+
+  // Se il nome cambia da fuori (ricarico dopo il salvataggio) la bozza segue.
+  useEffect(() => {
+    if (!inModifica) setBozza(label);
+  }, [label, inModifica]);
+
+  const salva = async () => {
+    const pulito = bozza.trim();
+    if (!pulito || pulito === label) {
+      setBozza(label);
+      setInModifica(false);
+      return;
+    }
+    const ok = await onRename?.(pulito);
+    if (ok) setInModifica(false);
+  };
+
+  if (!canRename) return <span className="font-semibold">{label}</span>;
+
+  if (!inModifica) {
+    return (
+      <span className="group/label inline-flex items-center gap-1">
+        <span className="font-semibold">{label}</span>
+        <button
+          type="button"
+          onClick={() => setInModifica(true)}
+          disabled={working}
+          className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover/label:opacity-100"
+          title="Rinomina assessment"
+          aria-label="Rinomina assessment"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Input
+        autoFocus
+        value={bozza}
+        maxLength={100}
+        disabled={working}
+        onChange={(e) => setBozza(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') void salva();
+          if (e.key === 'Escape') {
+            setBozza(label);
+            setInModifica(false);
+          }
+        }}
+        className="h-8 w-56 font-semibold"
+        aria-label="Nome assessment"
+      />
+      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => void salva()} disabled={working} title="Salva">
+        <Check className="h-4 w-4" />
+      </Button>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-8 w-8"
+        onClick={() => {
+          setBozza(label);
+          setInModifica(false);
+        }}
+        disabled={working}
+        title="Annulla"
+      >
+        <X className="h-4 w-4" />
+      </Button>
+    </span>
   );
 }
 

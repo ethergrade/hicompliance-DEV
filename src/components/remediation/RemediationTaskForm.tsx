@@ -3,6 +3,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import {
 	Select,
@@ -40,6 +41,8 @@ export interface RemediationTaskFormData {
 	startDate: string;
 	endDate: string;
 	progress: number;
+	/** Solo in modifica: la creazione parte sempre da "non fatto". */
+	isDone?: boolean;
 }
 
 /** Opzioni condivise: un'unica fonte di verità per entrambe le modali. */
@@ -297,17 +300,38 @@ export const RemediationTaskForm: React.FC<Props> = ({
 				</div>
 			</div>
 
-			<div className="space-y-2">
-				<Label>Progresso (%)</Label>
-				<Input
-					type="number"
-					min="0"
-					max="100"
-					value={value.progress}
-					onChange={(e) =>
-						onChange((p) => ({ ...p, progress: Number(e.target.value) }))
-					}
-				/>
+			<div className="grid grid-cols-2 gap-4 items-end">
+				<div className="space-y-2">
+					<Label>Progresso (%)</Label>
+					<Input
+						type="number"
+						min="0"
+						max="100"
+						value={value.progress}
+						onChange={(e) =>
+							onChange((p) => {
+								const progress = Number(e.target.value);
+								// Sotto il 100 il flag "fatto" non regge (stessa regola del server).
+								return { ...p, progress, isDone: progress >= 100 ? p.isDone : false };
+							})
+						}
+					/>
+				</div>
+				{value.isDone !== undefined && (
+					<label className="flex items-center gap-2 h-10 text-sm cursor-pointer">
+						<Checkbox
+							checked={value.isDone}
+							onCheckedChange={(checked) =>
+								onChange((p) => ({
+									...p,
+									isDone: checked === true,
+									progress: checked === true ? 100 : p.progress,
+								}))
+							}
+						/>
+						Fatto
+					</label>
+				)}
 			</div>
 
 			<Card className="bg-muted/50">

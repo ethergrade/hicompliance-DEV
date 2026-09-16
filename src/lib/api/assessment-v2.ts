@@ -149,6 +149,21 @@ export const assessmentV2Api = {
 		return res.data;
 	},
 
+	/** Rinomina il ciclo. Riservato agli admin. */
+	async renameCampaign(
+		companyId: string,
+		campaignId: string,
+		label: string,
+		_g?: string | null,
+	): Promise<AssessmentCampaign> {
+		const res = await apiClient.patch<ApiResponse<AssessmentCampaign>>(
+			`/companies/${companyId}/assessment-campaigns/${campaignId}`,
+			{ label },
+			_h(companyId, _g),
+		);
+		return res.data;
+	},
+
 	/**
 	 * Chiude il questionario. È l'unico innesco dell'elaborazione: da qui il cron
 	 * costruisce lo snapshot e accoda le scansioni.
