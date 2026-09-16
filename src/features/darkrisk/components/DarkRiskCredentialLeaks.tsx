@@ -1,15 +1,16 @@
 // Credenziali esposte (profilo Esteso).
 //
-// Il backend restituisce solo il valore mascherato: non esiste un modo di
-// mostrare la password in chiaro da questa tabella. Lo sblocco passa dal
-// reveal sull'evidenza, che richiede motivazione, è consentito ai soli
-// admin e viene registrato su darkrisk_audit_log (documento operativo §9.3).
+// Nel profilo Esteso il backend manda account e password in chiaro
+// (`clearAccount`, `clearValue`) a tutti gli utenti del gruppo. Sugli hit
+// ingeriti prima che l'account venisse conservato `clearAccount` è null e la
+// riga mostra il selector (dominio o email cercata). Nessun reveal né copia:
+// i valori sono già leggibili e l'export Excel li porta fuori tutti insieme.
 import React, { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { AlertTriangle, Check, Copy, Search, Unlock } from "lucide-react";
+import { AlertTriangle, FileSpreadsheet, Search } from "lucide-react";
 import type { CredentialLeak } from "../domain/contracts";
 
 const BUCKET_LABELS: Record<string, string> = {
@@ -28,14 +29,13 @@ const PASSWORD_TYPE_VARIANT: Record<string, "destructive" | "secondary" | "outli
 interface Props {
 	records: CredentialLeak[];
 	total?: number;
-	/** Assente quando l'utente non può richiedere lo sblocco (ruolo non abilitato). */
-	onReveal?: (record: CredentialLeak) => void;
+	/** Export Excel di tutti i record (non solo quelli filtrati/visibili). */
+	onExport?: () => void;
 	limit?: number;
 }
 
-export function DarkRiskCredentialLeaks({ records, total, onReveal, limit = 50 }: Props) {
+export function DarkRiskCredentialLeaks({ records, total, onExport, limit = 50 }: Props) {
 	const [search, setSearch] = useState("");
-	const [copied, setCopied] = useState<string | null>(null);
 
 	const filtered = useMemo(() => {
 		const q = search.trim().toLowerCase();
@@ -43,22 +43,13 @@ export function DarkRiskCredentialLeaks({ records, total, onReveal, limit = 50 }
 		return records.filter(
 			(record) =>
 				record.selector.toLowerCase().includes(q) ||
+				(record.clearAccount ?? "").toLowerCase().includes(q) ||
 				(record.assetScope ?? "").toLowerCase().includes(q) ||
 				(record.bucketDisplay ?? record.bucketCanonical ?? "").toLowerCase().includes(q),
 		);
 	}, [records, search]);
 
 	const visible = filtered.slice(0, limit);
-
-	const copyAccount = async (account: string) => {
-		try {
-			await navigator.clipboard.writeText(account);
-			setCopied(account);
-			setTimeout(() => setCopied(null), 2000);
-		} catch {
-			/* clipboard non disponibile: nessun fallback, non è un'azione critica */
-		}
-	};
 
 	if (!records.length) {
 		return (
@@ -85,6 +76,12 @@ export function DarkRiskCredentialLeaks({ records, total, onReveal, limit = 50 }
 					<Badge variant="destructive" className="text-xs">
 						{total ?? records.length}
 					</Badge>
+					{onExport && (
+						<Button size="sm" variant="outline" className="ml-auto" onClick={onExport}>
+							<FileSpreadsheet className="mr-2 h-4 w-4" />
+							Esporta Excel
+						</Button>
+					)}
 				</CardTitle>
 			</CardHeader>
 			<CardContent className="space-y-3 pt-0">
@@ -116,22 +113,30 @@ export function DarkRiskCredentialLeaks({ records, total, onReveal, limit = 50 }
 								<th className="hidden px-3 py-2 text-left font-medium text-muted-foreground lg:table-cell">
 									Data
 								</th>
-								<th className="w-16 px-3 py-2" />
 							</tr>
 						</thead>
 						<tbody>
 							{visible.map((record) => {
 								const bucket = record.bucketCanonical ?? record.bucketDisplay;
 								const date = record.evidenceDate ?? record.createdAt;
+								const account = record.clearAccount || record.selector || record.assetScope || "—";
 								return (
 									<tr
 										key={record.id}
 										className="border-b border-border/50 transition-colors hover:bg-muted/30"
 									>
 										<td className="max-w-[200px] px-3 py-2 font-mono">
-											<span className="block truncate">{record.selector || record.assetScope || "—"}</span>
+											<span className="block truncate" title={account}>{account}</span>
 										</td>
-										<td className="px-3 py-2 font-mono text-muted-foreground">{record.maskedValue}</td>
+										<td className="px-3 py-2 font-mono">
+											{record.clearValue ? (
+												<code className="rounded bg-red-500/10 px-1.5 py-0.5 text-red-200">
+													{record.clearValue}
+												</code>
+											) : (
+												<span className="text-muted-foreground">{record.maskedValue}</span>
+											)}
+										</td>
 										<td className="hidden px-3 py-2 sm:table-cell">
 											{record.passwordType && (
 												<Badge
@@ -157,34 +162,6 @@ export function DarkRiskCredentialLeaks({ records, total, onReveal, limit = 50 }
 										<td className="hidden px-3 py-2 text-muted-foreground lg:table-cell">
 											{date ? new Date(date).toLocaleDateString("it-IT") : "—"}
 										</td>
-										<td className="px-3 py-2">
-											<div className="flex items-center gap-1">
-												<Button
-													variant="ghost"
-													size="icon"
-													className="h-6 w-6"
-													onClick={() => copyAccount(record.selector)}
-													title="Copia account"
-												>
-													{copied === record.selector ? (
-														<Check className="h-3 w-3 text-green-500" />
-													) : (
-														<Copy className="h-3 w-3" />
-													)}
-												</Button>
-												{onReveal && record.evidenceId && (
-													<Button
-														variant="ghost"
-														size="icon"
-														className="h-6 w-6"
-														onClick={() => onReveal(record)}
-														title="Richiedi sblocco evidenza (richiede motivazione, viene registrato)"
-													>
-														<Unlock className="h-3 w-3" />
-													</Button>
-												)}
-											</div>
-										</td>
 									</tr>
 								);
 							})}
@@ -198,8 +175,8 @@ export function DarkRiskCredentialLeaks({ records, total, onReveal, limit = 50 }
 				</div>
 
 				<p className="text-[11px] leading-snug text-muted-foreground">
-					Le password sono sempre mascherate. Lo sblocco dell'evidenza in chiaro richiede una
-					motivazione, è riservato ai ruoli autorizzati e viene registrato nel log di audit.
+					Profilo Esteso: account e password sono mostrati in chiaro. Le righe senza account
+					provengono da scansioni precedenti e riportano il dominio o l'email cercata.
 				</p>
 			</CardContent>
 		</Card>

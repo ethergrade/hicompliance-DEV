@@ -24,6 +24,8 @@ export interface DarkRiskNotificationConfig {
 	min_new_findings_to_alert: number;
 	weekly_summary_enabled: boolean;
 	recipient_emails: string[];
+	last_alert_sent_at?: string | null;
+	last_summary_sent_at?: string | null;
 }
 
 export const darkRiskApi = {

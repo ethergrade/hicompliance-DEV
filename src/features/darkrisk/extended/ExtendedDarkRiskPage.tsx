@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Eye, Play, RefreshCw, ShieldAlert } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Eye, FileSpreadsheet, Play, RefreshCw, ShieldAlert } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -18,6 +18,7 @@ import {
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { useUserRoles } from "@/hooks/useUserRoles";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { DarkRiskNotificationConfigCard } from "@/components/dark-risk/DarkRiskNotificationConfigCard";
 import { darkRiskGateway } from "../api/darkRiskGateway";
 import { darkRiskQueryKeys } from "../api/queryKeys";
 import { DarkRiskAssetBreakdown } from "../components/DarkRiskAssetBreakdown";
@@ -25,7 +26,7 @@ import { DarkRiskCalendarHeatmap } from "../components/DarkRiskCalendarHeatmap";
 import { DarkRiskCredentialLeaks } from "../components/DarkRiskCredentialLeaks";
 import { DarkRiskFiletypePieChart } from "../components/DarkRiskFiletypePieChart";
 import { DarkRiskSourcePieChart } from "../components/DarkRiskSourcePieChart";
-import type { CredentialLeak } from "../domain/contracts";
+import { exportCredentialLeaksXlsx, exportRunRecordsXlsx } from "../shared/exportCredentialsXlsx";
 import { ReportList } from "../shared/ReportList";
 import { ScopeEditor } from "../shared/ScopeEditor";
 import { useDarkRiskEntitlements } from "../shared/useDarkRiskEntitlements";
@@ -64,6 +65,23 @@ export default function ExtendedDarkRiskPage() {
 		enabled: Boolean(organizationId && extendedEnabled),
 		staleTime: 30_000,
 	});
+	// Elenco dei run Esteso: serve a mostrare subito i risultati dell'ultimo
+	// run completato, senza dover passare da "Apri risultati" nei report (che
+	// esistono solo per i run con snapshot).
+	const runsQuery = useQuery({
+		queryKey: darkRiskQueryKeys.extendedRuns(organizationId),
+		queryFn: () => darkRiskGateway.getExtendedScans(organizationId!, groupId),
+		enabled: Boolean(organizationId && extendedEnabled),
+		staleTime: 30_000,
+	});
+	useEffect(() => {
+		if (activeRunId || !runsQuery.data?.length) return;
+		const latest =
+			runsQuery.data.find((run) => run.status === "completed" || run.status === "partial") ??
+			runsQuery.data[0];
+		setActiveRunId(latest.id);
+	}, [activeRunId, runsQuery.data]);
+
 	const resultsQuery = useQuery({
 		queryKey: darkRiskQueryKeys.extendedResult(organizationId, activeRunId),
 		queryFn: () =>
@@ -85,11 +103,13 @@ export default function ExtendedDarkRiskPage() {
 		staleTime: 60_000,
 	});
 	// Credenziali storicizzate, indipendenti dal run spot: l'endpoint risponde
-	// 403 se manca il grant extended_identity, e il gateway lo traduce in
-	// `forbidden` invece di propagare un errore.
+	// 403 se il tenant non è Esteso, e il gateway lo traduce in `forbidden`
+	// invece di propagare un errore. per_page al massimo consentito dal
+	// backend: tabella ed export devono avere tutto, non la prima pagina.
 	const credentialLeaksQuery = useQuery({
 		queryKey: darkRiskQueryKeys.credentialLeaks(organizationId),
-		queryFn: () => darkRiskGateway.getCredentialLeaks(organizationId!, groupId),
+		queryFn: () =>
+			darkRiskGateway.getCredentialLeaks(organizationId!, groupId, { per_page: 500 }),
 		enabled: Boolean(organizationId && extendedEnabled),
 		staleTime: 60_000,
 	});
@@ -120,39 +140,14 @@ export default function ExtendedDarkRiskPage() {
 	const snapshot = overviewQuery.data?.snapshot ?? null;
 	const credentialLeaks = credentialLeaksQuery.data;
 
-	/**
-	 * Lo sblocco richiede una motivazione perché finisce nel log di audit
-	 * insieme all'utente: senza, l'accesso al dato in chiaro non è tracciabile.
-	 * Il valore non viene mostrato in pagina, si apre l'URL firmato restituito.
-	 */
-	const handleReveal = async (record: CredentialLeak) => {
-		if (!organizationId || !record.evidenceId) return;
-		const reason = window.prompt(
-			`Motivazione per lo sblocco dell'evidenza di ${record.selector} (minimo 8 caratteri).\nL'accesso verrà registrato.`,
-		);
-		if (reason === null) return;
-		if (reason.trim().length < 8) {
-			toast.error("La motivazione deve contenere almeno 8 caratteri.");
-			return;
-		}
-		try {
-			const { downloadUrl, canDownload } = await darkRiskGateway.revealEvidence(
-				organizationId,
-				record.evidenceId,
-				reason.trim(),
-				groupId,
-			);
-			if (canDownload && downloadUrl) {
-				window.open(downloadUrl, "_blank", "noopener,noreferrer");
-				toast.success("Evidenza sbloccata: l'accesso è stato registrato.");
-			} else {
-				toast.warning("Sblocco autorizzato ma nessun file disponibile per questa evidenza.");
-			}
-		} catch (error) {
-			toast.error(
-				error instanceof Error ? error.message : "Impossibile sbloccare l'evidenza.",
-			);
-		}
+	const clientName = selectedOrganization?.name ?? "cliente";
+	const handleExportExcel = () => {
+		if (!activeRunId || records.length === 0) return;
+		exportRunRecordsXlsx(records, clientName, activeRunId, resultsQuery.data?.run?.completedAt);
+	};
+	const handleExportCredentials = () => {
+		if (!credentialLeaks?.records.length) return;
+		exportCredentialLeaksXlsx(credentialLeaks.records, clientName);
 	};
 
 	return (
@@ -242,9 +237,10 @@ export default function ExtendedDarkRiskPage() {
 				) : (
 					<>
 						<div className="rounded-md border border-amber-500/25 bg-amber-500/5 p-3 text-sm text-amber-100">
-							<strong>Dati altamente sensibili.</strong> Le visualizzazioni e i
-							download sono sottoposti ad audit. I risultati provengono
-							esclusivamente da <code>leaks.private.general</code>.
+							<strong>Dati altamente sensibili.</strong> Account e password sono
+							mostrati in chiaro: trattali con riservatezza e non condividere
+							export o schermate al di fuori del cliente. Le credenziali provengono
+							dal bucket <code>leaks.private.general</code> di Intelligence X.
 						</div>
 						<ScopeEditor
 							scope={scopeQuery.data ?? { targets: [] }}
@@ -261,16 +257,16 @@ export default function ExtendedDarkRiskPage() {
 						{credentialLeaks?.forbidden ? (
 							<Card>
 								<CardContent className="p-6 text-center text-sm text-muted-foreground">
-									Nessuna autorizzazione Identity attiva: le credenziali esposte non
-									sono consultabili. Serve un grant <code>extended_identity</code>{" "}
-									valido.
+									Le credenziali esposte non sono consultabili: il profilo Esteso non
+									è attivo per questo cliente o l'autorizzazione è stata revocata.
 								</CardContent>
 							</Card>
 						) : (
 							<DarkRiskCredentialLeaks
 								records={credentialLeaks?.records ?? []}
 								total={credentialLeaks?.total}
-								onReveal={canOperate ? handleReveal : undefined}
+								onExport={handleExportCredentials}
+								limit={500}
 							/>
 						)}
 
@@ -305,14 +301,25 @@ export default function ExtendedDarkRiskPage() {
 										Risultati del run
 									</CardTitle>
 									{activeRunId ? (
-										<Button
-											size="sm"
-											variant="outline"
-											onClick={() => resultsQuery.refetch()}
-										>
-											<RefreshCw className="mr-2 h-4 w-4" />
-											Aggiorna
-										</Button>
+										<div className="flex gap-2">
+											<Button
+												size="sm"
+												variant="outline"
+												onClick={() => resultsQuery.refetch()}
+											>
+												<RefreshCw className="mr-2 h-4 w-4" />
+												Aggiorna
+											</Button>
+											<Button
+												size="sm"
+												variant="outline"
+												disabled={records.length === 0}
+												onClick={handleExportExcel}
+											>
+												<FileSpreadsheet className="mr-2 h-4 w-4" />
+												Esporta Excel
+											</Button>
+										</div>
 									) : null}
 								</div>
 							</CardHeader>
@@ -409,6 +416,7 @@ export default function ExtendedDarkRiskPage() {
 							onSelectRun={setActiveRunId}
 							onDownload={handleDownloadReport}
 						/>
+						<DarkRiskNotificationConfigCard />
 					</>
 				)}
 			</div>

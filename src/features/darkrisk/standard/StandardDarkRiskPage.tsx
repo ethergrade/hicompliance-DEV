@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { useUserRoles } from "@/hooks/useUserRoles";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { DarkRiskNotificationConfigCard } from "@/components/dark-risk/DarkRiskNotificationConfigCard";
 import { toast } from "sonner";
 import { darkRiskGateway } from "../api/darkRiskGateway";
 import { darkRiskQueryKeys } from "../api/queryKeys";
@@ -358,6 +359,7 @@ export default function StandardDarkRiskPage() {
 							isLoading={reportsQuery.isLoading}
 							onDownload={handleDownloadReport}
 						/>
+						<DarkRiskNotificationConfigCard />
 					</>
 				)}
 			</div>

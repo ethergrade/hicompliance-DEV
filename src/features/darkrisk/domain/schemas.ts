@@ -97,8 +97,15 @@ export const parseWeeklySnapshot = (value: unknown): DarkRiskWeeklySnapshot | nu
  * `masked_value`, e lo smascheramento passa dal reveal audiato sull'evidenza.
  */
 export const parseCredentialLeaks = (value: unknown): CredentialLeakPage => {
-	const envelope = objectValue(unwrapApiData(value));
-	const rows = Array.isArray(envelope.data) ? envelope.data : [];
+	// Il gateway ha già tolto l'envelope ApiResponse: qui arriva il paginator
+	// Laravel `{ data: [...], total, current_page, last_page }`. Un secondo
+	// unwrap prenderebbe l'array e perderebbe i metadati di paginazione.
+	const envelope = objectValue(value);
+	const rows = Array.isArray(envelope.data)
+		? envelope.data
+		: Array.isArray(value)
+			? value
+			: [];
 
 	return {
 		records: rows.map((row) => {
@@ -108,6 +115,8 @@ export const parseCredentialLeaks = (value: unknown): CredentialLeakPage => {
 				selector: stringValue(item.selector_value),
 				assetScope: nullableString(item.asset_scope),
 				maskedValue: stringValue(item.masked_value),
+				clearValue: nullableString(item.clear_value),
+				clearAccount: nullableString(item.clear_account),
 				passwordType: nullableString(item.password_type),
 				bucketCanonical: nullableString(item.bucket_canonical),
 				bucketDisplay: nullableString(item.bucket_display),
@@ -155,7 +164,11 @@ export const parseScope = (value: unknown): DarkRiskScope => {
 
 export const parseRun = (value: unknown, mode: "standard" | "extended"): DarkRiskRun => {
 	const item = objectValue(unwrapApiData(value));
-	const rawStatus = stringValue(item.status, "queued").toLowerCase();
+	// Il backend usa "completed_with_warnings" e "retrying": senza mappa
+	// finirebbero in "queued" e la pagina Esteso li pollerebbe per sempre.
+	const rawStatus = stringValue(item.status, "queued").toLowerCase()
+		.replace("completed_with_warnings", "partial")
+		.replace("retrying", "running");
 	const allowed: DarkRiskRunStatus[] = ["queued", "running", "completed", "partial", "failed"];
 	const status = allowed.includes(rawStatus as DarkRiskRunStatus)
 		? (rawStatus as DarkRiskRunStatus)
@@ -247,9 +260,10 @@ const parseExtendedRecord = (value: unknown): ExtendedLeakRecord | null => {
 		id,
 		selector,
 		user,
+		accountMasked: item.account_masked === true,
 		password: stringValue(item.password || item.credential_password),
 		passwordType: stringValue(item.passwordtype || item.password_type),
-		bucket: "leaks.private.general",
+		bucket,
 		date,
 		sourceShort,
 		sourceLong: stringValue(item.sourcelong || item.source_long),

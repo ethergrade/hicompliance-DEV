@@ -92,9 +92,11 @@ export interface ExtendedLeakRecord {
 	id: string;
 	selector: string;
 	user: string;
+	/** true sugli hit ingeriti prima che l'account venisse conservato: `user` è mascherato. */
+	accountMasked: boolean;
 	password: string;
 	passwordType: string;
-	bucket: "leaks.private.general";
+	bucket: string;
 	date: string | null;
 	sourceShort: string;
 	sourceLong: string;
@@ -110,15 +112,18 @@ export interface ExtendedRunResult {
 /**
  * Credenziale esposta da `darkrisk/credential-leaks` (solo profilo Esteso).
  *
- * La password arriva sempre mascherata: il valore in chiaro non transita mai
- * da questo endpoint e si ottiene solo con il reveal audiato sull'evidenza,
- * da cui `evidenceId`.
+ * Nel profilo Esteso il backend manda password e account in chiaro
+ * (`clearValue`, `clearAccount`); `clearAccount` è null sugli hit ingeriti
+ * prima che venisse conservato, e allora resta il `selector`. Il reveal
+ * audiato sull'evidenza (`evidenceId`) resta disponibile per il dato grezzo.
  */
 export interface CredentialLeak {
 	id: string;
 	selector: string;
 	assetScope: string | null;
 	maskedValue: string;
+	clearValue: string | null;
+	clearAccount: string | null;
 	passwordType: string | null;
 	bucketCanonical: string | null;
 	bucketDisplay: string | null;
