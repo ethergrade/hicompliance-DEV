@@ -127,7 +127,7 @@ export interface UpsertExternalEndpointPayload {
 export interface VulnerabilityMatch {
 	id: string;
 	cve_id: string;
-	match_status: "confirmed" | "candidate" | "unknown" | "rejected";
+	match_status: "confirmed" | "candidate" | "hint" | "unknown" | "rejected";
 	severity: string | null;
 	asset_host: string | null;
 	service_key: string | null;
