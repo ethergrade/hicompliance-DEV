@@ -26,7 +26,6 @@ export const isModuleVisible = (modulePath: string): boolean => {
     case '/settings/integrations':
       return moduleVisibility.integrations;
     case '/settings/alerts':
-    case '/settings/surface-scan-alerts':
       return moduleVisibility.darkRiskAlerts;
     case '/threats':
       return moduleVisibility.threats;

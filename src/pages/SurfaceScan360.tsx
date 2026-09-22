@@ -49,9 +49,7 @@ import { SurfaceScanTrendline } from '@/components/surface-scan/SurfaceScanTrend
 import { SurfaceScanAlertBanner } from '@/components/surface-scan/SurfaceScanAlertBanner';
 import { SurfaceScanActionItems } from '@/components/surface-scan/SurfaceScanActionItems';
 import { SurfaceScanMailSecurity } from '@/components/surface-scan/SurfaceScanMailSecurity';
-import { AlertBellButton } from '@/components/dark-risk/AlertBellButton';
-import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceScanAlertConfigDialog';
-import { useSurfaceScanAlerts, SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
+import { SurfaceScanNotificationConfigCard } from '@/components/surface-scan/SurfaceScanNotificationConfigCard';
 import { useSurfaceScanMonitoredIps } from '@/hooks/useSurfaceScanMonitoredIps';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useCapabilities } from '@/hooks/useCapabilities';
@@ -254,7 +252,6 @@ const SurfaceScan360: React.FC = () => {
   const liveSectionRef = useRef<HTMLDivElement>(null);
   const dependencyMapRef = useRef<HTMLDivElement>(null);
   const exposureSectionRef = useRef<HTMLDivElement>(null);
-  const [alertDialogOpen, setAlertDialogOpen] = useState(false);
   const [newMonitoredIpInput, setNewMonitoredIpInput] = useState('');
   const [ownershipProof, setOwnershipProof] = useState('');
   const [assetSearch, setAssetSearch] = useState('');
@@ -269,8 +266,6 @@ const SurfaceScan360: React.FC = () => {
   const assetsPerPage = 15;
   const { organizationId, groupId } = useClientOrganization();
 
-  const { alerts, createAlert } = useSurfaceScanAlerts();
-  const activeAlertsCount = alerts.filter((a) => a.is_active).length;
 
   const { jobs: scanJobs, startScanQueue, isAdmin } = useSurfaceScanEngine();
   const {
@@ -345,10 +340,6 @@ const SurfaceScan360: React.FC = () => {
     () => splitMonitoredScopeRules(monitoredIpRules as any),
     [monitoredIpRules],
   );
-
-  const handleCreateAlert = async (data: { alert_email: string; alert_types: SurfaceScanAlertTypes }) => {
-    return await createAlert(data);
-  };
 
   const scrollToDependencyMap = () => {
     if (isDiscoveryCollapsed) {
@@ -969,10 +960,7 @@ const SurfaceScan360: React.FC = () => {
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="text-sm text-muted-foreground">Vulnerabilità Critiche</p>
-                      <AlertBellButton alertCount={activeAlertsCount} onClick={() => setAlertDialogOpen(true)} />
-                    </div>
+                    <p className="text-sm text-muted-foreground mb-1">Vulnerabilità Critiche</p>
                     <p className="text-2xl font-bold text-red-500">{findingsCounts.critical}</p>
                   </div>
                   <AlertTriangle className="w-8 h-8 text-red-500" />
@@ -1762,12 +1750,9 @@ const SurfaceScan360: React.FC = () => {
         )}
       </div>
 
-      <SurfaceScanAlertConfigDialog
-        open={alertDialogOpen}
-        onOpenChange={setAlertDialogOpen}
-        onSubmit={handleCreateAlert}
-        mode="create"
-      />
+      <div className="mt-6">
+        <SurfaceScanNotificationConfigCard />
+      </div>
     </DashboardLayout>
   );
 };

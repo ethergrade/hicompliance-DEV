@@ -197,7 +197,53 @@ export interface VulnerabilityIntelligenceFilters {
 	asset?: string;
 }
 
+/**
+ * Notifiche email SurfaceScan360 (`surface-scan360/notification-config`).
+ *
+ * Stessa forma della gemella DarkRisk360: una configurazione per cliente, letta
+ * dal backend per spedire alert di fine scansione e riepilogo settimanale.
+ * Sostituisce `surface-scan-alerts`, che nessun job leggeva.
+ */
+export interface SurfaceScanNotificationConfig {
+	alert_on_new_findings: boolean;
+	alert_severity_threshold: string;
+	min_new_findings_to_alert: number;
+	weekly_summary_enabled: boolean;
+	recipient_emails: string[];
+	last_alert_sent_at?: string | null;
+	last_summary_sent_at?: string | null;
+}
+
 export const surfaceScan360Api = {
+	async getNotificationConfig(
+		companyId: string,
+		groupId?: string | null,
+	): Promise<SurfaceScanNotificationConfig | null> {
+		const res = await complianceApiClient.get<
+			ApiResponse<SurfaceScanNotificationConfig | null>
+		>(
+			`/companies/${companyId}/surface-scan360/notification-config`,
+			undefined,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return res.data;
+	},
+
+	async updateNotificationConfig(
+		companyId: string,
+		payload: Partial<SurfaceScanNotificationConfig>,
+		groupId?: string | null,
+	): Promise<SurfaceScanNotificationConfig> {
+		const res = await complianceApiClient.put<
+			ApiResponse<SurfaceScanNotificationConfig>
+		>(
+			`/companies/${companyId}/surface-scan360/notification-config`,
+			payload,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return res.data;
+	},
+
 	// Jobs
 	async listJobs(
 		companyId: string,

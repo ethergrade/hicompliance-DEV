@@ -428,7 +428,6 @@ export const AppSidebar: React.FC = () => {
 											</SidebarMenuButton>
 										</SidebarMenuItem>
 									)}
-								{/* /settings/surface-scan-alerts — still hidden until full API migration of the page is complete */}
 							</SidebarMenu>
 						</SidebarGroupContent>
 					</SidebarGroup>

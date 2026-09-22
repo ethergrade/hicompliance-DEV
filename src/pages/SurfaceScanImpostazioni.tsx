@@ -21,11 +21,9 @@ import {
 } from 'lucide-react';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
-import { usersApi } from '@/lib/api/users';
 import { connectSecureApi } from '@/lib/api/connectsecure';
 import { cveEnrichmentApi } from '@/lib/api/cve-enrichment';
-import { useSurfaceScanAlerts, SurfaceScanAlertTypes } from '@/hooks/useSurfaceScanAlerts';
-import { SurfaceScanAlertConfigDialog } from '@/components/surface-scan/SurfaceScanAlertConfigDialog';
+import { SurfaceScanNotificationConfigCard } from '@/components/surface-scan/SurfaceScanNotificationConfigCard';
 import {
   IocLeaseMinutes, IocSeverity, IocType, useSurfaceScanIocFreshList,
 } from '@/hooks/useSurfaceScanIocFreshList';
@@ -37,14 +35,6 @@ import { toast } from 'sonner';
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface CveQueueStats { queued: number; failed: number; ok: number; }
-
-const alertTypeLabels: Record<keyof SurfaceScanAlertTypes, string> = {
-  vulnerabilita_critiche: 'Vulnerabilità Critiche',
-  vulnerabilita_alte: 'Vulnerabilità Alte',
-  porte_esposte: 'Porte Esposte',
-  certificati_scaduti: 'Certificati Scaduti',
-  servizi_non_sicuri: 'Servizi Non Sicuri',
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Page
@@ -70,13 +60,6 @@ const SurfaceScanImpostazioni: React.FC = () => {
   const [enriching, setEnriching] = useState(false);
   const [enrichResult, setEnrichResult] = useState<string | null>(null);
 
-  // ── Alert ────────────────────────────────────────────────────────────────
-  const { alerts, loading: alertsLoading, createAlert, updateAlert, deleteAlert, toggleAlertStatus } = useSurfaceScanAlerts();
-  const [alertDialogOpen, setAlertDialogOpen] = useState(false);
-  const [editingAlert, setEditingAlert] = useState<string | null>(null);
-  const [deleteAlertId, setDeleteAlertId] = useState<string | null>(null);
-  const [userNames, setUserNames] = useState<Record<string, string>>({});
-
   // ── IOC ──────────────────────────────────────────────────────────────────
   const {
     config: iocConfig, items: iocItems, loading: iocLoading, saving: iocSaving,
@@ -92,18 +75,6 @@ const SurfaceScanImpostazioni: React.FC = () => {
   const [iocNotes, setIocNotes] = useState('');
 
   useEffect(() => { if (iocConfig) { setLeaseMinutes(iocConfig.lease_minutes); setIocEnabled(Boolean(iocConfig.is_enabled)); } }, [iocConfig]);
-
-  useEffect(() => {
-    if (!isAdmin || alerts.length === 0) return;
-    const fetchNames = async () => {
-      const ids = [...new Set(alerts.map((a) => a.user_id))];
-      const users = await usersApi.batchByIds(ids, groupId);
-      const m: Record<string, string> = {};
-      users.forEach((u) => { m[u.id] = `${u.name} (${u.email})`; });
-      setUserNames(m);
-    };
-    fetchNames();
-  }, [alerts, isAdmin, groupId]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -175,8 +146,6 @@ const SurfaceScanImpostazioni: React.FC = () => {
       setEnriching(false);
     }
   };
-
-  const editingAlertData = alerts.find((a) => a.id === editingAlert);
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -354,78 +323,14 @@ const SurfaceScanImpostazioni: React.FC = () => {
 
           {/* ── Alert tab ──────────────────────────────────────────────── */}
           <TabsContent value="alerts" className="mt-6 space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold">Alert SurfaceScan360</h2>
-                <p className="text-sm text-muted-foreground mt-1">Notifiche email per vulnerabilità e anomalie rilevate</p>
-              </div>
-              <Button onClick={() => setAlertDialogOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Nuovo Alert
-              </Button>
+            <div>
+              <h2 className="text-xl font-semibold">Notifiche SurfaceScan360</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Destinatari e soglie degli avvisi email per il cliente selezionato
+              </p>
             </div>
 
-            {alertsLoading ? (
-              <Card><CardContent className="py-8 text-center text-muted-foreground">Caricamento alert...</CardContent></Card>
-            ) : alerts.length === 0 ? (
-              <Card>
-                <CardContent className="py-12">
-                  <div className="text-center space-y-4">
-                    <Bell className="w-12 h-12 mx-auto text-muted-foreground" />
-                    <p className="text-lg font-medium">Nessun alert configurato</p>
-                    <Button onClick={() => setAlertDialogOpen(true)}>
-                      <Plus className="w-4 h-4 mr-2" />Crea Alert
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid gap-4">
-                {alerts.map((alert) => {
-                  const activeTypes = Object.entries(alert.alert_types)
-                    .filter(([, enabled]) => enabled)
-                    .map(([type]) => type as keyof SurfaceScanAlertTypes);
-                  return (
-                    <Card key={alert.id}>
-                      <CardHeader>
-                        <div className="flex items-start justify-between">
-                          <div className="space-y-1 flex-1">
-                            <CardTitle className="flex items-center gap-2 text-base">
-                              <Bell className="w-4 h-4" />
-                              {alert.alert_email}
-                            </CardTitle>
-                            <CardDescription>Creato il {new Date(alert.created_at).toLocaleDateString('it-IT')}</CardDescription>
-                            {isAdmin && userNames[alert.user_id] && (
-                              <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                                <User className="w-3.5 h-3.5" />
-                                {userNames[alert.user_id]}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Switch checked={alert.is_active} onCheckedChange={(c) => toggleAlertStatus(alert.id, c)} />
-                            <Button variant="ghost" size="icon" onClick={() => setEditingAlert(alert.id)}>
-                              <Pencil className="w-4 h-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" onClick={() => setDeleteAlertId(alert.id)}>
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="flex flex-wrap gap-2">
-                          {activeTypes.map((type) => (
-                            <Badge key={type} variant="secondary">{alertTypeLabels[type]}</Badge>
-                          ))}
-                          {!alert.is_active && <Badge variant="outline">Disattivato</Badge>}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
+            <SurfaceScanNotificationConfigCard />
           </TabsContent>
 
           {/* ── IOC tab ────────────────────────────────────────────────── */}
@@ -561,36 +466,6 @@ const SurfaceScanImpostazioni: React.FC = () => {
         </Tabs>
       </div>
 
-      {/* ── Dialogs ────────────────────────────────────────────────────── */}
-      <SurfaceScanAlertConfigDialog
-        open={alertDialogOpen}
-        onOpenChange={setAlertDialogOpen}
-        onSubmit={async (data) => { await createAlert(data); }}
-        mode="create"
-      />
-      {editingAlertData && (
-        <SurfaceScanAlertConfigDialog
-          open={!!editingAlert}
-          onOpenChange={(open) => !open && setEditingAlert(null)}
-          onSubmit={async (data) => { const ok = await updateAlert(editingAlert!, data); if (ok) setEditingAlert(null); return ok; }}
-          defaultValues={{ alert_email: editingAlertData.alert_email, alert_types: editingAlertData.alert_types }}
-          mode="edit"
-        />
-      )}
-      <AlertDialog open={!!deleteAlertId} onOpenChange={() => setDeleteAlertId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Conferma eliminazione</AlertDialogTitle>
-            <AlertDialogDescription>Eliminare questo alert? L'azione non può essere annullata.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Annulla</AlertDialogCancel>
-            <AlertDialogAction onClick={async () => { if (deleteAlertId) { await deleteAlert(deleteAlertId); setDeleteAlertId(null); } }}>
-              Elimina
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </DashboardLayout>
   );
 };

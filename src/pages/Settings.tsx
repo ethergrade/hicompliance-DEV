@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { RotateCcw, Settings2 } from 'lucide-react';
 import { DarkRiskNotificationConfigCard } from '@/components/dark-risk/DarkRiskNotificationConfigCard';
+import { SurfaceScanNotificationConfigCard } from '@/components/surface-scan/SurfaceScanNotificationConfigCard';
 import { useResetAllPreferences } from '@/hooks/useUserPreferences';
 import { useClientContext } from '@/contexts/ClientContext';
 import { toast } from '@/hooks/use-toast';
@@ -60,11 +61,13 @@ const Settings: React.FC = () => {
         <div>
           <h1 className="text-3xl font-bold">Impostazioni</h1>
           <p className="text-muted-foreground mt-2">
-            Notifiche DarkRisk360 per {selectedOrganization?.name || 'il cliente selezionato'} e preferenze personali
+            Notifiche DarkRisk360 e SurfaceScan360 per {selectedOrganization?.name || 'il cliente selezionato'} e preferenze personali
           </p>
         </div>
 
         <DarkRiskNotificationConfigCard />
+
+        <SurfaceScanNotificationConfigCard />
 
         <Separator className="my-6" />
 
