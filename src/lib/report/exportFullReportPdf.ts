@@ -1,6 +1,9 @@
 import jsPDF from "jspdf";
 import type { AssessmentCategory, AssessmentResponse } from "@/data/assessmentQuestions";
-import { generateAssessmentPDF } from "@/components/assessment/AssessmentReportGenerator";
+import {
+	generateAssessmentPDF,
+	type PreviousSnapshot,
+} from "@/components/assessment/AssessmentReportGenerator";
 import {
 	captureElement,
 	RASTER_DEFAULTS,
@@ -23,6 +26,8 @@ export interface FullReportExportParams {
 	assessment?: {
 		responses: Record<number, AssessmentResponse>;
 		categories?: AssessmentCategory[];
+		/** Assente se l'anno precedente non ha uno snapshot: il confronto si omette. */
+		previousSnapshot?: PreviousSnapshot;
 	};
 	/** Blocchi visivi (radar, riepiloghi, remediation, surface, darkrisk) in ordine. */
 	blocks: ReportBlock[];
@@ -93,6 +98,7 @@ export async function exportFullReportPdf(params: FullReportExportParams): Promi
 		generateAssessmentPDF({
 			responses: assessment.responses,
 			categories: assessment.categories,
+			previousSnapshot: assessment.previousSnapshot,
 			companyName,
 			doc,
 			save: false,

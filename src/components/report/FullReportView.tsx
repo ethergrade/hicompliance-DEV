@@ -14,14 +14,17 @@ import { DarkRiskSourcePieChart } from "@/features/darkrisk/components/DarkRiskS
 import { useDarkRiskOverview } from "@/hooks/useDarkRiskOverview";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { useFullReportData } from "@/hooks/useFullReportData";
+import { useAssessmentSnapshots } from "@/hooks/useAssessmentSnapshots";
 import type { ReportBlock } from "@/lib/report/exportFullReportPdf";
 import type { AssessmentCategory, AssessmentResponse } from "@/data/assessmentQuestions";
+import type { PreviousSnapshot } from "@/components/assessment/AssessmentReportGenerator";
 
 export interface FullReportReadyPayload {
 	blocks: ReportBlock[];
 	assessment?: {
 		responses: Record<number, AssessmentResponse>;
 		categories: AssessmentCategory[];
+		previousSnapshot?: PreviousSnapshot;
 	};
 }
 
@@ -104,6 +107,22 @@ const FullReportView: React.FC<FullReportViewProps> = ({ onReady }) => {
 	const { assessment, remediation, consistenze, elaborazioneDate, aiCategoryAdvice, isLoading } = useFullReportData();
 	const { data: darkRisk } = useDarkRiskOverview();
 
+	// Confronto anno su anno nel PDF: serve lo snapshot dell'anno solare
+	// precedente. Se quel cliente non ce l'ha — primo assessment, oppure un anno
+	// saltato — resta undefined e il report si stampa esattamente come prima.
+	const { snapshots } = useAssessmentSnapshots();
+	const snapshotAnnoPrecedente: PreviousSnapshot | undefined = React.useMemo(() => {
+		const annoPrecedente = new Date().getFullYear() - 1;
+		const trovato = snapshots.find((s) => s.snapshot_year === annoPrecedente);
+		if (!trovato) return undefined;
+
+		return {
+			year: trovato.snapshot_year,
+			overallScore: trovato.overall_score,
+			categoryScores: trovato.category_scores.map((c) => ({ name: c.name, score: c.score })),
+		};
+	}, [snapshots]);
+
 	const snapshot = darkRisk?.weekly_snapshot ?? null;
 
 	// I campi jsonb possono essere null anche a snapshot presente: ogni grafico
@@ -182,7 +201,11 @@ const FullReportView: React.FC<FullReportViewProps> = ({ onReady }) => {
 				onReady({
 					blocks,
 					assessment: assessment
-						? { responses: assessment.responses, categories: assessment.categories }
+						? {
+								responses: assessment.responses,
+								categories: assessment.categories,
+								previousSnapshot: snapshotAnnoPrecedente,
+							}
 						: undefined,
 				});
 				setFiredReady(true);

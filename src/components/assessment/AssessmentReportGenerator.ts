@@ -20,6 +20,21 @@ interface AssessmentReportData {
   doc?: jsPDF;
   /** Default true: applica footer e salva/scarica. Impostare false in composizione. */
   save?: boolean;
+  /**
+   * Snapshot dell'anno precedente per la sezione di confronto.
+   *
+   * Arriva solo lo snapshot vecchio: i valori attuali li calcola già questo
+   * generatore dalle risposte, e riusarli è l'unico modo perché il confronto non
+   * contraddica le pagine accanto. Assente quando l'anno prima non esiste, e in
+   * quel caso la sezione non viene stampata affatto.
+   */
+  previousSnapshot?: PreviousSnapshot;
+}
+
+export interface PreviousSnapshot {
+  year: number;
+  overallScore: number;
+  categoryScores: { name: string; score: number }[];
 }
 
 // Mirror of Assessment.tsx isQuestionVisible — questions with a dependency are hidden
@@ -39,7 +54,19 @@ function isQuestionVisible(
   return parentStatus === 'pianificato_in_corso' || parentStatus === 'completato';
 }
 
-export const generateAssessmentPDF = ({ responses, companyName, categories, doc: providedDoc, save = true }: AssessmentReportData) => {
+/** Verde se migliora, rosso se peggiora, indaco se resta uguale. */
+function coloreDelta(delta: number): [number, number, number] {
+  if (delta > 0) return [34, 197, 94];
+  if (delta < 0) return [220, 38, 38];
+  return [99, 102, 241];
+}
+
+/** Un punteggio fuori scala non deve disegnare una barra più lunga del grafico. */
+function clamp(valore: number): number {
+  return Math.max(0, Math.min(100, valore));
+}
+
+export const generateAssessmentPDF = ({ responses, companyName, categories, doc: providedDoc, save = true, previousSnapshot }: AssessmentReportData) => {
   // Use backend categories when available — matches the view's question set exactly
   const effectiveCats = categories && categories.length > 0 ? categories : ASSESSMENT_CATEGORIES;
   const allCatQuestions = effectiveCats.flatMap(c => c.questions);
@@ -195,6 +222,148 @@ export const generateAssessmentPDF = ({ responses, companyName, categories, doc:
   });
 
   y += 10;
+
+  // ── CONFRONTO CON L'ANNO PRECEDENTE ──
+  // Stampata solo se esiste lo snapshot dell'anno prima: senza un termine di
+  // paragone un "confronto" mostrerebbe delta pari al punteggio attuale, cioè
+  // un miglioramento inventato. In quel caso il report resta com'era.
+  if (previousSnapshot) {
+    const annoCorrente = new Date().getFullYear();
+
+    // Le categorie si appaiano per nome, come nella schermata di gap analysis.
+    // Una categoria senza corrispondente nello snapshot viene saltata: non è un
+    // miglioramento da zero, è una categoria che l'anno prima non esisteva.
+    const confronto = catData
+      .map(cat => {
+        const prima = previousSnapshot.categoryScores.find(p => p.name === cat.name);
+        if (!prima) return null;
+        return { name: cat.name, prima: prima.score, adesso: cat.score, delta: cat.score - prima.score };
+      })
+      .filter((v): v is { name: string; prima: number; adesso: number; delta: number } => v !== null);
+
+    if (confronto.length > 0) {
+      checkPage(60);
+      doc.setFontSize(13);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(30, 30, 30);
+      doc.text(`Confronto ${previousSnapshot.year} - ${annoCorrente}`, margin, y);
+      y += 8;
+
+      // ── Riepilogo: punteggio globale prima/adesso e variazione ──
+      const deltaGlobale = overallScore - previousSnapshot.overallScore;
+      doc.setFillColor(30, 41, 59);
+      doc.roundedRect(margin, y, maxWidth, 26, 3, 3, 'F');
+      const colonna = maxWidth / 3;
+      const vociRiepilogo: [string, string, [number, number, number]][] = [
+        [`Punteggio ${previousSnapshot.year}`, `${previousSnapshot.overallScore}/100`, [255, 255, 255]],
+        [`Punteggio ${annoCorrente}`, `${overallScore}/100`, [255, 255, 255]],
+        ['Variazione', `${deltaGlobale > 0 ? '+' : ''}${deltaGlobale}`, coloreDelta(deltaGlobale)],
+      ];
+      vociRiepilogo.forEach(([etichetta, valore, colore], i) => {
+        const x = margin + colonna * i + colonna / 2;
+        doc.setFontSize(8);
+        doc.setTextColor(150, 180, 200);
+        doc.text(etichetta, x, y + 10, { align: 'center' });
+        doc.setFontSize(13);
+        doc.setTextColor(...colore);
+        doc.text(valore, x, y + 20, { align: 'center' });
+      });
+      y += 34;
+
+      // ── Migliori miglioramenti e aree critiche, come nella schermata ──
+      const perDelta = [...confronto].sort((a, b) => b.delta - a.delta);
+      const migliori = perDelta.slice(0, 3);
+      const peggiori = [...perDelta].reverse().slice(0, 3);
+
+      checkPage(40);
+      const larghezzaMeta = (maxWidth - 6) / 2;
+      const yElenchi = y;
+      ([
+        ['Migliori miglioramenti', migliori, margin],
+        ['Aree critiche', peggiori, margin + larghezzaMeta + 6],
+      ] as [string, typeof migliori, number][]).forEach(([titolo, voci, x]) => {
+        let yLocale = yElenchi;
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(71, 85, 105);
+        doc.text(titolo, x, yLocale);
+        yLocale += 5;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        voci.forEach(voce => {
+          // La colonna è mezza pagina: troncare a 30 caratteri sprecava spazio e
+          // rendeva indistinguibili categorie con lo stesso inizio.
+          const nome = voce.name.length > 44 ? voce.name.substring(0, 42) + '...' : voce.name;
+          doc.setTextColor(30, 30, 30);
+          doc.text(nome, x, yLocale);
+          doc.setTextColor(...coloreDelta(voce.delta));
+          doc.text(`${voce.delta > 0 ? '+' : ''}${voce.delta}`, x + larghezzaMeta - 2, yLocale, { align: 'right' });
+          yLocale += 5;
+        });
+      });
+      y = yElenchi + 5 + Math.max(migliori.length, peggiori.length) * 5 + 8;
+
+      // ── Grafico: due barre per categoria, anno prima e anno corrente ──
+      checkPage(30);
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(30, 30, 30);
+      doc.text('Variazione per categoria', margin, y);
+      y += 6;
+
+      // Legenda: il colore della barra corrente dice il verso della variazione,
+      // quindi va spiegato, altrimenti sembra una categoria "rossa".
+      const legenda: [string, [number, number, number]][] = [
+        [String(previousSnapshot.year), [148, 163, 184]],
+        ['migliorata', [34, 197, 94]],
+        ['peggiorata', [220, 38, 38]],
+        ['stabile', [99, 102, 241]],
+      ];
+      let xLegenda = margin;
+      doc.setFontSize(6.5);
+      doc.setFont('helvetica', 'normal');
+      legenda.forEach(([testo, colore]) => {
+        doc.setFillColor(...colore);
+        doc.rect(xLegenda, y - 2.4, 3, 3, 'F');
+        doc.setTextColor(71, 85, 105);
+        doc.text(testo, xLegenda + 4.2, y);
+        xLegenda += 4.2 + doc.getTextWidth(testo) + 6;
+      });
+      y += 6;
+
+      const larghezzaEtichetta = 52;
+      const larghezzaBarre = maxWidth - larghezzaEtichetta - 12; // spazio per i valori
+      const xBarre = margin + larghezzaEtichetta;
+      const altezzaRiga = 9;
+
+      confronto.forEach(voce => {
+        checkPage(altezzaRiga + 4);
+
+        doc.setFontSize(6.5);
+        doc.setTextColor(30, 30, 30);
+        const nome = voce.name.length > 34 ? voce.name.substring(0, 32) + '...' : voce.name;
+        doc.text(nome, margin, y + 4);
+
+        // Fondo scala 0-100: le barre sono confrontabili fra categorie diverse.
+        doc.setFillColor(241, 245, 249);
+        doc.rect(xBarre, y, larghezzaBarre, 6.4, 'F');
+
+        doc.setFillColor(148, 163, 184);
+        doc.rect(xBarre, y, (larghezzaBarre * clamp(voce.prima)) / 100, 2.8, 'F');
+
+        doc.setFillColor(...coloreDelta(voce.delta));
+        doc.rect(xBarre, y + 3.6, (larghezzaBarre * clamp(voce.adesso)) / 100, 2.8, 'F');
+
+        doc.setFontSize(6);
+        doc.setTextColor(71, 85, 105);
+        doc.text(`${voce.prima} -> ${voce.adesso}`, xBarre + larghezzaBarre + 2, y + 4.4);
+
+        y += altezzaRiga;
+      });
+
+      y += 6;
+    }
+  }
 
   // ── DETAILED CATEGORIES WITH QUESTIONS ──
   doc.addPage();
