@@ -30,6 +30,15 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             <span className="text-sm font-medium text-muted-foreground">Menu</span>
           </div>
 
+          {stageMode && (
+            <div className="flex items-center gap-2 px-4 py-2 text-sm bg-amber-500/10 text-amber-600 dark:text-amber-400 border-b border-amber-500/25">
+              <PauseCircle className="w-4 h-4 shrink-0" />
+              <span>
+                Modalità Stage attiva: scansioni e aggiornamenti automatici sono in pausa.
+              </span>
+            </div>
+          )}
+
           {isSales && (
             <div className="px-4 py-1 text-[11px] leading-4 bg-amber-500/10 text-amber-300 border-b border-amber-500/25">
               Ambiente Demo, Funzionalità in corso di sviluppo.
