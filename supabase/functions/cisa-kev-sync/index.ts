@@ -1,11 +1,13 @@
 // Sincronizza il catalogo CISA KEV una volta al giorno.
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { isStageModePaused, stageModeResponse } from '../_shared/stage-mode.ts';
 
 const KEV_URL = 'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (await isStageModePaused()) return stageModeResponse(corsHeaders);
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,

@@ -5,6 +5,7 @@ import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { dispatchSurfaceScanQueue } from '../_shared/surface-scan-engine.ts';
 import { getEuropeRomeScheduleDue } from '../darkrisk360-orchestrator-v2/orchestration.ts';
+import { isStageModePaused, stageModeResponse } from '../_shared/stage-mode.ts';
 
 interface MonitoredRule {
   id: string;
@@ -304,6 +305,7 @@ async function runDarkRiskV2Scheduler(
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (await isStageModePaused()) return stageModeResponse(corsHeaders);
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const serviceRoleKey = String(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '').trim();

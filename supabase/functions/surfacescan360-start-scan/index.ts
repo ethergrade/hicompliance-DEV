@@ -11,6 +11,7 @@ import {
   splitMonitoredScopeRules,
 } from "../_shared/surface-scan-utils.ts";
 import { dispatchSurfaceScanQueue } from "../_shared/surface-scan-engine.ts";
+import { isStageModePaused, stageModeResponse } from '../_shared/stage-mode.ts';
 
 interface StartScanRequest {
   target: string;
@@ -49,6 +50,7 @@ function extractBearerToken(req: Request): string {
 }
 
 serve(async (req: Request) => {
+  if (req.method !== "OPTIONS" && await isStageModePaused()) return stageModeResponse(corsHeaders);
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
