@@ -2,6 +2,7 @@ import { ShieldAlert } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { AssessmentQuestionsEditor } from "@/components/admin/AssessmentQuestionsEditor";
+import { PlatformRuntimeSettingsPanel } from "@/components/admin/PlatformRuntimeSettings";
 import { useUserRoles } from "@/hooks/useUserRoles";
 
 /**
@@ -56,6 +57,10 @@ export default function AdminSettings() {
 				</header>
 
 				<section className="space-y-3">
+					<PlatformRuntimeSettingsPanel />
+				</section>
+
+			<section className="space-y-3">
 					<div>
 						<h2 className="text-lg font-semibold">Domande dell'assessment</h2>
 						<p className="text-sm text-muted-foreground">

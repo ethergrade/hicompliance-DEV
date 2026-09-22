@@ -3,9 +3,11 @@ import {
   json,
   requireInternalRequest,
 } from "../_shared/hitrack-domotz.ts";
+import { isStageModePaused } from '../_shared/stage-mode.ts';
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return json({ ok: true });
+  if (await isStageModePaused()) return json({ ok: true, skipped: true, reason: 'stage_mode' });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
   try {

@@ -21,6 +21,7 @@ import {
   type CsConfig,
   type CsResult,
 } from '../_shared/connectsecure-adapter.ts';
+import { isStageModePaused, stageModeResponse } from '../_shared/stage-mode.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -31,6 +32,7 @@ type ConfigSource = 'global' | 'org' | 'missing';
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (await isStageModePaused()) return stageModeResponse(corsHeaders);
 
   const SUPABASE_URL     = Deno.env.get('SUPABASE_URL')!;
   const SERVICE_ROLE_KEY = String(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '').trim();
