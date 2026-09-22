@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Bot, CheckCircle, Clock, Loader2, XCircle, RefreshCw, Send, RotateCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useUserRoles } from '@/hooks/useUserRoles';
-import { AnalysisEditor } from '@/components/assessment/AnalysisEditor';
+import { AnalysisEditor, umanizzaEtichette } from '@/components/assessment/AnalysisEditor';
 import type {
   AnalysisState,
   AnalysisViolation,
@@ -318,7 +318,7 @@ export const AssessmentAiPanel: React.FC<Props> = ({
                   ottenere la versione strutturata.
                 </p>
                 <div className="prose prose-sm dark:prose-invert max-h-96 max-w-none overflow-y-auto rounded-lg border border-border bg-muted/30 px-4 py-3">
-                  <ReactMarkdown>{legacyText}</ReactMarkdown>
+                  <ReactMarkdown>{umanizzaEtichette(legacyText)}</ReactMarkdown>
                 </div>
               </div>
             )}

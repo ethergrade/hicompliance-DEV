@@ -760,7 +760,10 @@ export interface BatchAssessmentResponseRequest {
 }
 
 export interface CategoryScore {
-	name: string;
+	category_id?: string;
+	/** Il backend scrive `category_name`; `name` resta per gli snapshot più vecchi. */
+	category_name?: string;
+	name?: string;
 	score: number;
 	answered: number;
 	total: number;

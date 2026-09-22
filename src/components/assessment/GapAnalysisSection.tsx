@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend,
 } from 'recharts';
 import { TrendingUp, TrendingDown, Minus, History, ArrowRightLeft } from 'lucide-react';
 import { AssessmentSnapshot, CategorySnapshot, useAssessmentSnapshots } from '@/hooks/useAssessmentSnapshots';
@@ -19,6 +19,11 @@ interface GapAnalysisSectionProps {
   overallScore: number;
   overallProgress: number;
 }
+
+const COLORE_SNAPSHOT = 'hsl(var(--muted-foreground) / 0.45)';
+const COLORE_SU = 'hsl(142, 71%, 45%)';
+const COLORE_GIU = 'hsl(0, 72%, 51%)';
+const COLORE_STABILE = 'hsl(var(--primary))';
 
 const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
   currentCategories,
@@ -205,17 +210,23 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
-              <div className="h-[350px]">
+              {/* Due barre per categoria, punteggio prima e punteggio adesso, su scala
+                  0–100. Il solo delta nascondeva dov'è la categoria: una al 100 stabile
+                  spariva del tutto, e sembrava un grafico rotto. */}
+              <div className="h-[420px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={gapData}
                     layout="vertical"
+                    barGap={2}
+                    barCategoryGap="25%"
                     margin={{ top: 5, right: 20, bottom: 5, left: 10 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
                     <XAxis
                       type="number"
-                      domain={['auto', 'auto']}
+                      domain={[0, 100]}
+                      ticks={[0, 25, 50, 75, 100]}
                       tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
                     />
                     <YAxis
@@ -225,6 +236,7 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
                       tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }}
                     />
                     <Tooltip
+                      cursor={{ fill: 'hsl(var(--muted) / 0.25)' }}
                       contentStyle={{
                         backgroundColor: 'hsl(var(--card))',
                         border: '1px solid hsl(var(--border))',
@@ -236,27 +248,32 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
                       // le colora col colore della serie e, mancando (le barre
                       // usano Cell), ripiega su nero. Nero su card scura.
                       itemStyle={{ color: 'hsl(var(--foreground))' }}
-                      formatter={(value: number, _: string, props: any) => {
+                      formatter={(value: number, key: string, props: any) => {
                         const item = props.payload;
-                        return [
-                          `Delta: ${value > 0 ? '+' : ''}${value} (${item.previous} → ${item.current})`,
-                          item.name,
-                        ];
+                        if (key === 'previous') return [`${value}/100`, `${selectedSnapshot.snapshot_year}`];
+                        const segno = item.delta > 0 ? '+' : '';
+                        return [`${value}/100 (${segno}${item.delta})`, `${currentYear}`];
                       }}
-                      labelFormatter={() => ''}
+                      labelFormatter={(_: string, payload: any[]) => payload?.[0]?.payload?.name ?? ''}
                     />
-                    <ReferenceLine x={0} stroke="hsl(var(--muted-foreground))" strokeWidth={1} />
-                    <Bar dataKey="delta" radius={[0, 4, 4, 0]} maxBarSize={20}>
+                    {/* La legenda si scrive a mano: la barra "attuale" non ha un fill
+                        unico (le Cell lo decidono per riga) e Recharts la disegnerebbe
+                        nera. Meglio dire cosa vuol dire ogni colore. */}
+                    <Legend
+                      wrapperStyle={{ fontSize: '11px' }}
+                      payload={[
+                        { value: `Snapshot ${selectedSnapshot.snapshot_year}`, type: 'square', color: COLORE_SNAPSHOT },
+                        { value: `${currentYear} · migliorata`, type: 'square', color: COLORE_SU },
+                        { value: `${currentYear} · peggiorata`, type: 'square', color: COLORE_GIU },
+                        { value: `${currentYear} · stabile`, type: 'square', color: COLORE_STABILE },
+                      ]}
+                    />
+                    <Bar dataKey="previous" fill={COLORE_SNAPSHOT} radius={[0, 4, 4, 0]} maxBarSize={12} />
+                    <Bar dataKey="current" radius={[0, 4, 4, 0]} maxBarSize={12}>
                       {gapData.map((entry, index) => (
                         <Cell
                           key={index}
-                          fill={
-                            entry.delta > 0
-                              ? 'hsl(142, 71%, 45%)'
-                              : entry.delta < 0
-                              ? 'hsl(0, 72%, 51%)'
-                              : 'hsl(var(--muted-foreground))'
-                          }
+                          fill={entry.delta > 0 ? COLORE_SU : entry.delta < 0 ? COLORE_GIU : COLORE_STABILE}
                         />
                       ))}
                     </Bar>

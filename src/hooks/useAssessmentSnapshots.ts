@@ -22,14 +22,25 @@ export interface AssessmentSnapshot {
   created_at: string;
 }
 
-/** Map API snapshot (Record category_scores) to local shape (array category_scores) */
+/**
+ * Map API snapshot (Record category_scores) to local shape (array category_scores).
+ *
+ * Il backend chiama la categoria `category_name`; qui si normalizza a `name`,
+ * che è la chiave con cui la gap analysis la cerca. Senza, nessuna categoria
+ * dello snapshot combacia e ogni delta vale quanto il punteggio attuale.
+ */
 function toSnapshot(item: ApiAssessmentSnapshot, orgId: string): AssessmentSnapshot {
   return {
     id: item.id,
     organization_id: orgId,
     snapshot_year: item.snapshot_year,
     category_scores: item.category_scores
-      ? Object.values(item.category_scores)
+      ? Object.values(item.category_scores).map(c => ({
+          name: c.category_name ?? c.name ?? '',
+          score: c.score,
+          answered: c.answered,
+          total: c.total,
+        }))
       : [],
     overall_score: item.overall_score,
     total_answered: item.total_answered,

@@ -38,6 +38,29 @@ const CLASSIFICATION_LABEL: Record<string, string> = {
 	not_assessed: 'non valutata',
 };
 
+/**
+ * Le etichette di servizio che il modello lascia nei testi, con il nome che l'utente
+ * vede nel resto della pagina. Il backend le sostituisce già alla generazione
+ * (`AnalysisProseNormalizer`, stesse etichette); qui si coprono gli snapshot
+ * elaborati prima. Vale sia in lettura sia nell'editor: chi corregge vede lo stesso
+ * testo che legge, e salvando scrive l'etichetta al posto del token.
+ */
+const ETICHETTE_SERVIZIO: Record<string, string> = {
+	not_started: 'Non iniziato',
+	planned_in_progress: 'Pianificato/In corso',
+	completed: 'Completato',
+	not_applicable: 'Non applicabile',
+	missing: 'Senza risposta',
+	...CLASSIFICATION_LABEL,
+};
+
+const RE_ETICHETTE_SERVIZIO = new RegExp(`\\b(${Object.keys(ETICHETTE_SERVIZIO).join('|')})\\b`, 'g');
+
+/** Sostituisce i token tecnici con l'etichetta reale, tra virgolette perché è un nome di stato. */
+export function umanizzaEtichette(testo: string): string {
+	return testo.replace(RE_ETICHETTE_SERVIZIO, (token) => `"${ETICHETTE_SERVIZIO[token]}"`);
+}
+
 const CLASSIFICATION_CLASS: Record<string, string> = {
 	well_covered: 'bg-green-500/15 text-green-500 border-green-500/30',
 	targeted_improvement: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
@@ -58,7 +81,7 @@ const CampoTesto: React.FC<{
 	const [draft, setDraft] = useState(value);
 
 	const apri = () => {
-		setDraft(value);
+		setDraft(umanizzaEtichette(value));
 		setEditing(true);
 	};
 
@@ -85,7 +108,7 @@ const CampoTesto: React.FC<{
 					)}
 				</div>
 				<p className="whitespace-pre-wrap text-sm leading-relaxed">
-					{value?.trim() || <span className="italic text-muted-foreground">Vuoto.</span>}
+					{value?.trim() ? umanizzaEtichette(value) : <span className="italic text-muted-foreground">Vuoto.</span>}
 				</p>
 			</div>
 		);
