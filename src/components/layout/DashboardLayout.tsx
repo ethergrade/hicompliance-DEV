@@ -6,7 +6,8 @@ import { ClientIndicator } from './ClientIndicator';
 import { AppFooter } from './AppFooter';
 import { useUserRoles } from '@/hooks/useUserRoles';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { ShieldAlert } from 'lucide-react';
+import { ShieldAlert, PauseCircle } from 'lucide-react';
+import { useStageMode } from '@/hooks/usePlatformRuntimeSettings';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -15,6 +16,7 @@ interface DashboardLayoutProps {
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const { isSales } = useUserRoles();
   const { user } = useAuth();
+  const { data: stageMode } = useStageMode();
 
   return (
     <SidebarProvider defaultOpen={true}>
