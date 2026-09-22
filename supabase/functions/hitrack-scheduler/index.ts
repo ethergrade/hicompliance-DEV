@@ -3,7 +3,7 @@ import {
   json,
   requireInternalRequest,
 } from "../_shared/hitrack-domotz.ts";
-import { isStageModePaused, stageModeResponse } from '../_shared/stage-mode.ts';
+import { isStageModePaused } from '../_shared/stage-mode.ts';
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return json({ ok: true });
