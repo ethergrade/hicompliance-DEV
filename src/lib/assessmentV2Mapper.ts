@@ -37,7 +37,7 @@ export async function loadV2AssessmentData(groupId?: string | null) {
           return {
             id: uuidToIndex[q.id] ?? 0,
             question: q.question_text,
-            priority: "MEDIA" as const,
+            priority: ((((q as any).description ?? "").match(/ALTA|MEDIA|BASSA/)?.[0]) ?? "MEDIA") as "ALTA" | "MEDIA" | "BASSA",
             dependency: depUiIndex ? String(depUiIndex) : undefined,
           };
         }),
