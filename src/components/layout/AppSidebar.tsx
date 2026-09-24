@@ -88,7 +88,6 @@ const hiComplianceServices = [
 	{ title: "SurfaceScan360", href: "/surface-scan", icon: Globe },
 	{ title: "DarkRisk360", href: "/dark-risk", icon: Eye },
 	{ title: "DarkRisk360 Esteso", href: "/dark-risk-esteso", icon: ShieldAlert },
-	{ title: "HiTrack", href: "/dashboard/service/hitrack", icon: Activity },
 ];
 
 const incidentMainItems = [
@@ -330,6 +329,14 @@ export const AppSidebar: React.FC = () => {
 					<SidebarGroupContent>
 						<SidebarMenu>
 							{filteredNavigation.map((item) => renderNavItem(item))}
+							{/* HiTrack in Generale, subito dopo le voci principali */}
+							{isFeatureAllowed("/dashboard/service/hitrack") &&
+								isUserAllowed("/dashboard/service/hitrack") &&
+								renderNavItem({
+									title: "HiTrack",
+									href: "/dashboard/service/hitrack",
+									icon: Activity,
+								})}
 							{servicesStandalone.map((item) => renderNavItem(item))}
 							{hipatchOn &&
 								isUserAllowed("/dashboard/service/hipatch") &&
