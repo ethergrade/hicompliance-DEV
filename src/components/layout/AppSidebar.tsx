@@ -88,7 +88,6 @@ const hiComplianceServices = [
 	{ title: "SurfaceScan360", href: "/surface-scan", icon: Globe },
 	{ title: "DarkRisk360", href: "/dark-risk", icon: Eye },
 	{ title: "DarkRisk360 Esteso", href: "/dark-risk-esteso", icon: ShieldAlert },
-	{ title: "HiTrack", href: "/dashboard/service/hitrack", icon: Activity },
 ];
 
 const incidentMainItems = [
