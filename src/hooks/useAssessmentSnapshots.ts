@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { assessmentV2Api } from '@/lib/api';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { toast } from 'sonner';
-import type { AssessmentSnapshot as ApiAssessmentSnapshot } from '@/types/api';
 
 export interface CategorySnapshot {
   name: string;
@@ -15,6 +14,8 @@ export interface AssessmentSnapshot {
   id: string;
   organization_id: string;
   snapshot_year: number;
+  label: string | null;
+  snapshot_date: string;
   category_scores: CategorySnapshot[];
   overall_score: number;
   total_answered: number;
@@ -22,24 +23,29 @@ export interface AssessmentSnapshot {
   created_at: string;
 }
 
-/**
- * Map API snapshot (Record category_scores) to local shape (array category_scores).
- *
- * Il backend chiama la categoria `category_name`; qui si normalizza a `name`,
- * che è la chiave con cui la gap analysis la cerca. Senza, nessuna categoria
- * dello snapshot combacia e ogni delta vale quanto il punteggio attuale.
- */
-function toSnapshot(item: ApiAssessmentSnapshot, orgId: string): AssessmentSnapshot {
+export interface NewSnapshotInput {
+  label?: string;
+  year: number;
+  overall_score: number;
+  total_answered: number;
+  total_questions: number;
+  categories: CategorySnapshot[];
+}
+
+/** Il backend chiama la categoria `category_name`; qui si normalizza a `name`. */
+function toSnapshot(item: any, orgId: string): AssessmentSnapshot {
   return {
     id: item.id,
     organization_id: orgId,
     snapshot_year: item.snapshot_year,
+    label: item.label ?? null,
+    snapshot_date: item.snapshot_date ?? item.created_at,
     category_scores: item.category_scores
-      ? Object.values(item.category_scores).map(c => ({
+      ? Object.values(item.category_scores as Record<string, any>).map((c: any) => ({
           name: c.category_name ?? c.name ?? '',
-          score: c.score,
-          answered: c.answered,
-          total: c.total,
+          score: c.score ?? 0,
+          answered: c.answered ?? 0,
+          total: c.total ?? 0,
         }))
       : [],
     overall_score: item.overall_score,
@@ -49,6 +55,9 @@ function toSnapshot(item: ApiAssessmentSnapshot, orgId: string): AssessmentSnaps
   };
 }
 
+export const snapshotTitle = (s: AssessmentSnapshot) =>
+  s.label ? `${s.snapshot_year} · ${s.label}` : String(s.snapshot_year);
+
 export const useAssessmentSnapshots = () => {
   const { organizationId: orgId, groupId } = useClientOrganization();
 
@@ -57,7 +66,7 @@ export const useAssessmentSnapshots = () => {
   const [saving, setSaving] = useState(false);
 
   const loadSnapshots = useCallback(async () => {
-    if (!orgId || !groupId) return;
+    if (!orgId) return;
     setLoading(true);
     try {
       const items = await assessmentV2Api.snapshots(orgId, groupId);
@@ -73,21 +82,33 @@ export const useAssessmentSnapshots = () => {
     loadSnapshots();
   }, [loadSnapshots]);
 
-  /** Trigger a snapshot recalculation on the backend (no manual data needed) */
-  const saveSnapshot = useCallback(async () => {
-    if (!orgId || !groupId) return;
+  const saveSnapshot = useCallback(async (input: NewSnapshotInput) => {
+    if (!orgId) return null;
     setSaving(true);
     try {
-      await assessmentV2Api.createSnapshot(orgId, groupId);
-      toast.success('Snapshot ricalcolato e salvato con successo');
+      const created = await assessmentV2Api.createSnapshot(orgId, input);
+      toast.success('Snapshot salvato');
       await loadSnapshots();
-    } catch (err: any) {
+      return created;
+    } catch (err) {
       toast.error('Errore nel salvataggio dello snapshot');
       console.error(err);
+      return null;
     } finally {
       setSaving(false);
     }
-  }, [orgId, groupId, loadSnapshots]);
+  }, [orgId, loadSnapshots]);
 
-  return { snapshots, loading, saving, saveSnapshot };
+  const deleteSnapshot = useCallback(async (id: string) => {
+    try {
+      await assessmentV2Api.deleteSnapshot(id);
+      toast.success('Snapshot eliminato');
+      await loadSnapshots();
+    } catch (err) {
+      toast.error('Impossibile eliminare lo snapshot (permessi insufficienti)');
+      console.error(err);
+    }
+  }, [loadSnapshots]);
+
+  return { snapshots, loading, saving, saveSnapshot, deleteSnapshot };
 };

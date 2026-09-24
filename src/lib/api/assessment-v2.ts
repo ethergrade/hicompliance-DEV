@@ -211,26 +211,41 @@ export const assessmentV2Api = {
 		return (data ?? []) as unknown as AssessmentSnapshot[];
 	},
 
-	/** Create a new snapshot (recalculates scores from current responses) */
+	/**
+	 * Crea un nuovo snapshot (non sovrascrive i precedenti) con i punteggi
+	 * già calcolati dalla pagina Assessment.
+	 */
 	async createSnapshot(
 		companyId: string,
-		_g?: string | null,
+		payload: {
+			label?: string | null;
+			year: number;
+			overall_score: number;
+			total_answered: number;
+			total_questions: number;
+			categories: { name: string; score: number; answered: number; total: number }[];
+		},
 	): Promise<AssessmentSnapshot> {
-		const [{ data: responses, error }, { data: categories, error: categoryError }, { data: authData }] = await Promise.all([
-			supabase.from("assessment_responses").select("status,question_id,assessment_questions(category_id)").eq("organization_id", companyId),
-			supabase.from("assessment_categories").select("id,name"),
-			supabase.auth.getUser(),
-		]);
+		const { data: authData } = await supabase.auth.getUser();
+		const categoryScores = Object.fromEntries(payload.categories.map((c, i) => [String(i), { category_name: c.name, score: c.score, answered: c.answered, total: c.total }]));
+		const { data, error } = await (supabase as any).from("assessment_snapshots").insert({
+			organization_id: companyId,
+			snapshot_year: payload.year,
+			label: payload.label?.trim() || null,
+			category_scores: categoryScores,
+			overall_score: payload.overall_score,
+			total_answered: payload.total_answered,
+			total_questions: payload.total_questions,
+			created_by: authData.user?.id ?? null,
+		}).select("*").single();
 		if (error) throw error;
-		if (categoryError) throw categoryError;
-		const total = await this.questions().then((items) => items.length);
-		const completed = (responses ?? []).filter((item) => item.status === "completed").length;
-		const score = total ? Math.round(completed / total * 100) : 0;
-		const categoryScores = Object.fromEntries((categories ?? []).map((category) => [category.id, { category_id: category.id, category_name: category.name, score: 0, answered: 0, total: 0 }]));
-		const year = new Date().getFullYear();
-		const { data, error: saveError } = await supabase.from("assessment_snapshots").upsert({ organization_id: companyId, snapshot_year: year, category_scores: categoryScores, overall_score: score, total_answered: responses?.length ?? 0, total_questions: total, created_by: authData.user?.id ?? null }, { onConflict: "organization_id,snapshot_year" }).select("*").single();
-		if (saveError) throw saveError;
 		return data as unknown as AssessmentSnapshot;
+	},
+
+	async deleteSnapshot(id: string): Promise<void> {
+		const { error, count } = await supabase.from("assessment_snapshots").delete({ count: "exact" }).eq("id", id);
+		if (error) throw error;
+		if (!count) throw new Error("Permesso negato");
 	},
 
 	/** Get elaboration status for a snapshot (admin/superadmin only) */
