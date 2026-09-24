@@ -11,7 +11,17 @@ export default defineConfig(({ mode }) => {
   const isLocal = /localhost|127\.0\.0\.1/.test(targetUrl);
   const stripApiPrefix = isWebsoup || isLocal;
 
+  // Fallback pubblici (URL progetto + chiave anon, protetti da RLS) per build senza .env
+  const supabaseUrl = env.VITE_SUPABASE_URL || 'https://hcllvyzhefcqftesahnv.supabase.co';
+  const supabaseKey = env.VITE_SUPABASE_PUBLISHABLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhjbGx2eXpoZWZjcWZ0ZXNhaG52Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE1MzUyMTUsImV4cCI6MjA2NzExMTIxNX0.wzDcO5RkVKQXSMBftT8oGvv4SRG7wjeJr87DQwWh4zc';
+  const supabaseProjectId = env.VITE_SUPABASE_PROJECT_ID || 'hcllvyzhefcqftesahnv';
+
   return {
+    define: {
+      'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(supabaseUrl),
+      'import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY': JSON.stringify(supabaseKey),
+      'import.meta.env.VITE_SUPABASE_PROJECT_ID': JSON.stringify(supabaseProjectId),
+    },
     server: {
       host: "::",
       port: 8080,
