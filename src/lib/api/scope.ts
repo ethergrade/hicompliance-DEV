@@ -36,12 +36,16 @@ export interface ScopeEntry {
 
 export const scopeApi = {
 	async list(companyId: string, groupId?: string | null): Promise<ScopeEntry[]> {
-		const res = await complianceApiClient.get<ApiResponse<ScopeEntry[]>>(
-			`/companies/${companyId}/scope`,
-			undefined,
-			groupId ? groupHeader(groupId) : undefined,
-		);
-		return extractArray<ScopeEntry>(res.data);
+		try {
+			const res = await complianceApiClient.get<ApiResponse<ScopeEntry[]>>(
+				`/companies/${companyId}/scope`,
+				undefined,
+				groupId ? groupHeader(groupId) : undefined,
+			);
+			return extractArray<ScopeEntry>(res.data);
+		} catch {
+			return [];
+		}
 	},
 
 	async add(
