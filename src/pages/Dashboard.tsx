@@ -93,10 +93,13 @@ const Dashboard: React.FC = () => {
 	const [modulesDialogOpen, setModulesDialogOpen] = useState(false);
 
 	// Per-tenant assessment metrics + trends for dashboard widgets
-	const { completionScore, riskScore, assessmentId } = useDashboardMetrics(
+	const { completionScore: realCompletion, riskScore: realRisk, assessmentId } = useDashboardMetrics(
 		activeOrgId,
 		activeGroupId,
 	);
+	// Innovatech (demo sales): valori mock di conformità/rischio.
+	const completionScore = isDemoOrganization ? 64 : realCompletion;
+	const riskScore = isDemoOrganization ? 38 : realRisk;
 	const { vulnerabilities, deltaHosts, deltaCves } =
 		useAssessmentTrends(assessmentId, activeGroupId);
 	// Radar allineato alla vista Assessment (score live dalle risposte, non il
