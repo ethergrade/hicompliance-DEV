@@ -1,21 +1,22 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts';
-import { TrendingUp, TrendingDown, Minus, History, ArrowRightLeft } from 'lucide-react';
-import { AssessmentSnapshot, CategorySnapshot, useAssessmentSnapshots } from '@/hooks/useAssessmentSnapshots';
+import { TrendingUp, TrendingDown, Minus, History, ArrowRightLeft, Plus, FileDown, X, Loader2 } from 'lucide-react';
+import { useAssessmentSnapshots, snapshotTitle } from '@/hooks/useAssessmentSnapshots';
+import { useUserRoles } from '@/hooks/useUserRoles';
+import { useClientOrganization } from '@/hooks/useClientOrganization';
+import { exportAssessmentComparisonPdf, criticalAreas } from '@/lib/report/exportAssessmentComparisonPdf';
 
 interface GapAnalysisSectionProps {
-  currentCategories: {
-    name: string;
-    score: number;
-    completed: number;
-    questions: number;
-  }[];
+  currentCategories: { name: string; score: number; completed: number; questions: number }[];
   overallScore: number;
   overallProgress: number;
 }
@@ -24,48 +25,100 @@ const COLORE_SNAPSHOT = 'hsl(var(--muted-foreground) / 0.45)';
 const COLORE_SU = 'hsl(142, 71%, 45%)';
 const COLORE_GIU = 'hsl(0, 72%, 51%)';
 const COLORE_STABILE = 'hsl(var(--primary))';
+const CURRENT = 'current';
 
-const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
-  currentCategories,
-  overallScore,
-  overallProgress,
-}) => {
-  // Lo snapshot non si crea più da qui: nasce dalla conferma del ciclo di
-  // assessment. Il pulsante che stava qui poteva legare uno snapshot a un ciclo
-  // ancora in compilazione, escludendolo per sempre dall'elaborazione automatica.
-  const { snapshots, loading } = useAssessmentSnapshots();
-  // Serve alle etichette di confronto: "2025 → 2026"
+const deltaColor = (d: number) => (d > 0 ? COLORE_SU : d < 0 ? COLORE_GIU : COLORE_STABILE);
+const signed = (d: number) => `${d > 0 ? '+' : ''}${d}`;
+
+const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({ currentCategories, overallScore }) => {
+  const { snapshots, saving, saveSnapshot, deleteSnapshot } = useAssessmentSnapshots();
+  const { isAdmin, isSuperAdmin, isSales } = useUserRoles();
+  const canDelete = isAdmin || isSuperAdmin || isSales;
+  const { selectedOrganization } = useClientOrganization();
   const currentYear = new Date().getFullYear();
-  const [compareYear, setCompareYear] = useState<string>('');
 
-  const selectedSnapshot = useMemo(() => {
-    if (!compareYear) return null;
-    return snapshots.find(s => s.snapshot_year === parseInt(compareYear)) || null;
-  }, [compareYear, snapshots]);
+  const [fromId, setFromId] = useState('');
+  const [toId, setToId] = useState(CURRENT);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [label, setLabel] = useState('');
+  const [year, setYear] = useState(String(currentYear));
+
+  // Default: confronta lo snapshot più vecchio con la situazione attuale
+  useEffect(() => {
+    if (!snapshots.find(s => s.id === fromId)) setFromId(snapshots[snapshots.length - 1]?.id ?? '');
+    if (toId !== CURRENT && !snapshots.find(s => s.id === toId)) setToId(CURRENT);
+  }, [snapshots]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const current = useMemo(() => ({
+    title: `Situazione attuale (${currentYear})`,
+    overall: overallScore,
+    categories: currentCategories.map(c => ({ name: c.name, score: c.score })),
+  }), [currentCategories, overallScore, currentYear]);
+
+  const resolve = (id: string) => {
+    if (id === CURRENT) return current;
+    const s = snapshots.find(x => x.id === id);
+    return s ? { title: snapshotTitle(s), overall: s.overall_score, categories: s.category_scores } : null;
+  };
+  const from = resolve(fromId);
+  const to = resolve(toId);
 
   const gapData = useMemo(() => {
-    if (!selectedSnapshot) return [];
-    return currentCategories.map(curr => {
-      const prev = (selectedSnapshot.category_scores as CategorySnapshot[]).find(
-        (s) => s.name === curr.name
-      );
-      const prevScore = prev?.score ?? 0;
-      const delta = curr.score - prevScore;
+    if (!from || !to) return [];
+    const names = Array.from(new Set([...to.categories.map(c => c.name), ...from.categories.map(c => c.name)])).filter(Boolean);
+    return names.map(name => {
+      const previous = from.categories.find(c => c.name === name)?.score ?? 0;
+      const cur = to.categories.find(c => c.name === name)?.score ?? 0;
       return {
-        name: curr.name,
-        shortName: curr.name.length > 16 ? curr.name.substring(0, 14) + '…' : curr.name,
-        current: curr.score,
-        previous: prevScore,
-        delta,
+        name,
+        shortName: name.length > 16 ? name.substring(0, 14) + '…' : name,
+        previous, current: cur, delta: cur - previous,
       };
     });
-  }, [currentCategories, selectedSnapshot]);
+  }, [from, to]);
 
-  const overallDelta = selectedSnapshot ? overallScore - selectedSnapshot.overall_score : 0;
+  const overallDelta = from && to ? to.overall - from.overall : 0;
+  const gains = gapData.filter(r => r.delta > 0).sort((a, b) => b.delta - a.delta).slice(0, 3);
+  const critical = criticalAreas(gapData).slice(0, 3);
+  const sameSelection = fromId === toId;
+
+  const handleCreate = async () => {
+    const answered = currentCategories.reduce((a, c) => a + c.completed, 0);
+    const total = currentCategories.reduce((a, c) => a + c.questions, 0);
+    const created = await saveSnapshot({
+      label, year: parseInt(year) || currentYear, overall_score: overallScore,
+      total_answered: answered, total_questions: total,
+      categories: currentCategories.map(c => ({ name: c.name, score: c.score, answered: c.completed, total: c.questions })),
+    });
+    if (created) { setDialogOpen(false); setLabel(''); }
+  };
+
+  const handleExport = () => {
+    if (!from || !to) return;
+    exportAssessmentComparisonPdf({
+      organizationName: selectedOrganization?.name ?? 'Cliente',
+      fromTitle: from.title, toTitle: to.title,
+      fromScore: from.overall, toScore: to.overall,
+      rows: gapData.map(({ name, previous, current, delta }) => ({ name, previous, current, delta })),
+    });
+  };
+
+  const legend = from && to ? [
+    { label: `Partenza · ${from.title}`, color: COLORE_SNAPSHOT },
+    { label: 'Migliorata', color: COLORE_SU },
+    { label: 'Peggiorata', color: COLORE_GIU },
+    { label: 'Stabile', color: COLORE_STABILE },
+  ] : [];
+
+  const Row = ({ item, value }: { item: typeof gapData[number]; value: string }) => (
+    <div className="flex items-center justify-between py-1.5 border-b border-border/50 last:border-0 min-w-0">
+      <span className="text-xs text-foreground truncate flex-1 mr-2">{item.name}</span>
+      <span className="text-xs font-semibold" style={{ color: deltaColor(item.delta) }}>{value}</span>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
-      {/* Header with save + compare controls */}
       <Card className="border-border">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between flex-wrap gap-3">
@@ -73,209 +126,143 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
               <History className="w-5 h-5 text-primary" />
               <div>
                 <CardTitle className="text-base">Storico & Gap Analysis</CardTitle>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Confronta l'evoluzione fra un assessment e l'altro
-                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">Confronta l'evoluzione fra un assessment e l'altro</p>
               </div>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <Button size="sm" onClick={() => setDialogOpen(true)}><Plus className="w-4 h-4 mr-1" />Genera nuovo snapshot</Button>
+              <Button size="sm" variant="outline" disabled={!from || !to || sameSelection} onClick={handleExport}>
+                <FileDown className="w-4 h-4 mr-1" />Esporta report di confronto (PDF)
+              </Button>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="pt-0">
-          {/* Snapshots timeline */}
+        <CardContent className="pt-0 space-y-4">
           {snapshots.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-muted-foreground mr-1">Snapshot:</span>
-              {snapshots.map(s => (
-                <Badge
-                  key={s.id}
-                  variant={compareYear === String(s.snapshot_year) ? 'default' : 'outline'}
-                  className="cursor-pointer text-xs"
-                  onClick={() => setCompareYear(
-                    compareYear === String(s.snapshot_year) ? '' : String(s.snapshot_year)
-                  )}
-                >
-                  {s.snapshot_year} — {s.overall_score}/100
-                </Badge>
-              ))}
-              <span className="text-[10px] text-muted-foreground ml-2">
-                (clicca per confrontare)
-              </span>
-            </div>
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-muted-foreground mr-1">Snapshot:</span>
+                {snapshots.map(s => (
+                  <Badge
+                    key={s.id}
+                    variant={fromId === s.id ? 'default' : 'outline'}
+                    className="cursor-pointer text-xs gap-1"
+                    onClick={() => setFromId(s.id)}
+                    title={`Salvato il ${new Date(s.snapshot_date).toLocaleDateString('it-IT')}`}
+                  >
+                    {snapshotTitle(s)} — {s.overall_score}/100
+                    {canDelete && (
+                      <button
+                        type="button"
+                        aria-label="Elimina snapshot"
+                        className="ml-1 opacity-60 hover:opacity-100"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`Eliminare lo snapshot ${snapshotTitle(s)}?`)) deleteSnapshot(s.id);
+                        }}
+                      ><X className="w-3 h-3" /></button>
+                    )}
+                  </Badge>
+                ))}
+                <span className="text-[10px] text-muted-foreground ml-2">(clicca per impostarlo come partenza)</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Da</span>
+                  <Select value={fromId} onValueChange={setFromId}>
+                    <SelectTrigger className="h-8 w-56 text-xs"><SelectValue placeholder="Snapshot" /></SelectTrigger>
+                    <SelectContent>
+                      {snapshots.map(s => <SelectItem key={s.id} value={s.id}>{snapshotTitle(s)} — {s.overall_score}/100</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <ArrowRightLeft className="w-4 h-4 text-muted-foreground" />
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">A</span>
+                  <Select value={toId} onValueChange={setToId}>
+                    <SelectTrigger className="h-8 w-56 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={CURRENT}>Situazione attuale — {overallScore}/100</SelectItem>
+                      {snapshots.map(s => <SelectItem key={s.id} value={s.id}>{snapshotTitle(s)} — {s.overall_score}/100</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {sameSelection && <span className="text-xs text-destructive">Scegli due elementi diversi</span>}
+              </div>
+            </>
           ) : (
-            <p className="text-xs text-muted-foreground">
-              Rispondi ad almeno una domanda per generare automaticamente il primo snapshot.
-            </p>
+            <p className="text-xs text-muted-foreground">Nessuno snapshot salvato. Usa "Genera nuovo snapshot" per fissare la situazione attuale.</p>
           )}
         </CardContent>
       </Card>
 
-      {/* Gap/Gain Analysis */}
-      {selectedSnapshot && gapData.length > 0 && (
+      {from && to && !sameSelection && gapData.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Summary cards */}
           <Card className="border-border">
             <CardContent className="p-4 space-y-4">
-              <div className="flex items-center gap-2 mb-2">
-                <ArrowRightLeft className="w-4 h-4 text-primary" />
-                <span className="text-sm font-semibold text-foreground">
-                  Confronto {selectedSnapshot.snapshot_year} → {currentYear}
-                </span>
+              <div className="flex items-center gap-2 mb-2 min-w-0">
+                <ArrowRightLeft className="w-4 h-4 text-primary shrink-0" />
+                <span className="text-sm font-semibold text-foreground truncate">Confronto {from.title} → {to.title}</span>
               </div>
-
-              {/* Overall delta */}
               <div className="rounded-lg border border-border p-3 bg-muted/30">
                 <div className="text-xs text-muted-foreground mb-1">Punteggio Globale</div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-baseline gap-2">
-                    <span className="text-lg font-bold text-foreground">{overallScore}/100</span>
-                    <span className="text-xs text-muted-foreground">
-                      da {selectedSnapshot.overall_score}/100
-                    </span>
+                    <span className="text-lg font-bold text-foreground">{to.overall}/100</span>
+                    <span className="text-xs text-muted-foreground">da {from.overall}/100</span>
                   </div>
-                  <Badge
-                    variant="outline"
-                    className={`text-xs font-semibold ${
-                      overallDelta > 0
-                        ? 'text-green-500 border-green-500/30'
-                        : overallDelta < 0
-                        ? 'text-red-500 border-red-500/30'
-                        : 'text-muted-foreground'
-                    }`}
-                  >
+                  <Badge variant="outline" className="text-xs font-semibold" style={{ color: deltaColor(overallDelta), borderColor: deltaColor(overallDelta) }}>
                     {overallDelta > 0 && <TrendingUp className="w-3 h-3 mr-1" />}
                     {overallDelta < 0 && <TrendingDown className="w-3 h-3 mr-1" />}
                     {overallDelta === 0 && <Minus className="w-3 h-3 mr-1" />}
-                    {overallDelta > 0 ? '+' : ''}{overallDelta}
+                    {signed(overallDelta)}
                   </Badge>
                 </div>
               </div>
-
-              {/* Top gains */}
               <div>
-                <div className="text-xs font-medium text-muted-foreground mb-2">
-                  Migliori miglioramenti
-                </div>
-                {[...gapData]
-                  .sort((a, b) => b.delta - a.delta)
-                  .slice(0, 3)
-                  .map(item => (
-                    <div
-                      key={item.name}
-                      className="flex items-center justify-between py-1.5 border-b border-border/50 last:border-0"
-                    >
-                      <span className="text-xs text-foreground truncate flex-1 mr-2">{item.name}</span>
-                      <span
-                        className={`text-xs font-semibold ${
-                          item.delta > 0 ? 'text-green-500' : item.delta < 0 ? 'text-red-500' : 'text-muted-foreground'
-                        }`}
-                      >
-                        {item.delta > 0 ? '+' : ''}{item.delta}
-                      </span>
-                    </div>
-                  ))}
+                <div className="text-xs font-medium text-muted-foreground mb-2">Migliori miglioramenti</div>
+                {gains.length ? gains.map(i => <Row key={i.name} item={i} value={signed(i.delta)} />)
+                  : <p className="text-xs text-muted-foreground">Nessuna categoria migliorata.</p>}
               </div>
-
-              {/* Top gaps */}
               <div>
-                <div className="text-xs font-medium text-muted-foreground mb-2">
-                  Aree critiche (gap)
-                </div>
-                {[...gapData]
-                  .sort((a, b) => a.delta - b.delta)
-                  .slice(0, 3)
-                  .map(item => (
-                    <div
-                      key={item.name}
-                      className="flex items-center justify-between py-1.5 border-b border-border/50 last:border-0"
-                    >
-                      <span className="text-xs text-foreground truncate flex-1 mr-2">{item.name}</span>
-                      <span
-                        className={`text-xs font-semibold ${
-                          item.delta > 0 ? 'text-green-500' : item.delta < 0 ? 'text-red-500' : 'text-muted-foreground'
-                        }`}
-                      >
-                        {item.delta > 0 ? '+' : ''}{item.delta}
-                      </span>
-                    </div>
-                  ))}
+                <div className="text-xs font-medium text-muted-foreground mb-2">Aree critiche (gap)</div>
+                {critical.length ? critical.map(i => <Row key={i.name} item={i} value={`${i.current}/100 (${signed(i.delta)})`} />)
+                  : <p className="text-xs text-muted-foreground">Nessuna area critica.</p>}
               </div>
             </CardContent>
           </Card>
 
-          {/* Delta bar chart */}
           <Card className="border-border lg:col-span-2">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">
-                Variazione per Categoria ({selectedSnapshot.snapshot_year} → {currentYear})
-              </CardTitle>
+              <CardTitle className="text-sm">Variazione per Categoria ({from.title} → {to.title})</CardTitle>
+              <div className="flex flex-wrap gap-4 pt-2">
+                {legend.map(l => (
+                  <span key={l.label} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span className="w-3 h-3 rounded-sm" style={{ background: l.color }} />{l.label}
+                  </span>
+                ))}
+              </div>
             </CardHeader>
             <CardContent className="pt-0">
-              {/* Due barre per categoria, punteggio prima e punteggio adesso, su scala
-                  0–100. Il solo delta nascondeva dov'è la categoria: una al 100 stabile
-                  spariva del tutto, e sembrava un grafico rotto. */}
               <div className="h-[420px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={gapData}
-                    layout="vertical"
-                    barGap={2}
-                    barCategoryGap="25%"
-                    margin={{ top: 5, right: 20, bottom: 5, left: 10 }}
-                  >
+                  <BarChart data={gapData} layout="vertical" barGap={2} barCategoryGap="25%" margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
-                    <XAxis
-                      type="number"
-                      domain={[0, 100]}
-                      ticks={[0, 25, 50, 75, 100]}
-                      tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
-                    />
-                    <YAxis
-                      type="category"
-                      dataKey="shortName"
-                      width={120}
-                      tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }}
-                    />
+                    <XAxis type="number" domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
+                    <YAxis type="category" dataKey="shortName" width={120} tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }} />
                     <Tooltip
                       cursor={{ fill: 'hsl(var(--muted) / 0.25)' }}
-                      contentStyle={{
-                        backgroundColor: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: '8px',
-                        color: 'hsl(var(--foreground))',
-                        fontSize: '12px',
-                      }}
-                      // Il colore del contenitore non arriva alle righe: Recharts
-                      // le colora col colore della serie e, mancando (le barre
-                      // usano Cell), ripiega su nero. Nero su card scura.
+                      contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--foreground))', fontSize: '12px' }}
                       itemStyle={{ color: 'hsl(var(--foreground))' }}
                       formatter={(value: number, key: string, props: any) => {
-                        const item = props.payload;
-                        if (key === 'previous') return [`${value}/100`, `${selectedSnapshot.snapshot_year}`];
-                        const segno = item.delta > 0 ? '+' : '';
-                        return [`${value}/100 (${segno}${item.delta})`, `${currentYear}`];
+                        if (key === 'previous') return [`${value}/100`, from.title];
+                        return [`${value}/100 (${signed(props.payload.delta)})`, to.title];
                       }}
                       labelFormatter={(_: string, payload: any[]) => payload?.[0]?.payload?.name ?? ''}
                     />
-                    {/* La legenda si scrive a mano: la barra "attuale" non ha un fill
-                        unico (le Cell lo decidono per riga) e Recharts la disegnerebbe
-                        nera. Meglio dire cosa vuol dire ogni colore. */}
-                    <Legend
-                      wrapperStyle={{ fontSize: '11px' }}
-                      payload={[
-                        { value: `Snapshot ${selectedSnapshot.snapshot_year}`, type: 'square', color: COLORE_SNAPSHOT },
-                        { value: `${currentYear} · migliorata`, type: 'square', color: COLORE_SU },
-                        { value: `${currentYear} · peggiorata`, type: 'square', color: COLORE_GIU },
-                        { value: `${currentYear} · stabile`, type: 'square', color: COLORE_STABILE },
-                      ]}
-                    />
                     <Bar dataKey="previous" fill={COLORE_SNAPSHOT} radius={[0, 4, 4, 0]} maxBarSize={12} />
                     <Bar dataKey="current" radius={[0, 4, 4, 0]} maxBarSize={12}>
-                      {gapData.map((entry, index) => (
-                        <Cell
-                          key={index}
-                          fill={entry.delta > 0 ? COLORE_SU : entry.delta < 0 ? COLORE_GIU : COLORE_STABILE}
-                        />
-                      ))}
+                      {gapData.map((e, i) => <Cell key={i} fill={deltaColor(e.delta)} />)}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -284,6 +271,27 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
           </Card>
         </div>
       )}
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Genera nuovo snapshot</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">Salva la situazione attuale ({overallScore}/100). Gli snapshot precedenti restano invariati.</p>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <Label>Anno</Label>
+              <Input type="number" value={year} onChange={e => setYear(e.target.value)} />
+            </div>
+            <div className="space-y-1 col-span-2">
+              <Label>Etichetta (facoltativa)</Label>
+              <Input value={label} maxLength={60} placeholder="es. Q3, Pre-audit" onChange={e => setLabel(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Annulla</Button>
+            <Button onClick={handleCreate} disabled={saving}>{saving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}Salva snapshot</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
