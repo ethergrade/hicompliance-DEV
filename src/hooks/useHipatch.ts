@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { hipatchApi } from '@/lib/api/hipatch';
 import type { HipatchSummary, HipatchAsset, HipatchOsPatch, HipatchSoftwarePatch, HipatchRemediation, HipatchCve } from '@/lib/api/hipatch';
 import { useClientOrganization } from './useClientOrganization';
+import { isInnovatechDemo } from '@/data/innovatechSecurityDemo';
+import { HIPATCH_DEMO_DATA } from '@/data/hipatchDemo';
 
 export interface HipatchDashboardData {
   summary: HipatchSummary | null;
@@ -28,12 +30,14 @@ const emptyData: HipatchDashboardData = {
 };
 
 export function useHipatchDashboard(date?: string) {
-  const { organizationId, groupId } = useClientOrganization();
+  const { organizationId, groupId, selectedOrganization } = useClientOrganization();
+  const demo = isInnovatechDemo(selectedOrganization?.name);
 
   return useQuery<HipatchDashboardData>({
-    queryKey: ['hipatch-dashboard', organizationId, groupId, date],
+    queryKey: ['hipatch-dashboard', organizationId, groupId, date, demo],
     queryFn: async () => {
       if (!organizationId) return emptyData;
+      if (demo) return HIPATCH_DEMO_DATA;
 
       const [summary, assets, osPending, osInstalled, swPending, swInstalled, remediations, cves, epss] =
         await Promise.all([
