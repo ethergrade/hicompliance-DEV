@@ -7082,6 +7082,60 @@ export type Database = {
           },
         ]
       }
+      tenant_services: {
+        Row: {
+          api_methods: Json | null
+          created_at: string
+          id: string
+          service_type: string
+          settings: Json | null
+          site_id: string | null
+          status: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          api_methods?: Json | null
+          created_at?: string
+          id?: string
+          service_type: string
+          settings?: Json | null
+          site_id?: string | null
+          status?: string
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          api_methods?: Json | null
+          created_at?: string
+          id?: string
+          service_type?: string
+          settings?: Json | null
+          site_id?: string | null
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_services_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenant_services_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+        ]
+      }
       user_preferences: {
         Row: {
           created_at: string

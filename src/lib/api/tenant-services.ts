@@ -1,81 +1,80 @@
-import { apiClient } from "@/lib/api-client";
+// Prototipo: i servizi del cliente sono salvati nel database Supabase
+// (tabella tenant_services) invece che sul server Laravel.
+import { supabase } from "@/integrations/supabase/client";
+import { FALLBACK_SERVICE_CATALOG } from "@/data/serviceCatalog";
 import type {
-  ApiResponse,
   TenantServiceResource,
   StoreTenantServiceRequest,
   UpdateTenantServiceRequest,
   ServiceCatalog,
 } from "@/types/api";
 
-const groupHeader = (groupId: string) => ({ "X-Group-Id": groupId });
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const table = () => (supabase as any).from("tenant_services");
+
+async function currentUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getUser();
+  return data.user?.id ?? null;
+}
+
+function unwrap<T>(res: { data: T; error: { message: string } | null }): T {
+  if (res.error) throw new Error(res.error.message);
+  return res.data;
+}
 
 export const tenantServicesApi = {
-  /** List active tenant services (pass status query param to filter) */
-  async list(status?: "active" | "inactive", groupId?: string | null): Promise<TenantServiceResource[]> {
-    const params = status ? { status } : undefined;
-    const opts = groupId ? { headers: groupHeader(groupId) } : undefined;
-    const res = await apiClient.get<ApiResponse<TenantServiceResource[]>>("/tenant-services", params, opts);
-    return res.data;
+  async list(status?: "active" | "inactive", _groupId?: string | null): Promise<TenantServiceResource[]> {
+    let q = table().select("*").order("created_at");
+    if (status) q = q.eq("status", status);
+    return unwrap(await q) ?? [];
   },
 
-  /** List tenant services by organization/tenant ID */
-  async listByOrganization(organizationId: string, groupId?: string | null): Promise<TenantServiceResource[]> {
-    const effectiveGroup = groupId || organizationId;
-    const res = await apiClient.get<ApiResponse<TenantServiceResource[]>>(
-      `/tenant-services`,
-      { tenant_id: organizationId },
-      { headers: groupHeader(effectiveGroup) }
+  async listByOrganization(organizationId: string, _groupId?: string | null): Promise<TenantServiceResource[]> {
+    return unwrap(await table().select("*").eq("tenant_id", organizationId).order("created_at")) ?? [];
+  },
+
+  async get(id: string, _groupId?: string | null): Promise<TenantServiceResource> {
+    return unwrap(await table().select("*").eq("id", id).single());
+  },
+
+  async create(payload: StoreTenantServiceRequest, _groupId?: string | null): Promise<TenantServiceResource> {
+    if (!payload.tenant_id) throw new Error("Nessuna azienda selezionata");
+    return unwrap(
+      await table()
+        .insert({
+          tenant_id: payload.tenant_id,
+          site_id: payload.site_id ?? null,
+          service_type: payload.service_type,
+          status: payload.status ?? "active",
+          settings: payload.settings ?? null,
+          updated_by: await currentUserId(),
+        })
+        .select()
+        .single(),
     );
-    return res.data;
   },
 
-  async get(id: string, groupId?: string | null): Promise<TenantServiceResource> {
-    const res = await apiClient.get<ApiResponse<TenantServiceResource>>(
-      `/tenant-services/${id}`,
-      undefined,
-      groupId ? { headers: groupHeader(groupId) } : undefined
+  async update(id: string, payload: UpdateTenantServiceRequest, _groupId?: string | null): Promise<TenantServiceResource> {
+    return unwrap(
+      await table()
+        .update({ ...payload, updated_by: await currentUserId() })
+        .eq("id", id)
+        .select()
+        .single(),
     );
-    return res.data;
   },
 
-  async create(payload: StoreTenantServiceRequest, groupId?: string | null): Promise<TenantServiceResource> {
-    const res = await apiClient.post<ApiResponse<TenantServiceResource>>(
-      "/tenant-services",
-      payload,
-      groupId ? { headers: groupHeader(groupId) } : undefined
-    );
-    return res.data;
-  },
-
-  async update(id: string, payload: UpdateTenantServiceRequest, groupId?: string | null): Promise<TenantServiceResource> {
-    const res = await apiClient.put<ApiResponse<TenantServiceResource>>(
-      `/tenant-services/${id}`,
-      payload,
-      groupId ? { headers: groupHeader(groupId) } : undefined
-    );
-    return res.data;
-  },
-
-  /** PATCH — partial update (used for HiPatch settings, etc.) */
   async patch(id: string, payload: Partial<UpdateTenantServiceRequest>, groupId?: string | null): Promise<TenantServiceResource> {
-    const res = await apiClient.patch<ApiResponse<TenantServiceResource>>(
-      `/tenant-services/${id}`,
-      payload,
-      groupId ? { headers: groupHeader(groupId) } : undefined
-    );
-    return res.data;
+    return tenantServicesApi.update(id, payload, groupId);
   },
 
-  async delete(id: string, groupId?: string | null): Promise<void> {
-    await apiClient.delete(
-      `/tenant-services/${id}`,
-      groupId ? { headers: groupHeader(groupId) } : undefined
-    );
+  async delete(id: string, _groupId?: string | null): Promise<void> {
+    unwrap(await table().delete().eq("id", id));
   },
 
-  /** Service catalog from config endpoint */
   async catalog(): Promise<ServiceCatalog> {
-    const res = await apiClient.get<ApiResponse<ServiceCatalog>>("/config/tenant-services");
-    return res.data;
+    return Object.fromEntries(
+      FALLBACK_SERVICE_CATALOG.map((s) => [s.code, { label: s.name, description: s.description, icon: s.icon }]),
+    ) as unknown as ServiceCatalog;
   },
 };
