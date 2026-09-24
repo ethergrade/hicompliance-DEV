@@ -41,8 +41,8 @@ const LoginForm: React.FC = () => {
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="login">Email o Username</Label>
-            <Input id="login" name="login" type="text" placeholder="email o username" required />
+            <Label htmlFor="login">Email</Label>
+            <Input id="login" name="login" type="email" placeholder="nome@azienda.it" required />
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Password</Label>
