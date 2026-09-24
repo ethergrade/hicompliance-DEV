@@ -18,6 +18,7 @@ import { useAssessmentRadar } from "@/hooks/useAssessmentRadar";
 import ClientServicesDialog from "@/components/clients/ClientServicesDialog";
 import { Shield, BarChart3, Unlink, Settings } from "lucide-react";
 import { useHiTrackDashboard } from "@/hooks/useHiTrackDashboard";
+import { DEMO_SERVICE_HEALTH, isInnovatechDemo } from "@/data/innovatechSecurityDemo";
 
 const getServiceIcon = (code: string) => {
 	const key = code.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -84,6 +85,7 @@ const Dashboard: React.FC = () => {
 	const activeOrgName =
 		selectedOrganization?.name || user?.groups?.[0]?.name || "Organizzazione";
 	const activeGroupId = selectedOrganization?.group_id ?? null;
+	const isDemoOrganization = isInnovatechDemo(selectedOrganization?.name);
 	const { integrations } = useServiceIntegrations();
 	const { isSuperAdmin, isSales } = useUserRoles();
 	const { data: hiTrackDashboard } = useHiTrackDashboard();
@@ -150,6 +152,9 @@ const Dashboard: React.FC = () => {
 		fallbackScore: number | null,
 	) => {
 		const key = normalizeCode(serviceCode);
+		if (isDemoOrganization && DEMO_SERVICE_HEALTH[key] !== undefined) {
+			return DEMO_SERVICE_HEALTH[key];
+		}
 		if (key === "hitrack") {
 			return Math.round(hiTrackDashboard?.overview.healthScore ?? fallbackScore ?? 0);
 		}
@@ -173,7 +178,7 @@ const Dashboard: React.FC = () => {
 	) => {
 		const moduleEnabled = isModuleEnabledForDashboard(service.code);
 		const isGood = healthScore >= 80;
-		const issues = isGood ? 0 : Math.ceil((100 - healthScore) / 20);
+		const issues = isGood ? 0 : Math.max(1, Math.ceil((80 - healthScore) / 10));
 
 		return (
 			<div

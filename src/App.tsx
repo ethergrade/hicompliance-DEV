@@ -47,6 +47,9 @@ import SamlCallback from "./pages/SamlCallback";
 import EntraRedirect from "./pages/EntraRedirect";
 import NotFound from "./pages/NotFound";
 import { ErrorBoundary } from "./components/shared/ErrorFallback";
+import { useClientOrganization } from "@/hooks/useClientOrganization";
+import { DemoDarkRisk360, DemoSurfaceScan360 } from "@/components/demo/DemoSecurityUi";
+import { isInnovatechDemo } from "@/data/innovatechSecurityDemo";
 
 const StandardDarkRiskPage = lazy(
 	() => import("./features/darkrisk/standard/StandardDarkRiskPage"),
@@ -62,6 +65,16 @@ const darkRiskFallback = (
 );
 
 const queryClient = new QueryClient();
+
+const SurfaceScanRoute = () => {
+	const { selectedOrganization } = useClientOrganization();
+	return isInnovatechDemo(selectedOrganization?.name) ? <DemoSurfaceScan360 /> : <SurfaceScan360 />;
+};
+
+const DarkRiskRoute = () => {
+	const { selectedOrganization } = useClientOrganization();
+	return isInnovatechDemo(selectedOrganization?.name) ? <DemoDarkRisk360 /> : <StandardDarkRiskPage />;
+};
 
 const App = () => (
 	<QueryClientProvider client={queryClient}>
@@ -116,7 +129,7 @@ const App = () => (
 								path="/surface-scan"
 								element={
 									<ClientSelectionGuard>
-										<SurfaceScan360 />
+										<SurfaceScanRoute />
 									</ClientSelectionGuard>
 								}
 							/>
@@ -130,7 +143,7 @@ const App = () => (
 									<ClientSelectionGuard>
 										<Suspense fallback={darkRiskFallback}>
 											<ErrorBoundary>
-												<StandardDarkRiskPage />
+												<DarkRiskRoute />
 											</ErrorBoundary>
 										</Suspense>
 									</ClientSelectionGuard>
