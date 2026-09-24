@@ -48,7 +48,7 @@ export default function SupplyChain() {
   const [fScore, setFScore] = useState("all");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["supply-chain", organizationId],
+    queryKey: ["supply-chain", organizationId, canSeeCommercial],
     enabled: enabled && !!organizationId,
     queryFn: async () => {
       const { data: suppliers, error } = await sb.from("supplier_directory").select("*")
