@@ -165,6 +165,21 @@ const Dashboard: React.FC = () => {
 		return fallbackScore ?? 0;
 	};
 
+	// Rischio per servizio: HiTrack, SurfaceScan360 e DarkRisk360 (100 - health).
+	const serviceRiskItems = useMemo(
+		() =>
+			[
+				{ code: "hitrack", label: "HiTrack" },
+				{ code: "surfacescan", label: "SurfaceScan360" },
+				{ code: "darkrisk", label: "DarkRisk360" },
+			].map(({ code, label }) => ({
+				label,
+				health: resolveServiceHealthScore(code, null),
+			})),
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[isDemoOrganization, hiTrackDashboard?.overview.healthScore],
+	);
+
 	const handleServiceClick = (service: { code: string; name: string }) => {
 		const key = normalizeCode(service.code);
 		// HiCompliance è il container dei servizi hisolution, non ha pagina dedicata.
