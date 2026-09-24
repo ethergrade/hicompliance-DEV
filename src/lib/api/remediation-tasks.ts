@@ -56,7 +56,7 @@ async function readTask(companyId: string, id: string): Promise<RemediationTask>
 }
 
 export const remediationTasksApi = {
-	async list(companyId: string): Promise<RemediationTask[]> {
+	async list(companyId: string, _groupId?: string | null): Promise<RemediationTask[]> {
 		const { data, error } = await supabase
 			.from("remediation_tasks")
 			.select("*")
@@ -67,21 +67,29 @@ export const remediationTasksApi = {
 		return (data ?? []).map((row) => toTask(row as TaskRow));
 	},
 
-	async get(companyId: string, id: string): Promise<RemediationTask> {
+	async get(companyId: string, id: string, _groupId?: string | null): Promise<RemediationTask> {
 		return readTask(companyId, id);
 	},
 
-	async create(companyId: string, payload: StoreRemediationTaskRequest): Promise<RemediationTask> {
+	async create(companyId: string, payload: StoreRemediationTaskRequest, _groupId?: string | null): Promise<RemediationTask> {
+		const insertRow = {
+			organization_id: companyId,
+			task: payload.task,
+			category: payload.category,
+			start_date: payload.start_date,
+			end_date: payload.end_date,
+			...dbPayload(payload),
+		};
 		const { data, error } = await supabase
 			.from("remediation_tasks")
-			.insert({ organization_id: companyId, ...dbPayload(payload) })
+			.insert(insertRow)
 			.select("*")
 			.single();
 		if (error) throw error;
 		return toTask(data as TaskRow);
 	},
 
-	async update(companyId: string, id: string, payload: UpdateRemediationTaskRequest): Promise<RemediationTask> {
+	async update(companyId: string, id: string, payload: UpdateRemediationTaskRequest, _groupId?: string | null): Promise<RemediationTask> {
 		const { data, error } = await supabase
 			.from("remediation_tasks")
 			.update(dbPayload(payload))
@@ -94,15 +102,15 @@ export const remediationTasksApi = {
 		return toTask(data as TaskRow);
 	},
 
-	async updateProgress(companyId: string, id: string, progress: number): Promise<RemediationTask> {
+	async updateProgress(companyId: string, id: string, progress: number, _groupId?: string | null): Promise<RemediationTask> {
 		return this.update(companyId, id, { progress });
 	},
 
-	async updateDone(companyId: string, id: string, isDone: boolean): Promise<RemediationTask> {
+	async updateDone(companyId: string, id: string, isDone: boolean, _groupId?: string | null): Promise<RemediationTask> {
 		return this.update(companyId, id, { is_done: isDone });
 	},
 
-	async delete(companyId: string, id: string): Promise<void> {
+	async delete(companyId: string, id: string, _groupId?: string | null): Promise<void> {
 		const { error } = await supabase
 			.from("remediation_tasks")
 			.update({ is_deleted: true })

@@ -208,7 +208,7 @@ export const assessmentV2Api = {
 	): Promise<AssessmentSnapshot[]> {
 		const { data, error } = await supabase.from("assessment_snapshots").select("*").eq("organization_id", companyId).order("created_at", { ascending: false });
 		if (error) throw error;
-		return (data ?? []) as AssessmentSnapshot[];
+		return (data ?? []) as unknown as AssessmentSnapshot[];
 	},
 
 	/** Create a new snapshot (recalculates scores from current responses) */
@@ -230,7 +230,7 @@ export const assessmentV2Api = {
 		const year = new Date().getFullYear();
 		const { data, error: saveError } = await supabase.from("assessment_snapshots").upsert({ organization_id: companyId, snapshot_year: year, category_scores: categoryScores, overall_score: score, total_answered: responses?.length ?? 0, total_questions: total, created_by: authData.user?.id ?? null }, { onConflict: "organization_id,snapshot_year" }).select("*").single();
 		if (saveError) throw saveError;
-		return data as AssessmentSnapshot;
+		return data as unknown as AssessmentSnapshot;
 	},
 
 	/** Get elaboration status for a snapshot (admin/superadmin only) */
