@@ -66,6 +66,7 @@ const DARKRISK_EXTENDED_UI_V2_ENABLED = String(import.meta.env.VITE_DARKRISK_EXT
 import { useClientContext } from "@/contexts/ClientContext";
 import { useHydrateOrganizationServices } from "@/hooks/useHydrateOrganizationServices";
 import { useOrganizationStore } from "@/stores/organizationStore";
+import { isInnovatechDemo } from "@/data/innovatechSecurityDemo";
 
 const navigation = [
 	{ title: "Home", href: "/", icon: Home },
@@ -82,6 +83,7 @@ const hiComplianceModules = [
 	{ title: "Assessment", href: "/assessment", icon: ClipboardCheck },
 	{ title: "Remediation", href: "/remediation", icon: Wrench },
 	{ title: "Consistenze", href: "/consistenze", icon: Package },
+	{ title: "Supply Chain", href: "/supply-chain", icon: Network },
 ];
 
 const hiComplianceServices = [
@@ -182,6 +184,8 @@ export const AppSidebar: React.FC = () => {
 	const { canViewRoute, hasCapability } = usePermissions();
 
 	const isFeatureAllowed = (href: string) => {
+		// Supply Chain: demo solo per Innovatech
+		if (href === "/supply-chain") return isInnovatechDemo(selectedOrganization?.name);
 		// SuperAdmin/Sales without a selected org see everything (console view)
 		if (isConsoleUser && !selectedOrganization) return true;
 		if (href === "/surface-scan" || href === "/surface-scan/exposure")

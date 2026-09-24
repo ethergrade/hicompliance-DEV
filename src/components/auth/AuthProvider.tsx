@@ -49,6 +49,7 @@ export const useAuth = () => useContext(AuthContext);
 const isPublicPath = (pathname: string) =>
 	pathname === "/" ||
 	pathname.startsWith("/auth") ||
+	pathname.startsWith("/supplier-portal") ||
 	pathname.startsWith("/hiconsole") ||
 	pathname.startsWith("/reset-password") ||
 	pathname === "/saml-callback" ||
