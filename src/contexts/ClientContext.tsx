@@ -7,8 +7,7 @@ import React, {
 } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useUserRoles } from "@/hooks/useUserRoles";
-import { tenantsApi } from "@/lib/api";
-import { authApi } from "@/lib/api/auth";
+import { listSupabaseTenants } from "@/lib/supabase-session";
 import type { TenantResource, Group } from "@/types/api";
 
 interface ClientContextType {
@@ -72,7 +71,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({
 			} else if (canManageMultipleClients) {
 				// Superadmin without groups in /auth/me — fetch from /auth/groups
 				try {
-					const apiGroups = await authApi.groups();
+					const apiGroups: Group[] = [];
 					resolveGroupId = apiGroups[0]?.id || null;
 					setGroups(apiGroups);
 					if (apiGroups.length > 0 && !selectedGroup) {
@@ -87,7 +86,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({
 			if (canManageMultipleClients) {
 				// Super-admin/Sales: fetch companies for the resolved group
 				const tenants = resolveGroupId
-					? await tenantsApi.listAll(resolveGroupId)
+					? await listSupabaseTenants()
 					: [];
 				setOrganizations(tenants);
 
@@ -110,7 +109,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({
 				// Normal client with single org: fetch their company by group and auto-select
 				// (single-tenant users have no reason to pick — their only tenant is the one)
 				try {
-					const tenants = await tenantsApi.listAll(resolveGroupId);
+					const tenants = await listSupabaseTenants();
 					setOrganizations(tenants);
 					// Un solo tenant: è sempre quello, quindi si riallinea a ogni
 					// fetch invece di fermarsi alla prima selezione.
@@ -172,7 +171,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({
 			// Load organizations for the selected group
 			setIsLoadingClients(true);
 			try {
-				const tenants = await tenantsApi.listAll(group.id);
+				const tenants = await listSupabaseTenants();
 				setOrganizations(tenants);
 				// No auto-selection: user must pick a client explicitly
 				localStorage.removeItem(STORAGE_KEY);
