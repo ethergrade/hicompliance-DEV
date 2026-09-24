@@ -19,6 +19,7 @@ import ClientServicesDialog from "@/components/clients/ClientServicesDialog";
 import { Shield, BarChart3, Unlink, Settings } from "lucide-react";
 import { useHiTrackDashboard } from "@/hooks/useHiTrackDashboard";
 import { DEMO_SERVICE_HEALTH, isInnovatechDemo } from "@/data/innovatechSecurityDemo";
+import { ServiceRiskBreakdownCard } from "@/components/dashboard/ServiceRiskBreakdownCard";
 
 const getServiceIcon = (code: string) => {
 	const key = code.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -163,6 +164,21 @@ const Dashboard: React.FC = () => {
 		}
 		return fallbackScore ?? 0;
 	};
+
+	// Rischio per servizio: HiTrack, SurfaceScan360 e DarkRisk360 (100 - health).
+	const serviceRiskItems = useMemo(
+		() =>
+			[
+				{ code: "hitrack", label: "HiTrack" },
+				{ code: "surfacescan", label: "SurfaceScan360" },
+				{ code: "darkrisk", label: "DarkRisk360" },
+			].map(({ code, label }) => ({
+				label,
+				health: resolveServiceHealthScore(code, null),
+			})),
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[isDemoOrganization, hiTrackDashboard?.overview.healthScore],
+	);
 
 	const handleServiceClick = (service: { code: string; name: string }) => {
 		const key = normalizeCode(service.code);
@@ -351,6 +367,8 @@ const Dashboard: React.FC = () => {
 						</Card>
 					</div>
 				</div>
+
+				<ServiceRiskBreakdownCard items={serviceRiskItems} />
 
 				<Card className="border-border">
 					<CardHeader className="pb-6">
