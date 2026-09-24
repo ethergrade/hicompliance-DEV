@@ -3,10 +3,10 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { MODEL_LABEL, TECH_FIELDS, type TechProfile } from "../api";
+import { MODEL_LABEL, TECH_FIELDS } from "../api";
 
 interface Props {
-  value: Partial<TechProfile>;
+  value: Record<string, unknown>;
   onChange?: (key: string, v: unknown) => void;
   readOnly?: boolean;
   only?: "counts" | "tech";
