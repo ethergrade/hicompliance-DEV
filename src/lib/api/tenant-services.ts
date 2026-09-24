@@ -73,6 +73,8 @@ export const tenantServicesApi = {
   },
 
   async catalog(): Promise<ServiceCatalog> {
-    return FALLBACK_SERVICE_CATALOG as unknown as ServiceCatalog;
+    return Object.fromEntries(
+      FALLBACK_SERVICE_CATALOG.map((s) => [s.code, { label: s.name, description: s.description, icon: s.icon }]),
+    ) as unknown as ServiceCatalog;
   },
 };
