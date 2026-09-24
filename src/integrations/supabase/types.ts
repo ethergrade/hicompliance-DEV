@@ -171,8 +171,10 @@ export type Database = {
           created_at: string
           created_by: string | null
           id: string
+          label: string | null
           organization_id: string
           overall_score: number
+          snapshot_date: string
           snapshot_year: number
           total_answered: number
           total_questions: number
@@ -183,8 +185,10 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          label?: string | null
           organization_id: string
           overall_score?: number
+          snapshot_date?: string
           snapshot_year: number
           total_answered?: number
           total_questions?: number
@@ -195,8 +199,10 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          label?: string | null
           organization_id?: string
           overall_score?: number
+          snapshot_date?: string
           snapshot_year?: number
           total_answered?: number
           total_questions?: number
