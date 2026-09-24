@@ -145,7 +145,11 @@ export const HiTrackDashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+      <SectionNav items={[
+        { id: "ht-kpi", label: "Indicatori" }, { id: "ht-overview", label: "Monitoring Overview" },
+        { id: "ht-devices", label: "Dispositivi" }, { id: "ht-disks", label: "Dischi" }, { id: "ht-ram", label: "RAM" },
+      ]} />
+      <div id="ht-kpi" className="scroll-mt-20 grid grid-cols-1 gap-4 md:grid-cols-4">
         <Card className="border-border">
           <CardContent className="p-5">
             <div className="mb-3 flex items-center justify-between">
