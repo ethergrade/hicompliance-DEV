@@ -110,7 +110,7 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({ currentCategori
     { label: 'Stabile', color: COLORE_STABILE },
   ] : [];
 
-  const Row = ({ item, value }: { item: typeof gapData[number]; value: string }) => (
+  const Row = ({ item, value }: { item: { name: string; delta: number }; value: string }) => (
     <div className="flex items-center justify-between py-1.5 border-b border-border/50 last:border-0 min-w-0">
       <span className="text-xs text-foreground truncate flex-1 mr-2">{item.name}</span>
       <span className="text-xs font-semibold" style={{ color: deltaColor(item.delta) }}>{value}</span>
