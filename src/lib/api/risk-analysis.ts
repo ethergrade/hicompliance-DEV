@@ -1,56 +1,27 @@
-import { apiClient } from "@/lib/api-client";
-import type {
-  ApiResponse,
-  RiskAnalysisItem,
-  StoreRiskAnalysisRequest,
-  UpdateRiskAnalysisRequest,
-} from "@/types/api";
-
-const _h = (companyId: string, groupId?: string | null) => ({
-  headers: { "X-Group-Id": groupId || companyId },
-});
-
+import { supabase } from "@/integrations/supabase/client";
+const sb = supabase as any;
+const T = "risk_analysis";
+import type { RiskAnalysisItem, StoreRiskAnalysisRequest, UpdateRiskAnalysisRequest } from "@/types/api";
 export const riskAnalysisApi = {
   async list(companyId: string, _g?: string | null): Promise<RiskAnalysisItem[]> {
-    const res = await apiClient.get<ApiResponse<RiskAnalysisItem[]>>(
-      `/companies/${companyId}/risk-analysis`,
-      undefined,
-      _h(companyId, _g)
-    );
-    return res.data;
+    const { data, error } = await sb.from(T).select("*").eq("organization_id", companyId).order("created_at");
+    if (error) throw error; return data ?? [];
   },
-
   async get(companyId: string, id: string, _g?: string | null): Promise<RiskAnalysisItem> {
-    const res = await apiClient.get<ApiResponse<RiskAnalysisItem>>(
-      `/companies/${companyId}/risk-analysis/${id}`,
-      undefined,
-      _h(companyId, _g)
-    );
-    return res.data;
+    const { data, error } = await sb.from(T).select("*").eq("id", id).eq("organization_id", companyId).single();
+    if (error) throw error; return data;
   },
-
   async create(companyId: string, payload: StoreRiskAnalysisRequest, _g?: string | null): Promise<RiskAnalysisItem> {
-    const res = await apiClient.post<ApiResponse<RiskAnalysisItem>>(
-      `/companies/${companyId}/risk-analysis`,
-      payload,
-      _h(companyId, _g)
-    );
-    return res.data;
+    const created_by = (await supabase.auth.getUser()).data.user?.id;
+    const { data, error } = await sb.from(T).insert({ threat_source: "umana_esterna", ...payload, organization_id: companyId, created_by }).select("*").single();
+    if (error) throw error; return data;
   },
-
   async update(companyId: string, id: string, payload: UpdateRiskAnalysisRequest, _g?: string | null): Promise<RiskAnalysisItem> {
-    const res = await apiClient.put<ApiResponse<RiskAnalysisItem>>(
-      `/companies/${companyId}/risk-analysis/${id}`,
-      payload,
-      _h(companyId, _g)
-    );
-    return res.data;
+    const { data, error } = await sb.from(T).update(payload).eq("id", id).eq("organization_id", companyId).select("*").single();
+    if (error) throw error; return data;
   },
-
   async delete(companyId: string, id: string, _g?: string | null): Promise<void> {
-    await apiClient.delete(
-      `/companies/${companyId}/risk-analysis/${id}`,
-      _h(companyId, _g)
-    );
+    const { error } = await sb.from(T).delete().eq("id", id).eq("organization_id", companyId);
+    if (error) throw error;
   },
 };

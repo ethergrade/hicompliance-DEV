@@ -1,56 +1,27 @@
-import { apiClient } from "@/lib/api-client";
-import type {
-  ApiResponse,
-  PlaybookCompletion,
-  StorePlaybookCompletionRequest,
-  UpdatePlaybookCompletionRequest,
-} from "@/types/api";
-
-const _h = (companyId: string, groupId?: string | null) => ({
-  headers: { "X-Group-Id": groupId || companyId },
-});
-
+import { supabase } from "@/integrations/supabase/client";
+const sb = supabase as any;
+const T = "playbook_completions";
+import type { PlaybookCompletion, StorePlaybookCompletionRequest, UpdatePlaybookCompletionRequest } from "@/types/api";
 export const playbookCompletionsApi = {
   async list(companyId: string, _g?: string | null): Promise<PlaybookCompletion[]> {
-    const res = await apiClient.get<ApiResponse<PlaybookCompletion[]>>(
-      `/companies/${companyId}/playbook-completions`,
-      undefined,
-      _h(companyId, _g)
-    );
-    return res.data;
+    const { data, error } = await sb.from(T).select("*").eq("organization_id", companyId).order("updated_at", { ascending: false });
+    if (error) throw error; return data ?? [];
   },
-
   async get(companyId: string, id: string, _g?: string | null): Promise<PlaybookCompletion> {
-    const res = await apiClient.get<ApiResponse<PlaybookCompletion>>(
-      `/companies/${companyId}/playbook-completions/${id}`,
-      undefined,
-      _h(companyId, _g)
-    );
-    return res.data;
+    const { data, error } = await sb.from(T).select("*").eq("id", id).eq("organization_id", companyId).single();
+    if (error) throw error; return data;
   },
-
   async create(companyId: string, payload: StorePlaybookCompletionRequest, _g?: string | null): Promise<PlaybookCompletion> {
-    const res = await apiClient.post<ApiResponse<PlaybookCompletion>>(
-      `/companies/${companyId}/playbook-completions`,
-      payload,
-      _h(companyId, _g)
-    );
-    return res.data;
+    const user_id = (await supabase.auth.getUser()).data.user?.id;
+    const { data, error } = await sb.from(T).insert({ playbook_title: "", playbook_category: "", playbook_severity: "", ...payload, organization_id: companyId, user_id }).select("*").single();
+    if (error) throw error; return data;
   },
-
   async update(companyId: string, id: string, payload: UpdatePlaybookCompletionRequest, _g?: string | null): Promise<PlaybookCompletion> {
-    const res = await apiClient.put<ApiResponse<PlaybookCompletion>>(
-      `/companies/${companyId}/playbook-completions/${id}`,
-      payload,
-      _h(companyId, _g)
-    );
-    return res.data;
+    const { data, error } = await sb.from(T).update(payload).eq("id", id).eq("organization_id", companyId).select("*").single();
+    if (error) throw error; return data;
   },
-
   async delete(companyId: string, id: string, _g?: string | null): Promise<void> {
-    await apiClient.delete(
-      `/companies/${companyId}/playbook-completions/${id}`,
-      _h(companyId, _g)
-    );
+    const { error } = await sb.from(T).delete().eq("id", id).eq("organization_id", companyId);
+    if (error) throw error;
   },
 };

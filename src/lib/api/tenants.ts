@@ -47,12 +47,13 @@ export const companiesApi = {
 
   /** Get a single company by ID */
   async get(id: string, groupId?: string): Promise<TenantResource> {
-    const res = await apiClient.get<ApiResponse<TenantResource>>(
-      `/companies/${id}`,
-      undefined,
-      groupId ? groupHeader(groupId) : undefined
-    );
-    return res.data;
+    const { supabase } = await import("@/integrations/supabase/client");
+    const { data, error } = await (supabase as any).from("organizations").select("*").eq("id", id).maybeSingle();
+    if (error || !data) {
+      const res = await apiClient.get<ApiResponse<TenantResource>>(`/companies/${id}`, undefined, groupId ? groupHeader(groupId) : undefined);
+      return res.data;
+    }
+    return { ...data, extra: data.extra ?? {} } as TenantResource;
   },
 
   /** Create a new company */
