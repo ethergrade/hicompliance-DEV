@@ -68,6 +68,8 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({
 			const primaryGroup = user.groups?.[0];
 			if (primaryGroup?.id) {
 				resolveGroupId = primaryGroup.id;
+				setGroups(user.groups);
+				if (!selectedGroup) setSelectedGroupState(primaryGroup);
 			} else if (canManageMultipleClients) {
 				// Superadmin without groups in /auth/me — fetch from /auth/groups
 				try {
