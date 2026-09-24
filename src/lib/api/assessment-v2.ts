@@ -1,4 +1,5 @@
 import { apiClient } from "@/lib/api-client";
+import { supabase } from "@/integrations/supabase/client";
 import type {
 	AnalysisViolation,
 	ApiResponse,
@@ -23,24 +24,23 @@ const _h = (companyId: string, groupId?: string | null) => ({
 export const assessmentV2Api = {
 	/** Get all assessment categories with nested questions */
 	async categories(groupId?: string | null): Promise<AssessmentCategory[]> {
-		const opts = groupId ? { headers: { "X-Group-Id": groupId } } : undefined;
-		const res = await apiClient.get<ApiResponse<AssessmentCategory[]>>(
-			"/assessments-v2/categories",
-			undefined,
-			opts,
-		);
-		return res.data;
+		const [{ data: categories, error }, { data: questions, error: questionsError }] = await Promise.all([
+			supabase.from("assessment_categories").select("*").order("order_index"),
+			supabase.from("assessment_questions").select("*").order("order_index"),
+		]);
+		if (error) throw error;
+		if (questionsError) throw questionsError;
+		return (categories ?? []).map((category) => ({
+			...category,
+			questions: (questions ?? []).filter((question) => question.category_id === category.id),
+		})) as AssessmentCategory[];
 	},
 
 	/** Get all 132 questions */
 	async questions(groupId?: string | null): Promise<AssessmentQuestion[]> {
-		const opts = groupId ? { headers: { "X-Group-Id": groupId } } : undefined;
-		const res = await apiClient.get<ApiResponse<AssessmentQuestion[]>>(
-			"/assessments-v2/questions",
-			undefined,
-			opts,
-		);
-		return res.data;
+		const { data, error } = await supabase.from("assessment_questions").select("*").order("order_index");
+		if (error) throw error;
+		return (data ?? []) as AssessmentQuestion[];
 	},
 
 	/**
@@ -81,12 +81,9 @@ export const assessmentV2Api = {
 		companyId: string,
 		_g?: string | null,
 	): Promise<AssessmentResponseItem[]> {
-		const res = await apiClient.get<ApiResponse<AssessmentResponseItem[]>>(
-			`/companies/${companyId}/assessment-responses`,
-			undefined,
-			_h(companyId, _g),
-		);
-		return res.data;
+		const { data, error } = await supabase.from("assessment_responses").select("*").eq("organization_id", companyId);
+		if (error) throw error;
+		return (data ?? []).map((item) => ({ ...item, score: 0 })) as AssessmentResponseItem[];
 	},
 
 	/** Batch update assessment responses */
@@ -95,12 +92,18 @@ export const assessmentV2Api = {
 		payload: BatchAssessmentResponseRequest,
 		_g?: string | null,
 	): Promise<AssessmentResponseItem[]> {
-		const res = await apiClient.put<ApiResponse<AssessmentResponseItem[]>>(
-			`/companies/${companyId}/assessment-responses`,
-			payload,
-			_h(companyId, _g),
-		);
-		return res.data;
+		const { data: authData, error: authError } = await supabase.auth.getUser();
+		if (authError || !authData.user) throw authError ?? new Error("Non autenticato");
+		const rows = payload.responses.map((response) => ({
+			organization_id: companyId,
+			question_id: response.question_id,
+			status: response.status,
+			notes: response.notes ?? null,
+			last_updated_by: authData.user.id,
+		}));
+		const { data, error } = await supabase.from("assessment_responses").upsert(rows, { onConflict: "organization_id,question_id" }).select("*");
+		if (error) throw error;
+		return (data ?? []).map((item) => ({ ...item, score: 0 })) as AssessmentResponseItem[];
 	},
 
 	/** Update a single question response */
@@ -110,12 +113,10 @@ export const assessmentV2Api = {
 		payload: { status: string; notes?: string | null },
 		_g?: string | null,
 	): Promise<AssessmentResponseItem> {
-		const res = await apiClient.put<ApiResponse<AssessmentResponseItem>>(
-			`/companies/${companyId}/assessment-responses/${questionId}`,
-			payload,
-			_h(companyId, _g),
-		);
-		return res.data;
+		const rows = await this.updateResponses(companyId, { responses: [{ question_id: questionId, status: payload.status as AssessmentResponseItem["status"], notes: payload.notes }] });
+		const item = rows[0];
+		if (!item) throw new Error("Risposta non salvata");
+		return item;
 	},
 
 	// ─── Cicli di assessment ────────────────────────────────────────────────────
@@ -125,12 +126,9 @@ export const assessmentV2Api = {
 		companyId: string,
 		_g?: string | null,
 	): Promise<AssessmentCampaignsResponse> {
-		const res = await apiClient.get<ApiResponse<AssessmentCampaignsResponse>>(
-			`/companies/${companyId}/assessment-campaigns`,
-			undefined,
-			_h(companyId, _g),
-		);
-		return res.data;
+		const responses = await this.responses(companyId);
+		const total = await this.questions().then((items) => items.length);
+		return { campaigns: [], current: null, readiness: { answered: responses.length, visible_total: total, percent: total ? Math.round(responses.length / total * 100) : 0, profile_missing: [], is_ready: responses.length === total && total > 0, blocking_reason: null } };
 	},
 
 	/**
@@ -209,12 +207,9 @@ export const assessmentV2Api = {
 		companyId: string,
 		_g?: string | null,
 	): Promise<AssessmentSnapshot[]> {
-		const res = await apiClient.get<ApiResponse<AssessmentSnapshot[]>>(
-			`/companies/${companyId}/assessment-snapshots`,
-			undefined,
-			_h(companyId, _g),
-		);
-		return res.data;
+		const { data, error } = await supabase.from("assessment_snapshots").select("*").eq("organization_id", companyId).order("created_at", { ascending: false });
+		if (error) throw error;
+		return (data ?? []) as AssessmentSnapshot[];
 	},
 
 	/** Create a new snapshot (recalculates scores from current responses) */
@@ -222,12 +217,21 @@ export const assessmentV2Api = {
 		companyId: string,
 		_g?: string | null,
 	): Promise<AssessmentSnapshot> {
-		const res = await apiClient.post<ApiResponse<AssessmentSnapshot>>(
-			`/companies/${companyId}/assessment-snapshots`,
-			undefined,
-			_h(companyId, _g),
-		);
-		return res.data;
+		const [{ data: responses, error }, { data: categories, error: categoryError }, { data: authData }] = await Promise.all([
+			supabase.from("assessment_responses").select("status,question_id,assessment_questions(category_id)").eq("organization_id", companyId),
+			supabase.from("assessment_categories").select("id,name"),
+			supabase.auth.getUser(),
+		]);
+		if (error) throw error;
+		if (categoryError) throw categoryError;
+		const total = await this.questions().then((items) => items.length);
+		const completed = (responses ?? []).filter((item) => item.status === "completed").length;
+		const score = total ? Math.round(completed / total * 100) : 0;
+		const categoryScores = Object.fromEntries((categories ?? []).map((category) => [category.id, { category_id: category.id, category_name: category.name, score: 0, answered: 0, total: 0 }]));
+		const year = new Date().getFullYear();
+		const { data, error: saveError } = await supabase.from("assessment_snapshots").upsert({ organization_id: companyId, snapshot_year: year, category_scores: categoryScores, overall_score: score, total_answered: responses?.length ?? 0, total_questions: total, created_by: authData.user?.id ?? null }, { onConflict: "organization_id,snapshot_year" }).select("*").single();
+		if (saveError) throw saveError;
+		return data as AssessmentSnapshot;
 	},
 
 	/** Get elaboration status for a snapshot (admin/superadmin only) */
