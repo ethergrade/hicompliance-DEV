@@ -130,6 +130,7 @@ export const HiTrackDashboard: React.FC = () => {
   const { data, isLoading, isFetching } = useHiTrackDashboard();
   const syncMutation = useHiTrackSyncNow();
   const [trendWindow, setTrendWindow] = useState<HiTrackTrendWindow>("24h");
+  const paginaDispositivi = usePagina(data.monitoredDevices);
   const paginaDischi = usePagina(data.logicalDisks);
   const paginaRam = usePagina(data.ramMonitoring);
 
@@ -295,8 +296,9 @@ export const HiTrackDashboard: React.FC = () => {
         <CardHeader>
           <CardTitle className="text-lg">Monitored Devices</CardTitle>
         </CardHeader>
-        <CardContent>
-          <Table>
+        <CardContent className="space-y-4">
+          <div className="overflow-x-auto rounded-lg border border-border">
+          <Table className="min-w-[920px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Device</TableHead>
@@ -309,7 +311,7 @@ export const HiTrackDashboard: React.FC = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.monitoredDevices.map((device) => (
+              {paginaDispositivi.visibili.map((device) => (
                 <TableRow key={device.id}>
                   <TableCell>
                     <div>
@@ -343,6 +345,8 @@ export const HiTrackDashboard: React.FC = () => {
               )}
             </TableBody>
           </Table>
+          </div>
+          <Paginatore stato={paginaDispositivi} />
         </CardContent>
       </Card>
 
