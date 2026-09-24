@@ -10,6 +10,7 @@ import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { useOrganizationStore } from "@/stores/organizationStore";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useUserRoles } from "@/hooks/useUserRoles";
+import { HITRACK_DEMO_DATA, isHiTrackDemoOrganization } from "@/data/hitrackDemo";
 
 /**
  * I dati arrivano dal backend Laravel: nel browser non c'è più niente da
@@ -23,7 +24,7 @@ import { useUserRoles } from "@/hooks/useUserRoles";
  * capability.
  */
 function useHiTrackAbilitato() {
-  const { organizationId, groupId } = useClientOrganization();
+  const { organizationId, groupId, selectedOrganization } = useClientOrganization();
   const attivo = useOrganizationStore((s) => s.orgFlags?.hitrack_enabled);
   const { hasCapability, bypass } = usePermissions();
   const { isSuperAdmin } = useUserRoles();
@@ -35,20 +36,21 @@ function useHiTrackAbilitato() {
   return {
     organizationId,
     groupId,
+    demo: isHiTrackDemoOrganization(selectedOrganization?.name),
     abilitato:
       !!organizationId && previsto && (bypass || hasCapability("hitrack.view")),
   };
 }
 
 export function useHiTrackDashboard() {
-  const { organizationId, groupId, abilitato } = useHiTrackAbilitato();
+  const { organizationId, groupId, abilitato, demo } = useHiTrackAbilitato();
 
   const query = useQuery({
-    queryKey: ["hitrack-dashboard", organizationId, groupId],
-    queryFn: () => fetchHiTrackDashboard(organizationId!, groupId),
+    queryKey: ["hitrack-dashboard", organizationId, groupId, demo],
+    queryFn: () => demo ? Promise.resolve(HITRACK_DEMO_DATA) : fetchHiTrackDashboard(organizationId!, groupId),
     enabled: abilitato,
     staleTime: 60_000,
-    refetchInterval: 60_000,
+    refetchInterval: demo ? false : 60_000,
   });
 
   return {
@@ -69,7 +71,8 @@ export function useHiTrackCollectors() {
 }
 
 export function useHiTrackSyncNow() {
-  const { organizationId, groupId } = useClientOrganization();
+  const { organizationId, groupId, selectedOrganization } = useClientOrganization();
+  const demo = isHiTrackDemoOrganization(selectedOrganization?.name);
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -77,6 +80,7 @@ export function useHiTrackSyncNow() {
       if (!organizationId) {
         throw new Error("Organizzazione non selezionata");
       }
+      if (demo) return { queued: false, demo: true };
       return queueHiTrackSyncNow(organizationId, collectorIds, groupId);
     },
     onSuccess: () => {
@@ -86,7 +90,7 @@ export function useHiTrackSyncNow() {
       queryClient.invalidateQueries({
         queryKey: ["hitrack-collectors", organizationId],
       });
-      toast.success("Sincronizzazione HiTrack accodata");
+      toast.success(demo ? "Dati dimostrativi aggiornati" : "Sincronizzazione HiTrack accodata");
     },
     onError: (error: Error) => {
       toast.error(
