@@ -19,6 +19,7 @@ import ClientServicesDialog from "@/components/clients/ClientServicesDialog";
 import { Shield, BarChart3, Unlink, Settings } from "lucide-react";
 import { useHiTrackDashboard } from "@/hooks/useHiTrackDashboard";
 import { DEMO_SERVICE_HEALTH, isInnovatechDemo } from "@/data/innovatechSecurityDemo";
+import { ServiceRiskBreakdownCard } from "@/components/dashboard/ServiceRiskBreakdownCard";
 
 const getServiceIcon = (code: string) => {
 	const key = code.toLowerCase().replace(/[^a-z0-9]/g, "");
