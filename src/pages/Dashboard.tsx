@@ -368,6 +368,8 @@ const Dashboard: React.FC = () => {
 					</div>
 				</div>
 
+				<ServiceRiskBreakdownCard items={serviceRiskItems} />
+
 				<Card className="border-border">
 					<CardHeader className="pb-6">
 						<div className="flex items-center justify-between">
