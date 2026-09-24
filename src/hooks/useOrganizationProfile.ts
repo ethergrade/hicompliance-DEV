@@ -2,13 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { OrganizationProfile, NIS2Classification } from '@/types/organization';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
-import { companyProfileApi, tenantsApi } from '@/lib/api/tenants';
-import type {
-  CompanyProfileResource,
-  TenantResource,
-  UpdateCompanyProfileRequest,
-  UpdateTenantRequest,
-} from '@/types/api';
+import { supabase } from '@/integrations/supabase/client';
+import type { CompanyProfileResource, TenantResource } from '@/types/api';
 
 interface ProfileFormData {
   legal_name: string;
@@ -75,6 +70,15 @@ function toProfile(t: TenantResource, p: CompanyProfileResource | null): Organiz
   };
 }
 
+function toCompanyProfileResource(row: Record<string, unknown> | null): CompanyProfileResource | null {
+  if (!row) return null;
+  return {
+    ...row,
+    tenant_id: String(row.organization_id ?? ''),
+    group_id: null,
+  } as CompanyProfileResource;
+}
+
 /**
  * Unisce le due risorse in un unico form.
  *
@@ -99,34 +103,6 @@ function toFormData(t: TenantResource, p: CompanyProfileResource | null): Profil
 }
 
 /** Campi che vivono su `tenants`. */
-function formDataToUpdatePayload(data: ProfileFormData): UpdateTenantRequest {
-  return {
-    vat_number: data.vat_number || null,
-    phone: data.phone || null,
-    industry: data.business_sector || null,
-    nis2_classification: data.nis2_classification,
-  };
-}
-
-/**
- * Campi che vivono su `company_profiles`.
- *
- * `nis2_classification` resta fuori: il profilo accetta solo
- * none|essential|important mentre qui si usa il vocabolario italiano già
- * memorizzato sul tenant, e duplicarlo creerebbe due verità divergenti.
- */
-function formDataToProfilePayload(data: ProfileFormData): UpdateCompanyProfileRequest {
-  return {
-    legal_name: data.legal_name || null,
-    fiscal_code: data.fiscal_code || null,
-    legal_address: data.legal_address || null,
-    operational_address: data.operational_address || null,
-    pec: data.pec || null,
-    email: data.email || null,
-    ciso_substitute: data.ciso_substitute || null,
-  };
-}
-
 export function useOrganizationProfile() {
   const [profile, setProfile] = useState<OrganizationProfile | null>(null);
   const [formData, setFormData] = useState<ProfileFormData>(INITIAL_FORM_DATA);
@@ -160,13 +136,17 @@ export function useOrganizationProfile() {
 
     setLoading(true);
     try {
-      const [tenant, companyProfile] = await Promise.all([
-        tenantsApi.get(organizationId, groupId ?? undefined),
-        // Il profilo può non esistere ancora: l'endpoint risponde data null.
-        companyProfileApi.get(organizationId, groupId).catch(() => null),
-      ]);
-      const nextFormData = toFormData(tenant, companyProfile);
-      const prof = toProfile(tenant, companyProfile);
+	  const tenant = selectedOrganization;
+	  if (!tenant) throw new Error('Azienda non selezionata');
+	  const { data: companyProfile, error } = await supabase
+		.from('organization_profiles')
+		.select('*')
+		.eq('organization_id', organizationId)
+		.maybeSingle();
+	  if (error) throw error;
+      const normalizedProfile = toCompanyProfileResource(companyProfile as Record<string, unknown> | null);
+      const nextFormData = toFormData(tenant, normalizedProfile);
+      const prof = toProfile(tenant, normalizedProfile);
 
       setProfile(prof);
       setFormData(nextFormData);
@@ -191,18 +171,35 @@ export function useOrganizationProfile() {
 
     setSaving(true);
     try {
-      const groupId = selectedOrganization?.group_id ?? organizationId;
+	  const { data: authData, error: authError } = await supabase.auth.getUser();
+	  if (authError || !authData.user) throw authError ?? new Error('Non autenticato');
+	  const { data: updatedProfile, error } = await supabase
+		.from('organization_profiles')
+		.upsert({
+		  organization_id: organizationId,
+		  legal_name: data.legal_name || null,
+		  vat_number: data.vat_number || null,
+		  fiscal_code: data.fiscal_code || null,
+		  legal_address: data.legal_address || null,
+		  operational_address: data.operational_address || null,
+		  pec: data.pec || null,
+		  phone: data.phone || null,
+		  email: data.email || null,
+		  business_sector: data.business_sector || null,
+		  nis2_classification: data.nis2_classification === 'soggetto_essenziale'
+			? 'essential'
+			: data.nis2_classification === 'soggetto_importante'
+				? 'important'
+				: 'none',
+		  ciso_substitute: data.ciso_substitute || null,
+		}, { onConflict: 'organization_id' })
+		.select('*')
+		.single();
+	  if (error) throw error;
+	  const updatedTenant = selectedOrganization;
+	  if (!updatedTenant) throw new Error('Azienda non selezionata');
 
-      // Due risorse distinte, due chiamate: i campi anagrafici estesi non sono
-      // accettati da PUT /companies/{id} e verrebbero scartati in silenzio.
-      const [, updatedProfile] = await Promise.all([
-        tenantsApi.update(organizationId, formDataToUpdatePayload(data), groupId),
-        companyProfileApi.update(organizationId, formDataToProfilePayload(data), groupId),
-      ]);
-
-      const updatedTenant = await tenantsApi.get(organizationId, groupId);
-
-      setProfile(toProfile(updatedTenant, updatedProfile));
+	  setProfile(toProfile(updatedTenant, toCompanyProfileResource(updatedProfile as Record<string, unknown>)));
       lastPersistedHashRef.current = JSON.stringify(data);
       setLastSaved(new Date());
 
